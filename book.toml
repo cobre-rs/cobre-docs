@@ -1,0 +1,32 @@
+[book]
+title = "Cobre Documentation"
+description = "Open infrastructure for power system computation"
+authors = ["Rogério J. Malves"]
+language = "en"
+multilingual = false
+src = "src"
+
+[build]
+build-dir = "book"
+
+[output.html]
+default-theme = "coal"
+preferred-dark-theme = "coal"
+git-repository-url = "https://github.com/cobre-rs/cobre-docs"
+git-repository-icon = "fa-github"
+edit-url-template = "https://github.com/cobre-rs/cobre-docs/edit/main/{path}"
+site-url = "/cobre-docs/"
+additional-css = ["theme/css/custom.css"]
+no-section-label = false
+
+[output.html.fold]
+enable = true
+level = 1
+
+[output.html.search]
+enable = true
+limit-results = 20
+use-hierarchical-headings = true
+
+[output.html.playground]
+editable = false
