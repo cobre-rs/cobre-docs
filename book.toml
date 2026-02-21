@@ -1,9 +1,8 @@
 [book]
 title = "Cobre Documentation"
 description = "Open infrastructure for power system computation"
-authors = ["Rogério J. Malves"]
+authors = ["Rogerio J. M. Alves"]
 language = "en"
-multilingual = false
 src = "src"
 
 [build]
