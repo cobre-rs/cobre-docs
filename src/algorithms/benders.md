@@ -27,13 +27,15 @@ The full LP structure -- objective terms, constraint families, slack variables, 
 The true future cost function $V_{t+1}(x_t)$ is convex but unknown. SDDP builds a piecewise-linear lower approximation $\underline{V}_{t+1}$ through iterative cut generation:
 
 $$
-\underline{V}_{t+1}(x_t) = \max_{i \in \mathcal{K}} \left\{ \alpha_i + \beta_i^\top x_t \right\}
+\underline{V}_{t+1}(x_t) = \max_{i \in \mathcal{K}} \left\{ \alpha_i + \pi_i^\top x_t \right\}
 $$
 
-Each cut $(\\alpha_i, \\beta_i)$ is a supporting hyperplane derived from **dual variables** of the backward pass. When the stage $t+1$ subproblem is solved at a trial state $\hat{x}_t$ under scenario $\omega$, the optimal dual multipliers $\pi^*$ of the state-linking constraints yield:
+Each cut $(\alpha_i, \pi_i)$ is a supporting hyperplane derived from **dual variables** of the backward pass. When the stage $t+1$ subproblem is solved at a trial state $\hat{x}_t$ under scenario $\omega$, the optimal dual multipliers $\pi^*$ of the state-linking constraints yield:
 
-- **Slope**: $\beta = E_{t+1}^\top \pi^*$ (sensitivity of future cost to incoming state)
-- **Intercept**: $\alpha = V_{t+1}(\hat{x}_t, \omega) - \beta^\top \hat{x}_t$
+- **Slope**: $\pi = E_{t+1}^\top \pi^*$ (sensitivity of future cost to incoming state)
+- **Intercept**: $\alpha = V_{t+1}(\hat{x}_t, \omega) - \pi^\top \hat{x}_t$
+
+> **Notation note**: The matrix form $E_{t+1}^\top \pi^*$ above is the standard Benders decomposition notation from the stochastic programming literature. In Cobre's formal specs, the cut coefficients are expressed directly in terms of LP dual variables: $\pi^v_h = \pi^{wb}_h$ (the water balance dual) and $\pi^{lag}_{h,\ell}$ (the lag-fixing constraint dual), without explicit technology matrices. Both conventions are mathematically equivalent -- the matrix form is compact for general derivations, while the direct-dual form is more practical for implementation. See [Cut Management (spec)](../specs/math/cut-management.md) for the full derivation.
 
 In the hydrothermal problem, the state variables are reservoir storage volumes $v_h$ and AR inflow lags $a_{h,\ell}$, so the cut coefficients come from the water balance dual $\pi^{wb}_h$ and the lag-fixing constraint dual $\pi^{lag}_{h,\ell}$.
 
@@ -53,7 +55,7 @@ The quality of Benders cuts depends directly on the LP formulation:
 
 - **Recourse slacks** (deficit, excess) guarantee feasibility for every scenario, ensuring duals always exist. Without relatively complete recourse, the backward pass would encounter infeasible subproblems.
 - **Penalty magnitudes** shape the value function. Correct priority ordering ensures that cuts propagate economically meaningful signals across stages.
-- **State variable identification** determines which dual multipliers contribute to cut coefficients. Every constraint linking the current stage to the incoming state produces a component of $\beta$.
+- **State variable identification** determines which dual multipliers contribute to cut coefficients. Every constraint linking the current stage to the incoming state produces a component of $\pi$.
 
 The complete specification of all objective terms, constraints, and their dual interpretations is in the [LP Formulation](../specs/math/lp-formulation.md).
 

@@ -10,7 +10,7 @@ The index has five components:
 4. **Incoming Cross-Reference Table** -- for each spec, which other specs reference it
 5. **Dependency Ordering** -- a global topological reading order for the entire corpus
 
-> **Note on known errata:** Seven HIGH-severity section-number errors were identified in the Epic 03 cross-reference audit (findings F-1, F-5, F-6, F-7, F-8, F-9, F-11). These involve incorrect section-number references within spec files (e.g., pointing to S3 instead of S1.2, or to non-existent sections S18.6-S18.8). The cross-reference links in this index reflect the _current file state_ including these errors. They will be corrected in Epic 06 remediation.
+> **Errata resolved:** Seven HIGH-severity section-number errors (F-1, F-5, F-6, F-7, F-8, F-9, F-11) were identified in the Epic 03 cross-reference audit and corrected in Epic 06 remediation. All section-number references now point to the correct targets.
 
 ---
 

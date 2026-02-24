@@ -10,7 +10,7 @@ For notation conventions (index sets, parameters, decision variables, dual varia
 >
 > - $\alpha$ denotes the **CVaR confidence level** (matching the `alpha` field in `stages.json`). This is the standard convention in the risk measure literature.
 > - $\hat{\alpha}_t(\omega)$ denotes **per-scenario cut intercepts** within this spec. This corresponds to $\alpha$ in [Cut Management §1](cut-management.md), renamed here to avoid collision with the CVaR parameter.
-> - $d$ denotes the **discount factor** (not $\beta$, which denotes cut coefficients). See [Discount Rate](discount-rate.md).
+> - $d$ denotes the **discount factor**. See [Discount Rate](discount-rate.md).
 > - $\mu$ denotes the **risk-adjusted probability measure** (not $q$, which denotes turbined flow).
 > - $\psi(p, \mu)$ denotes the **dual penalty function** in the general dual representation.
 
@@ -106,10 +106,10 @@ The key theorem for computing risk-averse cuts:
 >
 > is a subgradient of $\mathbb{F}[V(x, \omega)]$ at $\tilde{x}$.
 
-**Application to Cut Generation**: In SDDP, the subgradients $\lambda(\tilde{x}, \omega)$ are the cut coefficients $\beta_t(\omega)$ obtained from LP duals (see [Cut Management §2](cut-management.md)). The risk-averse cut coefficients are computed by replacing the uniform scenario probabilities with risk-adjusted probabilities $\mu^*$:
+**Application to Cut Generation**: In SDDP, the subgradients $\lambda(\tilde{x}, \omega)$ are the cut coefficients $\pi_t(\omega)$ obtained from LP duals (see [Cut Management §2](cut-management.md)). The risk-averse cut coefficients are computed by replacing the uniform scenario probabilities with risk-adjusted probabilities $\mu^*$:
 
 $$
-\bar{\beta}_{t-1,h} = \sum_{\omega \in \Omega_t} \mu^*_\omega \cdot \beta_{t,h}(\omega)
+\bar{\pi}_{t-1,h} = \sum_{\omega \in \Omega_t} \mu^*_\omega \cdot \pi_{t,h}(\omega)
 $$
 
 where $\mu^*$ is the optimal dual probability vector computed from the scenario costs $\{Q_t(\hat{x}, \omega)\}_{\omega \in \Omega_t}$.
@@ -143,8 +143,8 @@ $$
 
 Extract dual solutions $\pi_t(\omega)$ and compute per-scenario cut coefficients:
 
-- Intercept: $\hat{\alpha}_t(\omega) = Q_t(\hat{x}_{t-1}, \omega) - \beta_t(\omega)^\top \hat{x}_{t-1}$
-- Coefficients: $\beta_t(\omega)$ — derived from LP duals (see [Cut Management §2](cut-management.md))
+- Intercept: $\hat{\alpha}_t(\omega) = Q_t(\hat{x}_{t-1}, \omega) - \pi_t(\omega)^\top \hat{x}_{t-1}$
+- Coefficients: $\pi_t(\omega)$ — derived from LP duals (see [Cut Management §2](cut-management.md))
 
 **Step 2: Compute risk-adjusted scenario weights** $\mu^*_\omega$.
 
@@ -177,13 +177,13 @@ $$
 $$
 
 $$
-\bar{\beta}_{t-1} = \sum_{\omega \in \Omega_t} \mu^*_\omega \cdot \beta_t(\omega)
+\bar{\pi}_{t-1} = \sum_{\omega \in \Omega_t} \mu^*_\omega \cdot \pi_t(\omega)
 $$
 
 **Step 4: Add cut to stage $t-1$**:
 
 $$
-\theta_{t-1} \geq \bar{\hat{\alpha}}_{t-1} + \bar{\beta}_{t-1}^\top x_{t-1}
+\theta_{t-1} \geq \bar{\hat{\alpha}}_{t-1} + \bar{\pi}_{t-1}^\top x_{t-1}
 $$
 
 > **Comparison with risk-neutral aggregation**: The only difference from [Cut Management §3](cut-management.md) is that the scenario probabilities $p(\omega)$ are replaced by the risk-adjusted weights $\mu^*_\omega$.

@@ -51,6 +51,11 @@ recovery failures, and signal-derived codes (130 for SIGINT, 137 for SIGKILL).
   CLI flags. This keeps job scripts stable and makes configuration
   self-documenting and version-controlled.
 
+- **Configuration reference** -- Complete `config.json` and `stages.json` schema
+  definitions, modeling/training/simulation option catalogs, and the mapping from
+  formulation choices to configuration fields.
+  See [Configuration Reference](../specs/configuration/configuration-reference.md).
+
 ## Status
 
 cobre-cli is in the **design phase**. The CLI/lifecycle and validation specs

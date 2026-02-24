@@ -29,6 +29,17 @@ parallelism, where throughput is critical.
 
 ## Key Concepts
 
+- **Design principles** -- Format selection criteria (JSON for human-editable
+  configuration, Parquet for columnar stage-varying data, FlatBuffers for binary
+  policy data), declaration order invariance, and canonical ID ordering that
+  underpin every data model decision.
+  See [Design Principles](../specs/overview/design-principles.md).
+
+- **System element formulations** -- Entity variable definitions and constraint
+  formulations that the data model must represent: per-element decision variables,
+  bounds, cost coefficients, and coupling constraints across the system.
+  See [System Element Modeling Overview](../specs/math/system-elements.md).
+
 - **Entity registries** -- JSON-backed collections for all physical and
   commercial elements in the system. Each entity carries typed fields, bus
   assignments, and optional stage-varying overrides.

@@ -336,6 +336,6 @@ minimize:
 - [Input Constraints](input-constraints.md) — Time-varying entity bounds; generic constraint slack penalties
 - [Input Hydro Extensions](input-hydro-extensions.md) — Hydro geometry for evaporation calculation
 - [Internal Structures](internal-structures.md) — Pre-resolved penalty tables, FPHA turbined cost rationale
-- [LP Formulation](../math/lp-formulation.md) — Cost taxonomy (§5.0) and slack penalties (§5.8)
+- [LP Formulation](../math/lp-formulation.md) — Cost taxonomy (§1) and penalty terms (§9)
 - [Configuration Reference](../configuration/configuration-reference.md) — Penalty-related config settings
 - [Design Principles](../overview/design-principles.md) — General design approach

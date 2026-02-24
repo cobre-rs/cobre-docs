@@ -17,7 +17,7 @@ This document follows [SDDP.jl](https://sddp.dev/stable/) notation conventions f
 | $V_t(x)$                 | Value function (cost-to-go) at stage $t$ |
 | $\theta_t$               | Epigraph variable approximating $V_{t}$  |
 | $\pi$                    | Dual variables (Lagrange multipliers)    |
-| $(\alpha, \beta)$        | Cut intercept and coefficients           |
+| $(\alpha, \pi)$          | Cut intercept and coefficients           |
 | $k$                      | Iteration counter                        |
 
 ## 2. Index Sets
@@ -271,10 +271,10 @@ $$
 The SDDP cut at stage $t-1$ has the form:
 
 $$
-\theta_{t-1} \geq \alpha + \sum_{h} \beta^v_h \cdot v_h + \sum_{h,\ell} \beta^{lag}_{h,\ell} \cdot a_{h,\ell}
+\theta_{t-1} \geq \alpha + \sum_{h} \pi^v_h \cdot v_h + \sum_{h,\ell} \pi^{lag}_{h,\ell} \cdot a_{h,\ell}
 $$
 
-where $\alpha$ is the intercept and $\beta$ are the coefficients with respect to state variables.
+where $\alpha$ is the intercept and $\pi$ are the coefficients with respect to state variables.
 
 **Key principle**: For a constraint written as $\text{LHS} = \text{RHS}$, the dual variable $\pi$ represents:
 
@@ -304,7 +304,7 @@ The dual $\pi^{wb}_h$ measures: _"How does optimal cost change if incoming stora
 **Cut coefficient**:
 
 $$
-\boxed{\beta^v_h = \pi^{wb}_h}
+\boxed{\pi^v_h = \pi^{wb}_h}
 $$
 
 No sign change is needed because the incoming state $\hat{v}_h$ appears directly on the RHS with coefficient $+1$.
@@ -330,29 +330,29 @@ The dual $\pi^{lag}_{h,\ell}$ measures: _"How does optimal cost change if incomi
 **Cut coefficient**:
 
 $$
-\boxed{\beta^{lag}_{h,\ell} = \pi^{lag}_{h,\ell}}
+\boxed{\pi^{lag}_{h,\ell} = \pi^{lag}_{h,\ell}}
 $$
 
 Direct correspondence since $\hat{a}_{h,\ell}$ appears on the RHS with coefficient $+1$.
 
 ### 5.5 Summary Table
 
-| Symbol               | Constraint (LP Form)                           | RHS                | Cut Coefficient                             |
-| -------------------- | ---------------------------------------------- | ------------------ | ------------------------------------------- |
-| $\pi^{wb}_h$         | $v_h - \zeta \cdot (\text{flows}) = \hat{v}_h$ | $\hat{v}_h$        | $\beta^v_h = \pi^{wb}_h$                    |
-| $\pi^{lag}_{h,\ell}$ | $a_{h,\ell} = \hat{a}_{h,\ell}$                | $\hat{a}_{h,\ell}$ | $\beta^{lag}_{h,\ell} = \pi^{lag}_{h,\ell}$ |
-| $\pi^{lb}_{b,k}$     | Load balance                                   | $D_{b,k}$          | Marginal cost of energy                     |
-| $\lambda_i$          | Benders cut $i$                                | $\alpha_i$         | Cut activity indicator                      |
+| Symbol               | Constraint (LP Form)                           | RHS                | Cut Coefficient                           |
+| -------------------- | ---------------------------------------------- | ------------------ | ----------------------------------------- |
+| $\pi^{wb}_h$         | $v_h - \zeta \cdot (\text{flows}) = \hat{v}_h$ | $\hat{v}_h$        | $\pi^v_h = \pi^{wb}_h$                    |
+| $\pi^{lag}_{h,\ell}$ | $a_{h,\ell} = \hat{a}_{h,\ell}$                | $\hat{a}_{h,\ell}$ | $\pi^{lag}_{h,\ell} = \pi^{lag}_{h,\ell}$ |
+| $\pi^{lb}_{b,k}$     | Load balance                                   | $D_{b,k}$          | Marginal cost of energy                   |
+| $\lambda_i$          | Benders cut $i$                                | $\alpha_i$         | Cut activity indicator                    |
 
 ### 5.6 Implementation Notes
 
-The hot-path solver update pattern (modifying RHS via `changeRowBounds` for incoming state, extracting duals via `getRowDual` for cut coefficients) is documented in [Solver HiGHS Implementation §3](../architecture/solver-highs-impl.md) and [Solver Abstraction §3](../architecture/solver-abstraction.md). The key property: since incoming state variables appear on the RHS with coefficient $+1$, no sign change is needed when mapping duals to cut coefficients ($\beta^v_h = \pi^{wb}_h$, $\beta^{lag}_{h,\ell} = \pi^{lag}_{h,\ell}$).
+The hot-path solver update pattern (modifying RHS via `changeRowBounds` for incoming state, extracting duals via `getRowDual` for cut coefficients) is documented in [Solver HiGHS Implementation §3](../architecture/solver-highs-impl.md) and [Solver Abstraction §3](../architecture/solver-abstraction.md). The key property: since incoming state variables appear on the RHS with coefficient $+1$, no sign change is needed when mapping duals to cut coefficients ($\pi^v_h = \pi^{wb}_h$, $\pi^{lag}_{h,\ell} = \pi^{lag}_{h,\ell}$).
 
 **Verification check**: In a typical hydrothermal system:
 
 - $\pi^{wb}_h < 0$ (water has value, more storage reduces cost)
-- $\beta^v_h < 0$ (cut value increases as storage decreases — future is more expensive with less water)
-- The cut $\theta \geq \alpha + \beta^v \cdot v$ correctly penalizes low storage
+- $\pi^v_h < 0$ (cut value increases as storage decreases — future is more expensive with less water)
+- The cut $\theta \geq \alpha + \pi^v \cdot v$ correctly penalizes low storage
 
 ## Cross-References
 

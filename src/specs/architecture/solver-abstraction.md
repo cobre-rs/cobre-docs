@@ -187,7 +187,7 @@ Two distinct concepts must be clearly separated:
 | **Cut pool**  | In-memory shared data structure holding all cuts (active + inactive) for all stages | Shared across threads, one per MPI rank    | Yes — deterministic slot assignment, activity bitmap, contiguous dense coefficients |
 | **Solver LP** | Transient LP loaded into a thread-local solver instance for a single solve          | Thread-local, rebuilt per stage transition | No — only active cuts are added via `addRows`                                       |
 
-Under the adopted LP rebuild strategy (§10), the solver LP is transient — it is constructed, used, and discarded at every stage transition. Pre-allocating inactive cut rows in the solver LP would add memory pressure and solver overhead (larger factorization) with no benefit. Only the cut pool uses preallocation.
+Under the adopted LP rebuild strategy (§11), the solver LP is transient — it is constructed, used, and discarded at every stage transition. Pre-allocating inactive cut rows in the solver LP would add memory pressure and solver overhead (larger factorization) with no benefit. Only the cut pool uses preallocation.
 
 ### 5.2 Cut Pool Preallocation
 
@@ -222,7 +222,7 @@ An activity bitmap tracks which slots are currently active. The count of active 
 
 ### 5.3 Mathematical Basis
 
-A Benders cut has the form: $\theta \geq \alpha + \boldsymbol{\beta}' \mathbf{x}$, where $\theta$ is the future cost variable, $\alpha$ is the cut intercept, $\boldsymbol{\beta}$ is the vector of cut coefficients, and $\mathbf{x}$ is the state vector. Rearranging to standard LP row form: $\theta - \boldsymbol{\beta}' \mathbf{x} \geq \alpha$.
+A Benders cut has the form: $\theta \geq \alpha + \boldsymbol{\pi}' \mathbf{x}$, where $\theta$ is the future cost variable, $\alpha$ is the cut intercept, $\boldsymbol{\pi}$ is the vector of cut coefficients, and $\mathbf{x}$ is the state vector. Rearranging to standard LP row form: $\theta - \boldsymbol{\pi}' \mathbf{x} \geq \alpha$.
 
 For details on cut generation and selection, see [Cut Management](../math/cut-management.md). For the in-memory layout requirements (contiguous dense coefficients, CSR-friendly, cache-aligned), see [Binary Formats §3.4](../data-model/binary-formats.md).
 
@@ -385,7 +385,7 @@ This is significantly faster than a full rebuild and is the common case in the b
 
 ## Cross-References
 
-- Solver Architecture Decisions — The 5 architectural decisions are documented inline throughout this spec (§1 pre-assembled templates, §2 LP layout, §5 cut preallocation, §8 stage transitions, §11 dual-solver validation)
+- Solver Architecture Decisions — The 5 architectural decisions are documented inline throughout this spec (§2 LP layout, §4.3 dual-solver validation, §5 cut preallocation, §10 compile-time solver selection, §11 pre-assembled templates and rebuild strategy)
 - [Solver Workspaces & LP Scaling](./solver-workspaces.md) — Thread-local solver infrastructure and LP scaling specification
 - [HiGHS Implementation](./solver-highs-impl.md) — HiGHS-specific implementation: retry strategy, batch operations, memory footprint
 - [CLP Implementation](./solver-clp-impl.md) — CLP-specific implementation: C++ wrapper strategy, mutable pointer access, cloning optimization path

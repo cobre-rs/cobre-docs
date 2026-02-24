@@ -2,9 +2,9 @@
 
 ## Overview
 
-This plan performs a deep quality audit of the 50 SDDP specification documents migrated from `powers-rs` into the `cobre-docs` mdBook. The migration itself (39 tickets, all completed) is not repeated — this plan verifies correctness, crate-mapping accuracy, cross-reference coherence, LaTeX rendering, and produces a new centralized cross-reference index.
+This plan performs a deep quality audit of the 50 SDDP specification documents migrated from `powers-rs` into the `cobre-docs` mdBook. The migration itself (39 tickets, all completed) is not repeated -- this plan verifies correctness, crate-mapping accuracy, cross-reference coherence, LaTeX rendering, and produces a new centralized cross-reference index.
 
-**Plan type**: Progressive (epics 1-2 detailed, epics 3-6 outline — refinement required before execution)
+**Plan type**: Progressive (epics 1-2 detailed, epics 3-6 outline -- refinement required before execution)
 
 **Cobre-docs repo**: `/home/rogerio/git/cobre-docs/`
 **Powers source repo**: `/home/rogerio/git/powers/docs/specs/`
@@ -24,8 +24,8 @@ This plan performs a deep quality audit of the 50 SDDP specification documents m
 | epic-02 | Spec-to-Crate Mapping Audit           | 4       | completed |
 | epic-03 | Cross-Reference and Coherence Audit   | 4       | completed |
 | epic-04 | LaTeX Equation Rendering Verification | 2       | completed |
-| epic-05 | Cross-Reference Index Creation        | 2       | executing |
-| epic-06 | Remediation                           | 3       | outline   |
+| epic-05 | Cross-Reference Index Creation        | 2       | completed |
+| epic-06 | Remediation                           | 4       | completed |
 
 ## Progress Tracking
 
@@ -48,15 +48,16 @@ This plan performs a deep quality audit of the 50 SDDP specification documents m
 | ticket-015 | Verify LaTeX Rendering for Remaining Pages and Deploy                                  | epic-04 | completed | Refined      |
 | ticket-016 | Build the Cross-Reference Index File                                                   | epic-05 | completed | Refined      |
 | ticket-017 | Finalize Cross-Reference Index and Verify mdBook Build                                 | epic-05 | completed | Refined      |
-| ticket-018 | Fix All CRITICAL Findings                                                              | epic-06 | pending   | Outline      |
-| ticket-019 | Fix All HIGH Findings                                                                  | epic-06 | pending   | Outline      |
-| ticket-020 | Fix MEDIUM and LOW Findings and Verify Final Build                                     | epic-06 | pending   | Outline      |
+| ticket-018 | Fix Cross-Cutting Notation Change: Beta to Pi for Cut Coefficients                     | epic-06 | completed | Refined      |
+| ticket-019 | Fix Section-Number Errata and User-Review HIGH Findings in Spec Files                  | epic-06 | completed | Refined      |
+| ticket-020 | Fix MEDIUM and LOW Findings and Verify Final Build                                     | epic-06 | completed | Refined      |
+| ticket-021 | Add Missing Spec Links to Crate Documentation Pages                                    | epic-06 | completed | Refined      |
 
 ## Severity Classification
 
 | Severity | Definition                                                                                              |
 | -------- | ------------------------------------------------------------------------------------------------------- |
-| CRITICAL | Information loss — content present in source but absent from target                                     |
+| CRITICAL | Information loss -- content present in source but absent from target                                    |
 | HIGH     | Incorrect spec-to-crate mapping, broken link, contradiction between algorithm reference and formal spec |
 | MEDIUM   | Missing crate doc reference, glossary gap, minor cross-reference inaccuracy                             |
 | LOW      | Style inconsistency, cosmetic, non-blocking                                                             |
@@ -68,11 +69,12 @@ plans/spec-migration-audit/
 ├── 00-master-plan.md
 ├── README.md
 ├── .implementation-state.json
+├── user-review-findings.md
 ├── learnings/
-│   ├── epic-01-summary.md
 │   ├── epic-02-summary.md
 │   ├── epic-03-summary.md
-│   └── epic-04-summary.md
+│   ├── epic-04-summary.md
+│   └── epic-05-summary.md
 ├── epic-01-content-integrity/
 │   ├── 00-epic-overview.md
 │   ├── ticket-001-audit-overview-specs.md          (detailed, completed)
@@ -98,11 +100,12 @@ plans/spec-migration-audit/
 │   └── ticket-015-verify-latex-remaining-pages.md   (refined, completed)
 ├── epic-05-cross-reference-index/
 │   ├── 00-epic-overview.md
-│   ├── ticket-016-build-cross-reference-index.md    (refined)
-│   └── ticket-017-finalize-index-and-verify-build.md (refined)
+│   ├── ticket-016-build-cross-reference-index.md    (refined, completed)
+│   └── ticket-017-finalize-index-and-verify-build.md (refined, completed)
 └── epic-06-remediation/
     ├── 00-epic-overview.md
-    ├── ticket-018-fix-critical-findings.md          (outline)
-    ├── ticket-019-fix-high-findings.md              (outline)
-    └── ticket-020-fix-medium-low-final-build.md     (outline)
+    ├── ticket-018-fix-cross-cutting-notation.md      (refined, completed)
+    ├── ticket-019-fix-high-findings.md               (refined, completed)
+    ├── ticket-020-fix-medium-low-final-build.md      (refined, completed)
+    └── ticket-021-fix-crate-doc-links.md             (refined, completed)
 ```

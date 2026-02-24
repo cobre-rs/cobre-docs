@@ -252,4 +252,5 @@ Whether stepped constraints should be expressed through the generic constraint m
 - [Input System Entities](../data-model/input-system-entities.md) — entity registries (contracts §6, NCS §7, GNL §4, pumping §5)
 - [Input Constraints](../data-model/input-constraints.md) — exchange factors, generic constraints
 - [Block formulations](block-formulations.md) — block structure within which equipment constraints operate
+- [SDDP Algorithm](sddp-algorithm.md) — iterative algorithm that solves stage subproblems containing these equipment constraints
 - [Deferred features](../deferred.md) — batteries, GNL thermals

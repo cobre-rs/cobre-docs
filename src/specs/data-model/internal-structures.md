@@ -435,4 +435,5 @@ See [Input Constraints §1](input-constraints.md).
 - [Penalty System](penalty-system.md) — Penalty cascade resolution and categories
 - [Binary Formats](binary-formats.md) — Serialization format decisions, FlatBuffers policy schema, cut pool persistence
 - [Scenario Generation](../architecture/scenario-generation.md) — Opening tree lifecycle (§2.3), sampling scheme abstraction (§3)
+- [LP Formulation](../math/lp-formulation.md) — Stage subproblem LP that consumes these internal structures at runtime
 - [Design Principles](../overview/design-principles.md) — Order invariance requirement (§3)

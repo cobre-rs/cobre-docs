@@ -63,6 +63,12 @@ functionality in Cobre.
   mapping supports the one-rank-per-NUMA-domain deployment model.
   See [Hybrid Parallelism](../specs/hpc/hybrid-parallelism.md).
 
+- **Synchronization protocol** -- MPI synchronization points in the SDDP
+  training loop: three collective calls per iteration (forward `Allreduce`,
+  backward `Allgatherv`, convergence `Allreduce`), forward-to-backward
+  transition barriers, and per-stage backward synchronization.
+  See [Synchronization](../specs/hpc/synchronization.md).
+
 ## Status
 
 ferrompi is in the **design phase**. The HPC specs linked above define the

@@ -77,7 +77,7 @@ After loading, a canonicalization step sorts every entity collection (buses, lin
 
 ## 4. LP Subproblem Formulation Reference
 
-The mathematical specifications are organized across the [01-math](../math/) spec category. The data model specs (02-data-model) focus on data structures and file formats; the math specs define what the solver computes.
+The mathematical specifications are organized across the [Mathematical Formulations](../math/) spec category. The data model specs focus on data structures and file formats; the math specs define what the solver computes.
 
 **Data Model → Math Spec Mapping**:
 
@@ -136,7 +136,7 @@ The limitation is not about what Rust _can_ do, but about **which solver APIs ar
 2. The `cxx` crate (limited to what it supports)
 3. Direct use of the C API only (losing C++-exclusive features)
 
-Cobre uses approach (3) — C APIs only — for solver portability. This means C++-exclusive features like model cloning, hot-start, and change tracking are not available through the standard solver abstraction. See [Solver Abstraction §9](../architecture/solver-abstraction.md) for the compile-time solver selection design.
+Cobre uses approach (3) — C APIs only — for solver portability. This means C++-exclusive features like model cloning, hot-start, and change tracking are not available through the standard solver abstraction. See [Solver Abstraction §10](../architecture/solver-abstraction.md) for the compile-time solver selection design.
 
 ### 5.4 Why This Does Not Block Performance
 

@@ -9,15 +9,15 @@ This spec defines the complete Benders cut lifecycle in Cobre: what cuts represe
 A **Benders cut** at stage $t-1$ is a linear inequality that provides a lower bound on the cost-to-go function $V_t(x)$:
 
 $$
-\theta \geq \alpha + \sum_{h \in \mathcal{H}} \beta^v_h \cdot v_h + \sum_{h \in \mathcal{H}} \sum_{\ell=1}^{p_h} \beta^{lag}_{h,\ell} \cdot a_{h,\ell}
+\theta \geq \alpha + \sum_{h \in \mathcal{H}} \pi^v_h \cdot v_h + \sum_{h \in \mathcal{H}} \sum_{\ell=1}^{p_h} \pi^{lag}_{h,\ell} \cdot a_{h,\ell}
 $$
 
 where:
 
 - $\theta$ is the future cost variable in the stage $t-1$ LP
 - $\alpha$ is the cut intercept
-- $\beta^v_h$ is the storage coefficient for hydro $h$ (marginal value of water)
-- $\beta^{lag}_{h,\ell}$ is the AR lag coefficient for hydro $h$, lag $\ell$ (marginal value of inflow history)
+- $\pi^v_h$ is the storage coefficient for hydro $h$ (marginal value of water)
+- $\pi^{lag}_{h,\ell}$ is the AR lag coefficient for hydro $h$, lag $\ell$ (marginal value of inflow history)
 - $v_h$, $a_{h,\ell}$ are the state variables (see [LP Formulation §4, §5](lp-formulation.md))
 
 The cut coefficients are dense — every state variable (all storage volumes and all AR lags) has a non-zero coefficient in every cut. See [Binary Formats §3.4](../data-model/binary-formats.md) for the implications on memory layout.
@@ -26,15 +26,15 @@ The cut coefficients are dense — every state variable (all storage volumes and
 
 After solving the stage $t$ subproblem for trial state $\hat{x}_{t-1}$ and scenario $\omega_t$, the cut coefficients are derived from the LP dual variables:
 
-| Constraint                            | Dual Variable        | Cut Coefficient                               | Units     |
-| ------------------------------------- | -------------------- | --------------------------------------------- | --------- |
-| Water balance (hydro $h$)             | $\pi^{wb}_h$         | $\beta^v_{t,h} = \pi^{wb}_h$                  | \$/hm³    |
-| AR lag fixing (hydro $h$, lag $\ell$) | $\pi^{lag}_{h,\ell}$ | $\beta^{lag}_{t,h,\ell} = \pi^{lag}_{h,\ell}$ | \$/(m³/s) |
+| Constraint                            | Dual Variable        | Cut Coefficient                             | Units     |
+| ------------------------------------- | -------------------- | ------------------------------------------- | --------- |
+| Water balance (hydro $h$)             | $\pi^{wb}_h$         | $\pi^v_{t,h} = \pi^{wb}_h$                  | \$/hm³    |
+| AR lag fixing (hydro $h$, lag $\ell$) | $\pi^{lag}_{h,\ell}$ | $\pi^{lag}_{t,h,\ell} = \pi^{lag}_{h,\ell}$ | \$/(m³/s) |
 
 The cut intercept ensures the cut passes through the trial point:
 
 $$
-\alpha_t = Q_t(\hat{x}_{t-1}, \omega_t) - \sum_{h \in \mathcal{H}} \beta^v_{t,h} \cdot \hat{v}_h - \sum_{h \in \mathcal{H}} \sum_{\ell=1}^{p_h} \beta^{lag}_{t,h,\ell} \cdot \hat{a}_{h,\ell}
+\alpha_t = Q_t(\hat{x}_{t-1}, \omega_t) - \sum_{h \in \mathcal{H}} \pi^v_{t,h} \cdot \hat{v}_h - \sum_{h \in \mathcal{H}} \sum_{\ell=1}^{p_h} \pi^{lag}_{t,h,\ell} \cdot \hat{a}_{h,\ell}
 $$
 
 where $Q_t(\hat{x}_{t-1}, \omega_t)$ is the optimal objective value of the stage $t$ subproblem.
@@ -43,7 +43,7 @@ where $Q_t(\hat{x}_{t-1}, \omega_t)$ is the optimal objective value of the stage
 
 > **Note on FPHA contribution**: For hydros using the FPHA production model, the storage cut coefficient has an additional term from the FPHA hyperplane duals. The FPHA constraints involve $v^{avg}_h = (\hat{v}_h + v_h)/2$, so the incoming storage $\hat{v}_h$ contributes with a factor of $\frac{1}{2}$:
 >
-> $$\beta^v_{t,h} = \pi^{wb}_h + \frac{1}{2} \sum_m \pi_m^{fpha} \cdot \gamma_v^m$$
+> $$\pi^v_{t,h} = \pi^{wb}_h + \frac{1}{2} \sum_m \pi_m^{fpha} \cdot \gamma_v^m$$
 >
 > where $\pi_m^{fpha}$ is the dual of FPHA hyperplane $m$ and $\gamma_v^m$ is its storage coefficient. This term captures how marginal changes in incoming storage affect generation capacity through head variation. See [Hydro Production Models §2.10](hydro-production-models.md) for details.
 
@@ -58,18 +58,18 @@ $$
 $$
 
 $$
-\bar{\beta}^v_{t-1,h} = \sum_{\omega \in \Omega_t} p(\omega) \cdot \beta^v_{t,h}(\omega)
+\bar{\pi}^v_{t-1,h} = \sum_{\omega \in \Omega_t} p(\omega) \cdot \pi^v_{t,h}(\omega)
 $$
 
 $$
-\bar{\beta}^{lag}_{t-1,h,\ell} = \sum_{\omega \in \Omega_t} p(\omega) \cdot \beta^{lag}_{t,h,\ell}(\omega)
+\bar{\pi}^{lag}_{t-1,h,\ell} = \sum_{\omega \in \Omega_t} p(\omega) \cdot \pi^{lag}_{t,h,\ell}(\omega)
 $$
 
 where $p(\omega)$ is the probability of scenario $\omega$.
 
-> **Opening tree correspondence**: The per-scenario cuts $\alpha_t(\omega)$, $\beta_t(\omega)$ correspond to the $N_{\text{openings}}$ noise vectors in the **fixed opening tree** — a pre-generated set of branchings created once before training begins. The backward pass always evaluates all openings, so the aggregation probabilities are uniform: $p(\omega) = 1/N_{\text{openings}}$. See [Scenario Generation §2.3](../architecture/scenario-generation.md).
+> **Opening tree correspondence**: The per-scenario cuts $\alpha_t(\omega)$, $\pi_t(\omega)$ correspond to the $N_{\text{openings}}$ noise vectors in the **fixed opening tree** — a pre-generated set of branchings created once before training begins. The backward pass always evaluates all openings, so the aggregation probabilities are uniform: $p(\omega) = 1/N_{\text{openings}}$. See [Scenario Generation §2.3](../architecture/scenario-generation.md).
 
-The aggregated cut $(\bar{\alpha}, \bar{\beta}^v, \bar{\beta}^{lag})$ is added to stage $t-1$'s cut pool.
+The aggregated cut $(\bar{\alpha}, \bar{\pi}^v, \bar{\pi}^{lag})$ is added to stage $t-1$'s cut pool.
 
 > **Discount factor**: When the problem uses stage-dependent discount rates, discounting is applied to the $\theta$ variable in the stage $t-1$ objective function (i.e., $d_{t-1 \to t} \cdot \theta$), rather than scaling the cut coefficients directly. This is simpler — the cuts remain unmodified and the discount factor appears only in the objective. See [Discount Rate](discount-rate.md) for the discounted Bellman equation and how discount factors interact with cut generation.
 
@@ -80,7 +80,7 @@ The aggregated cut $(\bar{\alpha}, \bar{\beta}^v, \bar{\beta}^{lag})$ is added t
 A cut is **valid** if it is a lower bound on the true cost-to-go function everywhere in the feasible state space:
 
 $$
-\alpha_k + \beta_k^\top x \leq V_{t+1}(x) \quad \forall x \in \mathcal{X}_t
+\alpha_k + \pi_k^\top x \leq V_{t+1}(x) \quad \forall x \in \mathcal{X}_t
 $$
 
 **Validity conditions**: The cuts generated by SDDP are valid under:
@@ -106,7 +106,7 @@ Cut selection removes inactive cuts to:
 A cut $k$ at stage $t$ is **active** at state $\hat{x}$ if it is binding at the optimal LP solution:
 
 $$
-\theta^* = \alpha_k + \beta_k^\top \hat{x}
+\theta^* = \alpha_k + \pi_k^\top \hat{x}
 $$
 
 Equivalently, the dual multiplier $\lambda_k$ of the cut constraint is positive ($\lambda_k > 0$).
@@ -114,7 +114,7 @@ Equivalently, the dual multiplier $\lambda_k$ of the cut constraint is positive 
 **Activity threshold**: A threshold parameter $\epsilon$ relaxes the binding condition:
 
 $$
-\text{cut } k \text{ is active at } \hat{x} \iff \theta^* - (\alpha_k + \beta_k^\top \hat{x}) < \epsilon
+\text{cut } k \text{ is active at } \hat{x} \iff \theta^* - (\alpha_k + \pi_k^\top \hat{x}) < \epsilon
 $$
 
 | Threshold | Effect                                           |
@@ -153,13 +153,13 @@ Each cut is timestamped with the most recent iteration at which it was active. P
 A cut $k$ is **dominated** if no other cut in the pool is ever tighter at any visited state. Formally, cut $k$ is dominated by the remaining cuts $\mathcal{S}$ if:
 
 $$
-\alpha_k + \beta_k^\top x \leq \max_{j \in \mathcal{S}} \left\{ \alpha_j + \beta_j^\top x \right\} \quad \forall x \in \mathcal{X}
+\alpha_k + \pi_k^\top x \leq \max_{j \in \mathcal{S}} \left\{ \alpha_j + \pi_j^\top x \right\} \quad \forall x \in \mathcal{X}
 $$
 
 Since checking this globally is intractable, domination is assessed **at visited states only**: a cut is dominated if at every visited state $\hat{x}$, some other cut achieves a higher (or equal within $\epsilon$) value:
 
 $$
-\Delta_k(\hat{x}) = \max_{j \neq k} \left\{ \alpha_j + \beta_j^\top \hat{x} \right\} - \left( \alpha_k + \beta_k^\top \hat{x} \right) > \epsilon \quad \forall \hat{x} \in \text{visited states}
+\Delta_k(\hat{x}) = \max_{j \neq k} \left\{ \alpha_j + \pi_j^\top \hat{x} \right\} - \left( \alpha_k + \pi_k^\top \hat{x} \right) > \epsilon \quad \forall \hat{x} \in \text{visited states}
 $$
 
 **Properties**:
@@ -202,4 +202,6 @@ See [Configuration Reference](../configuration/configuration-reference.md) for t
 - [Discount Rate](discount-rate.md) — Discount factor scaling in cut aggregation
 - [Risk Measures](risk-measures.md) — Risk-averse cut generation (CVaR modifies aggregation weights)
 - [Deferred Features §C.3](../deferred.md) — Multi-cut formulation
+- [Block Formulations](block-formulations.md) — block structure that affects how per-block duals contribute to cut coefficients
+- [Cut Management Implementation](../architecture/cut-management-impl.md) — FCF structure, cut selection implementation, serialization, and cross-rank cut synchronization
 - [Configuration Reference](../configuration/configuration-reference.md) — JSON schema for `cut_selection` parameters

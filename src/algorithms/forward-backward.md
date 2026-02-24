@@ -23,7 +23,7 @@ At each stage $t$, for each trial point $\hat{x}_{t-1}$ collected during the for
 
 1. Solve the stage $t$ LP for **every** scenario $\omega$ in the opening tree, using $\hat{x}_{t-1}$ as the incoming state. This is called **backward branching**: unlike the forward pass which samples one scenario per stage, the backward pass evaluates all of them.
 2. From each LP solution, extract the optimal objective value and the dual multipliers of the state-linking constraints (water balance, autoregressive lag fixing). These duals measure how sensitive the future cost is to small changes in the incoming state.
-3. Compute per-scenario cut coefficients $(\alpha(\omega), \beta(\omega))$ from the duals and trial point.
+3. Compute per-scenario cut coefficients $(\alpha(\omega), \pi(\omega))$ from the duals and trial point.
 4. Aggregate the per-scenario coefficients into a single cut via probability-weighted averaging (the single-cut formulation).
 5. Add the new cut to stage $t-1$'s problem.
 
@@ -55,3 +55,4 @@ For the full specification of the forward and backward pass mechanics, including
 - [Benders Decomposition](benders.md) -- The decomposition technique behind cut generation
 - [Convergence](convergence.md) -- How the bounds produced by these passes are used to monitor convergence
 - [Scenario Generation](scenario-generation.md) -- How scenarios are sampled for forward and backward passes
+- [Solver Workspaces (spec)](../specs/architecture/solver-workspaces.md) -- Solver state management, basis persistence, and warm-starting across forward and backward passes

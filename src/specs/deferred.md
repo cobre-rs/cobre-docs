@@ -67,7 +67,7 @@ $$
 \sum_{b \in \mathcal{B}} (p^{dis}_{b,k} - p^{ch}_{b,k}) \text{ added to generation}
 $$
 
-**Data Model** (from DATA_MODEL §3.5.8): The `system/batteries.json` schema is fully specified with fields for capacity (energy/charge/discharge), efficiency, initial SOC, and SOC limits. LP variables include `battery_soc` (state), `battery_charge`, and `battery_discharge` (controls). Output schema in `simulation/batteries/` is also defined.
+**Data Model**: The `system/batteries.json` schema is fully specified with fields for capacity (energy/charge/discharge), efficiency, initial SOC, and SOC limits. LP variables include `battery_soc` (state), `battery_charge`, and `battery_discharge` (controls). Output schema in `simulation/batteries/` is also defined. See [Input System Entities](data-model/input-system-entities.md) for the entity registry pattern and [Internal Structures](data-model/internal-structures.md) for how entities are resolved at runtime.
 
 **Why Deferred**: Batteries are linear storage devices (no integer variables needed), but require:
 
@@ -100,7 +100,7 @@ $$
 With per-scenario cuts:
 
 $$
-\theta_\omega \geq \alpha_k(\omega) + \beta_k(\omega)^\top x \quad \forall k, \omega
+\theta_\omega \geq \alpha_k(\omega) + \pi_k(\omega)^\top x \quad \forall k, \omega
 $$
 
 **Trade-offs**:
@@ -159,12 +159,12 @@ The policy graph becomes:
 Value function approximation:
 
 $$
-V_{t,r}(x) \approx \max_{k \in \mathcal{K}_{t,r}} \{\alpha_k + \beta_k^\top x\}
+V_{t,r}(x) \approx \max_{k \in \mathcal{K}_{t,r}} \{\alpha_k + \pi_k^\top x\}
 $$
 
 Cuts are regime-specific and only shared within the same regime.
 
-**Data Model** (from DATA_MODEL §3.2): The `stages.json` schema supports optional `markov_states` fields. Transitions include `source_markov` and `target_markov` fields. Cut files are indexed by `(stage_id, markov_state)` as `stage_XXX_markov_YYY.bin`.
+**Data Model**: The `stages.json` schema supports optional `markov_states` fields. Transitions include `source_markov` and `target_markov` fields. Cut files are indexed by `(stage_id, markov_state)` as `stage_XXX_markov_YYY.bin`. See [Input Scenarios](data-model/input-scenarios.md) for the stages.json schema and [Binary Formats](data-model/binary-formats.md) for cut file persistence.
 
 **Why Deferred**: Markovian policy graphs substantially increase algorithm complexity:
 
@@ -186,15 +186,9 @@ Cuts are regime-specific and only shared within the same regime.
 
 ## C.5 Non-Controllable Sources (Wind/Solar)
 
-**Status**: DEFERRED
+**Status**: IMPLEMENTED
 
-**Description**: Stochastic renewable generation with:
-
-- Availability factors correlated with inflows
-- Curtailment decisions
-- Capacity credit calculations
-
-**Planned Formulation**:
+> **Note**: Non-controllable sources are no longer deferred. The LP formulation (generation bounds, curtailment variables, bus balance participation) is specified in [Equipment Formulations §6](./math/equipment-formulations.md). The data model (entity registry, scenario pipeline, penalty overrides) is specified in [Input System Entities §7](./data-model/input-system-entities.md). The penalty system includes curtailment cost as a Category 3 regularization penalty in [Penalty System §2](./data-model/penalty-system.md). The formulation and data model descriptions below are retained for reference.
 
 **Variables**:
 
@@ -217,22 +211,7 @@ $$
 + \sum_{r \in \mathcal{R}} c^{curt} \cdot \kappa_{r,k} \cdot \Delta t_k
 $$
 
-**Data Model** (from DATA_MODEL §3.5.7): The `system/non_controllable_sources.json` schema defines source type, bus assignment, capacity, and curtailment settings. Generation models in `scenarios/non_controllable_models.parquet` provide mean and standard deviation per source per stage. Correlation with inflows is supported via `correlation.json` blocks. Output schema in `simulation/non_controllables/` is defined.
-
-**Why Deferred**: Requires:
-
-- Stochastic generation scenario infrastructure (similar to inflow scenarios)
-- Correlation structure between renewables and hydro inflows
-- Curtailment decision variables in LP
-- New output schema for non-controllable results
-
-**Prerequisites**:
-
-- Scenario generation supports correlated non-controllable sources
-- LP builder integrates curtailment variables and bus balance
-- Output writer handles non-controllable results
-
-**Estimated Effort**: Medium (2-3 weeks). LP formulation is simple; main effort is scenario generation pipeline.
+**Data Model**: The `system/non_controllable_sources.json` schema defines source type, bus assignment, capacity, and curtailment settings. Generation models in `scenarios/non_controllable_models.parquet` provide mean and standard deviation per source per stage. Correlation with inflows is supported via `correlation.json` blocks. Output schema in `simulation/non_controllables/` is defined.
 
 ## C.6 FPHA Enhancements
 
@@ -811,7 +790,7 @@ The concept and tree structure are documented in [Scenario Generation §7](./arc
 
 ## Additional Deferred Algorithm Variants
 
-The following algorithm variants from DATA_MODEL §3.2 are also deferred:
+The following algorithm variants are also deferred:
 
 ### Objective States
 

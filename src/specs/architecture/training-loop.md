@@ -214,32 +214,32 @@ See [Solver Abstraction](./solver-abstraction.md) and [Solver Workspaces](./solv
 A Benders cut for stage $t-1$ has the form:
 
 $$
-\theta_t \geq \alpha + \sum_{h \in \mathcal{H}} \beta^v_h \cdot v_{h,t-1} + \sum_{h \in \mathcal{H}} \sum_{\ell=1}^{P_h} \beta^a_{h,\ell} \cdot a_{h,t-1-\ell}
+\theta_t \geq \alpha + \sum_{h \in \mathcal{H}} \pi^v_h \cdot v_{h,t-1} + \sum_{h \in \mathcal{H}} \sum_{\ell=1}^{P_h} \pi^a_{h,\ell} \cdot a_{h,t-1-\ell}
 $$
 
 where:
 
-| Symbol             | Description                                                      |
-| ------------------ | ---------------------------------------------------------------- |
-| $\alpha$           | Cut intercept (constant term)                                    |
-| $\beta^v_h$        | Cut coefficient for hydro $h$'s storage state variable           |
-| $\beta^a_{h,\ell}$ | Cut coefficient for hydro $h$'s inflow lag $\ell$ state variable |
-| $v_{h,t-1}$        | End-of-stage storage at stage $t-1$ (state variable)             |
-| $a_{h,t-1-\ell}$   | Inflow lag $\ell$ at stage $t-1$ (state variable)                |
+| Symbol           | Description                                                      |
+| ---------------- | ---------------------------------------------------------------- |
+| $\alpha$         | Cut intercept (constant term)                                    |
+| $\pi^v_h$        | Cut coefficient for hydro $h$'s storage state variable           |
+| $\pi^a_{h,\ell}$ | Cut coefficient for hydro $h$'s inflow lag $\ell$ state variable |
+| $v_{h,t-1}$      | End-of-stage storage at stage $t-1$ (state variable)             |
+| $a_{h,t-1-\ell}$ | Inflow lag $\ell$ at stage $t-1$ (state variable)                |
 
 ### 7.2 Derivation from LP Duality
 
 The cut coefficients are derived from the dual variables of the backward LP's state-linking constraints:
 
-- **Storage**: The water balance constraint links incoming storage $v_{h,t-1}$ to outgoing storage. Its dual $\pi^v_h$ gives $\beta^v_h$, representing the marginal value of an additional unit of storage at the previous stage.
-- **AR inflow lags**: The lag fixing constraints bind each lag variable to its incoming value. Their duals $\pi^a_{h,\ell}$ give $\beta^a_{h,\ell}$, representing the marginal value of inflow history.
-- **FPHA duals**: For hydros using FPHA, the hyperplane constraint duals contribute additional terms to $\beta^v_h$ because the FPHA planes depend on storage (head). See [Cut Management §2](../math/cut-management.md).
+- **Storage**: The water balance constraint links incoming storage $v_{h,t-1}$ to outgoing storage. Its dual $\pi^v_h$ is the cut coefficient, representing the marginal value of an additional unit of storage at the previous stage.
+- **AR inflow lags**: The lag fixing constraints bind each lag variable to its incoming value. Their duals $\pi^a_{h,\ell}$ are the cut coefficients, representing the marginal value of inflow history.
+- **FPHA duals**: For hydros using FPHA, the hyperplane constraint duals contribute additional terms to $\pi^v_h$ because the FPHA planes depend on storage (head). See [Cut Management §2](../math/cut-management.md).
 - **Generic constraint duals**: When generic constraints involve state variables, their duals also contribute to cut coefficients. The mapping from generic constraint duals to state variable coefficients is static (determined at input loading time) and should be precomputed once. See [Cut Management Implementation](./cut-management-impl.md).
 
 The intercept $\alpha$ is computed from the LP objective value and the state-dependent terms:
 
 $$
-\alpha = Q_t(\hat{x}_{t-1}, \omega) - \sum_h \beta^v_h \cdot \hat{v}_{h,t-1} - \sum_h \sum_\ell \beta^a_{h,\ell} \cdot \hat{a}_{h,t-1-\ell}
+\alpha = Q_t(\hat{x}_{t-1}, \omega) - \sum_h \pi^v_h \cdot \hat{v}_{h,t-1} - \sum_h \sum_\ell \pi^a_{h,\ell} \cdot \hat{a}_{h,t-1-\ell}
 $$
 
 ### 7.3 Cut Metadata
@@ -270,5 +270,6 @@ The active count is used by cut selection strategies to prune dominated or inact
 - [Penalty System](../data-model/penalty-system.md) — Recourse slacks guaranteeing LP feasibility
 - [Solver Abstraction](./solver-abstraction.md) — Solver interface and LP construction
 - [Solver Workspaces](./solver-workspaces.md) — Solver state management, basis persistence, and warm-starting
+- [Synchronization](../hpc/synchronization.md) — Barrier semantics, MPI collective operations, and stage-boundary synchronization patterns
 - [Checkpointing](../hpc/checkpointing.md) — Checkpoint format and graceful shutdown
 - [Deferred Features](../deferred.md) — Multi-cut (C.3), alternative forward pass (C.13), Monte Carlo backward sampling (C.14), policy compatibility validation (C.9)

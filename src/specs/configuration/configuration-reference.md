@@ -351,7 +351,7 @@ This table maps each mathematical formulation to its configuration source and da
 | $\sigma_m$      | Residual std dev         | Computed from $s_m$ and AR coefficients at runtime                                 | `f64`      |
 | $\theta$        | Future cost variable     | LP variable                                                                        | `f64`      |
 | $\alpha_k$      | Cut intercept            | FlatBuffers policy data (see [Binary Formats §3](../data-model/binary-formats.md)) | `f64`      |
-| $\beta_k$       | Cut coefficients         | FlatBuffers policy data (see [Binary Formats §3](../data-model/binary-formats.md)) | `Vec<f64>` |
+| $\pi_k$         | Cut coefficients         | FlatBuffers policy data (see [Binary Formats §3](../data-model/binary-formats.md)) | `Vec<f64>` |
 | $d_{t \to t+1}$ | Discount factor          | stages.json → policy_graph.annual_discount_rate                                    | `f64`      |
 | $L_t$           | Lipschitz constant       | Computed from penalties                                                            | `f64`      |
 
@@ -375,5 +375,6 @@ This table maps each mathematical formulation to its configuration source and da
 - [Input Directory Structure](../data-model/input-directory-structure.md) — File layout and config.json schema
 - [Input Scenarios](../data-model/input-scenarios.md) — stages.json schema, scenario_source, policy_graph
 - [Extension Points](../architecture/extension-points.md) — Variant selection, validation rules, dispatch mechanism
+- [Solver Abstraction](../architecture/solver-abstraction.md) — Solver interface, LP construction, compile-time backend selection
 - [Scenario Generation](../architecture/scenario-generation.md) — Sampling scheme abstraction, opening tree, external scenarios
 - [Deferred Features](../deferred.md) — Planned but not yet implemented features

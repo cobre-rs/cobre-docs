@@ -278,7 +278,7 @@ For the full penalty taxonomy and priority ordering, see [Penalty System](../dat
 The FPHA formulation affects water value computation. The marginal value of incoming storage $\hat{v}_h$ includes the FPHA contribution via the dual variables of the hyperplane constraints:
 
 $$
-\beta_{\hat{v}_h} = \pi_h^{balance} + \frac{1}{2} \sum_m \pi_m^{fpha} \cdot \gamma_v^m
+\pi_{\hat{v}_h} = \pi_h^{balance} + \frac{1}{2} \sum_m \pi_m^{fpha} \cdot \gamma_v^m
 $$
 
 The factor $\frac{1}{2}$ appears because $v^{avg} = (\hat{v}_h + v_h)/2$, so $\partial v^{avg}/\partial \hat{v}_h = 1/2$.

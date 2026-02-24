@@ -44,4 +44,5 @@ During the backward pass, this combination changes only the **aggregation weight
 
 - [Risk Measures](risk-measures.md) -- Overview of risk-averse vs risk-neutral SDDP
 - [Risk Measures (spec)](../specs/math/risk-measures.md) -- Complete formal specification including the dual representation of CVaR, the sorting-based weight computation algorithm, and the critical warning about lower bound validity
+- [Cut Management (spec)](../specs/math/cut-management.md) -- How CVaR-modified aggregation weights affect cut coefficient computation
 - [SDDP Theory](sddp-theory.md) -- How the forward-backward iteration works

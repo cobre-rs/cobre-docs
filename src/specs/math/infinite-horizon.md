@@ -6,7 +6,7 @@ This spec defines the infinite periodic horizon formulation for Cobre SDDP: the 
 
 For the discount factor mechanics that make infinite horizon convergence possible, see [Discount Rate](discount-rate.md).
 
-> **Symbol convention**: This spec uses $d$ for the discount factor and $\beta$ for cut coefficients.
+> **Symbol convention**: This spec uses $d$ for the discount factor and $\pi$ for cut coefficients.
 
 ## 1 Motivation
 
@@ -68,7 +68,7 @@ Stages at the same position within the cycle share their value function approxim
 A cut generated at any stage $t \in \mathcal{C}_\tau$ is valid for all stages in $\mathcal{C}_\tau$:
 
 $$
-\underline{V}_\tau(x) = \max_{k \in \mathcal{K}_\tau} \left\{ \alpha_k + \beta_k^\top x \right\}
+\underline{V}_\tau(x) = \max_{k \in \mathcal{K}_\tau} \left\{ \alpha_k + \pi_k^\top x \right\}
 $$
 
 The cut pool is organized by season $\tau \in \{1, \ldots, P\}$, not by absolute stage ID. This means a single cycle's worth of cut pools represents the entire infinite horizon.

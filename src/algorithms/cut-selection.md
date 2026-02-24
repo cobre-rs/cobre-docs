@@ -11,7 +11,7 @@ All three strategies rely on the concept of **cut activity**. A cut is active at
 Activity is determined by checking whether the gap between the future cost variable $\theta^*$ and the cut's value is below a configurable threshold $\epsilon$:
 
 $$
-\text{cut } k \text{ is active at } \hat{x} \iff \theta^* - (\alpha_k + \beta_k^\top \hat{x}) < \epsilon
+\text{cut } k \text{ is active at } \hat{x} \iff \theta^* - (\alpha_k + \pi_k^\top \hat{x}) < \epsilon
 $$
 
 A threshold of zero means only strictly binding cuts count; a small positive value (e.g., 1e-6) accounts for numerical tolerance.

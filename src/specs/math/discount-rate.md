@@ -8,7 +8,7 @@ For the infinite periodic horizon formulation (where discounting is required for
 
 For notation conventions (index sets, parameters, decision variables, dual variables), see [Notation Conventions](../overview/notation-conventions.md).
 
-> **Symbol convention**: This spec uses $d$ for the discount factor to avoid collision with the cut coefficient symbol $\beta$ used in [Cut Management](cut-management.md). The deficit variable $\delta_{b,k,s}$ uses a different symbol (lowercase delta), so there is no conflict.
+> **Symbol convention**: This spec uses $d$ for the discount factor. The deficit variable $\delta_{b,k,s}$ uses a different symbol (lowercase delta), so there is no conflict.
 
 ## 1 Motivation
 
@@ -88,12 +88,12 @@ $$
 subject to all standard constraints (load balance, hydro balance, etc.) and Benders cuts:
 
 $$
-\theta \geq \alpha_i + \sum_{h} \beta^v_{i,h} \cdot v_h + \sum_{h,\ell} \beta^{lag}_{i,h,\ell} \cdot a_{h,\ell} \quad \forall i
+\theta \geq \alpha_i + \sum_{h} \pi^v_{i,h} \cdot v_h + \sum_{h,\ell} \pi^{lag}_{i,h,\ell} \cdot a_{h,\ell} \quad \forall i
 $$
 
-The cut coefficients $(\alpha_i, \beta^v_{i,h}, \beta^{lag}_{i,h,\ell})$ are the **undiscounted** values from the backward pass. Cuts are stored and managed in undiscounted form — the discount factor appears only in the objective coefficient of $\theta$. See [Cut Management](cut-management.md) for cut generation and aggregation details.
+The cut coefficients $(\alpha_i, \pi^v_{i,h}, \pi^{lag}_{i,h,\ell})$ are the **undiscounted** values from the backward pass. Cuts are stored and managed in undiscounted form — the discount factor appears only in the objective coefficient of $\theta$. See [Cut Management](cut-management.md) for cut generation and aggregation details.
 
-> **Why discount on $\theta$, not on cuts**: Applying the discount factor to the $\theta$ variable rather than scaling each cut individually is simpler and avoids modifying cut coefficients. The mathematical result is identical — if $\theta \geq \alpha + \beta^\top x$ and $d \cdot \theta$ appears in the objective, it is equivalent to having $\theta' \geq d \cdot (\alpha + \beta^\top x)$ with $\theta'$ in the objective.
+> **Why discount on $\theta$, not on cuts**: Applying the discount factor to the $\theta$ variable rather than scaling each cut individually is simpler and avoids modifying cut coefficients. The mathematical result is identical — if $\theta \geq \alpha + \pi^\top x$ and $d \cdot \theta$ appears in the objective, it is equivalent to having $\theta' \geq d \cdot (\alpha + \pi^\top x)$ with $\theta'$ in the objective.
 
 ## 5 Cumulative Discounting
 

@@ -1,6 +1,6 @@
 {
   "plan": "spec-migration-audit",
-  "last_updated": "2026-02-24T19:00:00Z",
+  "last_updated": "2026-02-25T01:00:00Z",
   "progressive": true,
   "tickets": {
     "ticket-001-audit-overview-specs.md": {
@@ -88,17 +88,25 @@
       "detail_level": "refined",
       "agent": "sddp-specialist"
     },
-    "ticket-018-fix-critical-findings.md": {
-      "status": "pending",
-      "detail_level": "outline"
+    "ticket-018-fix-cross-cutting-notation.md": {
+      "status": "completed",
+      "detail_level": "refined",
+      "agent": "sddp-specialist"
     },
     "ticket-019-fix-high-findings.md": {
-      "status": "pending",
-      "detail_level": "outline"
+      "status": "completed",
+      "detail_level": "refined",
+      "agent": "sddp-specialist"
     },
     "ticket-020-fix-medium-low-final-build.md": {
-      "status": "pending",
-      "detail_level": "outline"
+      "status": "completed",
+      "detail_level": "refined",
+      "agent": "sddp-specialist"
+    },
+    "ticket-021-fix-crate-doc-links.md": {
+      "status": "completed",
+      "detail_level": "refined",
+      "agent": "sddp-specialist"
     }
   },
   "epics": {
@@ -123,8 +131,8 @@
       "learning_extracted": true
     },
     "epic-06-remediation": {
-      "phase": "outline",
-      "learning_extracted": false
+      "phase": "completed",
+      "learning_extracted": true
     }
   }
 }

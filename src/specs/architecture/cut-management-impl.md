@@ -54,7 +54,7 @@ The FCF provides the following operations to the training loop:
 | ----------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
 | Add cut           | Write a new cut's coefficients, intercept, and metadata into the deterministic slot. Set the slot as active in the bitmap. O(1).         |
 | Get active cuts   | Return the active cut indices and coefficient/intercept data for a given stage. Used by the solver workspace for `addRows` CSR assembly. |
-| Evaluate at state | Compute max over all active cuts: $\max_k \{ \alpha_k + \beta_k^\top x \}$. Used for upper bound evaluation and dominated cut detection. |
+| Evaluate at state | Compute max over all active cuts: $\max_k \{ \alpha_k + \pi_k^\top x \}$. Used for upper bound evaluation and dominated cut detection.   |
 | Run selection     | Apply the configured cut selection strategy (§2) to deactivate cuts. Updates the activity bitmap.                                        |
 | Aggregate stats   | Return total cuts, active cuts per stage, cuts added this iteration — for logging and convergence monitoring.                            |
 
@@ -87,7 +87,7 @@ More aggressive than Level-1 — forgets cuts that haven't been active recently.
 
 A cut is dominated if at every visited state, some other cut achieves a higher value. At each selection check:
 
-1. For each active cut $k$, evaluate $\alpha_k + \beta_k^\top \hat{x}$ at all visited states $\hat{x}$
+1. For each active cut $k$, evaluate $\alpha_k + \pi_k^\top \hat{x}$ at all visited states $\hat{x}$
 2. For each visited state, compute the maximum value across all other active cuts
 3. If cut $k$ is dominated at every visited state (within tolerance $\epsilon$), deactivate it
 

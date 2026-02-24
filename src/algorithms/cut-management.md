@@ -9,10 +9,10 @@ A Benders cut is a linear inequality added to a stage's LP that approximates the
 Mathematically, a cut takes the form:
 
 $$
-\theta \geq \alpha + \sum_h \beta^v_h \cdot v_h + \sum_{h,\ell} \beta^{lag}_{h,\ell} \cdot a_{h,\ell}
+\theta \geq \alpha + \sum_h \pi^v_h \cdot v_h + \sum_{h,\ell} \pi^{lag}_{h,\ell} \cdot a_{h,\ell}
 $$
 
-where $\theta$ is the future cost variable, $\alpha$ is the intercept, $\beta^v_h$ captures the marginal value of water in reservoir $h$, and $\beta^{lag}_{h,\ell}$ captures the marginal value of inflow history. The collection of all cuts at a stage forms a piecewise-linear lower approximation of the true future cost function.
+where $\theta$ is the future cost variable, $\alpha$ is the intercept, $\pi^v_h$ captures the marginal value of water in reservoir $h$, and $\pi^{lag}_{h,\ell}$ captures the marginal value of inflow history. The collection of all cuts at a stage forms a piecewise-linear lower approximation of the true future cost function.
 
 ## How cuts are generated
 

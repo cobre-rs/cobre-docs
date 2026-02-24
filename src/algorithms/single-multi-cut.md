@@ -7,13 +7,13 @@ In SDDP, the backward pass evaluates multiple inflow scenarios at each trial sta
 The single-cut approach aggregates per-scenario cut coefficients into one cut per trial point by computing the probability-weighted average:
 
 $$
-\bar{\alpha} = \sum_{\omega} p(\omega) \cdot \alpha(\omega), \qquad \bar{\beta} = \sum_{\omega} p(\omega) \cdot \beta(\omega)
+\bar{\alpha} = \sum_{\omega} p(\omega) \cdot \alpha(\omega), \qquad \bar{\pi} = \sum_{\omega} p(\omega) \cdot \pi(\omega)
 $$
 
 This produces a single constraint added to the stage LP:
 
 $$
-\theta \geq \bar{\alpha} + \bar{\beta}^\top x
+\theta \geq \bar{\alpha} + \bar{\pi}^\top x
 $$
 
 **Advantages:**
@@ -31,7 +31,7 @@ $$
 The multi-cut approach keeps one cut per scenario, introducing scenario-specific future cost variables $\theta_\omega$:
 
 $$
-\theta_\omega \geq \alpha(\omega) + \beta(\omega)^\top x, \quad \forall \omega \in \Omega
+\theta_\omega \geq \alpha(\omega) + \pi(\omega)^\top x, \quad \forall \omega \in \Omega
 $$
 
 with the linking constraint $\theta = \sum_\omega p(\omega) \cdot \theta_\omega$.

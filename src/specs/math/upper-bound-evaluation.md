@@ -6,7 +6,7 @@ This spec defines the upper bound evaluation mechanism in Cobre via inner approx
 
 For notation conventions (index sets, parameters, decision variables, dual variables), see [Notation Conventions](../overview/notation-conventions.md).
 
-> **Symbol convention**: This spec uses $d$ for the discount factor (not $\beta$, which denotes cut coefficients). See [Discount Rate](discount-rate.md).
+> **Symbol convention**: This spec uses $d$ for the discount factor. See [Discount Rate](discount-rate.md).
 
 ## 1 Motivation
 
@@ -110,7 +110,7 @@ $$
 $$
 
 $$
-\text{s.t. } \theta \geq \alpha_k + \beta_k^\top x_t \quad \forall k \text{ (cuts)}
+\text{s.t. } \theta \geq \alpha_k + \pi_k^\top x_t \quad \forall k \text{ (cuts)}
 $$
 
 **Inner approximation LP (upper bound)**:

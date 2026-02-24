@@ -153,7 +153,17 @@ N_STATE = N_HYDRO                                               # storage
 
 ### 3.4 Sizing Calculator Tool
 
-> **Future work**: A sizing calculator tool (`scripts/lp_sizing.py`) is planned to compute LP dimensions, state dimension breakdown, and memory estimates from a JSON configuration. This tool does not yet exist.
+A sizing calculator tool (`scripts/lp_sizing.py`) exists in the powers repository. It computes LP dimensions, state dimension breakdown, and memory estimates from a JSON system configuration. Running with the default production-scale parameters (160 hydros, 130 thermals, 6 buses, 10 lines, avg AR order 6, 15,000 cut slots) produces:
+
+| Metric             | Calculator Output | Notes                                     |
+| ------------------ | ----------------: | ----------------------------------------- |
+| Total variables    |             6,923 | §3.1 estimates ~7,500 (worst-case AR(12)) |
+| Total constraints  |            20,788 | §3.2 estimates ~17,000-22,000             |
+| Active constraints |             5,788 | Excluding pre-allocated cut slots         |
+| State dimension    |             1,120 | With avg AR(6); up to 2,080 at AR(12)     |
+| Cuts memory/stage  |          128.7 MB | Dense coefficients, 15,000 slots          |
+
+> **Note**: The estimates in §3.1 and §3.2 use worst-case AR order (12 for all hydros). The sizing calculator uses configurable average AR order (default 6), which better reflects typical production cases. Both are consistent within their assumptions. Performance expectations in §4.2 are non-binding estimates pending solver benchmarking.
 
 ## 4. Performance Expectations by Scale
 

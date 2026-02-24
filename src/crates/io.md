@@ -61,6 +61,16 @@ cycle during training and cross-study warm-start of the cut pool.
   loading and checkpoint/resume across training iterations.
   See [Binary Formats](../specs/data-model/binary-formats.md).
 
+- **Input loading pipeline** -- Rank-0 centric loading strategy, dependency
+  ordering across input files, sparse expansion of cascaded defaults, and MPI
+  data broadcasting to worker ranks after validation completes.
+  See [Input Loading Pipeline](../specs/architecture/input-loading-pipeline.md).
+
+- **Validation architecture** -- Five-layer validation pipeline (structural,
+  schema, referential integrity, dimensional consistency, semantic rules), error
+  collection strategy, error catalog, and human-readable report format.
+  See [Validation Architecture](../specs/architecture/validation-architecture.md).
+
 ## Status
 
 cobre-io is in the **design phase**. The format decision framework and all

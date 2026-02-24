@@ -346,14 +346,14 @@ Generic constraints can have optional slack variables with configurable penaltie
 For each active cut $i$ from previous iterations:
 
 $$
-\theta \geq \alpha_i + \sum_{h \in \mathcal{H}} \beta^v_{i,h} \cdot v_h + \sum_{h,\ell} \beta^{lag}_{i,h,\ell} \cdot a_{h,\ell}
+\theta \geq \alpha_i + \sum_{h \in \mathcal{H}} \pi^v_{i,h} \cdot v_h + \sum_{h,\ell} \pi^{lag}_{i,h,\ell} \cdot a_{h,\ell}
 $$
 
 where:
 
 - $\alpha_i$ = cut intercept (RHS)
-- $\beta^v_{i,h}$ = coefficient for storage state variable
-- $\beta^{lag}_{i,h,\ell}$ = coefficient for AR lag state variable
+- $\pi^v_{i,h}$ = coefficient for storage state variable
+- $\pi^{lag}_{i,h,\ell}$ = coefficient for AR lag state variable
 
 Cuts are pre-allocated and toggled active/inactive via bound changes for warm-starting efficiency.
 
@@ -369,4 +369,5 @@ For cut coefficient derivation, aggregation, and selection strategies, see [cut 
 - [PAR(p) inflow model](par-inflow-model.md) — complete AR inflow model specification
 - [Hydro production models](hydro-production-models.md) — constant, linearized head, and FPHA model details
 - [Cut management](cut-management.md) — dual extraction, cut coefficients, aggregation, and selection
+- [Internal Structures](../data-model/internal-structures.md) — Pre-resolved in-memory data model that provides entity data and bounds to the LP builder
 - [Equipment formulations](equipment-formulations.md) — per-equipment constraint derivations, pumping details

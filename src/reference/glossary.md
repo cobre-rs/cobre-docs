@@ -4,14 +4,15 @@ Power system terminology used in Cobre, with Portuguese equivalents where they a
 
 ## Power System
 
-| English     | Portuguese      | Definition                                                            |
-| ----------- | --------------- | --------------------------------------------------------------------- |
-| Bus         | Barra           | A node in the electrical network where components connect             |
-| Branch      | Ramo / Circuito | A transmission line or transformer connecting two buses               |
-| Subsystem   | Subsistema      | A region of the interconnected grid (e.g., SE/CO, S, NE, N in Brazil) |
-| Interchange | Intercâmbio     | Power transfer between subsystems                                     |
-| Load        | Carga / Demanda | Electrical power consumption at a bus                                 |
-| Deficit     | Déficit         | Unmet demand — load that cannot be served by available generation     |
+| English     | Portuguese      | Definition                                                                                                                                                                |
+| ----------- | --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Block       | Patamar         | An intra-stage time period (e.g., peak, shoulder, off-peak) representing load level variation within a stage; can be parallel (independent) or chronological (sequential) |
+| Bus         | Barra           | A node in the electrical network where components connect                                                                                                                 |
+| Branch      | Ramo / Circuito | A transmission line or transformer connecting two buses                                                                                                                   |
+| Subsystem   | Subsistema      | A region of the interconnected grid (e.g., SE/CO, S, NE, N in Brazil)                                                                                                     |
+| Interchange | Intercâmbio     | Power transfer between subsystems                                                                                                                                         |
+| Load        | Carga / Demanda | Electrical power consumption at a bus                                                                                                                                     |
+| Deficit     | Déficit         | Unmet demand — load that cannot be served by available generation                                                                                                         |
 
 ## Hydro Generation
 
@@ -46,40 +47,48 @@ Power system terminology used in Cobre, with Portuguese equivalents where they a
 
 ## Stochastic Modeling
 
-| English           | Portuguese         | Definition                                                          |
-| ----------------- | ------------------ | ------------------------------------------------------------------- |
-| Scenario          | Cenário            | One realization of uncertain quantities (inflows, wind, etc.)       |
-| Stage             | Estágio            | A time period in the planning horizon                               |
-| State variable    | Variável de estado | Variables that link one stage to the next (storage, lagged inflows) |
-| PAR(p)            | PAR(p)             | Periodic Autoregressive model of order p for inflow generation      |
-| Historical record | Registro histórico | Observed inflow data used to fit stochastic models                  |
+| English               | Portuguese              | Definition                                                                                                                                                             |
+| --------------------- | ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Scenario              | Cenário                 | One realization of uncertain quantities (inflows, wind, etc.)                                                                                                          |
+| Stage                 | Estágio                 | A time period in the planning horizon                                                                                                                                  |
+| State variable        | Variável de estado      | Variables that link one stage to the next (storage, lagged inflows)                                                                                                    |
+| PAR(p)                | PAR(p)                  | Periodic Autoregressive model of order p for inflow generation                                                                                                         |
+| Historical record     | Registro histórico      | Observed inflow data used to fit stochastic models                                                                                                                     |
+| Innovation            | Inovação                | The independent noise term $\varepsilon_t \sim \mathcal{N}(0,1)$ in the PAR(p) model, representing the unpredictable component after removing autoregressive structure |
+| Yule-Walker equations | Equações de Yule-Walker | System of linear equations relating autoregressive coefficients to sample autocorrelations, used to fit PAR(p) model parameters                                        |
 
 ## SDDP Algorithm
 
-| English             | Portuguese                    | Definition                                                                           |
-| ------------------- | ----------------------------- | ------------------------------------------------------------------------------------ |
-| Cut (Benders cut)   | Corte (de Benders)            | A linear inequality approximating the future cost function                           |
-| Cost-to-go function | Função de custo futuro (FCF)  | Expected cost from the current stage to the end of the horizon                       |
-| Forward pass        | Passagem direta               | Simulation phase: solve stages sequentially under sampled scenarios                  |
-| Backward pass       | Passagem reversa              | Optimization phase: generate cuts by solving from the last stage backward            |
-| Lower bound         | Limite inferior               | Estimate from the first-stage problem (improves with more cuts)                      |
-| Upper bound         | Limite superior               | Statistical estimate from simulation (converges to true cost)                        |
-| Optimality gap      | Gap de otimalidade            | Difference between upper and lower bounds, as a percentage                           |
-| Dual variable       | Variável dual / Multiplicador | Shadow price from LP solution; indicates marginal value of a resource                |
-| Marginal cost (CMO) | Custo Marginal de Operação    | Shadow price of the demand constraint — the cost of one additional MWh               |
-| Cut pool            | Conjunto de cortes            | Collection of all generated Benders cuts for a given stage                           |
-| Infinite horizon    | Horizonte infinito            | Policy graph with cyclic transitions, used for long-term planning                    |
-| Opening             | Abertura                      | A pre-generated scenario noise vector used in the backward pass                      |
-| Policy graph        | Grafo de política             | Directed graph defining the stage structure and transitions in an SDDP problem       |
-| Trial point         | Ponto de prova                | The state visited during a forward pass, used to construct cuts in the backward pass |
+| English                      | Portuguese                    | Definition                                                                                                                                      |
+| ---------------------------- | ----------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| Cut (Benders cut)            | Corte (de Benders)            | A linear inequality approximating the future cost function                                                                                      |
+| Cost-to-go function          | Função de custo futuro (FCF)  | Expected cost from the current stage to the end of the horizon                                                                                  |
+| Forward pass                 | Passagem direta               | Simulation phase: solve stages sequentially under sampled scenarios                                                                             |
+| Backward pass                | Passagem reversa              | Optimization phase: generate cuts by solving from the last stage backward                                                                       |
+| Lower bound                  | Limite inferior               | Estimate from the first-stage problem (improves with more cuts)                                                                                 |
+| Upper bound                  | Limite superior               | Statistical estimate from simulation (converges to true cost)                                                                                   |
+| Optimality gap               | Gap de otimalidade            | Difference between upper and lower bounds, as a percentage                                                                                      |
+| Dual variable                | Variável dual / Multiplicador | Shadow price from LP solution; indicates marginal value of a resource                                                                           |
+| Marginal cost (CMO)          | Custo Marginal de Operação    | Shadow price of the demand constraint — the cost of one additional MWh                                                                          |
+| Cut pool                     | Conjunto de cortes            | Collection of all generated Benders cuts for a given stage                                                                                      |
+| Discount factor              | Fator de desconto             | Multiplicative factor $d \in (0,1]$ applied to future costs reflecting the time value of money; required for infinite-horizon SDDP convergence  |
+| Epigraph variable            | -                             | The auxiliary LP variable $\theta$ that lower-bounds the true cost-to-go function $V_{t+1}(x_t)$; named after the epigraph of a convex function |
+| Infinite horizon             | Horizonte infinito            | Policy graph with cyclic transitions, used for long-term planning                                                                               |
+| Opening                      | Abertura                      | A pre-generated scenario noise vector used in the backward pass                                                                                 |
+| Outer approximation          | Aproximação exterior          | The piecewise-linear lower bound on the cost-to-go function constructed from Benders cuts; the primary output of SDDP training                  |
+| Policy graph                 | Grafo de política             | Directed graph defining the stage structure and transitions in an SDDP problem                                                                  |
+| Relatively complete recourse | Recurso completo relativo     | Property that every LP subproblem is feasible for all incoming states and scenario realizations; ensured in Cobre via penalty slack variables   |
+| Trial point                  | Ponto de prova                | The state visited during a forward pass, used to construct cuts in the backward pass                                                            |
 
 ## Risk Measures
 
-| English      | Portuguese      | Definition                                                             |
-| ------------ | --------------- | ---------------------------------------------------------------------- |
-| CVaR         | CVaR            | Conditional Value at Risk — expected cost in the worst α% of scenarios |
-| Risk-neutral | Neutro ao risco | Optimization that minimizes expected cost only                         |
-| Risk-averse  | Averso ao risco | Optimization that penalizes high-cost tail scenarios                   |
+| English               | Portuguese               | Definition                                                                                                                                                   |
+| --------------------- | ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Coherent risk measure | Medida de risco coerente | A risk measure satisfying monotonicity, translation equivariance, positive homogeneity, and subadditivity; CVaR is the canonical example used in SDDP        |
+| CVaR                  | CVaR                     | Conditional Value at Risk — expected cost in the worst α% of scenarios                                                                                       |
+| EAVaR                 | -                        | Expectation plus Average Value-at-Risk; the convex combination $(1-\lambda)\mathbb{E}[Z] + \lambda \cdot \text{CVaR}_\alpha[Z]$ used as Cobre's risk measure |
+| Risk-neutral          | Neutro ao risco          | Optimization that minimizes expected cost only                                                                                                               |
+| Risk-averse           | Averso ao risco          | Optimization that penalizes high-cost tail scenarios                                                                                                         |
 
 ## NEWAVE / CEPEL Ecosystem
 

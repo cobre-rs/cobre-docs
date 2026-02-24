@@ -72,7 +72,7 @@ At each stage $t$, for each trial point $\hat{x}_{t-1}$ collected during the for
 
 1. Solve the stage $t$ LP for **every** scenario $\omega \in \Omega_t$ (branching), using the trial state $\hat{x}_{t-1}$ as incoming state
 2. From each LP solution, extract the optimal objective value $Q_t(\hat{x}_{t-1}, \omega)$ and the dual variables of state-linking constraints (water balance, AR lag fixing). For hydros using FPHA, the FPHA hyperplane duals also contribute to storage cut coefficients — see [Cut Management §2](cut-management.md)
-3. Compute per-scenario cut coefficients $(\alpha(\omega), \beta(\omega))$ from the duals and trial point
+3. Compute per-scenario cut coefficients $(\alpha(\omega), \pi(\omega))$ from the duals and trial point
 4. Aggregate into a single cut via probability-weighted expectation — see [Cut Management §3](cut-management.md)
 5. Add the aggregated cut to stage $t-1$'s cut pool
 
@@ -91,7 +91,7 @@ The backward pass produces one new cut per stage per trial point per iteration.
 **Lower Bound**: The deterministic lower bound is the first-stage LP value:
 
 $$
-\underline{z}^k = V_1^k(x) = \min_{x_1} \left\{ c_1^\top x_1 + \theta_1 : \text{constraints}, \; \theta_1 \geq \alpha_i + \beta_i^\top x_1 \; \forall i \right\}
+\underline{z}^k = V_1^k(x) = \min_{x_1} \left\{ c_1^\top x_1 + \theta_1 : \text{constraints}, \; \theta_1 \geq \alpha_i + \pi_i^\top x_1 \; \forall i \right\}
 $$
 
 This bound increases monotonically as cuts are added.
@@ -144,7 +144,7 @@ For long-term planning, Cobre supports **infinite periodic horizon** with cyclic
 - **Discount**: Cycle transitions require a discount factor $d < 1$ for convergence
 - **Cut sharing**: Cuts at equivalent cycle positions are shared
 
-> **Symbol note**: All specs use $d$ for the discount factor to avoid collision with the cut coefficient symbol $\beta$ (see [Cut Management §1](cut-management.md)). The deficit variable uses $\delta$ (lowercase delta), so there is no conflict.
+> **Symbol note**: All specs use $d$ for the discount factor. The deficit variable uses $\delta$ (lowercase delta), so there is no conflict.
 
 See [Discount Rate](discount-rate.md) for the discounted Bellman equation and [Infinite Horizon](infinite-horizon.md) for the complete cyclic formulation.
 
@@ -161,7 +161,7 @@ For SDDP to generate valid cuts, the subproblem must satisfy the **Markov proper
 | Battery SOC    | $soc_{bat}$    | $N_{battery}$        | Battery state of charge (DEFERRED) |
 | GNL pipeline   | $gnl_{t,\ell}$ | $\sum_{gnl} L_{gnl}$ | Committed GNL dispatch (DEFERRED)  |
 
-> **Note on deferred state variables**: Battery SOC and GNL pipeline state are planned extensions — see [Deferred Features](../deferred.md). For GNL thermals specifically, the data model already accepts GNL configurations but validation rejects them until the solver implementation is ready — see [Equipment Formulations §3](equipment-formulations.md).
+> **Note on deferred state variables**: Battery SOC and GNL pipeline state are planned extensions — see [Deferred Features](../deferred.md). For GNL thermals specifically, the data model already accepts GNL configurations but validation rejects them until the solver implementation is ready — see [Equipment Formulations §1.2](equipment-formulations.md).
 
 ### 5.1 AR Lag State Expansion
 
@@ -182,10 +182,10 @@ See [PAR Inflow Model](par-inflow-model.md) for the complete autoregressive form
 One aggregated cut per iteration:
 
 $$
-\theta_{t-1} \geq \bar{\alpha} + \bar{\beta}^\top x_{t-1}
+\theta_{t-1} \geq \bar{\alpha} + \bar{\pi}^\top x_{t-1}
 $$
 
-where $\bar{\alpha} = \mathbb{E}[\alpha(\omega)]$ and $\bar{\beta} = \mathbb{E}[\beta(\omega)]$.
+where $\bar{\alpha} = \mathbb{E}[\alpha(\omega)]$ and $\bar{\pi} = \mathbb{E}[\pi(\omega)]$.
 
 - **Pros**: Fewer cuts, smaller LP, faster solves
 - **Cons**: May require more iterations to converge
@@ -195,7 +195,7 @@ where $\bar{\alpha} = \mathbb{E}[\alpha(\omega)]$ and $\bar{\beta} = \mathbb{E}[
 One cut per scenario per iteration:
 
 $$
-\theta_{t-1,\omega} \geq \alpha(\omega) + \beta(\omega)^\top x_{t-1} \quad \forall \omega \in \Omega_t
+\theta_{t-1,\omega} \geq \alpha(\omega) + \pi(\omega)^\top x_{t-1} \quad \forall \omega \in \Omega_t
 $$
 
 - **Pros**: Tighter approximation, fewer iterations

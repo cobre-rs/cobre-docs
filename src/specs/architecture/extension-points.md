@@ -61,7 +61,7 @@ The `risk_measure` field appears per stage in `stages.json` (see [Input Scenario
 
 Each risk measure variant must provide two operations consumed by the training loop:
 
-1. **Cut aggregation** — Given $N_{\text{openings}}$ backward outcomes with their probabilities, produce a single set of cut coefficients $(\alpha, \beta)$. For Expectation, the weights are uniform. For CVaR, the weights are computed via the sorting-based greedy allocation from [Risk Measures §7](../math/risk-measures.md).
+1. **Cut aggregation** — Given $N_{\text{openings}}$ backward outcomes with their probabilities, produce a single set of cut coefficients $(\alpha, \pi)$. For Expectation, the weights are uniform. For CVaR, the weights are computed via the sorting-based greedy allocation from [Risk Measures §7](../math/risk-measures.md).
 
 2. **Risk evaluation** — Given a set of cost values and probabilities, produce a scalar risk-adjusted cost. Used for convergence bound computation.
 
@@ -77,10 +77,10 @@ The cut formulation determines the structure of cuts added to the FCF at each ba
 
 ### 3.1 Variant Table
 
-| Variant        | Status   | Behavior                                                                                                         | Math Reference                                   |
-| -------------- | -------- | ---------------------------------------------------------------------------------------------------------------- | ------------------------------------------------ |
-| **Single-cut** | Current  | One aggregated cut per iteration per stage. $\theta \geq \bar{\alpha} + \bar{\beta}^\top x$.                     | [SDDP Algorithm §6.1](../math/sddp-algorithm.md) |
-| **Multi-cut**  | Deferred | One cut per opening per iteration. $\theta_\omega \geq \alpha(\omega) + \beta(\omega)^\top x$ for each $\omega$. | [Deferred Features §C.3](../deferred.md)         |
+| Variant        | Status   | Behavior                                                                                                       | Math Reference                                   |
+| -------------- | -------- | -------------------------------------------------------------------------------------------------------------- | ------------------------------------------------ |
+| **Single-cut** | Current  | One aggregated cut per iteration per stage. $\theta \geq \bar{\alpha} + \bar{\pi}^\top x$.                     | [SDDP Algorithm §6.1](../math/sddp-algorithm.md) |
+| **Multi-cut**  | Deferred | One cut per opening per iteration. $\theta_\omega \geq \alpha(\omega) + \pi(\omega)^\top x$ for each $\omega$. | [Deferred Features §C.3](../deferred.md)         |
 
 ### 3.2 Configuration
 
@@ -225,7 +225,7 @@ The risk measure is per-stage (step 3 produces a mapping from stage ID to risk m
 
 The per-stage risk measure requirement (§2.2) rules out pure compile-time monomorphization for the risk measure dimension. Enum dispatch is the natural fit for a small, fixed set of variants.
 
-> **Note**: The solver abstraction uses compile-time `cfg`-feature selection for the LP solver backend (CLP vs HiGHS) — see [Solver Abstraction §2](./solver-abstraction.md). The algorithm variant dispatch mechanism is a separate decision and need not use the same approach.
+> **Note**: The solver abstraction uses compile-time `cfg`-feature selection for the LP solver backend (CLP vs HiGHS) — see [Solver Abstraction §10](./solver-abstraction.md). The algorithm variant dispatch mechanism is a separate decision and need not use the same approach.
 
 ## 8. Variant Composition Validation
 
@@ -264,6 +264,6 @@ When fields are omitted, the following defaults apply:
 - [Input Scenarios §1.2](../data-model/input-scenarios.md) — `policy_graph` schema for horizon mode configuration
 - [Input Scenarios §1.7](../data-model/input-scenarios.md) — `risk_measure` field schema for per-stage risk configuration
 - [Input Scenarios §2.1](../data-model/input-scenarios.md) — `scenario_source` schema for sampling scheme configuration
-- [Configuration Reference §18.6-§18.8](../configuration/configuration-reference.md) — Horizon mode, risk measure, and scenario source config tables
-- [Solver Abstraction §2](./solver-abstraction.md) — Compile-time solver selection (contrasted with algorithm variant dispatch)
+- [Configuration Reference §5, §6.2-§6.3](../configuration/configuration-reference.md) — Horizon mode, risk measure, and scenario source config tables
+- [Solver Abstraction §10](./solver-abstraction.md) — Compile-time solver selection (contrasted with algorithm variant dispatch)
 - [Deferred Features](../deferred.md) — Multi-cut (C.3), Monte Carlo backward sampling (C.14)
