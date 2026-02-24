@@ -271,7 +271,7 @@ immediate_cost = thermal_cost + contract_cost
 | `generation_mwh`                 | f64  | No       | Energy generation (MWh)                                                    |
 | `productivity_mw_per_m3s`        | f64  | Yes      | Effective productivity                                                     |
 | `spillage_cost`                  | f64  | No       | Spillage regularization cost (this plant)                                  |
-| `water_value_per_hm3`            | f64  | No       | Marginal value of stored water ($/hm³)                                     |
+| `water_value_per_hm3`            | f64  | No       | Marginal value of stored water (\$/hm³)                                    |
 | `storage_binding_code`           | i8   | No       | Storage bound binding status                                               |
 | `operative_state_code`           | i8   | No       | Operative state                                                            |
 | **Violation slacks**             |      |          |                                                                            |
@@ -344,7 +344,7 @@ immediate_cost = thermal_cost + contract_cost
 | `deficit_mwh` | f64  | No       | Unmet demand energy (MWh)            |
 | `excess_mw`   | f64  | No       | Excess generation (MW)               |
 | `excess_mwh`  | f64  | No       | Excess generation energy (MWh)       |
-| `spot_price`  | f64  | No       | Marginal cost of energy ($/MWh)      |
+| `spot_price`  | f64  | No       | Marginal cost of energy (\$/MWh)     |
 
 **Rows per scenario**: `num_stages × num_blocks × num_buses`
 
@@ -368,7 +368,7 @@ To compute generation by source, join with `hydros`, `thermals`, etc. using `bus
 
 **Rows per scenario**: `num_stages × num_blocks × num_pumping_stations`
 
-> **Note on `pumping_cost`**: Pumping stations have no explicit cost parameter in the LP objective. This column reports the imputed cost: marginal price at the connected bus (dual of load balance constraint, $/MWh) × energy consumed (MWh). It is computed after the solve from dual variables, not from a direct LP cost term. See [Penalty System §8](penalty-system.md).
+> **Note on `pumping_cost`**: Pumping stations have no explicit cost parameter in the LP objective. This column reports the imputed cost: marginal price at the connected bus (dual of load balance constraint, \$/MWh) × energy consumed (MWh). It is computed after the solve from dual variables, not from a direct LP cost term. See [Penalty System §8](penalty-system.md).
 
 ### 5.7 Contracts (`simulation/contracts/`) — Optional
 
@@ -379,7 +379,7 @@ To compute generation by source, join with `hydros`, `thermals`, etc. using `bus
 | `contract_id`          | i32  | No       | Contract identifier     |
 | `power_mw`             | f64  | No       | Contracted power (MW)   |
 | `energy_mwh`           | f64  | No       | Contracted energy (MWh) |
-| `price_per_mwh`        | f64  | No       | Contract price ($/MWh)  |
+| `price_per_mwh`        | f64  | No       | Contract price (\$/MWh) |
 | `total_cost`           | f64  | No       | Total contract cost     |
 | `operative_state_code` | i8   | No       | Operative state         |
 

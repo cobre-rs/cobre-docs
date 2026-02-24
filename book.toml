@@ -8,11 +8,14 @@ src = "src"
 [build]
 build-dir = "book"
 
+[preprocessor.katex]
+after = ["links"]
+throw-on-error = true
+
 [output.html]
 default-theme = "coal"
 preferred-dark-theme = "coal"
 git-repository-url = "https://github.com/cobre-rs/cobre-docs"
-git-repository-icon = "fa-github"
 edit-url-template = "https://github.com/cobre-rs/cobre-docs/edit/main/{path}"
 site-url = "/cobre-docs/"
 additional-css = ["theme/css/custom.css"]
@@ -25,7 +28,6 @@ level = 1
 [output.html.search]
 enable = true
 limit-results = 20
-use-hierarchical-headings = true
 
 [output.html.playground]
 editable = false

@@ -13,7 +13,7 @@ This plan performs a deep quality audit of the 50 SDDP specification documents m
 
 ## Tech Stack
 
-- Content: Markdown (mdBook), LaTeX math via MathJax
+- Content: Markdown (mdBook), LaTeX math via KaTeX (mdbook-katex preprocessor)
 - Agent routing: `sddp-specialist` (math/domain content), `open-source-documentation-writer` (index creation), `implementation-guardian` (crate mapping verification)
 
 ## Epics
@@ -23,7 +23,7 @@ This plan performs a deep quality audit of the 50 SDDP specification documents m
 | epic-01 | Content Integrity Verification        | 5       | completed |
 | epic-02 | Spec-to-Crate Mapping Audit           | 4       | completed |
 | epic-03 | Cross-Reference and Coherence Audit   | 4       | completed |
-| epic-04 | LaTeX Equation Rendering Verification | 2       | outline   |
+| epic-04 | LaTeX Equation Rendering Verification | 2       | executing |
 | epic-05 | Cross-Reference Index Creation        | 2       | outline   |
 | epic-06 | Remediation                           | 3       | outline   |
 
@@ -44,8 +44,8 @@ This plan performs a deep quality audit of the 50 SDDP specification documents m
 | ticket-011 | Audit Semantic Accuracy of Cross-References in Architecture, HPC, and Data Model Specs | epic-03 | completed | Refined      |
 | ticket-012 | Audit Algorithm Reference Pages for Consistency with Formal Specs                      | epic-03 | completed | Refined      |
 | ticket-013 | Audit Glossary Coverage and Crate Documentation Cross-Reference Accuracy               | epic-03 | completed | Refined      |
-| ticket-014 | Verify LaTeX Rendering on High-Density Equation Pages                                  | epic-04 | pending   | Outline      |
-| ticket-015 | Verify LaTeX Rendering for Remaining Spec and Algorithm Reference Pages                | epic-04 | pending   | Outline      |
+| ticket-014 | Configure mdbook-katex and Verify High-Density Equation Pages                          | epic-04 | completed | Refined      |
+| ticket-015 | Verify LaTeX Rendering for Remaining Pages and Deploy                                  | epic-04 | completed | Refined      |
 | ticket-016 | Build the Cross-Reference Index File                                                   | epic-05 | pending   | Outline      |
 | ticket-017 | Finalize Cross-Reference Index and Verify mdBook Build                                 | epic-05 | pending   | Outline      |
 | ticket-018 | Fix All CRITICAL Findings                                                              | epic-06 | pending   | Outline      |
@@ -70,7 +70,8 @@ plans/spec-migration-audit/
 ├── .implementation-state.json
 ├── learnings/
 │   ├── epic-01-summary.md
-│   └── epic-02-summary.md
+│   ├── epic-02-summary.md
+│   └── epic-03-summary.md
 ├── epic-01-content-integrity/
 │   ├── 00-epic-overview.md
 │   ├── ticket-001-audit-overview-specs.md          (detailed, completed)
@@ -86,14 +87,14 @@ plans/spec-migration-audit/
 │   └── ticket-009-audit-hpc-config-master-table.md  (detailed, completed)
 ├── epic-03-cross-reference-coherence/
 │   ├── 00-epic-overview.md
-│   ├── ticket-010-audit-math-overview-crossrefs.md  (refined)
-│   ├── ticket-011-audit-arch-hpc-data-crossrefs.md  (refined)
-│   ├── ticket-012-audit-algorithm-reference-pages.md (refined)
-│   └── ticket-013-audit-glossary-and-crate-crossrefs.md (refined)
+│   ├── ticket-010-audit-math-overview-crossrefs.md  (refined, completed)
+│   ├── ticket-011-audit-arch-hpc-data-crossrefs.md  (refined, completed)
+│   ├── ticket-012-audit-algorithm-reference-pages.md (refined, completed)
+│   └── ticket-013-audit-glossary-and-crate-crossrefs.md (refined, completed)
 ├── epic-04-latex-rendering/
 │   ├── 00-epic-overview.md
-│   ├── ticket-014-verify-latex-high-density-pages.md (outline)
-│   └── ticket-015-verify-latex-remaining-pages.md   (outline)
+│   ├── ticket-014-verify-latex-high-density-pages.md (refined)
+│   └── ticket-015-verify-latex-remaining-pages.md   (refined)
 ├── epic-05-cross-reference-index/
 │   ├── 00-epic-overview.md
 │   ├── ticket-016-build-cross-reference-index.md    (outline)

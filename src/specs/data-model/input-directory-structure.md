@@ -276,11 +276,11 @@ The LP must always be feasible. Penalty costs on slack variables ensure this by 
 
 Penalties are divided into three categories:
 
-| Category                           | Examples                                                                                     | Purpose                                                     | Typical Range     |
-| ---------------------------------- | -------------------------------------------------------------------------------------------- | ----------------------------------------------------------- | ----------------- |
-| **Recourse slacks**                | `deficit_*`, `excess_cost`                                                                   | Ensure LP feasibility when demand cannot be met             | 100–10,000 $/unit |
-| **Constraint violation penalties** | `*_violation_*_cost`, `generic_violation_cost`                                               | Allow soft constraint violations at a cost (policy shaping) | 50–5,000 $/unit   |
-| **Regularization costs**           | `spillage_cost`, `diversion_cost`, `exchange_cost`, `fpha_turbined_cost`, `curtailment_cost` | Discourage undesirable but feasible operations              | 0.001–10 $/unit   |
+| Category                           | Examples                                                                                     | Purpose                                                     | Typical Range      |
+| ---------------------------------- | -------------------------------------------------------------------------------------------- | ----------------------------------------------------------- | ------------------ |
+| **Recourse slacks**                | `deficit_*`, `excess_cost`                                                                   | Ensure LP feasibility when demand cannot be met             | 100–10,000 \$/unit |
+| **Constraint violation penalties** | `*_violation_*_cost`, `generic_violation_cost`                                               | Allow soft constraint violations at a cost (policy shaping) | 50–5,000 \$/unit   |
+| **Regularization costs**           | `spillage_cost`, `diversion_cost`, `exchange_cost`, `fpha_turbined_cost`, `curtailment_cost` | Discourage undesirable but feasible operations              | 0.001–10 \$/unit   |
 
 For the complete penalty specification — including `penalties.json` schema, entity override format, stage-varying override schemas, resolution semantics, and the full penalty inventory — see [Penalty System](penalty-system.md).
 

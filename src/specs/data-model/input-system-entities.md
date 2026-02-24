@@ -535,7 +535,7 @@ For the mathematical formulation of hydro water balance, production function, an
 | `exit_stage_id`                | i32 \| null    | No       | Stage when thermal is decommissioned (`null` = never)   |
 | `cost_segments`                | array          | Yes      | Piecewise-linear cost curve (ordered by ascending cost) |
 | `cost_segments[].capacity_mw`  | f64            | Yes      | Capacity of this cost segment (MW)                      |
-| `cost_segments[].cost_per_mwh` | f64            | Yes      | Marginal cost in this segment ($/MWh)                   |
+| `cost_segments[].cost_per_mwh` | f64            | Yes      | Marginal cost in this segment (\$/MWh)                  |
 | `generation.min_mw`            | f64            | Yes      | Minimum stable generation (0 if no minimum)             |
 | `generation.max_mw`            | f64            | Yes      | Maximum generation capacity                             |
 | `gnl_config`                   | object \| null | No       | GNL dispatch anticipation (see below)                   |
