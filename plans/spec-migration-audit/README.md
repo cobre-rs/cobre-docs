@@ -36,10 +36,10 @@ This plan performs a deep quality audit of the 50 SDDP specification documents m
 | ticket-003 | Audit Content Integrity of Math Spec Files Part 2                                      | epic-01 | completed | Detailed     |
 | ticket-004 | Audit Content Integrity of Data Model Spec Files                                       | epic-01 | completed | Detailed     |
 | ticket-005 | Audit Content Integrity of Architecture, HPC, Config, and Deferred Spec Files          | epic-01 | completed | Detailed     |
-| ticket-006 | Audit Crate Documentation Pages for Spec Reference Completeness                        | epic-02 | pending   | Detailed     |
-| ticket-007 | Audit Spec-to-Crate Mapping for Data Model and Overview Specs                          | epic-02 | pending   | Detailed     |
-| ticket-008 | Audit Spec-to-Crate Mapping for Math and Architecture Specs                            | epic-02 | pending   | Detailed     |
-| ticket-009 | Audit HPC and Config Spec Mapping and Produce Master Spec-to-Crate Table               | epic-02 | pending   | Detailed     |
+| ticket-006 | Audit Crate Documentation Pages for Spec Reference Completeness                        | epic-02 | completed | Detailed     |
+| ticket-007 | Audit Spec-to-Crate Mapping for Data Model and Overview Specs                          | epic-02 | completed | Detailed     |
+| ticket-008 | Audit Spec-to-Crate Mapping for Math and Architecture Specs                            | epic-02 | completed | Detailed     |
+| ticket-009 | Audit HPC and Config Spec Mapping and Produce Master Spec-to-Crate Table               | epic-02 | completed | Detailed     |
 | ticket-010 | Audit Semantic Accuracy of Cross-References in Math and Overview Specs                 | epic-03 | pending   | Outline      |
 | ticket-011 | Audit Semantic Accuracy of Cross-References in Architecture, HPC, and Data Model Specs | epic-03 | pending   | Outline      |
 | ticket-012 | Audit Algorithm Reference Pages for Consistency with Formal Specs                      | epic-03 | pending   | Outline      |

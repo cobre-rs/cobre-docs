@@ -1,6 +1,6 @@
 {
   "plan": "spec-migration-audit",
-  "last_updated": "2026-02-24T13:00:00Z",
+  "last_updated": "2026-02-24T18:00:00Z",
   "progressive": true,
   "tickets": {
     "ticket-001-audit-overview-specs.md": {
@@ -29,20 +29,24 @@
       "agent": "sddp-specialist"
     },
     "ticket-006-audit-crate-doc-pages.md": {
-      "status": "pending",
-      "detail_level": "detailed"
+      "status": "completed",
+      "detail_level": "detailed",
+      "agent": "sddp-specialist"
     },
     "ticket-007-audit-data-model-overview-mapping.md": {
-      "status": "pending",
-      "detail_level": "detailed"
+      "status": "completed",
+      "detail_level": "detailed",
+      "agent": "sddp-specialist"
     },
     "ticket-008-audit-math-arch-mapping.md": {
-      "status": "pending",
-      "detail_level": "detailed"
+      "status": "completed",
+      "detail_level": "detailed",
+      "agent": "sddp-specialist"
     },
     "ticket-009-audit-hpc-config-master-table.md": {
-      "status": "pending",
-      "detail_level": "detailed"
+      "status": "completed",
+      "detail_level": "detailed",
+      "agent": "sddp-specialist"
     },
     "ticket-010-audit-math-overview-crossrefs.md": {
       "status": "pending",
@@ -95,8 +99,8 @@
       "learning_extracted": true
     },
     "epic-02-spec-crate-mapping": {
-      "phase": "executing",
-      "learning_extracted": false
+      "phase": "completed",
+      "learning_extracted": true
     },
     "epic-03-cross-reference-coherence": {
       "phase": "outline",
