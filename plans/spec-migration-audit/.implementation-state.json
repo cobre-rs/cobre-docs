@@ -1,6 +1,6 @@
 {
   "plan": "spec-migration-audit",
-  "last_updated": "2026-02-24T12:00:00Z",
+  "last_updated": "2026-02-24T19:00:00Z",
   "progressive": true,
   "tickets": {
     "ticket-001-audit-overview-specs.md": {
@@ -79,12 +79,14 @@
       "agent": "sddp-specialist"
     },
     "ticket-016-build-cross-reference-index.md": {
-      "status": "pending",
-      "detail_level": "outline"
+      "status": "completed",
+      "detail_level": "refined",
+      "agent": "sddp-specialist"
     },
     "ticket-017-finalize-index-and-verify-build.md": {
-      "status": "pending",
-      "detail_level": "outline"
+      "status": "completed",
+      "detail_level": "refined",
+      "agent": "sddp-specialist"
     },
     "ticket-018-fix-critical-findings.md": {
       "status": "pending",
@@ -117,8 +119,8 @@
       "learning_extracted": true
     },
     "epic-05-cross-reference-index": {
-      "phase": "outline",
-      "learning_extracted": false
+      "phase": "completed",
+      "learning_extracted": true
     },
     "epic-06-remediation": {
       "phase": "outline",

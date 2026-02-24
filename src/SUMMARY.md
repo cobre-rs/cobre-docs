@@ -57,6 +57,7 @@
   - [Design Principles](./specs/overview/design-principles.md)
   - [Notation Conventions](./specs/overview/notation-conventions.md)
   - [Production Scale Reference](./specs/overview/production-scale-reference.md)
+- [Cross-Reference Index](./specs/cross-reference-index.md)
 - [Mathematical Formulations](./specs/math.md)
   - [SDDP Algorithm](./specs/math/sddp-algorithm.md)
   - [LP Formulation](./specs/math/lp-formulation.md)

@@ -23,8 +23,8 @@ This plan performs a deep quality audit of the 50 SDDP specification documents m
 | epic-01 | Content Integrity Verification        | 5       | completed |
 | epic-02 | Spec-to-Crate Mapping Audit           | 4       | completed |
 | epic-03 | Cross-Reference and Coherence Audit   | 4       | completed |
-| epic-04 | LaTeX Equation Rendering Verification | 2       | executing |
-| epic-05 | Cross-Reference Index Creation        | 2       | outline   |
+| epic-04 | LaTeX Equation Rendering Verification | 2       | completed |
+| epic-05 | Cross-Reference Index Creation        | 2       | executing |
 | epic-06 | Remediation                           | 3       | outline   |
 
 ## Progress Tracking
@@ -46,8 +46,8 @@ This plan performs a deep quality audit of the 50 SDDP specification documents m
 | ticket-013 | Audit Glossary Coverage and Crate Documentation Cross-Reference Accuracy               | epic-03 | completed | Refined      |
 | ticket-014 | Configure mdbook-katex and Verify High-Density Equation Pages                          | epic-04 | completed | Refined      |
 | ticket-015 | Verify LaTeX Rendering for Remaining Pages and Deploy                                  | epic-04 | completed | Refined      |
-| ticket-016 | Build the Cross-Reference Index File                                                   | epic-05 | pending   | Outline      |
-| ticket-017 | Finalize Cross-Reference Index and Verify mdBook Build                                 | epic-05 | pending   | Outline      |
+| ticket-016 | Build the Cross-Reference Index File                                                   | epic-05 | completed | Refined      |
+| ticket-017 | Finalize Cross-Reference Index and Verify mdBook Build                                 | epic-05 | completed | Refined      |
 | ticket-018 | Fix All CRITICAL Findings                                                              | epic-06 | pending   | Outline      |
 | ticket-019 | Fix All HIGH Findings                                                                  | epic-06 | pending   | Outline      |
 | ticket-020 | Fix MEDIUM and LOW Findings and Verify Final Build                                     | epic-06 | pending   | Outline      |
@@ -71,7 +71,8 @@ plans/spec-migration-audit/
 ├── learnings/
 │   ├── epic-01-summary.md
 │   ├── epic-02-summary.md
-│   └── epic-03-summary.md
+│   ├── epic-03-summary.md
+│   └── epic-04-summary.md
 ├── epic-01-content-integrity/
 │   ├── 00-epic-overview.md
 │   ├── ticket-001-audit-overview-specs.md          (detailed, completed)
@@ -93,12 +94,12 @@ plans/spec-migration-audit/
 │   └── ticket-013-audit-glossary-and-crate-crossrefs.md (refined, completed)
 ├── epic-04-latex-rendering/
 │   ├── 00-epic-overview.md
-│   ├── ticket-014-verify-latex-high-density-pages.md (refined)
-│   └── ticket-015-verify-latex-remaining-pages.md   (refined)
+│   ├── ticket-014-verify-latex-high-density-pages.md (refined, completed)
+│   └── ticket-015-verify-latex-remaining-pages.md   (refined, completed)
 ├── epic-05-cross-reference-index/
 │   ├── 00-epic-overview.md
-│   ├── ticket-016-build-cross-reference-index.md    (outline)
-│   └── ticket-017-finalize-index-and-verify-build.md (outline)
+│   ├── ticket-016-build-cross-reference-index.md    (refined)
+│   └── ticket-017-finalize-index-and-verify-build.md (refined)
 └── epic-06-remediation/
     ├── 00-epic-overview.md
     ├── ticket-018-fix-critical-findings.md          (outline)

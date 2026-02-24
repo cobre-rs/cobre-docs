@@ -1,31 +1,173 @@
 # ticket-017 Finalize Cross-Reference Index and Verify mdBook Build
 
-> **[OUTLINE]** This ticket requires refinement before execution.
-> It will be refined with learnings from earlier epics.
+## Context
 
-## Objective
+### Background
 
-After ticket-016 creates the cross-reference index file, verify that the mdBook build succeeds with the new file, that the index appears in the built HTML book with correct navigation, and that all cross-reference links within the index file itself resolve correctly. This is the quality gate for Epic 05.
+Ticket-016 creates the file `src/specs/cross-reference-index.md` and adds it to `src/SUMMARY.md`. This ticket is the quality gate for Epic 05: it verifies that the new file renders correctly in the mdBook HTML output, that all internal links within the index resolve to valid pages, that the SUMMARY.md entry produces correct left-sidebar navigation, and that the build remains clean (exit 0, no new errors). If any issues are found during verification, this ticket fixes them in place.
 
-Additionally, verify that the SUMMARY.md change from ticket-016 renders correctly — the index must appear under the correct parent in the left navigation sidebar.
+### Relation to Epic
 
-## Anticipated Scope
+This is the second and final ticket of Epic 05 (Cross-Reference Index Creation). It follows ticket-016 and serves as the epic's acceptance gate. The epic is complete when this ticket passes all acceptance criteria.
 
-- **Files likely to be modified**: Read-only verification. If links in `cross-reference-index.md` are broken, fix them in this ticket.
-- **Key decisions needed**:
-  - After ticket-016 is executed, does the file as generated pass `mdbook build` without warning?
-  - Are there any mdBook-specific rendering issues with very large tables (the 50-row spec-to-crate table and the outgoing/incoming cross-reference tables could be large)?
-- **Open questions**:
-  - Does mdBook have a table size limit or rendering issue with 50+ row tables?
-  - Should the cross-reference index use HTML `<details>` collapsible sections for the per-spec link tables (to reduce page length)?
-  - Is there a `mdbook-linkcheck` or similar tool configured in the cobre-docs build to catch broken links in the new file?
+### Current State
+
+After ticket-016 completes:
+
+- `src/specs/cross-reference-index.md` exists with 5 components: spec-to-crate mapping table (~50 rows), per-crate reading lists (7 crates), outgoing cross-reference table, incoming cross-reference table, and dependency ordering.
+- `src/SUMMARY.md` has been modified to include a `- [Cross-Reference Index](./specs/cross-reference-index.md)` entry under the Specifications heading.
+- `mdbook build` was verified to exit 0 at the end of ticket-016, but the HTML output has not been inspected for rendering quality.
+
+Build configuration (from `/home/rogerio/git/cobre-docs/book.toml`):
+
+- mdbook-katex preprocessor is active with `throw-on-error = true`
+- HTML output with `coal` default theme, section folding enabled at level 1
+- Search enabled, no linkcheck plugin configured
+- Custom CSS at `theme/css/custom.css` (KaTeX dark-theme styling)
+
+## Specification
+
+### Requirements
+
+Execute the following verification steps in order. If any step fails, apply the fix described and re-verify.
+
+**Step 1: Build Verification**
+Run `mdbook build` from `/home/rogerio/git/cobre-docs/`. Capture both stdout and stderr. Verify:
+
+- Exit code is 0
+- No `[ERROR]` lines on stderr
+- No `Rendering failed` lines on stderr (KaTeX errors)
+- No new `[WARN]` lines that were not present before ticket-016 (compare against the baseline: Epic 04 confirmed zero KaTeX rendering failures across all pages)
+
+**Step 2: SUMMARY.md Navigation Verification**
+Inspect the generated HTML sidebar (in `book/index.html` or any chapter page). Verify:
+
+- "Cross-Reference Index" appears in the left sidebar under the "Specifications" heading
+- It is positioned after "Overview" and before "Mathematical Formulations"
+- Clicking the sidebar entry navigates to the cross-reference index page
+- The page renders with the correct title and all 5 component headings visible
+
+**Step 3: Internal Link Verification**
+The cross-reference index contains approximately 500+ Markdown links to spec files. Verify link integrity:
+
+- Run `grep -oP '\[.*?\]\(.*?\)' src/specs/cross-reference-index.md | wc -l` to count total links
+- For each unique link target, verify the file exists: extract all unique href paths from the links, resolve them relative to `src/specs/`, and check file existence
+- Report any broken links found. If broken links exist, fix the relative path in the index file.
+
+**Step 4: Table Rendering Verification**
+mdBook renders Markdown tables as HTML `<table>` elements. Verify that:
+
+- The 50-row spec-to-crate mapping table (Component 1) renders as a single scrollable table, not broken into fragments
+- The outgoing and incoming cross-reference tables (Components 3 and 4) render correctly -- wide tables with many comma-separated links in a cell may cause layout issues
+- If any table is unreadable due to width, add `<div style="overflow-x: auto">` wrapper around it (this is valid Markdown/HTML in mdBook)
+
+**Step 5: Conservation Check**
+Verify that the total count of outgoing cross-reference entries (Component 3) equals the total count of incoming cross-reference entries (Component 4). This is a mathematical invariant: every outgoing link from spec A to spec B must appear as an incoming link on spec B from spec A. If the counts differ, investigate and fix the discrepancy.
+
+**Step 6: Content Spot-Check**
+Pick 3 representative specs and verify end-to-end:
+
+1. `sddp-algorithm.md` (14 outgoing cross-refs in the file): verify all 14 appear in the outgoing table row, and verify the file appears in the incoming table rows of all 14 targets.
+2. `training-loop.md` (16 outgoing cross-refs): same verification.
+3. `penalty-system.md` (7 outgoing cross-refs, plus known HIGH finding F-9): verify outgoing and incoming entries, and verify the errata note mentions F-9.
+
+### Inputs/Props
+
+- `src/specs/cross-reference-index.md` (created by ticket-016)
+- `src/SUMMARY.md` (modified by ticket-016)
+- Built HTML output in `book/` directory (generated by `mdbook build`)
+- Cross-reference data from the actual spec files (for spot-check comparison)
+
+### Outputs/Behavior
+
+- If all verifications pass: no file changes needed. The ticket produces a verification report (can be inline in the commit message or a brief note).
+- If fixes are needed: modify `src/specs/cross-reference-index.md` and/or `src/SUMMARY.md` to correct any issues found. Re-run `mdbook build` after every fix to confirm the fix does not introduce new errors.
+
+### Error Handling
+
+- If `mdbook build` fails with a KaTeX error, the most likely cause is a bare `$` character in the index file. Fix by escaping as `\$`.
+- If a link target does not exist, the link path is likely wrong (incorrect relative path from the index file's location). Fix by adjusting the relative path.
+- If a table renders poorly, wrap it in `<div style="overflow-x: auto">...</div>` to enable horizontal scrolling.
+
+## Acceptance Criteria
+
+- [ ] Given `mdbook build` is run from `/home/rogerio/git/cobre-docs/`, when stdout and stderr are captured, then exit code is 0 and stderr contains zero `[ERROR]` lines and zero `Rendering failed` lines.
+- [ ] Given the built HTML output, when the left sidebar is inspected on any page, then "Cross-Reference Index" appears under "Specifications" between "Overview" and "Mathematical Formulations".
+- [ ] Given the cross-reference index file, when all Markdown link targets are extracted and resolved relative to `src/specs/`, then every target file exists on disk.
+- [ ] Given the outgoing cross-reference table (Component 3) and the incoming cross-reference table (Component 4), when total entry counts are compared, then they are equal (conservation invariant holds).
+- [ ] Given `sddp-algorithm.md` has 14 entries in its `## Cross-References` section, when the outgoing table row for `sddp-algorithm.md` is inspected, then it lists exactly 14 referenced specs.
+- [ ] Given `training-loop.md` has 16 entries in its `## Cross-References` section, when the outgoing table row for `training-loop.md` is inspected, then it lists exactly 16 referenced specs.
+- [ ] Given `penalty-system.md` has 7 entries in its `## Cross-References` section and has known finding F-9 (phantom section references), when the outgoing table row and errata note are inspected, then the 7 entries are present and the errata note references F-9.
+- [ ] Given any fixes were applied during verification, when `mdbook build` is re-run after fixes, then exit code is 0 with no new errors.
+
+## Implementation Guide
+
+### Suggested Approach
+
+1. Run `mdbook build` from `/home/rogerio/git/cobre-docs/` and capture exit code and stderr output. This is the same build pattern used in Epic 04 (ticket-014 and ticket-015) where the agent ran `mdbook build 2>&1 | grep -c "Rendering failed"`.
+
+2. Open the built HTML: examine `book/specs/cross-reference-index.html` for rendering quality. Check the sidebar in `book/index.html` to verify the navigation entry appears in the correct position.
+
+3. Extract all link targets from the index file:
+
+   ```bash
+   grep -oP '\]\(\./[^)]+\)' src/specs/cross-reference-index.md | sed 's/^](\.\///' | sed 's/)$//' | sort -u
+   ```
+
+   For each unique path, verify `src/specs/<path>` exists.
+
+4. Count outgoing and incoming entries for the conservation check. The outgoing table has one row per spec with comma-separated references; count the total commas + rows. The incoming table has the same structure. Totals must match.
+
+5. Perform the 3-spec spot-check by reading the actual `## Cross-References` sections from `sddp-algorithm.md`, `training-loop.md`, and `penalty-system.md`, and comparing against the index table rows.
+
+6. If fixes are needed, edit `src/specs/cross-reference-index.md`, re-run `mdbook build`, and re-verify.
+
+### Key Files to Modify
+
+- **Potentially modify (if fixes needed)**: `/home/rogerio/git/cobre-docs/src/specs/cross-reference-index.md`
+- **Potentially modify (if fixes needed)**: `/home/rogerio/git/cobre-docs/src/SUMMARY.md`
+- **Read-only verification**: `/home/rogerio/git/cobre-docs/book/` (built HTML output)
+
+### Key Files to Read (Verification Data)
+
+- `/home/rogerio/git/cobre-docs/src/specs/math/sddp-algorithm.md` (verify 14 cross-refs)
+- `/home/rogerio/git/cobre-docs/src/specs/architecture/training-loop.md` (verify 16 cross-refs)
+- `/home/rogerio/git/cobre-docs/src/specs/data-model/penalty-system.md` (verify 7 cross-refs + F-9 errata)
+
+### Patterns to Follow
+
+- **Build verification pattern**: Same as Epic 04 tickets 014 and 015 -- run `mdbook build`, check exit code, grep stderr for errors.
+- **Link verification pattern**: Extract link targets with grep, resolve paths, check file existence. This is the same approach used in Epic 01 for path resolution checks (the "Check 5: Path Resolution" protocol from the content integrity audit).
+
+### Pitfalls to Avoid
+
+- **Do not modify spec files during this ticket**: This ticket only modifies the index file and SUMMARY.md. The 50 spec files are read-only inputs. Any issues with the spec files themselves (wrong section numbers, missing cross-references) are Epic 06 scope.
+- **Do not ignore KaTeX warnings**: With `throw-on-error = true`, KaTeX errors will cause build failure. But warnings may appear on stderr without failing the build. Log any new warnings and determine if they originate from the index file.
+- **Table width**: The outgoing/incoming tables may have very wide "References" columns (some specs have 14-20 cross-references). If the rendered table is too wide for the page, use the `<div style="overflow-x: auto">` wrapper pattern rather than abbreviating the content.
+
+## Testing Requirements
+
+### Unit Tests
+
+Not applicable (documentation verification, not code).
+
+### Integration Tests
+
+- **Build test**: `mdbook build` exits 0 with no new errors (Step 1).
+- **Link integrity test**: All Markdown links in the index file resolve to existing files (Step 3).
+- **Conservation test**: Outgoing entry count equals incoming entry count (Step 5).
+- **Spot-check test**: 3 representative specs verified against actual file contents (Step 6).
+
+### E2E Tests
+
+Not applicable.
 
 ## Dependencies
 
-- **Blocked By**: ticket-016 (file must exist before build can be verified)
-- **Blocks**: Nothing
+- **Blocked By**: ticket-016 (the index file must exist before it can be verified)
+- **Blocks**: Nothing (this is the final ticket in Epic 05)
 
 ## Effort Estimate
 
 **Points**: 1
-**Confidence**: Low (will be re-estimated during refinement)
+**Confidence**: High
