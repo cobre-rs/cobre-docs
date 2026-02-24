@@ -396,7 +396,7 @@ For each spec file, this table shows which other specs reference it in their `##
 
 This is a global reading order for the entire 50-spec corpus. Specs that are referenced by the most other specs (most foundational) appear first. Within the same reference count, section order applies (overview, math, data-model, architecture, hpc, configuration, deferred).
 
-> **Note on known errata:** Seven section-number references within spec files are incorrect (Epic 03 findings F-1, F-5, F-6, F-7, F-8, F-9, F-11). These involve wrong section numbers in cross-reference descriptions only -- the link targets (file paths) are all correct. Epic 06 will correct the section numbers. Until then, the cross-reference links in this index and in the spec files themselves correctly navigate to the right files, but some descriptive text may cite wrong section numbers within those files.
+> **Note on errata:** Seven section-number references were identified as incorrect in the Epic 03 audit (findings F-1, F-5, F-6, F-7, F-8, F-9, F-11) and corrected in Epic 06. All links and section numbers in this index are now accurate.
 
 | Order | Spec File                                                                 | Section       | Incoming References |
 | ----: | ------------------------------------------------------------------------- | ------------- | ------------------: |

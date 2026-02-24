@@ -329,24 +329,20 @@ The dual $\pi^{lag}_{h,\ell}$ measures: _"How does optimal cost change if incomi
 
 **Cut coefficient**:
 
-$$
-\boxed{\pi^{lag}_{h,\ell} = \pi^{lag}_{h,\ell}}
-$$
-
-Direct correspondence since $\hat{a}_{h,\ell}$ appears on the RHS with coefficient $+1$.
+The cut coefficient for lag $\ell$ is the dual variable $\pi^{lag}_{h,\ell}$ directly, since $\hat{a}_{h,\ell}$ appears on the RHS with coefficient $+1$. No sign change or scaling is needed.
 
 ### 5.5 Summary Table
 
-| Symbol               | Constraint (LP Form)                           | RHS                | Cut Coefficient                           |
-| -------------------- | ---------------------------------------------- | ------------------ | ----------------------------------------- |
-| $\pi^{wb}_h$         | $v_h - \zeta \cdot (\text{flows}) = \hat{v}_h$ | $\hat{v}_h$        | $\pi^v_h = \pi^{wb}_h$                    |
-| $\pi^{lag}_{h,\ell}$ | $a_{h,\ell} = \hat{a}_{h,\ell}$                | $\hat{a}_{h,\ell}$ | $\pi^{lag}_{h,\ell} = \pi^{lag}_{h,\ell}$ |
-| $\pi^{lb}_{b,k}$     | Load balance                                   | $D_{b,k}$          | Marginal cost of energy                   |
-| $\lambda_i$          | Benders cut $i$                                | $\alpha_i$         | Cut activity indicator                    |
+| Symbol               | Constraint (LP Form)                           | RHS                | Cut Coefficient               |
+| -------------------- | ---------------------------------------------- | ------------------ | ----------------------------- |
+| $\pi^{wb}_h$         | $v_h - \zeta \cdot (\text{flows}) = \hat{v}_h$ | $\hat{v}_h$        | $\pi^v_h = \pi^{wb}_h$        |
+| $\pi^{lag}_{h,\ell}$ | $a_{h,\ell} = \hat{a}_{h,\ell}$                | $\hat{a}_{h,\ell}$ | $\pi^{lag}_{h,\ell}$ (direct) |
+| $\pi^{lb}_{b,k}$     | Load balance                                   | $D_{b,k}$          | Marginal cost of energy       |
+| $\lambda_i$          | Benders cut $i$                                | $\alpha_i$         | Cut activity indicator        |
 
 ### 5.6 Implementation Notes
 
-The hot-path solver update pattern (modifying RHS via `changeRowBounds` for incoming state, extracting duals via `getRowDual` for cut coefficients) is documented in [Solver HiGHS Implementation §3](../architecture/solver-highs-impl.md) and [Solver Abstraction §3](../architecture/solver-abstraction.md). The key property: since incoming state variables appear on the RHS with coefficient $+1$, no sign change is needed when mapping duals to cut coefficients ($\pi^v_h = \pi^{wb}_h$, $\pi^{lag}_{h,\ell} = \pi^{lag}_{h,\ell}$).
+The hot-path solver update pattern (modifying RHS via `changeRowBounds` for incoming state, extracting duals via `getRowDual` for cut coefficients) is documented in [Solver HiGHS Implementation §3](../architecture/solver-highs-impl.md) and [Solver Abstraction §3](../architecture/solver-abstraction.md). The key property: since incoming state variables appear on the RHS with coefficient $+1$, no sign change is needed when mapping duals to cut coefficients ($\pi^v_h = \pi^{wb}_h$; for AR lags, $\pi^{lag}_{h,\ell}$ is used directly).
 
 **Verification check**: In a typical hydrothermal system:
 
