@@ -80,7 +80,7 @@ Inter-block storages $v_{h,k}$ for $k < |\mathcal{K}|$ are internal LP variables
 For cut generation, we need the dual of block 1's water balance (containing $\hat{v}_h$):
 
 $$
-\beta_h^{storage} = \pi^{wb}_{h,1}
+\pi^v_h = \pi^{wb}_{h,1}
 $$
 
 For the full cut coefficient definition (including FPHA and generic constraint contributions), see [Cut Management §2](cut-management.md).

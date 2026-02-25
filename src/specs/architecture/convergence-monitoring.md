@@ -183,4 +183,5 @@ The termination reason is one of: `BOUND_STALLING`, `SIMULATION`, `ITERATION_LIM
 - [Risk Measures](../math/risk-measures.md) — CVaR risk measure, which affects upper bound computation for risk-averse policies
 - [Infinite Horizon](../math/infinite-horizon.md) — Discount factor treatment for cyclic stage graphs
 - [Training Loop](./training-loop.md) — The SDDP training loop that invokes this convergence monitor each iteration (§2.1 iteration lifecycle, §4.3 forward synchronization)
+- [Synchronization](../hpc/synchronization.md) — MPI synchronization points including `MPI_Allreduce` for convergence statistics (§1.3)
 - [Configuration Reference](../configuration/configuration-reference.md) — JSON schema for `stopping_rules` and `stopping_mode`

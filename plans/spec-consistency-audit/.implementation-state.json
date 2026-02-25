@@ -1,0 +1,122 @@
+{
+  "plan": "spec-consistency-audit",
+  "last_updated": "2026-02-25T12:00:00Z",
+  "progressive": true,
+  "tickets": {
+    "ticket-001-audit-notation-math-specs-part1.md": {
+      "status": "completed",
+      "detail_level": "detailed",
+      "agent": "sddp-specialist"
+    },
+    "ticket-002-audit-notation-math-specs-part2.md": {
+      "status": "completed",
+      "detail_level": "detailed",
+      "agent": "sddp-specialist"
+    },
+    "ticket-003-audit-parameter-value-consistency.md": {
+      "status": "completed",
+      "detail_level": "detailed",
+      "agent": "sddp-specialist"
+    },
+    "ticket-004-audit-behavioral-description-consistency.md": {
+      "status": "completed",
+      "detail_level": "detailed",
+      "agent": "sddp-specialist"
+    },
+    "ticket-005-apply-epic01-fixes.md": {
+      "status": "completed",
+      "detail_level": "detailed",
+      "agent": "sddp-specialist"
+    },
+    "ticket-006-verify-bibliography-academic.md": {
+      "status": "pending",
+      "detail_level": "detailed"
+    },
+    "ticket-007-verify-bibliography-software.md": {
+      "status": "pending",
+      "detail_level": "detailed"
+    },
+    "ticket-008-audit-citation-usage-context.md": {
+      "status": "pending",
+      "detail_level": "detailed"
+    },
+    "ticket-009-apply-epic02-fixes.md": {
+      "status": "pending",
+      "detail_level": "detailed"
+    },
+    "ticket-010-crosscheck-sizing-calculator.md": {
+      "status": "pending",
+      "detail_level": "outline"
+    },
+    "ticket-011-update-forward-passes-to-192.md": {
+      "status": "pending",
+      "detail_level": "outline"
+    },
+    "ticket-012-add-traceability-annotations.md": {
+      "status": "pending",
+      "detail_level": "outline"
+    },
+    "ticket-013-build-timing-model.md": {
+      "status": "pending",
+      "detail_level": "outline"
+    },
+    "ticket-014-model-sync-overhead.md": {
+      "status": "pending",
+      "detail_level": "outline"
+    },
+    "ticket-015-update-performance-target-language.md": {
+      "status": "pending",
+      "detail_level": "outline"
+    },
+    "ticket-016-review-spec-organization.md": {
+      "status": "pending",
+      "detail_level": "outline"
+    },
+    "ticket-017-remove-newave-migration.md": {
+      "status": "pending",
+      "detail_level": "outline"
+    },
+    "ticket-018-audit-newave-references.md": {
+      "status": "pending",
+      "detail_level": "outline"
+    },
+    "ticket-019-define-python-api-surface.md": {
+      "status": "pending",
+      "detail_level": "outline"
+    },
+    "ticket-020-assess-spec-impact.md": {
+      "status": "pending",
+      "detail_level": "outline"
+    },
+    "ticket-021-draft-cobre-python-spec.md": {
+      "status": "pending",
+      "detail_level": "outline"
+    }
+  },
+  "epics": {
+    "epic-01-internal-formula-value-consistency": {
+      "phase": "completed",
+      "learning_extracted": true
+    },
+    "epic-02-external-reference-verification": {
+      "phase": "executing",
+      "learning_extracted": false
+    },
+    "epic-03-production-scale-hardening": {
+      "phase": "outline",
+      "learning_extracted": false
+    },
+    "epic-04-wall-clock-time-model": {
+      "phase": "outline",
+      "learning_extracted": false
+    },
+    "epic-05-documentation-organization": {
+      "phase": "outline",
+      "learning_extracted": false
+    },
+    "epic-06-pyo3-python-api-impact": {
+      "phase": "outline",
+      "learning_extracted": false
+    }
+  }
+}

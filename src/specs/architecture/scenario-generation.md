@@ -450,6 +450,7 @@ The solver integration for complete tree mode (tree enumeration, node-to-subprob
 - [Input Loading Pipeline](./input-loading-pipeline.md) — How scenario input files are loaded and validated
 - [CLI and Lifecycle](./cli-and-lifecycle.md) — Scenario generation phase within the execution lifecycle
 - [Training Loop](./training-loop.md) — How the training loop consumes sampling scheme configuration
+- [Memory Architecture](../hpc/memory-architecture.md) — Per-rank memory budget tracking for opening tree and scenario data (§2.1)
 - [Deferred Features §C.11](../deferred.md) — User-supplied noise openings (pre-sampled, pre-correlated)
 - [Deferred Features §C.12](../deferred.md) — Complete tree solver integration (DECOMP-like)
 - [Deferred Features §C.13](../deferred.md) — Alternative forward pass model

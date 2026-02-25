@@ -8,7 +8,7 @@ This spec defines the synchronization architecture for Cobre: the complete set o
 
 ### 1.1 Synchronization Summary
 
-The following table lists all MPI synchronization points in a single SDDP iteration. There are exactly three collective calls per iteration (one post-forward, one per backward stage, one for convergence).
+The following table lists all MPI synchronization points in a single SDDP iteration. There are three types of collective calls per iteration: one post-forward `MPI_Allgatherv` for visited states, one `MPI_Allgatherv` per backward stage ($T-1$ calls total), and one post-backward `MPI_Allreduce` for convergence — totaling $T+1$ collective operations.
 
 | Phase              | MPI Operation    | Data Exchanged                                              | Direction       |
 | ------------------ | ---------------- | ----------------------------------------------------------- | --------------- |

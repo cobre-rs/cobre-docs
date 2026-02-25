@@ -70,34 +70,35 @@ For production scale (160 hydros, AR order up to 12):
 | Hydro turbined flow         | $N_{hydro} \times N_{block}$                        | 160 × 3 = 480       |
 | Hydro spillage              | $N_{hydro} \times N_{block}$                        | 160 × 3 = 480       |
 | Hydro generation            | $N_{hydro} \times N_{block}$                        | 160 × 3 = 480       |
+| Hydro inflow (per-block)    | $N_{hydro} \times N_{block}$                        | 160 × 3 = 480       |
 | Hydro diversion             | $N_{div} \times N_{block}$                          | ~10 × 3 = 30        |
 | Hydro evaporation           | $N_{evap} \times N_{block}$                         | ~50 × 3 = 150       |
 | Hydro withdrawal            | $N_{withdrawal} \times N_{block}$                   | ~20 × 3 = 60        |
 | Hydro slacks                | $N_{hydro} \times N_{block} \times 6$               | 160 × 3 × 6 = 2,880 |
 | Thermal generation          | $N_{thermal} \times N_{block} \times \bar{N}_{seg}$ | 130 × 3 × 1.5 = 585 |
 | Contracts                   | $(N_{imp} + N_{exp}) \times N_{block}$              | 5 × 3 = 15          |
-| Pumping                     | $N_{pump} \times N_{block}$                         | 5 × 3 = 15          |
+| Pumping (flow + power)      | $N_{pump} \times N_{block} \times 2$                | 5 × 3 × 2 = 30      |
 | **Total Variables**         |                                                     | **~7,500**          |
 
 ### 3.2 Constraint Count per Subproblem
 
-| Component                        | Formula                                             | Typical Count       |
-| -------------------------------- | --------------------------------------------------- | ------------------- |
-| Load balance                     | $N_{bus} \times N_{block}$                          | 6 × 3 = 18          |
-| Hydro water balance              | $N_{hydro}$                                         | 160                 |
-| Incremental inflow AR dynamics   | $N_{hydro}$                                         | 160                 |
-| Lagged incremental inflow fixing | $N_{hydro} \times P$                                | 160 × 12 = 1,920    |
-| Hydro generation (constant)      | $N_{hydro} \times N_{block}$                        | 160 × 3 = 480       |
-| Hydro generation (FPHA)          | $N_{fpha} \times N_{block} \times \bar{M}_{planes}$ | 50 × 3 × 10 = 1,500 |
-| Outflow definition               | $N_{hydro} \times N_{block}$                        | 160 × 3 = 480       |
-| Outflow bounds (min/max)         | $2 \times N_{hydro} \times N_{block}$               | 2 × 160 × 3 = 960   |
-| Turbined min                     | $N_{hydro} \times N_{block}$                        | 160 × 3 = 480       |
-| Generation min                   | $N_{hydro} \times N_{block}$                        | 160 × 3 = 480       |
-| Evaporation                      | $N_{evap} \times N_{block}$                         | 50 × 3 = 150        |
-| Water withdrawal                 | $N_{withdrawal} \times N_{block}$                   | 20 × 3 = 60         |
-| Generic constraints              | $N_{generic}$                                       | ~50                 |
-| **Benders cuts (pre-allocated)** | $N_{cuts}$                                          | 10,000-15,000       |
-| **Total Constraints**            |                                                     | **~17,000-22,000**  |
+| Component                        | Formula                                             | Typical Count        |
+| -------------------------------- | --------------------------------------------------- | -------------------- |
+| Load balance                     | $N_{bus} \times N_{block}$                          | 6 × 3 = 18           |
+| Hydro water balance              | $N_{hydro}$                                         | 160                  |
+| Incremental inflow AR dynamics   | $N_{hydro}$                                         | 160                  |
+| Lagged incremental inflow fixing | $N_{hydro} \times P$                                | 160 × 12 = 1,920     |
+| Hydro generation (constant)      | $(N_{hydro} - N_{fpha}) \times N_{block}$           | (160 − 50) × 3 = 330 |
+| Hydro generation (FPHA)          | $N_{fpha} \times N_{block} \times \bar{M}_{planes}$ | 50 × 3 × 10 = 1,500  |
+| Outflow definition               | $N_{hydro} \times N_{block}$                        | 160 × 3 = 480        |
+| Outflow bounds (min/max)         | $2 \times N_{hydro} \times N_{block}$               | 2 × 160 × 3 = 960    |
+| Turbined min                     | $N_{hydro} \times N_{block}$                        | 160 × 3 = 480        |
+| Generation min                   | $N_{hydro} \times N_{block}$                        | 160 × 3 = 480        |
+| Evaporation                      | $N_{evap} \times N_{block}$                         | 50 × 3 = 150         |
+| Water withdrawal                 | $N_{withdrawal} \times N_{block}$                   | 20 × 3 = 60          |
+| Generic constraints              | $N_{generic}$                                       | ~50                  |
+| **Benders cuts (pre-allocated)** | $N_{cuts}$                                          | 10,000-15,000        |
+| **Total Constraints**            |                                                     | **~17,000-22,000**   |
 
 > **Note**: The constraint count is dominated by pre-allocated Benders cut slots. During early iterations, most cut constraints are inactive (bounds set to $[-\infty, +\infty]$). See [Solver Abstraction §5](../architecture/solver-abstraction.md) for pre-allocation design.
 
@@ -130,7 +131,7 @@ N_CON = N_BUS × N_BLOCK                                        # load balance
       + N_HYDRO                                                 # water balance
       + N_HYDRO                                                 # inflow AR dynamics
       + N_HYDRO × AR_ORDER                                      # lagged inflow fixing
-      + N_HYDRO × N_BLOCK                                       # generation (constant)
+      + (N_HYDRO - N_HYDRO_FPHA) × N_BLOCK                       # generation (constant)
       + N_HYDRO_FPHA × N_BLOCK × AVG_FPHA_PLANES                # FPHA (additional)
       + N_HYDRO × N_BLOCK                                       # outflow definition
       + N_HYDRO × N_BLOCK × 2                                   # outflow bounds

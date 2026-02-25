@@ -22,23 +22,27 @@ This document follows [SDDP.jl](https://sddp.dev/stable/) notation conventions f
 
 ## 2. Index Sets
 
-| Symbol                                     | Description                        | Typical Size          | Notes                                              |
-| ------------------------------------------ | ---------------------------------- | --------------------- | -------------------------------------------------- |
-| $t \in \{1, \ldots, T\}$                   | Stages                             | 60-120                | 5-10 year monthly horizon                          |
-| $k \in \mathcal{K}$                        | Blocks within stage                | 1-24                  | 3 typical (LEVE/MÉDIA/PESADA)                      |
-| $\mathcal{B}$                              | Buses                              | 4-10                  | 4-5 for SIN subsystems                             |
-| $\mathcal{H}$                              | Hydro plants                       | 160                   | All plants in system                               |
-| $\mathcal{H}^{op} \subseteq \mathcal{H}$   | Operating hydros (can generate)    | $\approx \mathcal{H}$ | Most/all plants typically operating                |
-| $\mathcal{H}^{fill} \subseteq \mathcal{H}$ | Filling hydros (no generation)     | 0                     | Usually 0; rare for new plants under commissioning |
-| $\mathcal{T}$                              | Thermal plants                     | 130                   |                                                    |
-| $\mathcal{L}$                              | Transmission lines                 | 10                    | Regional interconnections                          |
-| $\mathcal{C}^{imp}$, $\mathcal{C}^{exp}$   | Import/export contracts            | 5                     |                                                    |
-| $\mathcal{P}$                              | Pumping stations                   | 5                     |                                                    |
-| $\mathcal{G}$                              | Generic constraints                | 50                    | User-defined                                       |
-| $\mathcal{S}_b$                            | Deficit segments for bus $b$       | 1                     | Multiple segments optional                         |
-| $\mathcal{M}_h$                            | FPHA planes for hydro $h$          | 125                   | Typical value; depends on grid resolution          |
-| $\mathcal{U}_h$                            | Upstream hydros of $h$             | 1-2                   | Immediate upstream in cascade                      |
-| $\Omega_t$                                 | Scenario realizations at stage $t$ | 20                    | Standard NEWAVE branching factor                   |
+| Symbol                                      | Description                                                | Typical Size                                               | Notes                                                        |
+| ------------------------------------------- | ---------------------------------------------------------- | ---------------------------------------------------------- | ------------------------------------------------------------ |
+| $t \in \{1, \ldots, T\}$                    | Stages                                                     | 60-120                                                     | 5-10 year monthly horizon                                    |
+| $k \in \mathcal{K}$                         | Blocks within stage                                        | 1-24                                                       | 3 typical (LEVE/MÉDIA/PESADA)                                |
+| $\mathcal{B}$                               | Buses                                                      | 4-10                                                       | 4-5 for SIN subsystems                                       |
+| $\mathcal{H}$                               | Hydro plants                                               | 160                                                        | All plants in system                                         |
+| $\mathcal{H}^{op} \subseteq \mathcal{H}$    | Operating hydros (can generate)                            | $\approx \mathcal{H}$                                      | Most/all plants typically operating                          |
+| $\mathcal{H}^{fill} \subseteq \mathcal{H}$  | Filling hydros (no generation)                             | 0                                                          | Usually 0; rare for new plants under commissioning           |
+| $\mathcal{H}^{fpha} \subseteq \mathcal{H}$  | Hydros using FPHA production model                         | 50                                                         | Subset with fitted hyperplanes                               |
+| $\mathcal{H}^{const} \subseteq \mathcal{H}$ | Hydros using constant productivity                         | $\lvert\mathcal{H}\rvert - \lvert\mathcal{H}^{fpha}\rvert$ | Complement of $\mathcal{H}^{fpha}$ within $\mathcal{H}^{op}$ |
+| $\mathcal{T}$                               | Thermal plants                                             | 130                                                        |                                                              |
+| $\mathcal{R}$                               | Non-controllable generation sources                        | 0                                                          | Renewable curtailment entities                               |
+| $\mathcal{L}$                               | Transmission lines                                         | 10                                                         | Regional interconnections                                    |
+| $\mathcal{C}$                               | All contracts ($\mathcal{C}^{imp} \cup \mathcal{C}^{exp}$) | 10                                                         | Unified contract set                                         |
+| $\mathcal{C}^{imp}$, $\mathcal{C}^{exp}$    | Import/export contracts                                    | 5                                                          |                                                              |
+| $\mathcal{P}$                               | Pumping stations                                           | 5                                                          |                                                              |
+| $\mathcal{G}$                               | Generic constraints                                        | 50                                                         | User-defined                                                 |
+| $\mathcal{S}_b$                             | Deficit segments for bus $b$                               | 1                                                          | Multiple segments optional                                   |
+| $\mathcal{M}_h$                             | FPHA planes for hydro $h$                                  | 125                                                        | Typical value; depends on grid resolution                    |
+| $\mathcal{U}_h$                             | Upstream hydros of $h$                                     | 1-2                                                        | Immediate upstream in cascade                                |
+| $\Omega_t$                                  | Scenario realizations at stage $t$                         | 20                                                         | Standard NEWAVE branching factor                             |
 
 ## 3. Parameters
 
@@ -99,7 +103,7 @@ Direct calculation: $100 \text{ m³/s} \times 728 \text{ h} \times 3600 \text{ s
 | $c^{def}_{b,s}$          | \$/MWh      | Deficit cost at bus $b$, segment $s$   |
 | $\bar{d}_{b,s}$          | MW          | Deficit segment depth                  |
 | $c^{exc}_b$              | \$/MWh      | Excess generation cost                 |
-| $c^{th}_{t,s}$           | \$/MWh      | Thermal cost at plant $t$, segment $s$ |
+| $c^{th}_{j,s}$           | \$/MWh      | Thermal cost at plant $j$, segment $s$ |
 | $c^{spill}_h$            | \$/(m³/s·h) | Spillage cost                          |
 | $c^{div}_h$              | \$/(m³/s·h) | Diversion cost                         |
 | $c^{exch}_l$             | \$/MWh      | Exchange (transmission) cost           |
@@ -123,7 +127,7 @@ Direct calculation: $100 \text{ m³/s} \times 728 \text{ h} \times 3600 \text{ s
 | -------------------------------- | ----- | ------------------------------ |
 | $\bar{F}^+_l$, $\bar{F}^-_l$     | MW    | Line capacity (direct/reverse) |
 | $\eta_l = 1 - \text{losses}/100$ | -     | Line efficiency                |
-| $\bar{M}_c$                      | MW    | Contract capacity              |
+| $\bar{C}_c$, $\underline{C}_c$   | MW    | Contract capacity bounds       |
 
 ### 3.5 Inflow Model Parameters
 
@@ -198,6 +202,8 @@ Slack variables for soft constraints:
 
 | Variable                                 | Domain   | Units | Constraint                         |
 | ---------------------------------------- | -------- | ----- | ---------------------------------- |
+| $\sigma^{v-}_h$                          | $\geq 0$ | hm³   | Storage below minimum              |
+| $\sigma^{fill}_h$                        | $\geq 0$ | hm³   | Filling target shortfall           |
 | $\sigma^{q-}_{h,k}$                      | $\geq 0$ | m³/s  | Turbined flow below minimum        |
 | $\sigma^{o-}_{h,k}$                      | $\geq 0$ | m³/s  | Outflow below minimum              |
 | $\sigma^{o+}_{h,k}$                      | $\geq 0$ | m³/s  | Outflow above maximum              |
@@ -333,12 +339,14 @@ The cut coefficient for lag $\ell$ is the dual variable $\pi^{lag}_{h,\ell}$ dir
 
 ### 5.5 Summary Table
 
-| Symbol               | Constraint (LP Form)                           | RHS                | Cut Coefficient               |
-| -------------------- | ---------------------------------------------- | ------------------ | ----------------------------- |
-| $\pi^{wb}_h$         | $v_h - \zeta \cdot (\text{flows}) = \hat{v}_h$ | $\hat{v}_h$        | $\pi^v_h = \pi^{wb}_h$        |
-| $\pi^{lag}_{h,\ell}$ | $a_{h,\ell} = \hat{a}_{h,\ell}$                | $\hat{a}_{h,\ell}$ | $\pi^{lag}_{h,\ell}$ (direct) |
-| $\pi^{lb}_{b,k}$     | Load balance                                   | $D_{b,k}$          | Marginal cost of energy       |
-| $\lambda_i$          | Benders cut $i$                                | $\alpha_i$         | Cut activity indicator        |
+| Symbol               | Constraint (LP Form)                           | RHS                | Cut Coefficient                                      |
+| -------------------- | ---------------------------------------------- | ------------------ | ---------------------------------------------------- |
+| $\pi^{wb}_h$         | $v_h - \zeta \cdot (\text{flows}) = \hat{v}_h$ | $\hat{v}_h$        | $\pi^v_h = \pi^{wb}_h$                               |
+| $\pi^{lag}_{h,\ell}$ | $a_{h,\ell} = \hat{a}_{h,\ell}$                | $\hat{a}_{h,\ell}$ | $\pi^{lag}_{h,\ell}$ (direct)                        |
+| $\pi^{lb}_{b,k}$     | Load balance                                   | $D_{b,k}$          | Marginal cost of energy                              |
+| $\pi_m^{fpha}$       | FPHA hyperplane $m$                            | -                  | Contributes to $\pi^v_h$ via $\frac{1}{2}\gamma_v^m$ |
+| $\pi^{gen}_c$        | Generic constraint $c$                         | -                  | Contributes to state cut coefficients                |
+| $\lambda_i$          | Benders cut $i$                                | $\alpha_i$         | Cut activity indicator                               |
 
 ### 5.6 Implementation Notes
 
