@@ -1,6 +1,6 @@
 {
   "plan": "communication-backend-abstraction",
-  "last_updated": "2026-02-25T21:00:00Z",
+  "last_updated": "2026-02-25T23:59:00Z",
   "progressive": true,
   "tickets": {
     "ticket-001-define-communicator-trait.md": {
@@ -84,12 +84,14 @@
       "agent": "sddp-specialist"
     },
     "ticket-017-specify-backend-conformance-testing.md": {
-      "status": "pending",
-      "detail_level": "outline"
+      "status": "completed",
+      "detail_level": "refined",
+      "agent": "sddp-specialist"
     },
     "ticket-018-specify-determinism-verification.md": {
-      "status": "pending",
-      "detail_level": "outline"
+      "status": "completed",
+      "detail_level": "refined",
+      "agent": "sddp-specialist"
     }
   },
   "epics": {
@@ -110,8 +112,8 @@
       "learning_extracted": true
     },
     "epic-05-testing-determinism-spec": {
-      "phase": "outline",
-      "learning_extracted": false
+      "phase": "completed",
+      "learning_extracted": true
     }
   }
 }

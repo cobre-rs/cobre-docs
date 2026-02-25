@@ -18,7 +18,7 @@ This plan introduces a pluggable communication backend abstraction layer to the 
 | Epic 02 | Backend Implementation Specifications    | 4 (detailed) | completed |
 | Epic 03 | Refactor Existing Specs to Use Trait     | 5 (refined)  | completed |
 | Epic 04 | Python Multi-Process Execution Spec      | 3 (refined)  | completed |
-| Epic 05 | Testing and Determinism Verification     | 2 (outline)  | pending   |
+| Epic 05 | Testing and Determinism Verification     | 2 (refined)  | completed |
 
 ## Dependency Graph
 
@@ -47,8 +47,8 @@ Epic 04: Python Multi-Process Spec [REFINED]
   ticket-015 Specify Python worker coordination API ─────┤ (depends on 014)
   ticket-016 Update MCP server for multi-process ────────┘ (depends on 007, 014)
 
-Epic 05: Testing and Determinism [OUTLINE]
-  ticket-017 Specify backend conformance testing ────────┐ (depends on 001, 005-008, 011)
+Epic 05: Testing and Determinism [REFINED]
+  ticket-017 Specify backend conformance testing ────────┐ (depends on 001, 005-008, 011, 014)
   ticket-018 Specify determinism verification ───────────┘ (depends on 017)
 ```
 
@@ -62,7 +62,7 @@ The recommended execution order follows the dependency graph:
 4. **ticket-005** through **ticket-008** (all backend specs) -- can be parallel after 001-003
 5. **Epic 03 tickets** (refined, ready for execution) -- require Epics 01-02 complete
 6. **Epic 04 tickets** (refined, ready for execution) -- require TCP/shm backends and refactored specs
-7. **Epic 05 tickets** (after refinement) -- require everything above
+7. **Epic 05 tickets** (refined, ready for execution) -- require everything above
 
 ## Progress Tracking
 
@@ -84,5 +84,5 @@ The recommended execution order follows the dependency graph:
 | ticket-014 | Add multi-process execution sections to python-bindings.md   | epic-04 | completed | Refined      |
 | ticket-015 | Specify Python worker coordination API                       | epic-04 | completed | Refined      |
 | ticket-016 | Update MCP server spec for optional multi-process capability | epic-04 | completed | Refined      |
-| ticket-017 | Specify backend conformance and interchangeability testing   | epic-05 | pending   | Outline      |
-| ticket-018 | Specify determinism verification across backends             | epic-05 | pending   | Outline      |
+| ticket-017 | Specify backend conformance and interchangeability testing   | epic-05 | completed | Refined      |
+| ticket-018 | Specify determinism verification across backends             | epic-05 | completed | Refined      |
