@@ -398,8 +398,8 @@ These tests verify that the Python multi-process execution path preserves determ
 
 **Test procedure:**
 
-1. Execute `result_a = cobre.train(case, num_workers=2, backend="shm", seed=42)`.
-2. Execute `result_b = cobre.train(case, num_workers=2, backend="shm", seed=42)`.
+1. Execute `result_a = cobre.train(case, config_overrides={"random_seed": 42}, num_workers=2, backend="shm")`.
+2. Execute `result_b = cobre.train(case, config_overrides={"random_seed": 42}, num_workers=2, backend="shm")`.
 3. Compare lower bound traces: bit-for-bit identical.
 4. Compare final cut pool coefficients: bit-for-bit identical.
 5. Compare policy output: bit-for-bit identical.
@@ -429,7 +429,7 @@ These tests verify that the Python multi-process execution path preserves determ
 
 **Test procedure:**
 
-1. Set the environment variable `COBRE_TCP_COORDINATOR=127.0.0.1:<port>` where `<port>` is a free ephemeral port.
+1. Set the environment variables `COBRE_TCP_COORDINATOR=127.0.0.1` and `COBRE_TCP_PORT=<port>` where `<port>` is a free ephemeral port (see [TCP Backend §8.1](./backend-tcp.md) for the split-variable convention).
 2. Execute `result = cobre.train(case, num_workers=2, backend="auto")`.
 3. Inspect `result.workers` metadata.
 

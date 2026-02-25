@@ -2,7 +2,7 @@
 
 ## Purpose
 
-This spec defines the `cobre-python` crate: a PyO3-based `cdylib` that exposes Cobre's SDDP hydrothermal dispatch solver to Python as the `cobre` module. It covers the complete Python API surface with type-annotated signatures for all public classes and functions, the 5-point GIL management contract that governs the Python/Rust boundary, zero-copy data paths via NumPy and Arrow FFI, single-process and multi-process execution modes (the latter via TCP or shared-memory backends -- never MPI) with the rationale for prohibiting MPI from Python, the Python exception hierarchy mapped from the structured error kind registry ([Structured Output](./structured-output.md) SS2.3), optional async support via `asyncio`, the FlatBuffers policy access API, memory ownership rules at the boundary, and build/distribution via maturin.
+This spec defines the `cobre-python` crate: a PyO3-based `cdylib` that exposes Cobre's SDDP hydrothermal dispatch solver to Python as the `cobre` module. It covers the complete Python API surface with type-annotated signatures for all public classes and functions, the 6-point GIL management contract that governs the Python/Rust boundary, zero-copy data paths via NumPy and Arrow FFI, single-process and multi-process execution modes (the latter via TCP or shared-memory backends -- never MPI) with the rationale for prohibiting MPI from Python, the Python exception hierarchy mapped from the structured error kind registry ([Structured Output](./structured-output.md) SS2.3), optional async support via `asyncio`, the FlatBuffers policy access API, memory ownership rules at the boundary, and build/distribution via maturin.
 
 ## 1. Crate Architecture
 
@@ -223,7 +223,7 @@ When `num_workers > 1` is passed to `cobre.train()` or `cobre.simulate()`, the l
 
 3. **Generate backend-specific configuration.** The library generates the transport parameters that workers will use to find each other:
    - For `"shm"`: generates a unique POSIX shared memory segment name (e.g., `/cobre_comm_<random_hex>`).
-   - For `"tcp"`: starts a TCP coordinator listener on an ephemeral port and records the coordinator address (`127.0.0.1:<port>`).
+   - For `"tcp"`: starts a TCP coordinator listener on an ephemeral port and records the coordinator address and port separately (`COBRE_TCP_COORDINATOR=127.0.0.1`, `COBRE_TCP_PORT=<port>`; see [TCP Backend](../hpc/backend-tcp.md) §8.1).
 
 4. **Spawn worker processes.** The library spawns `num_workers` child processes via `multiprocessing.Process(target=_worker_entry, args=(rank, ...))`. Each child process receives its rank (0 through `num_workers - 1`), the backend-specific configuration from step 3, the case data, and a reference to a `multiprocessing.Queue` for result collection.
 
@@ -848,9 +848,9 @@ class ValidationRecord:
 
 ## 3. GIL Management Contract
 
-The Global Interpreter Lock (GIL) is the central concurrency constraint at the Python/Rust boundary. The following 5-point contract governs all interactions between Python and Cobre's Rust computation.
+The Global Interpreter Lock (GIL) is the central concurrency constraint at the Python/Rust boundary. The following 6-point contract governs all interactions between Python and Cobre's Rust computation.
 
-### 3.1 The 5-Point GIL Contract
+### 3.1 The 6-Point GIL Contract
 
 1. **GIL acquired to receive Python call and validate arguments.** When Python calls a PyO3-wrapped function (e.g., `train()`), the GIL is held. PyO3 validates and converts arguments from Python objects to Rust types.
 
@@ -1407,9 +1407,9 @@ The recommended approach for multi-process SDDP from Python uses `multiprocessin
   Results available on disk (Parquet/FlatBuffers)
 ```
 
-The complete Python code example for multi-process execution with the shm backend is provided in [Shared Memory Backend](../hpc/backend-shm.md) SS7.3. That example demonstrates the `multiprocessing.Process` spawn pattern, rank assignment, shared memory segment naming, and worker join logic.
+The complete Python code example for multi-process execution with the shm backend is provided in [Shared Memory Backend](../hpc/backend-shm.md) §7.3. That example demonstrates the high-level `cobre.train(num_workers=N, backend="shm")` call and the internal worker lifecycle.
 
-For the TCP backend, the pattern is identical except the backend parameters change from `shm_name`/`shm_rank`/`shm_size` to `coordinator`/`tcp_rank`/`tcp_size`. See [TCP Backend](../hpc/backend-tcp.md) SS8.1 for the TCP-specific environment variables.
+For the TCP backend, the calling convention is identical: `cobre.train(case, num_workers=N, backend="tcp")`. The library auto-generates the TCP coordinator address and port internally. See [TCP Backend](../hpc/backend-tcp.md) §8.1 for the environment variables used by the library when configuring worker processes.
 
 ### 7.3a Subprocess + CLI Workflow (Secondary Option)
 

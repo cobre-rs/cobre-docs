@@ -665,34 +665,28 @@ wait
 
 ### 7.3 Python Multi-Process Usage
 
-The shm backend is the recommended backend for Python multi-process SDDP on a single node, providing true shared memory without MPI:
+The shm backend is the recommended backend for Python multi-process SDDP on a single node, providing true shared memory without MPI. The high-level API handles all worker spawning, rank assignment, and shared memory segment naming internally:
 
 ```python
 import cobre
-import multiprocessing
-import uuid
 
-shm_name = f"/cobre_comm_{uuid.uuid4().hex[:8]}"
-size = 4
+case = cobre.CaseLoader.load("/path/to/case")
+result = cobre.train(case, num_workers=4, backend="shm")
 
-def run_rank(rank):
-    cobre.train(
-        "/path/to/case",
-        backend="shm",
-        shm_name=shm_name,
-        shm_rank=rank,
-        shm_size=size,
-    )
-
-processes = []
-for rank in range(size):
-    p = multiprocessing.Process(target=run_rank, args=(rank,))
-    p.start()
-    processes.append(p)
-
-for p in processes:
-    p.join()
+# result is rank 0's TrainingResult; result.workers has per-worker metadata
+print(f"Converged in {result.iterations} iterations")
+for w in result.workers:
+    print(f"  Worker {w.rank}: {w.wall_time_ms} ms, backend={w.backend}")
 ```
+
+Internally, `cobre.train()` with `num_workers > 1` performs the following steps (see [Python Bindings](../interfaces/python-bindings.md) SS2.1a for the full lifecycle):
+
+1. Generates a unique POSIX shared memory segment name (e.g., `/cobre_comm_<random_hex>`).
+2. Spawns `num_workers` child processes via `multiprocessing.Process` with `start_method="spawn"`.
+3. Each child creates a `ShmBackend` communicator for its assigned rank and runs the SDDP loop.
+4. The parent waits for all children via `Process.join()` and collects rank 0's result.
+
+The low-level per-rank parameters (`shm_name`, `shm_rank`, `shm_size`) are set by the library on each worker process's environment; users do not need to manage them directly.
 
 ## 8. Error Mapping
 

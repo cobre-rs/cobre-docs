@@ -137,13 +137,14 @@ Each backend accepts additional configuration via environment variables. These f
 
 **TCP backend** (`tcp` feature):
 
-| Variable                       | Required | Default   | Description                                                                                                                                 |
-| ------------------------------ | -------- | --------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
-| `COBRE_TCP_COORDINATOR`        | Yes      | _(none)_  | Host and port of the coordination server (`host:port`). All ranks connect to this address during initialization to exchange peer addresses. |
-| `COBRE_TCP_RANK`               | Yes      | _(none)_  | Rank index of this process (`0..COBRE_TCP_SIZE`).                                                                                           |
-| `COBRE_TCP_SIZE`               | Yes      | _(none)_  | Total number of ranks in the communicator.                                                                                                  |
-| `COBRE_TCP_BIND_ADDR`          | No       | `0.0.0.0` | Local address to bind for incoming peer connections.                                                                                        |
-| `COBRE_TCP_CONNECT_TIMEOUT_MS` | No       | `30000`   | Timeout in milliseconds for connecting to coordinator and peers.                                                                            |
+| Variable                       | Required | Default   | Description                                                                                                                                                        |
+| ------------------------------ | -------- | --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `COBRE_TCP_COORDINATOR`        | Yes      | _(none)_  | Hostname or IP address of the coordinator (rank 0). All ranks connect to this address during initialization. See [TCP Backend §8.1](./backend-tcp.md) for details. |
+| `COBRE_TCP_PORT`               | No       | `29500`   | TCP port on which the coordinator listens. All ranks must use the same port value.                                                                                 |
+| `COBRE_TCP_RANK`               | Yes      | _(none)_  | Rank index of this process (`0..COBRE_TCP_SIZE`).                                                                                                                  |
+| `COBRE_TCP_SIZE`               | Yes      | _(none)_  | Total number of ranks in the communicator.                                                                                                                         |
+| `COBRE_TCP_BIND_ADDR`          | No       | `0.0.0.0` | Local address to bind for incoming peer connections.                                                                                                               |
+| `COBRE_TCP_CONNECT_TIMEOUT_MS` | No       | `30000`   | Timeout in milliseconds for connecting to coordinator and peers.                                                                                                   |
 
 **Shared memory backend** (`shm` feature):
 
@@ -504,7 +505,7 @@ When a backend requires environment variables that are not set:
       "COBRE_TCP_SIZE"
     ]
   },
-  "suggestion": "Set the required environment variables. Example: COBRE_TCP_COORDINATOR=host:port COBRE_TCP_RANK=0 COBRE_TCP_SIZE=4 cobre run /path/to/case"
+  "suggestion": "Set the required environment variables. Example: COBRE_TCP_COORDINATOR=host COBRE_TCP_PORT=29500 COBRE_TCP_RANK=0 COBRE_TCP_SIZE=4 cobre run /path/to/case"
 }
 ```
 
