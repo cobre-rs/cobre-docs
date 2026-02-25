@@ -15,7 +15,7 @@ This plan introduces a pluggable communication backend abstraction layer to the 
 | Epic    | Name                                     | Tickets      | Status    |
 | ------- | ---------------------------------------- | ------------ | --------- |
 | Epic 01 | Communicator Trait and Backend Selection | 4 (detailed) | completed |
-| Epic 02 | Backend Implementation Specifications    | 4 (detailed) | pending   |
+| Epic 02 | Backend Implementation Specifications    | 4 (detailed) | completed |
 | Epic 03 | Refactor Existing Specs to Use Trait     | 5 (outline)  | pending   |
 | Epic 04 | Python Multi-Process Execution Spec      | 3 (outline)  | pending   |
 | Epic 05 | Testing and Determinism Verification     | 2 (outline)  | pending   |
@@ -72,10 +72,10 @@ The recommended execution order follows the dependency graph:
 | ticket-002 | Define SharedMemoryProvider trait specification              | epic-01 | completed | Detailed     |
 | ticket-003 | Specify backend registration and selection                   | epic-01 | completed | Detailed     |
 | ticket-004 | Specify cobre-comm crate architecture                        | epic-01 | completed | Detailed     |
-| ticket-005 | Specify ferrompi backend implementation                      | epic-02 | pending   | Detailed     |
-| ticket-006 | Specify local (no-op) backend implementation                 | epic-02 | pending   | Detailed     |
-| ticket-007 | Specify TCP backend implementation                           | epic-02 | pending   | Detailed     |
-| ticket-008 | Specify shared-memory backend implementation                 | epic-02 | pending   | Detailed     |
+| ticket-005 | Specify ferrompi backend implementation                      | epic-02 | completed | Detailed     |
+| ticket-006 | Specify local (no-op) backend implementation                 | epic-02 | completed | Detailed     |
+| ticket-007 | Specify TCP backend implementation                           | epic-02 | completed | Detailed     |
+| ticket-008 | Specify shared-memory backend implementation                 | epic-02 | completed | Detailed     |
 | ticket-009 | Refactor hybrid-parallelism.md for backend abstraction       | epic-03 | pending   | Outline      |
 | ticket-010 | Refactor communication-patterns.md for trait references      | epic-03 | pending   | Outline      |
 | ticket-011 | Refactor training-loop.md and remaining HPC specs            | epic-03 | pending   | Outline      |
