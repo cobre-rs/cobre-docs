@@ -120,7 +120,7 @@ Convergence is achieved when the value functions at all seasons stabilize — th
 
 ## 9 Reference
 
-> Costa, B.S., de Matos, V.L., Philpott, A.B. (2025). "SDDP.jl approaches for infinite horizon problems." _Trends in Computational and Applied Mathematics_, 11(1). https://doi.org/10.5540/03.2025.011.01.0355
+> Costa, B.F.P., Calixto, A.O., Sousa, R.F.S., Figueiredo, R.T., Penna, D.D.J., Khenayfis, L.S., & Oliveira, A.M.R. (2025). "Boundary conditions for hydrothermal operation planning problems: the infinite horizon approach." _Proceeding Series of the Brazilian Society of Computational and Applied Mathematics_, 11(1), 1-7. https://doi.org/10.5540/03.2025.011.01.0355
 
 ## Cross-References
 

@@ -214,7 +214,7 @@ The penalty is proportional to $\sigma_m \cdot \xi_h$, which is the actual inflo
 
 ## 8. Reference
 
-> Larroyd, P.V., Matos, V.L., Diniz, A.L., & Borges, C.L.T. (2022). "Tackling the Seasonal and Stochastic Components in Hydro-Dominated Power Systems with High Renewable Penetration." _Energies_, 15(3), 1115. https://doi.org/10.3390/en15031115
+> Larroyd, P.V., Pedrini, R., Beltran, F., Teixeira, G., Finardi, E.C., & Picarelli, L.B. (2022). "Dealing with Negative Inflows in the Long-Term Hydrothermal Scheduling Problem." _Energies_, 15(3), 1115. https://doi.org/10.3390/en15031115
 
 ## Cross-References
 

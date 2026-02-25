@@ -44,7 +44,7 @@ Since verifying domination over the entire state space is intractable, Cobre che
 
 ## Convergence guarantees
 
-Level-1 and LML1 both preserve the finite convergence guarantee of SDDP: removing cuts that are never active at visited states does not affect the outer approximation quality at those states. This result is established in Guigues and Bandarra (2019).
+Level-1 and LML1 both preserve the finite convergence guarantee of SDDP: removing cuts that are never active at visited states does not affect the outer approximation quality at those states. This result is established in Bandarra and Guigues (2021).
 
 ## Configuration
 

@@ -15,7 +15,7 @@ This plan performs a deep consistency audit of the Cobre specification corpus (5
 | Epic    | Name                                         | Tickets      | Status    |
 | ------- | -------------------------------------------- | ------------ | --------- |
 | Epic 01 | Internal Formula & Value Consistency         | 5 (detailed) | completed |
-| Epic 02 | External Reference Verification              | 4 (detailed) | pending   |
+| Epic 02 | External Reference Verification              | 4 (detailed) | completed |
 | Epic 03 | Production Scale Reference Hardening         | 3 (outline)  | pending   |
 | Epic 04 | Wall-Clock Time Model & Performance Targets  | 3 (outline)  | pending   |
 | Epic 05 | Documentation Organization & NEWAVE Deferral | 3 (outline)  | pending   |
@@ -30,10 +30,10 @@ This plan performs a deep consistency audit of the Cobre specification corpus (5
 | ticket-003 | Audit parameter value consistency across overview and math specs           | epic-01 | completed | Detailed     |
 | ticket-004 | Audit behavioral description consistency across architecture and HPC specs | epic-01 | completed | Detailed     |
 | ticket-005 | Apply fixes for Epic 01 findings                                           | epic-01 | completed | Detailed     |
-| ticket-006 | Verify bibliography entry metadata (academic papers)                       | epic-02 | pending   | Detailed     |
-| ticket-007 | Verify bibliography entry metadata (software and web references)           | epic-02 | pending   | Detailed     |
-| ticket-008 | Audit citation usage context across specs                                  | epic-02 | pending   | Detailed     |
-| ticket-009 | Apply fixes for Epic 02 findings                                           | epic-02 | pending   | Detailed     |
+| ticket-006 | Verify bibliography entry metadata (academic papers)                       | epic-02 | completed | Detailed     |
+| ticket-007 | Verify bibliography entry metadata (software and web references)           | epic-02 | completed | Detailed     |
+| ticket-008 | Audit citation usage context across specs                                  | epic-02 | completed | Detailed     |
+| ticket-009 | Apply fixes for Epic 02 findings                                           | epic-02 | completed | Detailed     |
 | ticket-010 | Cross-check sizing calculator output against spec values                   | epic-03 | pending   | Outline      |
 | ticket-011 | Update forward pass count from 200 to 192                                  | epic-03 | pending   | Outline      |
 | ticket-012 | Add traceability annotations to production-scale-reference                 | epic-03 | pending   | Outline      |

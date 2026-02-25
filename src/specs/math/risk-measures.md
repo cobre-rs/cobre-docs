@@ -267,7 +267,7 @@ For risk-averse problems, the value $\underline{z} = V_1(x_0)$ computed by SDDP 
 
 ## 11 References
 
-> Philpott, A.B., de Matos, V.L., & Finardi, E.C. (2013). "On solving multistage stochastic programs with coherent risk measures." _Operations Research_, 61(4), 957-970. https://doi.org/10.1287/opre.2013.1200
+> Philpott, A.B., de Matos, V.L., & Finardi, E.C. (2013). "On solving multistage stochastic programs with coherent risk measures." _Operations Research_, 61(4), 957-970. https://doi.org/10.1287/opre.2013.1175
 
 > Shapiro, A. (2011). "Analysis of stochastic dual dynamic programming method." _European Journal of Operational Research_, 209(1), 63-72.
 

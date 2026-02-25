@@ -130,7 +130,7 @@ Three cut selection strategies are available, in increasing order of aggressiven
 
 ### 7.1 Level-1
 
-A cut is **Level-1 active** if it was binding at least once during the entire algorithm execution. Periodically (every $N$ iterations), cuts that have never been active are deactivated.
+A cut is **Level-1 active** if it was binding at least once during the entire algorithm execution. Periodically (every $N$ iterations), cuts that have never been active are deactivated. This strategy was originally proposed by de Matos, Philpott & Finardi (2015).
 
 **Properties**:
 
@@ -170,11 +170,11 @@ $$
 
 ## 8. Convergence Guarantee
 
-**Theorem** (Guigues & Bandarra, 2019): Under Level-1 or LML1 cut selection, SDDP with finitely many scenarios converges to the optimal value function with probability 1.
+**Theorem** (Bandarra & Guigues, 2021): Under Level-1 or LML1 cut selection, SDDP with finitely many scenarios converges to the optimal value function with probability 1.
 
 **Key insight**: Removing cuts that are never active at any visited state does not affect the outer approximation quality at those states. As the set of visited states becomes dense over iterations, the approximation converges.
 
-> Guigues, V., & Bandarra, M.P. (2019). "Single cut and multicut SDDP with cut selection for multistage stochastic linear programs: convergence proof and numerical experiments." _arXiv:1902.06757_. https://arxiv.org/abs/1902.06757
+> Bandarra, M., & Guigues, V. (2021). "Single cut and multicut stochastic dual dynamic programming with cut selection for multistage stochastic linear programs: convergence proof and numerical experiments." _Computational Management Science_, 18(2), 125-148. https://doi.org/10.1007/s10287-021-00387-8
 
 ## 9. Selection Parameters
 
