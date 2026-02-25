@@ -16,7 +16,7 @@ This plan introduces a pluggable communication backend abstraction layer to the 
 | ------- | ---------------------------------------- | ------------ | --------- |
 | Epic 01 | Communicator Trait and Backend Selection | 4 (detailed) | completed |
 | Epic 02 | Backend Implementation Specifications    | 4 (detailed) | completed |
-| Epic 03 | Refactor Existing Specs to Use Trait     | 5 (outline)  | pending   |
+| Epic 03 | Refactor Existing Specs to Use Trait     | 5 (refined)  | completed |
 | Epic 04 | Python Multi-Process Execution Spec      | 3 (outline)  | pending   |
 | Epic 05 | Testing and Determinism Verification     | 2 (outline)  | pending   |
 
@@ -35,7 +35,7 @@ Epic 02: Backend Implementation Specifications
   ticket-007 Specify TCP backend ───────────────────────┤ (depends on 001, 003)
   ticket-008 Specify shared-memory backend ─────────────┘ (depends on 001, 002, 003)
 
-Epic 03: Refactor Existing Specs [OUTLINE]
+Epic 03: Refactor Existing Specs [REFINED]
   ticket-009 Refactor hybrid-parallelism.md ────────────┐ (depends on 001, 002, 005, 006)
   ticket-010 Refactor communication-patterns.md ────────┤ (depends on 001, 002, 005)
   ticket-011 Refactor training-loop.md + HPC specs ─────┤ (depends on 009, 010)
@@ -60,7 +60,7 @@ The recommended execution order follows the dependency graph:
 2. **ticket-002** (SharedMemoryProvider) and **ticket-003** (backend selection) -- can be parallel after 001
 3. **ticket-004** (cobre-comm crate) -- after 001-003
 4. **ticket-005** through **ticket-008** (all backend specs) -- can be parallel after 001-003
-5. **Epic 03 tickets** (after refinement) -- require Epics 01-02 complete
+5. **Epic 03 tickets** (refined, ready for execution) -- require Epics 01-02 complete
 6. **Epic 04 tickets** (after refinement) -- require TCP/shm backends and refactored specs
 7. **Epic 05 tickets** (after refinement) -- require everything above
 
@@ -76,11 +76,11 @@ The recommended execution order follows the dependency graph:
 | ticket-006 | Specify local (no-op) backend implementation                 | epic-02 | completed | Detailed     |
 | ticket-007 | Specify TCP backend implementation                           | epic-02 | completed | Detailed     |
 | ticket-008 | Specify shared-memory backend implementation                 | epic-02 | completed | Detailed     |
-| ticket-009 | Refactor hybrid-parallelism.md for backend abstraction       | epic-03 | pending   | Outline      |
-| ticket-010 | Refactor communication-patterns.md for trait references      | epic-03 | pending   | Outline      |
-| ticket-011 | Refactor training-loop.md and remaining HPC specs            | epic-03 | pending   | Outline      |
-| ticket-012 | Update crate overview and SUMMARY.md                         | epic-03 | pending   | Outline      |
-| ticket-013 | Update cross-reference index with new specs                  | epic-03 | pending   | Outline      |
+| ticket-009 | Refactor hybrid-parallelism.md for backend abstraction       | epic-03 | completed | Refined      |
+| ticket-010 | Refactor communication-patterns.md for trait references      | epic-03 | completed | Refined      |
+| ticket-011 | Refactor training-loop.md and remaining HPC specs            | epic-03 | completed | Refined      |
+| ticket-012 | Update crate overview and SUMMARY.md                         | epic-03 | completed | Refined      |
+| ticket-013 | Update cross-reference index with new specs                  | epic-03 | completed | Refined      |
 | ticket-014 | Add multi-process execution sections to python-bindings.md   | epic-04 | pending   | Outline      |
 | ticket-015 | Specify Python worker coordination API                       | epic-04 | pending   | Outline      |
 | ticket-016 | Update MCP server spec for optional multi-process capability | epic-04 | pending   | Outline      |

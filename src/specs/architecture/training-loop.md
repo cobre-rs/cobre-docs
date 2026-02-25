@@ -34,9 +34,9 @@ The training orchestrator manages the iterative SDDP loop and coordinates the fo
 Each iteration follows a fixed sequence:
 
 1. **Forward pass** — Execute $M$ scenario trajectories (§4)
-2. **Forward synchronization** — `MPI_Allreduce` aggregates global statistics (lower bound, visited states) across ranks
+2. **Forward synchronization** — `allreduce` ([Communicator Trait SS2.2](../hpc/communicator-trait.md)) aggregates global statistics (lower bound, upper bound) across ranks
 3. **Backward pass** — Generate cuts from visited states (§6)
-4. **Cut synchronization** — `MPI_Allgatherv` distributes new cuts to all ranks
+4. **Cut synchronization** — `allgatherv` ([Communicator Trait SS2.1](../hpc/communicator-trait.md)) distributes new cuts to all ranks
 5. **Convergence update** — Update bound estimates, evaluate stopping rules (see [Convergence Monitoring](./convergence-monitoring.md))
 6. **Checkpoint** — If the checkpoint interval has elapsed, persist current FCF and iteration state (see [Checkpointing](../hpc/checkpointing.md))
 7. **Logging** — Emit iteration summary (bounds, gap, timings)
@@ -151,16 +151,18 @@ For each forward trajectory:
 
 Scenarios are distributed across MPI ranks in contiguous blocks. Within each rank, scenarios are parallelized across OpenMP threads with **thread-trajectory affinity**: each thread owns one or more complete trajectories and solves all stages sequentially for its assigned trajectories. This preserves cache locality — the solver basis, scenario data, and LP coefficients remain warm in the thread's cache lines across stages.
 
+The training loop is generic over `C: Communicator` (see [Communicator Trait SS3](../hpc/communicator-trait.md) for the function signature pattern), enabling compile-time specialization to any communication backend.
+
 When $M > N_{\text{threads}}$, threads process multiple trajectories in batches. Between batches, the thread saves and restores forward pass state (solver basis, visited states, scenario realization) at stage boundaries. This is analogous to context switching, but only occurs at well-defined stage boundaries.
 
-After all ranks complete their trajectories, `MPI_Allreduce` aggregates:
+After all ranks complete their trajectories, `allreduce` aggregates:
 
 - **Lower bound** — First-stage LP objective value (the deterministic lower bound, monotonically increasing across iterations)
 - **Upper bound statistics** — Mean and variance of total forward costs across all trajectories
 
 ### 4.3a Single-Rank Forward Pass Variant
 
-In single-process mode (used by `cobre-python` and `cobre-mcp`), all scenarios are assigned to the single rank. The `MPI_Allreduce` for bound aggregation becomes a local computation -- the rank's local statistics are the global statistics. No inter-rank communication occurs. OpenMP thread-level parallelism remains active: scenarios are distributed across threads within the single rank using the same thread-trajectory affinity pattern (§4.3). See [Hybrid Parallelism §1](../hpc/hybrid-parallelism.md) for the single-process mode initialization sequence.
+When `comm.size() == 1` (single-process mode, used by `cobre-python` and `cobre-mcp`, or single-rank MPI execution), all scenarios are assigned to the single rank. The `allreduce` for bound aggregation becomes a local computation -- the rank's local statistics are the global statistics. For the `LocalBackend`, this is an identity copy operation (see [Local Backend SS2.2](../hpc/backend-local.md)). No inter-rank communication occurs. OpenMP thread-level parallelism remains active: scenarios are distributed across threads within the single rank using the same thread-trajectory affinity pattern (§4.3). See [Hybrid Parallelism §1](../hpc/hybrid-parallelism.md) for the single-process mode initialization sequence.
 
 ### 4.4 Warm-Starting
 
@@ -189,13 +191,13 @@ Future extensions (batteries, GNL pipeline) may add additional state dimensions 
    - **Inflow computation**: The PAR model (or external/historical lookup) produces the stage inflow $a_{h,t}$. The lag buffer is shifted: the oldest lag drops off, all remaining lags shift by one position, and $a_{h,t}$ becomes the new lag-1 value
    - **Storage extraction**: End-of-stage storage volumes are read from the LP solution's state variable values
 
-3. **Extraction for backward pass** — After the forward pass, the visited states at each stage are collected and broadcast to all ranks via `MPI_Allgatherv`. State deduplication (merging duplicate visited states to reduce backward pass LP solves) is a potential optimization deferred to [Deferred Features](../deferred.md).
+3. **Extraction for backward pass** — After the forward pass, the visited states at each stage are collected across all ranks via `allgatherv`. State deduplication (merging duplicate visited states to reduce backward pass LP solves) is a potential optimization deferred to [Deferred Features](../deferred.md).
 
 ## 6. Backward Pass
 
 ### 6.1 Overview
 
-The backward pass improves the FCF by generating new Benders cuts. It walks stages in reverse order from $T$ down to 2. The trial points $\{\hat{x}_t\}$ used here are the visited states from **all** forward scenarios across **all** MPI ranks (gathered via `MPI_Allgatherv` in §5.2). At each stage, the cost-to-go from each trial point is evaluated under **all** openings from the fixed opening tree.
+The backward pass improves the FCF by generating new Benders cuts. It walks stages in reverse order from $T$ down to 2. The trial points $\{\hat{x}_t\}$ used here are the visited states from **all** forward scenarios across **all** MPI ranks (gathered via `allgatherv` in §5.2). At each stage, the cost-to-go from each trial point is evaluated under **all** openings from the fixed opening tree.
 
 ### 6.2 Cut Generation per Stage
 
@@ -224,11 +226,11 @@ Trial states at each stage are distributed across MPI ranks. Within each rank, e
 
 **Stage synchronization barrier**: All threads across all ranks must complete cut generation at stage $t$ before any thread proceeds to stage $t-1$. This is because the new cuts at stage $t$ must be available to all ranks before they solve backward LPs at stage $t-1$ (which include stage $t$'s cuts in their FCF approximation).
 
-After processing each stage, `MPI_Allgatherv` collects all new cuts from all ranks and distributes them, so every rank has the complete set of new cuts.
+After processing each stage, `allgatherv` collects all new cuts from all ranks and distributes them, so every rank has the complete set of new cuts.
 
 ### 6.3a Single-Rank Backward Pass Variant
 
-In single-process mode, the `MPI_Allgatherv` for cut synchronization becomes a no-op -- all cuts generated by the single rank are immediately available locally. The per-stage synchronization barrier reduces to an OpenMP barrier only (ensuring all threads complete cut generation at stage $t$ before proceeding to stage $t-1$). All trial states are local, so no state broadcasting is needed. The backward pass logic is otherwise identical to the multi-rank case.
+When `comm.size() == 1`, the `allgatherv` for cut synchronization becomes an identity operation -- all cuts generated by the single rank are immediately available locally (for the `LocalBackend`, this is a memcpy; see [Local Backend SS2.2](../hpc/backend-local.md)). The per-stage synchronization barrier reduces to an OpenMP barrier only (ensuring all threads complete cut generation at stage $t$ before proceeding to stage $t-1$). All trial states are local, so no state broadcasting is needed. The backward pass logic is otherwise identical to the multi-rank case.
 
 ### 6.4 LP Rebuild Considerations
 
@@ -294,7 +296,7 @@ The active count is used by cut selection strategies to prune dominated or inact
 - [Cut Management Implementation](./cut-management-impl.md) — FCF structure, cut selection strategies, serialization, and cross-rank cut synchronization
 - [Stopping Rules](../math/stopping-rules.md) — Convergence criteria and termination conditions
 - [Risk Measures](../math/risk-measures.md) — CVaR mathematical formulation and cut weight computation
-- [Work Distribution](../hpc/work-distribution.md) — Detailed MPI+OpenMP parallelism patterns for forward and backward pass distribution
+- [Work Distribution](../hpc/work-distribution.md) — Detailed communication+OpenMP parallelism patterns for forward and backward pass distribution
 - [Convergence Monitoring](./convergence-monitoring.md) — Convergence criteria, bound computation, and stopping rules applied within this loop
 - [Input Loading Pipeline](./input-loading-pipeline.md) — How case data and warm-start policy cuts are loaded before training begins
 - [Input Constraints](../data-model/input-constraints.md) — Initial conditions (§1) that provide the starting state $x_0$
@@ -303,10 +305,12 @@ The active count is used by cut selection strategies to prune dominated or inact
 - [Penalty System](../data-model/penalty-system.md) — Recourse slacks guaranteeing LP feasibility
 - [Solver Abstraction](./solver-abstraction.md) — Solver interface and LP construction
 - [Solver Workspaces](./solver-workspaces.md) — Solver state management, basis persistence, and warm-starting
-- [Synchronization](../hpc/synchronization.md) — Barrier semantics, MPI collective operations, and stage-boundary synchronization patterns
+- [Synchronization](../hpc/synchronization.md) — Barrier semantics, collective operations via Communicator trait, and stage-boundary synchronization patterns
 - [Checkpointing](../hpc/checkpointing.md) — Checkpoint format and graceful shutdown
 - [Deferred Features](../deferred.md) — Multi-cut (C.3), alternative forward pass (C.13), Monte Carlo backward sampling (C.14), policy compatibility validation (C.9)
 - [Structured Output](../interfaces/structured-output.md) — JSON-lines streaming protocol consuming events from this training loop
 - [Terminal UI](../interfaces/terminal-ui.md) — TUI renderer consuming events from this training loop
 - [MCP Server](../interfaces/mcp-server.md) — MCP progress notifications consuming events from this training loop
 - [Python Bindings](../interfaces/python-bindings.md) — Single-process execution mode for Python library callers
+- [Communicator Trait](../hpc/communicator-trait.md) — Communicator trait definition, method contracts, generic parameterization
+- [Local Backend](../hpc/backend-local.md) — LocalBackend identity/no-op operations for single-rank execution

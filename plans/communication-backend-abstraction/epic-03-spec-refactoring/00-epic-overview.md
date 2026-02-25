@@ -26,16 +26,29 @@ This epic modifies 8+ existing spec documents and the SUMMARY.md:
 
 | Ticket     | Title                                                   | Status  | Detail Level |
 | ---------- | ------------------------------------------------------- | ------- | ------------ |
-| ticket-009 | Refactor hybrid-parallelism.md for backend abstraction  | pending | Outline      |
-| ticket-010 | Refactor communication-patterns.md for trait references | pending | Outline      |
-| ticket-011 | Refactor training-loop.md and remaining HPC specs       | pending | Outline      |
-| ticket-012 | Update crate overview and SUMMARY.md                    | pending | Outline      |
-| ticket-013 | Update cross-reference index with new specs             | pending | Outline      |
+| ticket-009 | Refactor hybrid-parallelism.md for backend abstraction  | pending | Refined      |
+| ticket-010 | Refactor communication-patterns.md for trait references | pending | Refined      |
+| ticket-011 | Refactor training-loop.md and remaining HPC specs       | pending | Refined      |
+| ticket-012 | Update crate overview and SUMMARY.md                    | pending | Refined      |
+| ticket-013 | Update cross-reference index with new specs             | pending | Refined      |
 
 ## Dependencies
 
 - **Blocked By**: Epic 01 (trait must be defined), Epic 02 (backends must be specified)
 - **Blocks**: Epic 04 (Python spec updates reference the refactored specs)
+
+## Execution Notes
+
+Tickets 009, 010, and 012 can execute in parallel -- they modify different files. Ticket 011 depends on 009 and 010 completing first. Ticket 013 depends on all of 009-012 completing first.
+
+**Parallelization strategy:**
+
+```
+  ticket-009 ──┐
+  ticket-010 ──┼── ticket-011 ──┐
+  ticket-012 ──┘                ├── ticket-013
+               └────────────────┘
+```
 
 ## Success Criteria
 

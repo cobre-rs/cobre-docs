@@ -2,36 +2,38 @@
 
 ## Purpose
 
-This spec defines the MPI communication patterns used by Cobre during SDDP training: the collective operations, their data payloads, wire formats, communication volume analysis, and optimization opportunities. All MPI operations use the ferrompi crate — no raw C FFI for MPI. This spec details the communication mechanics that [Synchronization](./synchronization.md) defines at the protocol level and [Cut Management Implementation §4](../architecture/cut-management-impl.md) defines for cut wire format.
+This spec defines the communication patterns used by Cobre during SDDP training through the `Communicator` trait ([Communicator Trait §1](./communicator-trait.md)): the collective operations, their data payloads, wire formats, communication volume analysis, and optimization opportunities. Communication is performed through a pluggable backend selected at compile time (see [Backend Selection](./backend-selection.md)) -- the SDDP training loop is generic over `C: Communicator` and never calls backend-specific APIs directly. This spec details the communication mechanics that [Synchronization](./synchronization.md) defines at the protocol level and [Cut Management Implementation §4](../architecture/cut-management-impl.md) defines for cut wire format.
 
-## 1. MPI Operations
+## 1. Collective Operations
 
 ### 1.1 Operations Summary
 
-Cobre uses exactly three MPI collective operations during SDDP training. All use ferrompi's safe, generic API with `Communicator` handles that are `Send + Sync`.
+Cobre uses exactly three collective operations through the `Communicator` trait during SDDP training. All operations are invoked through `comm: &C` where `C: Communicator` (see [Communicator Trait §3](./communicator-trait.md) for generic parameterization). The communicator is `Send + Sync` to support hybrid communication+OpenMP execution.
 
-| Operation        | ferrompi API                                          | When                    | Data                          | Frequency                |
-| ---------------- | ----------------------------------------------------- | ----------------------- | ----------------------------- | ------------------------ |
-| `MPI_Allgatherv` | `comm.allgatherv(&send, &mut recv, &counts, &displs)` | Forward → backward      | Visited states (trial points) | Once per iteration       |
-| `MPI_Allgatherv` | `comm.allgatherv(&send, &mut recv, &counts, &displs)` | Backward stage boundary | New cuts at stage $t$         | Once per stage ($T - 1$) |
-| `MPI_Allreduce`  | `comm.allreduce(&send, &mut recv, Op::Sum)`           | Post-forward            | Convergence statistics        | Once per iteration       |
+| Operation    | Communicator Trait Method                             | When                    | Data                          | Frequency                |
+| ------------ | ----------------------------------------------------- | ----------------------- | ----------------------------- | ------------------------ |
+| `allgatherv` | `comm.allgatherv(&send, &mut recv, &counts, &displs)` | Forward → backward      | Visited states (trial points) | Once per iteration       |
+| `allgatherv` | `comm.allgatherv(&send, &mut recv, &counts, &displs)` | Backward stage boundary | New cuts at stage $t$         | Once per stage ($T - 1$) |
+| `allreduce`  | `comm.allreduce(&send, &mut recv, ReduceOp::Sum)`     | Post-forward            | Convergence statistics        | Once per iteration       |
 
 Additionally, initialization uses standard (non-iterative) collectives:
 
-| Operation     | ferrompi API                 | When       | Data                     |
-| ------------- | ---------------------------- | ---------- | ------------------------ |
-| `MPI_Bcast`   | `comm.bcast(&mut buf, root)` | Startup    | Configuration, case data |
-| `MPI_Barrier` | `comm.barrier()`             | Checkpoint | Synchronization only     |
+| Operation   | Communicator Trait Method        | When       | Data                     |
+| ----------- | -------------------------------- | ---------- | ------------------------ |
+| `broadcast` | `comm.broadcast(&mut buf, root)` | Startup    | Configuration, case data |
+| `barrier`   | `comm.barrier()`                 | Checkpoint | Synchronization only     |
+
+For method contracts (preconditions, postconditions, error semantics), see [Communicator Trait §2](./communicator-trait.md).
 
 ### 1.2 No Point-to-Point Messaging
 
-The approved architecture uses only collective operations — no point-to-point (`Send`/`Recv`) communication. The symmetric `MPI_Allgatherv` pattern ensures all ranks have identical data after each synchronization point, eliminating the need for a master/worker protocol.
+The approved architecture uses only collective operations -- no point-to-point (`Send`/`Recv`) communication. The symmetric `allgatherv` pattern ensures all ranks have identical data after each synchronization point, eliminating the need for a master/worker protocol.
 
 ## 2. Data Payloads
 
 ### 2.1 Trial Point Payload (Forward → Backward)
 
-After the forward pass, each rank contributes its visited states to `MPI_Allgatherv`. The payload per trial point consists of the state vector:
+After the forward pass, each rank contributes its visited states to `allgatherv`. The payload per trial point consists of the state vector:
 
 | Component       | Type    | Size per trial point              |
 | --------------- | ------- | --------------------------------- |
@@ -45,11 +47,11 @@ At production scale ($N_{\text{hydro}} = 160$, average $P_h = 6$ lags, $M = 192$
 - Trial points per stage: 192
 - Total payload: $192 \times 8{,}964 \approx 1.72$ MB per stage, or $1.72 \times 120 \approx 206$ MB for all stages
 
-The `MPI_Allgatherv` counts and displacements are computed from the contiguous block assignment (see [Work Distribution §3.1](./work-distribution.md)).
+The `allgatherv` counts and displacements are computed from the contiguous block assignment (see [Work Distribution §3.1](./work-distribution.md)).
 
 ### 2.2 Cut Payload (Backward Stage Boundary)
 
-After generating cuts at each backward stage, ranks exchange cuts via `MPI_Allgatherv`. The wire format is a compact binary representation optimized for bandwidth — see [Cut Management Implementation §4.2](../architecture/cut-management-impl.md) for the complete specification.
+After generating cuts at each backward stage, ranks exchange cuts via `allgatherv`. The wire format is a compact binary representation optimized for bandwidth -- see [Cut Management Implementation §4.2](../architecture/cut-management-impl.md) for the complete specification.
 
 | Field              | Type    | Size (production scale)              |
 | ------------------ | ------- | ------------------------------------ |
@@ -60,22 +62,22 @@ After generating cuts at each backward stage, ranks exchange cuts via `MPI_Allga
 | Coefficients       | `[f64]` | $D_{\text{state}} \times 8$ bytes    |
 | **Total per cut**  |         | **~16,660 bytes** (at $D = 2{,}080$) |
 
-At production scale with $M = 192$ forward passes and $R = 16$ ranks, each rank generates $\lfloor 192/16 \rfloor = 12$ cuts per stage. The `MPI_Allgatherv` payload is $192 \times 16{,}660 \approx 3.2$ MB per stage.
+At production scale with $M = 192$ forward passes and $R = 16$ ranks, each rank generates $\lfloor 192/16 \rfloor = 12$ cuts per stage. The `allgatherv` payload is $192 \times 16{,}660 \approx 3.2$ MB per stage.
 
 ### 2.3 Convergence Statistics Payload (Post-Forward)
 
-The `MPI_Allreduce` aggregates 4 scalars using `Op::Sum`:
+The `allreduce` aggregates 4 scalars using `ReduceOp::Sum`:
 
-| Quantity                            | Type  | Reduction | Purpose                                |
-| ----------------------------------- | ----- | --------- | -------------------------------------- |
-| First-stage LP objective            | `f64` | `MPI_MIN` | Lower bound (monotonically increasing) |
-| Total forward cost (sum)            | `f64` | `MPI_SUM` | Upper bound mean computation           |
-| Total forward cost (sum of squares) | `f64` | `MPI_SUM` | Upper bound variance computation       |
-| Trajectory count                    | `f64` | `MPI_SUM` | Denominator for mean/variance          |
+| Quantity                            | Type  | Reduction       | Purpose                                |
+| ----------------------------------- | ----- | --------------- | -------------------------------------- |
+| First-stage LP objective            | `f64` | `ReduceOp::Min` | Lower bound (monotonically increasing) |
+| Total forward cost (sum)            | `f64` | `ReduceOp::Sum` | Upper bound mean computation           |
+| Total forward cost (sum of squares) | `f64` | `ReduceOp::Sum` | Upper bound variance computation       |
+| Trajectory count                    | `f64` | `ReduceOp::Sum` | Denominator for mean/variance          |
 
 Total payload: 32 bytes. See [Work Distribution §1.4](./work-distribution.md) and [Convergence Monitoring §3](../architecture/convergence-monitoring.md).
 
-> **Note**: The lower bound uses `MPI_MIN` while the other quantities use `MPI_SUM`. If ferrompi does not support mixed reduction operations in a single `allreduce`, this may require two separate calls (one `MPI_MIN` for lower bound, one `MPI_SUM` for the other 3 scalars) or a custom reduction operation.
+> **Note**: The lower bound uses `ReduceOp::Min` while the other quantities use `ReduceOp::Sum`. Because the `Communicator` trait's `allreduce` accepts a single `ReduceOp` per call, this requires two separate calls (one `ReduceOp::Min` for the lower bound, one `ReduceOp::Sum` for the other 3 scalars). See [Communicator Trait §1.3](./communicator-trait.md) for the `ReduceOp` enum definition.
 
 ## 3. Communication Volume Analysis
 
@@ -107,9 +109,13 @@ On 100 Gbps Ethernet (12.5 GB/s):
 
 SDDP's communication-to-computation ratio is low. The LP solve time dominates.
 
-> **Pure communication vs. total synchronization**: The fractions above measure pure data transfer time (wire time plus protocol overhead). They do not include load imbalance barrier overhead at per-stage `MPI_Allgatherv` synchronization points in the backward pass. A first-principles timing model at production scale ($R = 4$, $\tau_{LP} = 25$ ms) confirms pure communication remains well below 1% of iteration time. See [Production Scale Reference §4.6](../overview/production-scale-reference.md) for the complete time budget.
+> **Pure communication vs. total synchronization**: The fractions above measure pure data transfer time (wire time plus protocol overhead). They do not include load imbalance barrier overhead at per-stage `allgatherv` synchronization points in the backward pass. A first-principles timing model at production scale ($R = 4$, $\tau_{LP} = 25$ ms) confirms pure communication remains well below 1% of iteration time. See [Production Scale Reference §4.6](../overview/production-scale-reference.md) for the complete time budget.
 
-## 4. Persistent Collectives
+> **Backend note**: These bandwidth estimates assume direct network transfer (MPI or TCP). The shm backend uses shared memory buffers instead of network I/O, with effectively zero transfer latency for intra-node communication. See [Shm Backend §3](./backend-shm.md).
+
+## 4. Persistent Collectives (Ferrompi Backend)
+
+This section describes an optimization specific to the **ferrompi backend** (`FerrompiBackend`). MPI 4.0 persistent collectives allow pre-negotiating communication patterns at initialization and reusing them across iterations. For the complete ferrompi backend specification, see [Ferrompi Backend](./backend-ferrompi.md). Other backends use their own optimization strategies: the TCP backend uses persistent socket connections ([TCP Backend §2](./backend-tcp.md)); the shm backend uses persistent shared memory segments ([Shm Backend §1](./backend-shm.md)).
 
 ### 4.1 Optimization Opportunity
 
@@ -120,7 +126,7 @@ MPI 4.0 persistent collectives (`MPI_Allgatherv_init`, `MPI_Allreduce_init`) all
 | Setup cost per call     | Protocol negotiation | None (pre-negotiated)    |
 | Subsequent call latency | Full negotiation     | Reduced                  |
 | Buffer requirements     | Any buffer per call  | Fixed buffers at init    |
-| ferrompi support        | `comm.allgatherv()`  | `comm.allgatherv_init()` |
+| ferrompi API            | `comm.allgatherv()`  | `comm.allgatherv_init()` |
 
 ### 4.2 Applicability to SDDP
 
@@ -140,16 +146,16 @@ Whether to use persistent or standard collectives is an **implementation choice*
 
 ## 5. Intra-Node Shared Memory
 
-### 5.1 SharedWindow\<T\>
+### 5.1 SharedRegion\<T\>
 
-ferrompi's `SharedWindow<T>` enables ranks on the same physical node to share memory regions without replication. This is used for large read-only data structures that would otherwise be duplicated across ranks within a node.
+The `SharedMemoryProvider` trait ([Communicator Trait §4](./communicator-trait.md)) enables ranks on the same physical node to share memory regions without replication. The concrete region type (`SharedRegion<T>`) is backend-specific: `FerrompiRegion<T>` for MPI windows, `ShmRegion<T>` for POSIX shared memory, or `HeapRegion<T>` for the heap fallback (local and TCP backends). See [Communicator Trait §4.2](./communicator-trait.md) for the `SharedRegion<T>` trait definition.
 
-| Capability            | ferrompi API                     | Use Case                                          |
-| --------------------- | -------------------------------- | ------------------------------------------------- |
-| Window creation       | `SharedWindow::new(comm, count)` | Allocate shared region on intra-node communicator |
-| Intra-node grouping   | `comm.split_shared_memory()`     | Identify co-located ranks                         |
-| Read access           | Direct pointer dereference       | Zero-copy reads from shared region                |
-| Write synchronization | `window.fence()`                 | Ensure visibility of writes across ranks          |
+| Capability            | Trait Method                           | Use Case                                          |
+| --------------------- | -------------------------------------- | ------------------------------------------------- |
+| Region creation       | `provider.create_shared_region(count)` | Allocate shared region on intra-node communicator |
+| Intra-node grouping   | `provider.split_local()`               | Identify co-located ranks                         |
+| Read access           | `region.as_slice()`                    | Zero-copy reads from shared region                |
+| Write synchronization | `region.fence()`                       | Ensure visibility of writes across ranks          |
 
 ### 5.2 Shared Data Candidates
 
@@ -160,38 +166,49 @@ ferrompi's `SharedWindow<T>` enables ranks on the same physical node to share me
 | Cut pool               | Large (grows each iter)    | Partial    | Read-heavy in forward pass, written at stage boundaries only   |
 | Solver workspace       | Per-thread                 | No         | Thread-local mutable state, must not be shared                 |
 
-The memory savings from `SharedWindow<T>` are quantified in [Memory Architecture](./memory-architecture.md).
+The memory savings from `SharedRegion<T>` are quantified in [Memory Architecture](./memory-architecture.md).
 
-> **Design point**: The extent to which `SharedWindow<T>` is used for the cut pool depends on the access pattern analysis in [Shared Memory Aggregation](./shared-memory-aggregation.md). The baseline approach (each rank maintains its own cut pool, synchronized via `MPI_Allgatherv`) is simple and correct; shared memory is an optimization to reduce memory footprint on memory-constrained nodes.
+> **Design point**: The extent to which `SharedRegion<T>` is used for the cut pool depends on the access pattern analysis in [Shared Memory Aggregation](./shared-memory-aggregation.md). The baseline approach (each rank maintains its own cut pool, synchronized via `allgatherv`) is simple and correct; shared memory is an optimization to reduce memory footprint on memory-constrained nodes.
 
 ## 6. Deterministic Communication
 
 ### 6.1 Reproducibility Invariant
 
-All MPI collective operations in the SDDP training loop are deterministic: given the same inputs and rank count, every rank produces identical results after synchronization. This is critical for the SDDP correctness requirement that all ranks have identical FCFs (see [Cut Management Implementation §4.3](../architecture/cut-management-impl.md)).
+All collective operations through the `Communicator` trait in the SDDP training loop are deterministic: given the same inputs and rank count, every rank produces identical results after synchronization. This is critical for the SDDP correctness requirement that all ranks have identical FCFs (see [Cut Management Implementation §4.3](../architecture/cut-management-impl.md)).
+
+The rank-ordered receive semantics are a formal postcondition of `allgatherv` (see [Communicator Trait §2.1](./communicator-trait.md)) that all backends must satisfy.
 
 Determinism sources:
 
-- **Cut slot assignment** — Computed from `(iteration, forward_pass_index)`, deterministic across all ranks
-- **Contiguous block distribution** — Forward pass scenarios assigned by rank index, reproducible
-- **MPI_Allgatherv ordering** — Receives data in rank order (rank 0, rank 1, ..., rank $R-1$)
+- **Cut slot assignment** -- Computed from `(iteration, forward_pass_index)`, deterministic across all ranks
+- **Contiguous block distribution** -- Forward pass scenarios assigned by rank index, reproducible
+- **`allgatherv` ordering** -- Receives data in rank order (rank 0, rank 1, ..., rank $R-1$)
 
 ### 6.2 Floating-Point Reduction
 
-`MPI_Allreduce` with `Op::Sum` may produce different results depending on reduction tree shape (non-associativity of floating-point addition). For convergence statistics (§2.3), this variance is acceptable — the upper bound is already a statistical estimate. For the lower bound (`MPI_MIN`), the operation is exact.
+`allreduce` with `ReduceOp::Sum` may produce different results depending on reduction tree shape (non-associativity of floating-point addition). For convergence statistics (§2.3), this variance is acceptable -- the upper bound is already a statistical estimate. For the lower bound (`ReduceOp::Min`), the operation is exact.
+
+Non-MPI backends (TCP, shm) produce deterministic reduction results because they use a fixed coordinator/rank-0 reduction order -- see [TCP Backend §3.2](./backend-tcp.md) and [Shm Backend §3.2](./backend-shm.md).
 
 ## Cross-References
 
-- [Synchronization §1.1](./synchronization.md) — Three collective operations per iteration, their timing and semantics
-- [Synchronization §1.4](./synchronization.md) — Per-stage barrier via `MPI_Allgatherv` implicit synchronization
-- [Work Distribution §1.4](./work-distribution.md) — Post-forward `MPI_Allreduce` with 4 convergence quantities
-- [Work Distribution §2.2](./work-distribution.md) — Per-stage backward pass execution, `MPI_Allgatherv` for cuts
-- [Work Distribution §3](./work-distribution.md) — Contiguous block assignment arithmetic, `MPI_Allgatherv` parameters
-- [Cut Management Implementation §4](../architecture/cut-management-impl.md) — Wire format, deterministic slot assignment, synchronization protocol
-- [Hybrid Parallelism §1.2](./hybrid-parallelism.md) — ferrompi capabilities table, `SharedWindow<T>`, `split_shared_memory()`
-- [Convergence Monitoring §3](../architecture/convergence-monitoring.md) — Cross-rank bound aggregation
-- [Training Loop §5.2](../architecture/training-loop.md) — `MPI_Allgatherv` for trial point collection
-- [Training Loop §6.3](../architecture/training-loop.md) — `MPI_Allgatherv` for cut distribution
-- [Shared Memory Aggregation](./shared-memory-aggregation.md) — Intra-node shared memory patterns, hierarchical cut aggregation
-- [Memory Architecture](./memory-architecture.md) — Memory budget, shared memory savings quantification
-- [Production Scale Reference §4.6](../overview/production-scale-reference.md) — Wall-clock time budget, sync overhead in context of total iteration time
+- [Communicator Trait §1-§3](./communicator-trait.md) -- Communicator trait definition, method contracts, generic parameterization
+- [Communicator Trait §4](./communicator-trait.md) -- SharedMemoryProvider trait, SharedRegion\<T\> type
+- [Backend Selection](./backend-selection.md) -- Feature flags, runtime selection, factory pattern
+- [Ferrompi Backend](./backend-ferrompi.md) -- FerrompiBackend: MPI delegation, persistent collectives, FerrompiRegion\<T\>
+- [TCP Backend](./backend-tcp.md) -- TcpBackend: coordinator pattern, message framing, deterministic reductions
+- [Shm Backend](./backend-shm.md) -- ShmBackend: shared buffer protocols, atomic barriers, ShmRegion\<T\>
+- [Local Backend](./backend-local.md) -- LocalBackend: identity/no-op operations, HeapRegion\<T\>
+- [Synchronization §1.1](./synchronization.md) -- Three collective operations per iteration, their timing and semantics
+- [Synchronization §1.4](./synchronization.md) -- Per-stage barrier via `allgatherv` implicit synchronization
+- [Work Distribution §1.4](./work-distribution.md) -- Post-forward `allreduce` with 4 convergence quantities
+- [Work Distribution §2.2](./work-distribution.md) -- Per-stage backward pass execution, `allgatherv` for cuts
+- [Work Distribution §3](./work-distribution.md) -- Contiguous block assignment arithmetic, `allgatherv` parameters
+- [Cut Management Implementation §4](../architecture/cut-management-impl.md) -- Wire format, deterministic slot assignment, synchronization protocol
+- [Hybrid Parallelism §1.2](./hybrid-parallelism.md) -- ferrompi capabilities table, `SharedWindow<T>`, `split_shared_memory()`
+- [Convergence Monitoring §3](../architecture/convergence-monitoring.md) -- Cross-rank bound aggregation
+- [Training Loop §5.2](../architecture/training-loop.md) -- `allgatherv` for trial point collection
+- [Training Loop §6.3](../architecture/training-loop.md) -- `allgatherv` for cut distribution
+- [Shared Memory Aggregation](./shared-memory-aggregation.md) -- Intra-node shared memory patterns, hierarchical cut aggregation
+- [Memory Architecture](./memory-architecture.md) -- Memory budget, shared memory savings quantification
+- [Production Scale Reference §4.6](../overview/production-scale-reference.md) -- Wall-clock time budget, sync overhead in context of total iteration time

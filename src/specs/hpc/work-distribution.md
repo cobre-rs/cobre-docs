@@ -15,7 +15,7 @@ Forward pass scenarios are distributed across MPI ranks using **static contiguou
 | Distribution method                          | Static contiguous blocks                                                                        |
 | Scenarios per rank                           | $\lfloor M/R \rfloor$ or $\lceil M/R \rceil$ (remainder distributed to first $M \bmod R$ ranks) |
 | Inter-rank communication during forward pass | None — each rank processes independently                                                        |
-| Post-forward aggregation                     | `MPI_Allreduce` for lower bound and upper bound statistics                                      |
+| Post-forward aggregation                     | `allreduce` for lower bound and upper bound statistics                                          |
 
 **Why static, not dynamic dispatch**: Forward pass scenarios have nearly identical per-stage LP solve cost (same LP structure, same cut count, same constraint dimensions). The variance in solve time comes from simplex iterations, which is small relative to the total. Static distribution avoids the complexity and latency of a dispatcher/worker protocol while achieving near-perfect load balance.
 
@@ -35,14 +35,14 @@ When a rank's assigned scenario count exceeds its thread count ($M_r > N_{\text{
 
 ### 1.4 Post-Forward Aggregation
 
-After all ranks complete their trajectories, a single `MPI_Allreduce` aggregates:
+After all ranks complete their trajectories, a single `allreduce` ([Communicator Trait SS2.2](./communicator-trait.md)) aggregates:
 
-| Quantity                            | Reduction                                    | Purpose                                |
-| ----------------------------------- | -------------------------------------------- | -------------------------------------- |
-| First-stage LP objective            | `MPI_MIN` or first-stage deterministic value | Lower bound (monotonically increasing) |
-| Total forward cost (sum)            | `MPI_SUM`                                    | Upper bound mean computation           |
-| Total forward cost (sum of squares) | `MPI_SUM`                                    | Upper bound variance computation       |
-| Trajectory count                    | `MPI_SUM`                                    | Denominator for mean/variance          |
+| Quantity                            | Reduction                                          | Purpose                                |
+| ----------------------------------- | -------------------------------------------------- | -------------------------------------- |
+| First-stage LP objective            | `ReduceOp::Min` or first-stage deterministic value | Lower bound (monotonically increasing) |
+| Total forward cost (sum)            | `ReduceOp::Sum`                                    | Upper bound mean computation           |
+| Total forward cost (sum of squares) | `ReduceOp::Sum`                                    | Upper bound variance computation       |
+| Trajectory count                    | `ReduceOp::Sum`                                    | Denominator for mean/variance          |
 
 This is a single collective call — no point-to-point messaging, no dispatcher coordination.
 
@@ -50,7 +50,7 @@ This is a single collective call — no point-to-point messaging, no dispatcher 
 
 ### 2.1 Trial Point Collection
 
-Before the backward pass begins, the visited states from all forward trajectories must be available to all ranks. This is accomplished via `MPI_Allgatherv`: each rank contributes its forward pass visited states, and all ranks receive the complete set.
+Before the backward pass begins, the visited states from all forward trajectories must be available to all ranks. This is accomplished via `allgatherv` ([Communicator Trait SS2.1](./communicator-trait.md)): each rank contributes its forward pass visited states, and all ranks receive the complete set.
 
 The trial points are then distributed across ranks for the backward pass using the same static contiguous block assignment as the forward pass (§3).
 
@@ -64,11 +64,11 @@ The backward pass walks stages in reverse order ($t = T$ down to 2). At each sta
 
 **Step 3 — Aggregate into cuts**: Each thread aggregates its per-opening results into cuts using the configured risk measure (expectation or CVaR).
 
-**Step 4 — Synchronize cuts**: `MPI_Allgatherv` collects all new cuts from all ranks. After this call, every rank has the complete set of new cuts for stage $t$.
+**Step 4 — Synchronize cuts**: `allgatherv` collects all new cuts from all ranks. After this call, every rank has the complete set of new cuts for stage $t$.
 
 **Step 5 — Update FCF**: All ranks add the new cuts to stage $t-1$'s cut pool. This ensures that when stage $t-1$ is processed in the next loop iteration, the freshly computed cuts from stage $t$ are available (sequential backward pass using $V_{t+1}^k$).
 
-**Step 6 — Barrier**: The `MPI_Allgatherv` in step 4 acts as an implicit barrier — no rank can proceed to stage $t-1$ until all ranks have contributed their cuts for stage $t$.
+**Step 6 — Barrier**: The `allgatherv` in step 4 acts as an implicit barrier — no rank can proceed to stage $t-1$ until all ranks have contributed their cuts for stage $t$.
 
 ### 2.3 Why Sequential Opening Evaluation
 
@@ -98,9 +98,9 @@ Given $N$ items to distribute across $R$ ranks:
 
 This produces at most a difference of 1 between the largest and smallest block — optimal balance.
 
-### 3.2 MPI Collective Parameters
+### 3.2 Collective Parameters
 
-For `MPI_Allgatherv`, each rank must know the counts and displacements for all ranks:
+For `allgatherv`, each rank must know the counts and displacements for all ranks:
 
 | Parameter       | Computation                                 | Type       |
 | --------------- | ------------------------------------------- | ---------- |
@@ -160,13 +160,14 @@ The alternative — state-based distribution — would first deduplicate trial p
 
 - [Hybrid Parallelism](./hybrid-parallelism.md) — ferrompi + OpenMP architecture, static distribution across ranks, thread-trajectory affinity
 - [Training Loop §4.3](../architecture/training-loop.md) — Forward pass parallel distribution: contiguous blocks to ranks, thread-trajectory affinity
-- [Training Loop §6.2-§6.3](../architecture/training-loop.md) — Backward pass: per-stage execution, trial point distribution, MPI_Allgatherv
+- [Training Loop §6.2-§6.3](../architecture/training-loop.md) — Backward pass: per-stage execution, trial point distribution, allgatherv
 - [SDDP Algorithm §3.4](../math/sddp-algorithm.md) — Thread-trajectory affinity, backward sync barriers, forward pass state saving
 - [Solver Workspaces §1](../architecture/solver-workspaces.md) — Thread-local solver infrastructure, per-stage basis cache, NUMA-local allocation
 - [Cut Management Implementation §4](../architecture/cut-management-impl.md) — MPI cut synchronization protocol and wire format
 - [Scenario Generation §2.3](../architecture/scenario-generation.md) — Fixed opening tree: the $N_{\text{openings}}$ noise vectors evaluated in the backward pass
 - [Synchronization](./synchronization.md) — Sync points, per-stage barrier semantics
-- [Communication Patterns](./communication-patterns.md) — ferrompi collectives: `MPI_Allreduce`, `MPI_Allgatherv`
+- [Communication Patterns](./communication-patterns.md) — collective operations via Communicator trait
+- [Communicator Trait SS2](./communicator-trait.md) — Method contracts for allgatherv, allreduce
 - [Shared Memory Aggregation](./shared-memory-aggregation.md) — Hierarchical cut aggregation within node
 - [Memory Architecture](./memory-architecture.md) — NUMA-aware allocation, memory budget for per-rank resources
 - [Deferred Features](../deferred.md) — State deduplication (C.17), pipelined backward pass (C.18)
