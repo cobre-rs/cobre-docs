@@ -854,7 +854,7 @@ The Global Interpreter Lock (GIL) is the central concurrency constraint at the P
 
 1. **GIL acquired to receive Python call and validate arguments.** When Python calls a PyO3-wrapped function (e.g., `train()`), the GIL is held. PyO3 validates and converts arguments from Python objects to Rust types.
 
-2. **GIL released via `py.allow_threads()` before entering Rust computation.** Before invoking any Rust computation (LP solves, cut generation, scenario sampling), the binding code calls `py.allow_threads(|| { ... })` to release the GIL. This allows other Python threads to execute while Rust computation proceeds.
+2. **Thread state detached via `py.allow_threads()` before entering Rust computation.** Before invoking any Rust computation (LP solves, cut generation, scenario sampling), the binding code calls `py.allow_threads(|| { ... })` to detach from the Python runtime. On GIL-enabled builds, this releases the GIL, allowing other Python threads to execute. On free-threaded builds (see SS7.5a), this detaches the thread state, preventing the thread from blocking stop-the-world synchronization events (GC, tracing). The same code is correct on both build types.
 
 3. **No Rust thread within an OpenMP parallel region ever acquires the GIL.** OpenMP threads spawned during the training or simulation loop are pure Rust/C threads. They never call back into Python, never acquire the GIL, and never touch `PyObject` references. This is guaranteed by construction: the OpenMP callback trampoline pattern ([Hybrid Parallelism](../hpc/hybrid-parallelism.md) SS5.3) calls Rust closures that have no access to `Python<'_>` tokens.
 
@@ -1472,6 +1472,20 @@ The `backend` parameter in multi-process mode controls which communication backe
 
 This is the Python-side equivalent of the priority chain defined in [Backend Registration and Selection](../hpc/backend-selection.md) SS2.2, simplified for the Python context where MPI is never available. The full auto-detection algorithm (including MPI detection) is documented in that section.
 
+### 7.5a Future: Free-Threaded Python (PEP 703)
+
+CPython 3.14 (October 2025) introduced officially supported free-threaded builds ([PEP 779](https://peps.python.org/pep-0779/)) where the GIL can be disabled, allowing true multi-threaded parallelism within a single Python process. This section documents the impact on Cobre's Python bindings and the conditions under which the design may evolve.
+
+**Current status (Phase II):** Free-threaded Python is available as an optional, separate build (`python3.14t`). It is not the default. Importing a C extension not marked as free-thread-safe automatically re-enables the GIL for the process lifetime. The GIL-disabled default (Phase III) is estimated for Python ~3.17-3.18 (2028-2030) and requires a separate PEP.
+
+**Impact on the 6-point GIL contract (SS3.1):** All six contract points remain correct on both GIL-enabled and free-threaded builds. On free-threaded builds, `py.allow_threads()` (PyO3 `detach()`) detaches the calling thread from the Python runtime instead of releasing the GIL. This detachment is still necessary: free-threaded CPython triggers stop-the-world synchronization during garbage collection and tracing, and a thread that stays attached while performing pure Rust computation would block these events. The same code works correctly on both build types without conditional compilation.
+
+**Impact on MPI prohibition (SS7.2):** Free-threaded Python resolves the GIL/`MPI_THREAD_MULTIPLE` deadlock risk (SS7.2 point 2) because threads can truly execute concurrently. However, the remaining two prohibition reasons -- `MPI_Init_thread` timing conflict (point 1) and dual-FFI-layer fragility (point 3) -- are independent of the GIL and remain valid. The MPI prohibition therefore stands regardless of GIL state. mpi4py 4.1.1 ships free-threaded wheels (`cp314t`) and requests `MPI_THREAD_MULTIPLE` by default, but this benefits direct mpi4py usage, not Cobre's PyO3 layer which avoids MPI entirely.
+
+**Impact on multi-process design (SS7.3-7.4):** The current `multiprocessing.Process`-based multi-worker design remains the recommended approach. A future alternative -- spawning worker threads instead of processes within a single free-threaded Python interpreter -- becomes architecturally viable when: (1) free-threading is the CPython default, (2) all Cobre dependencies in the Python wheel are free-thread-safe, and (3) PyO3's `#[pyclass]` types satisfy the `Sync` requirement (already the case for Cobre's types, which do not hold Python objects across the Rust boundary). This threading-based mode would eliminate `multiprocessing` serialization overhead and shared-memory segment management, but requires careful evaluation of OpenMP thread pool interaction within a single-process multi-worker model. This extension is deferred pending ecosystem maturity.
+
+**PyO3 requirements for free-threading:** Since PyO3 0.23, `#[pyclass]` types must implement `Sync`. Since PyO3 0.28, modules default to thread-safe (`Py_MOD_GIL_NOT_USED`). At implementation time, the `cobre-python` crate should: (1) audit all `#[pyclass]` types for `Sync` compliance, (2) avoid `GILProtected<T>` (removed in current PyO3), (3) use `pyo3::sync::critical_section` for any shared mutable state, and (4) set `gil_used = true` as a temporary escape hatch only if thread-safety audit is incomplete.
+
 ## 8. Memory Model
 
 ### 8.1 Ownership Rules at the Python/Rust Boundary
@@ -1619,7 +1633,7 @@ The wheel contains:
 
 ### 10.4 Python Version Support
 
-Minimum Python version: 3.9 (matching PyO3's minimum supported version). Wheels are built for Python 3.9, 3.10, 3.11, 3.12, and 3.13.
+Minimum Python version: 3.9 (matching PyO3's minimum supported version). Wheels are built for Python 3.9, 3.10, 3.11, 3.12, 3.13, and 3.14. Free-threaded builds (`cp313t`, `cp314t`) are supported when the `cobre-python` crate passes the PyO3 free-threading audit (see SS7.5a); until then, importing `cobre` on a free-threaded interpreter will re-enable the GIL via the `gil_used = true` module flag.
 
 ## Cross-References
 
@@ -1636,6 +1650,9 @@ Minimum Python version: 3.9 (matching PyO3's minimum supported version). Wheels 
 - [Shared Memory Backend](../hpc/backend-shm.md) -- POSIX shared-memory multi-process backend (SS7.3 for the Python multiprocessing code example) used by Python multi-process mode (SS7.3, SS7.5)
 - [Backend Registration and Selection](../hpc/backend-selection.md) -- Auto-detection algorithm (SS2.2) and feature flag matrix (SS1.2) governing backend availability in Python wheel builds (SS7.5)
 - [Communicator Trait](../hpc/communicator-trait.md) -- `Communicator` trait definition (SS1) that each worker's backend implements; `SharedMemoryProvider` (SS4) for shm backend shared regions
+- [Backend Testing](../hpc/backend-testing.md) -- Conformance test suite (§1) and determinism verification (§4) that validate backend interchangeability for multi-process execution modes (SS7.3-7.5)
+- [PEP 703](https://peps.python.org/pep-0703/) -- Making the Global Interpreter Lock Optional in CPython (referenced in SS7.5a)
+- [PEP 779](https://peps.python.org/pep-0779/) -- Criteria for Supported Status for Free-Threaded CPython (referenced in SS7.5a)
 - Architecture-021 SS2.2 -- `cobre-python` crate responsibility boundaries and API surface table
 - Architecture-021 SS6.1 Q-4 -- Async support assumption (optional, `run_in_executor`)
 - Architecture-021 SS6.3 -- 5 hard constraints from GIL/MPI analysis
