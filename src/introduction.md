@@ -18,7 +18,7 @@ The name comes from the Portuguese word for **copper** — the metal that conduc
 
 **Production performance.** Rust gives us C/C++-level speed with memory safety guarantees. For software that dispatches national power grids, both matter.
 
-**Interoperability.** Parsers for NEWAVE (CEPEL) file formats and standard data formats. Bring your existing data, export results in modern formats.
+**Interoperability.** Standard data formats (JSON, Parquet, Arrow) for input and output. Planned support for NEWAVE (CEPEL) legacy file formats to enable migration from existing tools.
 
 **Modularity.** Pick the crates you need. Use `cobre-core` for data modeling without pulling in solver dependencies. Use `cobre-sddp` without caring about power flow.
 
@@ -32,12 +32,12 @@ See the [roadmap](https://github.com/cobre-rs/cobre#roadmap) for planned milesto
 
 ## Quick links
 
-| | |
-|---|---|
-| GitHub | [github.com/cobre-rs](https://github.com/cobre-rs) |
-| Main repository | [cobre-rs/cobre](https://github.com/cobre-rs/cobre) |
-| API docs (rustdoc) | [docs.rs/cobre-core](https://docs.rs/cobre-core) |
-| License | [Apache-2.0](https://github.com/cobre-rs/cobre/blob/main/LICENSE) |
+|                    |                                                                   |
+| ------------------ | ----------------------------------------------------------------- |
+| GitHub             | [github.com/cobre-rs](https://github.com/cobre-rs)                |
+| Main repository    | [cobre-rs/cobre](https://github.com/cobre-rs/cobre)               |
+| API docs (rustdoc) | [docs.rs/cobre-core](https://docs.rs/cobre-core)                  |
+| License            | [Apache-2.0](https://github.com/cobre-rs/cobre/blob/main/LICENSE) |
 
 ## Context
 

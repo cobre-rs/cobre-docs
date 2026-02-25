@@ -20,7 +20,7 @@ cobre-cli
 | Crate                                 | Status                                                | Description                                                            |
 | ------------------------------------- | ----------------------------------------------------- | ---------------------------------------------------------------------- |
 | [`cobre-core`](./core.md)             | <span class="status-experimental">experimental</span> | Power system data model — buses, branches, generators, loads, topology |
-| [`cobre-io`](./io.md)                 | <span class="status-experimental">experimental</span> | File parsers and serializers (NEWAVE, CSV, JSON, Arrow)                |
+| [`cobre-io`](./io.md)                 | <span class="status-experimental">experimental</span> | File parsers and serializers (JSON, Parquet, CSV, Arrow)               |
 | [`cobre-stochastic`](./stochastic.md) | <span class="status-experimental">experimental</span> | Stochastic processes — PAR(p) models, correlated scenario generation   |
 | [`cobre-solver`](./solver.md)         | <span class="status-experimental">experimental</span> | LP/MIP solver abstraction with HiGHS and CLP backends                  |
 | [`cobre-sddp`](./sddp.md)             | <span class="status-experimental">experimental</span> | Stochastic Dual Dynamic Programming for hydrothermal dispatch          |
@@ -38,4 +38,4 @@ cobre-cli
 
 **Solvers are pluggable.** `cobre-solver` provides a trait-based abstraction with compile-time backend selection. The currently implemented backends are HiGHS and CLP (both open-source); commercial solvers like Gurobi can be added behind the same interface.
 
-**IO is separated from computation.** Parsing NEWAVE files, reading TOML configs, or exporting Arrow tables happens in `cobre-io`. Solver crates never touch files directly — they receive typed data structures.
+**IO is separated from computation.** Reading JSON configs, loading Parquet time series, or exporting Arrow tables happens in `cobre-io`. Solver crates never touch files directly — they receive typed data structures.

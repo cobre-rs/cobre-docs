@@ -113,17 +113,6 @@
 
 ---
 
-# NEWAVE Migration
-
-- [Overview](./migration/overview.md)
-- [File Format Reference](./migration/file-formats.md)
-  - [HIDR.DAT](./migration/hidr-dat.md)
-  - [TERM.DAT](./migration/term-dat.md)
-  - [CONFHD.DAT](./migration/confhd-dat.md)
-- [Comparing Results](./migration/comparing-results.md)
-
----
-
 # Reference
 
 - [Glossary](./reference/glossary.md)
