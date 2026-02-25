@@ -17,6 +17,8 @@ All runtime data falls into one of four ownership categories, each with distinct
 | **Rank-local growing**   | MPI rank                        | Read by all threads, written at stage boundaries | Pre-allocated with growth capacity                     | Cut pool (grows each iteration)                                          |
 | **Temporary**            | OpenMP thread                   | Allocated/freed within a single solve            | Pre-allocated in workspace, reused                     | RHS patch buffer, scratch arrays                                         |
 
+**Single-process mode note**: In single-process mode (used by `cobre-python` and `cobre-mcp`), the "Shared read-only" category uses regular per-process heap allocation instead of `SharedWindow<T>`. MPI windows are not available without MPI initialization. The ownership semantics are otherwise identical -- data is still read-only during training, allocated once at initialization, and shared across all OpenMP threads within the process. See [Hybrid Parallelism §1.0a](./hybrid-parallelism.md) for single-process mode details.
+
 ### 1.2 Concurrency Model
 
 Cobre uses OpenMP for intra-rank threading (see [Hybrid Parallelism §5](./hybrid-parallelism.md)). The data sharing model follows OpenMP semantics:
@@ -56,6 +58,8 @@ When ranks on the same node share read-only data via `SharedWindow<T>` (see [Sha
 | **Total shareable** |                ~50 MB |                     ~50 MB |                ~150 MB |
 
 The savings are modest at production scale because the dominant memory consumer is the solver workspaces (~912 MB), which are inherently thread-local and cannot be shared. The cut pool (§2.3) is a larger sharing candidate if memory becomes constrained.
+
+**Single-process mode note**: The SharedWindow savings table above applies only to multi-rank MPI deployments. In single-process mode (used by `cobre-python` and `cobre-mcp`), all data resides in a single process with no inter-rank sharing opportunity. The per-process memory footprint in single-process mode equals the "Per-Rank (replicated)" column for all data categories. At production scale with 16 threads, expect approximately 1.2 GB total memory usage per the budget in §2.1.
 
 ### 2.3 Memory Growth
 

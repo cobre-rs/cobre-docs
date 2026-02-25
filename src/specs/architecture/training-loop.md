@@ -41,6 +41,31 @@ Each iteration follows a fixed sequence:
 6. **Checkpoint** — If the checkpoint interval has elapsed, persist current FCF and iteration state (see [Checkpointing](../hpc/checkpointing.md))
 7. **Logging** — Emit iteration summary (bounds, gap, timings)
 
+### 2.1a Event Emission Points
+
+Each step in the iteration lifecycle (§2.1) emits a typed event to the shared event channel when an event sender is registered. These events feed all runtime consumers: text logger, JSON-lines writer, TUI renderer, MCP progress notifications, and Parquet convergence writer. Event types are defined in `cobre-core`.
+
+| Step | Lifecycle Phase         | Event Type             | Payload Summary                                                                                                               |
+| ---- | ----------------------- | ---------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| 1    | Forward pass            | `ForwardPassComplete`  | iteration, scenarios, lb_candidate, ub_mean, ub_std, elapsed_ms                                                               |
+| 2    | Forward synchronization | `ForwardSyncComplete`  | iteration, global_lb, global_ub_mean, global_ub_std, sync_time_ms                                                             |
+| 3    | Backward pass           | `BackwardPassComplete` | iteration, cuts_generated, stages_processed, elapsed_ms                                                                       |
+| 4    | Cut synchronization     | `CutSyncComplete`      | iteration, cuts_distributed, cuts_active, cuts_removed, sync_time_ms                                                          |
+| 5    | Convergence update      | `ConvergenceUpdate`    | iteration, lower_bound, upper_bound, upper_bound_std, gap, rules_evaluated[]                                                  |
+| 6    | Checkpoint              | `CheckpointComplete`   | iteration, checkpoint_path, elapsed_ms (only when checkpoint interval triggers)                                               |
+| 7    | Logging                 | `IterationSummary`     | iteration, lower_bound, upper_bound, gap, wall_time_ms, iteration_time_ms, forward_ms, backward_ms, lp_solves, memory_peak_mb |
+
+**Lifecycle events** (emitted once per training/simulation run, not per iteration):
+
+| Event Type           | Trigger                     | Payload Summary                                                         |
+| -------------------- | --------------------------- | ----------------------------------------------------------------------- |
+| `TrainingStarted`    | Training loop entry         | case_name, stages, hydros, thermals, ranks, threads_per_rank, timestamp |
+| `TrainingFinished`   | Training loop exit          | reason, iterations, final_lb, final_ub, total_time_ms, total_cuts       |
+| `SimulationProgress` | Simulation batch completion | scenarios_complete, scenarios_total, elapsed_ms                         |
+| `SimulationFinished` | Simulation completion       | scenarios, output_dir, elapsed_ms                                       |
+
+The event channel uses an `Option<broadcast::Sender<TrainingEvent>>` pattern: when `None`, no events are emitted (zero overhead for library-mode callers). When `Some(sender)`, events are emitted at each step boundary. Consumers are additive -- multiple can subscribe simultaneously. See [Convergence Monitoring §4.1](./convergence-monitoring.md) for the JSON-lines schema, [Terminal UI](../interfaces/terminal-ui.md) for TUI consumption, and [MCP Server](../interfaces/mcp-server.md) for MCP progress notifications.
+
 ### 2.2 Termination Conditions
 
 The loop terminates based on the configured `stopping_mode` (`"any"` or `"all"`) applied to the following conditions:
@@ -133,6 +158,10 @@ After all ranks complete their trajectories, `MPI_Allreduce` aggregates:
 - **Lower bound** — First-stage LP objective value (the deterministic lower bound, monotonically increasing across iterations)
 - **Upper bound statistics** — Mean and variance of total forward costs across all trajectories
 
+### 4.3a Single-Rank Forward Pass Variant
+
+In single-process mode (used by `cobre-python` and `cobre-mcp`), all scenarios are assigned to the single rank. The `MPI_Allreduce` for bound aggregation becomes a local computation -- the rank's local statistics are the global statistics. No inter-rank communication occurs. OpenMP thread-level parallelism remains active: scenarios are distributed across threads within the single rank using the same thread-trajectory affinity pattern (§4.3). See [Hybrid Parallelism §1](../hpc/hybrid-parallelism.md) for the single-process mode initialization sequence.
+
 ### 4.4 Warm-Starting
 
 The forward pass LP solution at stage $t$ provides a near-optimal basis for the backward pass solves at the same stage. The solver retains this basis after the forward solve so that the backward pass at stage $t$ can warm-start from it, significantly reducing solve times. See [Solver Workspaces](./solver-workspaces.md).
@@ -196,6 +225,10 @@ Trial states at each stage are distributed across MPI ranks. Within each rank, e
 **Stage synchronization barrier**: All threads across all ranks must complete cut generation at stage $t$ before any thread proceeds to stage $t-1$. This is because the new cuts at stage $t$ must be available to all ranks before they solve backward LPs at stage $t-1$ (which include stage $t$'s cuts in their FCF approximation).
 
 After processing each stage, `MPI_Allgatherv` collects all new cuts from all ranks and distributes them, so every rank has the complete set of new cuts.
+
+### 6.3a Single-Rank Backward Pass Variant
+
+In single-process mode, the `MPI_Allgatherv` for cut synchronization becomes a no-op -- all cuts generated by the single rank are immediately available locally. The per-stage synchronization barrier reduces to an OpenMP barrier only (ensuring all threads complete cut generation at stage $t$ before proceeding to stage $t-1$). All trial states are local, so no state broadcasting is needed. The backward pass logic is otherwise identical to the multi-rank case.
 
 ### 6.4 LP Rebuild Considerations
 
@@ -273,3 +306,7 @@ The active count is used by cut selection strategies to prune dominated or inact
 - [Synchronization](../hpc/synchronization.md) — Barrier semantics, MPI collective operations, and stage-boundary synchronization patterns
 - [Checkpointing](../hpc/checkpointing.md) — Checkpoint format and graceful shutdown
 - [Deferred Features](../deferred.md) — Multi-cut (C.3), alternative forward pass (C.13), Monte Carlo backward sampling (C.14), policy compatibility validation (C.9)
+- [Structured Output](../interfaces/structured-output.md) — JSON-lines streaming protocol consuming events from this training loop
+- [Terminal UI](../interfaces/terminal-ui.md) — TUI renderer consuming events from this training loop
+- [MCP Server](../interfaces/mcp-server.md) — MCP progress notifications consuming events from this training loop
+- [Python Bindings](../interfaces/python-bindings.md) — Single-process execution mode for Python library callers

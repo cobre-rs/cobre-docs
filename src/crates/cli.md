@@ -56,6 +56,29 @@ recovery failures, and signal-derived codes (130 for SIGINT, 137 for SIGKILL).
   formulation choices to configuration fields.
   See [Configuration Reference](../specs/configuration/configuration-reference.md).
 
+- **Subcommand dispatch** -- Beyond the traditional `mpiexec cobre CASE_DIR`
+  invocation, the CLI supports subcommands (`run`, `validate`, `report`,
+  `compare`, `serve`, `version`) for operations that may not require MPI.
+  Hybrid detection treats a bare path argument as implicit `run` for backward
+  compatibility.
+  See [CLI and Lifecycle §2.1](../specs/architecture/cli-and-lifecycle.md).
+
+- **Output format negotiation** -- The `--output-format` global flag selects
+  between human-readable text (default), structured JSON, and JSON-lines
+  streaming. The flag affects only presentation, not computation.
+  See [CLI and Lifecycle §8](../specs/architecture/cli-and-lifecycle.md) and
+  [Structured Output](../specs/interfaces/structured-output.md).
+
+- **Structured error responses** -- All errors produce machine-parseable records
+  with `kind`, `message`, `context`, and `suggestion` fields. The 14 validation
+  error kinds plus runtime kinds form a stable error registry.
+  See [Structured Output](../specs/interfaces/structured-output.md).
+
+- **Progress streaming protocol** -- Long-running operations emit per-iteration
+  progress events as JSON-lines, enabling real-time monitoring by agents, the
+  TUI, and MCP server.
+  See [Convergence Monitoring §4.1](../specs/architecture/convergence-monitoring.md).
+
 ## Status
 
 cobre-cli is in the **design phase**. The CLI/lifecycle and validation specs

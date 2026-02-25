@@ -15,6 +15,18 @@ For the file layout and `config.json` schema overview, see [Input Directory Stru
 
 **Design rationale**: Settings that are inherently per-stage (block mode, risk measure, scenario source) live in `stages.json` alongside the stage definitions. Settings that are global solver parameters (training iteration count, cut selection, inflow non-negativity method, upper bound evaluation) live in `config.json`.
 
+### 1.1 CLI Presentation Settings
+
+The output format (`--output-format human|json|json-lines`) is a **CLI flag**, not a configuration parameter. It is intentionally excluded from `config.json` because:
+
+1. **Output format is a presentation concern, not a computation concern.** It does not affect solver behavior, random seeds, convergence criteria, or output files on disk. Mixing presentation settings with algorithm configuration would violate separation of concerns.
+
+2. **The same case may be run with different output formats** depending on the consumer: `human` for interactive HPC sessions, `json` for CI/CD pipelines, `json-lines` for agent monitoring. These are per-invocation choices, not per-case choices.
+
+3. **Reproducibility**: Two runs with the same `config.json` and inputs must produce identical results regardless of output format. If output format were in `config.json`, it would appear in the configuration hash (`data_integrity.config_hash` in [Output Infrastructure §2](../data-model/output-infrastructure.md)), creating spurious hash differences.
+
+Similarly, the `--quiet` and `--no-progress` flags are CLI-only. They suppress output but do not change what is computed or written to disk. See [CLI and Lifecycle §3.1](../architecture/cli-and-lifecycle.md) for the global CLI flags and [Structured Output §5](../interfaces/structured-output.md) for the output format negotiation.
+
 ## 2. Modeling Options (`config.json` → `modeling`)
 
 ### 2.1 Inflow Non-Negativity Treatment

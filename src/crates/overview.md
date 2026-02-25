@@ -12,8 +12,26 @@ cobre-cli
   │     └── cobre-solver
   ├── cobre-io
   │     └── cobre-core
+  ├── cobre-tui                  [NEW]
+  │     └── cobre-core           (event type definitions only)
   └── cobre-core
+
+cobre-mcp                        [NEW, standalone server binary]
+  ├── cobre-sddp
+  ├── cobre-io
+  └── cobre-core
+
+cobre-python                     [NEW, PyO3 cdylib]
+  ├── cobre-sddp
+  ├── cobre-io
+  └── cobre-core
+
+ferrompi (optional, MPI execution only)
+  used by: cobre-sddp, cobre-cli
+  NOT used by: cobre-mcp, cobre-python, cobre-tui
 ```
+
+**Key property**: None of the three new crates depend on `ferrompi`. They share the single-process execution path through `cobre-sddp` with OpenMP parallelism only.
 
 ## Crates
 
@@ -25,6 +43,9 @@ cobre-cli
 | [`cobre-solver`](./solver.md)         | <span class="status-experimental">experimental</span> | LP/MIP solver abstraction with HiGHS and CLP backends                  |
 | [`cobre-sddp`](./sddp.md)             | <span class="status-experimental">experimental</span> | Stochastic Dual Dynamic Programming for hydrothermal dispatch          |
 | [`cobre-cli`](./cli.md)               | <span class="status-experimental">experimental</span> | Command-line interface for running studies                             |
+| [`cobre-mcp`](./mcp.md)               | <span class="status-experimental">experimental</span> | MCP server exposing Cobre operations as tools, resources, and prompts  |
+| [`cobre-python`](./python.md)         | <span class="status-experimental">experimental</span> | PyO3 Python bindings for programmatic solver access                    |
+| [`cobre-tui`](./tui.md)               | <span class="status-experimental">experimental</span> | Interactive terminal UI for real-time training monitoring              |
 
 ## Related repositories
 

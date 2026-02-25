@@ -29,6 +29,9 @@
 - [cobre-solver](./crates/solver.md)
 - [cobre-sddp](./crates/sddp.md)
 - [cobre-cli](./crates/cli.md)
+- [cobre-mcp](./crates/mcp.md)
+- [cobre-python](./crates/python.md)
+- [cobre-tui](./crates/tui.md)
 - [ferrompi](./crates/ferrompi.md)
 
 ---
@@ -109,6 +112,11 @@
   - [Synchronization](./specs/hpc/synchronization.md)
 - [Configuration](./specs/configuration.md)
   - [Configuration Reference](./specs/configuration/configuration-reference.md)
+- [Interfaces](./specs/interfaces.md)
+  - [Structured Output](./specs/interfaces/structured-output.md)
+  - [MCP Server](./specs/interfaces/mcp-server.md)
+  - [Python Bindings](./specs/interfaces/python-bindings.md)
+  - [Terminal UI](./specs/interfaces/terminal-ui.md)
 - [Deferred Features](./specs/deferred.md)
 
 ---

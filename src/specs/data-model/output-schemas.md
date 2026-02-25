@@ -513,6 +513,34 @@ Which mechanism is active depends on configuration. Both may run simultaneously 
 
 Use `idle_time_ms` to identify load imbalance. Sum of `scenarios_processed` per iteration equals `forward_passes`. Communication patterns reveal MPI bottlenecks.
 
+## 7. Structured Output vs Parquet Schemas
+
+The Cobre output system produces two distinct categories of schemas with different purposes and access patterns:
+
+| Category                   | Format            | Transport  | Purpose                                               | Access Method                 |
+| -------------------------- | ----------------- | ---------- | ----------------------------------------------------- | ----------------------------- |
+| **Parquet schemas** (§5-6) | Apache Parquet    | Disk files | Post-hoc analysis, archival, large tabular data       | Arrow/Polars/Pandas libraries |
+| **Structured CLI output**  | JSON / JSON-lines | stdout     | Real-time monitoring, programmatic result consumption | Standard JSON parsing         |
+
+**Key distinction**: Parquet schemas define the on-disk storage format for simulation results and training diagnostics. Structured CLI output defines the presentation format for CLI responses. They serve different audiences and use different data paths.
+
+**No JSON equivalents for simulation Parquet schemas**: The 11 simulation entity schemas (§5.1-5.11) and 2 of the 3 training diagnostic schemas (§6.2-6.3) remain Parquet-only. Agents access them via Arrow libraries (available in Python, R, Julia, and Rust). Converting hundreds of MB of tabular data to JSON would be impractical and unnecessary.
+
+**Convergence log has a JSON equivalent**: The convergence log schema (§6.1) has a JSON equivalent via the JSON-lines streaming protocol. The `progress` events emitted during training (see [Convergence Monitoring §4.1](../architecture/convergence-monitoring.md)) contain the same fields as the `convergence.parquet` columns. The Parquet file is the permanent record; JSON-lines is the ephemeral real-time stream.
+
+**MCP resource serialization**: When the MCP server exposes Parquet data as resources (see [MCP Server](../interfaces/mcp-server.md)), it converts Parquet columns to JSON types using the following mapping:
+
+| Parquet/Arrow Type | JSON Type | Notes                             |
+| ------------------ | --------- | --------------------------------- |
+| `Int32`, `Int64`   | number    |                                   |
+| `Float64`          | number    | NaN/Infinity serialized as `null` |
+| `Utf8`             | string    |                                   |
+| `Boolean`          | boolean   |                                   |
+| `Timestamp`        | string    | ISO 8601 format                   |
+| Nullable columns   | `null`    | JSON null for missing values      |
+
+This conversion is performed on demand by the MCP server's resource handlers, not stored as separate JSON files.
+
 ## Cross-References
 
 - [Output Infrastructure](output-infrastructure.md) — Manifests, MPI partitioning, config, validation
@@ -527,3 +555,6 @@ Use `idle_time_ms` to identify load imbalance. Sum of `scenarios_processed` per 
 - [Discount Rate](../math/discount-rate.md) — Cumulative discount factor formula
 - [Inflow Non-Negativity](../math/inflow-nonnegativity.md) — Inflow penalty in costs
 - [Deferred Features](../deferred.md) — Batteries (deferred)
+- [Structured Output](../interfaces/structured-output.md) — CLI response envelope and JSON-lines streaming protocol
+- [MCP Server](../interfaces/mcp-server.md) — MCP resource handlers serving Parquet data as JSON
+- [Convergence Monitoring](../architecture/convergence-monitoring.md) — JSON-lines streaming schema (§4.1) as the JSON equivalent of convergence.parquet

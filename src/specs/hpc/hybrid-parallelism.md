@@ -15,6 +15,18 @@ Cobre employs a hybrid parallelization strategy optimized for modern HPC archite
 | **Topology detection**       | ferrompi (`split_shared_memory()`, SLURM integration) | Node and NUMA discovery          | Identify co-located ranks, NUMA domain mapping                                                 |
 | **Intra-rank threading**     | OpenMP via C FFI                                      | Threads within a single MPI rank | Parallel LP solves across scenario trajectories                                                |
 
+### 1.0a Single-Process Mode
+
+For interface layers that do not use MPI (`cobre-mcp`, `cobre-python`, `cobre-tui`), Cobre operates in **single-process mode**: OpenMP threads provide intra-process parallelism without any MPI communication. In this mode:
+
+- MPI is not initialized. No `ferrompi` calls are made.
+- There is exactly one "rank" (the process itself) with all scenarios assigned to it.
+- All MPI collectives (`MPI_Allreduce`, `MPI_Allgatherv`, `MPI_Broadcast`) become local no-ops or trivial identity operations.
+- `SharedWindow<T>` is not used -- shared read-only data (opening tree, case data) is allocated as regular per-process memory.
+- OpenMP thread-level parallelism for LP solves remains fully active with the same scheduling, affinity, and NUMA policies.
+
+Single-process mode is the required execution mode for Python bindings (GIL/MPI incompatibility -- see [Python Bindings §4](../interfaces/python-bindings.md)) and for the MCP server (long-lived server process incompatible with MPI launchers). See §6a below for the alternative initialization sequence.
+
 ### 1.1 Why ferrompi + OpenMP
 
 ferrompi covers inter-node communication, intra-node shared memory, and topology detection — everything at the process level. The one thing MPI does not provide is **thread-level parallelism within a single rank**. To parallelize LP solves across cores within a NUMA domain, a threading model is needed. OpenMP (via a thin C FFI wrapper) fills this gap, providing vendor-optimized scheduling, affinity control, and NUMA-aware thread placement that Rust's standard threading libraries (Rayon) cannot match on HPC hardware.
@@ -202,6 +214,22 @@ The parallel environment is initialized during the Startup phase (see [CLI and L
 
 **Step 8 — Startup logging**: Rank 0 logs the parallel configuration summary (rank count, threads per rank, total cores, detected scheduler, NUMA topology).
 
+### 6a. Alternative Initialization for Single-Process Mode
+
+When operating in single-process mode (library-mode callers such as `cobre-mcp` and `cobre-python`), the initialization sequence skips Steps 1-3 (MPI initialization, topology detection, shared memory communicator) and begins at Step 4:
+
+**Step 4 -- OpenMP configuration**: Identical to the MPI mode. The OpenMP runtime initializes with the thread count from `OMP_NUM_THREADS` or a caller-provided value. For Python bindings, the GIL is released before entering any OpenMP parallel region.
+
+**Step 5 -- LP solver suppression**: Identical to the MPI mode. Solver threading environment variables are validated and set.
+
+**Step 6 -- NUMA allocation policy**: Identical to the MPI mode on Linux. On platforms without `libnuma`, this step is a no-op.
+
+**Step 7 -- Workspace allocation**: Identical to the MPI mode. Thread-local solver workspaces are allocated with first-touch initialization.
+
+**Step 8 -- Startup logging**: In library mode, startup logging is optional. The library caller decides whether to register event consumers (text logger, JSON-lines writer, etc.) before training begins.
+
+The key difference is that Steps 1-3 are absent, and no `SharedWindow<T>` regions are created. Shared read-only data is allocated as regular heap memory within the single process.
+
 ## 7. Build Integration
 
 The OpenMP C wrapper must be compiled with an OpenMP-capable C compiler and linked as a static library into the Rust binary. The build script (`build.rs`) handles this:
@@ -258,3 +286,5 @@ For complete SLURM job scripts and multi-node deployment patterns, see [SLURM De
 - [Checkpointing](./checkpointing.md) — Checkpoint strategy and warm-start across MPI ranks
 - [SLURM Deployment](./slurm-deployment.md) — Job scripts, multi-node configuration, performance monitoring
 - [Design Principles](../overview/design-principles.md) — Foundational design goals including distributed I/O
+- [Python Bindings](../interfaces/python-bindings.md) — Single-process mode requirement for Python (GIL/MPI incompatibility)
+- [MCP Server](../interfaces/mcp-server.md) — Single-process mode requirement for MCP server

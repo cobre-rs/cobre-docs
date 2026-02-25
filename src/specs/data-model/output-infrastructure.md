@@ -106,6 +106,20 @@ Manifest files enable crash recovery and incremental writes. They track completi
 | `cuts.total_active`              | i64    | Active cuts at termination                                                                                                                                                               |
 | `cuts.peak_active`               | i64    | Peak active cuts during training                                                                                                                                                         |
 
+### 1.3 CLI Report Access
+
+Manifest files and metadata are accessible via the `report` subcommand, which reads them from disk and returns structured JSON. This enables agents and scripts to inspect training status, convergence outcome, and simulation progress without parsing the file contents directly.
+
+```bash
+# Query training manifest and metadata
+cobre report /path/to/output --output-format json --section convergence
+
+# Query simulation manifest
+cobre report /path/to/output --output-format json --section simulation
+```
+
+The `report` subcommand is a read-only operation that does not require MPI. It reads the manifest and metadata files documented in §1.1, §1.2, and §2, wraps them in the CLI response envelope (see [CLI and Lifecycle §8](../architecture/cli-and-lifecycle.md) and [Structured Output §4](../interfaces/structured-output.md)), and emits the result to stdout. The MCP tool `cobre/query-convergence` performs the same operation via the MCP protocol (see [MCP Server](../interfaces/mcp-server.md)).
+
 ## 2. Metadata File (`training/metadata.json`)
 
 Comprehensive metadata for reproducibility, audit trails, and debugging.

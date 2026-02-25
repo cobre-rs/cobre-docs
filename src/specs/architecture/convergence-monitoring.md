@@ -176,6 +176,61 @@ Total cuts: <count> | Cuts/stage: ~<avg>
 
 The termination reason is one of: `BOUND_STALLING`, `SIMULATION`, `ITERATION_LIMIT`, `TIME_LIMIT`, or `SHUTDOWN` (graceful signal).
 
+### 4.1 JSON-Lines Streaming Schema
+
+When `--output-format json-lines` is specified, the training log is emitted as newline-delimited JSON instead of the text format above. Each line is a self-describing JSON object with a `type` field. The field values match the per-iteration output record defined in §2.4.
+
+**Progress event** (one per iteration):
+
+```json
+{
+  "type": "progress",
+  "iteration": 1,
+  "lower_bound": 1234567.89,
+  "upper_bound": 1345678.9,
+  "upper_bound_std": 12345.67,
+  "ci_95": 2420.73,
+  "gap": 0.0899,
+  "wall_time_ms": 45200,
+  "iteration_time_ms": 45200
+}
+```
+
+**Started event** (emitted once, replaces the text header):
+
+```json
+{
+  "type": "started",
+  "case": "/data/case_001",
+  "stages": 120,
+  "hydros": 164,
+  "thermals": 130,
+  "ranks": 8,
+  "threads_per_rank": 16,
+  "timestamp": "2026-02-25T10:00:00Z"
+}
+```
+
+The text log and JSON-lines are **mutually exclusive output modes** for the same event stream. When `--output-format human` (default), the text log is emitted. When `--output-format json-lines`, the JSON-lines stream is emitted. The Parquet convergence log (`training/convergence.parquet`) is always written to disk regardless of output mode. See [Structured Output §3](../interfaces/structured-output.md) for the complete JSON-lines streaming protocol.
+
+### 4.2 Termination Event Schema
+
+When the training loop terminates, a structured termination event is emitted (replaces the text termination summary):
+
+```json
+{
+  "type": "terminated",
+  "reason": "bound_stalling",
+  "iterations": 87,
+  "final_lb": 72105.4,
+  "final_ub": 73211.8,
+  "total_time_ms": 3912000,
+  "total_cuts": 16704
+}
+```
+
+The `reason` field uses the same values as the text termination reason: `bound_stalling`, `simulation`, `iteration_limit`, `time_limit`, or `shutdown`. After the termination event, a final `result` event provides the response envelope for the overall command outcome. See [Structured Output §3](../interfaces/structured-output.md) for the `result` event schema.
+
 ## Cross-References
 
 - [Stopping Rules](../math/stopping-rules.md) — Mathematical definitions of the stopping rules implemented by the convergence monitor
@@ -185,3 +240,5 @@ The termination reason is one of: `BOUND_STALLING`, `SIMULATION`, `ITERATION_LIM
 - [Training Loop](./training-loop.md) — The SDDP training loop that invokes this convergence monitor each iteration (§2.1 iteration lifecycle, §4.3 forward synchronization)
 - [Synchronization](../hpc/synchronization.md) — MPI synchronization points including `MPI_Allreduce` for convergence statistics (§1.3)
 - [Configuration Reference](../configuration/configuration-reference.md) — JSON schema for `stopping_rules` and `stopping_mode`
+- [Structured Output](../interfaces/structured-output.md) — JSON-lines streaming protocol and response envelope schema
+- [Terminal UI](../interfaces/terminal-ui.md) — TUI convergence plot consuming the same per-iteration record

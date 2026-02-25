@@ -68,6 +68,10 @@ The index has five components:
 | 48  | [synchronization.md](./hpc/synchronization.md)                            | hpc           | cobre-sddp                 | ferrompi                                 |
 | 49  | [configuration-reference.md](./configuration/configuration-reference.md)  | configuration | cobre-cli                  | cobre-sddp, cobre-stochastic, cobre-core |
 | 50  | [deferred.md](./deferred.md)                                              | deferred      | (multi-crate)              | See audit report section 2.2             |
+| 51  | [structured-output.md](./interfaces/structured-output.md)                 | interfaces    | cobre-cli                  | cobre-mcp, cobre-python                  |
+| 52  | [mcp-server.md](./interfaces/mcp-server.md)                               | interfaces    | cobre-mcp                  | cobre-cli                                |
+| 53  | [python-bindings.md](./interfaces/python-bindings.md)                     | interfaces    | cobre-python               | cobre-cli                                |
+| 54  | [terminal-ui.md](./interfaces/terminal-ui.md)                             | interfaces    | cobre-tui                  | cobre-cli                                |
 
 ---
 
@@ -207,6 +211,37 @@ This crate owns MPI communication and SharedWindow. 1 primary spec, 7 secondary.
 6. [Output Infrastructure](./data-model/output-infrastructure.md) (secondary)
 7. [Synchronization](./hpc/synchronization.md) (secondary)
 8. [SLURM Deployment](./hpc/slurm-deployment.md) (secondary)
+
+### cobre-mcp
+
+This crate owns the MCP server specification. 1 primary spec, 5 secondary.
+
+1. [MCP Server](./interfaces/mcp-server.md)
+2. [Structured Output](./interfaces/structured-output.md) (secondary)
+3. [Convergence Monitoring](./architecture/convergence-monitoring.md) (secondary)
+4. [Validation Architecture](./architecture/validation-architecture.md) (secondary)
+5. [Output Schemas](./data-model/output-schemas.md) (secondary)
+6. [Output Infrastructure](./data-model/output-infrastructure.md) (secondary)
+
+### cobre-python
+
+This crate owns the Python bindings specification. 1 primary spec, 5 secondary.
+
+1. [Python Bindings](./interfaces/python-bindings.md)
+2. [Structured Output](./interfaces/structured-output.md) (secondary)
+3. [Hybrid Parallelism](./hpc/hybrid-parallelism.md) (secondary)
+4. [Memory Architecture](./hpc/memory-architecture.md) (secondary)
+5. [Training Loop](./architecture/training-loop.md) (secondary)
+6. [Output Schemas](./data-model/output-schemas.md) (secondary)
+
+### cobre-tui
+
+This crate owns the terminal UI specification. 1 primary spec, 3 secondary.
+
+1. [Terminal UI](./interfaces/terminal-ui.md)
+2. [Convergence Monitoring](./architecture/convergence-monitoring.md) (secondary)
+3. [Training Loop](./architecture/training-loop.md) (secondary)
+4. [Structured Output](./interfaces/structured-output.md) (secondary)
 
 ---
 

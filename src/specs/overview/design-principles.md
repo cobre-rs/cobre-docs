@@ -247,7 +247,7 @@ Every CLI subcommand (`run`, `validate`, `report`, `compare`, `version`) produce
 }
 ```
 
-The envelope schema is the same shape for all subcommands; only the `data` and `errors` content varies. See Structured Output spec (planned) for the complete schema definition.
+The envelope schema is the same shape for all subcommands; only the `data` and `errors` content varies. See [Structured Output](../interfaces/structured-output.md) for the complete schema definition.
 
 #### Rule 2: Every error is structured
 
@@ -316,7 +316,7 @@ This returns a JSON object with the full convergence history (all per-iteration 
 
 Similarly, the MCP tool `cobre/query-results` reads Hive-partitioned Parquet simulation results and returns them as JSON, and the Python binding `cobre.load_results(path)` returns Arrow tables for zero-copy consumption via Polars or Pandas.
 
-The existing output infrastructure -- manifests, metadata, convergence Parquet, Hive-partitioned simulation Parquet, FlatBuffers policy files -- already stores all necessary data. Agent-readability requires only that structured _access paths_ exist for this data, not that the storage format change. See [Output Infrastructure §1-2](../data-model/output-infrastructure.md) for the on-disk format and MCP Server spec (planned) for the query tool definitions.
+The existing output infrastructure -- manifests, metadata, convergence Parquet, Hive-partitioned simulation Parquet, FlatBuffers policy files -- already stores all necessary data. Agent-readability requires only that structured _access paths_ exist for this data, not that the storage format change. See [Output Infrastructure §1-2](../data-model/output-infrastructure.md) for the on-disk format and [MCP Server](../interfaces/mcp-server.md) for the query tool definitions.
 
 ### 6.3 Implementation Requirements
 
@@ -362,7 +362,7 @@ The test suite must include agent-readability tests that:
 - [Validation Architecture](../architecture/validation-architecture.md) — Validation of order invariance and other requirements; foundation for structured error schema (§4-5)
 - [Convergence Monitoring](../architecture/convergence-monitoring.md) — Per-iteration output record (§2.4) that defines the progress event payload
 - [Training Loop](../architecture/training-loop.md) — Iteration lifecycle (§2.1) that defines the event emission points
-- Structured Output spec (planned) — Full JSON schema definitions for CLI response envelope, error schema, and JSON-lines streaming protocol
-- MCP Server spec (planned) — MCP tool, resource, and prompt definitions for agent interaction
-- Python Bindings spec (planned) — PyO3 API surface, zero-copy data paths, GIL management
-- Terminal UI spec (planned) — TUI event consumption, convergence plot, interactive features
+- [Structured Output](../interfaces/structured-output.md) — Full JSON schema definitions for CLI response envelope, error schema, and JSON-lines streaming protocol
+- [MCP Server](../interfaces/mcp-server.md) — MCP tool, resource, and prompt definitions for agent interaction
+- [Python Bindings](../interfaces/python-bindings.md) — PyO3 API surface, zero-copy data paths, GIL management
+- [Terminal UI](../interfaces/terminal-ui.md) — TUI event consumption, convergence plot, interactive features

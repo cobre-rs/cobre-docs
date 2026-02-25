@@ -10,7 +10,7 @@ Based on the target production scenario:
 
 | Dimension            | Value                      | Memory Impact                          |
 | -------------------- | -------------------------- | -------------------------------------- |
-| Stages               | 120                        | Graph size                             |
+| Stages               | 60                         | Graph size                             |
 | Blocks per Stage     | 1-24 (varies), typically 3 | LP structure, outputs                  |
 | Hydros               | 160                        | State dimension                        |
 | Max AR Order         | 12                         | State dimension, variables/constraints |
@@ -18,7 +18,7 @@ Based on the target production scenario:
 | Buses                | 6                          | Variables/constraints                  |
 | Lines                | 10                         | Variables/constraints                  |
 | Forward Passes       | 192                        | Parallelism                            |
-| Openings             | 20                         | Backward pass LP solves                |
+| Openings             | 10                         | Backward pass LP solves                |
 | Iterations           | 50                         | Cut pool size                          |
 | Simulation Scenarios | 2000                       | Output size                            |
 
@@ -157,7 +157,7 @@ N_STATE = N_HYDRO                                               # storage
 
 ## 4. Performance Expectations by Scale
 
-> **Note**: The Production-row timing estimates in this section are derived from a first-principles wall-clock model using LP solve time KPIs (§4.3), parallelism parameters (§4.2), and work distribution mechanics ([Work Distribution §2](../hpc/work-distribution.md)). They assume a fully warm-started steady-state iteration and do not account for I/O, checkpointing, or convergence check overhead. The complete derivation is recorded in the [timing model analysis](../../../plans/spec-consistency-audit/epic-04-wall-clock-time-model/timing-model-analysis.md) audit artifact. These are pre-implementation estimates pending solver benchmarking; the smaller test system rows (Unit Test through Large) remain engineering targets based on domain experience.
+> **Note**: The timing targets in §4.2 are engineering targets for each test system scale, serving as upper bounds for performance regression testing. Section §4.6 provides a separate first-principles wall-clock model for the Production configuration using LP solve time KPIs (§4.3) and parallelism parameters. The complete derivation is in the [timing model analysis](../../../plans/spec-consistency-audit/epic-04-wall-clock-time-model/timing-model-analysis.md) audit artifact. All estimates assume fully warm-started steady-state iterations and do not account for I/O, checkpointing, or convergence check overhead.
 
 > **Purpose**: This table provides expected timing targets for different problem scales, enabling performance validation and regression detection. Timings are per-iteration unless otherwise noted.
 
@@ -172,39 +172,55 @@ N_STATE = N_HYDRO                                               # storage
 
 ### 4.2 Test Systems
 
-| Scale          | Stages | Hydros | Thermals | AR Order | Fwd Passes | Ranks | Threads/Rank | Forward Time | Backward Time | Memory/Rank |
-| -------------- | ------ | ------ | -------- | -------- | ---------- | ----- | ------------ | ------------ | ------------- | ----------- |
-| **Unit Test**  | 3      | 1      | 2        | 0        | 2          | 1     | 1            | <0.1s        | <1s           | <20 MB      |
-| **Small**      | 6      | 5      | 5        | 1        | 10         | 1     | 2            | <0.2s        | <2s           | <50 MB      |
-| **Medium**     | 12     | 80     | 65       | 6        | 100        | 4     | 12           | <5s          | <15s          | <500 MB     |
-| **Large**      | 60     | 160    | 130      | 12       | 192        | 16    | 16           | <15s         | <45s          | <1.5 GB     |
-| **Production** | 120    | 160    | 130      | 12       | 192        | 64    | 24           | ~0.24s \*    | ~4.76s \*     | <2 GB       |
+#### System Definition
 
-> **Note**: Memory/rank estimates reference [Memory Architecture §2.1](../hpc/memory-architecture.md) (~1.2 GB per rank at production scale with 16 threads). Rows marked with \* are model-derived estimates from the [timing model analysis](../../../plans/spec-consistency-audit/epic-04-wall-clock-time-model/timing-model-analysis.md) at $\tau_{LP} = 2$ ms (see §4.6 for the complete time budget). The remaining rows (Unit Test through Large) are engineering targets based on domain experience and will be validated during implementation.
+| Scale          | Stages | Hydros | Thermals | AR Order | Hydro Production | Fwd Passes | Openings |
+| -------------- | -----: | -----: | -------: | -------: | ---------------- | ---------: | -------: |
+| **Unit Test**  |      4 |      1 |        2 |        0 | Constant         |          2 |       10 |
+| **Small**      |     12 |      2 |        4 |        0 | Constant         |          4 |       10 |
+| **Medium**     |     24 |      4 |       20 |        0 | Constant         |         12 |       20 |
+| **Large**      |     24 |      4 |       20 |        6 | Constant         |         16 |       20 |
+| **XLarge**     |     36 |     12 |      130 |       12 | Constant         |         32 |       20 |
+| **2XLarge**    |     36 |     12 |      130 |       12 | FPHA (125)       |         32 |       20 |
+| **Production** |     60 |    160 |      130 |       12 | FPHA (125)       |        192 |       10 |
+
+#### Hardware Configuration and Performance Targets
+
+| Scale          | Ranks | Threads/Rank | Forward Time | Backward Time | Memory/Rank |
+| -------------- | ----: | -----------: | ------------ | ------------- | ----------- |
+| **Unit Test**  |     1 |            2 | <0.2s        | <1s           | —           |
+| **Small**      |     2 |            2 | <0.3s        | <1.5s         | —           |
+| **Medium**     |     2 |            6 | <1s          | <10s          | —           |
+| **Large**      |     2 |            8 | <1.2s        | <12s          | —           |
+| **XLarge**     |     2 |            8 | <2s          | <20s          | —           |
+| **2XLarge**    |     2 |            8 | <3s          | <30s          | —           |
+| **Production** |     4 |           48 | <10s         | <90s          | —           |
+
+> **Note**: All timing values are engineering targets based on domain experience. The Production row model-derived estimates from §4.6 are substantially lower than the engineering targets, indicating headroom for I/O, cold-starts, and solver variability. Memory/Rank values are to be calculated using the sizing tool; approximate sizing can be derived from the formulas in §3 and [Memory Architecture §2.1](../hpc/memory-architecture.md).
 
 ### 4.3 Key Performance Indicators
 
-| Metric                        | Target  | Measurement Point                  |
-| ----------------------------- | ------- | ---------------------------------- |
-| LP solve (warm-start)         | <2 ms   | Hot-path, ~500-row problem         |
-| LP solve (cold-start)         | <20 ms  | First solve or basis invalid       |
-| RHS batch update              | <100 us | ~500 constraint updates            |
-| Solution extraction           | <50 us  | Primal + basis to buffers          |
-| Cut exchange (MPI_Allgatherv) | <5 ms   | Per-stage, all ranks exchange cuts |
-| Parallel efficiency           | >80%    | At 64 ranks vs. 1 rank             |
-| Warm-start hit rate           | >70%    | Forward pass consecutive stages    |
+| Metric                        | Target  | Measurement Point                    |
+| ----------------------------- | ------- | ------------------------------------ |
+| LP solve (warm-start)         | ≤25 ms  | Hot-path, ~8,400-variable subproblem |
+| LP solve (cold-start)         | ≤250 ms | First solve or basis invalid         |
+| RHS batch update              | <100 us | ~25,000 constraint updates           |
+| Solution extraction           | <50 us  | Primal + basis to buffers            |
+| Cut exchange (MPI_Allgatherv) | <5 ms   | Per-stage, all ranks exchange cuts   |
+| Parallel efficiency           | >80%    | At 4 ranks vs. 1 rank                |
+| Warm-start hit rate           | >70%    | Forward pass consecutive stages      |
 
 ### 4.4 Scaling Expectations
 
-| Dimension       | Scaling Behavior                                                                                                                                                                                                      |
-| --------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Forward pass    | Time $\propto$ (stages $\times$ LP solve time) / (ranks $\times$ threads). Near-linear speedup.                                                                                                                       |
-| Backward pass   | Time $\propto$ stages $\times$ (openings / threads + MPI sync). Sequential stage dependency.                                                                                                                          |
-| Communication   | Pure data transfer < 0.1% of iteration time on InfiniBand; total synchronization overhead (including load imbalance barriers) ~2% ([Communication Patterns §3.2](../hpc/communication-patterns.md), §4.6 time budget) |
-| Memory per rank | $\approx$ solver workspaces (~57 MB $\times$ threads) + cut pool (~250 MB) + opening tree (~30 MB). See [Memory Architecture §2.1](../hpc/memory-architecture.md)                                                     |
-| Cut pool growth | Logical growth only (pre-allocated slots). Memory stable after initialization.                                                                                                                                        |
+| Dimension       | Scaling Behavior                                                                                                                                                                          |
+| --------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Forward pass    | Time $\propto$ (stages $\times$ LP solve time) / (ranks $\times$ threads). Near-linear speedup.                                                                                           |
+| Backward pass   | Time $\propto$ (stages $- 1$) $\times$ openings $\times$ LP solve time. Sequential stage and opening dependency (warm-start). Each rank redundantly solves all openings for cut locality. |
+| Communication   | With 4 ranks on InfiniBand, pure data transfer and synchronization are negligible (<0.1% of iteration time). See §4.6 time budget.                                                        |
+| Memory per rank | $\approx$ solver workspaces (~57 MB $\times$ threads) + cut pool (~250 MB) + opening tree. See [Memory Architecture §2.1](../hpc/memory-architecture.md)                                  |
+| Cut pool growth | Logical growth only (pre-allocated slots). Memory stable after initialization.                                                                                                            |
 
-> **Thread utilization at 64 ranks**: The forward and backward passes have different utilization characteristics. **Forward pass**: With $M = 192$ trajectories distributed across $R = 64$ ranks, each rank receives $192 / 64 = 3$ trajectories, so $3/24 = 12.5\%$ thread utilization. **Backward pass**: With $N_{open} = 20$ openings per stage distributed across $R = 64$ ranks, only 20 of 64 ranks receive work (at most 1 opening each), and each active rank uses 1 of 24 threads ($4.2\%$ utilization). The remaining 44 ranks are idle during backward pass stages. Despite the low utilization, the per-iteration compute time is determined by the critical path: $T \times \tau_{LP}$ for the forward pass and $(T-1) \times N_{open} \times \tau_{LP}$ for the backward pass. The 64-rank configuration trades utilization for reduced per-rank memory pressure and future scaling headroom. At $R = 8$ ranks with 24 threads, forward utilization reaches 100%. See the [timing model analysis §8](../../../plans/spec-consistency-audit/epic-04-wall-clock-time-model/timing-model-analysis.md) for the complete utilization comparison.
+> **Thread utilization at 4 ranks**: The forward and backward passes have different utilization characteristics. **Forward pass**: With $M = 192$ trajectories distributed across $R = 4$ ranks, each rank receives $192 / 4 = 48$ trajectories. With $T_h = 48$ threads per rank, each thread handles exactly 1 trajectory — **100% thread utilization**. **Backward pass**: With $N_{open} = 10$ openings per stage solved sequentially by 1 thread per rank (for warm-start benefit), thread utilization is $1/48 = 2.1\%$. All 4 ranks are active (redundant computation ensures each rank has all cuts locally). Despite the low backward utilization, the per-iteration compute time is determined by the critical path: $T \times \tau_{LP}$ for the forward pass and $(T-1) \times N_{open} \times \tau_{LP}$ for the backward pass. See the [timing model analysis §8](../../../plans/spec-consistency-audit/epic-04-wall-clock-time-model/timing-model-analysis.md) for the complete utilization comparison.
 
 ### 4.5 Convergence Reference
 
@@ -215,67 +231,72 @@ N_STATE = N_HYDRO                                               # storage
 | Complex (full national grid)       | 50-100             | <1.0%           |
 | With CVaR risk measure             | +20-50% iterations | Same gap target |
 
-> **Note**: Iteration counts assume reasonable initial policy (warm-start from previous study). Cold-start may require 2-3x more iterations.
+> **Note**: Iteration counts assume reasonable initial policy (warm-start from previous study). Cold-start may require 2-3x more iterations. The Production system (60 stages, 160 hydros, AR(12)) falls in the "Complex" category.
 
 ### 4.6 Wall-Clock Time Budget
 
-The following per-iteration time budget is derived from a first-principles model at $\tau_{LP} = 2$ ms, $R = 64$ ranks, $D_{state} = 2{,}080$ (worst-case AR(12)), InfiniBand HDR. The complete derivation with all intermediate steps is in the [timing model analysis](../../../plans/spec-consistency-audit/epic-04-wall-clock-time-model/timing-model-analysis.md).
+The following per-iteration time budget is derived from a first-principles model at $\tau_{LP} = 25$ ms, $R = 4$ ranks, $T_h = 48$ threads/rank, $D_{state} = 2{,}080$ (worst-case AR(12)), InfiniBand HDR. The complete derivation with all intermediate steps is in the [timing model analysis](../../../plans/spec-consistency-audit/epic-04-wall-clock-time-model/timing-model-analysis.md).
 
-| Component                     | Per-Iteration | Fraction | Category        |
-| ----------------------------- | ------------: | -------: | --------------- |
-| Forward pass compute          |       0.240 s |    4.70% | Compute         |
-| Backward pass compute         |       4.760 s |   93.30% | Compute         |
-| Trial point `Allgatherv`      |       0.002 s |    0.04% | Communication   |
-| Cut exchange (119 stages)     |       0.005 s |    0.10% | Communication   |
-| Convergence `Allreduce`       |      ~0.000 s |   ~0.00% | Communication   |
-| Barrier overhead (119 stages) |       0.095 s |    1.86% | Synchronization |
-| **Per-iteration total**       |   **5.102 s** | **100%** |                 |
+| Component                    | Per-Iteration | Fraction | Category        |
+| ---------------------------- | ------------: | -------: | --------------- |
+| Forward pass compute         |       1.500 s |    9.07% | Compute         |
+| Backward pass compute        |      14.750 s |   89.15% | Compute         |
+| Trial point `Allgatherv`     |      <0.001 s |   <0.01% | Communication   |
+| Cut exchange (59 stages)     |      <0.001 s |   <0.01% | Communication   |
+| Convergence `Allreduce`      |      <0.001 s |   <0.01% | Communication   |
+| Barrier overhead (59 stages) |       0.295 s |    1.78% | Synchronization |
+| **Per-iteration total**      |  **16.545 s** | **100%** |                 |
+
+**Forward pass**: $T \times \lceil M / (R \times T_h) \rceil \times \tau_{LP} = 60 \times 1 \times 25 = 1{,}500$ ms. Each rank receives $192/4 = 48$ trajectories, fully utilizing 48 threads.
+
+**Backward pass**: $(T - 1) \times N_{open} \times \tau_{LP} = 59 \times 10 \times 25 = 14{,}750$ ms. Each rank sequentially solves all 10 openings per stage for warm-start benefit.
 
 **50-iteration projection**:
 
 | Metric                 |     Value | Notes                                           |
 | ---------------------- | --------: | ----------------------------------------------- |
-| 50-iteration total     |   255.1 s | $50 \times 5.102$                               |
+| 50-iteration total     |   827.3 s | $50 \times 16.545$                              |
 | Wall-clock budget      | 7,200.0 s | 2-hour operational requirement                  |
-| Budget fraction        |      3.5% | Headroom: 6,945 s (96.5%)                       |
+| Budget fraction        |     11.5% | Headroom: 6,373 s (88.5%)                       |
 | Headroom available for |           | I/O, checkpointing, cold-starts, cut management |
 
 #### Sensitivity: Critical LP Solve Time
 
-The model is linear in $\tau_{LP}$. LP solves per iteration: $120 + 119 \times 20 = 2{,}500$. Including barrier overhead (2% of backward compute), the LP-equivalent coefficient is $2{,}500 + 47.6 = 2{,}547.6$. The total 50-iteration compute time is:
+The model is linear in $\tau_{LP}$. LP solves per iteration: $60 + 59 \times 10 = 650$. Including barrier overhead (2% of backward compute), the LP-equivalent coefficient is $650 + 11.8 = 661.8$. The total 50-iteration compute time is:
 
 $$
-T_{total}^{full} \approx 50 \times (2{,}547.6 \times \tau_{LP} + 0.007) = 127{,}380 \times \tau_{LP} + 0.35 \text{ seconds}
+T_{total}^{full} \approx 50 \times 661.8 \times \tau_{LP} = 33{,}090 \times \tau_{LP} \text{ seconds}
 $$
 
 Setting $T_{total}^{full} = 7{,}200$ s and solving for the critical LP solve time:
 
 $$
-\tau_{LP}^{crit} = \frac{7{,}200 - 0.35}{127{,}380} \approx 56.5 \text{ ms}
+\tau_{LP}^{crit} = \frac{7{,}200}{33{,}090} \approx 217.6 \text{ ms}
 $$
 
-If the effective LP solve time exceeds approximately **56.5 ms**, the 50-iteration budget is violated. With only 20 openings (vs. 200 in earlier estimates), the solver has substantial headroom against LP solve time degradation.
+If the effective LP solve time exceeds approximately **218 ms**, the 50-iteration budget is violated. With 60 stages, 10 openings, and 4 ranks, the solver has substantial headroom — the critical threshold is nearly 9x the baseline assumption.
 
-| Scenario                        | $\tau_{LP}$ | 50-iter total | Budget % | Verdict           |
-| ------------------------------- | ----------: | ------------: | -------: | ----------------- |
-| Aggressive warm-start           |        1 ms |      ~127.8 s |     1.8% | Well under budget |
-| **Target (spec KPI)**           |    **2 ms** |  **~255.1 s** | **3.5%** | **Under budget**  |
-| Moderate warm-start degradation |        4 ms |      ~509.9 s |     7.1% | Under budget      |
-| Elevated solve time             |       10 ms |    ~1,274.2 s |    17.7% | Under budget      |
-| **Critical threshold**          |    ~56.5 ms |    ~7,200.0 s |   100.0% | At budget limit   |
+| Scenario                | $\tau_{LP}$ | 50-iter total |  Budget % | Verdict             |
+| ----------------------- | ----------: | ------------: | --------: | ------------------- |
+| Optimistic warm-start   |       10 ms |        ~331 s |      4.6% | Well under budget   |
+| **Baseline (spec KPI)** |   **25 ms** |    **~827 s** | **11.5%** | **Under budget**    |
+| Moderate degradation    |       50 ms |      ~1,655 s |     23.0% | Under budget        |
+| Elevated solve time     |      100 ms |      ~3,309 s |     46.0% | Under budget        |
+| Heavy degradation       |      150 ms |      ~4,964 s |     68.9% | Under budget        |
+| **Critical threshold**  | **~218 ms** |  **~7,200 s** |  **100%** | **At budget limit** |
 
 #### Sensitivity: Backward Pass Warm-Start Rate
 
-The backward pass constitutes ~93% of compute. If the backward pass warm-start hit rate $\eta_{ws}^{bwd}$ drops below 100% (the design target from [Work Distribution §2.3](../hpc/work-distribution.md)), LP solve times blend between warm-start ($\tau_{ws} = 2$ ms) and cold-start ($\tau_{cs} = 20$ ms):
+The backward pass constitutes ~89% of compute. If the backward pass warm-start hit rate $\eta_{ws}^{bwd}$ drops below 100% (the design target from [Work Distribution §2.3](../hpc/work-distribution.md)), LP solve times blend between warm-start ($\tau_{ws} = 25$ ms) and cold-start ($\tau_{cs} = 250$ ms):
 
-| $\eta_{ws}^{bwd}$ | Effective $\tau_{LP}^{bwd}$ | 50-iter total | Verdict      |
-| ----------------: | --------------------------: | ------------: | ------------ |
-|              100% |                        2 ms |        ~255 s | Under budget |
-|               90% |                      3.8 ms |        ~474 s | Under budget |
-|               80% |                      5.6 ms |        ~693 s | Under budget |
-|               70% |                      7.4 ms |        ~911 s | Under budget |
+| $\eta_{ws}^{bwd}$ | Effective $\tau_{LP}^{bwd}$ | 50-iter total | Budget % | Verdict      |
+| ----------------: | --------------------------: | ------------: | -------: | ------------ |
+|              100% |                       25 ms |        ~827 s |    11.5% | Under budget |
+|               90% |                     47.5 ms |      ~1,504 s |    20.9% | Under budget |
+|               80% |                       70 ms |      ~2,181 s |    30.3% | Under budget |
+|               70% |                     92.5 ms |      ~2,858 s |    39.7% | Under budget |
 
-With 20 openings, warm-start remains beneficial for LP performance but is no longer an existential threat to the 2-hour budget. Even at 70% hit rate, the solver uses only ~12.7% of the budget. The sequential opening evaluation design ([Work Distribution §2.3](../hpc/work-distribution.md)) still targets near-100% warm-start for optimal LP throughput.
+With 10 openings and 60 stages, warm-start remains important for performance but is not an existential threat to the 2-hour budget. Even at 70% hit rate, the solver uses ~40% of the budget, leaving 60% headroom for other overhead. The sequential opening evaluation design ([Work Distribution §2.3](../hpc/work-distribution.md)) still targets near-100% warm-start for optimal LP throughput.
 
 ### 4.7 Model Assumptions
 
@@ -283,17 +304,17 @@ Every timing model estimate in §4.6 depends on the assumptions below. The table
 
 | Assumption                               | Value      | Source                                                                      | Category             | Sensitivity |
 | ---------------------------------------- | ---------- | --------------------------------------------------------------------------- | -------------------- | ----------- |
-| LP solve time (warm-start)               | 2 ms       | §4.3 KPI                                                                    | Spec KPI             | **High**    |
-| LP solve time (cold-start)               | 20 ms      | §4.3 KPI                                                                    | Spec KPI             | Medium      |
+| LP solve time (warm-start)               | 25 ms      | §4.3 KPI                                                                    | Spec KPI             | **High**    |
+| LP solve time (cold-start)               | 250 ms     | §4.3 KPI                                                                    | Spec KPI             | Medium      |
 | Forward pass warm-start hit rate         | 70%        | §4.3 KPI                                                                    | Spec KPI             | Low         |
 | Backward pass warm-start hit rate        | ~100%      | [Work Distribution §2.3](../hpc/work-distribution.md) (sequential openings) | Spec Architecture    | Low         |
-| MPI ranks                                | 64         | §4.2                                                                        | Spec Architecture    | Low         |
-| Threads per rank                         | 24         | §4.2                                                                        | Spec Architecture    | Low         |
-| Stages                                   | 120        | §1                                                                          | Spec Architecture    | Low         |
+| MPI ranks                                | 4          | §4.2                                                                        | Spec Architecture    | Low         |
+| Threads per rank                         | 48         | §4.2                                                                        | Spec Architecture    | Low         |
+| Stages                                   | 60         | §1                                                                          | Spec Architecture    | Low         |
 | Forward passes                           | 192        | §1                                                                          | Spec Architecture    | Low         |
-| Openings                                 | 20         | §1                                                                          | Spec Architecture    | Low         |
+| Openings                                 | 10         | §1                                                                          | Spec Architecture    | Low         |
 | Iterations                               | 50         | §1                                                                          | Spec Architecture    | Low         |
-| Backward stages = $T - 1$                | 119        | [Training Loop §6.1](../architecture/training-loop.md)                      | Spec Architecture    | Low         |
+| Backward stages = $T - 1$                | 59         | [Training Loop §6.1](../architecture/training-loop.md)                      | Spec Architecture    | Low         |
 | One LP solve per stage per trajectory    | 1          | §3 (blocks within LP, not separate solves)                                  | Spec Architecture    | Low         |
 | Sequential opening evaluation per thread | Sequential | [Work Distribution §2.3](../hpc/work-distribution.md)                       | Spec Architecture    | Low         |
 | InfiniBand HDR bandwidth                 | 25 GB/s    | §4.1                                                                        | Spec Architecture    | Low         |
@@ -302,7 +323,7 @@ Every timing model estimate in §4.6 depends on the assumptions below. The table
 | LP solve time standard deviation         | 15%        | [Work Distribution §4.1](../hpc/work-distribution.md) (upper end of 5-15%)  | Engineering Estimate | Low         |
 | Load imbalance barrier overhead          | 2%         | Derived from statistical model of per-stage max-of-ranks                    | Engineering Estimate | Low         |
 
-**High-sensitivity parameters**: LP solve time ($\tau_{ws}$) is the primary assumption with material impact on feasibility, though the critical threshold is now ~56.5 ms (well above the 2 ms target). With 20 openings, backward pass warm-start hit rate ($\eta_{ws}^{bwd}$) is no longer an existential risk -- even at 70% hit rate the budget fraction is ~12.7%. All other parameters would need to change by an order of magnitude to threaten the 2-hour budget. Early solver benchmarking should still prioritize measuring LP solve time under warm-start conditions.
+**High-sensitivity parameters**: LP solve time ($\tau_{ws} = 25$ ms) is the primary assumption with material impact on the time budget, though the critical threshold (~218 ms) provides nearly 9x headroom above the baseline. With 10 openings, backward pass warm-start hit rate ($\eta_{ws}^{bwd}$) is a moderate concern — at 70% hit rate, the budget fraction reaches ~40%, still well under the limit but with less headroom than the baseline. Early solver benchmarking should prioritize measuring LP solve time under warm-start conditions with production-scale subproblems (~8,400 variables, ~25,000 active constraints).
 
 ## Cross-References
 

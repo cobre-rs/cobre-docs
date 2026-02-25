@@ -291,6 +291,32 @@ When validation completes (pass or fail), Cobre emits a structured JSON report:
 
 The report is written to `{case_directory}/validation_report.json` and also emitted to the program log. In `--validate-only` mode, the report is the primary output.
 
+### 5.1 Structured Output Integration
+
+When `--output-format json` is specified, the validation report is emitted to stdout wrapped in the CLI response envelope. The `data` field is `null` for validation (the report content is conveyed via `errors` and `warnings`), and the top-level `success` field maps from the existing `valid` field:
+
+```json
+{
+  "$schema": "urn:cobre:response:v1",
+  "command": "validate",
+  "success": false,
+  "exit_code": 3,
+  "cobre_version": "2.0.0",
+  "errors": [ ... ],
+  "warnings": [ ... ],
+  "data": null,
+  "summary": { "files_checked": 24, "entities_validated": 456, "error_count": 2, "warning_count": 1 }
+}
+```
+
+The error records within `errors[]` and `warnings[]` use the enriched error schema defined in [Structured Output §2](../interfaces/structured-output.md), which extends the existing validation error format with `context` and `suggestion` fields. The existing 14 error kinds from §4 above are preserved unchanged; they serve as the foundation for the complete error kind registry.
+
+The validation report file (`validation_report.json`) continues to be written to disk regardless of the output format flag. The structured stdout emission is an additional output path, not a replacement.
+
+### 5.2 Response Envelope Reference
+
+The response envelope used by the `validate` subcommand is the same envelope used by all other subcommands. See [Structured Output §2](../interfaces/structured-output.md) for the complete JSON Schema definition and [CLI and Lifecycle §8](./cli-and-lifecycle.md) for the output format negotiation.
+
 ## Cross-References
 
 - [CLI and Lifecycle](./cli-and-lifecycle.md) — Validation phase within the execution lifecycle; `--validate-only` mode; exit codes
@@ -310,3 +336,4 @@ The report is written to `{case_directory}/validation_report.json` and also emit
 - [PAR Inflow Model](../math/par-inflow-model.md) — AR stationarity, residual variance, correlation matrix validation
 - [Scenario Generation](./scenario-generation.md) — PAR model validation rules (AR stationarity, sufficient history)
 - [Deferred Features](../deferred.md) — GNL (§C.1) and Markovian (§C.5) validation deferred
+- [Structured Output](../interfaces/structured-output.md) — Response envelope schema and enriched error format with `context` and `suggestion` fields
