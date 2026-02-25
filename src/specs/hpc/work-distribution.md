@@ -81,9 +81,9 @@ The openings for a given trial point are evaluated sequentially by the owning th
 | **Cache locality**     | Hot — LP data stays in L1/L2             | Cold — thrashing across $N_{\text{openings}}$ LPs     |
 | **Parallelism source** | Trial points across threads (sufficient) | Openings within a trial point                         |
 
-With production-scale parameters (e.g., $M = 192$ forward passes, $R = 8$ ranks, $N_{\text{threads}} = 16$ per rank), there are 192 trial points per stage distributed across 128 total threads — 1.5 trial points per thread per stage, which is sufficient parallelism.
+With production-scale parameters ($M = 192$ forward passes, $R = 4$ ranks, $N_{\text{threads}} = 48$ per rank), each rank handles $192 / 4 = 48$ trial points per stage with 48 threads — exactly 1.0 trial points per thread, achieving 100% thread utilization in the forward pass.
 
-> **Thread utilization varies with rank count**: The $R = 8$ example above achieves high utilization ($192 / 128 = 1.5$ items per thread). At the production deployment of $R = 64$ ranks with $N_{\text{threads}} = 24$, each rank receives only $192 / 64 = 3$ items, leaving 21 of 24 threads idle (12.5% utilization). The per-iteration compute time is identical in both configurations because the critical path depends on $M / R$ items per rank, not on total thread count. See [Production Scale Reference §4.4](../overview/production-scale-reference.md) for the utilization analysis and alternative deployment scenarios.
+> **Forward vs. backward utilization**: The forward pass achieves 100% thread utilization because $M / R = N_{\text{threads}} = 48$. The backward pass has lower utilization: each rank processes $(T - 1) \times N_{\text{open}} = 59 \times 10 = 590$ openings sequentially on a single thread (to preserve solver warm-start), using only 1 of 48 threads (2.1% utilization). This is an inherent trade-off — warm-start LP solves are faster per opening than cold-start parallel solves would be. See [Production Scale Reference §4.4](../overview/production-scale-reference.md) for the complete utilization analysis.
 
 ## 3. Distribution Arithmetic
 

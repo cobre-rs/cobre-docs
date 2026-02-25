@@ -35,17 +35,17 @@ No `Arc`, `RwLock`, or `Mutex` is needed — OpenMP's shared data model, implici
 
 ### 2.1 Derivable Components
 
-The following memory estimates are derived from production-scale dimensions in approved specs. Reference configuration: 160 hydros, 130 thermals, 120 stages, 192 forward passes, 200 openings, 15K cut capacity, 16 threads per rank.
+The following memory estimates are derived from production-scale dimensions in approved specs. Reference configuration: 160 hydros, 130 thermals, 60 stages, 192 forward passes, 10 openings, 15K cut capacity, 48 threads per rank.
 
-| Component                 |        Size | Derivation                                                                                     | Source                                                             |
-| ------------------------- | ----------: | ---------------------------------------------------------------------------------------------- | ------------------------------------------------------------------ |
-| Opening tree              |      ~30 MB | 200 openings × 120 stages × 160 entities × 8 bytes                                             | [Scenario Generation §2.3](../architecture/scenario-generation.md) |
-| Solver workspaces (×16)   |     ~912 MB | 16 threads × ~57 MB per workspace (HiGHS: solver instance + buffers + per-stage basis cache)   | [Solver Workspaces §1.2](../architecture/solver-workspaces.md)     |
-| Cut pool (at capacity)    |     ~250 MB | 15,000 cuts × 120 stages × ~16,660 bytes per cut ÷ 120 = ~250 MB active in memory at any stage | [Cut Management Impl §4.2](../architecture/cut-management-impl.md) |
-| Input case data           |      ~20 MB | System entities, PAR parameters, correlation factors, block/exchange factors                   | [Internal Structures](../data-model/internal-structures.md)        |
-| Forward pass state        |      ~18 MB | 192 trajectories × ~9 KB state vector (1,120 doubles + metadata) × ~1 stage buffered           | [Training Loop §5.1](../architecture/training-loop.md)             |
-| MPI communication buffers |      ~10 MB | Send/receive buffers for `MPI_Allgatherv` (cuts: ~3.2 MB, states: ~1.72 MB per stage)          | [Communication Patterns §2](./communication-patterns.md)           |
-| **Total per rank**        | **~1.2 GB** |                                                                                                |                                                                    |
+| Component                 |        Size | Derivation                                                                                   | Source                                                             |
+| ------------------------- | ----------: | -------------------------------------------------------------------------------------------- | ------------------------------------------------------------------ |
+| Opening tree              |     ~0.8 MB | 10 openings × 60 stages × 160 entities × 8 bytes                                             | [Scenario Generation §2.3](../architecture/scenario-generation.md) |
+| Solver workspaces (×48)   |   ~2,736 MB | 48 threads × ~57 MB per workspace (HiGHS: solver instance + buffers + per-stage basis cache) | [Solver Workspaces §1.2](../architecture/solver-workspaces.md)     |
+| Cut pool (at capacity)    |     ~250 MB | 15,000 cuts × 60 stages × ~16,660 bytes per cut ÷ 60 = ~250 MB active in memory at any stage | [Cut Management Impl §4.2](../architecture/cut-management-impl.md) |
+| Input case data           |      ~20 MB | System entities, PAR parameters, correlation factors, block/exchange factors                 | [Internal Structures](../data-model/internal-structures.md)        |
+| Forward pass state        |      ~18 MB | 192 trajectories × ~9 KB state vector (1,120 doubles + metadata) × ~1 stage buffered         | [Training Loop §5.1](../architecture/training-loop.md)             |
+| MPI communication buffers |      ~10 MB | Send/receive buffers for `MPI_Allgatherv` (cuts: ~3.2 MB, states: ~1.72 MB per stage)        | [Communication Patterns §2](./communication-patterns.md)           |
+| **Total per rank**        | **~3.0 GB** |                                                                                              |                                                                    |
 
 ### 2.2 SharedWindow Savings
 
@@ -53,13 +53,13 @@ When ranks on the same node share read-only data via `SharedWindow<T>` (see [Sha
 
 | Data                | Per-Rank (replicated) | SharedWindow (1 copy/node) | Savings (4 ranks/node) |
 | ------------------- | --------------------: | -------------------------: | ---------------------: |
-| Opening tree        |                ~30 MB |                     ~30 MB |                 ~90 MB |
+| Opening tree        |               ~0.8 MB |                    ~0.8 MB |                ~2.4 MB |
 | Input case data     |                ~20 MB |                     ~20 MB |                 ~60 MB |
-| **Total shareable** |                ~50 MB |                     ~50 MB |                ~150 MB |
+| **Total shareable** |              ~20.8 MB |                   ~20.8 MB |               ~62.4 MB |
 
-The savings are modest at production scale because the dominant memory consumer is the solver workspaces (~912 MB), which are inherently thread-local and cannot be shared. The cut pool (§2.3) is a larger sharing candidate if memory becomes constrained.
+The savings are modest at production scale because the dominant memory consumer is the solver workspaces (~2,736 MB), which are inherently thread-local and cannot be shared. The cut pool (§2.3) is a larger sharing candidate if memory becomes constrained.
 
-**Single-process mode note**: The SharedWindow savings table above applies only to multi-rank MPI deployments. In single-process mode (used by `cobre-python` and `cobre-mcp`), all data resides in a single process with no inter-rank sharing opportunity. The per-process memory footprint in single-process mode equals the "Per-Rank (replicated)" column for all data categories. At production scale with 16 threads, expect approximately 1.2 GB total memory usage per the budget in §2.1.
+**Single-process mode note**: The SharedWindow savings table above applies only to multi-rank MPI deployments. In single-process mode (used by `cobre-python` and `cobre-mcp`), all data resides in a single process with no inter-rank sharing opportunity. The per-process memory footprint in single-process mode equals the "Per-Rank (replicated)" column for all data categories. At production scale with 48 threads, expect approximately 3.0 GB total memory usage per the budget in §2.1.
 
 ### 2.3 Memory Growth
 

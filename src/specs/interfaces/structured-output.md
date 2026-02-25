@@ -736,6 +736,6 @@ The `cobre_version` field (SemVer) provides additional granularity for consumers
 - [CLI and Lifecycle](../architecture/cli-and-lifecycle.md) -- Invocation pattern (SS2), command-line interface (SS3), exit codes (SS4), execution phases (SS5)
 - [Output Infrastructure](../data-model/output-infrastructure.md) (planned update) -- Manifests and metadata accessed by the `report` subcommand
 - [Configuration Reference](../configuration/configuration-reference.md) -- Stopping rules and mode selection that determine training outcomes reported in `data`
-- MCP Server spec (planned) -- MCP tool definitions that consume this protocol's error schema and event types
-- Python Bindings spec (planned) -- Python exception hierarchy mapped from this protocol's error kinds
-- Terminal UI spec (planned) -- TUI rendering that consumes the same event stream as the JSON-lines writer
+- [MCP Server](./mcp-server.md) -- MCP tool definitions that consume this protocol's error schema and event types
+- [Python Bindings](./python-bindings.md) -- Python exception hierarchy mapped from this protocol's error kinds
+- [Terminal UI](./terminal-ui.md) -- TUI rendering that consumes the same event stream as the JSON-lines writer

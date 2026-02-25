@@ -35,7 +35,7 @@ The TUI depends only on `cobre-core` for event type deserialization. It does not
 
 ### 1.3 Deployment Modes
 
-> **Design decision (Q-2)**: The TUI is both a library crate consumed by `cobre-cli` via the `tui` Cargo feature flag, and can be compiled as a standalone binary for pipe mode. Co-hosted is the primary mode; standalone is secondary. This decision is flagged for user review -- see [architecture-021 SS6.1 Q-2](../../../plans/spec-consistency-audit/epic-06-pyo3-python-api-impact/architecture-021.md).
+> **Design decision (Q-2)**: The TUI is both a library crate consumed by `cobre-cli` via the `tui` Cargo feature flag, and can be compiled as a standalone binary for pipe mode. Co-hosted is the primary mode; standalone is secondary.
 
 | Mode       | Activation                                                        | Binary                       |
 | ---------- | ----------------------------------------------------------------- | ---------------------------- |
@@ -46,7 +46,7 @@ The TUI depends only on `cobre-core` for event type deserialization. It does not
 
 ## 2. Event Consumption
 
-The TUI consumes training events defined in `cobre-core` and documented in [architecture-021 SS3.2](../../../plans/spec-consistency-audit/epic-06-pyo3-python-api-impact/architecture-021.md). These are the same event types consumed by the JSON-lines writer ([Structured Output](./structured-output.md) SS3.4).
+The TUI consumes training events defined in `cobre-core`. These are the same event types consumed by the JSON-lines writer ([Structured Output](./structured-output.md) SS3.4).
 
 ### 2.1 Co-Hosted Mode (Broadcast Channel)
 
@@ -96,7 +96,7 @@ TUI Renderer
 
 ### 2.3 Backpressure and Gap Tolerance
 
-Following the broadcast channel design from [architecture-021 SS3.4](../../../plans/spec-consistency-audit/epic-06-pyo3-python-api-impact/architecture-021.md):
+Following the broadcast channel design:
 
 1. **Dropped events**: If the TUI falls behind (e.g., slow terminal rendering), the broadcast channel drops old events rather than blocking the training loop. The TUI must tolerate gaps in the event sequence.
 2. **Lagging indicator**: When the TUI detects a gap in iteration numbers (e.g., receives iteration 45 after iteration 42), it renders a `LAGGING` indicator in the status bar and interpolates missing data points in the convergence plot.
@@ -356,7 +356,7 @@ The TUI provides 5 monitoring views, each occupying the full terminal area below
 
 ## 4. Convergence Plot Data Model
 
-**Canonical data source**: The convergence plot data is the per-iteration output record defined in [Convergence Monitoring](../architecture/convergence-monitoring.md) SS2.4. The TUI does not require any fields beyond what SS2.4 already defines. The `ConvergenceUpdate` Rust struct ([architecture-021 SS3.3](../../../plans/spec-consistency-audit/epic-06-pyo3-python-api-impact/architecture-021.md)) is the shared type definition.
+**Canonical data source**: The convergence plot data is the per-iteration output record defined in [Convergence Monitoring](../architecture/convergence-monitoring.md) SS2.4. The TUI does not require any fields beyond what SS2.4 already defines. The `ConvergenceUpdate` Rust struct is the shared type definition.
 
 ### 4.1 Field-to-Axis Mapping
 
@@ -394,7 +394,7 @@ The Y-axis auto-scales to fit all visible data points with 5% padding above and 
 
 ## 5. Interactive Features
 
-All interactive features that read training state operate at **iteration boundaries only**. The training loop is not designed for mid-iteration inspection -- solver workspaces and cut pools are in flux during forward/backward passes. This constraint is documented in [findings-020 SS3.4](../../../plans/spec-consistency-audit/epic-06-pyo3-python-api-impact/findings-020.md).
+All interactive features that read training state operate at **iteration boundaries only**. The training loop is not designed for mid-iteration inspection -- solver workspaces and cut pools are in flux during forward/backward passes.
 
 ### 5.1 Pause/Resume Training
 
@@ -634,5 +634,4 @@ On terminal resize (detected via crossterm `Event::Resize`):
 - [Convergence Monitoring](../architecture/convergence-monitoring.md) -- Per-iteration output record (SS2.4) that is the canonical data source for the convergence plot; stopping rules (SS1) that the TUI can adjust at runtime
 - [Training Loop](../architecture/training-loop.md) -- Iteration lifecycle (SS2.1) defining the 7 steps that produce the 7 iteration-scoped event types consumed by the TUI
 - [Checkpointing](../hpc/checkpointing.md) -- Checkpoint mechanism used by the snapshot export feature (SS5.5)
-- [architecture-021](../../../plans/spec-consistency-audit/epic-06-pyo3-python-api-impact/architecture-021.md) -- Crate responsibility boundaries (SS2.3), event stream architecture (SS3), consumer registration pattern (SS3.4), deployment mode decision (SS6.1 Q-2)
 - [Configuration Reference](../configuration/configuration-reference.md) -- Stopping rule parameters that the TUI can adjust at runtime

@@ -30,7 +30,7 @@ cobre-mcp
   +-- cobre-core
 ```
 
-The `cobre-mcp` crate does **not** depend on `ferrompi`. It shares the single-process execution path through `cobre-sddp` with OpenMP parallelism only, identical to the execution mode used by `cobre-python` (see [Python Bindings](python-bindings.md) (planned)).
+The `cobre-mcp` crate does **not** depend on `ferrompi`. It shares the single-process execution path through `cobre-sddp` with OpenMP parallelism only, identical to the execution mode used by `cobre-python` (see [Python Bindings](python-bindings.md)).
 
 ### 1.3 Operation Categories
 
@@ -173,13 +173,10 @@ Executes SDDP training and/or simulation on a case directory. This is the only t
       "description": "Absolute path to the case directory"
     },
     "phases": {
-      "type": "array",
-      "items": {
-        "type": "string",
-        "enum": ["training", "simulation", "both"]
-      },
-      "description": "Execution phases to run. Defaults to [\"both\"]",
-      "default": ["both"]
+      "type": "string",
+      "enum": ["training", "simulation", "both"],
+      "description": "Execution phases to run. Defaults to \"both\"",
+      "default": "both"
     }
   },
   "required": ["case_dir"],
@@ -1630,5 +1627,5 @@ This allows agents to discover the server's capabilities and adapt their workflo
 - [Configuration Reference](../configuration/configuration-reference.md) -- `config.json` schema returned by `cobre/get-config-schema`; stopping rules that determine training termination reported in `cobre/run` output
 - [Training Loop](../architecture/training-loop.md) -- Iteration lifecycle (SS2.1) that produces the events consumed by progress reporting; event emission points for the shared event stream
 - Architecture Blueprint (architecture-021) -- Crate responsibility boundaries (SS2.1), shared event stream architecture (SS3), scope definition (SS5.2), long-running operation assumption (SS6.1 Q-3)
-- Python Bindings spec (planned) -- Shares the same single-process execution path and dependency subgraph
-- Terminal UI spec (planned) -- Shares the same event stream as another consumer of `ConvergenceUpdate` events
+- [Python Bindings](./python-bindings.md) -- Shares the same single-process execution path and dependency subgraph
+- [Terminal UI](./terminal-ui.md) -- Shares the same event stream as another consumer of `ConvergenceUpdate` events

@@ -107,7 +107,7 @@ On 100 Gbps Ethernet (12.5 GB/s):
 
 SDDP's communication-to-computation ratio is low. The LP solve time dominates.
 
-> **Pure communication vs. total synchronization**: The fractions above measure pure data transfer time (wire time plus protocol overhead). They do not include load imbalance barrier overhead at per-stage `MPI_Allgatherv` synchronization points in the backward pass. A first-principles timing model at production scale ($R = 64$, $\tau_{LP} = 2$ ms) shows pure communication at 0.08% of iteration time and total synchronization (including barriers) at ~2%. See [Production Scale Reference §4.6](../overview/production-scale-reference.md) for the complete time budget.
+> **Pure communication vs. total synchronization**: The fractions above measure pure data transfer time (wire time plus protocol overhead). They do not include load imbalance barrier overhead at per-stage `MPI_Allgatherv` synchronization points in the backward pass. A first-principles timing model at production scale ($R = 4$, $\tau_{LP} = 25$ ms) confirms pure communication remains well below 1% of iteration time. See [Production Scale Reference §4.6](../overview/production-scale-reference.md) for the complete time budget.
 
 ## 4. Persistent Collectives
 
