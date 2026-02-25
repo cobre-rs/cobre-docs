@@ -239,7 +239,7 @@ echo '{"avg_ar_order": 12}' | python3 scripts/lp_sizing.py /dev/stdin
 
 ## 4. Performance Expectations by Scale
 
-> **Note**: Performance expectations in this section are aspirational targets based on domain experience and hardware specifications, not calculator-derived values. They will be validated and refined during implementation. See §3.4 for calculator-verifiable values.
+> **Note**: The Production-row timing estimates in this section are derived from a first-principles wall-clock model using LP solve time KPIs (§4.3), parallelism parameters (§4.2), and work distribution mechanics ([Work Distribution §2](../hpc/work-distribution.md)). They assume a fully warm-started steady-state iteration and do not account for I/O, checkpointing, or convergence check overhead. The complete derivation is recorded in the [timing model analysis](../../../plans/spec-consistency-audit/epic-04-wall-clock-time-model/timing-model-analysis.md) audit artifact. These are pre-implementation estimates pending solver benchmarking; the smaller test system rows (Unit Test through Large) remain engineering targets based on domain experience.
 
 > **Purpose**: This table provides expected timing targets for different problem scales, enabling performance validation and regression detection. Timings are per-iteration unless otherwise noted.
 
@@ -260,9 +260,9 @@ echo '{"avg_ar_order": 12}' | python3 scripts/lp_sizing.py /dev/stdin
 | **Small**      | 6      | 5      | 5        | 1        | 10         | 1     | 2            | <0.2s        | <2s           | <50 MB      |
 | **Medium**     | 12     | 80     | 65       | 6        | 100        | 4     | 12           | <5s          | <15s          | <500 MB     |
 | **Large**      | 60     | 160    | 130      | 12       | 192        | 16    | 16           | <15s         | <45s          | <1.5 GB     |
-| **Production** | 120    | 160    | 130      | 12       | 192        | 64    | 24           | <30s         | <90s          | <2 GB       |
+| **Production** | 120    | 160    | 130      | 12       | 192        | 64    | 24           | ~0.24s \*    | ~47.6s \*     | <2 GB       |
 
-> **Note**: Memory/rank estimates reference [Memory Architecture §2.1](../hpc/memory-architecture.md) (~1.2 GB per rank at production scale with 16 threads). Timing targets are aspirational — actual values depend on LP solver performance and will be validated during implementation.
+> **Note**: Memory/rank estimates reference [Memory Architecture §2.1](../hpc/memory-architecture.md) (~1.2 GB per rank at production scale with 16 threads). Rows marked with \* are model-derived estimates from the [timing model analysis](../../../plans/spec-consistency-audit/epic-04-wall-clock-time-model/timing-model-analysis.md) at $\tau_{LP} = 2$ ms (see §4.6 for the complete time budget). The remaining rows (Unit Test through Large) are engineering targets based on domain experience and will be validated during implementation.
 
 ### 4.3 Key Performance Indicators
 
@@ -278,13 +278,15 @@ echo '{"avg_ar_order": 12}' | python3 scripts/lp_sizing.py /dev/stdin
 
 ### 4.4 Scaling Expectations
 
-| Dimension       | Scaling Behavior                                                                                                                                                  |
-| --------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Forward pass    | Time $\propto$ (stages $\times$ LP solve time) / (ranks $\times$ threads). Near-linear speedup.                                                                   |
-| Backward pass   | Time $\propto$ stages $\times$ (openings / threads + MPI sync). Sequential stage dependency.                                                                      |
-| Communication   | < 2% of iteration time at production scale, even on Ethernet ([Communication Patterns §3.2](../hpc/communication-patterns.md))                                    |
-| Memory per rank | $\approx$ solver workspaces (~57 MB $\times$ threads) + cut pool (~250 MB) + opening tree (~30 MB). See [Memory Architecture §2.1](../hpc/memory-architecture.md) |
-| Cut pool growth | Logical growth only (pre-allocated slots). Memory stable after initialization.                                                                                    |
+| Dimension       | Scaling Behavior                                                                                                                                                                                                      |
+| --------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Forward pass    | Time $\propto$ (stages $\times$ LP solve time) / (ranks $\times$ threads). Near-linear speedup.                                                                                                                       |
+| Backward pass   | Time $\propto$ stages $\times$ (openings / threads + MPI sync). Sequential stage dependency.                                                                                                                          |
+| Communication   | Pure data transfer < 0.1% of iteration time on InfiniBand; total synchronization overhead (including load imbalance barriers) ~2% ([Communication Patterns §3.2](../hpc/communication-patterns.md), §4.6 time budget) |
+| Memory per rank | $\approx$ solver workspaces (~57 MB $\times$ threads) + cut pool (~250 MB) + opening tree (~30 MB). See [Memory Architecture §2.1](../hpc/memory-architecture.md)                                                     |
+| Cut pool growth | Logical growth only (pre-allocated slots). Memory stable after initialization.                                                                                                                                        |
+
+> **Thread utilization at 64 ranks**: With $M = 192$ forward passes distributed across $R = 64$ ranks, each rank receives $192 / 64 = 3$ work items (trajectories in the forward pass, trial points in the backward pass). Since only 3 of 24 threads per rank are active, thread utilization is $3/24 = 12.5\%$. The per-iteration compute time is unchanged (the critical path is $T \times \tau_{LP}$ for the forward pass and $(T-1) \times N_{open} \times \tau_{LP}$ for the backward pass, both independent of rank count once $M$ items are covered). At $R = 8$ ranks with 24 threads, utilization reaches 100% with identical $T_{iter}$. The 64-rank configuration trades utilization for reduced per-rank memory pressure and future scaling headroom. See the [timing model analysis §8](../../../plans/spec-consistency-audit/epic-04-wall-clock-time-model/timing-model-analysis.md) for the complete utilization comparison.
 
 ### 4.5 Convergence Reference
 
@@ -297,6 +299,93 @@ echo '{"avg_ar_order": 12}' | python3 scripts/lp_sizing.py /dev/stdin
 
 > **Note**: Iteration counts assume reasonable initial policy (warm-start from previous study). Cold-start may require 2-3x more iterations.
 
+### 4.6 Wall-Clock Time Budget
+
+The following per-iteration time budget is derived from a first-principles model at $\tau_{LP} = 2$ ms, $R = 64$ ranks, $D_{state} = 1{,}120$ (typical AR(6)), InfiniBand HDR. The complete derivation with all intermediate steps is in the [timing model analysis](../../../plans/spec-consistency-audit/epic-04-wall-clock-time-model/timing-model-analysis.md).
+
+| Component                     | Per-Iteration | Fraction | Category        |
+| ----------------------------- | ------------: | -------: | --------------- |
+| Forward pass compute          |       0.240 s |    0.49% | Compute         |
+| Backward pass compute         |      47.600 s |   97.48% | Compute         |
+| Trial point `Allgatherv`      |       0.013 s |    0.03% | Communication   |
+| Cut exchange (119 stages)     |       0.027 s |    0.06% | Communication   |
+| Convergence `Allreduce`       |      ~0.000 s |   ~0.00% | Communication   |
+| Barrier overhead (119 stages) |       0.952 s |    1.95% | Synchronization |
+| **Per-iteration total**       |  **48.832 s** | **100%** |                 |
+
+**50-iteration projection**:
+
+| Metric                 |     Value | Notes                                           |
+| ---------------------- | --------: | ----------------------------------------------- |
+| 50-iteration total     | 2,441.6 s | $50 \times 48.832$                              |
+| Wall-clock budget      | 7,200.0 s | 2-hour operational requirement                  |
+| Budget fraction        |     33.9% | Headroom: 4,758 s (66.1%)                       |
+| Headroom available for |           | I/O, checkpointing, cold-starts, cut management |
+
+#### Sensitivity: Critical LP Solve Time
+
+The model is linear in $\tau_{LP}$. The total 50-iteration compute time (including sync overhead) is:
+
+$$
+T_{total}^{full} \approx 50 \times (23{,}920 \times \tau_{LP} + 0.992) = 1{,}196{,}000 \times \tau_{LP} + 49.6 \text{ seconds}
+$$
+
+Setting $T_{total}^{full} = 7{,}200$ s and solving for the critical LP solve time:
+
+$$
+\tau_{LP}^{crit} = \frac{7{,}200 - 49.6}{1{,}196{,}000} \approx 5.98 \text{ ms}
+$$
+
+If the effective LP solve time exceeds approximately **6 ms**, the 50-iteration budget is violated. This threshold provides a concrete validation target for solver benchmarking.
+
+| Scenario                        | $\tau_{LP}$ | 50-iter total |  Budget % | Verdict           |
+| ------------------------------- | ----------: | ------------: | --------: | ----------------- |
+| Aggressive warm-start           |        1 ms |     1,246.0 s |     17.3% | Well under budget |
+| **Target (spec KPI)**           |    **2 ms** | **2,441.6 s** | **33.9%** | **Under budget**  |
+| Moderate warm-start degradation |        4 ms |     4,833.6 s |     67.1% | Under budget      |
+| **Critical threshold**          |    ~5.98 ms |    ~7,200.0 s |    100.0% | At budget limit   |
+| Cold-start dominated            |       10 ms |    12,009.6 s |    166.8% | **OVER budget**   |
+
+#### Sensitivity: Backward Pass Warm-Start Rate
+
+The backward pass constitutes 99.5% of compute and its warm-start characteristics are critical. If the backward pass warm-start hit rate $\eta_{ws}^{bwd}$ drops below 100% (the design target from [Work Distribution §2.3](../hpc/work-distribution.md)), LP solve times blend between warm-start ($\tau_{ws} = 2$ ms) and cold-start ($\tau_{cs} = 20$ ms):
+
+| $\eta_{ws}^{bwd}$ | Effective $\tau_{LP}^{bwd}$ | 50-iter total | Verdict         |
+| ----------------: | --------------------------: | ------------: | --------------- |
+|              100% |                        2 ms |     2,441.6 s | Under budget    |
+|               90% |                      3.8 ms |     4,616.5 s | Under budget    |
+|               80% |                      5.6 ms |     6,758.5 s | Tight           |
+|               70% |                      7.4 ms |     8,900.5 s | **OVER budget** |
+
+Maintaining near-100% backward warm-start is the single most important performance requirement. The sequential opening evaluation design ([Work Distribution §2.3](../hpc/work-distribution.md)) is specifically engineered for this purpose.
+
+### 4.7 Model Assumptions
+
+Every timing model estimate in §4.6 depends on the assumptions below. The table distinguishes spec-defined KPIs (which are targets to be met by the implementation), spec-defined architecture parameters (which are design decisions), and engineering estimates (which need validation).
+
+| Assumption                               | Value      | Source                                                                      | Category             | Sensitivity |
+| ---------------------------------------- | ---------- | --------------------------------------------------------------------------- | -------------------- | ----------- |
+| LP solve time (warm-start)               | 2 ms       | §4.3 KPI                                                                    | Spec KPI             | **High**    |
+| LP solve time (cold-start)               | 20 ms      | §4.3 KPI                                                                    | Spec KPI             | Medium      |
+| Forward pass warm-start hit rate         | 70%        | §4.3 KPI                                                                    | Spec KPI             | Low         |
+| Backward pass warm-start hit rate        | ~100%      | [Work Distribution §2.3](../hpc/work-distribution.md) (sequential openings) | Spec Architecture    | **High**    |
+| MPI ranks                                | 64         | §4.2                                                                        | Spec Architecture    | Low         |
+| Threads per rank                         | 24         | §4.2                                                                        | Spec Architecture    | Low         |
+| Stages                                   | 120        | §1                                                                          | Spec Architecture    | Low         |
+| Forward passes                           | 192        | §1                                                                          | Spec Architecture    | Low         |
+| Openings                                 | 200        | §1                                                                          | Spec Architecture    | Low         |
+| Iterations                               | 50         | §1                                                                          | Spec Architecture    | Low         |
+| Backward stages = $T - 1$                | 119        | [Training Loop §6.1](../architecture/training-loop.md)                      | Spec Architecture    | Low         |
+| One LP solve per stage per trajectory    | 1          | §3 (blocks within LP, not separate solves)                                  | Spec Architecture    | Low         |
+| Sequential opening evaluation per thread | Sequential | [Work Distribution §2.3](../hpc/work-distribution.md)                       | Spec Architecture    | Low         |
+| InfiniBand HDR bandwidth                 | 25 GB/s    | §4.1                                                                        | Spec Architecture    | Low         |
+| IB protocol overhead factor              | 50%        | [Communication Patterns §3.2](../hpc/communication-patterns.md)             | Engineering Estimate | Low         |
+| MPI base latency (InfiniBand)            | 2 us       | Conservative estimate for modern IB HCA                                     | Engineering Estimate | Low         |
+| LP solve time standard deviation         | 15%        | [Work Distribution §4.1](../hpc/work-distribution.md) (upper end of 5-15%)  | Engineering Estimate | Low         |
+| Load imbalance barrier overhead          | 2%         | Derived from statistical model of per-stage max-of-ranks                    | Engineering Estimate | Low         |
+
+**High-sensitivity parameters**: LP solve time ($\tau_{ws}$) and backward pass warm-start hit rate ($\eta_{ws}^{bwd}$) are the only assumptions with material impact on feasibility. All other parameters would need to change by an order of magnitude to threaten the 2-hour budget. Early solver benchmarking should prioritize measuring these two quantities.
+
 ## Cross-References
 
 - [Design Principles](./design-principles.md) — Format selection criteria and design goals
@@ -307,5 +396,7 @@ echo '{"avg_ar_order": 12}' | python3 scripts/lp_sizing.py /dev/stdin
 - [Solver Workspaces §1.2](../architecture/solver-workspaces.md) — Per-thread workspace sizing (~57 MB)
 - [Memory Architecture §2](../hpc/memory-architecture.md) — Per-rank memory budget (~1.2 GB), derivable components
 - [Hybrid Parallelism](../hpc/hybrid-parallelism.md) — MPI+OpenMP architecture for achieving these scaling targets
-- [Communication Patterns §3](../hpc/communication-patterns.md) — Communication volume analysis (<2% overhead)
+- [Communication Patterns §3](../hpc/communication-patterns.md) — Communication volume analysis, pure transfer < 0.1%
+- [Work Distribution §2](../hpc/work-distribution.md) — Forward/backward pass distribution, thread-trajectory affinity
+- [Training Loop §6](../architecture/training-loop.md) — Backward pass stage loop, cut synchronization per stage
 - [SLURM Deployment](../hpc/slurm-deployment.md) — Job scripts for the test system scales above

@@ -83,6 +83,8 @@ The openings for a given trial point are evaluated sequentially by the owning th
 
 With production-scale parameters (e.g., $M = 192$ forward passes, $R = 8$ ranks, $N_{\text{threads}} = 16$ per rank), there are 192 trial points per stage distributed across 128 total threads — 1.5 trial points per thread per stage, which is sufficient parallelism.
 
+> **Thread utilization varies with rank count**: The $R = 8$ example above achieves high utilization ($192 / 128 = 1.5$ items per thread). At the production deployment of $R = 64$ ranks with $N_{\text{threads}} = 24$, each rank receives only $192 / 64 = 3$ items, leaving 21 of 24 threads idle (12.5% utilization). The per-iteration compute time is identical in both configurations because the critical path depends on $M / R$ items per rank, not on total thread count. See [Production Scale Reference §4.4](../overview/production-scale-reference.md) for the utilization analysis and alternative deployment scenarios.
+
 ## 3. Distribution Arithmetic
 
 ### 3.1 Contiguous Block Assignment

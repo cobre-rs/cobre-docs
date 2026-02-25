@@ -17,7 +17,7 @@ This plan performs a deep consistency audit of the Cobre specification corpus (5
 | Epic 01 | Internal Formula & Value Consistency         | 5 (detailed) | completed |
 | Epic 02 | External Reference Verification              | 4 (detailed) | completed |
 | Epic 03 | Production Scale Reference Hardening         | 3 (refined)  | completed |
-| Epic 04 | Wall-Clock Time Model & Performance Targets  | 3 (outline)  | pending   |
+| Epic 04 | Wall-Clock Time Model & Performance Targets  | 3 (refined)  | completed |
 | Epic 05 | Documentation Organization & NEWAVE Deferral | 3 (outline)  | pending   |
 | Epic 06 | Agent & External Interface Impact Assessment | 3 (outline)  | pending   |
 | Epic 07 | Agent Interface Specification Authoring      | 5 (outline)  | pending   |
@@ -38,9 +38,9 @@ This plan performs a deep consistency audit of the Cobre specification corpus (5
 | ticket-010 | Cross-check sizing calculator output against spec values                   | epic-03 | completed | Refined      |
 | ticket-011 | Update forward pass count from 200 to 192                                  | epic-03 | completed | Refined      |
 | ticket-012 | Add traceability annotations to production-scale-reference                 | epic-03 | completed | Refined      |
-| ticket-013 | Build forward and backward pass timing model                               | epic-04 | pending   | Outline      |
-| ticket-014 | Model synchronization and communication overhead                           | epic-04 | pending   | Outline      |
-| ticket-015 | Update performance target language in specs                                | epic-04 | pending   | Outline      |
+| ticket-013 | Build forward and backward pass timing model                               | epic-04 | completed | Refined      |
+| ticket-014 | Model synchronization and communication overhead                           | epic-04 | completed | Refined      |
+| ticket-015 | Update performance target language in specs                                | epic-04 | completed | Refined      |
 | ticket-016 | Review spec organization coherence                                         | epic-05 | pending   | Outline      |
 | ticket-017 | Remove NEWAVE migration section                                            | epic-05 | pending   | Outline      |
 | ticket-018 | Audit and update NEWAVE/CEPEL references                                   | epic-05 | pending   | Outline      |

@@ -97,7 +97,7 @@ On InfiniBand HDR (200 Gb/s = 25 GB/s):
 - 587 MB takes ~23 ms at wire speed
 - With protocol overhead (~50%), ~46 ms per iteration
 - At 200 iterations total: ~9.2 seconds of communication
-- Typical training time: 30-60 minutes → communication fraction: **< 1%**
+- Pure data transfer communication fraction: **< 1%**
 
 On 100 Gbps Ethernet (12.5 GB/s):
 
@@ -106,6 +106,8 @@ On 100 Gbps Ethernet (12.5 GB/s):
 - At 200 iterations: ~18.8 seconds → communication fraction: **~1-2%**
 
 SDDP's communication-to-computation ratio is low. The LP solve time dominates.
+
+> **Pure communication vs. total synchronization**: The fractions above measure pure data transfer time (wire time plus protocol overhead). They do not include load imbalance barrier overhead at per-stage `MPI_Allgatherv` synchronization points in the backward pass. A first-principles timing model at production scale ($R = 64$, $\tau_{LP} = 2$ ms) shows pure communication at 0.08% of iteration time and total synchronization (including barriers) at ~2%. See [Production Scale Reference §4.6](../overview/production-scale-reference.md) for the complete time budget.
 
 ## 4. Persistent Collectives
 
@@ -192,3 +194,4 @@ Determinism sources:
 - [Training Loop §6.3](../architecture/training-loop.md) — `MPI_Allgatherv` for cut distribution
 - [Shared Memory Aggregation](./shared-memory-aggregation.md) — Intra-node shared memory patterns, hierarchical cut aggregation
 - [Memory Architecture](./memory-architecture.md) — Memory budget, shared memory savings quantification
+- [Production Scale Reference §4.6](../overview/production-scale-reference.md) — Wall-clock time budget, sync overhead in context of total iteration time
