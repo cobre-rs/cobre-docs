@@ -1,33 +1,48 @@
-# ticket-020 Assess Impact on Existing Spec Designs
+# ticket-020 Assess MCP Server, Python Bindings, and TUI Impact on Existing Specs
 
 > **[OUTLINE]** This ticket requires refinement before execution.
 > It will be refined with learnings from earlier epics.
 
 ## Objective
 
-Identify which of the 50 existing spec documents contain assumptions that are incompatible with or need modification for a Python embedding layer. Produce an impact report listing each affected spec, the specific assumption or design element that conflicts, the nature of the conflict, and a recommended resolution. This informs both the cobre-python spec and any future updates to existing specs.
+Review the crate architecture, data model, configuration, and HPC specs to assess the impact of adding three new interface layers: an MCP server (`cobre-mcp`), Python bindings (`cobre-python` via PyO3), and a terminal UI (`cobre-tui` via ratatui). Identify every existing spec that needs modification, catalog new crate dependencies, and document architectural constraints for each interface layer.
 
 ## Anticipated Scope
 
-- **Files likely to be read**: All 50 spec files, with particular focus on:
-  - `src/specs/architecture/cli-and-lifecycle.md` (lifecycle assumes CLI-only entry point)
-  - `src/specs/architecture/validation-pipeline.md` (validation may need Python-accessible hooks)
-  - `src/specs/hpc/hybrid-parallelism.md` (MPI+threads model incompatible with GIL)
-  - `src/specs/hpc/memory-architecture.md` (NUMA-aware thread-local workspaces)
-  - `src/specs/hpc/work-distribution.md` (MPI rank distribution model)
-  - `src/specs/data-model/output-schemas.md` (output formats may need Python-native alternatives)
-  - `src/specs/configuration/solver-parameters.md` (configuration may need Python-specific options)
-- **Files likely to be created**: `plans/spec-consistency-audit/epic-06-pyo3-python-api-impact/spec-impact-report.md` (deliverable document)
-- **Key decisions needed**: Whether Python support requires changes to existing specs or only additive new specs; whether the lifecycle spec needs a new "embedded mode" section; whether GIL-compatible execution is a new HPC concern
-- **Open questions**:
-  - Does the validation pipeline need changes for Python, or can it be wrapped as-is?
-  - Does the configuration schema need Python-specific options (e.g., `output_format: "dataframe"`)?
-  - Should the lifecycle spec define an "embedded" or "library" mode alongside the CLI mode?
-  - How many specs actually have hard MPI-only assumptions vs. soft preferences?
+- **MCP Server assessment**:
+  - Which existing operations map to MCP tools (run study, validate, query results, compare policies)?
+  - Which data artifacts map to MCP resources (case directories, policy files, result datasets)?
+  - What MCP prompts would guide agent interaction (system modeling, parameter tuning, result interpretation)?
+  - Transport design: stdio for local agents, SSE for remote, WebSocket for streaming results?
+  - Security model: sandboxing, read-only vs. read-write operations
+
+- **Python Bindings assessment**:
+  - Map 7 Rust crate public APIs to Python interface design (classes, methods, data types)
+  - GIL interaction with thread-local solver workspaces and NUMA-aware allocation
+  - Zero-copy data paths (NumPy/Arrow for scenario data and results)
+  - Whether MPI support is needed (mpi4py integration vs single-process only)
+  - FlatBuffers deserialization for policy data from Python
+
+- **Terminal UI assessment**:
+  - Which training loop events need to be surfaced (iteration progress, convergence, resource usage)?
+  - What monitoring views are needed (convergence plot, iteration detail, memory, communication)?
+  - Interactive features (pause training, inspect cuts, compare scenarios)
+  - Relationship to structured output (TUI consumes same JSON-lines stream?)
+
+- **Specs to review**:
+  - `crates/overview.md` — Dependency graph needs 3 new crates
+  - `specs/architecture/cli-and-lifecycle.md` — Lifecycle needs embedded/library mode for Python, `serve` subcommand for MCP
+  - `specs/hpc/hybrid-parallelism.md` — MPI+threads model vs GIL vs single-process MCP
+  - `specs/hpc/memory-architecture.md` — NUMA-aware workspaces need Python-compatible patterns
+  - `specs/data-model/output-schemas.md` — Outputs need Python-native and MCP-native paths
+  - `specs/architecture/training-loop.md` — Event hooks for TUI and progress streaming
+  - `specs/architecture/convergence-monitoring.md` — Monitoring data for TUI consumption
+
+- **Deliverable**: Impact report with per-interface-layer sections, each listing affected specs, required changes, and architectural constraints
 
 ## Dependencies
 
-- **Blocked By**: ticket-019 (needs the API surface to assess impact)
+- **Blocked By**: None (can start independently, parallel with ticket-019)
 - **Blocks**: ticket-021
 
 ## Effort Estimate

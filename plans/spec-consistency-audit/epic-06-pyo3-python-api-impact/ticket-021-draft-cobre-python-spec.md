@@ -1,28 +1,57 @@
-# ticket-021 Draft cobre-python Specification Outline
+# ticket-021 Define Agent-Readability Design Principles and Interface Architecture
 
 > **[OUTLINE]** This ticket requires refinement before execution.
 > It will be refined with learnings from earlier epics.
 
 ## Objective
 
-Create an outline specification for the `cobre-python` crate, defining its purpose, public types, execution model, GIL strategy, zero-copy data patterns, and relationship to the existing 7 crates. This outline will later be refined into a full spec document that lives in the mdBook alongside the other crate specifications.
+Synthesize the findings from tickets 019 and 020 into a coherent architecture document that: (1) drafts the "Agent-Readability" design principle for inclusion in `design-principles.md`, (2) maps three new crates (`cobre-mcp`, `cobre-python`, `cobre-tui`) into the existing dependency graph with clear responsibility boundaries, and (3) defines the agent context strategy (structured documentation patterns, Claude Code skills, CLAUDE.md conventions).
+
+This document becomes the architectural blueprint for Epic 07 spec authoring.
 
 ## Anticipated Scope
 
-- **Files likely to be read**: Python API surface document (ticket-019 output), spec impact report (ticket-020 output), `src/crates/overview.md`, `src/specs/architecture/cli-and-lifecycle.md`
-- **Files likely to be created**: `plans/spec-consistency-audit/epic-06-pyo3-python-api-impact/cobre-python-spec-outline.md` (deliverable document)
-- **Files likely to be modified**: `src/crates/overview.md` (add cobre-python to crate list, or note it as planned)
-- **Key decisions needed**: Whether this should be a single spec or multiple specs (e.g., separate API spec, execution model spec, data interface spec); where cobre-python fits in the spec hierarchy (under `architecture/`, under `crates/`, or as a new top-level section); whether to update `crates/overview.md` now or defer until the spec is finalized
-- **Open questions**:
-  - Single spec or multi-spec? A single `cobre-python.md` under `crates/` may suffice for an outline, but the full spec may need architecture and data-model sub-specs.
-  - Should the outline include a dependency diagram showing which crates cobre-python wraps?
-  - What level of detail should the GIL strategy section have at the outline stage?
-  - Should the outline address versioning and compatibility (Python version requirements, maturin build configuration)?
+- **Agent-readability principle**:
+  - Define what "agent-readable" means for Cobre: structured I/O, discoverable capabilities, composable operations, deterministic behavior
+  - Position alongside existing principles (reproducibility, scalability, declaration order invariance)
+  - Establish design rules: every operation has a JSON schema, every error is structured, every result is machine-parseable
+
+- **Interface architecture**:
+  - Dependency graph with new crates:
+    ```
+    cobre-cli (expanded: subcommands, structured output)
+      ├── cobre-sddp
+      ├── cobre-io
+      ├── cobre-core
+      └── (existing deps)
+    cobre-mcp (new: MCP server)
+      ├── cobre-sddp
+      ├── cobre-io
+      └── cobre-core
+    cobre-python (new: PyO3 bindings)
+      ├── cobre-sddp
+      ├── cobre-stochastic
+      ├── cobre-solver
+      ├── cobre-io
+      └── cobre-core
+    cobre-tui (new: terminal UI)
+      └── cobre-cli (or shared event stream)
+    ```
+  - Responsibility boundaries: what each new crate owns vs delegates
+  - Shared event/progress stream that CLI, MCP, TUI all consume
+
+- **Agent context strategy**:
+  - CLAUDE.md conventions for the repository (what agents need to know)
+  - Claude Code skill definitions for common operations (run study, validate, compare)
+  - Structured documentation patterns (machine-readable cross-reference index)
+  - Agent-friendly error messages with actionable suggestions
+
+- **Deliverable**: Architecture document ready to inform Epic 07 ticket refinement
 
 ## Dependencies
 
-- **Blocked By**: ticket-019, ticket-020 (needs both the API surface and the impact assessment)
-- **Blocks**: None
+- **Blocked By**: ticket-019, ticket-020 (needs both assessment reports)
+- **Blocks**: Epic 07 (all tickets)
 
 ## Effort Estimate
 

@@ -81,7 +81,7 @@ The openings for a given trial point are evaluated sequentially by the owning th
 | **Cache locality**     | Hot — LP data stays in L1/L2             | Cold — thrashing across $N_{\text{openings}}$ LPs     |
 | **Parallelism source** | Trial points across threads (sufficient) | Openings within a trial point                         |
 
-With production-scale parameters (e.g., $M = 200$ forward passes, $R = 8$ ranks, $N_{\text{threads}} = 16$ per rank), there are 200 trial points per stage distributed across 128 total threads — approximately 1.5 trial points per thread per stage, which is sufficient parallelism.
+With production-scale parameters (e.g., $M = 192$ forward passes, $R = 8$ ranks, $N_{\text{threads}} = 16$ per rank), there are 192 trial points per stage distributed across 128 total threads — 1.5 trial points per thread per stage, which is sufficient parallelism.
 
 ## 3. Distribution Arithmetic
 

@@ -39,11 +39,11 @@ After the forward pass, each rank contributes its visited states to `MPI_Allgath
 | AR inflow lags  | `[f64]` | $\sum_h P_h \times 8$ bytes       |
 | Stage index     | `u32`   | 4 bytes                           |
 
-At production scale ($N_{\text{hydro}} = 160$, average $P_h = 6$ lags, $M = 200$ trajectories, $T = 120$ stages):
+At production scale ($N_{\text{hydro}} = 160$, average $P_h = 6$ lags, $M = 192$ trajectories, $T = 120$ stages):
 
 - State dimension: $160 + 160 \times 6 = 1{,}120$ doubles = 8,960 bytes per trial point
-- Trial points per stage: 200
-- Total payload: $200 \times 8{,}964 \approx 1.75$ MB per stage, or $1.75 \times 120 \approx 210$ MB for all stages
+- Trial points per stage: 192
+- Total payload: $192 \times 8{,}964 \approx 1.72$ MB per stage, or $1.72 \times 120 \approx 206$ MB for all stages
 
 The `MPI_Allgatherv` counts and displacements are computed from the contiguous block assignment (see [Work Distribution §3.1](./work-distribution.md)).
 
@@ -60,7 +60,7 @@ After generating cuts at each backward stage, ranks exchange cuts via `MPI_Allga
 | Coefficients       | `[f64]` | $D_{\text{state}} \times 8$ bytes    |
 | **Total per cut**  |         | **~16,660 bytes** (at $D = 2{,}080$) |
 
-At production scale with $M = 200$ forward passes and $R = 16$ ranks, each rank generates $\lfloor 200/16 \rfloor = 12\text{-}13$ cuts per stage. The `MPI_Allgatherv` payload is $200 \times 16{,}660 \approx 3.3$ MB per stage.
+At production scale with $M = 192$ forward passes and $R = 16$ ranks, each rank generates $\lfloor 192/16 \rfloor = 12$ cuts per stage. The `MPI_Allgatherv` payload is $192 \times 16{,}660 \approx 3.2$ MB per stage.
 
 ### 2.3 Convergence Statistics Payload (Post-Forward)
 
@@ -81,29 +81,29 @@ Total payload: 32 bytes. See [Work Distribution §1.4](./work-distribution.md) a
 
 ### 3.1 Per-Iteration Budget
 
-Reference configuration: $R = 16$ ranks, $T = 120$ stages, $M = 200$ forward passes, $D_{\text{state}} = 2{,}080$.
+Reference configuration: $R = 16$ ranks, $T = 120$ stages, $M = 192$ forward passes, $D_{\text{state}} = 2{,}080$.
 
 | Operation                | Per-stage | Per-iteration        | Notes                              |
 | ------------------------ | --------- | -------------------- | ---------------------------------- |
-| Trial point `allgatherv` | —         | ~210 MB (once)       | All stages' visited states at once |
-| Cut `allgatherv`         | ~3.3 MB   | ~393 MB (119 stages) | Per cut-management-impl.md §4.2    |
+| Trial point `allgatherv` | —         | ~206 MB (once)       | All stages' visited states at once |
+| Cut `allgatherv`         | ~3.2 MB   | ~381 MB (119 stages) | Per cut-management-impl.md §4.2    |
 | Convergence `allreduce`  | —         | 32 bytes (once)      | 4 scalars                          |
-| **Total per iteration**  |           | **~603 MB**          |                                    |
+| **Total per iteration**  |           | **~587 MB**          |                                    |
 
 ### 3.2 Bandwidth Requirements
 
 On InfiniBand HDR (200 Gb/s = 25 GB/s):
 
-- 603 MB takes ~24 ms at wire speed
-- With protocol overhead (~50%), ~48 ms per iteration
-- At 200 iterations total: ~9.6 seconds of communication
+- 587 MB takes ~23 ms at wire speed
+- With protocol overhead (~50%), ~46 ms per iteration
+- At 200 iterations total: ~9.2 seconds of communication
 - Typical training time: 30-60 minutes → communication fraction: **< 1%**
 
 On 100 Gbps Ethernet (12.5 GB/s):
 
-- 603 MB takes ~48 ms at wire speed
-- With TCP/RDMA overhead (~100%), ~96 ms per iteration
-- At 200 iterations: ~19.2 seconds → communication fraction: **~1-2%**
+- 587 MB takes ~47 ms at wire speed
+- With TCP/RDMA overhead (~100%), ~94 ms per iteration
+- At 200 iterations: ~18.8 seconds → communication fraction: **~1-2%**
 
 SDDP's communication-to-computation ratio is low. The LP solve time dominates.
 

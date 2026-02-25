@@ -33,7 +33,7 @@ No `Arc`, `RwLock`, or `Mutex` is needed — OpenMP's shared data model, implici
 
 ### 2.1 Derivable Components
 
-The following memory estimates are derived from production-scale dimensions in approved specs. Reference configuration: 160 hydros, 130 thermals, 120 stages, 200 forward passes, 200 openings, 15K cut capacity, 16 threads per rank.
+The following memory estimates are derived from production-scale dimensions in approved specs. Reference configuration: 160 hydros, 130 thermals, 120 stages, 192 forward passes, 200 openings, 15K cut capacity, 16 threads per rank.
 
 | Component                 |        Size | Derivation                                                                                     | Source                                                             |
 | ------------------------- | ----------: | ---------------------------------------------------------------------------------------------- | ------------------------------------------------------------------ |
@@ -41,8 +41,8 @@ The following memory estimates are derived from production-scale dimensions in a
 | Solver workspaces (×16)   |     ~912 MB | 16 threads × ~57 MB per workspace (HiGHS: solver instance + buffers + per-stage basis cache)   | [Solver Workspaces §1.2](../architecture/solver-workspaces.md)     |
 | Cut pool (at capacity)    |     ~250 MB | 15,000 cuts × 120 stages × ~16,660 bytes per cut ÷ 120 = ~250 MB active in memory at any stage | [Cut Management Impl §4.2](../architecture/cut-management-impl.md) |
 | Input case data           |      ~20 MB | System entities, PAR parameters, correlation factors, block/exchange factors                   | [Internal Structures](../data-model/internal-structures.md)        |
-| Forward pass state        |      ~20 MB | 200 trajectories × ~9 KB state vector (1,120 doubles + metadata) × ~1 stage buffered           | [Training Loop §5.1](../architecture/training-loop.md)             |
-| MPI communication buffers |      ~10 MB | Send/receive buffers for `MPI_Allgatherv` (cuts: ~3.3 MB, states: ~1.75 MB per stage)          | [Communication Patterns §2](./communication-patterns.md)           |
+| Forward pass state        |      ~18 MB | 192 trajectories × ~9 KB state vector (1,120 doubles + metadata) × ~1 stage buffered           | [Training Loop §5.1](../architecture/training-loop.md)             |
+| MPI communication buffers |      ~10 MB | Send/receive buffers for `MPI_Allgatherv` (cuts: ~3.2 MB, states: ~1.72 MB per stage)          | [Communication Patterns §2](./communication-patterns.md)           |
 | **Total per rank**        | **~1.2 GB** |                                                                                                |                                                                    |
 
 ### 2.2 SharedWindow Savings
@@ -63,7 +63,7 @@ The cut pool is the only component that grows during training. All other allocat
 
 | Iteration | Active Cuts (approx) | Cut Pool Memory | Notes                                   |
 | --------- | -------------------: | --------------: | --------------------------------------- |
-| 1         |                  200 |           ~3 MB | $M$ cuts (one per forward pass)         |
+| 1         |                  192 |           ~3 MB | $M$ cuts (one per forward pass)         |
 | 50        |               ~5,000 |          ~80 MB | Before cut selection starts pruning     |
 | 100       |              ~10,000 |         ~160 MB | Cut selection bounds active count       |
 | 200       |              ~15,000 |         ~250 MB | At capacity; dominated cuts deactivated |

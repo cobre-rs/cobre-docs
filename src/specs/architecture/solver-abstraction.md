@@ -204,7 +204,7 @@ capacity = warm_start_cuts + max_iterations × forward_passes_per_iteration
 | Parameter                       | Value                             |
 | ------------------------------- | --------------------------------- |
 | Warm-start cuts                 | 5,000                             |
-| Max iterations × forward passes | 50 × 200 = 10,000                 |
+| Max iterations × forward passes | 50 × 192 = 9,600                  |
 | **Total capacity per stage**    | **15,000**                        |
 | State dimension                 | 2,080                             |
 | Memory per stage                | 15,000 × 2,080 × 8 bytes ≈ 238 MB |

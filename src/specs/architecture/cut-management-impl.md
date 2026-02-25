@@ -36,13 +36,13 @@ This eliminates thread-safety concerns and non-determinism — the same inputs a
 
 The pool is fully pre-allocated at initialization:
 
-| Parameter              | Formula / Value                                           |
-| ---------------------- | --------------------------------------------------------- |
-| Capacity per stage     | `warm_start_cuts + max_iterations × forward_passes`       |
-| Production example     | 5,000 + 50 × 200 = 15,000 slots                           |
-| Per-cut memory         | `state_dimension × 8` bytes (coefficients) + metadata     |
-| Per-stage total (prod) | 15,000 × 2,080 × 8 ≈ 238 MB coefficients + ~1 MB metadata |
-| All stages (prod)      | 120 × 238 MB ≈ 28 GB per rank                             |
+| Parameter              | Formula / Value                                               |
+| ---------------------- | ------------------------------------------------------------- |
+| Capacity per stage     | `warm_start_cuts + max_iterations × forward_passes`           |
+| Production example     | 5,000 + 50 × 192 = 14,600 (rounded up to 15,000 for headroom) |
+| Per-cut memory         | `state_dimension × 8` bytes (coefficients) + metadata         |
+| Per-stage total (prod) | 15,000 × 2,080 × 8 ≈ 238 MB coefficients + ~1 MB metadata     |
+| All stages (prod)      | 120 × 238 MB ≈ 28 GB per rank                                 |
 
 See [Binary Formats §4.3](../data-model/binary-formats.md) for the full sizing breakdown.
 
@@ -173,7 +173,7 @@ The MPI wire format is a compact binary representation optimized for bandwidth, 
 | Coefficients       | `[f64]` | 2,080 × 8 = 16,640 bytes |
 | **Total per cut**  |         | **~16,660 bytes**        |
 
-At production scale with 200 forward passes per iteration and 16 ranks, each rank generates ~12-13 cuts per stage. The `MPI_Allgatherv` payload is ~200 cuts × 16,660 bytes ≈ 3.3 MB per stage — modest for InfiniBand interconnects.
+At production scale with 192 forward passes per iteration and 16 ranks, each rank generates 12 cuts per stage. The `MPI_Allgatherv` payload is ~192 cuts × 16,660 bytes ≈ 3.2 MB per stage — modest for InfiniBand interconnects.
 
 ### 4.3 Deterministic Integration
 

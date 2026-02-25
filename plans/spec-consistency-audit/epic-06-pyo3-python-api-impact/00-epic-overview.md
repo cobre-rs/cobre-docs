@@ -1,44 +1,54 @@
-# Epic 06: PyO3 Python API Spec Impact Assessment
+# Epic 06: Agent & External Interface Impact Assessment
 
 ## Goals
 
-1. **Define the Python API surface** — Map each of the 7 existing Rust crates' public APIs to a Python interface design, covering case loading, SDDP training, simulation, result access, configuration, and validation.
-2. **Assess impact on existing specs** — Identify which of the 50 existing spec documents contain assumptions incompatible with a Python embedding (MPI-only lifecycle, thread-local solver patterns, etc.) and document required changes.
-3. **Draft the cobre-python specification outline** — Produce an outline specification for the new `cobre-python` crate, defining its purpose, public types, execution model, GIL strategy, and zero-copy data patterns.
+1. **Assess structured CLI impact** — Review existing CLI, output, and lifecycle specs to determine what changes are needed for subcommands, JSON structured output, progress streaming, and composable pipeline patterns that serve both human users and AI agents.
+2. **Assess MCP server, Python bindings, and TUI impact** — Review crate architecture, data model, and configuration specs to determine what new crates and cross-references are needed for an MCP server, PyO3 Python bindings, and a ratatui terminal UI.
+3. **Define agent-readability design principles and interface architecture** — Draft the agent-readability design principle, map new crates (`cobre-mcp`, `cobre-python`, `cobre-tui`) into the dependency graph, and define the agent context strategy (structured documentation, skills, CLAUDE.md patterns).
+
+## Motivation
+
+Software must increasingly be readable, understandable, and usable by AI agents — not only people. The Cobre ecosystem is currently designed as an HPC-batch system with a single MPI entrypoint and human-readable output. This epic assesses the impact of adding multiple interface layers that make the solver composable for agents, interactive tools, and programmatic embedding.
 
 ## Scope
 
-This epic is an **impact assessment and specification planning** exercise, not an implementation effort. No code is written. The deliverables are:
+This epic is an **impact assessment and architecture planning** exercise. No specs are written or modified. The deliverables are assessment reports and architecture decisions that inform Epic 07 (spec authoring).
 
-- A Python API surface document mapping Rust APIs to Python interfaces
-- An impact report identifying which specs need modification
-- An outline specification for the cobre-python crate
+### Interface Layers (Priority Order)
+
+1. **Structured CLI & Output** — JSON output mode, subcommands, progress streaming, machine-parseable errors
+2. **MCP Server** — Model Context Protocol server exposing Cobre tools/resources to AI agents
+3. **Python Bindings** — PyO3 module for programmatic access from Python, Jupyter, agent frameworks
+4. **Terminal UI** — ratatui-based interactive monitoring and exploration
 
 ## Key Design Constraints
 
-| Constraint             | Detail                                                                                                              |
-| ---------------------- | ------------------------------------------------------------------------------------------------------------------- |
-| No MPI in Python layer | ferrompi uses C MPI FFI; Python wrapper is single-process or uses mpi4py separately                                 |
-| Memory management      | Thread-local solver workspaces use NUMA-aware allocation; Python needs GIL-compatible patterns                      |
-| Zero-copy data         | PyO3 can expose NumPy arrays for scenario data and results                                                          |
-| Serialization          | Policy persistence uses FlatBuffers; Python needs deserialization path                                              |
-| Validation pipeline    | 5-layer validation should be accessible from Python                                                                 |
-| New crate              | A `cobre-python` crate wrapping `cobre-sddp`, `cobre-stochastic`, `cobre-solver`, `cobre-io`, `cobre-core` via PyO3 |
+| Constraint                    | Detail                                                                                                                           |
+| ----------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| Agent-first, human-compatible | All interfaces must be machine-parseable first; human readability is a secondary concern that should not compromise parseability |
+| Structured output everywhere  | Every operation must support JSON output with stable schemas                                                                     |
+| No MPI in agent paths         | MCP server and Python bindings are single-process; HPC remains MPI-based                                                         |
+| Composable by default         | CLI subcommands, MCP tools, and Python functions must compose for multi-step agent workflows                                     |
+| Schema-first design           | All inputs and outputs have documented JSON schemas before implementation                                                        |
+| Backward compatible           | The existing HPC batch CLI (`mpiexec cobre /path`) must continue to work unchanged                                               |
 
 ## Tickets
 
-| Ticket     | Title                                         | Detail Level |
-| ---------- | --------------------------------------------- | ------------ |
-| ticket-019 | Define Python API surface from existing specs | Outline      |
-| ticket-020 | Assess impact on existing spec designs        | Outline      |
-| ticket-021 | Draft cobre-python specification outline      | Outline      |
+| Ticket     | Title                                                                 | Detail Level |
+| ---------- | --------------------------------------------------------------------- | ------------ |
+| ticket-019 | Assess structured CLI and output impact on existing specs             | Outline      |
+| ticket-020 | Assess MCP server, Python bindings, and TUI impact on existing specs  | Outline      |
+| ticket-021 | Define agent-readability design principles and interface architecture | Outline      |
 
 ## Dependencies
 
-- No hard dependencies on Epics 01-05
-- Epic 06 tickets have internal ordering: ticket-019 informs ticket-020, both inform ticket-021
-- Findings from Epic 01 (notation) and Epic 05 (organization) would improve the quality of the Python API spec
+- No hard dependencies on Epics 01-05 (but benefits from completed notation and organization audits)
+- Epic 06 tickets have internal ordering: ticket-019 and ticket-020 inform ticket-021
+- Epic 06 findings feed directly into Epic 07 spec authoring
 
-## Estimated Duration
+## Success Criteria
 
-2-3 weeks
+- Impact report identifying every existing spec that needs changes and what those changes are
+- Architecture document mapping new crates into the dependency graph
+- Agent-readability design principle drafted and ready for inclusion in `design-principles.md`
+- Clear scope definition for each Epic 07 spec document

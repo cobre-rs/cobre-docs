@@ -127,7 +127,7 @@ Comprehensive metadata for reproducibility, audit trails, and debugging.
   },
   "configuration_snapshot": {
     "seed": 42,
-    "num_forward_passes": 200,
+    "num_forward_passes": 192,
     "stopping_rules": [
       { "type": "iteration_limit", "limit": 100 },
       {

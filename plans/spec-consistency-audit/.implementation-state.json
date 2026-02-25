@@ -1,6 +1,6 @@
 {
   "plan": "spec-consistency-audit",
-  "last_updated": "2026-02-24T12:00:00Z",
+  "last_updated": "2026-02-25T10:00:00Z",
   "progressive": true,
   "tickets": {
     "ticket-001-audit-notation-math-specs-part1.md": {
@@ -49,16 +49,19 @@
       "agent": "sddp-specialist"
     },
     "ticket-010-crosscheck-sizing-calculator.md": {
-      "status": "pending",
-      "detail_level": "outline"
+      "status": "completed",
+      "detail_level": "refined",
+      "agent": "sddp-specialist"
     },
     "ticket-011-update-forward-passes-to-192.md": {
-      "status": "pending",
-      "detail_level": "outline"
+      "status": "completed",
+      "detail_level": "refined",
+      "agent": "sddp-specialist"
     },
     "ticket-012-add-traceability-annotations.md": {
-      "status": "pending",
-      "detail_level": "outline"
+      "status": "completed",
+      "detail_level": "refined",
+      "agent": "sddp-specialist"
     },
     "ticket-013-build-timing-model.md": {
       "status": "pending",
@@ -84,15 +87,35 @@
       "status": "pending",
       "detail_level": "outline"
     },
-    "ticket-019-define-python-api-surface.md": {
+    "ticket-019-assess-structured-cli-impact.md": {
       "status": "pending",
       "detail_level": "outline"
     },
-    "ticket-020-assess-spec-impact.md": {
+    "ticket-020-assess-mcp-python-tui-impact.md": {
       "status": "pending",
       "detail_level": "outline"
     },
-    "ticket-021-draft-cobre-python-spec.md": {
+    "ticket-021-define-agent-readability-architecture.md": {
+      "status": "pending",
+      "detail_level": "outline"
+    },
+    "ticket-022-write-structured-output-spec.md": {
+      "status": "pending",
+      "detail_level": "outline"
+    },
+    "ticket-023-write-mcp-server-spec.md": {
+      "status": "pending",
+      "detail_level": "outline"
+    },
+    "ticket-024-write-python-bindings-spec.md": {
+      "status": "pending",
+      "detail_level": "outline"
+    },
+    "ticket-025-write-terminal-ui-spec.md": {
+      "status": "pending",
+      "detail_level": "outline"
+    },
+    "ticket-026-update-existing-specs-agent-readability.md": {
       "status": "pending",
       "detail_level": "outline"
     }
@@ -107,8 +130,8 @@
       "learning_extracted": true
     },
     "epic-03-production-scale-hardening": {
-      "phase": "outline",
-      "learning_extracted": false
+      "phase": "completed",
+      "learning_extracted": true
     },
     "epic-04-wall-clock-time-model": {
       "phase": "outline",
@@ -118,7 +141,11 @@
       "phase": "outline",
       "learning_extracted": false
     },
-    "epic-06-pyo3-python-api-impact": {
+    "epic-06-agent-interface-assessment": {
+      "phase": "outline",
+      "learning_extracted": false
+    },
+    "epic-07-agent-interface-specs": {
       "phase": "outline",
       "learning_extracted": false
     }

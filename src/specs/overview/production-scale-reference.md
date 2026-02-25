@@ -17,7 +17,7 @@ Based on the target production scenario:
 | Thermals             | 130                        | Variables                              |
 | Buses                | 6                          | Variables/constraints                  |
 | Lines                | 10                         | Variables/constraints                  |
-| Forward Passes       | 200                        | Parallelism                            |
+| Forward Passes       | 192                        | Parallelism                            |
 | Openings             | 200                        | Backward pass LP solves                |
 | Iterations           | 50                         | Cut pool size                          |
 | Simulation Scenarios | 2000                       | Output size                            |
@@ -59,50 +59,52 @@ For production scale (160 hydros, AR order up to 12):
 
 ### 3.1 Variable Count per Subproblem
 
-| Component                   | Formula                                             | Typical Count       |
-| --------------------------- | --------------------------------------------------- | ------------------- |
-| Future cost                 | $1$                                                 | 1                   |
-| Deficit                     | $N_{bus} \times N_{block} \times N_{seg}$           | 6 × 3 × 3 = 54      |
-| Excess                      | $N_{bus} \times N_{block}$                          | 6 × 3 = 18          |
-| Exchange (direct + reverse) | $2 \times N_{line} \times N_{block}$                | 2 × 10 × 3 = 60     |
-| Hydro storage               | $N_{hydro}$                                         | 160                 |
-| Hydro incremental inflow AR | $N_{hydro} \times P$                                | 160 × 12 = 1,920    |
-| Hydro turbined flow         | $N_{hydro} \times N_{block}$                        | 160 × 3 = 480       |
-| Hydro spillage              | $N_{hydro} \times N_{block}$                        | 160 × 3 = 480       |
-| Hydro generation            | $N_{hydro} \times N_{block}$                        | 160 × 3 = 480       |
-| Hydro inflow (per-block)    | $N_{hydro} \times N_{block}$                        | 160 × 3 = 480       |
-| Hydro diversion             | $N_{div} \times N_{block}$                          | ~10 × 3 = 30        |
-| Hydro evaporation           | $N_{evap} \times N_{block}$                         | ~50 × 3 = 150       |
-| Hydro withdrawal            | $N_{withdrawal} \times N_{block}$                   | ~20 × 3 = 60        |
-| Hydro slacks                | $N_{hydro} \times N_{block} \times 6$               | 160 × 3 × 6 = 2,880 |
-| Thermal generation          | $N_{thermal} \times N_{block} \times \bar{N}_{seg}$ | 130 × 3 × 1.5 = 585 |
-| Contracts                   | $(N_{imp} + N_{exp}) \times N_{block}$              | 5 × 3 = 15          |
-| Pumping (flow + power)      | $N_{pump} \times N_{block} \times 2$                | 5 × 3 × 2 = 30      |
-| **Total Variables**         |                                                     | **~7,500**          |
+| Component                   | Formula                                             | Typical Count       | Source             |
+| --------------------------- | --------------------------------------------------- | ------------------- | ------------------ |
+| Future cost                 | $1$                                                 | 1                   | Calculator         |
+| Deficit                     | $N_{bus} \times N_{block} \times N_{seg}$           | 6 × 3 × 3 = 54      | Calculator         |
+| Excess                      | $N_{bus} \times N_{block}$                          | 6 × 3 = 18          | Calculator         |
+| Exchange (direct + reverse) | $2 \times N_{line} \times N_{block}$                | 2 × 10 × 3 = 60     | Calculator         |
+| Hydro storage               | $N_{hydro}$                                         | 160                 | Calculator         |
+| Hydro incremental inflow AR | $N_{hydro} \times P$                                | 160 × 12 = 1,920    | Calculator (AR 12) |
+| Hydro turbined flow         | $N_{hydro} \times N_{block}$                        | 160 × 3 = 480       | Calculator         |
+| Hydro spillage              | $N_{hydro} \times N_{block}$                        | 160 × 3 = 480       | Calculator         |
+| Hydro generation            | $N_{hydro} \times N_{block}$                        | 160 × 3 = 480       | Calculator         |
+| Hydro inflow (per-block)    | $N_{hydro} \times N_{block}$                        | 160 × 3 = 480       | Calculator         |
+| Hydro diversion             | $N_{div} \times N_{block}$                          | ~10 × 3 = 30        | Calculator         |
+| Hydro evaporation           | $N_{evap} \times N_{block}$                         | ~50 × 3 = 150       | Calculator         |
+| Hydro withdrawal            | $N_{withdrawal} \times N_{block}$                   | ~20 × 3 = 60        | Calculator         |
+| Hydro slacks                | $N_{hydro} \times N_{block} \times 6$               | 160 × 3 × 6 = 2,880 | Calculator         |
+| Thermal generation          | $N_{thermal} \times N_{block} \times \bar{N}_{seg}$ | 130 × 3 × 1.5 = 585 | Calculator         |
+| Contracts                   | $(N_{imp} + N_{exp}) \times N_{block}$              | 5 × 3 = 15          | Calculator         |
+| Pumping (flow + power)      | $N_{pump} \times N_{block} \times 2$                | 5 × 3 × 2 = 30      | Calculator         |
+| **Total Variables**         |                                                     | **~7,500**          | Derived            |
 
 ### 3.2 Constraint Count per Subproblem
 
-| Component                        | Formula                                             | Typical Count        |
-| -------------------------------- | --------------------------------------------------- | -------------------- |
-| Load balance                     | $N_{bus} \times N_{block}$                          | 6 × 3 = 18           |
-| Hydro water balance              | $N_{hydro}$                                         | 160                  |
-| Incremental inflow AR dynamics   | $N_{hydro}$                                         | 160                  |
-| Lagged incremental inflow fixing | $N_{hydro} \times P$                                | 160 × 12 = 1,920     |
-| Hydro generation (constant)      | $(N_{hydro} - N_{fpha}) \times N_{block}$           | (160 − 50) × 3 = 330 |
-| Hydro generation (FPHA)          | $N_{fpha} \times N_{block} \times \bar{M}_{planes}$ | 50 × 3 × 10 = 1,500  |
-| Outflow definition               | $N_{hydro} \times N_{block}$                        | 160 × 3 = 480        |
-| Outflow bounds (min/max)         | $2 \times N_{hydro} \times N_{block}$               | 2 × 160 × 3 = 960    |
-| Turbined min                     | $N_{hydro} \times N_{block}$                        | 160 × 3 = 480        |
-| Generation min                   | $N_{hydro} \times N_{block}$                        | 160 × 3 = 480        |
-| Evaporation                      | $N_{evap} \times N_{block}$                         | 50 × 3 = 150         |
-| Water withdrawal                 | $N_{withdrawal} \times N_{block}$                   | 20 × 3 = 60          |
-| Generic constraints              | $N_{generic}$                                       | ~50                  |
-| **Benders cuts (pre-allocated)** | $N_{cuts}$                                          | 10,000-15,000        |
-| **Total Constraints**            |                                                     | **~17,000-22,000**   |
+| Component                        | Formula                                             | Typical Count        | Source             |
+| -------------------------------- | --------------------------------------------------- | -------------------- | ------------------ |
+| Load balance                     | $N_{bus} \times N_{block}$                          | 6 × 3 = 18           | Calculator         |
+| Hydro water balance              | $N_{hydro}$                                         | 160                  | Calculator         |
+| Incremental inflow AR dynamics   | $N_{hydro}$                                         | 160                  | Calculator         |
+| Lagged incremental inflow fixing | $N_{hydro} \times P$                                | 160 × 12 = 1,920     | Calculator (AR 12) |
+| Hydro generation (constant)      | $(N_{hydro} - N_{fpha}) \times N_{block}$           | (160 − 50) × 3 = 330 | Calculator         |
+| Hydro generation (FPHA)          | $N_{fpha} \times N_{block} \times \bar{M}_{planes}$ | 50 × 3 × 10 = 1,500  | Calculator         |
+| Outflow definition               | $N_{hydro} \times N_{block}$                        | 160 × 3 = 480        | Calculator         |
+| Outflow bounds (min/max)         | $2 \times N_{hydro} \times N_{block}$               | 2 × 160 × 3 = 960    | Calculator         |
+| Turbined min                     | $N_{hydro} \times N_{block}$                        | 160 × 3 = 480        | Calculator         |
+| Generation min                   | $N_{hydro} \times N_{block}$                        | 160 × 3 = 480        | Calculator         |
+| Evaporation                      | $N_{evap} \times N_{block}$                         | 50 × 3 = 150         | Calculator         |
+| Water withdrawal                 | $N_{withdrawal} \times N_{block}$                   | 20 × 3 = 60          | Calculator         |
+| Generic constraints              | $N_{generic}$                                       | ~50                  | Calculator         |
+| **Benders cuts (pre-allocated)** | $N_{cuts}$                                          | 10,000-15,000        | Configuration      |
+| **Total Constraints**            |                                                     | **~17,000-22,000**   | Derived            |
 
 > **Note**: The constraint count is dominated by pre-allocated Benders cut slots. During early iterations, most cut constraints are inactive (bounds set to $[-\infty, +\infty]$). See [Solver Abstraction §5](../architecture/solver-abstraction.md) for pre-allocation design.
 
 ### 3.3 Counting Formulas (Exact)
+
+These formulas correspond one-to-one with the `calculate_sizing()` function in `scripts/lp_sizing.py` (lines 191-234). Each term below maps to a named field in the `LPSizing` dataclass. The calculator groups the "Incremental inflow AR dynamics" and "Lagged incremental inflow fixing" constraint rows into a single `n_cons_hydro_ar_dynamics` field computed as `N_HYDRO * (1 + AR_ORDER)`.
 
 For precise sizing, use the following formulas where parameters come from the configuration:
 
@@ -152,9 +154,67 @@ N_STATE = N_HYDRO                                               # storage
         # + SUM(GNL_LAG[t] for t in GNL_THERMALS)  (deferred C.1)
 ```
 
-### 3.4 Sizing Calculator Tool
+### 3.4 Sizing Calculator Verification
 
-A sizing calculator tool (`scripts/lp_sizing.py`) exists in the powers repository. It computes LP dimensions, state dimension breakdown, and memory estimates from a JSON system configuration. Running with the default production-scale parameters (160 hydros, 130 thermals, 6 buses, 10 lines, avg AR order 6, 15,000 cut slots) produces:
+The sizing calculator (`scripts/lp_sizing.py` in the `powers` repository) is the ground truth for LP variable counts, constraint counts, state dimension, and memory estimates. It accepts a JSON system configuration and computes all values using the same formulas documented in §3.3.
+
+#### Calculator Location and Verification Command
+
+To verify the production-scale values in this spec, run the calculator with an empty JSON input (which uses all defaults):
+
+```sh
+echo '{}' | python3 scripts/lp_sizing.py /dev/stdin
+```
+
+> **Note**: The calculator default `n_forward_passes` is 200; the spec uses 192 (see §1). This parameter does not affect LP variable or constraint counts, so the verification output matches regardless.
+
+#### Default Parameters
+
+The calculator's `SystemConfig` dataclass defines the following defaults, which drive all production-scale values in §3.1-§3.3:
+
+| Parameter                   | Default | Description                        |
+| --------------------------- | ------: | ---------------------------------- |
+| `n_hydros`                  |     160 | Number of hydroelectric plants     |
+| `n_thermals`                |     130 | Number of thermal plants           |
+| `n_buses`                   |       6 | Number of subsystem buses          |
+| `n_lines`                   |      10 | Number of transmission lines       |
+| `n_blocks`                  |       3 | Load blocks per stage              |
+| `n_pumps`                   |       5 | Number of pumping stations         |
+| `n_contracts_import`        |       3 | Import contracts                   |
+| `n_contracts_export`        |       2 | Export contracts                   |
+| `avg_ar_order`              |       6 | Average AR order (for calculator)  |
+| `max_ar_order`              |      12 | Maximum AR order (for worst-case)  |
+| `n_hydros_with_fpha`        |      50 | Hydros with FPHA generation model  |
+| `avg_fpha_planes`           |      10 | Average FPHA approximation planes  |
+| `n_hydros_with_diversion`   |      10 | Hydros with water diversion        |
+| `n_hydros_with_evaporation` |      50 | Hydros with evaporation modeling   |
+| `n_hydros_with_withdrawal`  |      20 | Hydros with water withdrawal       |
+| `avg_deficit_segments`      |       3 | Deficit cost segments per bus      |
+| `avg_thermal_segments`      |     1.5 | Cost segments per thermal          |
+| `n_slack_types`             |       6 | Slack variable types per hydro     |
+| `n_generic_constraints`     |      50 | Generic (custom) constraints       |
+| `n_cuts_capacity`           |  15,000 | Pre-allocated Benders cut slots    |
+| `n_stages`                  |     120 | Planning horizon stages            |
+| `n_iterations`              |      50 | SDDP iterations                    |
+| `n_forward_passes`          |     200 | Calculator default (spec uses 192) |
+
+#### Output Mapping
+
+The following table maps calculator output fields to spec sections for cross-verification:
+
+| Calculator Output Field        | Spec Reference                         |
+| ------------------------------ | -------------------------------------- |
+| `total_variables`              | §3.1 approximate total                 |
+| `total_constraints`            | §3.2 approximate total                 |
+| `total_constraints_no_cuts`    | §3.2 total minus Benders cuts row      |
+| `state_dimension`              | §2.1 state dimension (avg AR(6) case)  |
+| `cuts_per_stage_bytes`         | §3.4 headline table, cuts memory/stage |
+| Per-variable-category fields   | §3.1 individual rows (at avg AR(6))    |
+| Per-constraint-category fields | §3.2 individual rows (at avg AR(6))    |
+
+#### Headline Values
+
+Running with the default production-scale parameters (160 hydros, 130 thermals, 6 buses, 10 lines, avg AR order 6, 15,000 cut slots) produces:
 
 | Metric             | Calculator Output | Notes                                     |
 | ------------------ | ----------------: | ----------------------------------------- |
@@ -164,9 +224,22 @@ A sizing calculator tool (`scripts/lp_sizing.py`) exists in the powers repositor
 | State dimension    |             1,120 | With avg AR(6); up to 2,080 at AR(12)     |
 | Cuts memory/stage  |          128.7 MB | Dense coefficients, 15,000 slots          |
 
-> **Note**: The estimates in §3.1 and §3.2 use worst-case AR order (12 for all hydros). The sizing calculator uses configurable average AR order (default 6), which better reflects typical production cases. Both are consistent within their assumptions. Performance expectations in §4.2 are non-binding estimates pending solver benchmarking.
+#### AR(12) vs AR(6) Assumptions
+
+The per-row estimates in §3.1 and §3.2 use worst-case AR order (P=12 for all hydros) to establish upper bounds for capacity planning. The sizing calculator uses configurable average AR order (default `avg_ar_order=6`), which better reflects typical production cases where hydros have varying AR orders. Both are consistent within their stated assumptions:
+
+- **Worst-case (AR 12)**: §3.1 total ~7,900 variables; §3.2 active constraints ~6,750. Used for upper-bound capacity planning.
+- **Average-case (AR 6)**: Calculator total 6,923 variables; active constraints 5,788. Used for typical memory budgeting.
+
+Rows annotated "Calculator (AR 12)" in §3.1 and §3.2 are the ones affected by this assumption. To verify the worst-case values, run the calculator with `avg_ar_order` set to 12:
+
+```sh
+echo '{"avg_ar_order": 12}' | python3 scripts/lp_sizing.py /dev/stdin
+```
 
 ## 4. Performance Expectations by Scale
+
+> **Note**: Performance expectations in this section are aspirational targets based on domain experience and hardware specifications, not calculator-derived values. They will be validated and refined during implementation. See §3.4 for calculator-verifiable values.
 
 > **Purpose**: This table provides expected timing targets for different problem scales, enabling performance validation and regression detection. Timings are per-iteration unless otherwise noted.
 
@@ -186,8 +259,8 @@ A sizing calculator tool (`scripts/lp_sizing.py`) exists in the powers repositor
 | **Unit Test**  | 3      | 1      | 2        | 0        | 2          | 1     | 1            | <0.1s        | <1s           | <20 MB      |
 | **Small**      | 6      | 5      | 5        | 1        | 10         | 1     | 2            | <0.2s        | <2s           | <50 MB      |
 | **Medium**     | 12     | 80     | 65       | 6        | 100        | 4     | 12           | <5s          | <15s          | <500 MB     |
-| **Large**      | 60     | 160    | 130      | 12       | 200        | 16    | 16           | <15s         | <45s          | <1.5 GB     |
-| **Production** | 120    | 160    | 130      | 12       | 200        | 64    | 24           | <30s         | <90s          | <2 GB       |
+| **Large**      | 60     | 160    | 130      | 12       | 192        | 16    | 16           | <15s         | <45s          | <1.5 GB     |
+| **Production** | 120    | 160    | 130      | 12       | 192        | 64    | 24           | <30s         | <90s          | <2 GB       |
 
 > **Note**: Memory/rank estimates reference [Memory Architecture §2.1](../hpc/memory-architecture.md) (~1.2 GB per rank at production scale with 16 threads). Timing targets are aspirational — actual values depend on LP solver performance and will be validated during implementation.
 
