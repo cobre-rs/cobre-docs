@@ -23,6 +23,7 @@ This spec defines the foundational design principles governing the Cobre data mo
 4. **Warm-start Support**: Efficient serialization/deserialization of algorithm state
 5. **Distributed I/O**: Rank 0 loads, broadcasts to workers (or parallel loading where beneficial)
 6. **Declaration Order Invariance**: Results must not depend on the order entities are declared in input files
+7. **Agent-Readability**: Every operation produces structured, machine-parseable output with stable schemas, enabling AI agents and programmatic tools to compose, monitor, and verify Cobre workflows without human intervention
 
 ## 3. Declaration Order Invariance (Critical Requirement)
 
@@ -195,10 +196,173 @@ This decision should be revisited if:
 
 None of these conditions are expected at current production scale, but they should be monitored as the system evolves.
 
+## 6. Agent-Readability (Detailed)
+
+> **Principle**: Every Cobre operation must be fully usable by a programmatic agent -- an AI coding assistant, a CI/CD pipeline, or a Python orchestration script -- without requiring human interpretation of output, error messages, or progress indicators. Agent-readability is a first-class design concern, not an afterthought.
+
+Agent-readability does not replace human-readability. The default CLI output remains human-friendly text. Agent-readability means that a structured alternative exists for every output path, and that this alternative is governed by stable, documented schemas. An agent interacting with Cobre should never need to scrape text, guess at error causes, or poll files to detect completion.
+
+### 6.1 Relationship to Existing Principles
+
+Agent-readability complements and strengthens the existing design goals:
+
+- **Reproducibility (Goal 3)** guarantees that given the same inputs, Cobre produces the same outputs. Agent-readability extends this to the _interface layer_: an agent that replays the same command with the same inputs receives the same structured JSON response, enabling automated verification and regression testing of solver behavior.
+
+- **Scalability (Goal 2)** ensures data formats scale to production sizes. Agent-readability respects this by _not_ requiring JSON equivalents for large tabular outputs (simulation Parquet files remain Parquet -- agents consume them via Arrow/Polars). Structured output applies to control-plane data: progress events, error reports, metadata summaries, and convergence diagnostics.
+
+- **Declaration Order Invariance (Goal 6)** ensures that agent-constructed inputs produce consistent results regardless of how the agent orders entities. This is critical because agents generate JSON programmatically and cannot be expected to match any particular human-preferred ordering.
+
+- **Distributed I/O (Goal 5)** means that in MPI execution, only rank 0 produces structured output. Agents interact with a single output stream, never with per-rank fragments.
+
+### 6.2 Design Rules
+
+The following four rules govern agent-readability across all Cobre interfaces: CLI, MCP server, Python bindings, and TUI event stream.
+
+#### Rule 1: Every CLI operation has a JSON schema for its output
+
+Every CLI subcommand (`run`, `validate`, `report`, `compare`, `version`) produces a response that conforms to a documented JSON schema when invoked with `--output-format json` or `--output-format json-lines`.
+
+**Rationale**: Agents parse command output programmatically. Without a schema, the agent must reverse-engineer the output format from examples, which is fragile and breaks on version updates. A documented schema enables code generation, static validation, and version compatibility checks.
+
+**Cobre example**: The `validate` subcommand already produces structured JSON (see [Validation Architecture §5](../architecture/validation-architecture.md)). This existing pattern is generalized to all subcommands via a response envelope:
+
+```json
+{
+  "$schema": "urn:cobre:response:v1",
+  "command": "validate",
+  "success": false,
+  "exit_code": 3,
+  "cobre_version": "2.0.0",
+  "errors": [
+    {
+      "kind": "SchemaViolation",
+      "file": "hydros.json",
+      "message": "Unknown field 'turbin_capacity'",
+      "context": { "entity_id": "ITAIPU", "field": "turbin_capacity" },
+      "suggestion": "Did you mean 'turbine_capacity'?"
+    }
+  ],
+  "warnings": [],
+  "data": null
+}
+```
+
+The envelope schema is the same shape for all subcommands; only the `data` and `errors` content varies. See Structured Output spec (planned) for the complete schema definition.
+
+#### Rule 2: Every error is structured
+
+Every error Cobre produces -- whether from input validation, solver failure, MPI communication error, or signal interruption -- is emitted as a machine-parseable record with four required fields:
+
+| Field        | Type   | Description                                                                    |
+| ------------ | ------ | ------------------------------------------------------------------------------ |
+| `kind`       | string | Stable error identifier (e.g., `SchemaViolation`, `SolverFailure`, `MpiError`) |
+| `message`    | string | Human-readable description of the error                                        |
+| `context`    | object | Structured data about the error location and cause                             |
+| `suggestion` | string | Actionable remediation hint (may be null)                                      |
+
+**Rationale**: Agents cannot interpret free-text error messages reliably. The `kind` field enables programmatic dispatch (retry logic, fallback strategies, error categorization). The `context` field provides the structured data an agent needs to construct a fix. The `suggestion` field gives the agent a starting point for remediation without requiring domain knowledge of SDDP.
+
+**Cobre example**: A solver infeasibility during training produces:
+
+```json
+{
+  "kind": "SolverFailure",
+  "message": "LP infeasible at stage 5, iteration 23, opening 7",
+  "context": {
+    "stage": 5,
+    "iteration": 23,
+    "opening": 7,
+    "solver_status": "infeasible",
+    "active_penalty_slacks": ["deficit_SE", "deficit_S"]
+  },
+  "suggestion": "Check penalty costs in penalty_system.json; large deficits may indicate missing generation capacity or overly tight constraints"
+}
+```
+
+The 14 validation error kinds defined in [Validation Architecture §4](../architecture/validation-architecture.md) are the foundation. Runtime error kinds (`SolverFailure`, `MpiError`, `CheckpointFailed`, `OutputCorrupted`, `OutputNotFound`, `IncompatibleRuns`) extend this set. All error kinds are stable identifiers that follow semantic versioning -- removing or renaming a kind is a breaking change.
+
+#### Rule 3: Every long-running operation supports progress streaming
+
+Operations that take more than a few seconds (training, simulation) emit a stream of progress events as JSON-lines to stdout when `--output-format json-lines` is specified. Each line is a self-describing JSON object with a `type` field that identifies the event kind.
+
+**Rationale**: Agents monitoring a training run that takes minutes to hours need real-time feedback to (a) confirm the process is alive, (b) track convergence, (c) detect stalling, and (d) decide whether to intervene (e.g., adjust stopping rules or abort). Without streaming, the agent must poll files or wait for the process to terminate.
+
+**Cobre example**: A training run emits one progress event per iteration, plus lifecycle events:
+
+```
+{"type": "started", "case": "/data/case_001", "stages": 120, "hydros": 164, "timestamp": "2026-02-25T10:00:00Z"}
+{"type": "progress", "iteration": 1, "lower_bound": 45231.7, "upper_bound": 89442.1, "gap": 0.494, "wall_time_ms": 12400}
+{"type": "progress", "iteration": 2, "lower_bound": 51882.3, "upper_bound": 76553.8, "gap": 0.322, "wall_time_ms": 24100}
+...
+{"type": "terminated", "reason": "bound_stalling", "iterations": 87, "final_lb": 72105.4, "final_ub": 73211.8}
+{"type": "result", "status": "success", "exit_code": 0, "output_directory": "/data/case_001/output"}
+```
+
+The `progress` event payload matches the per-iteration output record defined in [Convergence Monitoring §2.4](../architecture/convergence-monitoring.md). The same event stream feeds the TUI convergence plot, the MCP server progress notifications, and the CLI JSON-lines output -- all consumers receive identical event types from a single emitter. See Training Loop §2.1 (planned update) for the event emission points in the iteration lifecycle.
+
+#### Rule 4: Every result is queryable without re-running computation
+
+After a training or simulation run completes, all results must be accessible via read-only query operations (`cobre report`, `cobre-mcp` query tools, Python `cobre.load_results()`) without re-executing the solver. Query operations return structured JSON or Arrow tables.
+
+**Rationale**: Agent workflows are often multi-step: run training, inspect convergence, compare with a previous run, extract specific entity results, generate a report. If any of these steps requires re-running the solver, the workflow becomes impractically expensive. Results persisted on disk (Parquet, FlatBuffers, JSON manifests) must be queryable through structured APIs.
+
+**Cobre example**: After training completes, an agent queries the convergence history:
+
+```bash
+cobre report /data/case_001/output --output-format json --section convergence
+```
+
+This returns a JSON object with the full convergence history (all per-iteration records) read from `training/convergence.parquet`. The agent can then programmatically determine whether convergence was satisfactory or whether parameter adjustments are needed for a subsequent run.
+
+Similarly, the MCP tool `cobre/query-results` reads Hive-partitioned Parquet simulation results and returns them as JSON, and the Python binding `cobre.load_results(path)` returns Arrow tables for zero-copy consumption via Polars or Pandas.
+
+The existing output infrastructure -- manifests, metadata, convergence Parquet, Hive-partitioned simulation Parquet, FlatBuffers policy files -- already stores all necessary data. Agent-readability requires only that structured _access paths_ exist for this data, not that the storage format change. See [Output Infrastructure §1-2](../data-model/output-infrastructure.md) for the on-disk format and MCP Server spec (planned) for the query tool definitions.
+
+### 6.3 Implementation Requirements
+
+1. **Output format flag**: The CLI must accept `--output-format <human|json|json-lines>` as a global flag. Default is `human` for backward compatibility. The flag does not affect computation, only presentation.
+
+2. **Envelope consistency**: All JSON responses from all subcommands must use the same top-level envelope schema (fields: `$schema`, `command`, `success`, `exit_code`, `cobre_version`, `errors`, `warnings`, `data`, `summary`). Subcommand-specific content lives within `data`.
+
+3. **Event type definitions**: Progress event types must be defined as shared Rust structs accessible to all consumers (CLI JSON-lines writer, TUI renderer, MCP progress notifications, Parquet convergence writer). The event types are derived from the per-iteration output record in [Convergence Monitoring §2.4](../architecture/convergence-monitoring.md) and the iteration lifecycle steps in [Training Loop §2.1](../architecture/training-loop.md).
+
+4. **Error kind registry**: All error kinds must be documented in a single authoritative list. New error kinds follow semantic versioning: additions are non-breaking, removals or renames are breaking changes.
+
+5. **Schema versioning**: The `$schema` field in every JSON response enables agents to detect schema changes. Schema evolution follows additive-only rules: new fields may be added, existing fields must not be removed or change type.
+
+### 6.4 What Agent-Readability Does NOT Require
+
+- **JSON equivalents for large tabular data**: Simulation Parquet files (hundreds of MB) remain Parquet. Agents access them via Arrow libraries. Only control-plane data (progress, errors, metadata, summaries) requires JSON schemas.
+- **Changes to computation**: Agent-readability is a presentation-layer concern. The `--output-format` flag does not alter solver behavior, random seeds, convergence criteria, or output files on disk.
+- **Replacing human output**: The default `--output-format human` remains unchanged. Text training logs, decorative headers, and formatted tables continue to work for human operators and HPC batch workflows.
+
+### 6.5 Validation Requirements
+
+The test suite must include agent-readability tests that:
+
+1. Verify every subcommand produces valid JSON when `--output-format json` is specified
+2. Validate JSON responses against the documented envelope schema
+3. Verify that every error kind in the registry produces a parseable structured error
+4. Verify that `--output-format json-lines` for the `run` subcommand produces valid JSON-lines (one valid JSON object per line)
+5. Verify that the response envelope `$schema` field is present and matches the expected version
+
+### 6.6 Why This Matters
+
+- **AI agent workflows**: Coding assistants and automation agents can compose multi-step Cobre workflows without parsing human-formatted text
+- **CI/CD pipelines**: Continuous integration can validate solver results, check convergence, and compare runs using structured output -- no `grep` or `awk` required
+- **Programmatic embedding**: Python bindings and MCP tools consume the same structured types, ensuring consistency across all access paths
+- **Interoperability**: Stable JSON schemas enable third-party tools (dashboards, reporting, monitoring) to integrate with Cobre without coupling to display format details
+
 ## Cross-References
 
 - [Notation Conventions](./notation-conventions.md) — Mathematical notation and symbol definitions used across all specs
 - [Production Scale Reference](./production-scale-reference.md) — Production-scale LP dimensions and performance targets
 - [LP Formulation](../math/lp-formulation.md) — Complete LP subproblem formulation
 - [Input Directory Structure](../data-model/input-directory-structure.md) — File layout implementing these format choices
-- [Validation Architecture](../architecture/validation-architecture.md) — Validation of order invariance and other requirements
+- [Validation Architecture](../architecture/validation-architecture.md) — Validation of order invariance and other requirements; foundation for structured error schema (§4-5)
+- [Convergence Monitoring](../architecture/convergence-monitoring.md) — Per-iteration output record (§2.4) that defines the progress event payload
+- [Training Loop](../architecture/training-loop.md) — Iteration lifecycle (§2.1) that defines the event emission points
+- Structured Output spec (planned) — Full JSON schema definitions for CLI response envelope, error schema, and JSON-lines streaming protocol
+- MCP Server spec (planned) — MCP tool, resource, and prompt definitions for agent interaction
+- Python Bindings spec (planned) — PyO3 API surface, zero-copy data paths, GIL management
+- Terminal UI spec (planned) — TUI event consumption, convergence plot, interactive features

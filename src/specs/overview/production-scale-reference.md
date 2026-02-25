@@ -18,7 +18,7 @@ Based on the target production scenario:
 | Buses                | 6                          | Variables/constraints                  |
 | Lines                | 10                         | Variables/constraints                  |
 | Forward Passes       | 192                        | Parallelism                            |
-| Openings             | 200                        | Backward pass LP solves                |
+| Openings             | 20                         | Backward pass LP solves                |
 | Iterations           | 50                         | Cut pool size                          |
 | Simulation Scenarios | 2000                       | Output size                            |
 
@@ -50,63 +50,62 @@ $$
 For production scale (160 hydros, AR order up to 12):
 
 - Storage: 160
-- AR lags: $160 \times 12 = 1920$ (worst case, all hydros use max order)
-- Total: up to 2,080
+- AR lags: $160 \times 12 = 1{,}920$ (all hydros at max order)
+- **Total: 2,080** (production assumption)
 
-> **Note**: The actual state dimension depends on the AR orders specified in `inflow_ar_coefficients.parquet`. If most hydros use AR(6), the dimension would be $160 + 160 \times 6 = 1{,}120$.
+> **Note**: The production assumption is $D_{state} = 2{,}080$, corresponding to all hydros using AR(12). This is the worst-case ceiling and the value used for all capacity planning and performance budgeting in this spec. If most hydros use AR(6), the dimension reduces to $160 + 160 \times 6 = 1{,}120$, which is the optimistic case.
 
 ## 3. Variable and Constraint Counts
 
 ### 3.1 Variable Count per Subproblem
 
-| Component                   | Formula                                             | Typical Count       | Source             |
-| --------------------------- | --------------------------------------------------- | ------------------- | ------------------ |
-| Future cost                 | $1$                                                 | 1                   | Calculator         |
-| Deficit                     | $N_{bus} \times N_{block} \times N_{seg}$           | 6 × 3 × 3 = 54      | Calculator         |
-| Excess                      | $N_{bus} \times N_{block}$                          | 6 × 3 = 18          | Calculator         |
-| Exchange (direct + reverse) | $2 \times N_{line} \times N_{block}$                | 2 × 10 × 3 = 60     | Calculator         |
-| Hydro storage               | $N_{hydro}$                                         | 160                 | Calculator         |
-| Hydro incremental inflow AR | $N_{hydro} \times P$                                | 160 × 12 = 1,920    | Calculator (AR 12) |
-| Hydro turbined flow         | $N_{hydro} \times N_{block}$                        | 160 × 3 = 480       | Calculator         |
-| Hydro spillage              | $N_{hydro} \times N_{block}$                        | 160 × 3 = 480       | Calculator         |
-| Hydro generation            | $N_{hydro} \times N_{block}$                        | 160 × 3 = 480       | Calculator         |
-| Hydro inflow (per-block)    | $N_{hydro} \times N_{block}$                        | 160 × 3 = 480       | Calculator         |
-| Hydro diversion             | $N_{div} \times N_{block}$                          | ~10 × 3 = 30        | Calculator         |
-| Hydro evaporation           | $N_{evap} \times N_{block}$                         | ~50 × 3 = 150       | Calculator         |
-| Hydro withdrawal            | $N_{withdrawal} \times N_{block}$                   | ~20 × 3 = 60        | Calculator         |
-| Hydro slacks                | $N_{hydro} \times N_{block} \times 6$               | 160 × 3 × 6 = 2,880 | Calculator         |
-| Thermal generation          | $N_{thermal} \times N_{block} \times \bar{N}_{seg}$ | 130 × 3 × 1.5 = 585 | Calculator         |
-| Contracts                   | $(N_{imp} + N_{exp}) \times N_{block}$              | 5 × 3 = 15          | Calculator         |
-| Pumping (flow + power)      | $N_{pump} \times N_{block} \times 2$                | 5 × 3 × 2 = 30      | Calculator         |
-| **Total Variables**         |                                                     | **~7,500**          | Derived            |
+| Component                   | Formula                                             | Typical Count       |
+| --------------------------- | --------------------------------------------------- | ------------------- |
+| Future cost                 | $1$                                                 | 1                   |
+| Deficit                     | $N_{bus} \times N_{block} \times N_{seg}$           | 6 × 3 × 1 = 18      |
+| Excess                      | $N_{bus} \times N_{block}$                          | 6 × 3 = 18          |
+| Exchange (direct + reverse) | $2 \times N_{line} \times N_{block}$                | 2 × 10 × 3 = 60     |
+| Hydro storage               | $N_{hydro}$                                         | 160                 |
+| Hydro incremental inflow AR | $N_{hydro} \times P$                                | 160 × 12 = 1,920    |
+| Hydro turbined flow         | $N_{hydro} \times N_{block}$                        | 160 × 3 = 480       |
+| Hydro spillage              | $N_{hydro} \times N_{block}$                        | 160 × 3 = 480       |
+| Hydro generation            | $N_{hydro} \times N_{block}$                        | 160 × 3 = 480       |
+| Hydro inflow (per-block)    | $N_{hydro} \times N_{block}$                        | 160 × 3 = 480       |
+| Hydro diversion             | $N_{div} \times N_{block}$                          | ~10 × 3 = 30        |
+| Hydro evaporation           | $N_{hydro} \times N_{block}$                        | 160 × 3 = 480       |
+| Hydro withdrawal            | $N_{hydro} \times N_{block}$                        | 160 × 3 = 480       |
+| Hydro slacks                | $N_{hydro} \times N_{block} \times 6$               | 160 × 3 × 6 = 2,880 |
+| Thermal generation          | $N_{thermal} \times N_{block} \times \bar{N}_{seg}$ | 130 × 3 × 1 = 390   |
+| Contracts                   | $(N_{imp} + N_{exp}) \times N_{block}$              | 5 × 3 = 15          |
+| Pumping (flow + power)      | $N_{pump} \times N_{block} \times 2$                | 5 × 3 × 2 = 30      |
+| **Total Variables**         |                                                     | **~8,400**          |
 
 ### 3.2 Constraint Count per Subproblem
 
-| Component                        | Formula                                             | Typical Count        | Source             |
-| -------------------------------- | --------------------------------------------------- | -------------------- | ------------------ |
-| Load balance                     | $N_{bus} \times N_{block}$                          | 6 × 3 = 18           | Calculator         |
-| Hydro water balance              | $N_{hydro}$                                         | 160                  | Calculator         |
-| Incremental inflow AR dynamics   | $N_{hydro}$                                         | 160                  | Calculator         |
-| Lagged incremental inflow fixing | $N_{hydro} \times P$                                | 160 × 12 = 1,920     | Calculator (AR 12) |
-| Hydro generation (constant)      | $(N_{hydro} - N_{fpha}) \times N_{block}$           | (160 − 50) × 3 = 330 | Calculator         |
-| Hydro generation (FPHA)          | $N_{fpha} \times N_{block} \times \bar{M}_{planes}$ | 50 × 3 × 10 = 1,500  | Calculator         |
-| Outflow definition               | $N_{hydro} \times N_{block}$                        | 160 × 3 = 480        | Calculator         |
-| Outflow bounds (min/max)         | $2 \times N_{hydro} \times N_{block}$               | 2 × 160 × 3 = 960    | Calculator         |
-| Turbined min                     | $N_{hydro} \times N_{block}$                        | 160 × 3 = 480        | Calculator         |
-| Generation min                   | $N_{hydro} \times N_{block}$                        | 160 × 3 = 480        | Calculator         |
-| Evaporation                      | $N_{evap} \times N_{block}$                         | 50 × 3 = 150         | Calculator         |
-| Water withdrawal                 | $N_{withdrawal} \times N_{block}$                   | 20 × 3 = 60          | Calculator         |
-| Generic constraints              | $N_{generic}$                                       | ~50                  | Calculator         |
-| **Benders cuts (pre-allocated)** | $N_{cuts}$                                          | 10,000-15,000        | Configuration      |
-| **Total Constraints**            |                                                     | **~17,000-22,000**   | Derived            |
+| Component                        | Formula                                             | Typical Count         |
+| -------------------------------- | --------------------------------------------------- | --------------------- |
+| Load balance                     | $N_{bus} \times N_{block}$                          | 6 × 3 = 18            |
+| Hydro water balance              | $N_{hydro}$                                         | 160                   |
+| Incremental inflow AR dynamics   | $N_{hydro}$                                         | 160                   |
+| Lagged incremental inflow fixing | $N_{hydro} \times P$                                | 160 × 12 = 1,920      |
+| Hydro generation (constant)      | $(N_{hydro} - N_{fpha}) \times N_{block}$           | (160 − 50) × 3 = 330  |
+| Hydro generation (FPHA)          | $N_{fpha} \times N_{block} \times \bar{M}_{planes}$ | 50 × 3 × 125 = 18,750 |
+| Outflow definition               | $N_{hydro} \times N_{block}$                        | 160 × 3 = 480         |
+| Outflow bounds (min/max)         | $2 \times N_{hydro} \times N_{block}$               | 2 × 160 × 3 = 960     |
+| Turbined min                     | $N_{hydro} \times N_{block}$                        | 160 × 3 = 480         |
+| Generation min                   | $N_{hydro} \times N_{block}$                        | 160 × 3 = 480         |
+| Evaporation                      | $N_{hydro} \times N_{block}$                        | 160 × 3 = 480         |
+| Water withdrawal                 | $N_{hydro} \times N_{block}$                        | 160 × 3 = 480         |
+| Generic constraints              | $N_{generic}$                                       | ~50                   |
+| **Active constraints**           |                                                     | **~24,750**           |
+| **Benders cuts (pre-allocated)** | $N_{cuts}$                                          | 10,000-15,000         |
+| **Total Constraints**            |                                                     | **~35,000-40,000**    |
 
-> **Note**: The constraint count is dominated by pre-allocated Benders cut slots. During early iterations, most cut constraints are inactive (bounds set to $[-\infty, +\infty]$). See [Solver Abstraction §5](../architecture/solver-abstraction.md) for pre-allocation design.
+> **Note**: Among active constraints, FPHA hyperplane constraints dominate (~18,750 of ~24,750). The total constraint count including pre-allocated Benders cut slots reaches ~35,000-40,000, but during early iterations most cut constraints are inactive (bounds set to $[-\infty, +\infty]$). See [Solver Abstraction §5](../architecture/solver-abstraction.md) for pre-allocation design.
 
 ### 3.3 Counting Formulas (Exact)
 
-These formulas correspond one-to-one with the `calculate_sizing()` function in `scripts/lp_sizing.py` (lines 191-234). Each term below maps to a named field in the `LPSizing` dataclass. The calculator groups the "Incremental inflow AR dynamics" and "Lagged incremental inflow fixing" constraint rows into a single `n_cons_hydro_ar_dynamics` field computed as `N_HYDRO * (1 + AR_ORDER)`.
-
-For precise sizing, use the following formulas where parameters come from the configuration:
+For precise sizing, use the following formulas where parameters come from the system configuration. The production-scale values in §3.1 and §3.2 are obtained by substituting the parameters from §1.
 
 **Variables**:
 
@@ -154,88 +153,7 @@ N_STATE = N_HYDRO                                               # storage
         # + SUM(GNL_LAG[t] for t in GNL_THERMALS)  (deferred C.1)
 ```
 
-### 3.4 Sizing Calculator Verification
-
-The sizing calculator (`scripts/lp_sizing.py` in the `powers` repository) is the ground truth for LP variable counts, constraint counts, state dimension, and memory estimates. It accepts a JSON system configuration and computes all values using the same formulas documented in §3.3.
-
-#### Calculator Location and Verification Command
-
-To verify the production-scale values in this spec, run the calculator with an empty JSON input (which uses all defaults):
-
-```sh
-echo '{}' | python3 scripts/lp_sizing.py /dev/stdin
-```
-
-> **Note**: The calculator default `n_forward_passes` is 200; the spec uses 192 (see §1). This parameter does not affect LP variable or constraint counts, so the verification output matches regardless.
-
-#### Default Parameters
-
-The calculator's `SystemConfig` dataclass defines the following defaults, which drive all production-scale values in §3.1-§3.3:
-
-| Parameter                   | Default | Description                        |
-| --------------------------- | ------: | ---------------------------------- |
-| `n_hydros`                  |     160 | Number of hydroelectric plants     |
-| `n_thermals`                |     130 | Number of thermal plants           |
-| `n_buses`                   |       6 | Number of subsystem buses          |
-| `n_lines`                   |      10 | Number of transmission lines       |
-| `n_blocks`                  |       3 | Load blocks per stage              |
-| `n_pumps`                   |       5 | Number of pumping stations         |
-| `n_contracts_import`        |       3 | Import contracts                   |
-| `n_contracts_export`        |       2 | Export contracts                   |
-| `avg_ar_order`              |       6 | Average AR order (for calculator)  |
-| `max_ar_order`              |      12 | Maximum AR order (for worst-case)  |
-| `n_hydros_with_fpha`        |      50 | Hydros with FPHA generation model  |
-| `avg_fpha_planes`           |      10 | Average FPHA approximation planes  |
-| `n_hydros_with_diversion`   |      10 | Hydros with water diversion        |
-| `n_hydros_with_evaporation` |      50 | Hydros with evaporation modeling   |
-| `n_hydros_with_withdrawal`  |      20 | Hydros with water withdrawal       |
-| `avg_deficit_segments`      |       3 | Deficit cost segments per bus      |
-| `avg_thermal_segments`      |     1.5 | Cost segments per thermal          |
-| `n_slack_types`             |       6 | Slack variable types per hydro     |
-| `n_generic_constraints`     |      50 | Generic (custom) constraints       |
-| `n_cuts_capacity`           |  15,000 | Pre-allocated Benders cut slots    |
-| `n_stages`                  |     120 | Planning horizon stages            |
-| `n_iterations`              |      50 | SDDP iterations                    |
-| `n_forward_passes`          |     200 | Calculator default (spec uses 192) |
-
-#### Output Mapping
-
-The following table maps calculator output fields to spec sections for cross-verification:
-
-| Calculator Output Field        | Spec Reference                         |
-| ------------------------------ | -------------------------------------- |
-| `total_variables`              | §3.1 approximate total                 |
-| `total_constraints`            | §3.2 approximate total                 |
-| `total_constraints_no_cuts`    | §3.2 total minus Benders cuts row      |
-| `state_dimension`              | §2.1 state dimension (avg AR(6) case)  |
-| `cuts_per_stage_bytes`         | §3.4 headline table, cuts memory/stage |
-| Per-variable-category fields   | §3.1 individual rows (at avg AR(6))    |
-| Per-constraint-category fields | §3.2 individual rows (at avg AR(6))    |
-
-#### Headline Values
-
-Running with the default production-scale parameters (160 hydros, 130 thermals, 6 buses, 10 lines, avg AR order 6, 15,000 cut slots) produces:
-
-| Metric             | Calculator Output | Notes                                     |
-| ------------------ | ----------------: | ----------------------------------------- |
-| Total variables    |             6,923 | §3.1 estimates ~7,500 (worst-case AR(12)) |
-| Total constraints  |            20,788 | §3.2 estimates ~17,000-22,000             |
-| Active constraints |             5,788 | Excluding pre-allocated cut slots         |
-| State dimension    |             1,120 | With avg AR(6); up to 2,080 at AR(12)     |
-| Cuts memory/stage  |          128.7 MB | Dense coefficients, 15,000 slots          |
-
-#### AR(12) vs AR(6) Assumptions
-
-The per-row estimates in §3.1 and §3.2 use worst-case AR order (P=12 for all hydros) to establish upper bounds for capacity planning. The sizing calculator uses configurable average AR order (default `avg_ar_order=6`), which better reflects typical production cases where hydros have varying AR orders. Both are consistent within their stated assumptions:
-
-- **Worst-case (AR 12)**: §3.1 total ~7,900 variables; §3.2 active constraints ~6,750. Used for upper-bound capacity planning.
-- **Average-case (AR 6)**: Calculator total 6,923 variables; active constraints 5,788. Used for typical memory budgeting.
-
-Rows annotated "Calculator (AR 12)" in §3.1 and §3.2 are the ones affected by this assumption. To verify the worst-case values, run the calculator with `avg_ar_order` set to 12:
-
-```sh
-echo '{"avg_ar_order": 12}' | python3 scripts/lp_sizing.py /dev/stdin
-```
+**Production-scale parameter values**: `AVG_DEF_SEGMENTS = 1`, `AVG_COST_SEGMENTS = 1`, `AVG_FPHA_PLANES = 125`, `N_HYDRO_EVAP = N_HYDRO = 160`, `N_HYDRO_WITHDRAWAL = N_HYDRO = 160`, `AR_ORDER = 12` (worst case). All other parameters as in §1.
 
 ## 4. Performance Expectations by Scale
 
@@ -260,7 +178,7 @@ echo '{"avg_ar_order": 12}' | python3 scripts/lp_sizing.py /dev/stdin
 | **Small**      | 6      | 5      | 5        | 1        | 10         | 1     | 2            | <0.2s        | <2s           | <50 MB      |
 | **Medium**     | 12     | 80     | 65       | 6        | 100        | 4     | 12           | <5s          | <15s          | <500 MB     |
 | **Large**      | 60     | 160    | 130      | 12       | 192        | 16    | 16           | <15s         | <45s          | <1.5 GB     |
-| **Production** | 120    | 160    | 130      | 12       | 192        | 64    | 24           | ~0.24s \*    | ~47.6s \*     | <2 GB       |
+| **Production** | 120    | 160    | 130      | 12       | 192        | 64    | 24           | ~0.24s \*    | ~4.76s \*     | <2 GB       |
 
 > **Note**: Memory/rank estimates reference [Memory Architecture §2.1](../hpc/memory-architecture.md) (~1.2 GB per rank at production scale with 16 threads). Rows marked with \* are model-derived estimates from the [timing model analysis](../../../plans/spec-consistency-audit/epic-04-wall-clock-time-model/timing-model-analysis.md) at $\tau_{LP} = 2$ ms (see §4.6 for the complete time budget). The remaining rows (Unit Test through Large) are engineering targets based on domain experience and will be validated during implementation.
 
@@ -286,7 +204,7 @@ echo '{"avg_ar_order": 12}' | python3 scripts/lp_sizing.py /dev/stdin
 | Memory per rank | $\approx$ solver workspaces (~57 MB $\times$ threads) + cut pool (~250 MB) + opening tree (~30 MB). See [Memory Architecture §2.1](../hpc/memory-architecture.md)                                                     |
 | Cut pool growth | Logical growth only (pre-allocated slots). Memory stable after initialization.                                                                                                                                        |
 
-> **Thread utilization at 64 ranks**: With $M = 192$ forward passes distributed across $R = 64$ ranks, each rank receives $192 / 64 = 3$ work items (trajectories in the forward pass, trial points in the backward pass). Since only 3 of 24 threads per rank are active, thread utilization is $3/24 = 12.5\%$. The per-iteration compute time is unchanged (the critical path is $T \times \tau_{LP}$ for the forward pass and $(T-1) \times N_{open} \times \tau_{LP}$ for the backward pass, both independent of rank count once $M$ items are covered). At $R = 8$ ranks with 24 threads, utilization reaches 100% with identical $T_{iter}$. The 64-rank configuration trades utilization for reduced per-rank memory pressure and future scaling headroom. See the [timing model analysis §8](../../../plans/spec-consistency-audit/epic-04-wall-clock-time-model/timing-model-analysis.md) for the complete utilization comparison.
+> **Thread utilization at 64 ranks**: The forward and backward passes have different utilization characteristics. **Forward pass**: With $M = 192$ trajectories distributed across $R = 64$ ranks, each rank receives $192 / 64 = 3$ trajectories, so $3/24 = 12.5\%$ thread utilization. **Backward pass**: With $N_{open} = 20$ openings per stage distributed across $R = 64$ ranks, only 20 of 64 ranks receive work (at most 1 opening each), and each active rank uses 1 of 24 threads ($4.2\%$ utilization). The remaining 44 ranks are idle during backward pass stages. Despite the low utilization, the per-iteration compute time is determined by the critical path: $T \times \tau_{LP}$ for the forward pass and $(T-1) \times N_{open} \times \tau_{LP}$ for the backward pass. The 64-rank configuration trades utilization for reduced per-rank memory pressure and future scaling headroom. At $R = 8$ ranks with 24 threads, forward utilization reaches 100%. See the [timing model analysis §8](../../../plans/spec-consistency-audit/epic-04-wall-clock-time-model/timing-model-analysis.md) for the complete utilization comparison.
 
 ### 4.5 Convergence Reference
 
@@ -301,63 +219,63 @@ echo '{"avg_ar_order": 12}' | python3 scripts/lp_sizing.py /dev/stdin
 
 ### 4.6 Wall-Clock Time Budget
 
-The following per-iteration time budget is derived from a first-principles model at $\tau_{LP} = 2$ ms, $R = 64$ ranks, $D_{state} = 1{,}120$ (typical AR(6)), InfiniBand HDR. The complete derivation with all intermediate steps is in the [timing model analysis](../../../plans/spec-consistency-audit/epic-04-wall-clock-time-model/timing-model-analysis.md).
+The following per-iteration time budget is derived from a first-principles model at $\tau_{LP} = 2$ ms, $R = 64$ ranks, $D_{state} = 2{,}080$ (worst-case AR(12)), InfiniBand HDR. The complete derivation with all intermediate steps is in the [timing model analysis](../../../plans/spec-consistency-audit/epic-04-wall-clock-time-model/timing-model-analysis.md).
 
 | Component                     | Per-Iteration | Fraction | Category        |
 | ----------------------------- | ------------: | -------: | --------------- |
-| Forward pass compute          |       0.240 s |    0.49% | Compute         |
-| Backward pass compute         |      47.600 s |   97.48% | Compute         |
-| Trial point `Allgatherv`      |       0.013 s |    0.03% | Communication   |
-| Cut exchange (119 stages)     |       0.027 s |    0.06% | Communication   |
+| Forward pass compute          |       0.240 s |    4.70% | Compute         |
+| Backward pass compute         |       4.760 s |   93.30% | Compute         |
+| Trial point `Allgatherv`      |       0.002 s |    0.04% | Communication   |
+| Cut exchange (119 stages)     |       0.005 s |    0.10% | Communication   |
 | Convergence `Allreduce`       |      ~0.000 s |   ~0.00% | Communication   |
-| Barrier overhead (119 stages) |       0.952 s |    1.95% | Synchronization |
-| **Per-iteration total**       |  **48.832 s** | **100%** |                 |
+| Barrier overhead (119 stages) |       0.095 s |    1.86% | Synchronization |
+| **Per-iteration total**       |   **5.102 s** | **100%** |                 |
 
 **50-iteration projection**:
 
 | Metric                 |     Value | Notes                                           |
 | ---------------------- | --------: | ----------------------------------------------- |
-| 50-iteration total     | 2,441.6 s | $50 \times 48.832$                              |
+| 50-iteration total     |   255.1 s | $50 \times 5.102$                               |
 | Wall-clock budget      | 7,200.0 s | 2-hour operational requirement                  |
-| Budget fraction        |     33.9% | Headroom: 4,758 s (66.1%)                       |
+| Budget fraction        |      3.5% | Headroom: 6,945 s (96.5%)                       |
 | Headroom available for |           | I/O, checkpointing, cold-starts, cut management |
 
 #### Sensitivity: Critical LP Solve Time
 
-The model is linear in $\tau_{LP}$. The total 50-iteration compute time (including sync overhead) is:
+The model is linear in $\tau_{LP}$. LP solves per iteration: $120 + 119 \times 20 = 2{,}500$. Including barrier overhead (2% of backward compute), the LP-equivalent coefficient is $2{,}500 + 47.6 = 2{,}547.6$. The total 50-iteration compute time is:
 
 $$
-T_{total}^{full} \approx 50 \times (23{,}920 \times \tau_{LP} + 0.992) = 1{,}196{,}000 \times \tau_{LP} + 49.6 \text{ seconds}
+T_{total}^{full} \approx 50 \times (2{,}547.6 \times \tau_{LP} + 0.007) = 127{,}380 \times \tau_{LP} + 0.35 \text{ seconds}
 $$
 
 Setting $T_{total}^{full} = 7{,}200$ s and solving for the critical LP solve time:
 
 $$
-\tau_{LP}^{crit} = \frac{7{,}200 - 49.6}{1{,}196{,}000} \approx 5.98 \text{ ms}
+\tau_{LP}^{crit} = \frac{7{,}200 - 0.35}{127{,}380} \approx 56.5 \text{ ms}
 $$
 
-If the effective LP solve time exceeds approximately **6 ms**, the 50-iteration budget is violated. This threshold provides a concrete validation target for solver benchmarking.
+If the effective LP solve time exceeds approximately **56.5 ms**, the 50-iteration budget is violated. With only 20 openings (vs. 200 in earlier estimates), the solver has substantial headroom against LP solve time degradation.
 
-| Scenario                        | $\tau_{LP}$ | 50-iter total |  Budget % | Verdict           |
-| ------------------------------- | ----------: | ------------: | --------: | ----------------- |
-| Aggressive warm-start           |        1 ms |     1,246.0 s |     17.3% | Well under budget |
-| **Target (spec KPI)**           |    **2 ms** | **2,441.6 s** | **33.9%** | **Under budget**  |
-| Moderate warm-start degradation |        4 ms |     4,833.6 s |     67.1% | Under budget      |
-| **Critical threshold**          |    ~5.98 ms |    ~7,200.0 s |    100.0% | At budget limit   |
-| Cold-start dominated            |       10 ms |    12,009.6 s |    166.8% | **OVER budget**   |
+| Scenario                        | $\tau_{LP}$ | 50-iter total | Budget % | Verdict           |
+| ------------------------------- | ----------: | ------------: | -------: | ----------------- |
+| Aggressive warm-start           |        1 ms |      ~127.8 s |     1.8% | Well under budget |
+| **Target (spec KPI)**           |    **2 ms** |  **~255.1 s** | **3.5%** | **Under budget**  |
+| Moderate warm-start degradation |        4 ms |      ~509.9 s |     7.1% | Under budget      |
+| Elevated solve time             |       10 ms |    ~1,274.2 s |    17.7% | Under budget      |
+| **Critical threshold**          |    ~56.5 ms |    ~7,200.0 s |   100.0% | At budget limit   |
 
 #### Sensitivity: Backward Pass Warm-Start Rate
 
-The backward pass constitutes 99.5% of compute and its warm-start characteristics are critical. If the backward pass warm-start hit rate $\eta_{ws}^{bwd}$ drops below 100% (the design target from [Work Distribution §2.3](../hpc/work-distribution.md)), LP solve times blend between warm-start ($\tau_{ws} = 2$ ms) and cold-start ($\tau_{cs} = 20$ ms):
+The backward pass constitutes ~93% of compute. If the backward pass warm-start hit rate $\eta_{ws}^{bwd}$ drops below 100% (the design target from [Work Distribution §2.3](../hpc/work-distribution.md)), LP solve times blend between warm-start ($\tau_{ws} = 2$ ms) and cold-start ($\tau_{cs} = 20$ ms):
 
-| $\eta_{ws}^{bwd}$ | Effective $\tau_{LP}^{bwd}$ | 50-iter total | Verdict         |
-| ----------------: | --------------------------: | ------------: | --------------- |
-|              100% |                        2 ms |     2,441.6 s | Under budget    |
-|               90% |                      3.8 ms |     4,616.5 s | Under budget    |
-|               80% |                      5.6 ms |     6,758.5 s | Tight           |
-|               70% |                      7.4 ms |     8,900.5 s | **OVER budget** |
+| $\eta_{ws}^{bwd}$ | Effective $\tau_{LP}^{bwd}$ | 50-iter total | Verdict      |
+| ----------------: | --------------------------: | ------------: | ------------ |
+|              100% |                        2 ms |        ~255 s | Under budget |
+|               90% |                      3.8 ms |        ~474 s | Under budget |
+|               80% |                      5.6 ms |        ~693 s | Under budget |
+|               70% |                      7.4 ms |        ~911 s | Under budget |
 
-Maintaining near-100% backward warm-start is the single most important performance requirement. The sequential opening evaluation design ([Work Distribution §2.3](../hpc/work-distribution.md)) is specifically engineered for this purpose.
+With 20 openings, warm-start remains beneficial for LP performance but is no longer an existential threat to the 2-hour budget. Even at 70% hit rate, the solver uses only ~12.7% of the budget. The sequential opening evaluation design ([Work Distribution §2.3](../hpc/work-distribution.md)) still targets near-100% warm-start for optimal LP throughput.
 
 ### 4.7 Model Assumptions
 
@@ -368,12 +286,12 @@ Every timing model estimate in §4.6 depends on the assumptions below. The table
 | LP solve time (warm-start)               | 2 ms       | §4.3 KPI                                                                    | Spec KPI             | **High**    |
 | LP solve time (cold-start)               | 20 ms      | §4.3 KPI                                                                    | Spec KPI             | Medium      |
 | Forward pass warm-start hit rate         | 70%        | §4.3 KPI                                                                    | Spec KPI             | Low         |
-| Backward pass warm-start hit rate        | ~100%      | [Work Distribution §2.3](../hpc/work-distribution.md) (sequential openings) | Spec Architecture    | **High**    |
+| Backward pass warm-start hit rate        | ~100%      | [Work Distribution §2.3](../hpc/work-distribution.md) (sequential openings) | Spec Architecture    | Low         |
 | MPI ranks                                | 64         | §4.2                                                                        | Spec Architecture    | Low         |
 | Threads per rank                         | 24         | §4.2                                                                        | Spec Architecture    | Low         |
 | Stages                                   | 120        | §1                                                                          | Spec Architecture    | Low         |
 | Forward passes                           | 192        | §1                                                                          | Spec Architecture    | Low         |
-| Openings                                 | 200        | §1                                                                          | Spec Architecture    | Low         |
+| Openings                                 | 20         | §1                                                                          | Spec Architecture    | Low         |
 | Iterations                               | 50         | §1                                                                          | Spec Architecture    | Low         |
 | Backward stages = $T - 1$                | 119        | [Training Loop §6.1](../architecture/training-loop.md)                      | Spec Architecture    | Low         |
 | One LP solve per stage per trajectory    | 1          | §3 (blocks within LP, not separate solves)                                  | Spec Architecture    | Low         |
@@ -384,7 +302,7 @@ Every timing model estimate in §4.6 depends on the assumptions below. The table
 | LP solve time standard deviation         | 15%        | [Work Distribution §4.1](../hpc/work-distribution.md) (upper end of 5-15%)  | Engineering Estimate | Low         |
 | Load imbalance barrier overhead          | 2%         | Derived from statistical model of per-stage max-of-ranks                    | Engineering Estimate | Low         |
 
-**High-sensitivity parameters**: LP solve time ($\tau_{ws}$) and backward pass warm-start hit rate ($\eta_{ws}^{bwd}$) are the only assumptions with material impact on feasibility. All other parameters would need to change by an order of magnitude to threaten the 2-hour budget. Early solver benchmarking should prioritize measuring these two quantities.
+**High-sensitivity parameters**: LP solve time ($\tau_{ws}$) is the primary assumption with material impact on feasibility, though the critical threshold is now ~56.5 ms (well above the 2 ms target). With 20 openings, backward pass warm-start hit rate ($\eta_{ws}^{bwd}$) is no longer an existential risk -- even at 70% hit rate the budget fraction is ~12.7%. All other parameters would need to change by an order of magnitude to threaten the 2-hour budget. Early solver benchmarking should still prioritize measuring LP solve time under warm-start conditions.
 
 ## Cross-References
 

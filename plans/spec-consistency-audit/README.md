@@ -19,7 +19,7 @@ This plan performs a deep consistency audit of the Cobre specification corpus (5
 | Epic 03 | Production Scale Reference Hardening         | 3 (refined)  | completed |
 | Epic 04 | Wall-Clock Time Model & Performance Targets  | 3 (refined)  | completed |
 | Epic 05 | Documentation Organization & NEWAVE Deferral | 3 (refined)  | completed |
-| Epic 06 | Agent & External Interface Impact Assessment | 3 (outline)  | pending   |
+| Epic 06 | Agent & External Interface Impact Assessment | 3 (refined)  | completed |
 | Epic 07 | Agent Interface Specification Authoring      | 5 (outline)  | pending   |
 
 ## Progress Tracking
@@ -44,9 +44,9 @@ This plan performs a deep consistency audit of the Cobre specification corpus (5
 | ticket-016 | Review spec organization coherence                                         | epic-05 | completed | Refined      |
 | ticket-017 | Remove NEWAVE migration section                                            | epic-05 | completed | Refined      |
 | ticket-018 | Audit and update NEWAVE/CEPEL references                                   | epic-05 | completed | Refined      |
-| ticket-019 | Assess structured CLI and output impact on existing specs                  | epic-06 | pending   | Outline      |
-| ticket-020 | Assess MCP server, Python bindings, and TUI impact on existing specs       | epic-06 | pending   | Outline      |
-| ticket-021 | Define agent-readability design principles and interface architecture      | epic-06 | pending   | Outline      |
+| ticket-019 | Assess structured CLI and output impact on existing specs                  | epic-06 | completed | Refined      |
+| ticket-020 | Assess MCP server, Python bindings, and TUI impact on existing specs       | epic-06 | completed | Refined      |
+| ticket-021 | Define agent-readability design principles and interface architecture      | epic-06 | completed | Refined      |
 | ticket-022 | Write structured-output.md spec                                            | epic-07 | pending   | Outline      |
 | ticket-023 | Write mcp-server.md spec                                                   | epic-07 | pending   | Outline      |
 | ticket-024 | Write python-bindings.md spec                                              | epic-07 | pending   | Outline      |

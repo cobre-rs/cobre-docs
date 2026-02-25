@@ -12,7 +12,7 @@ Software must increasingly be readable, understandable, and usable by AI agents 
 
 ## Scope
 
-This epic is an **impact assessment and architecture planning** exercise. No specs are written or modified. The deliverables are assessment reports and architecture decisions that inform Epic 07 (spec authoring).
+This epic is an **impact assessment and architecture planning** exercise. The only spec modification is adding the agent-readability design principle to `design-principles.md` (ticket-021). All other deliverables are assessment reports and architecture decisions that inform Epic 07 (spec authoring).
 
 ### Interface Layers (Priority Order)
 
@@ -36,9 +36,9 @@ This epic is an **impact assessment and architecture planning** exercise. No spe
 
 | Ticket     | Title                                                                 | Detail Level |
 | ---------- | --------------------------------------------------------------------- | ------------ |
-| ticket-019 | Assess structured CLI and output impact on existing specs             | Outline      |
-| ticket-020 | Assess MCP server, Python bindings, and TUI impact on existing specs  | Outline      |
-| ticket-021 | Define agent-readability design principles and interface architecture | Outline      |
+| ticket-019 | Assess structured CLI and output impact on existing specs             | Refined      |
+| ticket-020 | Assess MCP server, Python bindings, and TUI impact on existing specs  | Refined      |
+| ticket-021 | Define agent-readability design principles and interface architecture | Refined      |
 
 ## Dependencies
 

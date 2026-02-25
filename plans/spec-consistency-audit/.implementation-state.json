@@ -1,6 +1,6 @@
 {
   "plan": "spec-consistency-audit",
-  "last_updated": "2026-02-25T23:00:00Z",
+  "last_updated": "2026-02-25T23:45:00Z",
   "progressive": true,
   "tickets": {
     "ticket-001-audit-notation-math-specs-part1.md": {
@@ -93,17 +93,20 @@
       "detail_level": "refined",
       "agent": "sddp-specialist"
     },
-    "ticket-019-assess-structured-cli-impact.md": {
-      "status": "pending",
-      "detail_level": "outline"
+    "ticket-019-define-python-api-surface.md": {
+      "status": "completed",
+      "detail_level": "refined",
+      "agent": "sddp-specialist"
     },
-    "ticket-020-assess-mcp-python-tui-impact.md": {
-      "status": "pending",
-      "detail_level": "outline"
+    "ticket-020-assess-spec-impact.md": {
+      "status": "completed",
+      "detail_level": "refined",
+      "agent": "sddp-specialist"
     },
-    "ticket-021-define-agent-readability-architecture.md": {
-      "status": "pending",
-      "detail_level": "outline"
+    "ticket-021-draft-cobre-python-spec.md": {
+      "status": "completed",
+      "detail_level": "refined",
+      "agent": "sddp-specialist"
     },
     "ticket-022-write-structured-output-spec.md": {
       "status": "pending",
@@ -148,8 +151,8 @@
       "learning_extracted": true
     },
     "epic-06-agent-interface-assessment": {
-      "phase": "outline",
-      "learning_extracted": false
+      "phase": "completed",
+      "learning_extracted": true
     },
     "epic-07-agent-interface-specs": {
       "phase": "outline",
