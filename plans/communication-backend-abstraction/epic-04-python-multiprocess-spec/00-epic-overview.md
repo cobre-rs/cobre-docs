@@ -9,15 +9,15 @@
 
 ## Scope
 
-This epic primarily modifies `src/specs/interfaces/python-bindings.md` with new sections for multi-process execution. It may also add a brief note to `src/specs/interfaces/mcp-server.md` about potential multi-process MCP execution.
+This epic primarily modifies `src/specs/interfaces/python-bindings.md` with new sections for multi-process execution. It also adds a brief note to `src/specs/interfaces/mcp-server.md` about potential multi-process MCP execution.
 
 ## Tickets
 
 | Ticket     | Title                                                        | Status  | Detail Level |
 | ---------- | ------------------------------------------------------------ | ------- | ------------ |
-| ticket-014 | Add multi-process execution sections to python-bindings.md   | pending | Outline      |
-| ticket-015 | Specify Python worker coordination API                       | pending | Outline      |
-| ticket-016 | Update MCP server spec for optional multi-process capability | pending | Outline      |
+| ticket-014 | Add multi-process execution sections to python-bindings.md   | pending | Refined      |
+| ticket-015 | Specify Python worker coordination API                       | pending | Refined      |
+| ticket-016 | Update MCP server spec for optional multi-process capability | pending | Refined      |
 
 ## Dependencies
 

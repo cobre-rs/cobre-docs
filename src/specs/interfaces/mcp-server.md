@@ -17,6 +17,14 @@ This spec defines the Cobre MCP (Model Context Protocol) server: the complete to
 | **What it delegates** | All computation to `cobre-sddp`; all I/O to `cobre-io`; all data model types from `cobre-core`                               |
 | **MPI relationship**  | Never initializes MPI. The `cobre-sddp` library operates in single-rank mode                                                 |
 
+### 1.1a Future: Multi-Process Capability
+
+The MCP server currently operates in single-process mode, which is the recommended configuration for AI agent interaction.
+
+Multi-process SDDP execution via TCP or shm backends is architecturally possible using the same mechanism specified for the Python bindings API ([Python Bindings](./python-bindings.md) SS7.4). Exposing multi-process capability in the MCP server would require adding `backend` and `num_workers` parameters to the `cobre/run` tool input schema (SS2.2). This extension is deferred to a future release pending demonstrated demand from MCP-based agent workflows.
+
+See [Python Bindings](./python-bindings.md) SS2.1 for the multi-process API pattern that would be adapted for `cobre/run`.
+
 ### 1.2 Dependency Graph
 
 ```
@@ -30,7 +38,7 @@ cobre-mcp
   +-- cobre-core
 ```
 
-The `cobre-mcp` crate does **not** depend on `ferrompi`. It shares the single-process execution path through `cobre-sddp` with OpenMP parallelism only, identical to the execution mode used by `cobre-python` (see [Python Bindings](python-bindings.md)).
+The `cobre-mcp` crate does **not** depend on `ferrompi`. Multi-process execution is not currently exposed in the MCP tool interface (see SS1.1a).
 
 ### 1.3 Operation Categories
 
@@ -1627,5 +1635,5 @@ This allows agents to discover the server's capabilities and adapt their workflo
 - [Configuration Reference](../configuration/configuration-reference.md) -- `config.json` schema returned by `cobre/get-config-schema`; stopping rules that determine training termination reported in `cobre/run` output
 - [Training Loop](../architecture/training-loop.md) -- Iteration lifecycle (SS2.1) that produces the events consumed by progress reporting; event emission points for the shared event stream
 - Architecture Blueprint (architecture-021) -- Crate responsibility boundaries (SS2.1), shared event stream architecture (SS3), scope definition (SS5.2), long-running operation assumption (SS6.1 Q-3)
-- [Python Bindings](./python-bindings.md) -- Shares the same single-process execution path and dependency subgraph
+- [Python Bindings](./python-bindings.md) -- Shares the single-process execution path (SS1.2); multi-process architecture (SS7.4) and multi-process `train()` API pattern (SS2.1) may be adopted in a future release
 - [Terminal UI](./terminal-ui.md) -- Shares the same event stream as another consumer of `ConvergenceUpdate` events

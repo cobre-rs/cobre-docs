@@ -17,7 +17,7 @@ This plan introduces a pluggable communication backend abstraction layer to the 
 | Epic 01 | Communicator Trait and Backend Selection | 4 (detailed) | completed |
 | Epic 02 | Backend Implementation Specifications    | 4 (detailed) | completed |
 | Epic 03 | Refactor Existing Specs to Use Trait     | 5 (refined)  | completed |
-| Epic 04 | Python Multi-Process Execution Spec      | 3 (outline)  | pending   |
+| Epic 04 | Python Multi-Process Execution Spec      | 3 (refined)  | completed |
 | Epic 05 | Testing and Determinism Verification     | 2 (outline)  | pending   |
 
 ## Dependency Graph
@@ -42,7 +42,7 @@ Epic 03: Refactor Existing Specs [REFINED]
   ticket-012 Update crate overview + SUMMARY.md ────────┤ (depends on 004-008)
   ticket-013 Update cross-reference index ──────────────┘ (depends on 009-012)
 
-Epic 04: Python Multi-Process Spec [OUTLINE]
+Epic 04: Python Multi-Process Spec [REFINED]
   ticket-014 Add multi-process sections to python.md ───┐ (depends on 007, 008, 009)
   ticket-015 Specify Python worker coordination API ─────┤ (depends on 014)
   ticket-016 Update MCP server for multi-process ────────┘ (depends on 007, 014)
@@ -61,7 +61,7 @@ The recommended execution order follows the dependency graph:
 3. **ticket-004** (cobre-comm crate) -- after 001-003
 4. **ticket-005** through **ticket-008** (all backend specs) -- can be parallel after 001-003
 5. **Epic 03 tickets** (refined, ready for execution) -- require Epics 01-02 complete
-6. **Epic 04 tickets** (after refinement) -- require TCP/shm backends and refactored specs
+6. **Epic 04 tickets** (refined, ready for execution) -- require TCP/shm backends and refactored specs
 7. **Epic 05 tickets** (after refinement) -- require everything above
 
 ## Progress Tracking
@@ -81,8 +81,8 @@ The recommended execution order follows the dependency graph:
 | ticket-011 | Refactor training-loop.md and remaining HPC specs            | epic-03 | completed | Refined      |
 | ticket-012 | Update crate overview and SUMMARY.md                         | epic-03 | completed | Refined      |
 | ticket-013 | Update cross-reference index with new specs                  | epic-03 | completed | Refined      |
-| ticket-014 | Add multi-process execution sections to python-bindings.md   | epic-04 | pending   | Outline      |
-| ticket-015 | Specify Python worker coordination API                       | epic-04 | pending   | Outline      |
-| ticket-016 | Update MCP server spec for optional multi-process capability | epic-04 | pending   | Outline      |
+| ticket-014 | Add multi-process execution sections to python-bindings.md   | epic-04 | completed | Refined      |
+| ticket-015 | Specify Python worker coordination API                       | epic-04 | completed | Refined      |
+| ticket-016 | Update MCP server spec for optional multi-process capability | epic-04 | completed | Refined      |
 | ticket-017 | Specify backend conformance and interchangeability testing   | epic-05 | pending   | Outline      |
 | ticket-018 | Specify determinism verification across backends             | epic-05 | pending   | Outline      |

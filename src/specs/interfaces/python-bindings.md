@@ -2,7 +2,7 @@
 
 ## Purpose
 
-This spec defines the `cobre-python` crate: a PyO3-based `cdylib` that exposes Cobre's SDDP hydrothermal dispatch solver to Python as the `cobre` module. It covers the complete Python API surface with type-annotated signatures for all public classes and functions, the 5-point GIL management contract that governs the Python/Rust boundary, zero-copy data paths via NumPy and Arrow FFI, the single-process-only execution mode with the rationale for prohibiting MPI from Python, the Python exception hierarchy mapped from the structured error kind registry ([Structured Output](./structured-output.md) SS2.3), optional async support via `asyncio`, the FlatBuffers policy access API, memory ownership rules at the boundary, and build/distribution via maturin.
+This spec defines the `cobre-python` crate: a PyO3-based `cdylib` that exposes Cobre's SDDP hydrothermal dispatch solver to Python as the `cobre` module. It covers the complete Python API surface with type-annotated signatures for all public classes and functions, the 5-point GIL management contract that governs the Python/Rust boundary, zero-copy data paths via NumPy and Arrow FFI, single-process and multi-process execution modes (the latter via TCP or shared-memory backends -- never MPI) with the rationale for prohibiting MPI from Python, the Python exception hierarchy mapped from the structured error kind registry ([Structured Output](./structured-output.md) SS2.3), optional async support via `asyncio`, the FlatBuffers policy access API, memory ownership rules at the boundary, and build/distribution via maturin.
 
 ## 1. Crate Architecture
 
@@ -10,14 +10,14 @@ This spec defines the `cobre-python` crate: a PyO3-based `cdylib` that exposes C
 
 `cobre-python` is a `cdylib` crate that compiles to a shared library (`.so` / `.dylib` / `.pyd`) loadable by the Python interpreter. It is a leaf crate in the Cobre dependency graph: no internal crate depends on it.
 
-| Attribute             | Value                                                                                                             |
-| --------------------- | ----------------------------------------------------------------------------------------------------------------- |
-| **Crate type**        | `cdylib` (PyO3 shared library)                                                                                    |
-| **Module name**       | `import cobre`                                                                                                    |
-| **Execution mode**    | Single-process. No MPI. OpenMP threads for computation. GIL released during all Rust computation                  |
-| **What it owns**      | PyO3 class/function definitions, Python-to-Rust type conversions, zero-copy NumPy/Arrow bridge, async wrappers    |
-| **What it delegates** | All computation to `cobre-sddp`; all I/O to `cobre-io`; all data model types from `cobre-core`                    |
-| **MPI relationship**  | MUST NOT depend on `ferrompi`. MUST NOT initialize MPI. Python users needing distributed execution use subprocess |
+| Attribute             | Value                                                                                                                                                       |
+| --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Crate type**        | `cdylib` (PyO3 shared library)                                                                                                                              |
+| **Module name**       | `import cobre`                                                                                                                                              |
+| **Execution mode**    | Single-process (default) or multi-process via TCP/shm backends. No MPI. OpenMP threads per worker for computation. GIL released during all Rust computation |
+| **What it owns**      | PyO3 class/function definitions, Python-to-Rust type conversions, zero-copy NumPy/Arrow bridge, async wrappers                                              |
+| **What it delegates** | All computation to `cobre-sddp`; all I/O to `cobre-io`; all data model types from `cobre-core`                                                              |
+| **MPI relationship**  | MUST NOT depend on `ferrompi`. MUST NOT initialize MPI. Multi-process execution uses TCP or shm backends instead                                            |
 
 **Dependency graph**:
 
@@ -49,6 +49,23 @@ ferrompi: NOT a dependency of cobre-python
 | Step 7 -- Workspace allocation            | **Active**. Thread-local solver workspaces allocated with first-touch NUMA placement    |
 | Step 8 -- Startup logging                 | **Modified**. Logs to Python's `logging` module instead of stdout; reports thread count |
 
+### 1.2a Multi-Process Execution
+
+When `num_workers > 1` is requested (or when a non-local backend is explicitly selected), `cobre-python` operates in multi-process mode. The parent Python process spawns `num_workers` child processes via `multiprocessing.Process` (with `start_method="spawn"`). Each worker process is a fully independent Python interpreter that executes the same initialization steps as SS1.2 above, with the following differences:
+
+| Standard Step (SS6)                       | Multi-Process Worker Mode                                                                                                             |
+| ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| Step 1 -- MPI initialization              | **Replaced**. Creates a `TcpBackend` or `ShmBackend` instead of `LocalBackend`, depending on the selected backend (see SS7.5)         |
+| Step 2 -- Topology detection              | **Replaced**. Rank and size are assigned by the parent process via function arguments, not by a scheduler                             |
+| Step 3 -- Shared memory communicator      | **Replaced**. For `ShmBackend`, the POSIX shared memory segment provides true shared memory. For `TcpBackend`, `HeapFallback` is used |
+| Step 4 -- OpenMP configuration            | **Active**. Each worker reads `OMP_NUM_THREADS` independently; defaults to physical core count divided by `num_workers`               |
+| Step 5 -- LP solver threading suppression | **Active**. Same as single-process mode                                                                                               |
+| Step 6 -- NUMA allocation policy          | **Active** on Linux. Each worker process has its own NUMA allocation policy                                                           |
+| Step 7 -- Workspace allocation            | **Active**. Each worker allocates its own thread-local solver workspaces                                                              |
+| Step 8 -- Startup logging                 | **Modified**. Each worker logs to Python's `logging` module with its rank prefix; parent process aggregates status                    |
+
+This maps to the single-process mode described in [Hybrid Parallelism](../hpc/hybrid-parallelism.md) SS1.0a, extended to multiple cooperating processes that communicate via a non-MPI backend. The parent process is the orchestrator: it spawns workers, waits for completion, and collects results. It does not participate in the SDDP computation.
+
 ### 1.3 OpenMP Thread Control
 
 Users control the thread count via environment variable or Python API:
@@ -79,12 +96,27 @@ def train(
     case: Case,
     config_overrides: dict | None = None,
     progress_callback: Callable[[ProgressEvent], None] | None = None,
+    backend: str = "auto",
+    num_workers: int = 1,
 ) -> TrainingResult:
     """Train an SDDP policy.
 
     Loads the case data, builds the LP subproblems, and runs the SDDP
     training loop until a stopping rule fires. The GIL is released during
     all Rust computation (see SS3).
+
+    When num_workers > 1, the library spawns num_workers child processes
+    via multiprocessing.Process (with start_method="spawn") and
+    coordinates them using the selected communication backend. Each
+    worker process runs the full SDDP training loop independently,
+    communicating via the backend's transport (TCP sockets or POSIX
+    shared memory). The parent process does not participate in
+    computation -- it is a pure orchestrator. See SS2.1a for the
+    complete worker lifecycle and SS7.4 for the multi-process
+    architecture.
+
+    When num_workers == 1 (the default), no child processes are spawned
+    and the local backend is used regardless of the backend parameter.
 
     Args:
         case: A loaded case object returned by CaseLoader.load().
@@ -93,15 +125,33 @@ def train(
             {"stopping_rules": {"bound_stalling": {"tolerance": 0.001}}}.
         progress_callback: Optional callable invoked once per iteration
             with a ProgressEvent. The GIL is briefly reacquired for each
-            callback invocation (see SS3 point 4).
+            callback invocation (see SS3 point 4). In multi-process mode,
+            progress events from all workers are multiplexed into this
+            single callback with worker_id disambiguation (see SS2.9).
+        backend: Communication backend for multi-process execution.
+            Accepted values: "auto", "shm", "tcp", "local". See SS7.5
+            for the full backend selection table and auto-detection
+            logic. When num_workers == 1, this parameter is ignored.
+        num_workers: Number of worker processes for parallel SDDP
+            execution. Must be >= 1. When 1 (default), runs in
+            single-process mode. When > 1, spawns num_workers child
+            processes (start_method="spawn"); the parent is the
+            orchestrator and does not participate in SDDP computation.
 
     Returns:
         TrainingResult containing the trained policy and convergence history.
+        In multi-process mode, the result is collected from rank 0
+        (see SS2.1b).
 
     Raises:
         cobre.ValidationError: If config_overrides contain invalid values.
         cobre.SolverError: If an LP solve fails during training.
-        cobre.CobreError: For unexpected internal errors.
+        cobre.WorkerError: If a worker process fails during multi-process
+            training. Contains the rank, exit code, and inner error of the
+            first failed worker (see SS6.1a).
+        cobre.CobreError: If backend is not a recognized value, if
+            num_workers < 1, or if start_method is set to "fork" when
+            num_workers > 1. Also raised for unexpected internal errors.
     """
     ...
 ```
@@ -116,11 +166,19 @@ def simulate(
     policy: Policy,
     config_overrides: dict | None = None,
     progress_callback: Callable[[ProgressEvent], None] | None = None,
+    backend: str = "auto",
+    num_workers: int = 1,
 ) -> SimulationResult:
     """Simulate a trained SDDP policy.
 
     Replays the policy on a configurable number of scenario trajectories
     and produces per-scenario, per-stage results.
+
+    When num_workers > 1, the library spawns num_workers child processes
+    to evaluate scenarios in parallel. Each worker evaluates a contiguous
+    block of scenarios using the same policy. The parent process
+    orchestrates spawning and result collection. See SS2.1a for the
+    worker lifecycle.
 
     Args:
         case: A loaded case object returned by CaseLoader.load().
@@ -128,7 +186,17 @@ def simulate(
         config_overrides: Optional dictionary of simulation configuration
             overrides. Example: {"simulation": {"scenarios": 5000}}.
         progress_callback: Optional callable invoked periodically with
-            simulation progress.
+            simulation progress. In multi-process mode, progress events
+            from all workers are multiplexed into this single callback
+            with worker_id disambiguation (see SS2.9).
+        backend: Communication backend for multi-process execution.
+            Accepted values: "auto", "shm", "tcp", "local". See SS7.5
+            for the full backend selection table and auto-detection
+            logic. When num_workers == 1, this parameter is ignored.
+        num_workers: Number of worker processes for parallel simulation.
+            Must be >= 1. When 1 (default), runs in single-process mode.
+            When > 1, spawns num_workers child processes
+            (start_method="spawn").
 
     Returns:
         SimulationResult containing simulation outputs and summary statistics.
@@ -136,10 +204,50 @@ def simulate(
     Raises:
         cobre.ValidationError: If config_overrides contain invalid values.
         cobre.SolverError: If an LP solve fails during simulation.
-        cobre.CobreError: For unexpected internal errors.
+        cobre.WorkerError: If a worker process fails during multi-process
+            simulation (see SS6.1a).
+        cobre.CobreError: If backend is not a recognized value, if
+            num_workers < 1, or if start_method is set to "fork" when
+            num_workers > 1. Also raised for unexpected internal errors.
     """
     ...
 ```
+
+#### SS2.1a Worker Lifecycle
+
+When `num_workers > 1` is passed to `cobre.train()` or `cobre.simulate()`, the library executes the following lifecycle within the calling process (the parent/orchestrator):
+
+1. **Validate parameters.** The library checks that `num_workers >= 1`, that `backend` is one of `"auto"`, `"shm"`, `"tcp"`, or `"local"`, and that `multiprocessing.get_start_method()` is not `"fork"`. If `start_method` has not been set, the library calls `multiprocessing.set_start_method("spawn")`. If it is already set to `"fork"`, the library raises `cobre.CobreError` with `kind="IncompatibleSettings"` and a message explaining that `"fork"` is prohibited (see SS7.1 for the rationale).
+
+2. **Resolve backend.** If `backend="auto"`, the library applies the auto-detection logic from SS7.5: if `COBRE_TCP_COORDINATOR` is set in the environment, select `"tcp"`; otherwise select `"shm"`.
+
+3. **Generate backend-specific configuration.** The library generates the transport parameters that workers will use to find each other:
+   - For `"shm"`: generates a unique POSIX shared memory segment name (e.g., `/cobre_comm_<random_hex>`).
+   - For `"tcp"`: starts a TCP coordinator listener on an ephemeral port and records the coordinator address (`127.0.0.1:<port>`).
+
+4. **Spawn worker processes.** The library spawns `num_workers` child processes via `multiprocessing.Process(target=_worker_entry, args=(rank, ...))`. Each child process receives its rank (0 through `num_workers - 1`), the backend-specific configuration from step 3, the case data, and a reference to a `multiprocessing.Queue` for result collection.
+
+5. **Each worker initializes.** Inside the child process, the worker:
+   - Imports the `cobre` module (fresh Python interpreter due to `"spawn"`).
+   - Creates a backend-specific `Communicator` for its assigned rank (e.g., `ShmBackend` with the shared segment name, or `TcpBackend` connecting to the coordinator address).
+   - Runs the SDDP training loop (or simulation loop) with the `Communicator` handling all inter-worker collective operations.
+   - On completion, rank 0 places the `TrainingResult` (or `SimulationResult`) onto the `multiprocessing.Queue`.
+
+6. **Parent waits for completion.** The parent process calls `Process.join()` on each worker process. If any worker process exits with a non-zero exit code or raises an exception, the parent terminates remaining workers via `Process.terminate()` and raises `cobre.WorkerError` (see SS6.1a).
+
+7. **Parent collects result.** The parent reads the result from the `multiprocessing.Queue` (placed there by rank 0 in step 5) and returns it to the caller.
+
+The per-rank worker invocation pattern for the `"shm"` backend -- including `multiprocessing.Process` spawn, rank assignment, and shared memory segment naming -- is demonstrated in [Shared Memory Backend](../hpc/backend-shm.md) SS7.3. `cobre.train()` performs steps 1-7 internally, automating the boilerplate shown in that example.
+
+#### SS2.1b Multi-Process Result Collection
+
+When `num_workers > 1`, the result returned by `cobre.train()` or `cobre.simulate()` is collected from rank 0 only. The rationale and semantics are:
+
+1. **Rank 0's result is authoritative.** All ranks converge to the same SDDP policy (identical cut pools after `allgatherv` synchronization at each iteration). The `TrainingResult` from any rank would contain the same policy and the same final bounds. Rank 0 is chosen by convention, consistent with the coordinator role in both the TCP backend ([TCP Backend](../hpc/backend-tcp.md) SS1.1) and the shm backend.
+
+2. **`convergence_history` comes from rank 0.** The Arrow table in `TrainingResult.convergence_history` is produced by rank 0's convergence monitoring loop. All ranks compute identical lower bounds (from the same first-stage LP) and contribute to the same upper bound statistics (aggregated via `allreduce`), so rank 0's history is representative of the global convergence trajectory.
+
+3. **`workers` metadata is available.** When `num_workers > 1`, the `TrainingResult.workers` property returns a list of `WorkerInfo` dataclass instances (one per worker) containing per-worker metadata. See SS2.7 for the property definition.
 
 #### `cobre.validate()`
 
@@ -513,6 +621,48 @@ class TrainingResult:
     def total_cuts(self) -> int:
         """Total Benders cuts generated across all stages."""
         ...
+
+    @property
+    def workers(self) -> list[WorkerInfo] | None:
+        """Per-worker metadata for multi-process training runs.
+
+        Returns a list of WorkerInfo instances (one per worker, ordered
+        by rank) when the training run used num_workers > 1. Returns
+        None when num_workers == 1 (single-process mode).
+        """
+        ...
+
+
+class WorkerInfo:
+    """Metadata for a single worker process in a multi-process run.
+
+    Instances are created by the library during result collection
+    (SS2.1b) and are read-only.
+    """
+
+    @property
+    def rank(self) -> int:
+        """Worker rank index (0-based), as assigned during spawning (SS2.1a step 4)."""
+        ...
+
+    @property
+    def wall_time_ms(self) -> int:
+        """Wall-clock time for this worker in milliseconds.
+
+        Measured from the start of the worker's SDDP computation
+        (after Communicator initialization) to the end of its
+        training loop. Does not include process spawn overhead.
+        """
+        ...
+
+    @property
+    def backend(self) -> str:
+        """Communication backend used by this worker.
+
+        One of: 'shm', 'tcp', 'local'. Reflects the actual
+        backend selected after auto-detection resolution.
+        """
+        ...
 ```
 
 ### 2.8 SimulationResult
@@ -615,6 +765,19 @@ class ProgressEvent:
     def scenarios_total(self) -> int | None:
         """Total scenarios to simulate. None during training."""
         ...
+
+    # Multi-process fields
+    @property
+    def worker_id(self) -> int | None:
+        """Worker rank (0-based) that emitted this event.
+
+        None in single-process mode. In multi-process mode, progress
+        events from all workers are multiplexed into the single
+        progress_callback stream; this field disambiguates the source.
+        Events are delivered in arrival order across workers; events
+        from the same worker are in iteration order.
+        """
+        ...
 ```
 
 ### 2.10 ValidationResult
@@ -673,14 +836,15 @@ class ValidationRecord:
 
 ### 2.11 API Surface Summary
 
-| Source Crate     | Python Classes / Functions                                                               | Exposed? |
-| ---------------- | ---------------------------------------------------------------------------------------- | -------- |
-| cobre-core       | `HydroPlant`, `ThermalUnit`, `Bus`, `Line`, `Case` (read-only entities and topology)     | Yes      |
-| cobre-io         | `CaseLoader.load()`, `validate()`, `ValidationResult`, `ValidationRecord`                | Yes      |
-| cobre-stochastic | `PARModel`, `OpeningTree`, `sample_noise()`, `load_external_scenarios()`                 | Yes      |
-| cobre-sddp       | `train()`, `simulate()`, `Policy`, `TrainingResult`, `SimulationResult`, `ProgressEvent` | Yes      |
-| cobre-solver     | (none)                                                                                   | **No**   |
-| ferrompi         | (none)                                                                                   | **No**   |
+| Source Crate     | Python Classes / Functions                                                                             | Exposed? |
+| ---------------- | ------------------------------------------------------------------------------------------------------ | -------- |
+| cobre-core       | `HydroPlant`, `ThermalUnit`, `Bus`, `Line`, `Case` (read-only entities and topology)                   | Yes      |
+| cobre-io         | `CaseLoader.load()`, `validate()`, `ValidationResult`, `ValidationRecord`                              | Yes      |
+| cobre-stochastic | `PARModel`, `OpeningTree`, `sample_noise()`, `load_external_scenarios()`                               | Yes      |
+| cobre-sddp       | `train()`, `simulate()`, `Policy`, `TrainingResult`, `SimulationResult`, `ProgressEvent`, `WorkerInfo` | Yes      |
+| cobre-python     | `WorkerError` (exception class, see SS6.1a)                                                            | Yes      |
+| cobre-solver     | (none)                                                                                                 | **No**   |
+| ferrompi         | (none)                                                                                                 | **No**   |
 
 ## 3. GIL Management Contract
 
@@ -697,6 +861,8 @@ The Global Interpreter Lock (GIL) is the central concurrency constraint at the P
 4. **GIL reacquired to convert results to Python objects on return.** When Rust computation completes, `py.allow_threads()` returns, reacquiring the GIL. The binding code converts Rust results to Python objects (NumPy arrays, dicts, PyO3 class instances).
 
 5. **No Python callbacks into the hot loop.** All customization is via configuration (`config_overrides` dict), not runtime callbacks. The optional `progress_callback` is invoked only at iteration boundaries (outside the LP solve parallel regions) with the GIL briefly reacquired.
+
+6. **In multi-process mode, each worker process has its own Python interpreter and GIL.** Every worker spawned via `multiprocessing.Process` with `start_method="spawn"` runs a fresh Python interpreter with an independent GIL. The GIL contract (points 1-5) applies independently within each worker process. There is no GIL contention between workers because they are separate OS processes -- each worker releases its own GIL before entering Rust computation, and no GIL state is shared across process boundaries.
 
 ### 3.2 GIL State Transitions During `train()`
 
@@ -745,6 +911,70 @@ train(case, config)
   |
   return TrainingResult
 ```
+
+### 3.2a GIL State Transitions During Multi-Process `train()`
+
+When `num_workers > 1`, the parent process spawns child processes and waits for results. Each child process follows the single-process GIL flow from SS3.2 independently. The following timeline shows the parent and worker GIL state transitions:
+
+```
+Parent Process                    Worker Processes (spawned)
+==============                    =========================
+
+train(case, num_workers=N)
+  |
+  +-- [GIL HELD] -----------+
+  |   Validate arguments     |
+  |   Check start_method     |
+  |   Resolve backend        |
+  |   Generate backend config|
+  +-- [GIL HELD] -----------+
+  |   Spawn N workers via    |
+  |   multiprocessing.Process|
+  +--------------------------+
+  |                           \
+  |                            +---> Worker 0           Worker 1  ...  Worker N-1
+  |                            |     ==========         ==========     ==========
+  |                            |
+  |                            |     [NEW INTERPRETER]  [NEW INTERPRETER]
+  |                            |     [OWN GIL]          [OWN GIL]
+  |                            |       |                  |
+  |                            |     [GIL HELD]         [GIL HELD]
+  |                            |     Import cobre       Import cobre
+  |                            |     Create Communicator Create Communicator
+  |                            |       |                  |
+  |                            |     py.allow_threads() py.allow_threads()
+  |                            |       |                  |
+  |                            |     [GIL RELEASED]     [GIL RELEASED]
+  |                            |     SDDP loop          SDDP loop
+  |                            |     (SS3.2 flow)       (SS3.2 flow)
+  |                            |     allgatherv <------> allgatherv
+  |                            |     allreduce  <------> allreduce
+  |                            |       |                  |
+  |  [GIL HELD]                |     [if callback]      [if callback]
+  |  Process.join() blocks     |     Reacquire own GIL  Reacquire own GIL
+  |  (waiting for workers)     |     Call callback      Call callback
+  |                            |     (worker_id=0)      (worker_id=1)
+  |                            |     Release own GIL    Release own GIL
+  |                            |       |                  |
+  |                            |     [if converged]     [if converged]
+  |                            |     Put result on Q    (no result)
+  |                            |     Process exits      Process exits
+  |                            |       |                  |
+  +-- join() returns ----------+-------+------------------+
+  |   [GIL HELD]               |
+  |   Read result from Queue   |
+  |   Build TrainingResult     |
+  |   Attach WorkerInfo list   |
+  +----------------------------+
+  |
+  return TrainingResult
+```
+
+**Key observations:**
+
+- Each worker has its own Python interpreter and its own GIL. Releasing one worker's GIL has no effect on other workers or the parent.
+- Worker-to-worker communication (allgatherv, allreduce) occurs entirely in Rust within the GIL-released section of each worker. No Python objects cross process boundaries during SDDP computation.
+- Progress callbacks are invoked by each worker independently; the parent multiplexes them via `multiprocessing.Queue` with a `worker_id` field (see SS2.9).
 
 ### 3.3 Progress Callback GIL Protocol
 
@@ -952,7 +1182,63 @@ Exception (Python built-in)
         +-- cobre.ValidationError
         +-- cobre.SolverError
         +-- cobre.IOError
+        +-- cobre.WorkerError
 ```
+
+### 6.1a Worker Error Handling
+
+The `WorkerError` exception is raised by the parent process when a worker process fails during multi-process execution (`num_workers > 1`). It is a subclass of `CobreError` and carries information about the failed worker.
+
+```python
+class WorkerError(CobreError):
+    """Raised when a worker process fails during multi-process execution.
+
+    Wraps information about the first failure detected. Raised by the
+    parent (orchestrator) process; remaining live workers are terminated.
+    """
+
+    @property
+    def rank(self) -> int:
+        """Rank of the failed worker (0-based).
+
+        The rank of the first worker whose failure was detected by the
+        parent process (rank assigned during spawning, SS2.1a step 4).
+        """
+        ...
+
+    @property
+    def exit_code(self) -> int | None:
+        """Exit code of the failed worker process.
+
+        The OS exit code returned by the worker process. None if the
+        worker was terminated by a signal (e.g., SIGKILL, SIGSEGV)
+        rather than exiting normally with a non-zero code.
+        """
+        ...
+
+    @property
+    def inner(self) -> CobreError | None:
+        """The original exception from the failed worker, if available.
+
+        When a worker raises a CobreError (or subclass) during execution,
+        the exception is serialized via multiprocessing.Queue and attached
+        here. None if the worker crashed without raising a Python-level
+        exception (e.g., segfault, OOM kill, or a Rust panic that could
+        not be translated).
+        """
+        ...
+```
+
+**Error propagation protocol:**
+
+1. Each worker process runs inside a `try/except` block that catches all `CobreError` subclasses.
+2. If a worker catches an exception, it places the exception onto a shared error `multiprocessing.Queue` along with its rank, then exits with a non-zero exit code.
+3. The parent process monitors worker processes via `Process.join()`. When a worker exits with a non-zero exit code (or is terminated by a signal), the parent:
+   a. Reads the error from the error queue (if available).
+   b. Calls `Process.terminate()` on all remaining live workers.
+   c. Calls `Process.join()` on all terminated workers (with a timeout) to clean up OS resources.
+   d. Raises `cobre.WorkerError` with the `rank`, `exit_code`, and `inner` fields populated from the first detected failure.
+4. If multiple workers fail concurrently, only the first detected failure is reported in the `WorkerError`. The `message` field notes that additional workers may have failed.
 
 ### 6.2 Exception Class Definitions
 
@@ -1057,6 +1343,7 @@ class IOError(CobreError):
 | `OutputCorrupted`                       | `cobre.IOError`         | Output file exists but is unreadable    |
 | `OutputNotFound`                        | `cobre.IOError`         | Required output file missing            |
 | `IncompatibleRuns`                      | `cobre.CobreError`      | Compared runs have incompatible configs |
+| `WorkerFailed`                          | `cobre.WorkerError`     | Worker process failed (see SS6.1a)      |
 
 ### 6.4 Rust Panic Handling
 
@@ -1077,14 +1364,18 @@ A failure to release the GIL (i.e., `py.allow_threads()` failing) should never h
 
 ### 7.1 Execution Mode Table
 
-| Execution Mode                           | Supported            | Thread Count        | GIL State During Computation | Use Case                         |
-| ---------------------------------------- | -------------------- | ------------------- | ---------------------------- | -------------------------------- |
-| Single-process, single-thread            | Yes                  | `OMP_NUM_THREADS=1` | Released                     | Small problems, debugging        |
-| Single-process, OpenMP threads           | **Yes (default)**    | `OMP_NUM_THREADS=N` | Released                     | Production use from Python       |
-| Multi-process via MPI                    | **No**               | --                  | --                           | Use `cobre` CLI via subprocess   |
-| Multi-process via Python multiprocessing | **No** (unsupported) | --                  | --                           | Fork-safety concerns with OpenMP |
+| Execution Mode                              | Supported         | Thread Count                   | GIL State During Computation      | Use Case                                        |
+| ------------------------------------------- | ----------------- | ------------------------------ | --------------------------------- | ----------------------------------------------- |
+| Single-process, single-thread               | Yes               | `OMP_NUM_THREADS=1`            | Released                          | Small problems, debugging                       |
+| Single-process, OpenMP threads              | **Yes (default)** | `OMP_NUM_THREADS=N`            | Released                          | Production use from Python                      |
+| Multi-process via `multiprocessing.Process` | Yes (optional)    | `OMP_NUM_THREADS=N` per worker | Released (per-worker independent) | Multi-worker SDDP via `multiprocessing.Process` |
+| Multi-process via MPI                       | **No**            | --                             | --                                | Use `cobre` CLI via subprocess                  |
+
+**`start_method` requirement:** Multi-process execution MUST use `multiprocessing.set_start_method("spawn")`. The `"fork"` start method is prohibited because `fork()` in a process with active OpenMP threads causes undefined behavior (POSIX fork-safety rules). The `"spawn"` method creates a fresh Python interpreter per worker, avoiding all fork-safety issues with OpenMP, POSIX locks, and GPU driver state.
 
 ### 7.2 MPI Prohibition Rationale
+
+Multi-process SDDP execution from Python is fully supported via the TCP and shared-memory backends (see SS7.3, SS7.4, SS7.5). These backends provide inter-process communication without any MPI dependency, using standard OS primitives (TCP sockets, POSIX shared memory) that are fully compatible with Python's process model. The prohibition below applies exclusively to MPI -- not to distributed execution in general.
 
 Python bindings MUST NOT initialize MPI. The prohibition rests on three independent technical reasons:
 
@@ -1094,9 +1385,35 @@ Python bindings MUST NOT initialize MPI. The prohibition rests on three independ
 
 3. **Dual-FFI-layer fragility.** Combining mpi4py (Python MPI bindings) with ferrompi (Rust MPI bindings) in the same process requires both to share the same `MPI_Comm` handle. Having two independent MPI FFI layers addressing the same MPI runtime is fragile and untested. The risk of ABI conflicts, double-free of communicators, or inconsistent threading levels is high.
 
-### 7.3 Distributed Execution Workflow
+### 7.3 Multi-Process Execution via Python
 
-For users who need distributed (multi-node) execution, the recommended workflow uses the CLI as a subprocess:
+The recommended approach for multi-process SDDP from Python uses `multiprocessing.Process` with the shm or TCP backend. Each worker process is a separate Python interpreter that calls `cobre.train()` with backend-specific parameters. The workers communicate via the selected backend (TCP sockets or POSIX shared memory) -- not via Python IPC mechanisms.
+
+**Architecture overview:**
+
+```
+  Parent Process (orchestrator)
+  |
+  |  multiprocessing.Process(target=run_rank, args=(rank,))
+  |  start_method="spawn"
+  |
+  +---> Worker 0 (rank 0)    --+
+  +---> Worker 1 (rank 1)    --+-- communicate via shm or TCP
+  +---> Worker 2 (rank 2)    --+   (not Python IPC)
+  +---> Worker 3 (rank 3)    --+
+  |
+  |  p.join() for all workers
+  v
+  Results available on disk (Parquet/FlatBuffers)
+```
+
+The complete Python code example for multi-process execution with the shm backend is provided in [Shared Memory Backend](../hpc/backend-shm.md) SS7.3. That example demonstrates the `multiprocessing.Process` spawn pattern, rank assignment, shared memory segment naming, and worker join logic.
+
+For the TCP backend, the pattern is identical except the backend parameters change from `shm_name`/`shm_rank`/`shm_size` to `coordinator`/`tcp_rank`/`tcp_size`. See [TCP Backend](../hpc/backend-tcp.md) SS8.1 for the TCP-specific environment variables.
+
+### 7.3a Subprocess + CLI Workflow (Secondary Option)
+
+For users who need MPI-based distributed execution (multi-node with InfiniBand), or who prefer process isolation from the Python interpreter, the CLI subprocess workflow remains available:
 
 ```python
 import subprocess
@@ -1121,7 +1438,39 @@ convergence = pl.read_parquet(f"{output_dir}/training/convergence.parquet")
 costs = pl.read_parquet(f"{output_dir}/simulation/costs.parquet")
 ```
 
-This workflow provides full MPI parallelism without any GIL/MPI interaction, and leverages the structured output protocol ([Structured Output](./structured-output.md) SS1) for programmatic result parsing.
+This workflow provides full MPI parallelism without any GIL/MPI interaction, and leverages the structured output protocol ([Structured Output](./structured-output.md) SS1) for programmatic result parsing. It is the only option for multi-node execution with MPI and InfiniBand interconnects.
+
+### 7.4 Multi-Process Architecture
+
+Each worker process in the multi-process execution model (SS7.3) has the following properties:
+
+1. **Independent Python interpreter and GIL.** Every worker spawned via `multiprocessing.Process` with `start_method="spawn"` runs its own Python interpreter with its own GIL. There is zero GIL contention between workers -- each worker releases its own GIL independently before entering Rust computation.
+
+2. **Per-worker `Communicator` instance.** Each worker calls into the PyO3 layer, which creates a backend-specific `Communicator` (either `TcpBackend` or `ShmBackend`). The `Communicator` is owned by the Rust side within the worker process. No `Communicator` state crosses the Python/Rust boundary.
+
+3. **Parent process is orchestrator only.** The parent Python process spawns workers, waits for them to complete via `p.join()`, and reads results from disk. It does not participate in the SDDP computation and does not hold a `Communicator` instance.
+
+4. **Workers communicate via the selected backend, not via Python IPC.** All inter-worker communication (cut sharing via `allgatherv`, bound synchronization via `allreduce`, barrier synchronization) occurs within the Rust layer through the backend's transport (TCP sockets or POSIX shared memory). Python's `multiprocessing.Queue`, `multiprocessing.Pipe`, and `multiprocessing.Value` are not used for SDDP data exchange.
+
+5. **Independent OpenMP thread pools.** Each worker process has its own OpenMP runtime with its own thread pool. If the user sets `OMP_NUM_THREADS=N` before spawning, each worker creates `N` OpenMP threads. For optimal CPU utilization, the total thread count across all workers should not exceed the physical core count: `num_workers * OMP_NUM_THREADS <= num_physical_cores`.
+
+### 7.5 Backend Selection from Python
+
+The `backend` parameter in multi-process mode controls which communication backend each worker creates. The following values are accepted:
+
+| `backend` Value | Behavior                                                                                                                                                                                           |
+| --------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `"auto"`        | **Default.** When `num_workers > 1`: selects `"shm"` for single-node execution; selects `"tcp"` if the `COBRE_TCP_COORDINATOR` environment variable is set                                         |
+| `"shm"`         | Forces the shared-memory backend. Requires all workers on the same physical node. Each worker opens the same POSIX shared memory segment. See [Shared Memory Backend](../hpc/backend-shm.md) SS7.1 |
+| `"tcp"`         | Forces the TCP backend. Requires a coordinator address (passed as a parameter or via `COBRE_TCP_COORDINATOR`). See [TCP Backend](../hpc/backend-tcp.md) SS8.1                                      |
+| `"local"`       | Forces the local backend. Single-process mode; the `num_workers` parameter is ignored. All computation runs in the calling process                                                                 |
+
+**Auto-detection logic** (when `backend="auto"` and `num_workers > 1`):
+
+1. If `COBRE_TCP_COORDINATOR` is set in the environment, select `"tcp"`.
+2. Otherwise, select `"shm"` (assumes single-node execution).
+
+This is the Python-side equivalent of the priority chain defined in [Backend Registration and Selection](../hpc/backend-selection.md) SS2.2, simplified for the Python context where MPI is never available. The full auto-detection algorithm (including MPI detection) is documented in that section.
 
 ## 8. Memory Model
 
@@ -1283,6 +1632,10 @@ Minimum Python version: 3.9 (matching PyO3's minimum supported version). Wheels 
 - [Input System Entities](../data-model/input-system-entities.md) -- Entity field definitions for `HydroPlant`, `ThermalUnit`, `Bus`, `Line` Python classes
 - [Binary Formats](../data-model/binary-formats.md) -- FlatBuffers schemas for policy data accessed by the `Policy` class
 - [Output Schemas](../data-model/output-schemas.md) -- Parquet output column definitions for simulation results read by Python directly
+- [TCP Backend](../hpc/backend-tcp.md) -- TCP-based multi-process communication backend (SS8.1 for environment variables, SS8.2 for invocation examples) used by Python multi-process mode (SS7.3, SS7.5)
+- [Shared Memory Backend](../hpc/backend-shm.md) -- POSIX shared-memory multi-process backend (SS7.3 for the Python multiprocessing code example) used by Python multi-process mode (SS7.3, SS7.5)
+- [Backend Registration and Selection](../hpc/backend-selection.md) -- Auto-detection algorithm (SS2.2) and feature flag matrix (SS1.2) governing backend availability in Python wheel builds (SS7.5)
+- [Communicator Trait](../hpc/communicator-trait.md) -- `Communicator` trait definition (SS1) that each worker's backend implements; `SharedMemoryProvider` (SS4) for shm backend shared regions
 - Architecture-021 SS2.2 -- `cobre-python` crate responsibility boundaries and API surface table
 - Architecture-021 SS6.1 Q-4 -- Async support assumption (optional, `run_in_executor`)
 - Architecture-021 SS6.3 -- 5 hard constraints from GIL/MPI analysis
