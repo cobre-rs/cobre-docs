@@ -35,7 +35,19 @@ The scenario pipeline (§13) is exercised repeatedly during both training and si
 
 The top-level system object holds all entity collections needed by the solver. After loading from input files, all collections are sorted by entity ID (canonical ordering) to ensure deterministic behavior regardless of declaration order in input files. See [Design Principles §3](../overview/design-principles.md).
 
-### Entity Collections
+### 1.1 Dual-Nature Design Principle
+
+The Cobre data model follows a **dual-nature design**: `cobre-core` defines clarity-first data models optimized for correctness and readability, while `cobre-sddp` builds performance-adapted views at initialization from `&System`.
+
+**`cobre-core` (clarity-first)**. The `System` struct uses `Vec<Hydro>`, `Vec<Thermal>`, and other rich entity structs organized as arrays-of-structs with `HashMap`-based O(1) lookup by entity ID. This representation prioritizes data clarity: field names match domain concepts, entity relationships are explicit, and the structure is straightforward to validate, debug, and serialize. The `System` struct is the canonical representation shared across all crates that need to read the case data.
+
+**`cobre-sddp` (performance-adapted)**. Before the training loop begins, `cobre-sddp` constructs performance-adapted views from `&System`. These views reorganize the data into struct-of-arrays layouts with contiguous LP variable indices, SIMD-friendly `f64` slices, and pre-computed lookup tables that eliminate indirection on the hot path. The performance-adapted types are consumed exclusively within the SDDP training and simulation loops. Their lifetime is bounded by the algorithm execution, and they hold no ownership over the underlying case data.
+
+This separation means that adding a new entity type or modifying a domain struct in `cobre-core` does not require changing the performance-critical inner loops of `cobre-sddp` -- only the initialization code that builds the performance-adapted views needs to be updated. Conversely, hot-path data layout optimizations in `cobre-sddp` do not propagate to the rest of the ecosystem.
+
+> **Cross-reference**: The performance-adapted types in `cobre-sddp` (stage templates, LP variable indexers, contiguous coefficient arrays) are defined in Epic 3 specs. See [Solver Abstraction](../architecture/solver-abstraction.md) for the stage LP template design and [Solver Workspaces](../architecture/solver-workspaces.md) for thread-local workspace layout.
+
+### 1.2 Entity Collections
 
 | Collection               | Source                                 | Description                                                     |
 | ------------------------ | -------------------------------------- | --------------------------------------------------------------- |
@@ -47,13 +59,178 @@ The top-level system object holds all entity collections needed by the solver. A
 | Energy contracts         | `system/energy_contracts.json`         | Import/export agreements with external systems                  |
 | Non-controllable sources | `system/non_controllable_sources.json` | Intermittent generation (wind/solar) with curtailment option    |
 
-### System Metadata
+### 1.3 System Struct Sketch
 
-The system object should also carry metadata needed for cross-cutting concerns:
+The `System` struct is the top-level in-memory representation of a fully loaded, validated, and resolved case. It is produced by `cobre_io::load_case()` and consumed by `cobre_sddp::train()`, `cobre_sddp::simulate()`, and `cobre_stochastic` scenario generation.
 
-- Total entity counts per type (for LP dimensioning)
-- Cascade topology (downstream/upstream adjacency, resolved to skip non-existing plants)
-- Global configuration references
+```rust
+/// Top-level system representation.
+/// Produced by cobre-io, consumed by cobre-sddp and cobre-stochastic.
+/// Immutable after construction. Shared read-only across threads.
+pub struct System {
+    // Entity collections (canonical ordering by ID)
+    pub buses: Vec<Bus>,
+    pub lines: Vec<Line>,
+    pub hydros: Vec<Hydro>,
+    pub thermals: Vec<Thermal>,
+    pub pumping_stations: Vec<PumpingStation>,
+    pub contracts: Vec<EnergyContract>,
+    pub non_controllable_sources: Vec<NonControllableSource>,
+
+    // O(1) lookup indices (entity ID -> position in collection)
+    bus_index: HashMap<EntityId, usize>,
+    line_index: HashMap<EntityId, usize>,
+    hydro_index: HashMap<EntityId, usize>,
+    thermal_index: HashMap<EntityId, usize>,
+    pumping_station_index: HashMap<EntityId, usize>,
+    contract_index: HashMap<EntityId, usize>,
+    non_controllable_source_index: HashMap<EntityId, usize>,
+
+    // Cascade topology (resolved during loading)
+    pub cascade: CascadeTopology,
+
+    // Transmission network topology (resolved during loading)
+    pub network: NetworkTopology,
+
+    // Stages and temporal structure
+    pub stages: Vec<Stage>,
+    pub policy_graph: PolicyGraph,
+
+    // Pre-resolved penalties and bounds
+    pub penalties: ResolvedPenalties,
+    pub bounds: ResolvedBounds,
+
+    // Scenario pipeline parameters
+    pub par_models: Vec<ParModel>,       // per (hydro, stage)
+    pub correlation: CorrelationModel,
+
+    // Initial conditions
+    pub initial_conditions: InitialConditions,
+
+    // Generic constraints
+    pub generic_constraints: Vec<GenericConstraint>,
+}
+```
+
+**Field descriptions**:
+
+| Field Group         | Fields                                                                                                                                | Description                                                                                                                                                                                              |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Entity collections  | `buses`, `lines`, `hydros`, `thermals`, `pumping_stations`, `contracts`, `non_controllable_sources`                                   | One `Vec` per entity type from the entity collections table (1.2). Each vector is sorted by `EntityId` in canonical order. Public for read access.                                                       |
+| Lookup indices      | `bus_index`, `line_index`, `hydro_index`, `thermal_index`, `pumping_station_index`, `contract_index`, `non_controllable_source_index` | One `HashMap<EntityId, usize>` per entity type, mapping entity IDs to their position in the corresponding collection vector. Private -- accessed only through the public API methods (1.4).              |
+| Cascade topology    | `cascade`                                                                                                                             | Resolved cascade topology for hydro plants. Contains downstream and upstream adjacency lists, with references to non-existing plants already redirected to the next operating downstream plant. See 1.5. |
+| Network topology    | `network`                                                                                                                             | Resolved transmission network graph for buses and lines. Contains bus-line incidence relationships for power balance and flow constraints. See 1.5b.                                                     |
+| Temporal structure  | `stages`, `policy_graph`                                                                                                              | Stage definitions (section 12) and policy graph transitions for finite or cyclic horizon.                                                                                                                |
+| Pre-resolved data   | `penalties`, `bounds`                                                                                                                 | Fully resolved penalty and bound values per (entity, stage). See sections 10 and 11.                                                                                                                     |
+| Scenario pipeline   | `par_models`, `correlation`                                                                                                           | PAR model parameters per (hydro, stage) and Cholesky-decomposed correlation matrices. See section 14.                                                                                                    |
+| Initial conditions  | `initial_conditions`                                                                                                                  | Initial storage volumes, filling storage, and GNL pipeline state. See section 16.                                                                                                                        |
+| Generic constraints | `generic_constraints`                                                                                                                 | User-defined linear constraints with parsed expressions and resolved entity references. See section 15.                                                                                                  |
+
+### 1.4 Public API Surface
+
+The `System` struct exposes the following public methods. All methods are read-only -- `System` is immutable after construction.
+
+**Entity collection accessors** -- return shared slices over the canonical-ordered collections:
+
+```rust
+impl System {
+    pub fn buses(&self) -> &[Bus];
+    pub fn lines(&self) -> &[Line];
+    pub fn hydros(&self) -> &[Hydro];
+    pub fn thermals(&self) -> &[Thermal];
+    pub fn pumping_stations(&self) -> &[PumpingStation];
+    pub fn contracts(&self) -> &[EnergyContract];
+    pub fn non_controllable_sources(&self) -> &[NonControllableSource];
+}
+```
+
+**Entity count queries** -- return the number of entities of each type (used for LP dimensioning and preallocation):
+
+```rust
+impl System {
+    pub fn n_buses(&self) -> usize;
+    pub fn n_lines(&self) -> usize;
+    pub fn n_hydros(&self) -> usize;
+    pub fn n_thermals(&self) -> usize;
+    pub fn n_pumping_stations(&self) -> usize;
+    pub fn n_contracts(&self) -> usize;
+    pub fn n_non_controllable_sources(&self) -> usize;
+}
+```
+
+**Entity lookup by ID** -- O(1) lookup via the private `HashMap` indices. Returns `None` if the ID does not exist in the system:
+
+```rust
+impl System {
+    pub fn bus(&self, id: EntityId) -> Option<&Bus>;
+    pub fn line(&self, id: EntityId) -> Option<&Line>;
+    pub fn hydro(&self, id: EntityId) -> Option<&Hydro>;
+    pub fn thermal(&self, id: EntityId) -> Option<&Thermal>;
+    pub fn pumping_station(&self, id: EntityId) -> Option<&PumpingStation>;
+    pub fn contract(&self, id: EntityId) -> Option<&EnergyContract>;
+    pub fn non_controllable_source(&self, id: EntityId) -> Option<&NonControllableSource>;
+}
+```
+
+**Topology and structure accessors**:
+
+```rust
+impl System {
+    pub fn cascade(&self) -> &CascadeTopology;
+    pub fn network(&self) -> &NetworkTopology;
+    pub fn stages(&self) -> &[Stage];
+    pub fn policy_graph(&self) -> &PolicyGraph;
+}
+```
+
+All accessor methods are infallible: they operate on fully validated, resolved data. The validation guarantees are established during `cobre_io::load_case()` -- see [Input Loading Pipeline](../architecture/input-loading-pipeline.md) section 2 for the file loading sequence and cross-reference validation.
+
+### 1.5 Cascade Topology
+
+The `CascadeTopology` struct holds the resolved hydro cascade graph. During input loading, raw downstream references are resolved into a directed graph with non-existing plants already redirected to the next operating downstream plant (see section 2 on cascade redirection). The topology provides:
+
+- **Downstream adjacency**: for each hydro, the ID of its immediate downstream hydro (after redirection), or `None` if it is a terminal node
+- **Upstream adjacency**: for each hydro, the list of hydro IDs that flow into it (derived from downstream references)
+- **Travel times**: water travel delay from upstream to downstream, in stages
+- **Topological order**: a pre-computed ordering of hydros such that every upstream plant appears before its downstream plant, enabling single-pass cascade traversal
+
+The cascade topology is immutable after construction and shared read-only. LP construction uses it to build water balance constraints without needing to walk or re-resolve the cascade graph at build time.
+
+### 1.5b Network Topology
+
+The `NetworkTopology` struct holds the resolved transmission network graph for buses and lines. During input loading, bus-line connectivity is resolved into a directed graph suitable for generating power balance and flow constraints. The topology provides:
+
+- **Bus-line incidence**: for each bus, the list of lines connected to it (both incoming and outgoing), enabling single-pass power balance constraint generation
+- **Line endpoints**: for each line, the from-bus and to-bus IDs (resolved to collection indices for O(1) access)
+- **Bus generation map**: for each bus, the list of generating entities (hydros, thermals, non-controllable sources) connected to it, with their collection indices
+- **Bus load map**: for each bus, the demand and contract entities attached to it
+
+The network topology is immutable after construction and shared read-only. LP construction uses it to build power flow and bus balance constraints without needing to re-resolve bus-line relationships at build time. This is the transmission-network counterpart to the hydro cascade topology in 1.5.
+
+### 1.6 Thread Safety and Lifetime
+
+**`Send + Sync` bounds.** The `System` struct implements `Send + Sync`. This is required because:
+
+1. **MPI broadcast**: after rank 0 constructs `System` from input files, the serialized representation is broadcast to all worker ranks. Each rank deserializes into its own `System` instance. `Send` is required for the serialization buffer to cross thread boundaries during broadcast.
+2. **OpenMP-style thread sharing**: within each MPI rank, multiple threads read from the same `System` during forward and backward pass LP construction. `Sync` is required so that `&System` can be shared across threads without synchronization.
+
+All fields of `System` are either inherently `Send + Sync` (`Vec<T>` where `T: Send + Sync`, `HashMap<K, V>` where `K, V: Send + Sync`) or must be chosen to satisfy these bounds.
+
+**Immutability after construction.** Once constructed by `cobre_io::load_case()`, the `System` is never mutated. All access is through shared references (`&System`). This eliminates the need for interior mutability patterns (`Mutex`, `RwLock`) and guarantees data-race freedom by construction.
+
+**Lifetime and ownership.** The `System` is owned by the caller of `load_case()` (typically the top-level orchestrator in `cobre-cli` or `cobre-python`). It is passed by shared reference to `cobre_sddp::train()` and other consumers. Because MPI broadcast creates a full copy on each rank, no cross-rank reference sharing occurs -- each rank owns its `System` instance independently. The `System` lifetime is effectively `'static` within the scope of a single training or simulation run.
+
+**No `Arc` needed.** Since each MPI rank owns its own `System` and shares it across threads via `&System` (not `Arc<System>`), there is no reference-counting overhead. The borrow checker ensures that the `System` outlives all references to it.
+
+### 1.7 Crate Boundary Contract
+
+The `System` struct is the primary data type that crosses the `cobre-io` / `cobre-core` / `cobre-sddp` crate boundaries:
+
+- **`cobre_io::load_case(path: &Path) -> Result<System, LoadError>`** -- loads, validates, and resolves all input files from the case directory into a `System`. See [Input Loading Pipeline](../architecture/input-loading-pipeline.md) section 8 for the transition to in-memory model.
+- **`cobre_sddp::train(system: &System, config: &TrainingConfig, comm: &C) -> Result<TrainingResult, TrainError>`** -- consumes the `System` by shared reference to build performance-adapted views, construct stage LP templates, and execute the SDDP training loop. See [Training Loop](../architecture/training-loop.md) section 1 for the algorithm overview.
+- **`cobre_sddp::simulate(system: &System, policy: &Policy, config: &SimulationConfig, comm: &C) -> Result<SimulationResult, SimError>`** -- consumes the `System` by shared reference for simulation.
+
+The `System` type is defined in `cobre-core` so that both `cobre-io` (producer) and `cobre-sddp` (consumer) depend on `cobre-core` without creating a circular dependency. This follows the bottom-up build sequence defined in [Implementation Ordering](../overview/implementation-ordering.md).
 
 ## 2. Operative State
 
@@ -64,7 +241,9 @@ Every entity with lifecycle attributes (`entry_stage_id`, `exit_stage_id`) has a
 | Non-existing   | All entity types | No LP variables or constraints                                                                                              |
 | Filling        | Hydros only      | Storage, spillage, evaporation, violation slacks. No generation (turbined = 0). See [Penalty System §7](penalty-system.md). |
 | Operating      | All entity types | Full LP variables and constraints per entity type                                                                           |
-| Decommissioned | All entity types | See open question in [Input System Entities §3](input-system-entities.md)                                                   |
+| Decommissioned | All entity types | No LP variables or constraints (identical to Non-existing)                                                                  |
+
+**Stakeholder decision**: Decommissioned entities are treated identically to Non-existing for all entity types, including hydros. Reservoir drainage after decommissioning is not modeled. This simplifies the lifecycle to three meaningful LP states: Non-existing/Decommissioned (no LP presence), Filling (hydros only), and Operating (full LP formulation).
 
 **Hydro filling timeline**: `[start_stage_id, entry_stage_id)` = filling period. At `entry_stage_id`, transitions to operating. Based on CEPEL's dead-volume filling model (`enchimento de volume morto`).
 
@@ -437,3 +616,8 @@ See [Input Constraints §1](input-constraints.md).
 - [Scenario Generation](../architecture/scenario-generation.md) — Opening tree lifecycle (§2.3), sampling scheme abstraction (§3)
 - [LP Formulation](../math/lp-formulation.md) — Stage subproblem LP that consumes these internal structures at runtime
 - [Design Principles](../overview/design-principles.md) — Order invariance requirement (§3)
+- [Input Loading Pipeline](../architecture/input-loading-pipeline.md) — File loading sequence, broadcast strategy, transition to in-memory model (sections 2, 6, 8)
+- [Training Loop](../architecture/training-loop.md) — SDDP algorithm that consumes System via shared reference (section 1)
+- [Solver Abstraction](../architecture/solver-abstraction.md) — Stage LP template design built from System data (section 11)
+- [Solver Workspaces](../architecture/solver-workspaces.md) — Thread-local workspace layout for performance-adapted views
+- [Implementation Ordering](../overview/implementation-ordering.md) — Build sequence with cobre-core as foundation (section 4)

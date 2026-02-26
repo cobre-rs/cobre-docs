@@ -153,10 +153,10 @@ For the mathematical formulation of exchange variables and capacity constraints,
 
 | State            | Condition                                                 | LP Variables                                                                               |
 | ---------------- | --------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
-| `non_existing`   | Before filling or entry (no filling defined)              | See open question below                                                                    |
+| `non_existing`   | Before filling or entry (no filling defined)              | None (no LP variables or constraints)                                                      |
 | `filling`        | Between `filling.start_stage_id` and `entry_stage_id - 1` | storage, outflow (=spillage), violation slacks, evaporation                                |
 | `operating`      | Between `entry_stage_id` and `exit_stage_id`              | storage, turbined, spillage, diversion, outflow, generation, evaporation, violation slacks |
-| `decommissioned` | After `exit_stage_id`                                     | See open question below                                                                    |
+| `decommissioned` | After `exit_stage_id`                                     | None (identical to non_existing)                                                           |
 
 > **Dead-volume filling**: During filling stages, the reservoir accumulates water. `turbined_flow = 0` (hard constraint), and all released water goes through spillways/bottom gates. Environmental flow must be met via spillage.
 >
@@ -164,13 +164,7 @@ For the mathematical formulation of exchange variables and capacity constraints,
 >
 > **Penalties**: Penalty defaults are defined in `penalties.json`. Entity-level overrides can be specified in an optional `penalties` block in the hydro definition. Stage-varying overrides use the stage override mechanism (format TBD). See [Penalty System](penalty-system.md).
 
-> **Open Question — LP behavior for non-existing and decommissioned hydros**: When a hydro is `non_existing` or `decommissioned`, the treatment of its LP variables and constraints is not fully defined. Key questions:
->
-> - **Decommissioned**: What happens to water stored in the reservoir? Should storage variables remain (with no generation constraints) to allow water to pass through the cascade? Should all constraints be removed except the water balance?
-> - **Non-existing**: Should constraints associated with the hydro (e.g., water balance for cascade neighbors that reference it) be active before the plant begins filling?
-> - **LP shape regularity**: Is it preferable to keep the LP structure uniform across all stages (adding zero-bounded variables for non-existing elements) for implementation simplicity, or dynamically add/remove variables per stage?
->
-> **Resolution**: This is a behavioral/semantic question that affects the LP formulation. Flagged for resolution during P2 math spec reviews (`system-elements.md`, `lp-formulation.md`).
+> **Resolved — LP behavior for non-existing and decommissioned hydros**: Both `non_existing` and `decommissioned` hydros have no LP variables or constraints. Decommissioned is treated identically to non-existing for all entity types, including hydros. Reservoir drainage after decommissioning is not modeled. Cascade redirection handles water routing around absent plants (see cascade redirection note above). This simplifies the lifecycle to three meaningful LP states: Non-existing/Decommissioned (no LP presence), Filling (hydros only), and Operating (full LP formulation). LP shape regularity is achieved by omitting variables/constraints for inactive entities rather than adding zero-bounded placeholders.
 
 ### Generation Model (Tagged Union)
 

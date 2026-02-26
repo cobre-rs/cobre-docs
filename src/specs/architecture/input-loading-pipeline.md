@@ -158,6 +158,75 @@ After rank 0 loads and validates all data, it broadcasts to worker ranks. Data i
 
 **Sparse broadcast optimization:** Bounds and penalty override files are broadcast in their sparse Parquet form. Each rank performs the sparse-to-dense expansion locally (§5). This reduces broadcast volume — only non-default values are transmitted.
 
+### 6.1 Serialization Format
+
+The serialization format for MPI broadcast is **rkyv** (version 0.8+).
+
+rkyv ("archive") provides zero-copy deserialization: the archived representation can be accessed directly from the byte buffer without deserializing into owned Rust types. When rank 0 serializes the `System` struct, the resulting byte buffer is broadcast via `MPI_Bcast`. Receiving ranks access the archived data directly from the receive buffer, then convert to owned types only once. This avoids the double allocation overhead (deserialize into intermediate representation, then copy into final types) that traditional serialization frameworks impose. For a `System` struct at production scale — containing 160 hydros, 120 stages, thousands of resolved bounds entries, and PAR model parameters — this eliminates a significant allocation burst on every worker rank during startup.
+
+**Why not bincode:** bincode was considered but is unmaintained. Its last release predates the current Rust edition, and it lacks the zero-copy access pattern that rkyv provides. Given that the broadcast payload can reach tens of megabytes for production-scale systems, the allocation-free archived access is a material advantage.
+
+**Sparse broadcast and Parquet pass-through:** For bounds and penalty override data broadcast in sparse Parquet form (see broadcast categories table above), rkyv serializes only the metadata envelope (entity IDs, stage ranges, file identity). The raw Parquet bytes are passed through as-is in a separate broadcast buffer — they are not re-serialized through rkyv. Each rank deserializes the metadata envelope via rkyv and then performs sparse-to-dense expansion locally from the Parquet bytes.
+
+### 6.2 Required Trait Bounds
+
+All types that participate in the `System` broadcast must derive `rkyv::Archive`, `rkyv::Serialize`, and `rkyv::Deserialize`. The complete list of types requiring these trait bounds:
+
+**Entity types:**
+
+- `System`, `Bus`, `Line`, `Hydro`, `Thermal`, `PumpingStation`, `EnergyContract`, `NonControllableSource`
+
+**Temporal and topological types:**
+
+- `Stage`, `PolicyGraph`, `CascadeTopology`, `NetworkTopology`
+
+**Pre-resolved data types:**
+
+- `ResolvedPenalties`, `ResolvedBounds`
+
+**Scenario pipeline types:**
+
+- `ParModel`, `CorrelationModel`
+
+**Other types:**
+
+- `InitialConditions`, `GenericConstraint`
+
+All nested types within these top-level types (e.g., tagged union variants within `Hydro`, individual bound entries within `ResolvedBounds`) must also satisfy the same trait bounds transitively.
+
+**Derive example:**
+
+```rust
+#[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
+#[rkyv(compare(PartialEq))]
+pub struct Hydro { /* ... */ }
+```
+
+**HashMap lookup indices are NOT serialized.** The `System` struct contains `HashMap<EntityId, usize>` fields (`bus_index`, `hydro_index`, `thermal_index`, etc.) that serve as O(1) lookup indices from entity ID to position in the corresponding `Vec`. These indices are **excluded** from rkyv serialization. Each receiving rank rebuilds them locally from the deserialized entity collections. This is correct because the indices are derived data — they are deterministically reconstructable from the entity vectors — and excluding them reduces the broadcast payload size and avoids serializing HashMap internal layout, which is not stable across allocator states.
+
+### 6.3 Alignment and Buffer Allocation
+
+rkyv requires **16-byte alignment** for archived data by default. The archived root object must begin at a 16-byte-aligned address for zero-copy access to function correctly.
+
+The MPI receive buffer on worker ranks must be allocated with appropriate alignment. Standard `Vec<u8>` allocation does not guarantee 16-byte alignment. Instead, use explicit aligned allocation:
+
+```rust
+use std::alloc::{alloc, Layout};
+
+let layout = Layout::from_size_align(size, 16).expect("valid layout");
+let ptr = unsafe { alloc(layout) };
+```
+
+Rank 0 serializes via `rkyv::to_bytes` (or equivalent), which produces an aligned buffer. The two-step broadcast protocol (size first, then contents) allows worker ranks to allocate a correctly aligned receive buffer of the exact required size before the second `MPI_Bcast` call.
+
+### 6.4 Versioning Scope
+
+rkyv does **not** provide built-in schema evolution. The archived byte format is tied directly to the Rust struct layout — any change to field order, field types, or field count produces an incompatible archive. There is no field tagging, no optional field mechanism, and no forward/backward compatibility guarantee.
+
+This is acceptable because rkyv is used **exclusively for in-memory MPI broadcast** within a single program execution. All ranks run the same binary, so the struct layout is identical on the serializing and deserializing sides. There is no cross-version compatibility requirement for broadcast data — the buffer exists only for the duration of the broadcast operation and is never persisted to disk.
+
+**rkyv is NOT suitable for long-term storage.** Any data that must survive across program versions (policy cuts, checkpoints, warm-start files) uses FlatBuffers, which provides schema evolution and cross-version compatibility. See [Binary Formats](../data-model/binary-formats.md) SS3 for the FlatBuffers policy persistence format.
+
 ## 7. Parallel Policy Loading (Warm-Start)
 
 Policy files (cuts, states, vertices, basis) can be large. Loading them on rank 0 and broadcasting would create a bottleneck. Instead, all ranks load in parallel:

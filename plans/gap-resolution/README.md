@@ -68,10 +68,10 @@ Epic 4 (High-Severity Gaps)      [blocked by Epics 1-3, outline tickets]
 | ticket-001 | Create CLAUDE.md with Ecosystem Guidelines              | epic-01 | completed | Detailed     | 0.85      | 0.90    | EXCELLENT |
 | ticket-002 | Create ecosystem-guidelines.md Spec Page                | epic-01 | completed | Detailed     | 0.90      | 0.90    | EXCELLENT |
 | ticket-003 | Update SUMMARY.md and Cross-References                  | epic-01 | completed | Detailed     | 0.97      | 1.00    | EXCELLENT |
-| ticket-004 | Specify SystemRepresentation Top-Level Type             | epic-02 | pending   | Detailed     | 0.93      | --      | --        |
-| ticket-005 | Resolve Decommissioned Operative State                  | epic-02 | pending   | Detailed     | 0.83      | --      | --        |
-| ticket-006 | Specify rkyv Serialization for MPI Broadcast            | epic-02 | pending   | Detailed     | 0.94      | --      | --        |
-| ticket-007 | Update Gap Inventory for GAP-001/002/003                | epic-02 | pending   | Detailed     | 0.91      | --      | --        |
+| ticket-004 | Specify SystemRepresentation Top-Level Type             | epic-02 | completed | Detailed     | 0.93      | 1.00    | EXCELLENT |
+| ticket-005 | Resolve Decommissioned Operative State                  | epic-02 | completed | Detailed     | 0.83      | 1.00    | EXCELLENT |
+| ticket-006 | Specify rkyv Serialization for MPI Broadcast            | epic-02 | completed | Detailed     | 0.94      | 1.00    | EXCELLENT |
+| ticket-007 | Update Gap Inventory for GAP-001/002/003                | epic-02 | completed | Detailed     | 0.91      | 1.00    | EXCELLENT |
 | ticket-008 | Specify LP Memory Layout with Index Formulas            | epic-03 | pending   | Detailed     | 0.93      | --      | --        |
 | ticket-009 | Specify State Vectors and Indexer Structs               | epic-03 | pending   | Detailed     | 0.94      | --      | --        |
 | ticket-010 | Update Gap Inventory for GAP-004/005                    | epic-03 | pending   | Detailed     | 0.77      | --      | --        |
