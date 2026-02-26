@@ -40,6 +40,7 @@ cost function approximation.
   dynamic dispatch.
   See [HiGHS Implementation](../specs/architecture/solver-highs-impl.md) and
   [CLP Implementation](../specs/architecture/solver-clp-impl.md).
+  See also [Solver Interface Trait](../specs/architecture/solver-interface-trait.md) for the formal trait definition, method contracts, and error types.
 
 - **Solver workspaces** -- Thread-local infrastructure containing the solver
   instance, pre-allocated buffers, per-stage basis cache, and NUMA node

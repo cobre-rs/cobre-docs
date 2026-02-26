@@ -43,6 +43,12 @@ interface to the training loop.
   backward pass to evaluate the cost-to-go at each visited state. Defines the
   probabilities and noise vectors that drive cut generation.
 
+- **Sampling scheme** -- Determines how the forward pass selects scenario
+  realizations at each stage. Three variants are supported: in-sample (from
+  the opening tree), external (user-provided scenarios), and historical (from
+  inflow history).
+  See [Sampling Scheme Trait](../specs/architecture/sampling-scheme-trait.md).
+
 - **External scenario override** -- Users can supply inflow trajectories
   directly (e.g., from external hydrological models), bypassing PAR generation
   while maintaining the same downstream interface.

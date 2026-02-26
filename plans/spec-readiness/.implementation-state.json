@@ -1,6 +1,6 @@
 {
   "plan": "spec-readiness",
-  "last_updated": "2026-02-25T00:00:00Z",
+  "last_updated": "2026-02-26T01:45:00Z",
   "progressive": true,
   "tickets": {
     "ticket-001-define-riskmeasure-trait-spec.md": {
@@ -54,20 +54,24 @@
       "agent": "sddp-specialist"
     },
     "ticket-011-define-solver-trait-spec.md": {
-      "status": "pending",
-      "detail_level": "outline"
+      "status": "completed",
+      "detail_level": "refined",
+      "agent": "sddp-specialist"
     },
     "ticket-012-define-solver-conformance-tests.md": {
-      "status": "pending",
-      "detail_level": "outline"
+      "status": "completed",
+      "detail_level": "refined",
+      "agent": "sddp-specialist"
     },
     "ticket-013-update-crossref-and-summary.md": {
-      "status": "pending",
-      "detail_level": "outline"
+      "status": "completed",
+      "detail_level": "refined",
+      "agent": "sddp-specialist"
     },
     "ticket-014-update-crate-specs.md": {
-      "status": "pending",
-      "detail_level": "outline"
+      "status": "completed",
+      "detail_level": "refined",
+      "agent": "sddp-specialist"
     },
     "ticket-015-audit-crossrefs-new-specs.md": {
       "status": "pending",
@@ -108,7 +112,7 @@
       "learning_extracted": true
     },
     "epic-03-solver-trait-formalization": {
-      "phase": "outline",
+      "phase": "executing",
       "learning_extracted": false
     },
     "epic-04-spec-consistency-pass": {

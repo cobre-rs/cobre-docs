@@ -64,11 +64,13 @@ checkpoint/resume, and MPI broadcast for cross-rank distribution.
   probabilities, per-stage risk profiles, and bound validity under nested
   risk measures.
   See [Risk Measures](../specs/math/risk-measures.md).
+  See also [Risk Measure Trait](../specs/architecture/risk-measure-trait.md) for the formal trait definition and method contracts.
 
 - **Stopping rules** -- Convergence criteria for the training loop: bound
   stalling detection, simulation-based stability tests, iteration limits,
   and wall-clock time limits.
   See [Stopping Rules](../specs/math/stopping-rules.md).
+  See also [Stopping Rule Trait](../specs/architecture/stopping-rule-trait.md) for the formal trait definition and method contracts.
 
 - **Training iterations** -- Each iteration performs a forward pass (sample $M$
   scenarios, solve stage LPs, record visited states and lower bound) followed by
@@ -97,6 +99,12 @@ checkpoint/resume, and MPI broadcast for cross-rank distribution.
   Limited Memory Level 1 (keep only the most recently active cut per visited
   state). Both preserve finite convergence guarantees while controlling pool
   growth.
+  See [Cut Selection Strategy Trait](../specs/architecture/cut-selection-trait.md) for the formal trait definition and method contracts.
+
+- **Horizon mode** -- Determines stage traversal and terminal conditions.
+  Finite horizon uses a linear chain with zero terminal value; cyclic horizon
+  supports periodic policy graphs with discount factors for convergence.
+  See [Horizon Mode Trait](../specs/architecture/horizon-mode-trait.md).
 
 ## Status
 

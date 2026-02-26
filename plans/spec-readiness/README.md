@@ -15,7 +15,7 @@ Prepare the Cobre SDDP specification corpus for Rust implementation by formalizi
 | ------- | ------------------------------------ | ------- | -------- |
 | epic-01 | High-Priority Trait Formalization    | 6       | Complete |
 | epic-02 | Medium-Priority Trait Formalization  | 4       | Complete |
-| epic-03 | Solver Interface Trait Formalization | 4       | Pending  |
+| epic-03 | Solver Interface Trait Formalization | 4       | Complete |
 | epic-04 | Spec Consistency Final Pass          | 4       | Pending  |
 | epic-05 | Implementation Readiness Assessment  | 3       | Pending  |
 
@@ -81,10 +81,10 @@ Recommended execution order (respecting dependencies, maximizing parallelism):
 | ticket-008 | Define CutSelectionStrategy conformance test spec            | epic-02 | completed | Detailed     |
 | ticket-009 | Define StoppingRule trait spec                               | epic-02 | completed | Detailed     |
 | ticket-010 | Define StoppingRule conformance test spec                    | epic-02 | completed | Detailed     |
-| ticket-011 | Define SolverInterface trait spec                            | epic-03 | pending   | Outline      |
-| ticket-012 | Define SolverInterface conformance test spec                 | epic-03 | pending   | Outline      |
-| ticket-013 | Update cross-reference-index and SUMMARY for all trait specs | epic-03 | pending   | Outline      |
-| ticket-014 | Update crate specs to reference new trait specs              | epic-03 | pending   | Outline      |
+| ticket-011 | Define SolverInterface trait spec                            | epic-03 | completed | Refined      |
+| ticket-012 | Define SolverInterface conformance test spec                 | epic-03 | completed | Refined      |
+| ticket-013 | Update cross-reference-index and SUMMARY for all trait specs | epic-03 | completed | Refined      |
+| ticket-014 | Update crate specs to reference new trait specs              | epic-03 | completed | Refined      |
 | ticket-015 | Audit cross-references in new trait and test specs           | epic-04 | pending   | Outline      |
 | ticket-016 | Audit naming consistency across trait specs                  | epic-04 | pending   | Outline      |
 | ticket-017 | Validate free-threaded Python note consistency               | epic-04 | pending   | Outline      |
