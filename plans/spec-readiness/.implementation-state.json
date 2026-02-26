@@ -1,0 +1,119 @@
+{
+  "plan": "spec-readiness",
+  "last_updated": "2026-02-26T00:10:00Z",
+  "progressive": true,
+  "tickets": {
+    "ticket-001-define-riskmeasure-trait-spec.md": {
+      "status": "completed",
+      "detail_level": "detailed",
+      "agent": "sddp-specialist"
+    },
+    "ticket-002-define-riskmeasure-conformance-tests.md": {
+      "status": "completed",
+      "detail_level": "detailed",
+      "agent": "sddp-specialist"
+    },
+    "ticket-003-define-horizonmode-trait-spec.md": {
+      "status": "completed",
+      "detail_level": "detailed",
+      "agent": "sddp-specialist"
+    },
+    "ticket-004-define-horizonmode-conformance-tests.md": {
+      "status": "completed",
+      "detail_level": "detailed",
+      "agent": "sddp-specialist"
+    },
+    "ticket-005-define-samplingscheme-trait-spec.md": {
+      "status": "completed",
+      "detail_level": "detailed",
+      "agent": "sddp-specialist"
+    },
+    "ticket-006-define-samplingscheme-conformance-tests.md": {
+      "status": "completed",
+      "detail_level": "detailed",
+      "agent": "sddp-specialist"
+    },
+    "ticket-007-define-cutselection-trait-spec.md": {
+      "status": "pending",
+      "detail_level": "detailed"
+    },
+    "ticket-008-define-cutselection-conformance-tests.md": {
+      "status": "pending",
+      "detail_level": "detailed"
+    },
+    "ticket-009-define-stoppingrule-trait-spec.md": {
+      "status": "pending",
+      "detail_level": "detailed"
+    },
+    "ticket-010-define-stoppingrule-conformance-tests.md": {
+      "status": "pending",
+      "detail_level": "detailed"
+    },
+    "ticket-011-define-solver-trait-spec.md": {
+      "status": "pending",
+      "detail_level": "outline"
+    },
+    "ticket-012-define-solver-conformance-tests.md": {
+      "status": "pending",
+      "detail_level": "outline"
+    },
+    "ticket-013-update-crossref-and-summary.md": {
+      "status": "pending",
+      "detail_level": "outline"
+    },
+    "ticket-014-update-crate-specs.md": {
+      "status": "pending",
+      "detail_level": "outline"
+    },
+    "ticket-015-audit-crossrefs-new-specs.md": {
+      "status": "pending",
+      "detail_level": "outline"
+    },
+    "ticket-016-audit-naming-consistency.md": {
+      "status": "pending",
+      "detail_level": "outline"
+    },
+    "ticket-017-validate-freethreaded-python.md": {
+      "status": "pending",
+      "detail_level": "outline"
+    },
+    "ticket-018-verify-traits-convention-propagation.md": {
+      "status": "pending",
+      "detail_level": "outline"
+    },
+    "ticket-019-create-implementation-ordering.md": {
+      "status": "pending",
+      "detail_level": "outline"
+    },
+    "ticket-020-create-spec-gap-inventory.md": {
+      "status": "pending",
+      "detail_level": "outline"
+    },
+    "ticket-021-update-summary-crossref-readiness.md": {
+      "status": "pending",
+      "detail_level": "outline"
+    }
+  },
+  "epics": {
+    "epic-01-high-priority-traits": {
+      "phase": "completed",
+      "learning_extracted": true
+    },
+    "epic-02-medium-priority-traits": {
+      "phase": "executing",
+      "learning_extracted": false
+    },
+    "epic-03-solver-trait-formalization": {
+      "phase": "outline",
+      "learning_extracted": false
+    },
+    "epic-04-spec-consistency-pass": {
+      "phase": "outline",
+      "learning_extracted": false
+    },
+    "epic-05-implementation-readiness": {
+      "phase": "outline",
+      "learning_extracted": false
+    }
+  }
+}
