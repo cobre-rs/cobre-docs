@@ -11,13 +11,13 @@
 
 ### CONDITIONAL GO
 
-The Cobre specification corpus is ready for implementation subject to the resolution of enumerated conditions totaling 9--15 working days of pre-coding spec work. Implementation of Phases 1--4 may begin immediately while Batch 1 conditions are resolved in parallel; Phases 5--8 require Batch 2 conditions to be completed before their respective start dates.
+The Cobre specification corpus is ready for implementation subject to the resolution of enumerated conditions totaling 9--16 working days of pre-coding spec work. Implementation of Phases 1--4 may begin immediately while Batch 1 conditions are resolved in parallel; Phases 5--8 require Batch 2 conditions to be completed before their respective start dates.
 
 **Justification.** The verdict is determined by applying the threshold criteria defined in the ticket specification against the accumulated evidence from 16 reports:
 
 1. **Not GO** because the audit identified 3 Resolve-Before-Coding gaps (GAP-020, GAP-023, GAP-029 -- report-009 section 3.1) and 1 NOT READY phase (Phase 7 -- report-013 section 4.5). The GO threshold requires zero of each.
 
-2. **Not NO-GO** because all 3 Resolve-Before-Coding gaps have concrete resolution paths with bounded effort: GAP-029 requires enumerating cross-reference validation checks (2--3 days, report-009 section 5.1); GAP-023 requires defining the `OpeningTree` Rust type with `SharedRegion` ownership model (1--2 days, report-009 section 5.1); GAP-020 requires defining 9 specific output writer API elements (2--3 days, report-013 section 4.4). The total pre-coding effort across all conditions is 9--15 working days (report-012 section 7.5: 5--9 days for Phases 1--4; report-013 section 7: 4--6 days for Phases 5--8), which is under the 20-day NO-GO threshold. No fundamental architectural gap was identified -- all 8 crates received CONDITIONAL PASS verdicts (reports 001--008), all 7 shared Rust types passed cross-spec consistency checks (report-011), and the HPC specification corpus was assessed as SUFFICIENT WITH GAPS with zero blocking findings (report-016 section 6).
+2. **Not NO-GO** because all 3 Resolve-Before-Coding gaps have concrete resolution paths with bounded effort: GAP-029 requires enumerating cross-reference validation checks (2--3 days, report-009 section 5.1); GAP-023 requires defining the `OpeningTree` Rust type with `SharedRegion` ownership model (1--2 days, report-009 section 5.1); GAP-020 requires defining 9 specific output writer API elements (2--3 days, report-013 section 4.4). The total pre-coding effort across all conditions is 9--16 working days (report-012 section 7.5: 5--9 days for Phases 1--4; report-013 section 7: 4--6 days for Phases 5--8; plus C-19 ferrompi::slurm module resolution 0.5--1 day), which is under the 20-day NO-GO threshold. No fundamental architectural gap was identified -- all 8 crates received CONDITIONAL PASS verdicts (reports 001--008), all 7 shared Rust types passed cross-spec consistency checks (report-011), and the HPC specification corpus was assessed as SUFFICIENT WITH GAPS with zero blocking findings (report-016 section 6).
 
 3. **CONDITIONAL GO** because every blocking condition has a concrete resolution path, a bounded effort estimate, an identified owner (spec author), and a scheduling slot that does not delay the overall implementation timeline. The Phase 7 NOT READY verdict (report-013 section 4.5) is resolvable: the 3 missing API elements (simulation orchestrator signature, `SimulationScenarioResult` type, output writer API) can be specified during Phase 6 coding (report-013 section 8.2, Batch 2). The data model traceability audit (report-015) confirmed that all 4 input chains are COMPLETE or PARTIAL and all 4 output chains are blocked by the same root cause (GAP-020), meaning a single resolution action unblocks the entire output side.
 
@@ -47,29 +47,30 @@ Every condition below must be resolved before its blocked phase begins coding. T
 | C-16 | Standardize config field name `training.forward_passes` across 4 spec files (report-007 F-010)                                                                                                                                                                                                                        | 8                       | Hours            | Batch 1 | None                                                     |
 | C-17 | Add `training.enabled` boolean field to `configuration-reference.md` (report-007 F-007)                                                                                                                                                                                                                               | 8                       | Hours            | Batch 1 | None                                                     |
 | C-18 | Add `backend-testing.md` and `ecosystem-guidelines.md` to cross-reference index with reading list entries (report-010 section 4)                                                                                                                                                                                      | 3 (conformance testing) | Hours            | Batch 1 | None                                                     |
+| C-19 | Resolve `ferrompi::slurm` module gap: verify whether the real ferrompi crate contains a `slurm` module; if yes, add its API to SS7; if no, relocate SLURM env-var reading to cobre-comm or cobre-cli and update 4 referencing specs (report-008 F-001)                                                                | 3                       | 0.5--1 day       | Batch 1 | None                                                     |
 
-**Total conditions**: 18
-**Total effort**: 9--15 working days (Batch 1: 7--12 days; Batch 2: 2--3 days)
+**Total conditions**: 19
+**Total effort**: 9--16 working days (Batch 1: 7--13 days; Batch 2: 2--3 days)
 
 ---
 
 ## 3. Resolution Schedule
 
-### Batch 1: Resolve Before Any Phase 5+ Coding (7--12 working days)
+### Batch 1: Resolve Before Any Phase 5+ Coding (7--13 working days)
 
 Batch 1 conditions have no dependencies on implementation. They are pure spec authoring tasks that can be executed in parallel with Phases 1--4 coding. Upon completion of Batch 1, Phases 1--6 and Phase 8 become unblocked.
 
-| Workstream                           | Conditions             | Effort    | Phases Unblocked  |
-| ------------------------------------ | ---------------------- | --------- | ----------------- |
-| cobre-core entity struct definitions | C-01, C-02, C-03       | 2--4 days | Phase 1           |
-| Validation checklist completeness    | C-04                   | 2--3 days | Phase 2           |
-| Solver/ferrompi naming and ownership | C-05, C-06, C-07, C-08 | 1--2 days | Phase 3           |
-| Opening tree type definition         | C-09                   | 1--2 days | Phase 5           |
-| Notation and threading fixes         | C-10, C-11, C-12       | Hours     | Phase 6           |
-| CLI cross-spec fixes                 | C-15, C-16, C-17       | 1 day     | Phase 8           |
-| Cross-reference index updates        | C-18                   | Hours     | Phase 3 (testing) |
+| Workstream                           | Conditions                   | Effort      | Phases Unblocked  |
+| ------------------------------------ | ---------------------------- | ----------- | ----------------- |
+| cobre-core entity struct definitions | C-01, C-02, C-03             | 2--4 days   | Phase 1           |
+| Validation checklist completeness    | C-04                         | 2--3 days   | Phase 2           |
+| Solver/ferrompi naming and ownership | C-05, C-06, C-07, C-08, C-19 | 1.5--3 days | Phase 3           |
+| Opening tree type definition         | C-09                         | 1--2 days   | Phase 5           |
+| Notation and threading fixes         | C-10, C-11, C-12             | Hours       | Phase 6           |
+| CLI cross-spec fixes                 | C-15, C-16, C-17             | 1 day       | Phase 8           |
+| Cross-reference index updates        | C-18                         | Hours       | Phase 3 (testing) |
 
-**Parallelism note**: The cobre-core workstream (C-01 through C-03) and the validation checklist (C-04) can proceed in parallel. C-04 is accelerated by C-01 (entity struct definitions provide concrete types to enumerate cross-references against) but is not blocked by it. The solver/ferrompi and notation workstreams are independent of all other workstreams. Total calendar time with 2 parallel authors: 4--6 working days.
+**Parallelism note**: The cobre-core workstream (C-01 through C-03) and the validation checklist (C-04) can proceed in parallel. C-04 is accelerated by C-01 (entity struct definitions provide concrete types to enumerate cross-references against) but is not blocked by it. The solver/ferrompi and notation workstreams are independent of all other workstreams. Total calendar time with 2 parallel authors: 4--7 working days.
 
 **Phases unblocked upon Batch 1 completion**: 1, 2, 3, 4 (already READY), 5, 6, 8.
 
@@ -91,20 +92,20 @@ Batch 2 conditions depend on understanding gained during Phase 6 implementation.
 
 This table consolidates per-phase verdicts from report-012 (Phases 1--4) and report-013 (Phases 5--8), supplemented by findings from reports 015 (data traceability) and 016 (HPC correctness). No phase verdict is downgraded from the source reports. Report-016 findings are additive (C-11, C-12) but do not change any phase verdict.
 
-| Phase | Crate(s)                    | Verdict             | Blocking Conditions                                                                | Resolve-Before-Coding Gaps | Resolve-During-Phase Gaps               | Pre-Coding Effort |
-| ----- | --------------------------- | ------------------- | ---------------------------------------------------------------------------------- | -------------------------- | --------------------------------------- | ----------------- |
-| 1     | cobre-core                  | CONDITIONALLY READY | C-01, C-02, C-03 (entity structs, EntityId, Stage/Block/PolicyGraph)               | 0                          | 1 (GAP-031)                             | 2--4 days         |
-| 2     | cobre-io (input)            | CONDITIONALLY READY | C-04 (GAP-029: validation checklist)                                               | 1 (GAP-029)                | 0                                       | 2--3 days         |
-| 3     | ferrompi + cobre-solver     | CONDITIONALLY READY | C-05, C-06, C-07, C-08, C-18 (naming, ownership, guard, stale names, index)        | 0                          | 1 (GAP-019)                             | 1--2 days         |
-| 4     | cobre-comm                  | READY               | None                                                                               | 0                          | 0                                       | 0                 |
-| 5     | cobre-stochastic            | CONDITIONALLY READY | C-09 (GAP-023: opening tree type)                                                  | 1 (GAP-023)                | 1 (GAP-022)                             | 1--2 days         |
-| 6     | cobre-sddp (training)       | READY               | None (C-10, C-11, C-12 are minor fixes, not architectural blockers)                | 0                          | 8 (GAP-018/019/024/026/027/030/032/033) | Hours             |
-| 7     | cobre-sddp (sim) + cobre-io | NOT READY           | C-13, C-14 (GAP-020: output writer API, simulation types)                          | 1 (GAP-020)                | 1 (GAP-028)                             | 2--3 days         |
-| 8     | cobre-cli                   | CONDITIONALLY READY | C-15, C-16, C-17 (SLURM patterns, config name, training.enabled); inherits Phase 7 | 0                          | 2 (GAP-027, GAP-035)                    | 1 day             |
+| Phase | Crate(s)                    | Verdict             | Blocking Conditions                                                                             | Resolve-Before-Coding Gaps | Resolve-During-Phase Gaps               | Pre-Coding Effort |
+| ----- | --------------------------- | ------------------- | ----------------------------------------------------------------------------------------------- | -------------------------- | --------------------------------------- | ----------------- |
+| 1     | cobre-core                  | CONDITIONALLY READY | C-01, C-02, C-03 (entity structs, EntityId, Stage/Block/PolicyGraph)                            | 0                          | 1 (GAP-031)                             | 2--4 days         |
+| 2     | cobre-io (input)            | CONDITIONALLY READY | C-04 (GAP-029: validation checklist)                                                            | 1 (GAP-029)                | 0                                       | 2--3 days         |
+| 3     | ferrompi + cobre-solver     | CONDITIONALLY READY | C-05, C-06, C-07, C-08, C-18, C-19 (naming, ownership, guard, stale names, index, slurm module) | 0                          | 1 (GAP-019)                             | 1.5--3 days       |
+| 4     | cobre-comm                  | READY               | None                                                                                            | 0                          | 0                                       | 0                 |
+| 5     | cobre-stochastic            | CONDITIONALLY READY | C-09 (GAP-023: opening tree type)                                                               | 1 (GAP-023)                | 1 (GAP-022)                             | 1--2 days         |
+| 6     | cobre-sddp (training)       | READY               | None (C-10, C-11, C-12 are minor fixes, not architectural blockers)                             | 0                          | 8 (GAP-018/019/024/026/027/030/032/033) | Hours             |
+| 7     | cobre-sddp (sim) + cobre-io | NOT READY           | C-13, C-14 (GAP-020: output writer API, simulation types)                                       | 1 (GAP-020)                | 1 (GAP-028)                             | 2--3 days         |
+| 8     | cobre-cli                   | CONDITIONALLY READY | C-15, C-16, C-17 (SLURM patterns, config name, training.enabled); inherits Phase 7              | 0                          | 2 (GAP-027, GAP-035)                    | 1 day             |
 
 **Source consistency check**: Phase verdicts match reports 012 and 013 exactly. Phase 4 is READY (report-012 section 5.6). Phase 6 is READY (report-013 section 3, verdict). Phase 7 is NOT READY (report-013 section 4.5). All others are CONDITIONALLY READY. No phase verdict was contradicted or downgraded.
 
-**Aggregate**: 2 READY, 5 CONDITIONALLY READY, 1 NOT READY. Total pre-coding effort: 9--15 working days.
+**Aggregate**: 2 READY, 5 CONDITIONALLY READY, 1 NOT READY. Total pre-coding effort: 9--16 working days.
 
 ---
 

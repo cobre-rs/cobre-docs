@@ -5,7 +5,7 @@
 - Epics 01, 02, and 03 complete; Epic 04 pending
 - All 8 crates audited (epic-01): CONDITIONAL PASS -- domain semantics sufficient, Rust API formalization and naming consistency are the gaps
 - 18 remaining Medium/Low gaps triaged (epic-02): 3 Resolve-Before-Coding, 12 Resolve-During-Phase, 3 Resolve-After-MVP
-- 8 phases assessed (epic-03): 6 CONDITIONALLY READY, 1 READY (Phase 4 cobre-comm, Phase 6 cobre-sddp training), 1 NOT READY (Phase 7 simulation + output)
+- 8 phases assessed (epic-03): 5 CONDITIONALLY READY, 2 READY (Phase 4 cobre-comm, Phase 6 cobre-sddp training), 1 NOT READY (Phase 7 simulation + output)
 - 7 testing specs audited (epic-03): 5 ADEQUATE, 2 ADEQUATE WITH GAPS, 0 INADEQUATE; 247 total named tests verified
 - Total pre-coding effort before first commit: 9-15 working days across all 8 phases
 
