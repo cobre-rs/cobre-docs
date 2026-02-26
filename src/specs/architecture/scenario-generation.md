@@ -54,7 +54,7 @@ For the full PAR(p) model definition, parameter set, and fitting theory, see [PA
 └─────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-> **Key distinction:** The input file stores the seasonal sample standard deviation ($s_m$), NOT the residual standard deviation ($\sigma_m$). The residual std is computed during preprocessing from $s_m$ and the AR coefficients via reverse-standardization. See [PAR(p) Inflow Model §3](../math/par-inflow-model.md) for the derivation.
+> **Key distinction:** The input file stores the seasonal sample standard deviation ($s_m$), NOT the residual standard deviation ($\sigma_m$). The residual std is computed during preprocessing from $s_m$ and the AR coefficients via reverse-standardization. See [PAR(p) Inflow Model SS3](../math/par-inflow-model.md) for the derivation.
 
 ### 1.3 Memory Layout for Hot-Path Access
 
@@ -75,7 +75,7 @@ $$
 a_{h,t} = \text{base}[h][t] + \sum_{\ell=1}^{p} \text{coeff}[h][t][\ell] \cdot a_{h,t-\ell} + \text{scale}[h][t] \cdot \eta
 $$
 
-This is the runtime form of the PAR(p) equation from [PAR(p) Inflow Model §1](../math/par-inflow-model.md), with all season lookups pre-resolved.
+This is the runtime form of the PAR(p) equation from [PAR(p) Inflow Model SS1](../math/par-inflow-model.md), with all season lookups pre-resolved.
 
 ### 1.4 PAR Model Fitting from Historical Data
 
@@ -92,7 +92,7 @@ The fitting process:
 
 The fitted model output includes: seasonal means, AR coefficients (original units), residual standard deviations, and selected AR orders — all per season.
 
-**Fitted model validation** follows the same invariants defined in [PAR(p) Inflow Model §6](../math/par-inflow-model.md):
+**Fitted model validation** follows the same invariants defined in [PAR(p) Inflow Model SS6](../math/par-inflow-model.md):
 
 | Check                      | Severity | Description                                                |
 | -------------------------- | -------- | ---------------------------------------------------------- |
@@ -106,7 +106,7 @@ The fitted model output includes: seasonal means, AR coefficients (original unit
 
 ### 2.1 Correlated Noise Generation
 
-Hydros within the same correlation group share spatially **correlated** noise. The correlation structure is defined in `correlation.json` (see [Input Scenarios §5](../data-model/input-scenarios.md)).
+Hydros within the same correlation group share spatially **correlated** noise. The correlation structure is defined in `correlation.json` (see [Input Scenarios SS5](../data-model/input-scenarios.md)).
 
 The generation process:
 
@@ -155,7 +155,7 @@ Total size: $N_{\text{openings}} \times T \times N_{\text{entities}} \times 8$ b
 
 ### 2.4 Time-Varying Correlation Profiles
 
-The correlation structure can vary across stages via the **profile + schedule** pattern defined in [Input Scenarios §5.3](../data-model/input-scenarios.md):
+The correlation structure can vary across stages via the **profile + schedule** pattern defined in [Input Scenarios SS5.3](../data-model/input-scenarios.md):
 
 - **Profiles** — Named correlation configurations (e.g., `"default"`, `"wet_season"`, `"dry_season"`), each defining correlation groups and matrices
 - **Schedule** — An optional array embedded in `correlation.json` that maps specific `stage_id` values to profile names. Stages not listed use the `"default"` profile.
@@ -227,7 +227,7 @@ The forward pass model determines which LP is solved at each stage during the fo
 
 - **Default** — Solve the training LP (the convex LP used for cut generation) with the scenario realization from the sampling scheme. This is the standard SDDP forward pass.
 
-An **Alternative Forward Pass** model — solving a different LP (e.g., with simulation-only features like linearized head or unit commitment) to generate trial points, while keeping the training LP for cut generation — is deferred. See [Deferred Features §C.13](../deferred.md).
+An **Alternative Forward Pass** model — solving a different LP (e.g., with simulation-only features like linearized head or unit commitment) to generate trial points, while keeping the training LP for cut generation — is deferred. See [Deferred Features SSC.13](../deferred.md).
 
 ### 3.4 Backward Sampling
 
@@ -235,11 +235,11 @@ The backward sampling scheme determines which noise terms are evaluated at each 
 
 - **Complete** — Evaluate **all** $N_{\text{openings}}$ noise vectors from the fixed opening tree. This is the standard SDDP backward pass that guarantees proper cut generation by considering every branching.
 
-A **MonteCarlo(n)** backward sampling scheme — sampling $n$ openings with replacement instead of evaluating all — is deferred. See [Deferred Features §C.14](../deferred.md).
+A **MonteCarlo(n)** backward sampling scheme — sampling $n$ openings with replacement instead of evaluating all — is deferred. See [Deferred Features SSC.14](../deferred.md).
 
 ### 3.5 Configuration
 
-The sampling scheme is configured in `stages.json` via the `scenario_source` object. See [Input Scenarios §2.1](../data-model/input-scenarios.md) for the full schema.
+The sampling scheme is configured in `stages.json` via the `scenario_source` object. See [Input Scenarios SS2.1](../data-model/input-scenarios.md) for the full schema.
 
 **Summary of scheme-to-config mapping:**
 
@@ -261,7 +261,7 @@ Cobre supports external (deterministic) scenarios as an alternative forward pass
 | Monte Carlo import | Pre-generated scenarios from external tool |
 | Stress testing     | Specific drought/flood scenarios           |
 
-**Input file**: `scenarios/external_scenarios.parquet` with columns `(stage_id, scenario_id, hydro_id, value_m3s)`. See [Input Scenarios §2.5](../data-model/input-scenarios.md).
+**Input file**: `scenarios/external_scenarios.parquet` with columns `(stage_id, scenario_id, hydro_id, value_m3s)`. See [Input Scenarios SS2.5](../data-model/input-scenarios.md).
 
 ### 4.2 Backward Pass with External Forward Scenarios
 
@@ -287,7 +287,7 @@ $$
 
 where $\phi_m = \mu_m - \sum_{\ell=1}^{P} \psi_{m,\ell} \cdot \mu_{m-\ell}$ is the precomputed base value.
 
-All quantities ($\mu_m$, $\psi_{m,\ell}$, $\sigma_m$) are in their respective units as described in [PAR(p) Inflow Model §2-3](../math/par-inflow-model.md). The AR coefficients are in original units; $\sigma_m$ is the derived residual std.
+All quantities ($\mu_m$, $\psi_{m,\ell}$, $\sigma_m$) are in their respective units as described in [PAR(p) Inflow Model SS2-3](../math/par-inflow-model.md). The AR coefficients are in original units; $\sigma_m$ is the derived residual std.
 
 The inversion proceeds **sequentially through stages** (each stage updates the lag buffer for the next):
 
@@ -299,7 +299,7 @@ The inversion proceeds **sequentially through stages** (each stage updates the l
 
 After inversion, a JSON validation report is emitted with noise statistics (mean, std, min, max, extreme count), warnings, and an overall status.
 
-**Critical**: If AR order mismatches between the PAR model and a warm-start policy, noise inversion produces incorrect values. This is validated during policy loading (see [Validation Architecture §2.5b](./validation-architecture.md)).
+**Critical**: If AR order mismatches between the PAR model and a warm-start policy, noise inversion produces incorrect values. This is validated during policy loading (see [Validation Architecture SS2.5b](./validation-architecture.md)).
 
 ### 4.4 External Scenarios in Simulation
 
@@ -354,7 +354,7 @@ $$
 d_{b,t} = \mu_{b,t}^{\text{load}} + s_{b,t}^{\text{load}} \cdot \eta_{b,t}^{\text{load}}
 $$
 
-where $\eta_{b,t}^{\text{load}} \sim N(0,1)$ is an independent noise term. See [Input Scenarios §3.3](../data-model/input-scenarios.md).
+where $\eta_{b,t}^{\text{load}} \sim N(0,1)$ is an independent noise term. See [Input Scenarios SS3.3](../data-model/input-scenarios.md).
 
 When `load_seasonal_stats.parquet` is absent, loads are treated as deterministic (taken from the demand values in the entity definitions).
 
@@ -366,7 +366,7 @@ $$
 d_{b,t,k} = d_{b,t} \cdot f_{b,t,k}
 $$
 
-where $f_{b,t,k}$ is the block factor from `load_factors.json`. If `load_factors.json` is absent, all block factors default to 1.0. See [Input Scenarios §4](../data-model/input-scenarios.md).
+where $f_{b,t,k}$ is the block factor from `load_factors.json`. If `load_factors.json` is absent, all block factors default to 1.0. See [Input Scenarios SS4](../data-model/input-scenarios.md).
 
 ### 6.3 Load Correlation
 
@@ -437,21 +437,21 @@ Complete tree mode is feasible only when the total number of tree nodes is compu
 - DECOMP-like configurations with deterministic trunks and branching only at specific stages
 - Validation and benchmarking against SDDP solutions on small instances
 
-The solver integration for complete tree mode (tree enumeration, node-to-subproblem mapping, result aggregation) is documented in [Deferred Features §C.12](../deferred.md).
+The solver integration for complete tree mode (tree enumeration, node-to-subproblem mapping, result aggregation) is documented in [Deferred Features SSC.12](../deferred.md).
 
 ## Cross-References
 
 - [PAR(p) Inflow Model](../math/par-inflow-model.md) — Mathematical definition, parameter set, stored vs. computed quantities, fitting procedure, validation invariants
 - [Inflow Non-Negativity](../math/inflow-nonnegativity.md) — Handling of negative inflow realizations from PAR sampling
-- [SDDP Algorithm](../math/sddp-algorithm.md) — Forward/backward pass structure, cut generation, convergence; references sampling scheme abstraction (§3.1-§3.2)
-- [Input Scenarios](../data-model/input-scenarios.md) — Data model for seasonal stats (§3.1), AR coefficients (§3.2), load stats (§3.3), load factors (§4), correlation (§5), external scenarios (§2.5), scenario_source schema (§2.1)
+- [SDDP Algorithm](../math/sddp-algorithm.md) — Forward/backward pass structure, cut generation, convergence; references sampling scheme abstraction (SS3.1-SS3.2)
+- [Input Scenarios](../data-model/input-scenarios.md) — Data model for seasonal stats (SS3.1), AR coefficients (SS3.2), load stats (SS3.3), load factors (SS4), correlation (SS5), external scenarios (SS2.5), scenario_source schema (SS2.1)
 - [Input System Entities](../data-model/input-system-entities.md) — Hydro and bus entity definitions referenced by scenario data
-- [Validation Architecture](./validation-architecture.md) — PAR validation rules (§2.5, PAR Inflow Model domain), warm-start AR compatibility (§2.5b)
+- [Validation Architecture](./validation-architecture.md) — PAR validation rules (SS2.5, PAR Inflow Model domain), warm-start AR compatibility (SS2.5b)
 - [Input Loading Pipeline](./input-loading-pipeline.md) — How scenario input files are loaded and validated
 - [CLI and Lifecycle](./cli-and-lifecycle.md) — Scenario generation phase within the execution lifecycle
 - [Training Loop](./training-loop.md) — How the training loop consumes sampling scheme configuration
 - [Memory Architecture](../hpc/memory-architecture.md) — Per-rank memory budget tracking for opening tree and scenario data (§2.1)
-- [Deferred Features §C.11](../deferred.md) — User-supplied noise openings (pre-sampled, pre-correlated)
-- [Deferred Features §C.12](../deferred.md) — Complete tree solver integration (DECOMP-like)
-- [Deferred Features §C.13](../deferred.md) — Alternative forward pass model
-- [Deferred Features §C.14](../deferred.md) — Monte Carlo backward sampling
+- [Deferred Features SSC.11](../deferred.md) — User-supplied noise openings (pre-sampled, pre-correlated)
+- [Deferred Features SSC.12](../deferred.md) — Complete tree solver integration (DECOMP-like)
+- [Deferred Features SSC.13](../deferred.md) — Alternative forward pass model
+- [Deferred Features SSC.14](../deferred.md) — Monte Carlo backward sampling

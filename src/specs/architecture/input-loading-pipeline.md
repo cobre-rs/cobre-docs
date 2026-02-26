@@ -127,7 +127,7 @@ Some files are loaded only when certain conditions are met. Missing optional fil
 | `non_controllable_sources.json` present                   | Load NCS penalty overrides                                                                     |
 | `external_scenarios.parquet` present                      | Use external scenarios instead of PAR-generated ones                                           |
 
-> **Note on external scenarios scope**: The presence of `external_scenarios.parquet` does NOT imply simulation-only usage. External scenarios can also be used during training — see [Scenario Generation §4.2](./scenario-generation.md). Loading and validation apply identically regardless of the target phase.
+> **Note on external scenarios scope**: The presence of `external_scenarios.parquet` does NOT imply simulation-only usage. External scenarios can also be used during training — see [Scenario Generation SS4.2](./scenario-generation.md). Loading and validation apply identically regardless of the target phase.
 
 ## 5. Sparse Time-Series Expansion
 
@@ -167,7 +167,7 @@ Policy files (cuts, states, vertices, basis) can be large. Loading them on rank 
 3. Each rank loads a subset of policy stage files from `policy/cuts/` — stages are assigned round-robin by rank.
 4. After local loading, ranks exchange cuts so that every rank has the complete policy. The exchange strategy (e.g., `MPI_Allgatherv` or shared memory window + inter-node broadcast) is an implementation choice.
 
-For the policy file format (FlatBuffers `.bin` files), see [Binary Formats](../data-model/binary-formats.md) §3.2.
+For the policy file format (FlatBuffers `.bin` files), see [Binary Formats](../data-model/binary-formats.md) SS3.2.
 
 ## 8. Transition to In-Memory Model
 
@@ -175,7 +175,7 @@ After loading and broadcasting, each rank constructs its in-memory data model fr
 
 **FPHA preprocessing:** For hydros with FPHA production model and source `"computed"`, the FPHA hyperplanes are fitted during the Initialization phase (after validation, before training). Fitting uses the hydro geometry (volume-area-level curves from `hydro_geometry.parquet`), topology data (productivity, tailrace, hydraulic losses, turbine efficiency from `hydros.json`), and fitting configuration (discretization points from `hydro_production_models.json`). See [Hydro Production Models](../math/hydro-production-models.md) for the mathematical formulation and [Input Hydro Extensions](../data-model/input-hydro-extensions.md) for the required input data.
 
-The key invariant is: **after the Initialization phase completes, all ranks hold identical copies of the validated case data** (except for per-rank scenario assignments, which are determined during Scenario Generation). See [CLI and Lifecycle](./cli-and-lifecycle.md) §5.2 for the phase sequence.
+The key invariant is: **after the Initialization phase completes, all ranks hold identical copies of the validated case data** (except for per-rank scenario assignments, which are determined during Scenario Generation). See [CLI and Lifecycle](./cli-and-lifecycle.md) SS5.2 for the phase sequence.
 
 ## Cross-References
 

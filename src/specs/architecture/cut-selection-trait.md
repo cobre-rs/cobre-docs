@@ -14,7 +14,7 @@ The cut selection strategy is modeled as a flat enum with three variants, matchi
 /// Cut selection strategy for controlling cut pool growth during SDDP training.
 ///
 /// A single `CutSelectionStrategy` value is resolved from the `cut_selection`
-/// field in `config.json` during configuration loading (see Extension Points §6).
+/// field in `config.json` during configuration loading (see Extension Points SS6).
 /// The strategy is global to the training run -- all stages use the same
 /// selection method. Selection runs periodically (every `check_frequency`
 /// iterations) and only deactivates cuts -- it never deletes them, preserving
@@ -27,7 +27,7 @@ pub enum CutSelectionStrategy {
     /// i.e., it has never been binding at any visited state during the entire
     /// algorithm execution. This is the least aggressive strategy.
     ///
-    /// See [Cut Management §7.1](../math/cut-management.md).
+    /// See [Cut Management SS7.1](../math/cut-management.md).
     Level1 {
         /// Activity threshold epsilon for near-binding tolerance.
         /// A cut is considered binding if theta* - (alpha_k + pi_k^T x) < threshold.
@@ -44,7 +44,7 @@ pub enum CutSelectionStrategy {
     /// are deactivated. More aggressive than Level-1 because cuts that were
     /// active early but are now permanently dominated will eventually be removed.
     ///
-    /// See [Cut Management §7.2](../math/cut-management.md).
+    /// See [Cut Management SS7.2](../math/cut-management.md).
     LML1 {
         /// Activity threshold epsilon for near-binding tolerance.
         threshold: f64,
@@ -65,7 +65,7 @@ pub enum CutSelectionStrategy {
     /// most aggressive strategy and the most computationally expensive:
     /// O(|active cuts| x |visited states|) per stage per check.
     ///
-    /// See [Cut Management §7.3](../math/cut-management.md).
+    /// See [Cut Management SS7.3](../math/cut-management.md).
     Dominated {
         /// Activity threshold epsilon for near-binding tolerance.
         threshold: f64,
@@ -282,7 +282,7 @@ Each cut slot in the pre-allocated cut pool carries metadata used by the selecti
 /// Per-cut metadata for cut selection tracking.
 ///
 /// Stored alongside the cut coefficients and intercept in the pre-allocated
-/// cut pool (see Cut Management Implementation §1.1). All fields are
+/// cut pool (see Cut Management Implementation SS1.1). All fields are
 /// initialized to their zero/default values when the cut is first written.
 pub struct CutMetadata {
     /// Iteration at which this cut was generated.
@@ -291,7 +291,7 @@ pub struct CutMetadata {
 
     /// Forward pass index that generated this cut.
     /// Combined with `iteration_generated`, uniquely identifies the cut's
-    /// deterministic slot (see Cut Management Implementation §1.2).
+    /// deterministic slot (see Cut Management Implementation SS1.2).
     pub forward_pass_index: u32,
 
     /// Cumulative number of times this cut was binding at an LP solution.

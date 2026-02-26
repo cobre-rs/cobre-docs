@@ -22,7 +22,7 @@ Cobre serves two audiences with complementary interaction models:
 - **HPC batch execution** -- The primary mode. MPI-launched, config-driven, human-readable output. Optimized for production-scale runs on cluster schedulers.
 - **Agent-composable interfaces** -- Secondary modes (MCP server, Python bindings, TUI) that expose the same solver through programmatic APIs. These operate in single-process mode without MPI, producing structured output with stable schemas.
 
-The agent composability principle states that every Cobre operation must be usable by a programmatic agent -- an AI coding assistant, a CI/CD pipeline, or a Python orchestration script -- without requiring human interpretation of output. This is achieved through structured JSON output (`--output-format json`), progress streaming (`--output-format json-lines`), and library-mode execution (no MPI, no signal handlers, no scheduler detection). See [Design Principles §6](../overview/design-principles.md) for the full agent-readability design rules and [Structured Output](../interfaces/structured-output.md) for the JSON schema definitions.
+The agent composability principle states that every Cobre operation must be usable by a programmatic agent -- an AI coding assistant, a CI/CD pipeline, or a Python orchestration script -- without requiring human interpretation of output. This is achieved through structured JSON output (`--output-format json`), progress streaming (`--output-format json-lines`), and library-mode execution (no MPI, no signal handlers, no scheduler detection). See [Design Principles SS6](../overview/design-principles.md) for the full agent-readability design rules and [Structured Output](../interfaces/structured-output.md) for the JSON schema definitions.
 
 ## 2. Invocation Pattern
 
@@ -56,7 +56,7 @@ cobre run /path/to/case --output-format json-lines
 cobre report /path/to/output --output-format json
 ```
 
-**Hybrid detection**: When invoked as `mpiexec cobre /path/to/case`, the CLI detects that no recognized subcommand was given and treats the path argument as an implicit `run` subcommand (backward-compatible with the existing invocation pattern). See [Structured Output §4](../interfaces/structured-output.md) for the output format negotiation and per-subcommand response shapes.
+**Hybrid detection**: When invoked as `mpiexec cobre /path/to/case`, the CLI detects that no recognized subcommand was given and treats the path argument as an implicit `run` subcommand (backward-compatible with the existing invocation pattern). See [Structured Output SS4](../interfaces/structured-output.md) for the output format negotiation and per-subcommand response shapes.
 
 **MPI requirements by subcommand**:
 
@@ -84,7 +84,7 @@ The following flags apply to all subcommands:
 
 | Flag              | Values                        | Default | Description                                                                                                                          |
 | ----------------- | ----------------------------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------ |
-| `--output-format` | `human`, `json`, `json-lines` | `human` | Output presentation format. Does not affect computation. See [Structured Output §5](../interfaces/structured-output.md)              |
+| `--output-format` | `human`, `json`, `json-lines` | `human` | Output presentation format. Does not affect computation. See [Structured Output SS5](../interfaces/structured-output.md)              |
 | `--quiet`         | (flag)                        | off     | Suppress non-essential output (progress bars, decorative headers). In `json` mode, suppresses `warnings` array                       |
 | `--no-progress`   | (flag)                        | off     | Suppress progress streaming. In `json-lines` mode, suppresses `progress` events (only `started`, `terminated`, `result` are emitted) |
 
@@ -204,7 +204,7 @@ Algorithm parameters (tolerances, buffer sizes, stopping rules, etc.) are resolv
 1. **`config.json`** — Explicit user configuration. See [Configuration Reference](../configuration/configuration-reference.md)
 2. **Compiled defaults** — Internal constants for any parameter not specified in `config.json`
 
-The resolved configuration is recorded in the training metadata file for reproducibility (see [Output Infrastructure](../data-model/output-infrastructure.md) §2).
+The resolved configuration is recorded in the training metadata file for reproducibility (see [Output Infrastructure](../data-model/output-infrastructure.md) SS2).
 
 ### 6.3 Scheduler Detection
 
@@ -241,7 +241,7 @@ Cobre installs signal handlers to support graceful shutdown during long-running 
 4. All MPI ranks coordinate shutdown via a barrier before finalization.
 5. The training manifest is updated with `status: "partial"` and the last completed iteration number.
 
-This ensures that a `SIGTERM` from SLURM (e.g., approaching wall-time limit) results in a prompt shutdown without corrupting policy or output files. The next invocation can detect the partial state via the manifest and resume from the checkpoint. See [Output Infrastructure](../data-model/output-infrastructure.md) §1.2 for manifest status values.
+This ensures that a `SIGTERM` from SLURM (e.g., approaching wall-time limit) results in a prompt shutdown without corrupting policy or output files. The next invocation can detect the partial state via the manifest and resume from the checkpoint. See [Output Infrastructure](../data-model/output-infrastructure.md) SS1.2 for manifest status values.
 
 ## 8. Structured Output Protocol
 
@@ -261,7 +261,7 @@ The output format affects only presentation. It does not change computation, out
 
 ### 8.2 Response Envelope
 
-All JSON responses use a common envelope schema. See [Structured Output §2](../interfaces/structured-output.md) for the complete JSON Schema definition:
+All JSON responses use a common envelope schema. See [Structured Output SS2](../interfaces/structured-output.md) for the complete JSON Schema definition:
 
 ```json
 {
@@ -279,7 +279,7 @@ All JSON responses use a common envelope schema. See [Structured Output §2](../
 
 ### 8.3 JSON-Lines Streaming
 
-For long-running operations (`run`), the JSON-lines format emits per-iteration progress events matching the fields defined in [Convergence Monitoring §2.4](./convergence-monitoring.md). The streaming protocol uses four envelope types: `started`, `progress`, `terminated`, and `result`. See [Structured Output §3](../interfaces/structured-output.md) for the complete streaming protocol and [Convergence Monitoring §4.1](./convergence-monitoring.md) for the JSON-lines schema.
+For long-running operations (`run`), the JSON-lines format emits per-iteration progress events matching the fields defined in [Convergence Monitoring SS2.4](./convergence-monitoring.md). The streaming protocol uses four envelope types: `started`, `progress`, `terminated`, and `result`. See [Structured Output SS3](../interfaces/structured-output.md) for the complete streaming protocol and [Convergence Monitoring SS4.1](./convergence-monitoring.md) for the JSON-lines schema.
 
 ## Cross-References
 

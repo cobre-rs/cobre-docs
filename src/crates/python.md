@@ -11,10 +11,12 @@ Jupyter notebooks, and orchestration frameworks.
 
 The crate operates in **single-process mode only** -- it MUST NOT initialize
 MPI or depend on `ferrompi`. This is a hard constraint arising from the
-fundamental GIL/MPI incompatibility: MPI_THREAD_MULTIPLE requires all threads
-to be able to make MPI calls, but the GIL serializes Python threads, creating
-deadlock risk. Python users needing distributed execution launch `mpiexec cobre`
-as a subprocess.
+fundamental GIL/MPI incompatibility (three independent reasons: `MPI_Init_thread`
+timing conflict, GIL/`MPI_THREAD_MULTIPLE` deadlock risk, and dual-FFI-layer
+fragility). See [Python Bindings SS7.2](../specs/interfaces/python-bindings.md)
+for the full rationale. Python users needing MPI-based distributed execution
+launch `mpiexec cobre` as a subprocess; for non-MPI multi-process execution,
+use the TCP or shared-memory backends via `cobre.train(num_workers=N)`.
 
 The GIL is released during all Rust computation via `py.allow_threads()`,
 allowing OpenMP threads within `cobre-sddp` to run at full parallelism. No
@@ -29,11 +31,13 @@ via configuration.
   scenario sampling), and `cobre-sddp` (training, simulation, policy access).
   See [Python Bindings](../specs/interfaces/python-bindings.md).
 
-- **GIL management contract** -- Five-point contract: (1) GIL acquired to
-  receive call and validate arguments, (2) GIL released before Rust computation,
-  (3) no Rust thread within OpenMP region acquires GIL, (4) GIL reacquired for
-  result conversion, (5) no Python callbacks in hot loop.
-  See [Python Bindings](../specs/interfaces/python-bindings.md).
+- **GIL management contract** -- Six-point contract: (1) GIL acquired to
+  receive call and validate arguments, (2) thread state detached via
+  `py.allow_threads()` before Rust computation, (3) no Rust thread within
+  OpenMP region acquires GIL, (4) GIL reacquired for result conversion,
+  (5) no Python callbacks in hot loop, (6) in multi-process mode, each worker
+  has its own interpreter and GIL.
+  See [Python Bindings SS3.1](../specs/interfaces/python-bindings.md).
 
 - **Zero-copy data paths** -- NumPy arrays for PAR parameters and scenario
   noise via the PyO3 numpy crate. Apache Arrow FFI for simulation result

@@ -32,7 +32,7 @@ The C API is sufficient for the Option A baseline. The C++ API enables the antic
 
 ## 2. Solver Interface Mapping
 
-This section maps each operation from the [Solver Abstraction §4](./solver-abstraction.md) to the specific CLP API calls.
+This section maps each operation from the [Solver Abstraction SS4](./solver-abstraction.md) to the specific CLP API calls.
 
 ### 2.1 Load Model
 
@@ -45,7 +45,7 @@ Clp_loadProblem(model, numcols, numrows,
                 rowlb, rowub)              // row bounds
 ```
 
-**Format note**: `Clp_loadProblem` expects **column-major** (CSC) format (column starts, row indices, values). The stage LP templates (see [Solver Abstraction §11](./solver-abstraction.md)) store the structural matrix in CSC form — this is CLP's native internal format (CLP stores the LP matrix as a `ClpPackedMatrix` in column-ordered form). The CLP implementation passes the template CSC arrays directly to `Clp_loadProblem` with no format transposition needed.
+**Format note**: `Clp_loadProblem` expects **column-major** (CSC) format (column starts, row indices, values). The stage LP templates (see [Solver Abstraction SS11](./solver-abstraction.md)) store the structural matrix in CSC form — this is CLP's native internal format (CLP stores the LP matrix as a `ClpPackedMatrix` in column-ordered form). The CLP implementation passes the template CSC arrays directly to `Clp_loadProblem` with no format transposition needed.
 
 ### 2.2 Add Cut Rows
 
@@ -56,7 +56,7 @@ Clp_addRows(model, number, rowLower, rowUpper,
             rowStarts, columns, elements)
 ```
 
-The `rowStarts`/`columns`/`elements` arrays follow the standard CSR (row-major) format. This is the natural format for cut addition since cut pool storage is already CSR-friendly (see [Binary Formats §3.4](../data-model/binary-formats.md)).
+The `rowStarts`/`columns`/`elements` arrays follow the standard CSR (row-major) format. This is the natural format for cut addition since cut pool storage is already CSR-friendly (see [Binary Formats SS3.4](../data-model/binary-formats.md)).
 
 ### 2.3 Patch Scenario-Dependent Values
 
@@ -70,7 +70,7 @@ CLP's mutable pointer access is a **key differentiator** from HiGHS. The C API f
 | Patch column upper | `Clp_columnUpper(model)[col_idx] = val` | Direct memory write                              |
 | Patch objective    | `Clp_objective(model)[col_idx] = val`   | Direct memory write                              |
 
-**Performance implication**: Scenario patching (the ~2,240 RHS updates per solve — incoming storage, AR lag fixing, noise fixing) can be done as direct memory writes with no function call overhead per element. The LP layout convention ([Solver Abstraction §2](./solver-abstraction.md)) places state-linking constraints at the top, so these patches target a contiguous prefix of the row arrays — cache-friendly sequential writes.
+**Performance implication**: Scenario patching (the ~2,240 RHS updates per solve — incoming storage, AR lag fixing, noise fixing) can be done as direct memory writes with no function call overhead per element. The LP layout convention ([Solver Abstraction SS2](./solver-abstraction.md)) places state-linking constraints at the top, so these patches target a contiguous prefix of the row arrays — cache-friendly sequential writes.
 
 Alternatively, CLP provides bulk array replacement via `Clp_chgRowLower(model, rowLower)` and `Clp_chgRowUpper(model, rowUpper)`, which copy entire arrays. This is only useful if the majority of values change — for SDDP scenario patching where only ~2,240 of potentially 10,000+ rows change, direct pointer writes to specific indices are more efficient.
 
@@ -111,7 +111,7 @@ CLP returns mutable `double*` pointers to its internal solution arrays:
 
 Since these are pointers into solver-owned memory, the values must be copied out before any subsequent solver operation that could invalidate them (e.g., the next solve).
 
-**Dual normalization**: CLP uses the convention where the dual row solution `Clp_dualRowSolution(model)` returns row duals that follow the same sign convention as the solver abstraction's canonical form ([Solver Abstraction §8](./solver-abstraction.md)). This must be verified empirically for $\leq$ vs $\geq$ constraint forms and documented in the implementation.
+**Dual normalization**: CLP uses the convention where the dual row solution `Clp_dualRowSolution(model)` returns row duals that follow the same sign convention as the solver abstraction's canonical form ([Solver Abstraction SS8](./solver-abstraction.md)). This must be verified empirically for $\leq$ vs $\geq$ constraint forms and documented in the implementation.
 
 ### 2.6 Basis Management
 
@@ -137,7 +137,7 @@ unsigned char* status = Clp_statusArray(model);
 
 **Getting basis**: `Clp_statusArray(model)` returns a mutable pointer to the internal status array. Copy the values before any structural change.
 
-**Interaction with LP layout convention**: Per [Solver Abstraction §2.3](./solver-abstraction.md), the structural portion of the basis (rows `[0, n_structural)`) is position-stable across iterations. When warm-starting after adding cuts, the implementation:
+**Interaction with LP layout convention**: Per [Solver Abstraction SS2.3](./solver-abstraction.md), the structural portion of the basis (rows `[0, n_structural)`) is position-stable across iterations. When warm-starting after adding cuts, the implementation:
 
 1. Copies the cached basis (truncated or extended to match the new row count)
 2. Sets new cut rows to status `1` (Basic — slack in basis)
@@ -151,7 +151,7 @@ CLP does not have a direct equivalent of HiGHS's `clearSolver`. Two approaches:
 - **Reconstruct**: `Clp_deleteModel(model)` + `Clp_newModel()`. Clean but discards all state.
 - **Re-solve cold**: Call `Clp_initialDualSolve(model)` which performs a full re-factorization from scratch, effectively resetting the solver's internal state while keeping the LP loaded.
 
-For the retry strategy (§3), re-solving cold is preferred since it avoids reloading the LP.
+For the retry strategy (SS3), re-solving cold is preferred since it avoids reloading the LP.
 
 ### 2.8 Infeasibility Diagnostics
 
@@ -162,7 +162,7 @@ For the retry strategy (§3), re-solving cold is preferred since it avoids reloa
 
 ## 3. Retry Strategy
 
-The retry strategy follows the behavioral contract defined in [Solver Abstraction §7](./solver-abstraction.md). CLP-specific retry escalation:
+The retry strategy follows the behavioral contract defined in [Solver Abstraction SS7](./solver-abstraction.md). CLP-specific retry escalation:
 
 | Attempt | Strategy            | CLP Actions                                                                                                |
 | ------- | ------------------- | ---------------------------------------------------------------------------------------------------------- |
@@ -181,7 +181,7 @@ After each successful retry, the implementation restores default settings for th
 | Setting          | CLP Call                                 | Value        | Rationale                                                                                                 |
 | ---------------- | ---------------------------------------- | ------------ | --------------------------------------------------------------------------------------------------------- |
 | Algorithm        | `Clp_setAlgorithm(model, -1)`            | -1 (dual)    | Dual simplex is the standard for SDDP — cut addition modifies RHS, which is a bound change in the dual    |
-| Scaling          | `Clp_scaling(model, 0)`                  | 0 (off)      | Disabled for warm-start compatibility; see open point in [Solver Abstraction §3](./solver-abstraction.md) |
+| Scaling          | `Clp_scaling(model, 0)`                  | 0 (off)      | Disabled for warm-start compatibility; see open point in [Solver Abstraction SS3](./solver-abstraction.md) |
 | Log level        | `Clp_setLogLevel(model, 0)`              | 0 (none)     | Quiet for production; millions of solves per run                                                          |
 | Primal tolerance | `Clp_setPrimalTolerance(model, 1e-7)`    | 1e-7         | Match HiGHS defaults for cross-solver reproducibility                                                     |
 | Dual tolerance   | `Clp_setDualTolerance(model, 1e-7)`      | 1e-7         | Match HiGHS defaults                                                                                      |
@@ -200,7 +200,7 @@ CLP supports four scaling modes via `Clp_scaling(model, mode)`:
 | 2    | Geometric   | Geometric mean scaling   |
 | 3    | Auto        | CLP chooses              |
 
-The scaling strategy interacts with the open point in [Solver Abstraction §3](./solver-abstraction.md) (single-phase vs two-phase scaling). If Cobre manages its own scaling (applied at the template level), CLP internal scaling should remain off to avoid double-scaling. If Cobre delegates scaling to the solver, CLP's auto mode (3) is a reasonable default.
+The scaling strategy interacts with the open point in [Solver Abstraction SS3](./solver-abstraction.md) (single-phase vs two-phase scaling). If Cobre manages its own scaling (applied at the template level), CLP internal scaling should remain off to avoid double-scaling. If Cobre delegates scaling to the solver, CLP's auto mode (3) is a reasonable default.
 
 ## 5. C++ Wrapper Strategy (Anticipated Optimization)
 
@@ -264,17 +264,17 @@ This is within acceptable bounds for production HPC nodes (256+ GB RAM). The clo
 
 ### 7.1 Column-Major Format
 
-`Clp_loadProblem` expects column-major (CSC) format, which matches the stage LP template format directly — templates store their structural matrix in CSC form (see [Solver Abstraction §11](./solver-abstraction.md)). No format transposition is needed at stage transitions.
+`Clp_loadProblem` expects column-major (CSC) format, which matches the stage LP template format directly — templates store their structural matrix in CSC form (see [Solver Abstraction SS11](./solver-abstraction.md)). No format transposition is needed at stage transitions.
 
 `Clp_addRows` for cut addition accepts row-major (CSR) format (row starts, column indices, elements), which matches the cut pool's CSR-friendly storage layout. No transposition needed for cut addition either.
 
 ### 7.2 Dual Sign Convention
 
-CLP's dual sign convention must be verified against the canonical sign convention defined in [Solver Abstraction §8](./solver-abstraction.md). If CLP reports duals with a different sign for $\geq$ constraints, the CLP implementation must negate the appropriate dual values before returning them to the SDDP algorithm. This is a critical correctness requirement — sign errors in duals produce divergent cuts.
+CLP's dual sign convention must be verified against the canonical sign convention defined in [Solver Abstraction SS8](./solver-abstraction.md). If CLP reports duals with a different sign for $\geq$ constraints, the CLP implementation must negate the appropriate dual values before returning them to the SDDP algorithm. This is a critical correctness requirement — sign errors in duals produce divergent cuts.
 
 ### 7.3 Thread Safety
 
-Each `Clp_Simplex*` instance is **not thread-safe** — it must be exclusively owned by one thread. This aligns with the solver abstraction's thread-safety requirement ([Solver Abstraction §4.2](./solver-abstraction.md)). Each OpenMP thread creates its own `Clp_Simplex*` via `Clp_newModel()` at initialization and destroys it at shutdown via `Clp_deleteModel`.
+Each `Clp_Simplex*` instance is **not thread-safe** — it must be exclusively owned by one thread. This aligns with the solver abstraction's thread-safety requirement ([Solver Abstraction SS4.2](./solver-abstraction.md)). Each OpenMP thread creates its own `Clp_Simplex*` via `Clp_newModel()` at initialization and destroys it at shutdown via `Clp_deleteModel`.
 
 ### 7.4 Persistence Flag
 
@@ -290,14 +290,14 @@ For SDDP where the LP is rebuilt many times with similar (but not identical) siz
 
 ## Cross-References
 
-- [Solver Abstraction](./solver-abstraction.md) — Interface contract (§4), LP layout convention (§2), cut pool design (§5), error categories (§6), retry contract (§7), dual normalization (§8), basis storage (§9), stage templates (§11)
+- [Solver Abstraction](./solver-abstraction.md) — Interface contract (SS4), LP layout convention (SS2), cut pool design (SS5), error categories (SS6), retry contract (SS7), dual normalization (SS8), basis storage (SS9), stage templates (SS11)
 - [Solver Abstraction](./solver-abstraction.md) — Decision 5 (dual-solver validation) that motivated this spec
 - [HiGHS Implementation](./solver-highs-impl.md) — Companion solver implementation for cross-validation
 - [Solver Workspaces & LP Scaling](./solver-workspaces.md) — Thread-local workspace infrastructure that owns the `Clp_Simplex*` instance
 - [LP Formulation](../math/lp-formulation.md) — Constraint structure that CLP operates on
 - [Cut Management](../math/cut-management.md) — How cuts are generated; this spec handles how they are loaded via `Clp_addRows`
 - [Training Loop](./training-loop.md) — Forward/backward pass orchestration driving solver invocations
-- [Binary Formats](../data-model/binary-formats.md) — Cut pool CSR layout (§3.4), LP rebuild analysis (§A)
+- [Binary Formats](../data-model/binary-formats.md) — Cut pool CSR layout (SS3.4), LP rebuild analysis (SSA)
 - [Hybrid Parallelism](../hpc/hybrid-parallelism.md) — OpenMP threading model requiring one CLP instance per thread
 - [Memory Architecture](../hpc/memory-architecture.md) — NUMA-aware allocation for solver workspaces
 - [Configuration Reference](../configuration/configuration-reference.md) — Solver configuration parameters

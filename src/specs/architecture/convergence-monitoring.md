@@ -72,7 +72,7 @@ $$
 
 The rule triggers when $|\Delta_k| < \text{tolerance}$.
 
-This is the same formula defined in [Stopping Rules §4](../math/stopping-rules.md). The convergence monitor maintains the bound history needed to evaluate this windowed comparison.
+This is the same formula defined in [Stopping Rules SS4](../math/stopping-rules.md). The convergence monitor maintains the bound history needed to evaluate this windowed comparison.
 
 ### 2.3 Convergence Evaluation
 
@@ -81,7 +81,7 @@ At each iteration, the monitor evaluates all configured stopping rules:
 1. **Iteration limit** — If iteration count $\geq$ `limit`, report terminated
 2. **Time limit** — If cumulative wall-clock time $\geq$ `seconds`, report terminated
 3. **Bound stalling** — If LB relative improvement over the last `iterations` window is below `tolerance`, report converged
-4. **Simulation-based** — If the check period has elapsed: test bound stability, then run Monte Carlo simulations and compare to previous; if both stable, report converged. See [Stopping Rules §5](../math/stopping-rules.md)
+4. **Simulation-based** — If the check period has elapsed: test bound stability, then run Monte Carlo simulations and compare to previous; if both stable, report converged. See [Stopping Rules SS5](../math/stopping-rules.md)
 5. **Graceful shutdown** — If an external signal flag is set, report terminated
 
 The `stopping_mode` determines whether the first satisfied rule terminates (mode `"any"`) or all must be satisfied (mode `"all"`). The termination reason is recorded in the training log and output metadata.
@@ -105,7 +105,7 @@ Each iteration produces a record with the following fields, used for logging (§
 
 ### 3.1 Cross-Rank Aggregation
 
-Forward pass scenarios are distributed across MPI ranks (see [Training Loop §4.3](./training-loop.md)). After the forward pass, bound statistics must be aggregated globally. This is done via a single `MPI_Allreduce` operation that collects three sufficient statistics from each rank:
+Forward pass scenarios are distributed across MPI ranks (see [Training Loop SS4.3](./training-loop.md)). After the forward pass, bound statistics must be aggregated globally. This is done via a single `MPI_Allreduce` operation that collects three sufficient statistics from each rank:
 
 | Statistic        | Per-rank value                                       | Reduction operation |
 | ---------------- | ---------------------------------------------------- | ------------------- |
@@ -211,7 +211,7 @@ When `--output-format json-lines` is specified, the training log is emitted as n
 }
 ```
 
-The text log and JSON-lines are **mutually exclusive output modes** for the same event stream. When `--output-format human` (default), the text log is emitted. When `--output-format json-lines`, the JSON-lines stream is emitted. The Parquet convergence log (`training/convergence.parquet`) is always written to disk regardless of output mode. See [Structured Output §3](../interfaces/structured-output.md) for the complete JSON-lines streaming protocol.
+The text log and JSON-lines are **mutually exclusive output modes** for the same event stream. When `--output-format human` (default), the text log is emitted. When `--output-format json-lines`, the JSON-lines stream is emitted. The Parquet convergence log (`training/convergence.parquet`) is always written to disk regardless of output mode. See [Structured Output SS3](../interfaces/structured-output.md) for the complete JSON-lines streaming protocol.
 
 ### 4.2 Termination Event Schema
 
@@ -229,7 +229,7 @@ When the training loop terminates, a structured termination event is emitted (re
 }
 ```
 
-The `reason` field uses the same values as the text termination reason: `bound_stalling`, `simulation`, `iteration_limit`, `time_limit`, or `shutdown`. After the termination event, a final `result` event provides the response envelope for the overall command outcome. See [Structured Output §3](../interfaces/structured-output.md) for the `result` event schema.
+The `reason` field uses the same values as the text termination reason: `bound_stalling`, `simulation`, `iteration_limit`, `time_limit`, or `shutdown`. After the termination event, a final `result` event provides the response envelope for the overall command outcome. See [Structured Output SS3](../interfaces/structured-output.md) for the `result` event schema.
 
 ## Cross-References
 
@@ -237,7 +237,7 @@ The `reason` field uses the same values as the text termination reason: `bound_s
 - [Upper Bound Evaluation](../math/upper-bound-evaluation.md) — Statistical upper bound theory, confidence interval construction, and bias corrections
 - [Risk Measures](../math/risk-measures.md) — CVaR risk measure, which affects upper bound computation for risk-averse policies
 - [Infinite Horizon](../math/infinite-horizon.md) — Discount factor treatment for cyclic stage graphs
-- [Training Loop](./training-loop.md) — The SDDP training loop that invokes this convergence monitor each iteration (§2.1 iteration lifecycle, §4.3 forward synchronization)
+- [Training Loop](./training-loop.md) — The SDDP training loop that invokes this convergence monitor each iteration (SS2.1 iteration lifecycle, SS4.3 forward synchronization)
 - [Synchronization](../hpc/synchronization.md) — MPI synchronization points including `MPI_Allreduce` for convergence statistics (§1.3)
 - [Configuration Reference](../configuration/configuration-reference.md) — JSON schema for `stopping_rules` and `stopping_mode`
 - [Structured Output](../interfaces/structured-output.md) — JSON-lines streaming protocol and response envelope schema

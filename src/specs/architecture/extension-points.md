@@ -4,7 +4,7 @@
 
 This spec defines how Cobre selects, composes, and validates algorithm variants at configuration time. The training loop is parameterized by four abstraction points — risk measure, cut formulation, horizon mode, and sampling scheme — each with a defined set of variants. This spec maps each variant to its configuration source, lists validation rules, and documents cross-variant compatibility constraints.
 
-For the behavioral contracts that the training loop imposes on each abstraction point, see [Training Loop §3](./training-loop.md). For the mathematical definitions of each variant, see the referenced math specs.
+For the behavioral contracts that the training loop imposes on each abstraction point, see [Training Loop SS3](./training-loop.md). For the mathematical definitions of each variant, see the referenced math specs.
 
 ## 1. Variant Architecture Overview
 
@@ -19,9 +19,9 @@ The training loop has a fixed structure (forward pass, backward pass, MPI synchr
 
 **Fixed components** (not configurable — same behavior regardless of variant selection):
 
-- Forward pass execution and parallel distribution ([Training Loop §4](./training-loop.md))
-- Backward pass execution and stage synchronization ([Training Loop §6](./training-loop.md))
-- MPI cut synchronization ([Cut Management Implementation §4](./cut-management-impl.md))
+- Forward pass execution and parallel distribution ([Training Loop SS4](./training-loop.md))
+- Backward pass execution and stage synchronization ([Training Loop SS6](./training-loop.md))
+- MPI cut synchronization ([Cut Management Implementation SS4](./cut-management-impl.md))
 - Convergence monitoring and stopping rules ([Convergence Monitoring](./convergence-monitoring.md))
 - LP construction and solver interaction ([Solver Abstraction](./solver-abstraction.md))
 
@@ -33,12 +33,12 @@ The risk measure determines how backward pass outcomes (one per opening) are agg
 
 | Variant         | Config Value                              | Behavior                                                                                                                                                                            | Math Reference                                   |
 | --------------- | ----------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------ |
-| **Expectation** | `"expectation"`                           | Probability-weighted average of per-outcome intercepts and gradients. Weights equal the uniform opening probabilities $p(\omega)$.                                                  | [Risk Measures §1](../math/risk-measures.md)     |
-| **CVaR**        | `{"cvar": {"alpha": ..., "lambda": ...}}` | Convex combination: $(1-\lambda)\mathbb{E}[\cdot] + \lambda \cdot \text{CVaR}_\alpha[\cdot]$. Sorting-based greedy weight allocation places maximum weight on worst-cost scenarios. | [Risk Measures §3, §7](../math/risk-measures.md) |
+| **Expectation** | `"expectation"`                           | Probability-weighted average of per-outcome intercepts and gradients. Weights equal the uniform opening probabilities $p(\omega)$.                                                  | [Risk Measures SS1](../math/risk-measures.md)     |
+| **CVaR**        | `{"cvar": {"alpha": ..., "lambda": ...}}` | Convex combination: $(1-\lambda)\mathbb{E}[\cdot] + \lambda \cdot \text{CVaR}_\alpha[\cdot]$. Sorting-based greedy weight allocation places maximum weight on worst-cost scenarios. | [Risk Measures SS3, SS7](../math/risk-measures.md) |
 
 ### 2.2 Configuration Mapping
 
-The `risk_measure` field appears per stage in `stages.json` (see [Input Scenarios §1.7](../data-model/input-scenarios.md)):
+The `risk_measure` field appears per stage in `stages.json` (see [Input Scenarios SS1.7](../data-model/input-scenarios.md)):
 
 ```json
 {
@@ -61,11 +61,11 @@ The `risk_measure` field appears per stage in `stages.json` (see [Input Scenario
 
 Each risk measure variant must provide two operations consumed by the training loop:
 
-1. **Cut aggregation** — Given $N_{\text{openings}}$ backward outcomes with their probabilities, produce a single set of cut coefficients $(\alpha, \pi)$. For Expectation, the weights are uniform. For CVaR, the weights are computed via the sorting-based greedy allocation from [Risk Measures §7](../math/risk-measures.md).
+1. **Cut aggregation** — Given $N_{\text{openings}}$ backward outcomes with their probabilities, produce a single set of cut coefficients $(\alpha, \pi)$. For Expectation, the weights are uniform. For CVaR, the weights are computed via the sorting-based greedy allocation from [Risk Measures SS7](../math/risk-measures.md).
 
 2. **Risk evaluation** — Given a set of cost values and probabilities, produce a scalar risk-adjusted cost. Used for convergence bound computation.
 
-> **Bound validity warning**: When CVaR is active, the first-stage LP objective is a convergence indicator only — it is NOT a valid lower bound. See [Risk Measures §10](../math/risk-measures.md).
+> **Bound validity warning**: When CVaR is active, the first-stage LP objective is a convergence indicator only — it is NOT a valid lower bound. See [Risk Measures SS10](../math/risk-measures.md).
 
 ### 2.5 Deferred Variants
 
@@ -79,8 +79,8 @@ The cut formulation determines the structure of cuts added to the FCF at each ba
 
 | Variant        | Status   | Behavior                                                                                                       | Math Reference                                   |
 | -------------- | -------- | -------------------------------------------------------------------------------------------------------------- | ------------------------------------------------ |
-| **Single-cut** | Current  | One aggregated cut per iteration per stage. $\theta \geq \bar{\alpha} + \bar{\pi}^\top x$.                     | [SDDP Algorithm §6.1](../math/sddp-algorithm.md) |
-| **Multi-cut**  | Deferred | One cut per opening per iteration. $\theta_\omega \geq \alpha(\omega) + \pi(\omega)^\top x$ for each $\omega$. | [Deferred Features §C.3](../deferred.md)         |
+| **Single-cut** | Current  | One aggregated cut per iteration per stage. $\theta \geq \bar{\alpha} + \bar{\pi}^\top x$.                     | [SDDP Algorithm SS6.1](../math/sddp-algorithm.md) |
+| **Multi-cut**  | Deferred | One cut per opening per iteration. $\theta_\omega \geq \alpha(\omega) + \pi(\omega)^\top x$ for each $\omega$. | [Deferred Features SSC.3](../deferred.md)         |
 
 ### 3.2 Configuration
 
@@ -94,12 +94,12 @@ The horizon mode determines stage traversal, terminal conditions, and discount f
 
 | Variant    | Config Trigger                                     | Behavior                                                                                                                                    | Math Reference                                   |
 | ---------- | -------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------ |
-| **Finite** | `policy_graph.type = "finite_horizon"` (or absent) | Linear chain $1 \to 2 \to \cdots \to T$. Terminal value $V_{T+1} = 0$. No cycle, no mandatory discount.                                     | [SDDP Algorithm §4.1](../math/sddp-algorithm.md) |
+| **Finite** | `policy_graph.type = "finite_horizon"` (or absent) | Linear chain $1 \to 2 \to \cdots \to T$. Terminal value $V_{T+1} = 0$. No cycle, no mandatory discount.                                     | [SDDP Algorithm SS4.1](../math/sddp-algorithm.md) |
 | **Cyclic** | `policy_graph.type = "cyclic"`                     | At least one transition creates a cycle (source_id > target_id or equal). Cut pools organized by season. Discount required for convergence. | [Infinite Horizon](../math/infinite-horizon.md)  |
 
 ### 4.2 Configuration Mapping
 
-The horizon mode is implicitly selected by the `policy_graph` structure in `stages.json` (see [Input Scenarios §1.2](../data-model/input-scenarios.md)):
+The horizon mode is implicitly selected by the `policy_graph` structure in `stages.json` (see [Input Scenarios SS1.2](../data-model/input-scenarios.md)):
 
 **Finite horizon:**
 
@@ -149,23 +149,23 @@ Each horizon mode variant must provide:
 3. **Discount factor** — The discount factor $d_{t \to t+1}$ for each transition. For finite horizon, this comes from the per-transition or global `annual_discount_rate` (may be 1.0 if undiscounted). For cyclic, the back-edge transition always applies the discount factor.
 4. **Validation** — Verify stage configuration is valid for the selected mode
 
-> **Forward pass termination in cyclic mode**: The forward pass simulates multiple cycles until the cumulative discount drops below a tolerance threshold or a `max_horizon_length` safety bound is reached. See [Infinite Horizon §6](../math/infinite-horizon.md).
+> **Forward pass termination in cyclic mode**: The forward pass simulates multiple cycles until the cumulative discount drops below a tolerance threshold or a `max_horizon_length` safety bound is reached. See [Infinite Horizon SS6](../math/infinite-horizon.md).
 
 ## 5. Sampling Scheme Variants
 
-The sampling scheme determines how the forward pass selects scenario realizations at each stage. This is the fourth abstraction point defined in [Training Loop §3.4](./training-loop.md).
+The sampling scheme determines how the forward pass selects scenario realizations at each stage. This is the fourth abstraction point defined in [Training Loop SS3.4](./training-loop.md).
 
 ### 5.1 Variant Table
 
 | Variant        | Config Value   | Forward Noise Source                       | Backward Noise Source                         | Math Reference                                     |
 | -------------- | -------------- | ------------------------------------------ | --------------------------------------------- | -------------------------------------------------- |
-| **InSample**   | `"in_sample"`  | Random index from fixed opening tree       | Same opening tree                             | [Scenario Generation §3](./scenario-generation.md) |
-| **External**   | `"external"`   | User-provided `external_scenarios.parquet` | Opening tree from PAR fitted to external data | [Scenario Generation §4](./scenario-generation.md) |
-| **Historical** | `"historical"` | `inflow_history.parquet` mapped to stages  | Opening tree from PAR fitted to history       | [Scenario Generation §3](./scenario-generation.md) |
+| **InSample**   | `"in_sample"`  | Random index from fixed opening tree       | Same opening tree                             | [Scenario Generation SS3](./scenario-generation.md) |
+| **External**   | `"external"`   | User-provided `external_scenarios.parquet` | Opening tree from PAR fitted to external data | [Scenario Generation SS4](./scenario-generation.md) |
+| **Historical** | `"historical"` | `inflow_history.parquet` mapped to stages  | Opening tree from PAR fitted to history       | [Scenario Generation SS3](./scenario-generation.md) |
 
 ### 5.2 Configuration Mapping
 
-The `scenario_source` field in `stages.json` (see [Input Scenarios §2.1](../data-model/input-scenarios.md)):
+The `scenario_source` field in `stages.json` (see [Input Scenarios SS2.1](../data-model/input-scenarios.md)):
 
 ```json
 { "scenario_source": { "sampling_scheme": "in_sample", "seed": 42 } }
@@ -195,7 +195,7 @@ The `scenario_source` field in `stages.json` (see [Input Scenarios §2.1](../dat
 
 ### 5.4 Key Invariant
 
-The backward pass always uses the fixed opening tree, regardless of the forward sampling scheme. The separation of forward and backward noise sources is fundamental to SDDP correctness — see [Scenario Generation §3.1](./scenario-generation.md).
+The backward pass always uses the fixed opening tree, regardless of the forward sampling scheme. The separation of forward and backward noise sources is fundamental to SDDP correctness — see [Scenario Generation SS3.1](./scenario-generation.md).
 
 ## 6. Variant Selection Pipeline
 
@@ -225,7 +225,7 @@ The risk measure is per-stage (step 3 produces a mapping from stage ID to risk m
 
 The per-stage risk measure requirement (§2.2) rules out pure compile-time monomorphization for the risk measure dimension. Enum dispatch is the natural fit for a small, fixed set of variants.
 
-> **Note**: The solver abstraction uses compile-time `cfg`-feature selection for the LP solver backend (CLP vs HiGHS) — see [Solver Abstraction §10](./solver-abstraction.md). The algorithm variant dispatch mechanism is a separate decision and need not use the same approach.
+> **Note**: The solver abstraction uses compile-time `cfg`-feature selection for the LP solver backend (CLP vs HiGHS) — see [Solver Abstraction SS10](./solver-abstraction.md). The algorithm variant dispatch mechanism is a separate decision and need not use the same approach.
 
 ## 8. Variant Composition Validation
 
@@ -235,7 +235,7 @@ Some variant combinations have specific interactions that require validation or 
 
 | Rule | Combination                             | Constraint                                                              | Rationale                                                                          |
 | ---- | --------------------------------------- | ----------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
-| X1   | CVaR + Cyclic horizon                   | Convergence indicator only (not a valid lower bound)                    | [Risk Measures §10](../math/risk-measures.md): risk-averse LB is not a valid bound |
+| X1   | CVaR + Cyclic horizon                   | Convergence indicator only (not a valid lower bound)                    | [Risk Measures SS10](../math/risk-measures.md): risk-averse LB is not a valid bound |
 | X2   | CVaR + Simulation stopping rule         | Simulation-based stopping must use risk-adjusted forward costs          | The upper bound estimate requires risk-adjusted evaluation                         |
 | X3   | External/Historical + Cyclic            | Forward pass cycle wrapping must handle external scenario index mapping | External scenarios may not align with cycle boundaries                             |
 | X4   | Any risk measure + Multi-cut (deferred) | Per-opening risk adjustment not applicable with multi-cut               | Multi-cut produces one cut per opening, bypassing risk aggregation                 |
@@ -253,17 +253,17 @@ When fields are omitted, the following defaults apply:
 
 ## Cross-References
 
-- [Training Loop §3](./training-loop.md) — Behavioral contracts for the four abstraction points that this spec maps variants to
-- [Training Loop §2](./training-loop.md) — Training orchestrator components and iteration lifecycle
-- [Risk Measures](../math/risk-measures.md) — Mathematical definitions: CVaR (§2), convex combination (§3), cut weight computation (§7), lower bound invalidity (§10)
-- [SDDP Algorithm §4](../math/sddp-algorithm.md) — Policy graph topologies (finite §4.1, cyclic §4.2)
-- [SDDP Algorithm §6](../math/sddp-algorithm.md) — Single-cut (§6.1) and multi-cut (§6.2) formulations
+- [Training Loop SS3](./training-loop.md) — Behavioral contracts for the four abstraction points that this spec maps variants to
+- [Training Loop SS2](./training-loop.md) — Training orchestrator components and iteration lifecycle
+- [Risk Measures](../math/risk-measures.md) — Mathematical definitions: CVaR (SS2), convex combination (SS3), cut weight computation (SS7), lower bound invalidity (SS10)
+- [SDDP Algorithm SS4](../math/sddp-algorithm.md) — Policy graph topologies (finite SS4.1, cyclic SS4.2)
+- [SDDP Algorithm SS6](../math/sddp-algorithm.md) — Single-cut (SS6.1) and multi-cut (SS6.2) formulations
 - [Infinite Horizon](../math/infinite-horizon.md) — Cyclic policy graph: periodic structure, cut sharing, forward/backward pass behavior, convergence
 - [Discount Rate](../math/discount-rate.md) — Discount factor mechanics for horizon modes
-- [Scenario Generation §3](./scenario-generation.md) — Sampling scheme abstraction, forward/backward noise source separation
-- [Input Scenarios §1.2](../data-model/input-scenarios.md) — `policy_graph` schema for horizon mode configuration
-- [Input Scenarios §1.7](../data-model/input-scenarios.md) — `risk_measure` field schema for per-stage risk configuration
-- [Input Scenarios §2.1](../data-model/input-scenarios.md) — `scenario_source` schema for sampling scheme configuration
-- [Configuration Reference §5, §6.2-§6.3](../configuration/configuration-reference.md) — Horizon mode, risk measure, and scenario source config tables
-- [Solver Abstraction §10](./solver-abstraction.md) — Compile-time solver selection (contrasted with algorithm variant dispatch)
+- [Scenario Generation SS3](./scenario-generation.md) — Sampling scheme abstraction, forward/backward noise source separation
+- [Input Scenarios SS1.2](../data-model/input-scenarios.md) — `policy_graph` schema for horizon mode configuration
+- [Input Scenarios SS1.7](../data-model/input-scenarios.md) — `risk_measure` field schema for per-stage risk configuration
+- [Input Scenarios SS2.1](../data-model/input-scenarios.md) — `scenario_source` schema for sampling scheme configuration
+- [Configuration Reference SS5, SS6.2-SS6.3](../configuration/configuration-reference.md) — Horizon mode, risk measure, and scenario source config tables
+- [Solver Abstraction SS10](./solver-abstraction.md) — Compile-time solver selection (contrasted with algorithm variant dispatch)
 - [Deferred Features](../deferred.md) — Multi-cut (C.3), Monte Carlo backward sampling (C.14)

@@ -48,12 +48,12 @@ Simulation behavior is configured via the `simulation` section of `config.json`.
 
 | Parameter       | Config Path                        | Description                                                           | Reference                                                              |
 | --------------- | ---------------------------------- | --------------------------------------------------------------------- | ---------------------------------------------------------------------- |
-| `enabled`       | `simulation.enabled`               | Whether the simulation phase executes after training                  | [CLI and Lifecycle §5.3](./cli-and-lifecycle.md)                       |
+| `enabled`       | `simulation.enabled`               | Whether the simulation phase executes after training                  | [CLI and Lifecycle SS5.3](./cli-and-lifecycle.md)                       |
 | `n_scenarios`   | `simulation.n_scenarios`           | Number of scenarios to evaluate                                       | [Configuration Reference](../configuration/configuration-reference.md) |
-| Sampling scheme | `scenario_source` in `stages.json` | How scenarios are selected (InSample, External, Historical)           | [Scenario Generation §3](./scenario-generation.md)                     |
+| Sampling scheme | `scenario_source` in `stages.json` | How scenarios are selected (InSample, External, Historical)           | [Scenario Generation SS3](./scenario-generation.md)                     |
 | Output detail   | `simulation.output_detail`         | Level of output granularity (summary, stage-level, full per-scenario) | [Output Schemas](../data-model/output-schemas.md)                      |
 
-The sampling scheme is defined in `stages.json` (not `config.json`) because it is a property of the stochastic model, not the solver. See [Configuration Reference §18.11](../configuration/configuration-reference.md).
+The sampling scheme is defined in `stages.json` (not `config.json`) because it is a property of the stochastic model, not the solver. See [Configuration Reference SS18.11](../configuration/configuration-reference.md).
 
 For the full `config.json` schema, see [Configuration Reference](../configuration/configuration-reference.md).
 
@@ -94,7 +94,7 @@ Before simulation begins, the system validates that the current input data is co
 
 Any mismatch results in a **hard error** — the simulation does not proceed with an incompatible policy.
 
-The full policy compatibility validation specification, including the metadata format persisted by training and the validation algorithm, is documented in [Deferred Features §C.9](../deferred.md).
+The full policy compatibility validation specification, including the metadata format persisted by training and the validation algorithm, is documented in [Deferred Features SSC.9](../deferred.md).
 
 ## 3. Simulation Execution
 
@@ -106,7 +106,7 @@ Simulation scenarios are distributed across MPI ranks using the same two-level w
 
 2. **Thread level — dynamic work-stealing.** Within each rank, scenarios are processed by a thread pool with dynamic work-stealing. Per-scenario costs are not uniform — LP solve time varies with noise realization, active constraints, and warm-start quality — so dynamic scheduling absorbs this variability.
 
-For details on the distribution strategy and NUMA-aware allocation, see [Scenario Generation §5](./scenario-generation.md).
+For details on the distribution strategy and NUMA-aware allocation, see [Scenario Generation SS5](./scenario-generation.md).
 
 ### 3.2 Per-Scenario Forward Pass
 
@@ -116,7 +116,7 @@ For each assigned scenario, the simulation executes a complete forward pass thro
 
 2. **For each stage $t = 1, \ldots, T$:**
 
-   a. **Realize uncertainties** — Obtain the stage realization from the configured sampling scheme. For InSample, sample from the opening tree. For External or Historical, use the external/historical values with noise inversion to obtain $\varepsilon$ values for the LP's AR dynamics constraint. See [Scenario Generation §3.2](./scenario-generation.md).
+   a. **Realize uncertainties** — Obtain the stage realization from the configured sampling scheme. For InSample, sample from the opening tree. For External or Historical, use the external/historical values with noise inversion to obtain $\varepsilon$ values for the LP's AR dynamics constraint. See [Scenario Generation SS3.2](./scenario-generation.md).
 
    b. **Build stage LP** — Construct the LP with the current state, realized uncertainties, and all FCF cuts accumulated during training. The LP includes the block structure for this stage (parallel or chronological, per-stage definition). See [Block Formulations](../math/block-formulations.md).
 
@@ -124,7 +124,7 @@ For each assigned scenario, the simulation executes a complete forward pass thro
 
    d. **Apply non-convex refinements** — If non-convex extensions are configured (see §5), refine the LP solution through post-processing.
 
-   e. **Extract results** — Record stage-level outputs: generation, storage, flows, costs, violations, marginal values. See [Output Schemas §5](../data-model/output-schemas.md) for column definitions.
+   e. **Extract results** — Record stage-level outputs: generation, storage, flows, costs, violations, marginal values. See [Output Schemas SS5](../data-model/output-schemas.md) for column definitions.
 
    f. **Propagate state** — Extract end-of-stage storage volumes and updated inflow lag buffer as the initial state for stage $t+1$.
 
@@ -153,7 +153,7 @@ CVaR computation requires all individual scenario costs (for sorting and tail av
 
 ### 4.2 Per-Category Cost Statistics
 
-In addition to aggregate cost statistics, the simulation reports mean cost broken down by the cost categories defined in [Penalty System §2](../data-model/penalty-system.md). This allows the user to understand the composition of total cost and diagnose policy behavior.
+In addition to aggregate cost statistics, the simulation reports mean cost broken down by the cost categories defined in [Penalty System SS2](../data-model/penalty-system.md). This allows the user to understand the composition of total cost and diagnose policy behavior.
 
 | Category                           | Components Summed                                                                                                            |
 | ---------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
@@ -169,7 +169,7 @@ For each category, the simulation computes:
 - **Maximum** across all scenarios (identifies worst-case contributors)
 - **Frequency** — fraction of scenarios where the category cost is non-zero (particularly relevant for deficit and constraint violations)
 
-These statistics are computed from the gathered cost arrays on rank 0 alongside the aggregate statistics in §4.1. The per-scenario, per-stage cost breakdown is always available in the detailed output files — see [Output Schemas §5.1](../data-model/output-schemas.md) for the full column definitions.
+These statistics are computed from the gathered cost arrays on rank 0 alongside the aggregate statistics in SS4.1. The per-scenario, per-stage cost breakdown is always available in the detailed output files — see [Output Schemas SS5.1](../data-model/output-schemas.md) for the full column definitions.
 
 ### 4.3 Operational Statistics
 
@@ -197,8 +197,8 @@ All non-convex extensions are **deferred**. This section documents _what_ they a
 
 | Feature                 | Why Simulation-Only                                             | Status   | Reference                                |
 | ----------------------- | --------------------------------------------------------------- | -------- | ---------------------------------------- |
-| Linearized head model   | Bilinear dependency (head × flow) changes LP between iterations | Deferred | [Deferred Features §C.6](../deferred.md) |
-| Thermal unit commitment | Binary on/off variables incompatible with LP relaxation         | Deferred | [Deferred Features §C.1](../deferred.md) |
+| Linearized head model   | Bilinear dependency (head × flow) changes LP between iterations | Deferred | [Deferred Features SSC.6](../deferred.md) |
+| Thermal unit commitment | Binary on/off variables incompatible with LP relaxation         | Deferred | [Deferred Features SSC.1](../deferred.md) |
 | Minimum generation      | Big-M or indicator constraints break LP convexity               | Deferred | —                                        |
 | Startup/shutdown costs  | Multi-period linking constraints across blocks                  | Deferred | —                                        |
 
@@ -227,7 +227,7 @@ The amount of data written per scenario depends on the configured output detail 
 | Stage-level  | Per-stage aggregates (cost, deficit, storage) | Storage trajectory analysis     |
 | Full         | Per-scenario, per-stage, per-entity detail    | Detailed operational analysis   |
 
-For the complete column definitions at each detail level, see [Output Schemas §5](../data-model/output-schemas.md).
+For the complete column definitions at each detail level, see [Output Schemas SS5](../data-model/output-schemas.md).
 
 ### 6.3 Distributed Output
 
@@ -235,12 +235,12 @@ Each MPI rank writes its simulation results independently using **per-rank outpu
 
 The output uses Hive-style partitioning by `scenario_id`, where each rank writes exclusively to the partitions corresponding to its assigned scenarios. No coordination between ranks is needed during writing — the partition assignment is determined by the deterministic scenario distribution (§3.1).
 
-After all ranks complete, rank 0 writes the simulation manifest (`_manifest.json`) with checksums, row counts, and partition listings. The `_SUCCESS` marker file is written atomically on successful completion. See [Output Infrastructure §1.1](../data-model/output-infrastructure.md).
+After all ranks complete, rank 0 writes the simulation manifest (`_manifest.json`) with checksums, row counts, and partition listings. The `_SUCCESS` marker file is written atomically on successful completion. See [Output Infrastructure SS1.1](../data-model/output-infrastructure.md).
 
 ## Cross-References
 
-- [CLI and Lifecycle](./cli-and-lifecycle.md) — Execution phases and conditional simulation mode (§5.3)
-- [Scenario Generation](./scenario-generation.md) — Sampling scheme abstraction (§3), scenario distribution (§5), noise inversion for external scenarios (§4.3)
+- [CLI and Lifecycle](./cli-and-lifecycle.md) — Execution phases and conditional simulation mode (SS5.3)
+- [Scenario Generation](./scenario-generation.md) — Sampling scheme abstraction (SS3), scenario distribution (SS5), noise inversion for external scenarios (SS4.3)
 - [Training Loop](./training-loop.md) — Training phase that produces the policy evaluated by simulation
 - [Block Formulations](../math/block-formulations.md) — Block structure (parallel/chronological) within simulation LP stages
 - [Risk Measures](../math/risk-measures.md) — CVaR computation for simulation cost statistics
@@ -248,7 +248,7 @@ After all ranks complete, rank 0 writes the simulation manifest (`_manifest.json
 - [LP Formulation](../math/lp-formulation.md) — Stage LP construction shared between training and simulation
 - [Output Schemas](../data-model/output-schemas.md) — Parquet column definitions for all simulation output files
 - [Output Infrastructure](../data-model/output-infrastructure.md) — Manifests, MPI partitioning, crash recovery
-- [Deferred Features §C.1](../deferred.md) — GNL / thermal unit commitment (simulation-only MIP)
-- [Deferred Features §C.6](../deferred.md) — FPHA enhancements including head-dependent refinement
-- [Deferred Features §C.9](../deferred.md) — Policy compatibility validation specification
-- [Deferred Features §C.13](../deferred.md) — Alternative forward pass model (simulation-only LP in training)
+- [Deferred Features SSC.1](../deferred.md) — GNL / thermal unit commitment (simulation-only MIP)
+- [Deferred Features SSC.6](../deferred.md) — FPHA enhancements including head-dependent refinement
+- [Deferred Features SSC.9](../deferred.md) — Policy compatibility validation specification
+- [Deferred Features SSC.13](../deferred.md) — Alternative forward pass model (simulation-only LP in training)

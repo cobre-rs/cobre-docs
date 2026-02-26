@@ -86,7 +86,7 @@ The solver abstraction separates concerns into four layers:
 │  │                    Stage LP Template (Data Holder)                    │  │
 │  │  - Pre-assembled structural LP in CSC form (built once per stage)     │  │
 │  │  - Solver-agnostic problem representation                             │  │
-│  │  - Row/column layout follows §2 convention                            │  │
+│  │  - Row/column layout follows SS2 convention                            │  │
 │  └───────────────────────────────────────────────────────────────────────┘  │
 │                                    │                                        │
 │                                    ▼                                        │
@@ -224,7 +224,7 @@ An activity bitmap tracks which slots are currently active. The count of active 
 
 A Benders cut has the form: $\theta \geq \alpha + \boldsymbol{\pi}' \mathbf{x}$, where $\theta$ is the future cost variable, $\alpha$ is the cut intercept, $\boldsymbol{\pi}$ is the vector of cut coefficients, and $\mathbf{x}$ is the state vector. Rearranging to standard LP row form: $\theta - \boldsymbol{\pi}' \mathbf{x} \geq \alpha$.
 
-For details on cut generation and selection, see [Cut Management](../math/cut-management.md). For the in-memory layout requirements (contiguous dense coefficients, CSR-friendly, cache-aligned), see [Binary Formats §3.4](../data-model/binary-formats.md).
+For details on cut generation and selection, see [Cut Management](../math/cut-management.md). For the in-memory layout requirements (contiguous dense coefficients, CSR-friendly, cache-aligned), see [Binary Formats SS3.4](../data-model/binary-formats.md).
 
 ### 5.4 How Active Cuts Enter the Solver LP
 
@@ -322,7 +322,7 @@ A basis consists of one status value per column (variable) and one per row (cons
 **Key design decisions:**
 
 - Bases are stored in the **original problem space** (not presolved), ensuring portability across solver versions and presolve strategies
-- The forward pass basis at each stage is retained for warm-starting the backward pass at the same stage (see [Training Loop §4.4](./training-loop.md))
+- The forward pass basis at each stage is retained for warm-starting the backward pass at the same stage (see [Training Loop SS4.4](./training-loop.md))
 - Basis storage uses compact representation (one byte per variable/constraint)
 - Basis structure splits naturally at the cut boundary per §2.3: structural rows are position-stable, cut rows are appended/truncated
 
@@ -359,7 +359,7 @@ Memory constraints prevent keeping all stage LPs with their full cut sets reside
 4. **Warm-start** — Apply the cached basis from the previous iteration's solve at this stage (structural rows reused directly, new cut rows set to Basic per §2.3).
 5. **Solve** — Solve the LP.
 
-See [Binary Formats §3, §A](../data-model/binary-formats.md) for the full analysis, memory estimates, and solver API survey that informed the Option A decision. For quantified analysis of the cut loading cost (which dominates stage transitions at production scale) and two-level storage considerations, see [Solver Workspaces §1.10](./solver-workspaces.md).
+See [Binary Formats SS3, SSA](../data-model/binary-formats.md) for the full analysis, memory estimates, and solver API survey that informed the Option A decision. For quantified analysis of the cut loading cost (which dominates stage transitions at production scale) and two-level storage considerations, see [Solver Workspaces SS1.10](./solver-workspaces.md).
 
 ### 11.3 Solver-Specific Optimization Paths
 
@@ -392,7 +392,7 @@ This is significantly faster than a full rebuild and is the common case in the b
 - [LP Formulation](../math/lp-formulation.md) — Constraint structure that the solver operates on
 - [Cut Management](../math/cut-management.md) — How cuts are generated; this spec handles how they are stored in the cut pool and loaded into the solver LP
 - [Training Loop](./training-loop.md) — Forward pass (parallel solve) and backward pass (cut addition) that drive solver invocations
-- [Binary Formats](../data-model/binary-formats.md) — FlatBuffers schema for cut persistence, cut pool memory layout (§3.4), LP rebuild strategy analysis (§3, §A)
+- [Binary Formats](../data-model/binary-formats.md) — FlatBuffers schema for cut persistence, cut pool memory layout (SS3.4), LP rebuild strategy analysis (SS3, SSA)
 - [Internal Structures](../data-model/internal-structures.md) — Logical in-memory data model from which stage templates are built
 - [Hybrid Parallelism](../hpc/hybrid-parallelism.md) — OpenMP threading model that requires thread-local solvers
 - [Memory Architecture](../hpc/memory-architecture.md) — NUMA-aware allocation for solver workspaces

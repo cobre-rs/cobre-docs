@@ -64,7 +64,7 @@ Each step in the iteration lifecycle (§2.1) emits a typed event to the shared e
 | `SimulationProgress` | Simulation batch completion | scenarios_complete, scenarios_total, elapsed_ms                         |
 | `SimulationFinished` | Simulation completion       | scenarios, output_dir, elapsed_ms                                       |
 
-The event channel uses an `Option<broadcast::Sender<TrainingEvent>>` pattern: when `None`, no events are emitted (zero overhead for library-mode callers). When `Some(sender)`, events are emitted at each step boundary. Consumers are additive -- multiple can subscribe simultaneously. See [Convergence Monitoring §4.1](./convergence-monitoring.md) for the JSON-lines schema, [Terminal UI](../interfaces/terminal-ui.md) for TUI consumption, and [MCP Server](../interfaces/mcp-server.md) for MCP progress notifications.
+The event channel uses an `Option<broadcast::Sender<TrainingEvent>>` pattern: when `None`, no events are emitted (zero overhead for library-mode callers). When `Some(sender)`, events are emitted at each step boundary. Consumers are additive -- multiple can subscribe simultaneously. See [Convergence Monitoring SS4.1](./convergence-monitoring.md) for the JSON-lines schema, [Terminal UI](../interfaces/terminal-ui.md) for TUI consumption, and [MCP Server](../interfaces/mcp-server.md) for MCP progress notifications.
 
 ### 2.2 Termination Conditions
 
@@ -98,7 +98,7 @@ The risk measure can vary by stage (configured per stage in `stages.json`).
 Determines the structure of cuts added to the FCF:
 
 - **Single-cut** (current) — One aggregated cut per iteration per stage. The future cost variable $\theta$ receives a single constraint per backward pass evaluation.
-- **Multi-cut** (deferred) — One cut per opening per iteration. See [Deferred Features §C.3](../deferred.md).
+- **Multi-cut** (deferred) — One cut per opening per iteration. See [Deferred Features SSC.3](../deferred.md).
 
 ### 3.3 Horizon Mode
 
@@ -107,11 +107,11 @@ Determines stage traversal and terminal conditions:
 - **Finite horizon** — Linear chain $1 \to 2 \to \cdots \to T$. Terminal value $V_{T+1} = 0$.
 - **Cyclic** — Stage $T$ transitions back to a cycle start stage. Requires discount factor $d < 1$ for convergence. Cuts at equivalent cycle positions are shared.
 
-See [SDDP Algorithm §4](../math/sddp-algorithm.md) and [Infinite Horizon](../math/infinite-horizon.md).
+See [SDDP Algorithm SS4](../math/sddp-algorithm.md) and [Infinite Horizon](../math/infinite-horizon.md).
 
 ### 3.4 Sampling Scheme
 
-Determines how the forward pass selects scenario realizations. This is one of three orthogonal SDDP concerns formalized in [Scenario Generation §3](./scenario-generation.md):
+Determines how the forward pass selects scenario realizations. This is one of three orthogonal SDDP concerns formalized in [Scenario Generation SS3](./scenario-generation.md):
 
 | Scheme       | Forward Noise Source                       | Description                                                    |
 | ------------ | ------------------------------------------ | -------------------------------------------------------------- |
@@ -119,7 +119,7 @@ Determines how the forward pass selects scenario realizations. This is one of th
 | `External`   | User-provided `external_scenarios.parquet` | Draw from external data (random or sequential selection)       |
 | `Historical` | `inflow_history.parquet` mapped to stages  | Replay historical inflow sequences in order                    |
 
-The backward pass noise source is **always** the fixed opening tree, regardless of the forward sampling scheme. This separation means the forward and backward passes may use different noise distributions — see [Scenario Generation §3.1](./scenario-generation.md).
+The backward pass noise source is **always** the fixed opening tree, regardless of the forward sampling scheme. This separation means the forward and backward passes may use different noise distributions — see [Scenario Generation SS3.1](./scenario-generation.md).
 
 ## 4. Forward Pass
 
@@ -134,13 +134,13 @@ The forward pass simulates $M$ independent scenario trajectories through the ful
 
 For each forward trajectory:
 
-1. **Initialize** — Start from the known initial state $x_0$: initial storage volumes from [Input Constraints §1](../data-model/input-constraints.md) and inflow lag values from historical data or pre-study stages
+1. **Initialize** — Start from the known initial state $x_0$: initial storage volumes from [Input Constraints SS1](../data-model/input-constraints.md) and inflow lag values from historical data or pre-study stages
 2. **Stage loop** ($t = 1, \ldots, T$):
    a. **Select scenario realization** — The sampling scheme selects the noise vector for this stage:
    - _InSample_: Sample random index $j$ from the opening tree, retrieve noise vector $\eta_{t,j}$
-   - _External_: Select scenario from external data (by random sampling or sequential iteration). The external inflow values are **inverted to noise terms** via the PAR model (see [Scenario Generation §3.2](./scenario-generation.md))
+   - _External_: Select scenario from external data (by random sampling or sequential iteration). The external inflow values are **inverted to noise terms** via the PAR model (see [Scenario Generation SS3.2](./scenario-generation.md))
    - _Historical_: Look up historical inflow for this stage. The historical values are similarly inverted to noise terms
-     b. **Compute inflows and fix noise** — The PAR model evaluates with the selected noise to produce inflow values. The noise terms $\varepsilon_{h,t}$ (whether sampled, inverted from external data, or inverted from historical data) are fixed into the LP via fixing constraints on the AR dynamics equation — the LP always receives noise, never raw inflow values directly (see [Scenario Generation §3.2](./scenario-generation.md))
+     b. **Compute inflows and fix noise** — The PAR model evaluates with the selected noise to produce inflow values. The noise terms $\varepsilon_{h,t}$ (whether sampled, inverted from external data, or inverted from historical data) are fixed into the LP via fixing constraints on the AR dynamics equation — the LP always receives noise, never raw inflow values directly (see [Scenario Generation SS3.2](./scenario-generation.md))
      c. **Build stage LP** — Construct the stage LP with incoming state $\hat{x}_{t-1}$, scenario realization, and all current FCF cuts as constraints on $\theta$
      d. **Solve** — Solve the LP. Feasibility is guaranteed by the recourse slack system (see [Penalty System](../data-model/penalty-system.md))
      e. **Record** — Store the stage cost and the end-of-stage state $\hat{x}_t$ (storage volumes and updated AR lags)
@@ -179,12 +179,12 @@ The state vector carries all information needed to transition between stages and
 | Storage volumes | $N_{\text{hydro}}$ | End-of-stage storage from LP solution ($v_{h,T_k}$) |
 | AR inflow lags  | $\sum_h P_h$       | Updated lag buffer after inflow computation         |
 
-Future extensions (batteries, GNL pipeline) may add additional state dimensions — see [SDDP Algorithm §5](../math/sddp-algorithm.md).
+Future extensions (batteries, GNL pipeline) may add additional state dimensions — see [SDDP Algorithm SS5](../math/sddp-algorithm.md).
 
 ### 5.2 State Lifecycle
 
 1. **Initialization** — The initial state $x_0$ is constructed from:
-   - Storage: initial reservoir volumes from `initial_conditions.json` (see [Input Constraints §1](../data-model/input-constraints.md))
+   - Storage: initial reservoir volumes from `initial_conditions.json` (see [Input Constraints SS1](../data-model/input-constraints.md))
    - AR lags: historical inflow values from `inflow_history.parquet` or pre-study stages in `stages.json`, ordered newest-first (lag 1 = most recent)
 
 2. **Update** — At each stage, the state is updated in two steps:
@@ -203,7 +203,7 @@ The backward pass improves the FCF by generating new Benders cuts. It walks stag
 
 At each stage $t$, for each trial point $\hat{x}_{t-1}$ collected during the forward pass:
 
-1. **Retrieve openings** — Get all $N_{\text{openings}}$ noise vectors for stage $t$ from the fixed opening tree (see [Scenario Generation §2.3](./scenario-generation.md)). This is the **Complete** backward sampling scheme — all openings are always evaluated. A deferred `MonteCarlo(n)` variant would sample a subset; see [Deferred Features §C.14](../deferred.md).
+1. **Retrieve openings** — Get all $N_{\text{openings}}$ noise vectors for stage $t$ from the fixed opening tree (see [Scenario Generation SS2.3](./scenario-generation.md)). This is the **Complete** backward sampling scheme — all openings are always evaluated. A deferred `MonteCarlo(n)` variant would sample a subset; see [Deferred Features SSC.14](../deferred.md).
 
 2. **Evaluate each opening** — For each noise vector $\eta_{t,j}$ ($j = 0, \ldots, N_{\text{openings}} - 1$):
    a. Compute realized inflows via the PAR model with the trial state's lag buffer and the opening's noise vector
@@ -211,7 +211,7 @@ At each stage $t$, for each trial point $\hat{x}_{t-1}$ collected during the for
    c. Solve the LP and extract:
    - Objective value $Q_t(\hat{x}_{t-1}, \omega_j)$
    - Dual variables of state-linking constraints (water balance for storage, fixing constraints for AR lags)
-   - For hydros using FPHA, the FPHA hyperplane duals also contribute to storage cut coefficients (see [Cut Management §2](../math/cut-management.md))
+   - For hydros using FPHA, the FPHA hyperplane duals also contribute to storage cut coefficients (see [Cut Management SS2](../math/cut-management.md))
 
 3. **Aggregate into cut** — The risk measure aggregates the per-opening outcomes into a single cut:
    - Probabilities are uniform: $p(\omega_j) = 1/N_{\text{openings}}$
@@ -268,7 +268,7 @@ The cut coefficients are derived from the dual variables of the backward LP's st
 
 - **Storage**: The water balance constraint links incoming storage $v_{h,t-1}$ to outgoing storage. Its dual $\pi^v_h$ is the cut coefficient, representing the marginal value of an additional unit of storage at the previous stage.
 - **AR inflow lags**: The lag fixing constraints bind each lag variable to its incoming value. Their duals $\pi^a_{h,\ell}$ are the cut coefficients, representing the marginal value of inflow history.
-- **FPHA duals**: For hydros using FPHA, the hyperplane constraint duals contribute additional terms to $\pi^v_h$ because the FPHA planes depend on storage (head). See [Cut Management §2](../math/cut-management.md).
+- **FPHA duals**: For hydros using FPHA, the hyperplane constraint duals contribute additional terms to $\pi^v_h$ because the FPHA planes depend on storage (head). See [Cut Management SS2](../math/cut-management.md).
 - **Generic constraint duals**: When generic constraints involve state variables, their duals also contribute to cut coefficients. The mapping from generic constraint duals to state variable coefficients is static (determined at input loading time) and should be precomputed once. See [Cut Management Implementation](./cut-management-impl.md).
 
 The intercept $\alpha$ is computed from the LP objective value and the state-dependent terms:
@@ -299,9 +299,9 @@ The active count is used by cut selection strategies to prune dominated or inact
 - [Work Distribution](../hpc/work-distribution.md) — Detailed communication+OpenMP parallelism patterns for forward and backward pass distribution
 - [Convergence Monitoring](./convergence-monitoring.md) — Convergence criteria, bound computation, and stopping rules applied within this loop
 - [Input Loading Pipeline](./input-loading-pipeline.md) — How case data and warm-start policy cuts are loaded before training begins
-- [Input Constraints](../data-model/input-constraints.md) — Initial conditions (§1) that provide the starting state $x_0$
-- [Input Scenarios](../data-model/input-scenarios.md) — Scenario source configuration (§2.1), external scenarios (§2.5)
-- [Scenario Generation](./scenario-generation.md) — Sampling scheme abstraction (§3), fixed opening tree lifecycle (§2.3), external scenario integration (§4)
+- [Input Constraints](../data-model/input-constraints.md) — Initial conditions (SS1) that provide the starting state $x_0$
+- [Input Scenarios](../data-model/input-scenarios.md) — Scenario source configuration (SS2.1), external scenarios (SS2.5)
+- [Scenario Generation](./scenario-generation.md) — Sampling scheme abstraction (SS3), fixed opening tree lifecycle (SS2.3), external scenario integration (SS4)
 - [Penalty System](../data-model/penalty-system.md) — Recourse slacks guaranteeing LP feasibility
 - [Solver Abstraction](./solver-abstraction.md) — Solver interface and LP construction
 - [Solver Workspaces](./solver-workspaces.md) — Solver state management, basis persistence, and warm-starting

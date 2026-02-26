@@ -2,13 +2,13 @@
 
 ## Purpose
 
-This spec defines the `HorizonMode` abstraction -- the enum-based trait through which the SDDP training loop determines stage traversal order, successor transitions with associated probabilities and discount factors, terminal conditions, forward pass termination logic, and cut pool organization. The horizon mode is a global property of the training run (one mode per execution), derived from the `policy_graph` field in `stages.json` ([Input Scenarios §1.2](../data-model/input-scenarios.md)). Unlike the risk measure (which varies per stage), the horizon mode governs the structural topology of the entire policy graph, so a single enum value suffices for the full run. The two supported modes -- Finite and Cyclic -- correspond to the acyclic and infinite periodic horizon topologies described in [SDDP Algorithm §4](../math/sddp-algorithm.md) and [Infinite Horizon](../math/infinite-horizon.md).
+This spec defines the `HorizonMode` abstraction -- the enum-based trait through which the SDDP training loop determines stage traversal order, successor transitions with associated probabilities and discount factors, terminal conditions, forward pass termination logic, and cut pool organization. The horizon mode is a global property of the training run (one mode per execution), derived from the `policy_graph` field in `stages.json` ([Input Scenarios SS1.2](../data-model/input-scenarios.md)). Unlike the risk measure (which varies per stage), the horizon mode governs the structural topology of the entire policy graph, so a single enum value suffices for the full run. The two supported modes -- Finite and Cyclic -- correspond to the acyclic and infinite periodic horizon topologies described in [SDDP Algorithm SS4](../math/sddp-algorithm.md) and [Infinite Horizon](../math/infinite-horizon.md).
 
 > **Convention: Rust traits as specification guidelines.** The Rust trait definitions, method signatures, and struct declarations throughout this specification corpus serve as _guidelines for implementation_, not as absolute source-of-truth contracts that must be reproduced verbatim. Their purpose is twofold: (1) to express behavioral contracts, preconditions, postconditions, and type-level invariants more precisely than prose alone, and (2) to anchor conformance test suites that verify backend interchangeability (see [Backend Testing §1](../hpc/backend-testing.md)). Implementation may diverge in naming, parameter ordering, error representation, or internal organization when practical considerations demand it -- provided the behavioral contracts and conformance tests continue to pass. When a trait signature and a prose description conflict, the prose description (which captures the domain intent) takes precedence; the conflict should be resolved by updating the trait signature. This convention applies to all trait-bearing specification documents in `src/specs/`.
 
 ## 1. Trait Definition
 
-The horizon mode is modeled as a flat enum with two variants, matching the two horizon types supported by Cobre ([Extension Points §4.1](./extension-points.md)):
+The horizon mode is modeled as a flat enum with two variants, matching the two horizon types supported by Cobre ([Extension Points SS4.1](./extension-points.md)):
 
 ```rust
 /// Horizon mode controlling stage traversal, terminal conditions,
@@ -16,7 +16,7 @@ The horizon mode is modeled as a flat enum with two variants, matching the two h
 ///
 /// A single `HorizonMode` value is resolved from the `policy_graph`
 /// field in `stages.json` during configuration loading (see
-/// Extension Points §6). The enum is global to the training run --
+/// Extension Points SS6). The enum is global to the training run --
 /// all stages share the same horizon mode.
 #[derive(Debug, Clone)]
 pub enum HorizonMode {
@@ -27,7 +27,7 @@ pub enum HorizonMode {
     /// applied via `annual_discount_rate`). Each stage has a unique cut
     /// pool indexed by stage ID.
     ///
-    /// See [SDDP Algorithm §4.1](../math/sddp-algorithm.md).
+    /// See [SDDP Algorithm SS4.1](../math/sddp-algorithm.md).
     Finite {
         /// Precomputed transitions from `policy_graph.transitions`.
         /// Each entry maps source_id → Vec<(target_id, probability, discount_factor)>.
@@ -73,7 +73,7 @@ The `TransitionMap` type is defined in SS3.
 
 ## 2. Method Contracts
 
-The four operations from [Extension Points §4.4](./extension-points.md) are formalized below.
+The four operations from [Extension Points SS4.4](./extension-points.md) are formalized below.
 
 ### 2.1 successors
 
@@ -104,7 +104,7 @@ pub struct Successor {
     /// Discount factor d_{source → target} for this transition.
     /// Derived from `annual_discount_rate` and stage duration,
     /// or from a per-transition override.
-    /// See [Discount Rate §3](../math/discount-rate.md).
+    /// See [Discount Rate SS3](../math/discount-rate.md).
     pub discount_factor: f64,
 }
 ```
@@ -114,7 +114,7 @@ pub struct Successor {
 | Condition                          | Description                                                                                                     |
 | ---------------------------------- | --------------------------------------------------------------------------------------------------------------- |
 | `stage_id` exists in the stage set | The stage ID was loaded from `stages.json` and passed validation                                                |
-| Transitions have been precomputed  | `HorizonMode` was constructed via the variant selection pipeline ([Extension Points §6](./extension-points.md)) |
+| Transitions have been precomputed  | `HorizonMode` was constructed via the variant selection pipeline ([Extension Points SS6](./extension-points.md)) |
 
 **Postconditions:**
 
@@ -165,7 +165,7 @@ impl HorizonMode {
 
 ### 2.3 discount_factor
 
-`discount_factor` returns the per-transition discount factor $d_{s \to t}$ between a source stage and a target stage. The discount factor is derived from the `annual_discount_rate` (global or per-transition override) and the source stage's duration, following the conversion formula in [Discount Rate §3](../math/discount-rate.md):
+`discount_factor` returns the per-transition discount factor $d_{s \to t}$ between a source stage and a target stage. The discount factor is derived from the `annual_discount_rate` (global or per-transition override) and the source stage's duration, following the conversion formula in [Discount Rate SS3](../math/discount-rate.md):
 
 $$
 d_{s \to t} = \frac{1}{(1 + r_{\text{annual}})^{\Delta t_s}}
@@ -180,7 +180,7 @@ impl HorizonMode {
     ///
     /// The discount factor is applied to the future cost variable θ in
     /// the stage subproblem objective: c_t + d_{t→t+1} · θ.
-    /// See [Discount Rate §4](../math/discount-rate.md).
+    /// See [Discount Rate SS4](../math/discount-rate.md).
     pub fn discount_factor(&self, source: usize, target: usize) -> f64 {
         todo!()
     }
@@ -208,7 +208,7 @@ impl HorizonMode {
 
 ### 2.4 validate
 
-`validate` verifies that the stage configuration is valid for the selected horizon mode. It enforces rules H1-H4 from [Extension Points §4.3](./extension-points.md) and returns structured errors for each violated rule. This method is called once during the variant selection pipeline ([Extension Points §6](./extension-points.md), step 5) -- never during training.
+`validate` verifies that the stage configuration is valid for the selected horizon mode. It enforces rules H1-H4 from [Extension Points SS4.3](./extension-points.md) and returns structured errors for each violated rule. This method is called once during the variant selection pipeline ([Extension Points SS6](./extension-points.md), step 5) -- never during training.
 
 ```rust
 impl HorizonMode {
@@ -273,7 +273,7 @@ pub enum ValidationError {
 
 ### 3.1 PolicyGraphConfig
 
-`PolicyGraphConfig` represents the deserialized form of the `policy_graph` field in `stages.json` ([Input Scenarios §1.2](../data-model/input-scenarios.md)). It maps directly to the JSON schema:
+`PolicyGraphConfig` represents the deserialized form of the `policy_graph` field in `stages.json` ([Input Scenarios SS1.2](../data-model/input-scenarios.md)). It maps directly to the JSON schema:
 
 ```rust
 /// Configuration representation of the policy graph, matching the
@@ -330,7 +330,7 @@ pub type TransitionMap = HashMap<usize, Vec<Successor>>;
 
 ### 3.3 Season Mapping (Cyclic Mode)
 
-For cyclic mode, the season function $\tau(t) = (t - 1) \bmod P + 1$ from [Infinite Horizon §2](../math/infinite-horizon.md) maps absolute stage IDs to season indices. This mapping determines which cut pool a stage reads from and writes to.
+For cyclic mode, the season function $\tau(t) = (t - 1) \bmod P + 1$ from [Infinite Horizon SS2](../math/infinite-horizon.md) maps absolute stage IDs to season indices. This mapping determines which cut pool a stage reads from and writes to.
 
 ```rust
 impl HorizonMode {
@@ -341,7 +341,7 @@ impl HorizonMode {
     /// computed as τ(t) = (t - cycle_start) mod P + 1, where P
     /// is the cycle_length.
     ///
-    /// See [Infinite Horizon §2](../math/infinite-horizon.md).
+    /// See [Infinite Horizon SS2](../math/infinite-horizon.md).
     pub fn season(&self, stage_id: usize) -> usize {
         todo!()
     }
@@ -354,15 +354,15 @@ The horizon mode uses **enum dispatch** -- a `match` on the `HorizonMode` varian
 
 **Why global, not per-stage:** The horizon mode determines the graph structure -- whether stages form an acyclic chain or a cycle. This is inherently a global property: either the graph has a cycle or it does not. Unlike the risk measure (where stage 0 might use CVaR while stage 1 uses Expectation), the horizon mode applies uniformly to all stages. A "per-stage horizon mode" would be semantically incoherent -- a stage cannot be simultaneously in a finite chain and in a cycle.
 
-**Why enum dispatch, not compile-time monomorphization:** Although the horizon mode is global (making monomorphization technically feasible), enum dispatch is preferred for consistency with the other abstraction points ([Extension Points §7](./extension-points.md)). The match overhead is negligible: `successors` and `is_terminal` are called once per stage per forward/backward pass iteration. At production scale (120 stages, 200 iterations), this is ~48,000 match dispatches per training run -- vanishingly small compared to the LP solve cost.
+**Why enum dispatch, not compile-time monomorphization:** Although the horizon mode is global (making monomorphization technically feasible), enum dispatch is preferred for consistency with the other abstraction points ([Extension Points SS7](./extension-points.md)). The match overhead is negligible: `successors` and `is_terminal` are called once per stage per forward/backward pass iteration. At production scale (120 stages, 200 iterations), this is ~48,000 match dispatches per training run -- vanishingly small compared to the LP solve cost.
 
-**Why not trait objects:** The variant set is closed (Finite and Cyclic only, with no additional variants planned). Trait objects add indirection cost without extensibility benefit. The enum approach avoids heap allocation and is consistent with the `RiskMeasure` dispatch pattern ([Risk Measure Trait §4](./risk-measure-trait.md)).
+**Why not trait objects:** The variant set is closed (Finite and Cyclic only, with no additional variants planned). Trait objects add indirection cost without extensibility benefit. The enum approach avoids heap allocation and is consistent with the `RiskMeasure` dispatch pattern ([Risk Measure Trait SS4](./risk-measure-trait.md)).
 
 ## 5. Forward Pass Termination
 
 In finite horizon, the forward pass terminates naturally when it reaches a terminal stage ($V_{T+1} = 0$). In cyclic horizon, there is no terminal stage -- the forward pass must be explicitly terminated to avoid infinite traversal.
 
-The cyclic forward pass termination logic follows [Infinite Horizon §6](../math/infinite-horizon.md). At each stage $t$ along the forward trajectory, the cumulative discount factor from the trajectory start is tracked:
+The cyclic forward pass termination logic follows [Infinite Horizon SS6](../math/infinite-horizon.md). At each stage $t$ along the forward trajectory, the cumulative discount factor from the trajectory start is tracked:
 
 $$
 d_{1 \to t} = \prod_{s=1}^{t-1} d_{s \to s+1}
@@ -415,7 +415,7 @@ impl HorizonMode {
 }
 ```
 
-**Upper bound computation with cyclic termination:** The forward pass trajectory cost for the upper bound estimate ([Discount Rate §7](../math/discount-rate.md)) sums discounted stage costs over all traversed stages, including multiple cycle repetitions:
+**Upper bound computation with cyclic termination:** The forward pass trajectory cost for the upper bound estimate ([Discount Rate SS7](../math/discount-rate.md)) sums discounted stage costs over all traversed stages, including multiple cycle repetitions:
 
 $$
 \bar{z}^{k,m} = \sum_{t=1}^{t_{\text{stop}}} d_{1 \to t} \cdot c_t(\hat{x}_t^{k,m})
@@ -439,7 +439,7 @@ where $\mathcal{K}_t$ is the cut set for stage $t$. There are $T$ independent cu
 
 ### 6.2 Cyclic Mode
 
-In cyclic mode, cut pools are organized by **season** $\tau \in \{1, \ldots, P\}$ rather than by absolute stage ID, following [Infinite Horizon §5](../math/infinite-horizon.md). Let $\mathcal{C}_\tau = \{t : \tau(t) = \tau\}$ be all stages with season $\tau$. A cut generated at any stage $t \in \mathcal{C}_\tau$ is valid for all stages in $\mathcal{C}_\tau$:
+In cyclic mode, cut pools are organized by **season** $\tau \in \{1, \ldots, P\}$ rather than by absolute stage ID, following [Infinite Horizon SS5](../math/infinite-horizon.md). Let $\mathcal{C}_\tau = \{t : \tau(t) = \tau\}$ be all stages with season $\tau$. A cut generated at any stage $t \in \mathcal{C}_\tau$ is valid for all stages in $\mathcal{C}_\tau$:
 
 $$
 \underline{V}_\tau(x) = \max_{k \in \mathcal{K}_\tau} \left\{ \alpha_k + \pi_k^\top x \right\}
@@ -449,7 +449,7 @@ There are only $P$ cut pools (one per season), regardless of how many cycles the
 
 **Practical consequence:** When the backward pass generates a cut at stage $t$ in cycle $n$, the cut is added to cut pool $\tau(t)$, making it immediately available to all future stages at the same position in any cycle. This is the mechanism by which information propagates across cycles in the infinite horizon formulation.
 
-**Season mapping:** The season function from [Infinite Horizon §2](../math/infinite-horizon.md) is:
+**Season mapping:** The season function from [Infinite Horizon SS2](../math/infinite-horizon.md) is:
 
 $$
 \tau(t) = (t - t_{\text{start}}) \bmod P + 1
@@ -459,15 +459,15 @@ where $t_{\text{start}}$ is the cycle start stage ID (the `cycle_start` field in
 
 ## Cross-References
 
-- [Infinite Horizon](../math/infinite-horizon.md) -- Periodic structure (§2), cyclic policy graph (§3), discount requirement (§4), cut sharing within cycles (§5), forward pass termination (§6), backward pass behavior (§7)
-- [Discount Rate](../math/discount-rate.md) -- Discounted Bellman equation (§2), annual-rate-to-factor conversion (§3), discount on $\theta$ (§4), cumulative discounting (§5), infinite horizon considerations (§9)
-- [SDDP Algorithm §4](../math/sddp-algorithm.md) -- Policy graph topologies: finite horizon (§4.1), cyclic graph (§4.2)
-- [Extension Points](./extension-points.md) -- Horizon mode variant table (§4.1), configuration mapping (§4.2), validation rules H1-H4 (§4.3), behavioral contract (§4.4), dispatch mechanism analysis (§7), variant selection pipeline (§6)
-- [Training Loop §3.3](./training-loop.md) -- Behavioral contract for the horizon mode abstraction point
-- [Input Scenarios §1.2](../data-model/input-scenarios.md) -- `policy_graph` JSON schema: `type`, `annual_discount_rate`, `transitions` array, per-transition overrides
-- [Cut Management](../math/cut-management.md) -- Cut generation (§2), single-cut aggregation (§3); cuts remain undiscounted, discount applied to $\theta$
+- [Infinite Horizon](../math/infinite-horizon.md) -- Periodic structure (SS2), cyclic policy graph (SS3), discount requirement (SS4), cut sharing within cycles (SS5), forward pass termination (SS6), backward pass behavior (SS7)
+- [Discount Rate](../math/discount-rate.md) -- Discounted Bellman equation (SS2), annual-rate-to-factor conversion (SS3), discount on $\theta$ (SS4), cumulative discounting (SS5), infinite horizon considerations (SS9)
+- [SDDP Algorithm SS4](../math/sddp-algorithm.md) -- Policy graph topologies: finite horizon (SS4.1), cyclic graph (SS4.2)
+- [Extension Points](./extension-points.md) -- Horizon mode variant table (SS4.1), configuration mapping (SS4.2), validation rules H1-H4 (SS4.3), behavioral contract (SS4.4), dispatch mechanism analysis (SS7), variant selection pipeline (SS6)
+- [Training Loop SS3.3](./training-loop.md) -- Behavioral contract for the horizon mode abstraction point
+- [Input Scenarios SS1.2](../data-model/input-scenarios.md) -- `policy_graph` JSON schema: `type`, `annual_discount_rate`, `transitions` array, per-transition overrides
+- [Cut Management](../math/cut-management.md) -- Cut generation (SS2), single-cut aggregation (SS3); cuts remain undiscounted, discount applied to $\theta$
 - [Stopping Rules](../math/stopping-rules.md) -- Convergence criteria using discounted bounds, cycle convergence tolerance
 - [Risk Measure Trait](./risk-measure-trait.md) -- Sibling trait specification following the same enum dispatch pattern
 - [Communicator Trait](../hpc/communicator-trait.md) -- Reference pattern for trait specification structure and convention blockquote
-- [Solver Abstraction §10](./solver-abstraction.md) -- Compile-time solver selection pattern (contrasted with the enum dispatch used here)
+- [Solver Abstraction SS10](./solver-abstraction.md) -- Compile-time solver selection pattern (contrasted with the enum dispatch used here)
 - [Configuration Reference](../configuration/configuration-reference.md) -- Horizon and cycle configuration parameters: `max_horizon_length`, `discount_threshold`, `cycle_convergence_tolerance`

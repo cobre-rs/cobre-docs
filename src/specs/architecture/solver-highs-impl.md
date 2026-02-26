@@ -28,7 +28,7 @@ HiGHS exposes a pure C API through `Highs_c_api.h` that is directly callable fro
 
 ## 2. Solver Interface Mapping
 
-This section maps each operation from the [Solver Abstraction §4](./solver-abstraction.md) to the specific HiGHS API calls.
+This section maps each operation from the [Solver Abstraction SS4](./solver-abstraction.md) to the specific HiGHS API calls.
 
 ### 2.1 Load Model
 
@@ -49,7 +49,7 @@ Highs_passLp(highs, num_col, num_row, num_nz,
 | `kHighsMatrixFormatColwise` (1) | Column-major (CSC) | Column starts, row indices, values |
 | `kHighsMatrixFormatRowwise` (2) | Row-major (CSR)    | Row starts, column indices, values |
 
-Since the stage LP templates ([Solver Abstraction §11](./solver-abstraction.md)) store the structural matrix in CSC form, the HiGHS implementation passes them with `a_format = kHighsMatrixFormatColwise`. This avoids per-stage-transition transposition overhead — HiGHS internally stores the LP matrix in column-major (CSC) format, so passing CSC directly skips the internal `ensureColwise()` transposition that would occur if CSR were passed.
+Since the stage LP templates ([Solver Abstraction SS11](./solver-abstraction.md)) store the structural matrix in CSC form, the HiGHS implementation passes them with `a_format = kHighsMatrixFormatColwise`. This avoids per-stage-transition transposition overhead — HiGHS internally stores the LP matrix in column-major (CSC) format, so passing CSC directly skips the internal `ensureColwise()` transposition that would occur if CSR were passed.
 
 ### 2.2 Add Cut Rows
 
@@ -61,7 +61,7 @@ Highs_addRows(highs, num_new_row,
               num_new_nz, starts, index, value)
 ```
 
-The `starts`/`index`/`value` arrays follow the standard CSR (row-major) format. This matches the cut pool's CSR-friendly storage layout (see [Binary Formats §3.4](../data-model/binary-formats.md)).
+The `starts`/`index`/`value` arrays follow the standard CSR (row-major) format. This matches the cut pool's CSR-friendly storage layout (see [Binary Formats SS3.4](../data-model/binary-formats.md)).
 
 ### 2.3 Patch Scenario-Dependent Values
 
@@ -74,7 +74,7 @@ HiGHS provides batch bound modification via index-set APIs. Unlike CLP's mutable
 
 **Performance implication**: Scenario patching (the ~2,240 RHS updates per solve — incoming storage, AR lag fixing, noise fixing) should be assembled into a single batch call rather than individual per-row calls. The index array (`set`) identifies which rows to update; the `lower`/`upper` arrays provide the new bounds. Pre-allocating these batch buffers in the thread-local workspace (see [Solver Workspaces](./solver-workspaces.md)) eliminates allocation overhead on the hot path.
 
-The LP layout convention ([Solver Abstraction §2](./solver-abstraction.md)) places state-linking constraints at the top, so the row indices for scenario patching form a contiguous range starting at 0 — enabling efficient sequential index generation.
+The LP layout convention ([Solver Abstraction SS2](./solver-abstraction.md)) places state-linking constraints at the top, so the row indices for scenario patching form a contiguous range starting at 0 — enabling efficient sequential index generation.
 
 **Comparison with CLP**: CLP's mutable `double*` pointers enable zero-copy in-place writes with no function call overhead per element. HiGHS's batch API is slightly higher overhead but provides bounds checking and maintains solver-internal invariants. For the ~2,240 updates typical in SDDP, the difference is expected to be negligible relative to solve time.
 
@@ -119,7 +119,7 @@ HiGHS copies solution values into caller-provided arrays:
 
 **Key difference from CLP**: HiGHS copies values into pre-allocated caller-owned arrays, while CLP returns mutable pointers into solver-internal memory. The HiGHS approach is safer (no pointer invalidation risk) but requires pre-allocated buffers. These buffers should be part of the thread-local workspace (see [Solver Workspaces](./solver-workspaces.md)).
 
-**Dual normalization**: HiGHS's dual sign convention must be verified against the canonical sign convention defined in [Solver Abstraction §8](./solver-abstraction.md). If HiGHS reports duals with a different sign for $\geq$ constraints, the HiGHS implementation must negate the appropriate dual values before returning them to the SDDP algorithm. This is a critical correctness requirement — sign errors in duals produce divergent cuts.
+**Dual normalization**: HiGHS's dual sign convention must be verified against the canonical sign convention defined in [Solver Abstraction SS8](./solver-abstraction.md). If HiGHS reports duals with a different sign for $\geq$ constraints, the HiGHS implementation must negate the appropriate dual values before returning them to the SDDP algorithm. This is a critical correctness requirement — sign errors in duals produce divergent cuts.
 
 ### 2.6 Basis Management
 
@@ -142,9 +142,9 @@ Both arrays are `HighsInt[]` (one integer per variable/constraint).
 | 3    | `kHighsBasisStatusZero`     | Free (zero)    | Free                            |
 | 4    | `kHighsBasisStatusNonbasic` | Nonbasic       | At lower (default nonbasic)     |
 
-**Key difference from CLP**: HiGHS uses separate column and row status arrays (`HighsInt[]`), while CLP uses a combined `unsigned char[]` array (`status[0..numcols-1]` = columns, `status[numcols..numcols+numrows-1]` = rows). The HiGHS representation is more natural for the basis management described in [Solver Abstraction §2.3](./solver-abstraction.md).
+**Key difference from CLP**: HiGHS uses separate column and row status arrays (`HighsInt[]`), while CLP uses a combined `unsigned char[]` array (`status[0..numcols-1]` = columns, `status[numcols..numcols+numrows-1]` = rows). The HiGHS representation is more natural for the basis management described in [Solver Abstraction SS2.3](./solver-abstraction.md).
 
-**Interaction with LP layout convention**: Per [Solver Abstraction §2.3](./solver-abstraction.md), the structural portion of the basis is position-stable across iterations. When warm-starting after adding cuts, the implementation:
+**Interaction with LP layout convention**: Per [Solver Abstraction SS2.3](./solver-abstraction.md), the structural portion of the basis is position-stable across iterations. When warm-starting after adding cuts, the implementation:
 
 1. Prepares the column status array (unchanged from cached basis)
 2. Prepares the row status array: cached structural rows + new cut rows set to `kHighsBasisStatusBasic` (1)
@@ -166,7 +166,7 @@ For a full reset (discard everything): `Highs_destroy(highs)` + `Highs_create()`
 
 ## 3. Retry Strategy
 
-The retry strategy follows the behavioral contract defined in [Solver Abstraction §7](./solver-abstraction.md). HiGHS-specific retry escalation:
+The retry strategy follows the behavioral contract defined in [Solver Abstraction SS7](./solver-abstraction.md). HiGHS-specific retry escalation:
 
 | Attempt | Strategy         | HiGHS Actions                                                                                                             |
 | ------- | ---------------- | ------------------------------------------------------------------------------------------------------------------------- |
@@ -186,7 +186,7 @@ After each successful retry, the implementation restores default settings for th
 | -------------------------- | ----------------------------------------- | ------------ | --------------------------------------------------------------------------------------------------------- |
 | Solver algorithm           | `"solver"` → `"simplex"`                  | `"simplex"`  | Simplex required for basis warm-starting                                                                  |
 | Simplex strategy           | `"simplex_strategy"` → `4`                | 4 (dual)     | Dual simplex is the standard for SDDP — cut addition modifies RHS, which is a bound change in dual        |
-| Presolve                   | `"presolve"` → `"off"`                    | `"off"`      | Disabled for warm-start compatibility; see open point in [Solver Abstraction §3](./solver-abstraction.md) |
+| Presolve                   | `"presolve"` → `"off"`                    | `"off"`      | Disabled for warm-start compatibility; see open point in [Solver Abstraction SS3](./solver-abstraction.md) |
 | Parallel                   | `"parallel"` → `"off"`                    | `"off"`      | Each solver instance is single-threaded (thread safety via exclusive ownership)                           |
 | Output                     | `"output_flag"` → `0`                     | 0 (off)      | Quiet for production; millions of solves per run                                                          |
 | Primal tolerance           | `"primal_feasibility_tolerance"` → `1e-7` | 1e-7         | Match CLP defaults for cross-solver reproducibility                                                       |
@@ -202,7 +202,7 @@ HiGHS manages scaling internally. The relevant options are:
 | -------------------------- | --------------------------------- | ------------------------------------ |
 | `"simplex_scale_strategy"` | 0 (off), 1-4 (various strategies) | Controls simplex scaling; 0 disables |
 
-The scaling strategy interacts with the open point in [Solver Abstraction §3](./solver-abstraction.md) (single-phase vs two-phase scaling). If Cobre manages its own scaling (applied at the template level), HiGHS internal scaling should be set to 0 to avoid double-scaling. If Cobre delegates scaling to the solver, HiGHS's default strategy is a reasonable starting point.
+The scaling strategy interacts with the open point in [Solver Abstraction SS3](./solver-abstraction.md) (single-phase vs two-phase scaling). If Cobre manages its own scaling (applied at the template level), HiGHS internal scaling should be set to 0 to avoid double-scaling. If Cobre delegates scaling to the solver, HiGHS's default strategy is a reasonable starting point.
 
 ## 5. Memory Footprint
 
@@ -229,11 +229,11 @@ HiGHS's `Highs_passLp` accepts both CSR (`kHighsMatrixFormatRowwise = 2`) and CS
 
 ### 6.2 Dual Sign Convention
 
-HiGHS's dual sign convention must be verified against the canonical sign convention defined in [Solver Abstraction §8](./solver-abstraction.md). If HiGHS reports duals with a different sign for $\geq$ constraints, the HiGHS implementation must negate the appropriate dual values before returning them to the SDDD algorithm. This is a critical correctness requirement — sign errors in duals produce divergent cuts.
+HiGHS's dual sign convention must be verified against the canonical sign convention defined in [Solver Abstraction SS8](./solver-abstraction.md). If HiGHS reports duals with a different sign for $\geq$ constraints, the HiGHS implementation must negate the appropriate dual values before returning them to the SDDD algorithm. This is a critical correctness requirement — sign errors in duals produce divergent cuts.
 
 ### 6.3 Thread Safety
 
-Each `void*` HiGHS instance is **not thread-safe** — it must be exclusively owned by one thread. This aligns with the solver abstraction's thread-safety requirement ([Solver Abstraction §4.2](./solver-abstraction.md)). Each OpenMP thread creates its own instance via `Highs_create()` at initialization and destroys it at shutdown via `Highs_destroy`.
+Each `void*` HiGHS instance is **not thread-safe** — it must be exclusively owned by one thread. This aligns with the solver abstraction's thread-safety requirement ([Solver Abstraction SS4.2](./solver-abstraction.md)). Each OpenMP thread creates its own instance via `Highs_create()` at initialization and destroys it at shutdown via `Highs_destroy`.
 
 ### 6.4 Solution Copy Semantics
 
@@ -245,14 +245,14 @@ HiGHS does not expose LP template cloning through its C API (no equivalent of CL
 
 ## Cross-References
 
-- [Solver Abstraction](./solver-abstraction.md) — Interface contract (§4), LP layout convention (§2), cut pool design (§5), error categories (§6), retry contract (§7), dual normalization (§8), basis storage (§9), stage templates (§11)
+- [Solver Abstraction](./solver-abstraction.md) — Interface contract (SS4), LP layout convention (SS2), cut pool design (SS5), error categories (SS6), retry contract (SS7), dual normalization (SS8), basis storage (SS9), stage templates (SS11)
 - [Solver Abstraction](./solver-abstraction.md) — Decision 5 (dual-solver validation) that established HiGHS as a first-class reference implementation
 - [CLP Implementation](./solver-clp-impl.md) — Companion solver implementation for cross-validation
 - [Solver Workspaces & LP Scaling](./solver-workspaces.md) — Thread-local workspace infrastructure that owns the HiGHS instance
 - [LP Formulation](../math/lp-formulation.md) — Constraint structure that HiGHS operates on
 - [Cut Management](../math/cut-management.md) — How cuts are generated; this spec handles how they are loaded via `Highs_addRows`
 - [Training Loop](./training-loop.md) — Forward/backward pass orchestration driving solver invocations
-- [Binary Formats](../data-model/binary-formats.md) — Cut pool CSR layout (§3.4), LP rebuild analysis (§A)
+- [Binary Formats](../data-model/binary-formats.md) — Cut pool CSR layout (SS3.4), LP rebuild analysis (SSA)
 - [Hybrid Parallelism](../hpc/hybrid-parallelism.md) — OpenMP threading model requiring one HiGHS instance per thread
 - [Memory Architecture](../hpc/memory-architecture.md) — NUMA-aware allocation for solver workspaces
 - [Configuration Reference](../configuration/configuration-reference.md) — Solver configuration parameters

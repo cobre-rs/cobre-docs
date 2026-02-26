@@ -10,8 +10,18 @@ Create `src/specs/overview/implementation-ordering.md` that provides a concrete 
 ## Anticipated Scope
 
 - **Files likely to be modified**: Create `src/specs/overview/implementation-ordering.md`
-- **Key decisions needed**: What constitutes the minimal viable deliverable (likely: cobre-core + cobre-io + cobre-solver + cobre-sddp with local backend and HiGHS solver, no Python bindings, no MPI); how to represent the dependency graph (ASCII, Mermaid, or prose); whether to include estimated effort per crate
-- **Open questions**: Should the ordering account for external dependency availability (e.g., HiGHS vs CLP, ferrompi availability)? Should it define intermediate integration test milestones? How does the cobre-comm crate fit -- should it be implemented early (it has the most detailed trait spec) or deferred until MPI is needed?
+- **Key decisions resolved by stakeholder review** (see 00-epic-overview.md):
+  - The minimal viable SDDP solver is MPI-first (real `mpiexec -n N` binary), not local-only
+  - cobre-comm MUST be implemented early with MPI backend (the primary use case)
+  - Python bindings, TUI, MCP server, TCP/shm backends are NOT in scope for minimal viable
+  - Real crate boundaries must be respected — no stubs that bypass architecture
+  - Only one variant per trait needed: Expectation, Level-1, Finite, InSample
+  - System elements: Buses + Lines + Thermals + Hydros only; other types are NO-OP stubs
+  - Constant hydro productivity only
+  - Single scenario input path (deferred: PAR fitting, history, external)
+  - Training + simulation + parallel + reproducibility required
+  - Full output chain via cobre-io following spec schemas
+- **Remaining open questions**: How to represent the dependency graph (ASCII, Mermaid, or prose); whether to include estimated effort per crate; whether to define intermediate integration test milestones
 
 ## Dependencies
 

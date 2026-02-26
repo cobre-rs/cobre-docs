@@ -2,9 +2,9 @@
 
 ## Purpose
 
-This spec defines the Cobre multi-layer input validation pipeline: the five validation layers, the error collection strategy, the error type catalog, and the validation report format. Validation runs during the Validation phase of the execution lifecycle (see [CLI and Lifecycle](./cli-and-lifecycle.md) §5.2).
+This spec defines the Cobre multi-layer input validation pipeline: the five validation layers, the error collection strategy, the error type catalog, and the validation report format. Validation runs during the Validation phase of the execution lifecycle (see [CLI and Lifecycle](./cli-and-lifecycle.md) SS5.2).
 
-For the file loading sequence and per-file validation checks, see [Input Loading Pipeline](./input-loading-pipeline.md) §2. This spec defines the _architectural framework_ for validation; the loading pipeline spec defines _what is validated per file_.
+For the file loading sequence and per-file validation checks, see [Input Loading Pipeline](./input-loading-pipeline.md) SS2. This spec defines the _architectural framework_ for validation; the loading pipeline spec defines _what is validated per file_.
 
 ## 1. Validation Pipeline Overview
 
@@ -18,7 +18,7 @@ Structural    →  Schema       →  Referential     →  Dimensional    →  Se
 (files, format)  (fields, types)  (foreign keys)    (coverage)        (business rules)
 ```
 
-**Canonicalization** (sorting all entity collections by ID) occurs during loading, before any validation layer executes. This ensures bit-for-bit reproducibility regardless of declaration order in input files (see [Design Principles](../overview/design-principles.md) §3).
+**Canonicalization** (sorting all entity collections by ID) occurs during loading, before any validation layer executes. This ensures bit-for-bit reproducibility regardless of declaration order in input files (see [Design Principles](../overview/design-principles.md) SS3).
 
 ## 2. Validation Layers
 
@@ -31,7 +31,7 @@ Verifies that required files exist and are parseable:
 - Parquet files have valid Parquet headers and are readable
 - Optional files that are absent are recorded and their defaults noted
 
-Missing required files produce immediate errors. Missing optional files are not errors — the loader uses defaults (see [Input Loading Pipeline](./input-loading-pipeline.md) §4).
+Missing required files produce immediate errors. Missing optional files are not errors — the loader uses defaults (see [Input Loading Pipeline](./input-loading-pipeline.md) SS4).
 
 ### 2.2 Layer 2 — Schema Validation
 
@@ -40,7 +40,7 @@ Validates that every file conforms to its expected structure:
 - **JSON files:** Required vs. optional fields present, data types correct (string, number, boolean, array, object), value ranges valid (e.g., all IDs non-negative, probabilities in [0,1]), enum values valid (e.g., `block_mode` is `"parallel"` or `"chronological"`)
 - **Parquet files:** Expected columns present with correct Arrow types, per-column value constraints (e.g., non-negative costs, valid entity IDs)
 
-Schema validation is exhaustive for each file — every field and column is checked. See [Input Loading Pipeline](./input-loading-pipeline.md) §2 for the per-file validation notes.
+Schema validation is exhaustive for each file — every field and column is checked. See [Input Loading Pipeline](./input-loading-pipeline.md) SS2 for the per-file validation notes.
 
 ### 2.3 Layer 3 — Referential Integrity
 
@@ -97,7 +97,7 @@ Domain-specific rules that require understanding of the model semantics. Rules a
 | Rule              | Description                                                                                                                                |
 | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
 | Generation bounds | `generation_min ≤ generation_max` for each thermal                                                                                         |
-| GNL rejection     | Thermals with `gnl_config` are rejected with a diagnostic error — GNL is not yet implemented. See [Deferred Features](../deferred.md) §C.1 |
+| GNL rejection     | Thermals with `gnl_config` are rejected with a diagnostic error — GNL is not yet implemented. See [Deferred Features](../deferred.md) SSC.1 |
 
 #### Stages, Blocks, and Policy Graph
 
@@ -109,14 +109,14 @@ Domain-specific rules that require understanding of the model semantics. Rules a
 | Season alignment         | Stage `[start_date, end_date)` falls within the corresponding season calendar period                                                 |
 | Same-season duration     | Stages assigned to the same season have identical total duration                                                                     |
 | Transition probabilities | Outgoing transition probabilities sum to 1.0 per source stage in the policy graph                                                    |
-| Iteration limit          | At least one `iteration_limit` stopping rule is present (mandatory safety bound). See [Stopping Rules](../math/stopping-rules.md) §2 |
+| Iteration limit          | At least one `iteration_limit` stopping rule is present (mandatory safety bound). See [Stopping Rules](../math/stopping-rules.md) SS2 |
 
 #### Penalty System
 
 | Rule                 | Description                                                                                                                                                     |
 | -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Penalty values       | All penalty values in `penalties.json` are strictly positive                                                                                                    |
-| Priority ordering    | Penalty hierarchy maintained: recourse slacks > constraint violation penalties > regularization costs. See [Penalty System](../data-model/penalty-system.md) §3 |
+| Priority ordering    | Penalty hierarchy maintained: recourse slacks > constraint violation penalties > regularization costs. See [Penalty System](../data-model/penalty-system.md) SS3 |
 | Deficit last segment | Last deficit cost segment must have `depth_mw: null` (uncapped final segment)                                                                                   |
 | Deficit monotonicity | Piecewise-linear deficit cost segments have monotonically increasing cost per MW                                                                                |
 
@@ -157,15 +157,15 @@ Domain-specific rules that require understanding of the model semantics. Rules a
 
 | Rule                    | Description                                                                                                                                                                          |
 | ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Discount rate in cycles | Cyclic policy graphs require `annual_discount_rate > 0`; cumulative discount factor around any cycle must be < 1.0 for convergence. See [Discount Rate](../math/discount-rate.md) §4 |
-| CVaR confidence level   | $\alpha \in (0, 1]$. See [Risk Measures](../math/risk-measures.md) §2                                                                                                                |
-| Risk aversion weight    | $\lambda \in [0, 1]$. See [Risk Measures](../math/risk-measures.md) §3                                                                                                               |
+| Discount rate in cycles | Cyclic policy graphs require `annual_discount_rate > 0`; cumulative discount factor around any cycle must be < 1.0 for convergence. See [Discount Rate](../math/discount-rate.md) SS4 |
+| CVaR confidence level   | $\alpha \in (0, 1]$. See [Risk Measures](../math/risk-measures.md) SS2                                                                                                                |
+| Risk aversion weight    | $\lambda \in [0, 1]$. See [Risk Measures](../math/risk-measures.md) SS3                                                                                                               |
 
 #### Declaration Order Invariance
 
 | Rule              | Description                                                                                                                                                                                                                                                                |
 | ----------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **ID uniqueness** | Entity IDs unique within each registry (hydros, thermals, buses, lines, etc.) — combined with canonicalization during loading, this guarantees bit-for-bit identical results regardless of declaration order. See [Design Principles](../overview/design-principles.md) §3 |
+| **ID uniqueness** | Entity IDs unique within each registry (hydros, thermals, buses, lines, etc.) — combined with canonicalization during loading, this guarantees bit-for-bit identical results regardless of declaration order. See [Design Principles](../overview/design-principles.md) SS3 |
 
 #### General Warnings
 
@@ -189,7 +189,7 @@ Certain rules apply only when specific configuration modes or optional files are
 - Cut stage IDs exist in current policy graph
 - Entity IDs in state dictionary exist in current registries
 - At least one stage has stored cuts
-- Block mode and block count/durations per stage match between warm-start policy and current configuration. See [Block Formulations](../math/block-formulations.md) §4
+- Block mode and block count/durations per stage match between warm-start policy and current configuration. See [Block Formulations](../math/block-formulations.md) SS4
 
 ##### Resume (`policy.mode = "resume"`)
 
@@ -204,13 +204,13 @@ Certain rules apply only when specific configuration modes or optional files are
 - Entity/stage/scenario coverage is complete for all required entities
 - Distinct `scenario_id` count equals `num_scenarios`
 
-> **Note**: These validation rules apply regardless of whether external scenarios are used for simulation or training. External scenarios are NOT restricted to simulation — see [Scenario Generation §3](./scenario-generation.md). When used in training, additional validation applies: a PAR model must be fittable from the external data for backward pass opening tree generation.
+> **Note**: These validation rules apply regardless of whether external scenarios are used for simulation or training. External scenarios are NOT restricted to simulation — see [Scenario Generation SS3](./scenario-generation.md). When used in training, additional validation applies: a PAR model must be fittable from the external data for backward pass opening tree generation.
 
 ##### Linearized Head Model
 
-- Hydros using `linearized_head` production model are accepted only for simulation runs — rejected during training. See [Hydro Production Models](../math/hydro-production-models.md) §5
+- Hydros using `linearized_head` production model are accepted only for simulation runs — rejected during training. See [Hydro Production Models](../math/hydro-production-models.md) SS5
 
-> **Note:** Markovian horizon validation (Markov states, transition probabilities per Markov state) is deferred. See [Deferred Features](../deferred.md) §C.5.
+> **Note:** Markovian horizon validation (Markov states, transition probabilities per Markov state) is deferred. See [Deferred Features](../deferred.md) SSC.5.
 
 ## 3. Error Collection Strategy
 
@@ -225,7 +225,7 @@ Within each layer, all checks run to completion. If a layer produces errors, sub
 
 After all layers complete, the validation context is evaluated:
 
-- If **any errors** exist, the program emits a validation report and exits with code 3 (see [CLI and Lifecycle](./cli-and-lifecycle.md) §4).
+- If **any errors** exist, the program emits a validation report and exits with code 3 (see [CLI and Lifecycle](./cli-and-lifecycle.md) SS4).
 - If **only warnings** exist, the program emits the report to the log and continues execution.
 
 ## 4. Error Type Catalog
@@ -309,19 +309,19 @@ When `--output-format json` is specified, the validation report is emitted to st
 }
 ```
 
-The error records within `errors[]` and `warnings[]` use the enriched error schema defined in [Structured Output §2](../interfaces/structured-output.md), which extends the existing validation error format with `context` and `suggestion` fields. The existing 14 error kinds from §4 above are preserved unchanged; they serve as the foundation for the complete error kind registry.
+The error records within `errors[]` and `warnings[]` use the enriched error schema defined in [Structured Output SS2](../interfaces/structured-output.md), which extends the existing validation error format with `context` and `suggestion` fields. The existing 14 error kinds from SS4 above are preserved unchanged; they serve as the foundation for the complete error kind registry.
 
 The validation report file (`validation_report.json`) continues to be written to disk regardless of the output format flag. The structured stdout emission is an additional output path, not a replacement.
 
 ### 5.2 Response Envelope Reference
 
-The response envelope used by the `validate` subcommand is the same envelope used by all other subcommands. See [Structured Output §2](../interfaces/structured-output.md) for the complete JSON Schema definition and [CLI and Lifecycle §8](./cli-and-lifecycle.md) for the output format negotiation.
+The response envelope used by the `validate` subcommand is the same envelope used by all other subcommands. See [Structured Output SS2](../interfaces/structured-output.md) for the complete JSON Schema definition and [CLI and Lifecycle SS8](./cli-and-lifecycle.md) for the output format negotiation.
 
 ## Cross-References
 
 - [CLI and Lifecycle](./cli-and-lifecycle.md) — Validation phase within the execution lifecycle; `--validate-only` mode; exit codes
-- [Input Loading Pipeline](./input-loading-pipeline.md) — File loading sequence, per-file validation checks (§2), conditional loading rules (§4)
-- [Design Principles](../overview/design-principles.md) — Declaration order invariance (§3) enforced by canonicalization before validation
+- [Input Loading Pipeline](./input-loading-pipeline.md) — File loading sequence, per-file validation checks (SS2), conditional loading rules (SS4)
+- [Design Principles](../overview/design-principles.md) — Declaration order invariance (SS3) enforced by canonicalization before validation
 - [Input Directory Structure](../data-model/input-directory-structure.md) — File inventory and `config.json` schema
 - [Input System Entities](../data-model/input-system-entities.md) — Entity registries and default bounds
 - [Input Scenarios](../data-model/input-scenarios.md) — Policy graph, stage definitions, block hours, season definitions
@@ -335,5 +335,5 @@ The response envelope used by the `validate` subcommand is the same envelope use
 - [Hydro Production Models](../math/hydro-production-models.md) — FPHA coefficient signs, linearized head simulation-only restriction
 - [PAR Inflow Model](../math/par-inflow-model.md) — AR stationarity, residual variance, correlation matrix validation
 - [Scenario Generation](./scenario-generation.md) — PAR model validation rules (AR stationarity, sufficient history)
-- [Deferred Features](../deferred.md) — GNL (§C.1) and Markovian (§C.5) validation deferred
+- [Deferred Features](../deferred.md) — GNL (SSC.1) and Markovian (SSC.5) validation deferred
 - [Structured Output](../interfaces/structured-output.md) — Response envelope schema and enriched error format with `context` and `suggestion` fields
