@@ -94,14 +94,14 @@ impl Communicator for FerrompiBackend {
 
 **Method mapping summary:**
 
-| Trait Method | ferrompi API Call                                     | Type Conversion                                      |
-| ------------ | ----------------------------------------------------- | ---------------------------------------------------- |
-| `allgatherv` | `self.world.allgatherv(send, recv, &counts, &displs)` | `counts`/`displs`: `&[usize]` to `&[i32]`            |
-| `allreduce`  | `self.world.allreduce(send, recv, mpi_op)`            | `ReduceOp` to `ferrompi::ReduceOp` (zero-cost match) |
-| `broadcast`  | `self.world.broadcast(buf, root)`                     | `root: usize` to `i32`                               |
-| `barrier`    | `self.world.barrier()`                                | None                                                 |
-| `rank`       | `self.world.rank()`                                   | `i32` to `usize`                                     |
-| `size`       | `self.world.size()`                                   | `i32` to `usize`                                     |
+| Trait Method | ferrompi API Call                                             | Type Conversion                                      |
+| ------------ | ------------------------------------------------------------- | ---------------------------------------------------- |
+| `allgatherv` | `self.world.allgatherv(send, recv, &i32_counts, &i32_displs)` | `counts`/`displs`: `&[usize]` to `&[i32]`            |
+| `allreduce`  | `self.world.allreduce(send, recv, mpi_op)`                    | `ReduceOp` to `ferrompi::ReduceOp` (zero-cost match) |
+| `broadcast`  | `self.world.broadcast(buf, root)`                             | `root: usize` to `i32`                               |
+| `barrier`    | `self.world.barrier()`                                        | None                                                 |
+| `rank`       | `self.world.rank()`                                           | `i32` to `usize`                                     |
+| `size`       | `self.world.size()`                                           | `i32` to `usize`                                     |
 
 **Error delegation:** All fallible methods convert `ferrompi::Error` to `CommError` via the `map_ferrompi_error` helper (see SS5.2). The helper extracts the MPI error code from the `Error::Mpi` variant and classifies errors into the most specific `CommError` variant. No new `CommError` variants are introduced -- all errors map to the variants defined in [Communicator Trait §1.4](./communicator-trait.md) and [Communicator Trait §4.6](./communicator-trait.md). See SS5 for the complete error mapping table.
 

@@ -231,7 +231,7 @@ The denominator $N - 1$ is **Bessel's correction**, producing the unbiased sampl
 The single-pass formula $Q - N \cdot \bar{c}^2$ can suffer from **catastrophic cancellation** when the coefficient of variation $\sigma / \bar{c}$ is small — i.e., when costs are large in magnitude but tightly distributed. The relative error is bounded by:
 
 $$
-\varepsilon_{\text{rel}} \lesssim \varepsilon_{\text{mach}} \cdot N \cdot \left(\frac{c_{\max}}{\sigma}\right)^2
+\varepsilon_{\text{rel}} \lesssim \varepsilon_{\text{mach}} \cdot N \cdot \left(\frac{\bar{c}}{\sigma}\right)^2
 $$
 
 where $\varepsilon_{\text{mach}} \approx 2.2 \times 10^{-16}$ for `f64`. At production scale ($N = 100$ scenarios, costs $\sim 10^6$, $\sigma / \bar{c} \approx 0.05\text{--}0.10$), this bound evaluates to:

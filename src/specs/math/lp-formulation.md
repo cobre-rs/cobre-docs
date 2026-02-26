@@ -210,7 +210,7 @@ See [PAR(p) inflow model](par-inflow-model.md) for the complete PAR(p) model spe
 
 The AR dynamics equation (SS5) uses lagged inflows $a_{h,\ell}$ as LP variables. To maintain the Markov property in the SDDP decomposition, each lag variable must be fixed to its incoming state value via an explicit equality constraint. These constraints serve a dual purpose: they bind the lag variables to the known incoming state, and their dual multipliers $\pi^{lag}_{h,\ell}$ provide the cut coefficients for the inflow lag dimensions of the Benders cuts (SS11).
 
-For each hydro $h \in \mathcal{H}$ and each lag $\ell \in \{1, \ldots, L\}$:
+For each hydro $h \in \mathcal{H}$ and each lag $\ell \in \{0, \ldots, L-1\}$ (0-based, matching the implementation index convention in [Solver Abstraction SS2.2](../architecture/solver-abstraction.md)):
 
 $$
 a_{h,\ell} = \hat{a}_{h,\ell}
