@@ -63,30 +63,30 @@ Epic 4 (High-Severity Gaps)      [blocked by Epics 1-3, outline tickets]
 
 ## Progress Tracking
 
-| Ticket     | Title                                                   | Epic    | Status  | Detail Level | Readiness | Quality | Badge |
-| ---------- | ------------------------------------------------------- | ------- | ------- | ------------ | --------- | ------- | ----- |
-| ticket-001 | Create CLAUDE.md with Ecosystem Guidelines              | epic-01 | pending | Detailed     | --        | --      | --    |
-| ticket-002 | Create ecosystem-guidelines.md Spec Page                | epic-01 | pending | Detailed     | --        | --      | --    |
-| ticket-003 | Update SUMMARY.md and Cross-References                  | epic-01 | pending | Detailed     | --        | --      | --    |
-| ticket-004 | Specify SystemRepresentation Top-Level Type             | epic-02 | pending | Detailed     | --        | --      | --    |
-| ticket-005 | Resolve Decommissioned Operative State                  | epic-02 | pending | Detailed     | --        | --      | --    |
-| ticket-006 | Specify rkyv Serialization for MPI Broadcast            | epic-02 | pending | Detailed     | --        | --      | --    |
-| ticket-007 | Update Gap Inventory for GAP-001/002/003                | epic-02 | pending | Detailed     | --        | --      | --    |
-| ticket-008 | Specify LP Memory Layout with Index Formulas            | epic-03 | pending | Detailed     | --        | --      | --    |
-| ticket-009 | Specify State Vectors and Indexer Structs               | epic-03 | pending | Detailed     | --        | --      | --    |
-| ticket-010 | Update Gap Inventory for GAP-004/005                    | epic-03 | pending | Detailed     | --        | --      | --    |
-| ticket-011 | Specify State Vector MPI Wire Format                    | epic-04 | pending | Outline      | --        | --      | --    |
-| ticket-012 | Specify Cut Synchronization MPI Wire Format             | epic-04 | pending | Outline      | --        | --      | --    |
-| ticket-013 | Add AR Lag Fixing Constraints to LP Formulation         | epic-04 | pending | Outline      | --        | --      | --    |
-| ticket-014 | Split patch_rhs_bounds into Row and Column Methods      | epic-04 | pending | Outline      | --        | --      | --    |
-| ticket-015 | Adopt Single-Phase LP Scaling as Baseline               | epic-04 | pending | Outline      | --        | --      | --    |
-| ticket-016 | Adopt Selective Cut Addition as Baseline                | epic-04 | pending | Outline      | --        | --      | --    |
-| ticket-017 | Define load_case API and System Crate Boundary Type     | epic-04 | pending | Outline      | --        | --      | --    |
-| ticket-018 | Define TrainingEvent Enum in cobre-core                 | epic-04 | pending | Outline      | --        | --      | --    |
-| ticket-019 | Specify Deterministic Hash Function for Seed Derivation | epic-04 | pending | Outline      | --        | --      | --    |
-| ticket-020 | Specify Simulation-Based Stopping Rule Interaction      | epic-04 | pending | Outline      | --        | --      | --    |
-| ticket-021 | Audit CLI Lifecycle for Training Loop Consistency       | epic-04 | pending | Outline      | --        | --      | --    |
-| ticket-022 | Specify ferrompi Standalone API                         | epic-04 | pending | Outline      | --        | --      | --    |
-| ticket-023 | Specify Solver Workspace Lifecycle                      | epic-04 | pending | Outline      | --        | --      | --    |
-| ticket-024 | Clarify Lower Bound Computation                         | epic-04 | pending | Outline      | --        | --      | --    |
-| ticket-025 | Specify Upper Bound Variance Aggregation                | epic-04 | pending | Outline      | --        | --      | --    |
+| Ticket     | Title                                                   | Epic    | Status    | Detail Level | Readiness | Quality | Badge     |
+| ---------- | ------------------------------------------------------- | ------- | --------- | ------------ | --------- | ------- | --------- |
+| ticket-001 | Create CLAUDE.md with Ecosystem Guidelines              | epic-01 | completed | Detailed     | 0.85      | 0.90    | EXCELLENT |
+| ticket-002 | Create ecosystem-guidelines.md Spec Page                | epic-01 | completed | Detailed     | 0.90      | 0.90    | EXCELLENT |
+| ticket-003 | Update SUMMARY.md and Cross-References                  | epic-01 | completed | Detailed     | 0.97      | 1.00    | EXCELLENT |
+| ticket-004 | Specify SystemRepresentation Top-Level Type             | epic-02 | pending   | Detailed     | 0.93      | --      | --        |
+| ticket-005 | Resolve Decommissioned Operative State                  | epic-02 | pending   | Detailed     | 0.83      | --      | --        |
+| ticket-006 | Specify rkyv Serialization for MPI Broadcast            | epic-02 | pending   | Detailed     | 0.94      | --      | --        |
+| ticket-007 | Update Gap Inventory for GAP-001/002/003                | epic-02 | pending   | Detailed     | 0.91      | --      | --        |
+| ticket-008 | Specify LP Memory Layout with Index Formulas            | epic-03 | pending   | Detailed     | 0.93      | --      | --        |
+| ticket-009 | Specify State Vectors and Indexer Structs               | epic-03 | pending   | Detailed     | 0.94      | --      | --        |
+| ticket-010 | Update Gap Inventory for GAP-004/005                    | epic-03 | pending   | Detailed     | 0.77      | --      | --        |
+| ticket-011 | Specify State Vector MPI Wire Format                    | epic-04 | pending   | Outline      | --        | --      | --        |
+| ticket-012 | Specify Cut Synchronization MPI Wire Format             | epic-04 | pending   | Outline      | --        | --      | --        |
+| ticket-013 | Add AR Lag Fixing Constraints to LP Formulation         | epic-04 | pending   | Outline      | --        | --      | --        |
+| ticket-014 | Split patch_rhs_bounds into Row and Column Methods      | epic-04 | pending   | Outline      | --        | --      | --        |
+| ticket-015 | Adopt Single-Phase LP Scaling as Baseline               | epic-04 | pending   | Outline      | --        | --      | --        |
+| ticket-016 | Adopt Selective Cut Addition as Baseline                | epic-04 | pending   | Outline      | --        | --      | --        |
+| ticket-017 | Define load_case API and System Crate Boundary Type     | epic-04 | pending   | Outline      | --        | --      | --        |
+| ticket-018 | Define TrainingEvent Enum in cobre-core                 | epic-04 | pending   | Outline      | --        | --      | --        |
+| ticket-019 | Specify Deterministic Hash Function for Seed Derivation | epic-04 | pending   | Outline      | --        | --      | --        |
+| ticket-020 | Specify Simulation-Based Stopping Rule Interaction      | epic-04 | pending   | Outline      | --        | --      | --        |
+| ticket-021 | Audit CLI Lifecycle for Training Loop Consistency       | epic-04 | pending   | Outline      | --        | --      | --        |
+| ticket-022 | Specify ferrompi Standalone API                         | epic-04 | pending   | Outline      | --        | --      | --        |
+| ticket-023 | Specify Solver Workspace Lifecycle                      | epic-04 | pending   | Outline      | --        | --      | --        |
+| ticket-024 | Clarify Lower Bound Computation                         | epic-04 | pending   | Outline      | --        | --      | --        |
+| ticket-025 | Specify Upper Bound Variance Aggregation                | epic-04 | pending   | Outline      | --        | --      | --        |

@@ -59,6 +59,7 @@
 
 - [Overview](./specs/overview.md)
   - [Design Principles](./specs/overview/design-principles.md)
+  - [Ecosystem Guidelines](./specs/overview/ecosystem-guidelines.md)
   - [Notation Conventions](./specs/overview/notation-conventions.md)
   - [Production Scale Reference](./specs/overview/production-scale-reference.md)
   - [Implementation Ordering](./specs/overview/implementation-ordering.md)
