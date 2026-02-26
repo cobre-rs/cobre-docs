@@ -36,6 +36,6 @@ Systematic, evidence-based audit of the Cobre specification corpus to determine 
 | ticket-012 | Assess Implementation Phase 1-4 Readiness       | epic-03 | completed | Refined      | 0.88      | 0.97    | EXCELLENT |
 | ticket-013 | Assess Implementation Phase 5-8 Readiness       | epic-03 | completed | Refined      | 1.00      | 0.92    | EXCELLENT |
 | ticket-014 | Audit Testing Spec Adequacy                     | epic-03 | completed | Refined      | 1.00      | 0.94    | EXCELLENT |
-| ticket-015 | Trace Data Model End-to-End                     | epic-04 | pending   | Outline      | --        | --      | --        |
-| ticket-016 | Audit HPC Spec Correctness                      | epic-04 | pending   | Outline      | --        | --      | --        |
-| ticket-017 | Synthesize Readiness Verdict                    | epic-04 | pending   | Outline      | --        | --      | --        |
+| ticket-015 | Trace Data Model End-to-End                     | epic-04 | completed | Refined      | 1.00      | 0.97    | EXCELLENT |
+| ticket-016 | Audit HPC Spec Correctness                      | epic-04 | completed | Refined      | 0.96      | 0.97    | EXCELLENT |
+| ticket-017 | Synthesize Readiness Verdict                    | epic-04 | completed | Refined      | 0.89      | 0.97    | EXCELLENT |
