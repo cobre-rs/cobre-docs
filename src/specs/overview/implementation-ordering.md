@@ -53,7 +53,7 @@ The minimal viable solver satisfies the following eight stakeholder requirements
 4. **Minimal system elements.** Only four element types are fully modeled: Buses, Lines, Thermals, and Hydros. Remaining element types (Contracts, Pumping Stations, Non-Controllable sources) have code-path stubs that satisfy the type system but contribute no variables or constraints to the LP.
 5. **Constant hydro productivity only.** The hydro production function uses a constant productivity coefficient $\rho_i$ (MW per m3/s). FPHA hyperplanes and head-dependent models are deferred.
 6. **Single scenario input path.** Scenarios are loaded from Parquet files in the case directory following the PAR(p) model specification. PAR parameter fitting from historical data, external scenario injection, and historical replay are deferred.
-7. **Training + simulation + parallel + reproducibility.** Both the training loop and the simulation pipeline are implemented, distributed across MPI ranks, and produce deterministic results given the same inputs, number of ranks, and random seed.
+7. **Training + simulation + parallel + reproducibility.** Both the training loop and the simulation pipeline are implemented, distributed across MPI ranks, and produce deterministic results given the same inputs and random seed, independently on the number of ranks and threads per rank.
 8. **Full output chain.** Training convergence data and simulation results are written to Hive-partitioned Parquet output following the schemas in [Output Schemas](../data-model/output-schemas.md), with manifests and metadata as specified in [Output Infrastructure](../data-model/output-infrastructure.md).
 
 ## 4. Crates Required for Minimal Viable
@@ -156,11 +156,11 @@ Each phase produces a testable intermediate. Phases are ordered so that every de
 ### Phase Dependency Summary
 
 ```
-Phase 1 (core) ──────┬──> Phase 2 (io) ──────────────────────────────────────┐
+Phase 1 (core) ──────┬──> Phase 2 (io) ────────────────────────────────────────┐
                       │                                                        │
-                      ├──> Phase 3 (ferrompi + solver) ──> Phase 4 (comm) ──┐ │
+                      ├──> Phase 3 (ferrompi + solver) ──> Phase 4 (comm) ───┐ │
                       │                                                      │ │
-                      └──> Phase 5 (stochastic) ─────────────────────────┐  │ │
+                      └──> Phase 5 (stochastic) ──────────────────────────┐  │ │
                                                                           │  │ │
                                                                           v  v v
                                                                      Phase 6 (sddp training)

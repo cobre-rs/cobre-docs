@@ -1,0 +1,125 @@
+{
+  "plan": "gap-resolution",
+  "last_updated": "2026-02-26T00:00:00Z",
+  "progressive": true,
+  "tickets": {
+    "ticket-001-create-claude-md.md": {
+      "status": "pending",
+      "detail_level": "detailed"
+    },
+    "ticket-002-create-ecosystem-guidelines-spec.md": {
+      "status": "pending",
+      "detail_level": "detailed"
+    },
+    "ticket-003-update-summary-and-crossrefs.md": {
+      "status": "pending",
+      "detail_level": "detailed"
+    },
+    "ticket-004-specify-system-representation.md": {
+      "status": "pending",
+      "detail_level": "detailed"
+    },
+    "ticket-005-resolve-decommissioned-state.md": {
+      "status": "pending",
+      "detail_level": "detailed"
+    },
+    "ticket-006-specify-rkyv-serialization.md": {
+      "status": "pending",
+      "detail_level": "detailed"
+    },
+    "ticket-007-update-gap-inventory-epic2.md": {
+      "status": "pending",
+      "detail_level": "detailed"
+    },
+    "ticket-008-specify-lp-memory-layout.md": {
+      "status": "pending",
+      "detail_level": "detailed"
+    },
+    "ticket-009-specify-state-vectors-and-indexers.md": {
+      "status": "pending",
+      "detail_level": "detailed"
+    },
+    "ticket-010-update-gap-inventory-epic3.md": {
+      "status": "pending",
+      "detail_level": "detailed"
+    },
+    "ticket-011-state-vector-wire-format.md": {
+      "status": "pending",
+      "detail_level": "outline"
+    },
+    "ticket-012-cut-sync-wire-format.md": {
+      "status": "pending",
+      "detail_level": "outline"
+    },
+    "ticket-013-ar-lag-fixing-constraints.md": {
+      "status": "pending",
+      "detail_level": "outline"
+    },
+    "ticket-014-patch-rhs-bounds-split.md": {
+      "status": "pending",
+      "detail_level": "outline"
+    },
+    "ticket-015-lp-scaling-strategy.md": {
+      "status": "pending",
+      "detail_level": "outline"
+    },
+    "ticket-016-selective-cut-loading.md": {
+      "status": "pending",
+      "detail_level": "outline"
+    },
+    "ticket-017-load-case-api.md": {
+      "status": "pending",
+      "detail_level": "outline"
+    },
+    "ticket-018-training-event-types.md": {
+      "status": "pending",
+      "detail_level": "outline"
+    },
+    "ticket-019-deterministic-seed-hash.md": {
+      "status": "pending",
+      "detail_level": "outline"
+    },
+    "ticket-020-simulation-stopping-rule.md": {
+      "status": "pending",
+      "detail_level": "outline"
+    },
+    "ticket-021-cli-lifecycle-audit.md": {
+      "status": "pending",
+      "detail_level": "outline"
+    },
+    "ticket-022-ferrompi-api-spec.md": {
+      "status": "pending",
+      "detail_level": "outline"
+    },
+    "ticket-023-solver-workspace-lifecycle.md": {
+      "status": "pending",
+      "detail_level": "outline"
+    },
+    "ticket-024-lower-bound-computation.md": {
+      "status": "pending",
+      "detail_level": "outline"
+    },
+    "ticket-025-upper-bound-variance.md": {
+      "status": "pending",
+      "detail_level": "outline"
+    }
+  },
+  "epics": {
+    "epic-01-ecosystem-guidelines": {
+      "phase": "executing",
+      "learning_extracted": false
+    },
+    "epic-02-core-data-model": {
+      "phase": "executing",
+      "learning_extracted": false
+    },
+    "epic-03-lp-layout-and-state": {
+      "phase": "executing",
+      "learning_extracted": false
+    },
+    "epic-04-high-severity-gaps": {
+      "phase": "outline",
+      "learning_extracted": false
+    }
+  }
+}
