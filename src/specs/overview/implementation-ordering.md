@@ -188,7 +188,7 @@ Each trait abstraction point is instantiated with exactly one variant for the mi
 
 **Deferred variants** (not in minimal viable):
 
-- `RiskMeasure::CVaR` and `RiskMeasure::EAVaR` -- risk-averse aggregation
+- `RiskMeasure::CVaR` -- risk-averse aggregation (implements the EAVaR convex combination)
 - `CutSelectionStrategy::LML1` -- Limited Memory Level 1
 - `HorizonMode::Cyclic` -- infinite horizon with discount factor
 - `SamplingScheme::External` and `SamplingScheme::Historical` -- alternative scenario sources
