@@ -14,7 +14,7 @@ Prepare the Cobre SDDP specification corpus for Rust implementation by formalizi
 | Epic    | Name                                 | Tickets | Status   |
 | ------- | ------------------------------------ | ------- | -------- |
 | epic-01 | High-Priority Trait Formalization    | 6       | Complete |
-| epic-02 | Medium-Priority Trait Formalization  | 4       | Pending  |
+| epic-02 | Medium-Priority Trait Formalization  | 4       | Complete |
 | epic-03 | Solver Interface Trait Formalization | 4       | Pending  |
 | epic-04 | Spec Consistency Final Pass          | 4       | Pending  |
 | epic-05 | Implementation Readiness Assessment  | 3       | Pending  |
@@ -77,10 +77,10 @@ Recommended execution order (respecting dependencies, maximizing parallelism):
 | ticket-004 | Define HorizonMode conformance test spec                     | epic-01 | completed | Detailed     |
 | ticket-005 | Define SamplingScheme trait spec                             | epic-01 | completed | Detailed     |
 | ticket-006 | Define SamplingScheme conformance test spec                  | epic-01 | completed | Detailed     |
-| ticket-007 | Define CutSelectionStrategy trait spec                       | epic-02 | pending   | Detailed     |
-| ticket-008 | Define CutSelectionStrategy conformance test spec            | epic-02 | pending   | Detailed     |
-| ticket-009 | Define StoppingRule trait spec                               | epic-02 | pending   | Detailed     |
-| ticket-010 | Define StoppingRule conformance test spec                    | epic-02 | pending   | Detailed     |
+| ticket-007 | Define CutSelectionStrategy trait spec                       | epic-02 | completed | Detailed     |
+| ticket-008 | Define CutSelectionStrategy conformance test spec            | epic-02 | completed | Detailed     |
+| ticket-009 | Define StoppingRule trait spec                               | epic-02 | completed | Detailed     |
+| ticket-010 | Define StoppingRule conformance test spec                    | epic-02 | completed | Detailed     |
 | ticket-011 | Define SolverInterface trait spec                            | epic-03 | pending   | Outline      |
 | ticket-012 | Define SolverInterface conformance test spec                 | epic-03 | pending   | Outline      |
 | ticket-013 | Update cross-reference-index and SUMMARY for all trait specs | epic-03 | pending   | Outline      |
