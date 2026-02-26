@@ -30,9 +30,9 @@ Systematic, evidence-based audit of the Cobre specification corpus to determine 
 | ticket-006 | Audit cobre-comm API Surface Completeness       | epic-01 | completed | Detailed     | 0.88      | 0.99    | EXCELLENT |
 | ticket-007 | Audit cobre-cli API Surface Completeness        | epic-01 | completed | Detailed     | 0.98      | 0.91    | EXCELLENT |
 | ticket-008 | Audit ferrompi API Surface Completeness         | epic-01 | completed | Detailed     | 0.98      | 0.92    | EXCELLENT |
-| ticket-009 | Triage Medium and Low Gaps for Phase 1 Impact   | epic-02 | pending   | Detailed     | --        | --      | --        |
-| ticket-010 | Verify Cross-Reference Link Integrity           | epic-02 | pending   | Detailed     | --        | --      | --        |
-| ticket-011 | Verify Shared Type Consistency Across Specs     | epic-02 | pending   | Detailed     | --        | --      | --        |
+| ticket-009 | Triage Medium and Low Gaps for Phase 1 Impact   | epic-02 | completed | Detailed     | 0.92      | 0.94    | EXCELLENT |
+| ticket-010 | Verify Cross-Reference Link Integrity           | epic-02 | completed | Detailed     | 0.95      | 0.93    | EXCELLENT |
+| ticket-011 | Verify Shared Type Consistency Across Specs     | epic-02 | completed | Detailed     | 0.98      | 0.92    | EXCELLENT |
 | ticket-012 | Assess Implementation Phase 1-4 Readiness       | epic-03 | pending   | Outline      | --        | --      | --        |
 | ticket-013 | Assess Implementation Phase 5-8 Readiness       | epic-03 | pending   | Outline      | --        | --      | --        |
 | ticket-014 | Audit Testing Spec Adequacy                     | epic-03 | pending   | Outline      | --        | --      | --        |
