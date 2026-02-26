@@ -232,6 +232,639 @@ The `System` struct is the primary data type that crosses the `cobre-io` / `cobr
 
 The `System` type is defined in `cobre-core` so that both `cobre-io` (producer) and `cobre-sddp` (consumer) depend on `cobre-core` without creating a circular dependency. This follows the bottom-up build sequence defined in [Implementation Ordering](../overview/implementation-ordering.md).
 
+### 1.8 EntityId Type
+
+All entity collections use `EntityId` as the key type for identification and lookup. The input JSON schemas define entity `id` fields as `i32` (see [Input System Entities](input-system-entities.md)), so the internal type wraps `i32` directly.
+
+```rust
+/// Strongly-typed entity identifier.
+///
+/// Wraps the i32 identifier from JSON input files. The newtype pattern prevents
+/// accidental confusion between entity IDs and collection indices (usize), which
+/// is a common source of bugs in systems with both ID-based lookup and index-based
+/// access. EntityId is used as the key in HashMap<EntityId, usize> lookup tables
+/// and as the value in cross-reference fields (e.g., Hydro::bus_id, Line::source_bus_id).
+///
+/// Why i32 and not String: All JSON entity schemas use integer IDs (i32). Integer
+/// keys are cheaper to hash, compare, and copy than strings — important because
+/// EntityId appears in every lookup table and cross-reference field. If a future
+/// input format requires string IDs, the newtype boundary isolates the change to
+/// EntityId's internal representation and its From/Into impls.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct EntityId(pub i32);
+```
+
+**Design rationale**:
+
+| Consideration    | Choice                           | Reason                                                                                                                                                                                                    |
+| ---------------- | -------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Inner type       | `i32`                            | Matches JSON schema `id` type across all 7 entity registries                                                                                                                                              |
+| Newtype vs alias | Newtype (`struct EntityId(i32)`) | Type safety: prevents mixing entity IDs with raw indices or other integers                                                                                                                                |
+| `Copy`           | Yes                              | `i32` is `Copy`; avoids unnecessary cloning in lookup paths                                                                                                                                               |
+| `Hash + Eq`      | Yes                              | Required for `HashMap<EntityId, usize>` keys in System lookup indices (1.3)                                                                                                                               |
+| No `Ord`         | Intentional                      | Canonical ordering uses collection position (Vec index), not ID magnitude. Sorting by ID happens once during loading; after that, position-based ordering is used. If needed, `Ord` can be derived later. |
+
+### 1.9 Entity Struct Definitions
+
+The following structs define the clarity-first entity representations stored in the `System` struct's entity collections (1.3). Each struct corresponds to one entity type from the entity collections table (1.2) and maps field-by-field to the JSON schema tables in [Input System Entities](input-system-entities.md).
+
+These are `cobre-core` types following the dual-nature design (1.1): they prioritize **data clarity and correctness** over hot-path performance. The performance-adapted views in `cobre-sddp` are built from these structs at initialization time.
+
+**What is included**: All fields that are loaded from JSON input files or resolved during input loading (default resolution, cross-reference validation). Fields are annotated as "base" (loaded directly from JSON) or "resolved" (computed during loading from defaults, cascades, or cross-references).
+
+**What is NOT included**: LP variable indices, contiguous `f64` slices, SIMD-aligned layouts, or any other performance-adapted data. Those belong to the `cobre-sddp` performance layer (see [Solver Abstraction](../architecture/solver-abstraction.md) and [Solver Workspaces](../architecture/solver-workspaces.md)).
+
+#### 1.9.1 Supporting Enums
+
+Several entity fields use a fixed set of variants. These are modeled as Rust enums to prevent invalid states at the type level.
+
+```rust
+/// Hydro generation model variant.
+/// Selects the production function used to convert turbined flow into generation.
+/// See Input System Entities §3 and Hydro Production Models for mathematical details.
+#[derive(Debug, Clone, PartialEq)]
+pub enum HydroGenerationModel {
+    /// Fixed productivity factor [MW/(m3/s)]. Training + simulation.
+    ConstantProductivity {
+        productivity_mw_per_m3s: f64,
+    },
+    /// Head-dependent productivity adjusted by storage level. Simulation-only.
+    /// Excluded from training because the bilinear term breaks SDDP convergence.
+    /// See Hydro Production Models §3.
+    LinearizedHead {
+        productivity_mw_per_m3s: f64,
+    },
+    /// Full piecewise-linear approximation via hyperplanes. Training + simulation.
+    /// Hyperplanes are either computed from geometry or loaded from precomputed data.
+    /// Configuration is in Input Hydro Extensions §2.
+    Fpha,
+}
+
+/// Tailrace model for downstream water level computation.
+/// Used by linearized_head and fpha (computed) models to determine net head.
+/// See Input System Entities §3.
+#[derive(Debug, Clone, PartialEq)]
+pub enum TailraceModel {
+    /// Tailrace level as polynomial function of outflow:
+    /// h_tail(Q_out) = c0 + c1*Q + c2*Q^2 + ...
+    Polynomial {
+        /// Coefficients in ascending order [c0, c1, c2, ...]
+        coefficients: Vec<f64>,
+    },
+    /// Tailrace level as piecewise-linear function of outflow.
+    Piecewise {
+        /// (outflow_m3s, height_m) points, sorted by outflow, monotonically increasing.
+        points: Vec<TailracePoint>,
+    },
+}
+
+/// A single point on the piecewise tailrace curve.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct TailracePoint {
+    pub outflow_m3s: f64,
+    pub height_m: f64,
+}
+
+/// Hydraulic losses model for head loss computation.
+/// See Input System Entities §3.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum HydraulicLossesModel {
+    /// Losses as a fraction of gross head: h_loss = value * h_gross
+    Factor { value: f64 },
+    /// Fixed head loss in meters, independent of operating point.
+    Constant { value_m: f64 },
+}
+
+/// Turbine-generator efficiency model.
+/// See Input System Entities §3.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum EfficiencyModel {
+    /// Single efficiency value across all operating points.
+    Constant { value: f64 },
+    // Future: FlowDependent { ... }
+}
+
+/// Energy contract direction.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ContractType {
+    /// External power imported into the system (adds to supply).
+    Import,
+    /// System power exported externally (adds to demand).
+    Export,
+}
+```
+
+#### 1.9.2 Bus
+
+```rust
+/// Electrical network node where energy balance is maintained.
+///
+/// Buses represent aggregation points in the transmission network — regional
+/// subsystems, substations, or any user-defined grouping. Each bus has a
+/// piecewise-linear deficit cost curve that ensures LP feasibility when demand
+/// cannot be met.
+///
+/// Source: system/buses.json. See Input System Entities §1.
+pub struct Bus {
+    // -- Base fields (loaded from JSON) --
+
+    /// Unique bus identifier.
+    pub id: EntityId,
+    /// Human-readable bus name.
+    pub name: String,
+
+    // -- Resolved fields (defaults applied during loading) --
+
+    /// Pre-resolved piecewise-linear deficit cost segments.
+    /// If not specified in buses.json, uses the global default from penalties.json.
+    /// Segments are ordered by ascending cost. The final segment has depth_mw = None
+    /// (unbounded) to ensure LP feasibility.
+    /// See Penalty System §2, Category 1 (recourse slack).
+    pub deficit_segments: Vec<DeficitSegment>,
+    /// Cost per MWh for surplus generation absorption (recourse slack).
+    /// Resolved from entity-level override or global default.
+    pub excess_cost: f64,
+}
+
+/// A single segment of the piecewise-linear deficit cost curve.
+///
+/// Segments are cumulative: the first depth_mw MW of deficit costs cost_per_mwh,
+/// the next segment's depth_mw MW cost that segment's cost_per_mwh, and so on.
+/// The final segment has depth_mw = None (extends to infinity).
+#[derive(Debug, Clone, PartialEq)]
+pub struct DeficitSegment {
+    /// MW of deficit covered by this segment. None for the final unbounded segment.
+    pub depth_mw: Option<f64>,
+    /// Cost per MWh of deficit in this segment.
+    pub cost_per_mwh: f64,
+}
+```
+
+**Field descriptions**:
+
+| Field              | Source                                                                  | Base/Resolved | Description                                                                         |
+| ------------------ | ----------------------------------------------------------------------- | ------------- | ----------------------------------------------------------------------------------- |
+| `id`               | `buses.json` `id`                                                       | Base          | Unique bus identifier (i32 from JSON)                                               |
+| `name`             | `buses.json` `name`                                                     | Base          | Human-readable bus name                                                             |
+| `deficit_segments` | `buses.json` `deficit_segments` or `penalties.json` global default      | Resolved      | Piecewise deficit cost curve with defaults applied. Final segment always unbounded. |
+| `excess_cost`      | `buses.json` `penalties.excess_cost` or `penalties.json` global default | Resolved      | Surplus generation absorption cost                                                  |
+
+#### 1.9.3 Line
+
+```rust
+/// Transmission interconnection between two buses.
+///
+/// Lines allow bidirectional power transfer subject to capacity limits and
+/// transmission losses. Line flow is a hard constraint (no slack variables) --
+/// the exchange_cost is a regularization penalty, not a violation penalty.
+///
+/// Source: system/lines.json. See Input System Entities §2.
+pub struct Line {
+    // -- Base fields (loaded from JSON) --
+
+    /// Unique line identifier.
+    pub id: EntityId,
+    /// Human-readable line name.
+    pub name: String,
+    /// Source bus for direct flow direction.
+    pub source_bus_id: EntityId,
+    /// Target bus for direct flow direction.
+    pub target_bus_id: EntityId,
+    /// Stage when line enters service. None = always exists.
+    pub entry_stage_id: Option<i32>,
+    /// Stage when line is decommissioned. None = never decommissioned.
+    pub exit_stage_id: Option<i32>,
+    /// Maximum flow from source to target (MW). Hard bound.
+    pub direct_capacity_mw: f64,
+    /// Maximum flow from target to source (MW). Hard bound.
+    pub reverse_capacity_mw: f64,
+    /// Transmission losses as percentage (e.g., 2.5 means 2.5%).
+    pub losses_percent: f64,
+
+    // -- Resolved fields (defaults applied during loading) --
+
+    /// Regularization cost per MWh exchanged.
+    /// Resolved from entity-level override or global default from penalties.json.
+    /// See Penalty System §2, Category 3.
+    pub exchange_cost: f64,
+}
+```
+
+**Field descriptions**:
+
+| Field                 | Source                                                          | Base/Resolved | Description                                |
+| --------------------- | --------------------------------------------------------------- | ------------- | ------------------------------------------ |
+| `id`                  | `lines.json` `id`                                               | Base          | Unique line identifier                     |
+| `name`                | `lines.json` `name`                                             | Base          | Human-readable line name                   |
+| `source_bus_id`       | `lines.json` `source_bus_id`                                    | Base          | Source bus for direct flow                 |
+| `target_bus_id`       | `lines.json` `target_bus_id`                                    | Base          | Target bus for direct flow                 |
+| `entry_stage_id`      | `lines.json` `entry_stage_id`                                   | Base          | Lifecycle start (None = always)            |
+| `exit_stage_id`       | `lines.json` `exit_stage_id`                                    | Base          | Lifecycle end (None = never)               |
+| `direct_capacity_mw`  | `lines.json` `capacity.direct_mw`                               | Base          | Maximum direct flow (MW)                   |
+| `reverse_capacity_mw` | `lines.json` `capacity.reverse_mw`                              | Base          | Maximum reverse flow (MW)                  |
+| `losses_percent`      | `lines.json` `losses_percent`                                   | Base          | Transmission loss percentage (default 0.0) |
+| `exchange_cost`       | `lines.json` `exchange_cost` or `penalties.json` global default | Resolved      | Regularization cost per MWh exchanged      |
+
+#### 1.9.4 Hydro
+
+```rust
+/// Hydro plant with reservoir, generation model, and cascade topology.
+///
+/// Hydro plants are the most complex entity in the system. The struct captures
+/// core identity, reservoir bounds, outflow limits, generation model (as a tagged
+/// union), optional tailrace/losses/efficiency/evaporation data, diversion channel,
+/// and filling configuration. The generation model can vary by stage or season --
+/// see Input Hydro Extensions §2 for selection modes.
+///
+/// Source: system/hydros.json + extension files. See Input System Entities §3
+/// and Input Hydro Extensions.
+pub struct Hydro {
+    // -- Core identity and topology (base) --
+
+    /// Unique hydro identifier.
+    pub id: EntityId,
+    /// Human-readable hydro name.
+    pub name: String,
+    /// Bus where generation is injected.
+    pub bus_id: EntityId,
+    /// Physical downstream hydro in the cascade. None if terminal node.
+    /// Always refers to the physical downstream -- cascade redirection for
+    /// non-existing plants is handled in CascadeTopology (1.5).
+    pub downstream_id: Option<EntityId>,
+    /// Stage when hydro enters operation. None = always exists.
+    pub entry_stage_id: Option<i32>,
+    /// Stage when hydro is decommissioned. None = never.
+    pub exit_stage_id: Option<i32>,
+
+    // -- Reservoir (base) --
+
+    /// Minimum storage (dead volume) in hm3. Soft lower bound --
+    /// violation uses storage_violation_below slack.
+    pub min_storage_hm3: f64,
+    /// Maximum storage in hm3. Hard upper bound (emergency spillage handles excess).
+    pub max_storage_hm3: f64,
+
+    // -- Outflow bounds (base) --
+
+    /// Minimum total outflow (environmental flow requirement) in m3/s.
+    /// Soft lower bound -- violation slack available.
+    pub min_outflow_m3s: f64,
+    /// Maximum total outflow (flood control) in m3/s.
+    /// None = no upper bound constraint. Soft upper bound when present.
+    pub max_outflow_m3s: Option<f64>,
+
+    // -- Generation model (base, tagged union) --
+
+    /// Active generation model variant. Determines the production function
+    /// used for this hydro. Can be overridden per stage or season via the
+    /// production model selection mechanism in Input Hydro Extensions §2.
+    pub generation_model: HydroGenerationModel,
+    /// Minimum turbined flow (machine limits) in m3/s.
+    /// Soft lower bound -- violation slack available.
+    pub min_turbined_m3s: f64,
+    /// Maximum turbined flow (machine capacity) in m3/s. Hard bound.
+    pub max_turbined_m3s: f64,
+    /// Minimum generation bound (user-defined) in MW.
+    /// Soft lower bound -- violation slack available.
+    pub min_generation_mw: f64,
+    /// Maximum generation bound (user-defined) in MW. Hard bound.
+    pub max_generation_mw: f64,
+
+    // -- Optional hydro data (base, None = not provided) --
+
+    /// Tailrace model for downstream water level computation.
+    /// None = no tailrace adjustment. Only relevant for linearized_head and
+    /// computed fpha models.
+    pub tailrace: Option<TailraceModel>,
+    /// Hydraulic losses model. None = zero losses assumed.
+    pub hydraulic_losses: Option<HydraulicLossesModel>,
+    /// Turbine-generator efficiency model. None = efficiency embedded in
+    /// productivity_mw_per_m3s.
+    pub efficiency: Option<EfficiencyModel>,
+    /// Monthly evaporation coefficients (mm), January through December.
+    /// None = no evaporation modeled for this hydro.
+    /// Combined with surface area from hydro_geometry to compute evaporated volume.
+    /// See Input Hydro Extensions §1 for geometry data.
+    pub evaporation_coefficients_mm: Option<[f64; 12]>,
+
+    // -- Diversion channel (base, optional) --
+
+    /// Diversion channel configuration. None = no diversion.
+    pub diversion: Option<DiversionChannel>,
+
+    // -- Filling configuration (base, optional) --
+
+    /// Dead-volume filling configuration. None = no filling period.
+    /// See Input System Entities §3 (Filling Model) and Penalty System §7.
+    pub filling: Option<FillingConfig>,
+
+    // -- Resolved penalty overrides --
+
+    /// Entity-level penalty overrides resolved from hydros.json penalties block.
+    /// Stage-varying penalties are resolved separately in ResolvedPenalties (section 10).
+    /// Fields here represent the entity-level base values after applying the
+    /// three-tier cascade: global defaults -> entity overrides.
+    pub penalties: HydroPenalties,
+}
+
+/// Diversion channel configuration for a hydro plant.
+/// Diversion creates an additional flow variable bounded by [0, max_flow_m3s].
+/// Diverted water is subtracted from the plant's balance and added to the
+/// destination hydro's inflow. It does NOT generate power.
+#[derive(Debug, Clone, PartialEq)]
+pub struct DiversionChannel {
+    /// Hydro plant receiving diverted water.
+    pub downstream_id: EntityId,
+    /// Maximum diversion flow in m3/s. Hard bound.
+    pub max_flow_m3s: f64,
+}
+
+/// Dead-volume filling configuration.
+/// Represents the commissioning period of a new hydro plant, during which the
+/// reservoir fills from an initial level up to the dead volume (min_storage_hm3).
+/// Based on CEPEL's dead-volume filling model (enchimento de volume morto).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct FillingConfig {
+    /// First stage of the filling period. Must be strictly less than entry_stage_id.
+    pub start_stage_id: i32,
+    /// Default filling inflow retained per stage (m3/s).
+    /// Can be overridden per stage in hydro_bounds.
+    /// Default: 0.0 (passive filling from natural inflows only).
+    pub filling_inflow_m3s: f64,
+}
+
+/// Entity-level penalty overrides for a hydro plant.
+/// These are the resolved base values after applying the global -> entity cascade.
+/// Stage-varying overrides are stored in ResolvedPenalties (section 10).
+/// All fields are resolved (never None at runtime) -- if no entity override exists,
+/// the global default is used.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct HydroPenalties {
+    pub spillage_cost: f64,
+    pub diversion_cost: f64,
+    pub fpha_turbined_cost: f64,
+    pub storage_violation_below_cost: f64,
+    pub filling_target_violation_cost: f64,
+    pub turbined_violation_below_cost: f64,
+    pub outflow_violation_below_cost: f64,
+    pub outflow_violation_above_cost: f64,
+    pub generation_violation_below_cost: f64,
+    pub evaporation_violation_cost: f64,
+    pub water_withdrawal_violation_cost: f64,
+}
+```
+
+**Field descriptions (Hydro)**:
+
+| Field                         | Source                                                | Base/Resolved | Description                                                |
+| ----------------------------- | ----------------------------------------------------- | ------------- | ---------------------------------------------------------- |
+| `id`                          | `hydros.json` `id`                                    | Base          | Unique hydro identifier                                    |
+| `name`                        | `hydros.json` `name`                                  | Base          | Human-readable hydro name                                  |
+| `bus_id`                      | `hydros.json` `bus_id`                                | Base          | Bus where generation is injected                           |
+| `downstream_id`               | `hydros.json` `downstream_id`                         | Base          | Physical downstream hydro (None if terminal)               |
+| `entry_stage_id`              | `hydros.json` `entry_stage_id`                        | Base          | Lifecycle start (None = always)                            |
+| `exit_stage_id`               | `hydros.json` `exit_stage_id`                         | Base          | Lifecycle end (None = never)                               |
+| `min_storage_hm3`             | `hydros.json` `reservoir.min_storage_hm3`             | Base          | Dead volume (soft lower bound)                             |
+| `max_storage_hm3`             | `hydros.json` `reservoir.max_storage_hm3`             | Base          | Full reservoir capacity (hard bound)                       |
+| `min_outflow_m3s`             | `hydros.json` `outflow.min_outflow_m3s`               | Base          | Environmental flow requirement                             |
+| `max_outflow_m3s`             | `hydros.json` `outflow.max_outflow_m3s`               | Base          | Flood control limit (None = unbounded)                     |
+| `generation_model`            | `hydros.json` `generation.model` + variant fields     | Base          | Tagged union selecting production function                 |
+| `min_turbined_m3s`            | `hydros.json` `generation.min_turbined_m3s`           | Base          | Machine minimum flow (soft bound)                          |
+| `max_turbined_m3s`            | `hydros.json` `generation.max_turbined_m3s`           | Base          | Machine capacity (hard bound)                              |
+| `min_generation_mw`           | `hydros.json` `generation.min_generation_mw`          | Base          | User-defined min generation (soft bound)                   |
+| `max_generation_mw`           | `hydros.json` `generation.max_generation_mw`          | Base          | User-defined max generation (hard bound)                   |
+| `tailrace`                    | `hydros.json` `tailrace`                              | Base          | Downstream water level model (None = no adjustment)        |
+| `hydraulic_losses`            | `hydros.json` `hydraulic_losses`                      | Base          | Head losses model (None = zero losses)                     |
+| `efficiency`                  | `hydros.json` `efficiency`                            | Base          | Turbine efficiency model (None = embedded in productivity) |
+| `evaporation_coefficients_mm` | `hydros.json` `evaporation.coefficients_mm`           | Base          | 12 monthly evaporation rates (None = no evaporation)       |
+| `diversion`                   | `hydros.json` `diversion`                             | Base          | Diversion channel config (None = no diversion)             |
+| `filling`                     | `hydros.json` `filling`                               | Base          | Dead-volume filling config (None = no filling)             |
+| `penalties`                   | `hydros.json` `penalties` + `penalties.json` defaults | Resolved      | Entity-level penalty values after cascade resolution       |
+
+> **Cross-reference**: The `HydroGenerationModel` enum defines the base model loaded from `hydros.json`. Stage-varying or season-varying model selection (the `stage_ranges` and `seasonal` modes) is configured via [Input Hydro Extensions §2](input-hydro-extensions.md) and resolved into a per-(hydro, stage) lookup during loading. That resolved lookup is stored alongside the system data, not inside the `Hydro` struct itself.
+
+#### 1.9.5 Thermal
+
+```rust
+/// Thermal plant with piecewise-linear cost curve.
+///
+/// Thermal dispatch is directly controllable (unlike hydro which depends on
+/// exogenous inflows), so generation bounds are hard constraints without
+/// slack variables.
+///
+/// Source: system/thermals.json. See Input System Entities §4.
+pub struct Thermal {
+    // -- Base fields (loaded from JSON) --
+
+    /// Unique thermal identifier.
+    pub id: EntityId,
+    /// Human-readable thermal name.
+    pub name: String,
+    /// Bus where generation is injected.
+    pub bus_id: EntityId,
+    /// Stage when thermal enters service. None = always exists.
+    pub entry_stage_id: Option<i32>,
+    /// Stage when thermal is decommissioned. None = never.
+    pub exit_stage_id: Option<i32>,
+    /// Piecewise-linear cost curve, ordered by ascending cost.
+    /// Each segment defines a tranche of generation capacity at a given cost.
+    pub cost_segments: Vec<ThermalCostSegment>,
+    /// Minimum stable generation in MW. Hard constraint (no slack).
+    /// 0 if no minimum.
+    pub min_generation_mw: f64,
+    /// Maximum generation capacity in MW. Hard constraint (no slack).
+    pub max_generation_mw: f64,
+    /// GNL dispatch anticipation configuration. None = standard thermal.
+    /// When present, adds state variables for committed dispatch pipeline.
+    /// Currently rejected by validation -- see Input System Entities §4.
+    pub gnl_config: Option<GnlConfig>,
+}
+
+/// A single segment of the thermal piecewise-linear cost curve.
+///
+/// Segments are ordered by ascending cost. The first segment covers the cheapest
+/// tranche, and subsequent segments cover progressively more expensive tranches.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ThermalCostSegment {
+    /// Generation capacity of this segment in MW.
+    pub capacity_mw: f64,
+    /// Marginal cost in this segment ($/MWh).
+    pub cost_per_mwh: f64,
+}
+
+/// GNL (Gas Natural Liquefeito) dispatch anticipation configuration.
+/// Requires dispatch decisions N stages ahead due to fuel ordering lead times.
+/// Adds lag_stages state variables to the SDDP state vector per GNL thermal.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct GnlConfig {
+    /// Number of stages of dispatch anticipation (e.g., 2 means the dispatch
+    /// decision must be made 2 stages before execution).
+    pub lag_stages: i32,
+}
+```
+
+**Field descriptions**:
+
+| Field               | Source                              | Base/Resolved | Description                               |
+| ------------------- | ----------------------------------- | ------------- | ----------------------------------------- |
+| `id`                | `thermals.json` `id`                | Base          | Unique thermal identifier                 |
+| `name`              | `thermals.json` `name`              | Base          | Human-readable thermal name               |
+| `bus_id`            | `thermals.json` `bus_id`            | Base          | Bus where generation is injected          |
+| `entry_stage_id`    | `thermals.json` `entry_stage_id`    | Base          | Lifecycle start (None = always)           |
+| `exit_stage_id`     | `thermals.json` `exit_stage_id`     | Base          | Lifecycle end (None = never)              |
+| `cost_segments`     | `thermals.json` `cost_segments`     | Base          | Piecewise cost curve segments             |
+| `min_generation_mw` | `thermals.json` `generation.min_mw` | Base          | Minimum stable generation (hard bound)    |
+| `max_generation_mw` | `thermals.json` `generation.max_mw` | Base          | Maximum capacity (hard bound)             |
+| `gnl_config`        | `thermals.json` `gnl_config`        | Base          | GNL anticipation config (None = standard) |
+
+#### 1.9.6 PumpingStation
+
+```rust
+/// Water transfer station consuming electrical power.
+///
+/// Pumping stations are independent system elements -- not a property of any
+/// specific hydro plant. They transfer water from a source reservoir to a
+/// destination reservoir, with power consumption at the connected bus. The cost
+/// of pumping is implicit via energy consumption in the bus load balance.
+///
+/// Source: system/pumping_stations.json. See Input System Entities §5.
+pub struct PumpingStation {
+    // -- Base fields (loaded from JSON) --
+
+    /// Unique station identifier.
+    pub id: EntityId,
+    /// Station name.
+    pub name: String,
+    /// Bus where power is consumed.
+    pub bus_id: EntityId,
+    /// Hydro from which water is withdrawn.
+    pub source_hydro_id: EntityId,
+    /// Hydro to which water is delivered.
+    pub destination_hydro_id: EntityId,
+    /// Stage when station enters service. None = always exists.
+    pub entry_stage_id: Option<i32>,
+    /// Stage when station is decommissioned. None = never.
+    pub exit_stage_id: Option<i32>,
+    /// Power consumption rate [MW/(m3/s)].
+    pub consumption_mw_per_m3s: f64,
+    /// Minimum pumped flow in m3/s.
+    pub min_flow_m3s: f64,
+    /// Maximum pumped flow in m3/s.
+    pub max_flow_m3s: f64,
+}
+```
+
+**Field descriptions**:
+
+| Field                    | Source                                           | Base/Resolved | Description                     |
+| ------------------------ | ------------------------------------------------ | ------------- | ------------------------------- |
+| `id`                     | `pumping_stations.json` `id`                     | Base          | Unique station identifier       |
+| `name`                   | `pumping_stations.json` `name`                   | Base          | Station name                    |
+| `bus_id`                 | `pumping_stations.json` `bus_id`                 | Base          | Bus where power is consumed     |
+| `source_hydro_id`        | `pumping_stations.json` `source_hydro_id`        | Base          | Water source hydro              |
+| `destination_hydro_id`   | `pumping_stations.json` `destination_hydro_id`   | Base          | Water destination hydro         |
+| `entry_stage_id`         | `pumping_stations.json` `entry_stage_id`         | Base          | Lifecycle start (None = always) |
+| `exit_stage_id`          | `pumping_stations.json` `exit_stage_id`          | Base          | Lifecycle end (None = never)    |
+| `consumption_mw_per_m3s` | `pumping_stations.json` `consumption_mw_per_m3s` | Base          | Power consumption rate          |
+| `min_flow_m3s`           | `pumping_stations.json` `flow.min_m3s`           | Base          | Minimum pumped flow             |
+| `max_flow_m3s`           | `pumping_stations.json` `flow.max_m3s`           | Base          | Maximum pumped flow             |
+
+#### 1.9.7 EnergyContract
+
+```rust
+/// Import/export agreement with an external system.
+///
+/// Import contracts add to supply at the connected bus; export contracts add
+/// to demand. Contract limits are hard constraints (no slack variables).
+/// The price represents cost (import, positive) or revenue (export, typically negative).
+///
+/// Source: system/energy_contracts.json. See Input System Entities §6.
+pub struct EnergyContract {
+    // -- Base fields (loaded from JSON) --
+
+    /// Unique contract identifier.
+    pub id: EntityId,
+    /// Contract name.
+    pub name: String,
+    /// Bus connected to this contract.
+    pub bus_id: EntityId,
+    /// Contract direction (import or export).
+    pub contract_type: ContractType,
+    /// Stage when contract becomes active. None = always exists.
+    pub entry_stage_id: Option<i32>,
+    /// Stage when contract expires. None = never.
+    pub exit_stage_id: Option<i32>,
+    /// Cost per MWh (import, positive) or revenue per MWh (export, typically negative).
+    pub price_per_mwh: f64,
+    /// Minimum contract usage in MW. Hard bound.
+    pub min_mw: f64,
+    /// Maximum contract usage in MW. Hard bound.
+    pub max_mw: f64,
+}
+```
+
+**Field descriptions**:
+
+| Field            | Source                                   | Base/Resolved | Description                       |
+| ---------------- | ---------------------------------------- | ------------- | --------------------------------- |
+| `id`             | `energy_contracts.json` `id`             | Base          | Unique contract identifier        |
+| `name`           | `energy_contracts.json` `name`           | Base          | Contract name                     |
+| `bus_id`         | `energy_contracts.json` `bus_id`         | Base          | Bus connected to contract         |
+| `contract_type`  | `energy_contracts.json` `type`           | Base          | Import or export direction        |
+| `entry_stage_id` | `energy_contracts.json` `entry_stage_id` | Base          | Lifecycle start (None = always)   |
+| `exit_stage_id`  | `energy_contracts.json` `exit_stage_id`  | Base          | Lifecycle end (None = never)      |
+| `price_per_mwh`  | `energy_contracts.json` `price_per_mwh`  | Base          | Cost (import) or revenue (export) |
+| `min_mw`         | `energy_contracts.json` `limits.min_mw`  | Base          | Minimum usage (hard bound)        |
+| `max_mw`         | `energy_contracts.json` `limits.max_mw`  | Base          | Maximum usage (hard bound)        |
+
+#### 1.9.8 NonControllableSource
+
+```rust
+/// Intermittent generation source (wind, solar, small run-of-river hydro).
+///
+/// Non-controllable sources have stochastic availability per (stage, scenario)
+/// from the scenario pipeline. The solver can only curtail generation below the
+/// available amount -- it cannot dispatch upward. Curtailment is penalized with
+/// curtailment_cost (regularization) to prioritize using available generation.
+///
+/// Source: system/non_controllable_sources.json. See Input System Entities §7.
+pub struct NonControllableSource {
+    // -- Base fields (loaded from JSON) --
+
+    /// Unique source identifier.
+    pub id: EntityId,
+    /// Human-readable source name.
+    pub name: String,
+    /// Bus where generation is injected.
+    pub bus_id: EntityId,
+    /// Stage when source enters service. None = always exists.
+    pub entry_stage_id: Option<i32>,
+    /// Stage when source is decommissioned. None = never.
+    pub exit_stage_id: Option<i32>,
+    /// Installed capacity (hard upper bound, physical limit) in MW.
+    pub max_generation_mw: f64,
+
+    // -- Resolved fields (defaults applied during loading) --
+
+    /// Regularization cost per MWh curtailed.
+    /// Resolved from entity-level override or global default from penalties.json.
+    /// See Penalty System §2, Category 3.
+    pub curtailment_cost: f64,
+}
+```
+
+**Field descriptions**:
+
+| Field               | Source                                                                                | Base/Resolved | Description                           |
+| ------------------- | ------------------------------------------------------------------------------------- | ------------- | ------------------------------------- |
+| `id`                | `non_controllable_sources.json` `id`                                                  | Base          | Unique source identifier              |
+| `name`              | `non_controllable_sources.json` `name`                                                | Base          | Human-readable source name            |
+| `bus_id`            | `non_controllable_sources.json` `bus_id`                                              | Base          | Bus where generation is injected      |
+| `entry_stage_id`    | `non_controllable_sources.json` `entry_stage_id`                                      | Base          | Lifecycle start (None = always)       |
+| `exit_stage_id`     | `non_controllable_sources.json` `exit_stage_id`                                       | Base          | Lifecycle end (None = never)          |
+| `max_generation_mw` | `non_controllable_sources.json` `max_generation_mw`                                   | Base          | Installed capacity (hard bound)       |
+| `curtailment_cost`  | `non_controllable_sources.json` `curtailment_cost` or `penalties.json` global default | Resolved      | Regularization cost per MWh curtailed |
+
 ## 2. Operative State
 
 Every entity with lifecycle attributes (`entry_stage_id`, `exit_stage_id`) has a stage-dependent operative state that determines which LP variables and constraints are active. The operative state is computed per entity per stage.
@@ -475,41 +1108,455 @@ The resolved set of hydro bounds for a given (hydro, stage):
 
 ## 12. Stage and Block Definitions
 
-The temporal structure must be fully loaded in memory for the solver to dimension LPs and iterate:
+The temporal structure must be fully loaded in memory for the solver to dimension LPs and iterate. These are `cobre-core` clarity-first types following the dual-nature design (1.1): they use `Vec<T>`, `String`, and `HashMap` for readability and correctness. LP-related fields (variable indices, constraint counts, coefficient arrays) belong to the `cobre-sddp` performance layer -- see [Solver Abstraction](../architecture/solver-abstraction.md) for the stage LP template design.
 
-### Stage
+### 12.1 Supporting Enums
 
-- `id` — unique identifier (non-negative for study, negative for pre-study)
-- `start_date`, `end_date` — temporal extent
-- `season_id` — links to season definitions for PAR model cycling
-- `blocks` — ordered list of blocks (see below)
-- `block_mode` — `parallel` or `chronological` (can vary per stage)
-- `state_variables` — boolean flags: `storage` (default true), `inflow_lags` (default false)
-- `risk_measure` — `expectation` or CVaR parameters (`alpha`, `lambda`)
-- `num_scenarios` — branching factor for this stage
-- `sampling_method` — SAA, LHS, QMC, etc.
+```rust
+/// Block formulation mode controlling how blocks within a stage relate
+/// to each other in the LP.
+///
+/// See [Block Formulations](../math/block-formulations.md) for the
+/// mathematical treatment of each mode.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlockMode {
+    /// Blocks are independent sub-periods solved simultaneously.
+    /// Water balance is aggregated across all blocks in the stage.
+    /// This is the default and most common mode.
+    Parallel,
 
-### Block
+    /// Blocks are sequential within the stage, with inter-block
+    /// state transitions (intra-stage storage dynamics).
+    /// Enables modeling of daily cycling patterns within monthly stages.
+    Chronological,
+}
 
-- `id` — contiguous within stage (0, 1, 2, ...)
-- `name` — human-readable label
-- `hours` — duration in hours
-- Derived: `weight = hours / sum(all block hours in stage)`
+/// Season cycle type controlling how season IDs map to calendar periods.
+///
+/// See [Input Scenarios §1.1](input-scenarios.md) for the JSON schema
+/// and calendar mapping rules.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SeasonCycleType {
+    /// Each season corresponds to one calendar month (12 seasons).
+    Monthly,
+    /// Each season corresponds to one ISO calendar week (52 seasons).
+    Weekly,
+    /// User-defined date ranges with explicit boundaries per season.
+    Custom,
+}
 
-### Policy Graph
+/// Scenario sampling method for a stage.
+///
+/// Controls how noise vectors are drawn for the forward pass at this
+/// stage. See [Input Scenarios §1.8](input-scenarios.md) for the
+/// full method catalog and use cases.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SamplingMethod {
+    /// Sample Average Approximation. Pure Monte Carlo random sampling.
+    Saa,
+    /// Latin Hypercube Sampling. Stratified sampling ensuring uniform coverage.
+    Lhs,
+    /// Quasi-Monte Carlo with Sobol sequences. Low-discrepancy.
+    QmcSobol,
+    /// Quasi-Monte Carlo with Halton sequences. Low-discrepancy.
+    QmcHalton,
+    /// Selective/Representative Sampling. Clustering on historical data.
+    Selective,
+}
+```
 
-The policy graph defines stage transitions and discounting:
+### 12.2 Block
 
-- `type` — `finite_horizon` or `cyclic`
-- `annual_discount_rate` — global rate, auto-converted to per-transition factor: `beta = 1/(1+r)^dt`
-- Transitions: list of `(source_id, target_id, probability)` with optional per-transition rate overrides
+```rust
+/// A load block within a stage, representing a sub-period with uniform
+/// demand and generation characteristics.
+///
+/// Blocks partition the stage duration into sub-periods (e.g., peak,
+/// off-peak, shoulder). Block IDs are contiguous within each stage,
+/// starting at 0. The block weight (fraction of stage duration) is
+/// derived from `duration_hours` and is not stored -- it is computed
+/// on demand as `duration_hours / sum(all block hours in stage)`.
+///
+/// Source: `stages.json` `stages[].blocks[]`.
+/// See [Input Scenarios §1.5](input-scenarios.md).
+pub struct Block {
+    /// 0-based index within the parent stage.
+    /// Matches the `id` field from `stages.json`, validated to be
+    /// contiguous (0, 1, 2, ..., n-1) during loading.
+    pub index: usize,
 
-### Season Definitions
+    /// Human-readable block label (e.g., "LEVE", "MEDIA", "PESADA").
+    pub name: String,
 
-Maps `season_id` to calendar periods. Required when deriving AR parameters from inflow history.
+    /// Duration of this block in hours. Must be positive.
+    /// Validation: the sum of all block hours within a stage must
+    /// equal the total stage duration in hours.
+    /// See [Input Scenarios §1.10](input-scenarios.md), rule 3.
+    pub duration_hours: f64,
+}
+```
 
-- `cycle_type`: `monthly` (12 seasons), `weekly` (52), or `custom`
-- Validation: all stages sharing a `season_id` must have equal duration
+**Field descriptions**:
+
+| Field            | Source                         | Description                                                                                                                                                                                            |
+| ---------------- | ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `index`          | `stages.json` `blocks[].id`    | 0-based block index within the stage. Contiguous by validation rule 2 ([Input Scenarios §1.10](input-scenarios.md)).                                                                                   |
+| `name`           | `stages.json` `blocks[].name`  | Human-readable label for reporting and identification.                                                                                                                                                 |
+| `duration_hours` | `stages.json` `blocks[].hours` | Duration in hours. The block **weight** is derived as `duration_hours / total_stage_hours` and is not stored as a field. Computed on demand because it depends on the sibling blocks within the stage. |
+
+### 12.3 StageStateConfig
+
+```rust
+/// State variable flags controlling which variables carry state
+/// between stages for a given stage.
+///
+/// Source: `stages.json` `stages[].state_variables`.
+/// See [Input Scenarios §1.6](input-scenarios.md).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct StageStateConfig {
+    /// Whether reservoir storage volumes are state variables.
+    /// Default: true. Mandatory in most applications but kept as an
+    /// explicit flag for transparency.
+    pub storage: bool,
+
+    /// Whether past inflow realizations (AR model lags) are state
+    /// variables. Default: false. Required when PAR model order p > 0
+    /// and inflow lag cuts are enabled.
+    pub inflow_lags: bool,
+}
+```
+
+### 12.4 StageRiskConfig
+
+```rust
+/// Per-stage risk measure configuration, representing the parsed and
+/// validated risk parameters for a single stage.
+///
+/// This is the clarity-first representation stored in the Stage struct.
+/// The solver-level `RiskMeasure` enum in
+/// [Risk Measure Trait](../architecture/risk-measure-trait.md) is the
+/// dispatch type built FROM this configuration during the variant
+/// selection pipeline.
+///
+/// Source: `stages.json` `stages[].risk_measure`.
+/// See [Input Scenarios §1.7](input-scenarios.md).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum StageRiskConfig {
+    /// Risk-neutral expected value. No additional parameters.
+    Expectation,
+
+    /// Convex combination of expectation and CVaR.
+    /// See [Risk Measures](../math/risk-measures.md) for the
+    /// mathematical formulation.
+    CVaR {
+        /// Confidence level alpha in (0, 1].
+        /// alpha = 0.95 means 5% worst-case scenarios.
+        alpha: f64,
+
+        /// Risk aversion weight lambda in [0, 1].
+        /// lambda = 0 reduces to Expectation.
+        /// lambda = 1 is pure CVaR.
+        lambda: f64,
+    },
+}
+```
+
+### 12.5 StageSamplingConfig
+
+```rust
+/// Per-stage scenario sampling configuration, grouping the branching
+/// factor and sampling method for a single stage.
+///
+/// Source: `stages.json` `stages[].num_scenarios` and
+/// `stages[].sampling_method`.
+/// See [Input Scenarios §1.4, §1.8](input-scenarios.md).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct StageSamplingConfig {
+    /// Number of scenarios (branching factor) for this stage.
+    /// Must be positive. Controls the number of noise realizations
+    /// sampled at this stage during forward and backward passes.
+    pub num_scenarios: usize,
+
+    /// Sampling method used to draw noise vectors at this stage.
+    /// Can vary per stage, allowing adaptive strategies (e.g., LHS
+    /// for near-term, SAA for distant stages).
+    pub sampling_method: SamplingMethod,
+}
+```
+
+### 12.6 Stage
+
+```rust
+/// A single stage in the multi-stage stochastic optimization problem.
+///
+/// Stages partition the study horizon into decision periods. Each stage
+/// has a temporal extent, block structure, scenario configuration, risk
+/// parameters, and state variable flags. Stages are sorted by `id` in
+/// canonical order after loading (see Design Principles §3).
+///
+/// Study stages have non-negative IDs; pre-study stages (used only for
+/// PAR model lag initialization) have negative IDs. Pre-study stages
+/// carry only `id`, `start_date`, `end_date`, and `season_id` -- their
+/// blocks, risk, and sampling fields are unused.
+///
+/// This struct does NOT contain LP-related fields (variable indices,
+/// constraint counts, coefficient arrays). Those belong to the
+/// cobre-sddp performance layer -- see Solver Abstraction SS11.
+///
+/// Source: `stages.json` `stages[]` and `pre_study_stages[]`.
+/// See [Input Scenarios §1.4](input-scenarios.md).
+pub struct Stage {
+    // -- Identity and temporal extent --
+
+    /// 0-based index of this stage in the canonical-ordered stages
+    /// vector. Used for array indexing into per-stage data structures
+    /// (cuts, results, penalty arrays). Assigned during loading after
+    /// sorting by `id`.
+    pub index: usize,
+
+    /// Unique stage identifier from `stages.json`.
+    /// Non-negative for study stages, negative for pre-study stages.
+    /// The `id` is the domain-level identifier; `index` is the
+    /// internal array position.
+    pub id: i32,
+
+    /// Stage start date (inclusive). Parsed from ISO 8601 string.
+    /// Uses `chrono::NaiveDate` -- timezone-free calendar date, which
+    /// is appropriate because stage boundaries are calendar concepts,
+    /// not instants in time.
+    pub start_date: NaiveDate,
+
+    /// Stage end date (exclusive). Parsed from ISO 8601 string.
+    /// The stage duration is `end_date - start_date`.
+    pub end_date: NaiveDate,
+
+    /// Season index linking to `SeasonDefinition`. Maps this stage to
+    /// a position in the seasonal cycle (e.g., month 0-11 for monthly).
+    /// Required for PAR model coefficient lookup and inflow history
+    /// aggregation. `None` for stages without seasonal structure.
+    pub season_id: Option<usize>,
+
+    // -- Block structure --
+
+    /// Ordered list of load blocks within this stage.
+    /// Sorted by block index (0, 1, ..., n-1). The sum of all block
+    /// `duration_hours` must equal the total stage duration in hours.
+    pub blocks: Vec<Block>,
+
+    /// Block formulation mode for this stage.
+    /// Can vary per stage (e.g., chronological for near-term,
+    /// parallel for distant stages).
+    /// See [Block Formulations](../math/block-formulations.md).
+    pub block_mode: BlockMode,
+
+    // -- State, risk, and sampling --
+
+    /// State variable flags controlling which variables carry state
+    /// from this stage to the next.
+    pub state_config: StageStateConfig,
+
+    /// Risk measure configuration for this stage.
+    /// Can vary per stage (e.g., CVaR for near-term, Expectation
+    /// for distant stages).
+    pub risk_config: StageRiskConfig,
+
+    /// Scenario sampling configuration (branching factor and method).
+    pub sampling_config: StageSamplingConfig,
+}
+```
+
+**Field descriptions**:
+
+| Field             | Source                                                             | Description                                                                                                                                               |
+| ----------------- | ------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `index`           | Assigned during loading                                            | 0-based canonical index in the `System.stages` vector. Assigned after sorting by `id`.                                                                    |
+| `id`              | `stages.json` `stages[].id`                                        | Domain-level identifier. Non-negative for study, negative for pre-study.                                                                                  |
+| `start_date`      | `stages.json` `stages[].start_date`                                | Stage start date (inclusive). Parsed from ISO 8601 string.                                                                                                |
+| `end_date`        | `stages.json` `stages[].end_date`                                  | Stage end date (exclusive). Duration = `end_date - start_date`.                                                                                           |
+| `season_id`       | `stages.json` `stages[].season_id`                                 | Season index for PAR model cycling. `None` when null in JSON. Validated against `season_definitions`.                                                     |
+| `blocks`          | `stages.json` `stages[].blocks`                                    | Ordered block list. Resolves the `System` field `pub stages: Vec<Stage>` block structure.                                                                 |
+| `block_mode`      | `stages.json` `stages[].block_mode`                                | Parallel or Chronological. Default: Parallel. See [Block Formulations](../math/block-formulations.md).                                                    |
+| `state_config`    | `stages.json` `stages[].state_variables`                           | State variable flags (storage, inflow_lags). Defaults resolved during loading.                                                                            |
+| `risk_config`     | `stages.json` `stages[].risk_measure`                              | Risk measure parameters. Expectation or CVaR(alpha, lambda). Validated by rules R1-R4 in [Risk Measure Trait SS5](../architecture/risk-measure-trait.md). |
+| `sampling_config` | `stages.json` `stages[].num_scenarios`, `stages[].sampling_method` | Branching factor and sampling method. Both can vary per stage.                                                                                            |
+
+### 12.7 SeasonDefinition
+
+```rust
+/// A single season entry mapping a season ID to a calendar period.
+///
+/// Season definitions are required when deriving AR parameters from
+/// inflow history — the season determines how history values are
+/// aggregated into seasonal means and standard deviations.
+///
+/// Source: `stages.json` `season_definitions.seasons[]`.
+/// See [Input Scenarios §1.1](input-scenarios.md).
+pub struct SeasonDefinition {
+    /// Season index (0-based). For monthly cycles: 0 = January, ...,
+    /// 11 = December. For weekly cycles: 0-51 (ISO week numbers).
+    pub id: usize,
+
+    /// Human-readable label (e.g., "January", "Q1", "Wet Season").
+    pub label: String,
+
+    /// Calendar month where this season starts (1-12).
+    /// For monthly cycle_type, this uniquely identifies the month.
+    pub month_start: u32,
+
+    /// Calendar day where this season starts (1-31).
+    /// Only used when cycle_type is Custom. Default: 1.
+    pub day_start: Option<u32>,
+
+    /// Calendar month where this season ends (1-12).
+    /// Only used when cycle_type is Custom.
+    pub month_end: Option<u32>,
+
+    /// Calendar day where this season ends (1-31).
+    /// Only used when cycle_type is Custom.
+    pub day_end: Option<u32>,
+}
+```
+
+**Field descriptions**:
+
+| Field         | Source                                     | Description                                                                                      |
+| ------------- | ------------------------------------------ | ------------------------------------------------------------------------------------------------ |
+| `id`          | `season_definitions.seasons[].id`          | 0-based season index. Count depends on `cycle_type`: 12 (monthly), 52 (weekly), or user-defined. |
+| `label`       | `season_definitions.seasons[].label`       | Human-readable name for reporting.                                                               |
+| `month_start` | `season_definitions.seasons[].month_start` | Calendar month (1-12) where season begins.                                                       |
+| `day_start`   | `season_definitions.seasons[].day_start`   | Calendar day (1-31) for Custom cycle type. `None` for Monthly and Weekly.                        |
+| `month_end`   | `season_definitions.seasons[].month_end`   | Calendar month (1-12) where season ends. Only for Custom.                                        |
+| `day_end`     | `season_definitions.seasons[].day_end`     | Calendar day (1-31) where season ends. Only for Custom.                                          |
+
+### 12.8 SeasonMap
+
+```rust
+/// Complete season definitions including cycle type and all season entries.
+///
+/// The SeasonMap is the resolved representation of the `season_definitions`
+/// section in `stages.json`. It provides the season-to-calendar mapping
+/// consumed by the PAR model and inflow history aggregation.
+///
+/// Source: `stages.json` `season_definitions`.
+/// See [Input Scenarios §1.1](input-scenarios.md).
+pub struct SeasonMap {
+    /// Cycle type controlling how season IDs map to calendar periods.
+    pub cycle_type: SeasonCycleType,
+
+    /// Season entries sorted by `id`. Length depends on cycle_type:
+    /// 12 for Monthly, 52 for Weekly, user-defined for Custom.
+    pub seasons: Vec<SeasonDefinition>,
+}
+```
+
+**Validation**: All stages sharing the same `season_id` must have exactly the same duration. Each stage's `[start_date, end_date)` interval must fall entirely within the calendar period defined by its `season_id`. See [Input Scenarios §1.10](input-scenarios.md), rules 4 and 5.
+
+### 12.9 Transition
+
+```rust
+/// A single transition in the policy graph, representing a directed
+/// edge from one stage to another with an associated probability and
+/// optional discount rate override.
+///
+/// Transitions define the stage traversal order for both the forward
+/// and backward passes. In finite horizon mode, transitions form a
+/// linear chain. In cyclic mode, at least one transition creates a
+/// back-edge (source_id >= target_id).
+///
+/// Source: `stages.json` `policy_graph.transitions[]`.
+/// See [Input Scenarios §1.2](input-scenarios.md).
+pub struct Transition {
+    /// Source stage ID. Must exist in the stage set.
+    pub source_id: i32,
+
+    /// Target stage ID. Must exist in the stage set.
+    pub target_id: i32,
+
+    /// Transition probability. Outgoing probabilities from each source
+    /// must sum to 1.0 (within tolerance).
+    pub probability: f64,
+
+    /// Per-transition annual discount rate override.
+    /// When `None`, the global `annual_discount_rate` from the
+    /// PolicyGraph is used. When `Some(r)`, this rate is converted to
+    /// a per-transition factor using the source stage duration:
+    /// d = 1 / (1 + r)^dt.
+    /// See [Discount Rate §3](../math/discount-rate.md).
+    pub annual_discount_rate_override: Option<f64>,
+}
+```
+
+**Field descriptions**:
+
+| Field                           | Source                                            | Description                                                                                               |
+| ------------------------------- | ------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| `source_id`                     | `policy_graph.transitions[].source_id`            | Source stage ID. Validated to exist in the stage set (rule H4).                                           |
+| `target_id`                     | `policy_graph.transitions[].target_id`            | Target stage ID. Validated to exist in the stage set (rule H4).                                           |
+| `probability`                   | `policy_graph.transitions[].probability`          | Transition probability. Sum per source must be 1.0 ([Input Scenarios §1.10](input-scenarios.md), rule 6). |
+| `annual_discount_rate_override` | `policy_graph.transitions[].annual_discount_rate` | Optional per-transition override. `None` means use the global rate.                                       |
+
+### 12.10 PolicyGraph
+
+The `PolicyGraph` struct is the parsed, validated, clarity-first representation of the stage transition graph in `cobre-core`. It stores the raw graph topology (transitions, discount rate, horizon type) as loaded from `stages.json`. The solver-level `HorizonMode` enum -- defined in [Horizon Mode Trait SS1](../architecture/horizon-mode-trait.md) -- is a precomputed dispatch type built FROM this `PolicyGraph` during the variant selection pipeline ([Extension Points SS6](../architecture/extension-points.md)). The `PolicyGraph` captures _what_ the user specified; `HorizonMode` captures _how_ the solver will traverse it.
+
+```rust
+/// Parsed and validated policy graph defining stage transitions,
+/// horizon type, and global discount rate.
+///
+/// This is the cobre-core clarity-first representation loaded from
+/// `stages.json`. It stores the graph topology as specified by the
+/// user. The solver-level `HorizonMode` enum (see Horizon Mode Trait
+/// SS1) is built from this struct during initialization — it
+/// precomputes transition maps, cycle detection, and discount factors
+/// for efficient runtime dispatch.
+///
+/// Cross-reference: [Horizon Mode Trait](../architecture/horizon-mode-trait.md)
+/// defines the `HorizonMode` enum that interprets this graph structure.
+/// `PolicyGraphConfig` in that spec is the serde-level deserialization
+/// type; this `PolicyGraph` is the validated cobre-core representation.
+///
+/// Source: `stages.json` `policy_graph`.
+/// See [Input Scenarios §1.2](input-scenarios.md).
+pub struct PolicyGraph {
+    /// Horizon type: finite (acyclic chain) or cyclic (infinite periodic).
+    /// Determines which `HorizonMode` variant will be constructed at
+    /// solver initialization.
+    pub graph_type: PolicyGraphType,
+
+    /// Global annual discount rate.
+    /// Converted to per-transition factors using source stage durations:
+    /// d = 1 / (1 + annual_discount_rate)^dt.
+    /// A value of 0.0 means no discounting (d = 1.0 for all transitions).
+    /// For cyclic graphs, must be > 0 for convergence (validation rule 7).
+    /// See [Discount Rate §3](../math/discount-rate.md).
+    pub annual_discount_rate: f64,
+
+    /// Stage transitions with probabilities and optional per-transition
+    /// discount rate overrides. For finite horizon, these form a linear
+    /// chain or DAG. For cyclic horizon, at least one transition has
+    /// source_id >= target_id (the back-edge).
+    pub transitions: Vec<Transition>,
+
+    /// Season definitions loaded from `season_definitions` in
+    /// `stages.json`. Required when PAR models or inflow history
+    /// aggregation are used. `None` when no season definitions are
+    /// provided and none are required.
+    pub season_map: Option<SeasonMap>,
+}
+```
+
+**Field descriptions**:
+
+| Field                  | Source                              | Description                                                                                                                                                   |
+| ---------------------- | ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `graph_type`           | `policy_graph.type`                 | Horizon type tag. Reuses the `PolicyGraphType` enum (`FiniteHorizon`, `Cyclic`) defined in [Horizon Mode Trait SS3.1](../architecture/horizon-mode-trait.md). |
+| `annual_discount_rate` | `policy_graph.annual_discount_rate` | Global annual rate (e.g., 0.06 = 6%). Converted to per-transition factors at solver initialization.                                                           |
+| `transitions`          | `policy_graph.transitions`          | Directed edges with probabilities. Validated by rules in [Input Scenarios §1.10](input-scenarios.md).                                                         |
+| `season_map`           | `season_definitions`                | Season-to-calendar mapping. Required when `inflow_history` is provided; optional otherwise.                                                                   |
+
+> **Relationship to `HorizonMode`**: The `PolicyGraph` is a data structure -- it stores _what_ the user configured. The `HorizonMode` enum in [Horizon Mode Trait](../architecture/horizon-mode-trait.md) is an algorithm dispatch type -- it stores _precomputed_ transition maps (`TransitionMap`), cycle metadata, and discount factors for efficient O(1) lookup during the training loop. The conversion from `PolicyGraph` to `HorizonMode` happens in `HorizonMode::validate()` (Horizon Mode Trait SS2.4), which enforces rules H1-H4 and precomputes all derived quantities. This separation keeps `cobre-core` free of solver-specific precomputation while ensuring `cobre-sddp` has the runtime-optimized data it needs.
+
+> **`PolicyGraphType` reuse**: The `PolicyGraph` struct uses the `PolicyGraphType` enum (`FiniteHorizon`, `Cyclic`) already defined in [Horizon Mode Trait SS3.1](../architecture/horizon-mode-trait.md). This type is simple enough (two-variant tag with no data) to be shared between `cobre-core` and `cobre-sddp` without introducing coupling. It lives in `cobre-core` and is re-exported by both crates.
 
 ## 13. Block Factors
 

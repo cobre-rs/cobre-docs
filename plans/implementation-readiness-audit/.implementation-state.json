@@ -1,6 +1,6 @@
 {
   "plan": "implementation-readiness-audit",
-  "last_updated": "2026-02-26T21:02:43Z",
+  "last_updated": "2026-02-26T22:48:09Z",
   "progressive": true,
   "tickets": {
     "ticket-001-audit-cobre-core-api-surface.md": {
@@ -410,6 +410,142 @@
         }
       },
       "agent": "sddp-specialist"
+    },
+    "ticket-018-define-entityid-and-entity-structs.md": {
+      "status": "completed",
+      "detail_level": "detailed",
+      "workflow_step": null,
+      "scores": {
+        "quality": 0.958,
+        "quality_breakdown": {
+          "correctness": 0.95,
+          "completeness": 0.97,
+          "evidence_quality": 0.96,
+          "format_conventions": 0.91,
+          "scope_compliance": 1.0
+        },
+        "readiness": 0.94,
+        "readiness_breakdown": {
+          "structure": 1.0,
+          "testability": 0.8,
+          "boundary": 1.0,
+          "dependency_clarity": 1.0,
+          "atomicity": 1.0
+        }
+      },
+      "agent": "data-model-format-specialist"
+    },
+    "ticket-019-define-stage-block-policygraph.md": {
+      "status": "completed",
+      "detail_level": "detailed",
+      "workflow_step": null,
+      "scores": {
+        "quality": 0.961,
+        "quality_breakdown": {
+          "correctness": 0.95,
+          "completeness": 1.0,
+          "consistency": 0.92,
+          "prose_documentation": 0.97,
+          "implementation_guidance": 0.96
+        },
+        "readiness": 0.8,
+        "readiness_breakdown": {
+          "structure": 1.0,
+          "testability": 0.6,
+          "boundary": 0.7,
+          "dependency_clarity": 1.0,
+          "atomicity": 0.8
+        }
+      },
+      "agent": "data-model-format-specialist"
+    },
+    "ticket-020-enumerate-validation-checks.md": {
+      "status": "completed",
+      "detail_level": "detailed",
+      "workflow_step": null,
+      "scores": {
+        "quality": 0.99,
+        "quality_breakdown": {
+          "completeness": 1.0,
+          "correctness": 1.0,
+          "consistency": 1.0,
+          "precision": 0.95,
+          "structural_integrity": 1.0
+        },
+        "readiness": 0.979,
+        "readiness_breakdown": {
+          "structure": 1.0,
+          "testability": 0.93,
+          "boundary": 1.0,
+          "dependency_clarity": 1.0,
+          "atomicity": 1.0
+        }
+      },
+      "agent": "data-model-format-specialist"
+    },
+    "ticket-021-define-openingtree-type.md": {
+      "status": "completed",
+      "detail_level": "detailed",
+      "workflow_step": null,
+      "scores": {
+        "quality": 0.98,
+        "quality_breakdown": {
+          "completeness": 1.0,
+          "correctness": 0.95,
+          "adherence_to_conventions": 1.0,
+          "cross_reference_integrity": 1.0,
+          "clarity_documentation": 0.95
+        },
+        "readiness": 0.94,
+        "readiness_breakdown": {
+          "structure": 1.0,
+          "testability": 0.8,
+          "boundary": 1.0,
+          "dependency_clarity": 1.0,
+          "atomicity": 1.0
+        }
+      },
+      "agent": "sddp-specialist"
+    },
+    "ticket-022-fix-solver-testing-naming.md": {
+      "status": "pending",
+      "detail_level": "detailed"
+    },
+    "ticket-023-fix-stagetemplate-ownership-and-ferrompi-names.md": {
+      "status": "pending",
+      "detail_level": "detailed"
+    },
+    "ticket-024-fix-notation-and-threading.md": {
+      "status": "pending",
+      "detail_level": "detailed"
+    },
+    "ticket-025-fix-cli-config-slurm.md": {
+      "status": "pending",
+      "detail_level": "detailed"
+    },
+    "ticket-026-update-crossref-index-and-slurm-module.md": {
+      "status": "pending",
+      "detail_level": "detailed"
+    },
+    "ticket-027-evaluate-rkyv-serialization.md": {
+      "status": "pending",
+      "detail_level": "outline"
+    },
+    "ticket-028-define-simulation-result-type.md": {
+      "status": "pending",
+      "detail_level": "outline"
+    },
+    "ticket-029-define-output-writer-api.md": {
+      "status": "pending",
+      "detail_level": "outline"
+    },
+    "ticket-030-verify-crossref-integrity.md": {
+      "status": "pending",
+      "detail_level": "outline"
+    },
+    "ticket-031-confirm-conditions-and-final-verdict.md": {
+      "status": "pending",
+      "detail_level": "outline"
     }
   },
   "epics": {
@@ -428,6 +564,22 @@
     "epic-04-data-hpc-verdict": {
       "phase": "completed",
       "learning_extracted": true
+    },
+    "epic-05-core-entity-and-validation-specs": {
+      "phase": "completed",
+      "learning_extracted": true
+    },
+    "epic-06-mechanical-fixes": {
+      "phase": "executing",
+      "learning_extracted": false
+    },
+    "epic-07-serialization-eval-and-output-api": {
+      "phase": "outline",
+      "learning_extracted": false
+    },
+    "epic-08-final-verification": {
+      "phase": "outline",
+      "learning_extracted": false
     }
   }
 }
