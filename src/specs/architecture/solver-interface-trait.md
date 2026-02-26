@@ -514,6 +514,18 @@ pub struct SolverStatistics {
 
 The `StageTemplate` holds the pre-assembled structural LP for one stage in solver-ready CSC form. It is built once at initialization and shared read-only across all threads. The full specification of its contents, lifecycle, and memory layout is in [Solver Abstraction SS11.1](./solver-abstraction.md). This spec defines only the type signature for use in the `SolverInterface` trait.
 
+**Construction ownership**: The `cobre-sddp` crate owns `StageTemplate` construction. A builder function in `cobre-sddp` takes a reference to the resolved `System` struct ([Internal Structures SS1](../data-model/internal-structures.md)) and the `StageDefinition` for the target stage, and produces a `StageTemplate`. The solver crate (`cobre-solver`) receives `StageTemplate` as an opaque data holder and does not interpret its contents -- it bulk-loads the CSC arrays into the underlying LP solver without understanding what the columns or rows represent. This separation ensures that LP modeling concerns (variable ordering, constraint structure, state dimension) remain in `cobre-sddp`, while solver concerns (API calls, retry logic, basis management) remain in `cobre-solver`.
+
+```rust
+// Construction function signature (in cobre-sddp, not cobre-solver):
+//
+// pub fn build_stage_template(
+//     system: &System,
+//     stage_def: &StageDefinition,
+//     stage_index: usize,
+// ) -> StageTemplate;
+```
+
 ```rust
 /// Pre-assembled structural LP for one stage, in CSC (column-major) form.
 ///
@@ -549,9 +561,19 @@ pub struct StageTemplate {
     pub row_upper: Vec<f64>,
 
     /// Number of state variables (contiguous prefix of columns).
+    /// Equal to N * (1 + L) per [Solver Abstraction SS2.1](./solver-abstraction.md).
     pub n_state: usize,
+    /// Number of state values to transfer between stages.
+    /// Equal to N * L per [Solver Abstraction SS2.1](./solver-abstraction.md)
+    /// (storage + all lags except the oldest).
+    pub n_transfer: usize,
     /// Number of cut-relevant constraint rows (contiguous prefix of rows).
+    /// Equal to N + N*L + n_fpha + n_gvc per [Solver Abstraction SS2.2](./solver-abstraction.md).
     pub n_cut_relevant: usize,
+    /// Number of operating hydros at this stage.
+    pub n_hydro: usize,
+    /// Maximum PAR order across all operating hydros at this stage.
+    pub max_par_order: usize,
 }
 ```
 

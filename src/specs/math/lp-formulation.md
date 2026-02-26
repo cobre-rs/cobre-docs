@@ -370,4 +370,5 @@ For cut coefficient derivation, aggregation, and selection strategies, see [cut 
 - [Hydro production models](hydro-production-models.md) — constant, linearized head, and FPHA model details
 - [Cut management](cut-management.md) — dual extraction, cut coefficients, aggregation, and selection
 - [Internal Structures](../data-model/internal-structures.md) — Pre-resolved in-memory data model that provides entity data and bounds to the LP builder
+- [Solver Abstraction](../architecture/solver-abstraction.md) — LP layout convention (SS2) mapping this mathematical formulation to solver column/row indices, with exact index formulas and a worked example
 - [Equipment formulations](equipment-formulations.md) — per-equipment constraint derivations, pumping details

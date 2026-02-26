@@ -24,42 +24,135 @@ The LP row and column ordering is standardized to enable performance optimizatio
 
 ### 2.1 Column Layout (Variables)
 
-State variables are placed contiguously at the beginning of the variable vector:
+State variables are placed contiguously at the beginning of the variable vector. All index formulas below use 0-based indexing. Let $N$ denote the number of **operating** hydros at the current stage (non-existing and decommissioned hydros per [Internal Structures SS2](../data-model/internal-structures.md) have zero LP presence) and $L$ the maximum PAR order across all operating hydros (i.e., $L = \max_{h} P_h$).
 
-| Column Range                     | Contents                                                      | Rationale                                        |
-| -------------------------------- | ------------------------------------------------------------- | ------------------------------------------------ |
-| `[0, n_hydro)`                   | Storage volumes $v_h$                                         | Contiguous for slice-based state transfer        |
-| `[n_hydro, n_hydro + n_ar_lags)` | AR inflow lags $a_{h,\ell}$                                   | Contiguous with storage for complete state slice |
-| `[n_state, n_state + 1)`         | Future cost variable $\theta$                                 | Single variable, fixed position                  |
-| `[n_state + 1, n_cols)`          | All other decision variables (generation, flow, slacks, etc.) | Order follows LP formulation convention          |
+**Column layout diagram:**
 
-**Key benefit**: The complete state vector (storage + AR lags) occupies columns `[0, n_state)`. Transferring state from one stage to the next is a single contiguous slice copy — no gathering from scattered column positions.
+```
+Column index:
+  0          N        N+N       N+2N     ...  N+L·N   N+L·N+1     n_cols
+  ├──────────┼─────────┼─────────┼────────────┼────────┼───────────────┤
+  │ storage  │ lag 0   │ lag 1   │   ...      │ lag L-1│  θ  │ decision│
+  │ v_0..v_{N-1} │ a_{0,0}..a_{N-1,0} │ ...  │        │     │ vars    │
+  └──────────┴─────────┴─────────┴────────────┴────────┴─────┴─────────┘
+  ╰──────────── state prefix (n_state columns) ────────╯
+```
 
-### 2.2 Row Layout (Constraints)
+**Exact index formulas:**
 
-Constraints are ordered in three regions:
+| Column Index Formula          | Contents                                                                   | Count       |
+| ----------------------------- | -------------------------------------------------------------------------- | ----------- |
+| $h$                           | Storage volume $v_h$ for hydro $h \in [0, N)$                              | $N$         |
+| $N + \ell \cdot N + h$        | AR inflow lag $a_{h,\ell}$ for hydro $h \in [0, N)$, lag $\ell \in [0, L)$ | $N \cdot L$ |
+| $N + L \cdot N = N(1 + L)$    | Future cost variable $\theta$                                              | $1$         |
+| $[N(1 + L) + 1, \; n_{cols})$ | Decision variables (see ordering convention below)                         | varies      |
 
-| Region     | Row Range                                      | Contents                                                                                                      | Lifecycle                                            |
-| ---------- | ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------- |
-| **Top**    | `[0, n_cut_relevant)`                          | All constraints whose duals contribute to cut coefficient computation (see below)                             | Static structure per stage; RHS patched per scenario |
-| **Middle** | `[n_cut_relevant, n_structural)`               | All other structural constraints: load balance, generation/flow bounds, penalty bounds, remaining constraints | Static per stage                                     |
-| **Bottom** | `[n_structural, n_structural + n_active_cuts)` | Benders cuts (active only)                                                                                    | Rebuilt each iteration via batch `addRows`           |
+**State dimension:**
 
-**Top region — cut-relevant constraints (contiguous for dual extraction):**
+$$n_{state} = N + N \cdot L = N \cdot (1 + L)$$
 
-The top region groups all constraints whose dual multipliers are needed for Benders cut coefficient computation. Placing them contiguously enables a single slice read from the dual vector rather than gathering from scattered positions. The constraints in this region include:
+**Uniform lag storage**: All operating hydros store $L$ lags regardless of their individual AR order $P_h$. Hydros with $P_h < L$ have zero-valued AR coefficients ($\psi_\ell = 0$ for $\ell > P_h$) in their lag positions beyond their actual order. This uniform stride enables:
 
-| Sub-region                 | Contents                                                                                 | Duals Used For                                                                                                                   |
-| -------------------------- | ---------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
-| State-linking              | Water balance (hydro storage), AR lag fixing                                             | Cut coefficients for state variables ($\pi^{wb}_h$, $\pi^{lag}_{h,\ell}$)                                                        |
-| FPHA hyperplanes           | Piecewise-linear production function constraints (when FPHA model is active for a hydro) | Cut coefficients involving volume-dependent production (duals propagate storage marginal value through production approximation) |
-| Generic volume constraints | User-defined constraints that reference storage volume as a variable                     | Cut coefficients for any constraint that creates a shadow price on state variables                                               |
+- SIMD vectorization of dot products between cut coefficients and state vectors (all hydros have the same memory stride)
+- A single contiguous slice for the entire state vector (no variable-length per-hydro regions)
+- Simplified index arithmetic (the formula $N + \ell \cdot N + h$ works for all hydros without per-hydro offset tables)
 
-The exact sub-region boundaries within the top region depend on the stage's active constraints (e.g., FPHA rows only exist for stages where hydros use the FPHA production model). The key invariant is: **all rows whose duals are needed for cut computation occupy a contiguous prefix of the constraint vector**. This must be validated against the [LP Formulation](../math/lp-formulation.md) during implementation — any constraint type whose dual feeds into the cut coefficient formula must be placed in this region.
+**State transfer operation**: Transferring state from stage $t$ to stage $t+1$ is a single contiguous slice copy. The oldest lag ($\ell = L-1$) is dropped because it will not be needed in the next stage's AR dynamics (it ages out of the lag window). The transfer copies:
+
+```
+primal[0 .. N·(1 + L_transfer)]   where L_transfer = L - 1
+```
+
+This copies $N$ storage values plus $N \cdot (L-1)$ lag values (lags $\ell = 0, \ldots, L-2$). The new stage then shifts these lags by one position (lag $\ell$ becomes lag $\ell+1$), and the newly computed inflow $a_{h,t}$ is written into lag position $\ell = 0$. The transfer dimension is:
+
+$$n_{transfer} = N \cdot (1 + (L - 1)) = N \cdot L$$
+
+**Decision variable ordering** (columns $[N(1+L)+1, \; n_{cols})$): Decision variables are ordered by entity type, then by entity ID within type, then by block within entity. This ordering is secondary to performance (decision variables are not in the state vector) but important for debugging and output interpretation.
+
+| Sub-region (in order) | Contents                                                                                                                                                          | Count                                              |
+| --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------- |
+| Thermals              | $g_{j,k,s}$ by thermal $j$, block $k$, segment $s$                                                                                                                | $N_{th} \times N_{blk} \times \bar{N}_{seg}$       |
+| Lines                 | $f^+_{\ell,k}$, $f^-_{\ell,k}$ by line $\ell$, block $k$                                                                                                          | $2 \times N_{line} \times N_{blk}$                 |
+| Buses                 | $\delta_{b,k,s}$, $\epsilon_{b,k}$ by bus $b$, block $k$                                                                                                          | $N_{bus} \times N_{blk} \times (N_{def\_seg} + 1)$ |
+| Hydro per-block       | $q_{h,k}$, $s_{h,k}$, $g_{h,k}$, $\tilde{a}_{h,k}$, $e_{h,k}$, $r_{h,k}$, $u_{h,k}$ by hydro $h$, block $k$                                                       | $N \times N_{blk} \times n_{h\_vars}$              |
+| Hydro slacks          | $\sigma^{v-}_h$, $\sigma^{fill}_h$, $\sigma^{q-}_{h,k}$, $\sigma^{o-}_{h,k}$, $\sigma^{o+}_{h,k}$, $\sigma^{g-}_{h,k}$, $\sigma^{e\pm}_{h,k}$, $\sigma^{r}_{h,k}$ | varies                                             |
+| Contracts             | $\chi_{c,k}$ by contract $c$, block $k$                                                                                                                           | $(N_{imp} + N_{exp}) \times N_{blk}$               |
+| Pumping               | $p_{j,k}$, power by pump $j$, block $k$                                                                                                                           | $N_{pump} \times N_{blk} \times 2$                 |
+| NCS                   | $g^{nc}_{r,k}$ by NCS $r$, block $k$                                                                                                                              | $N_{ncs} \times N_{blk}$                           |
 
 **Key benefits**:
 
-- **Cut-relevant constraints at top** — All duals needed for cut coefficient computation are in the first `n_cut_relevant` rows. Extracting them is a contiguous slice read from the dual vector — no index gathering required.
+- The complete state vector (storage + AR lags) occupies columns $[0, n_{state})$. Transferring state from one stage to the next is a single contiguous slice copy -- no gathering from scattered column positions.
+- The $\theta$ variable sits at a fixed, easily computed position $n_{state}$ immediately after the state prefix.
+- Decision variables follow a predictable type-then-ID-then-block ordering for debuggability.
+
+### 2.2 Row Layout (Constraints)
+
+Constraints are ordered in three regions. All index formulas use 0-based indexing. Let $N$ and $L$ be defined as in SS2.1.
+
+| Region     | Row Range                                      | Contents                                                                                                      | Lifecycle                                            |
+| ---------- | ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------- |
+| **Top**    | `[0, n_cut_relevant)`                          | All constraints whose duals contribute to cut coefficient computation (sub-regions defined below)             | Static structure per stage; RHS patched per scenario |
+| **Middle** | `[n_cut_relevant, n_structural)`               | All other structural constraints: load balance, generation/flow bounds, penalty bounds, remaining constraints | Static per stage                                     |
+| **Bottom** | `[n_structural, n_structural + n_active_cuts)` | Benders cuts (active only)                                                                                    | Rebuilt each iteration via batch `addRows`           |
+
+**Top region — cut-relevant constraints with exact sub-region boundaries:**
+
+The top region groups all constraints whose dual multipliers are needed for Benders cut coefficient computation. Placing them contiguously enables a single slice read from the dual vector rather than gathering from scattered positions. The sub-regions within the top region have exact index formulas:
+
+**Row layout diagram (top region):**
+
+```
+Row index:
+  0          N         N+N·L        N+N·L+n_fpha       n_cut_relevant
+  ├──────────┼──────────┼─────────────┼───────────────────┤
+  │ water    │ AR lag   │ FPHA        │ generic volume    │
+  │ balance  │ fixing   │ hyperplanes │ constraints       │
+  │ (N rows) │(N·L rows)│(n_fpha rows)│ (n_gvc rows)      │
+  └──────────┴──────────┴─────────────┴───────────────────┘
+```
+
+**Exact row index formulas (top region):**
+
+| Row Index Formula              | Contents                                                                                                                                                                                                                                                 | Count       | Dual Symbol          |
+| ------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------- | -------------------- |
+| $h$                            | Water balance for hydro $h \in [0, N)$ — see [LP Formulation SS4](../math/lp-formulation.md)                                                                                                                                                             | $N$         | $\pi^{wb}_h$         |
+| $N + \ell \cdot N + h$         | AR lag fixing constraint for hydro $h \in [0, N)$, lag $\ell \in [0, L)$ — see [LP Formulation SS5](../math/lp-formulation.md)                                                                                                                           | $N \cdot L$ | $\pi^{lag}_{h,\ell}$ |
+| $N + N \cdot L + f$            | FPHA hyperplane constraint $f \in [0, n_{fpha})$ where $n_{fpha} = \sum_{h \in \mathcal{H}^{fpha}} M_h \cdot N_{blk}$ is the total number of FPHA planes across all FPHA-model hydros times blocks — see [LP Formulation SS6](../math/lp-formulation.md) | $n_{fpha}$  | $\pi^{fpha}_{h,m,k}$ |
+| $N + N \cdot L + n_{fpha} + g$ | Generic volume constraint $g \in [0, n_{gvc})$ — user-defined constraints referencing storage ([LP Formulation SS10](../math/lp-formulation.md))                                                                                                         | $n_{gvc}$   | $\pi^{gen}_g$        |
+
+**Cut-relevant row count:**
+
+$$n_{cut\_relevant} = N + N \cdot L + n_{fpha} + n_{gvc}$$
+
+The row index formulas for water balance and AR lag fixing use the same structure as the column index formulas in SS2.1 (index $h$ and $N + \ell \cdot N + h$ respectively). This symmetry is intentional: the dual of row $r$ contributes to the cut coefficient for column $r$ within the state prefix, simplifying the cut coefficient extraction to a contiguous slice read of the first $n_{cut\_relevant}$ dual values. See [Cut Management Implementation SS5](./cut-management-impl.md) for FPHA and generic constraint dual preprocessing.
+
+**Middle region — structural, non-cut-relevant constraints:**
+
+The middle region contains all structural constraints whose duals do not contribute to cut coefficients. Their exact internal ordering follows the [LP Formulation](../math/lp-formulation.md) convention:
+
+| Sub-region (in order) | Contents                                                                                             |
+| --------------------- | ---------------------------------------------------------------------------------------------------- |
+| Load balance          | Bus power balance ([LP Formulation SS3](../math/lp-formulation.md)) -- $N_{bus} \times N_{blk}$ rows |
+| Inflow AR dynamics    | PAR model dynamics equation ([LP Formulation SS5](../math/lp-formulation.md)) -- $N$ rows            |
+| Constant productivity | $g_{h,k} = \rho_h \cdot q_{h,k}$ for non-FPHA hydros -- $(N - N_{fpha}) \times N_{blk}$ rows         |
+| Outflow definition    | $o_{h,k} = q_{h,k} + s_{h,k}$ -- $N \times N_{blk}$ rows                                             |
+| Outflow bounds        | Min/max outflow -- $2 \times N \times N_{blk}$ rows                                                  |
+| Turbined flow min     | $q_{h,k} \geq \underline{Q}_h - \sigma^{q-}_{h,k}$ -- $N \times N_{blk}$ rows                        |
+| Generation min        | $g_{h,k} \geq \underline{G}_h - \sigma^{g-}_{h,k}$ -- $N \times N_{blk}$ rows                        |
+| Evaporation           | Evaporation constraints -- $N \times N_{blk}$ rows                                                   |
+| Water withdrawal      | Withdrawal constraints -- $N \times N_{blk}$ rows                                                    |
+| Storage bounds        | $\underline{V}_h - \sigma^{v-}_h \leq v_h \leq \bar{V}_h$ -- $N$ rows                                |
+| Generic (non-volume)  | User-defined constraints not referencing storage -- varies                                           |
+
+**Bottom region — Benders cuts:**
+
+Benders cuts are appended at rows $[n_{structural}, \; n_{structural} + n_{active\_cuts})$ via batch `addRows`. Each cut row has the form $\theta - \boldsymbol{\pi}^\top \mathbf{x} \geq \alpha$ where $\boldsymbol{\pi}$ is the cut coefficient vector and $\alpha$ is the intercept (see [Solver Abstraction SS5.3](./solver-abstraction.md)).
+
+**Key benefits**:
+
+- **Cut-relevant constraints at top** — All duals needed for cut coefficient computation are in the first $n_{cut\_relevant}$ rows. Extracting them is a contiguous slice read from the dual vector: `dual[0 .. n_cut_relevant]` — no index gathering required.
+- **Symmetric index structure** — Water balance row $h$ corresponds to storage column $h$; lag fixing row $N + \ell \cdot N + h$ corresponds to lag column $N + \ell \cdot N + h$. This alignment means the first $N + N \cdot L$ cut coefficients can be read directly from the first $N + N \cdot L$ dual values (with appropriate sign convention per [Solver Abstraction SS8](./solver-abstraction.md)).
 - **Cuts at bottom** — Everything above the cut boundary is identical across iterations within a stage. A cached basis from the previous iteration applies directly to the structural portion (rows `[0, n_structural)`). Only the new cut rows need their basis status initialized.
 - **Structural middle region** — All non-cut-relevant, non-cut constraints. Their ordering within this region follows the [LP Formulation](../math/lp-formulation.md) convention.
 
@@ -72,6 +165,112 @@ When warm-starting from a cached basis after adding new cuts:
 3. If cuts were removed since the cached basis was saved, the basis is truncated to match the new row count
 
 This is possible precisely because cuts are at the bottom — the structural portion of the basis is position-stable across iterations.
+
+### 2.4 Worked Example
+
+This section applies the index formulas from SS2.1 and SS2.2 to a concrete small system, providing a verification baseline for implementers.
+
+**System definition:**
+
+| Entity                     | Count         | Details                                                                                 |
+| -------------------------- | ------------- | --------------------------------------------------------------------------------------- |
+| Hydros                     | $N = 3$       | H0 (constant productivity), H1 (FPHA with $M_1 = 4$ planes), H2 (constant productivity) |
+| Max PAR order              | $L = 2$       | H0 uses PAR(1), H1 uses PAR(2), H2 uses PAR(1); all store $L = 2$ lags                  |
+| Buses                      | 2             | B0, B1                                                                                  |
+| Thermals                   | 1             | T0 (single cost segment)                                                                |
+| Lines                      | 1             | L0 (B0 $\to$ B1)                                                                        |
+| Blocks                     | $N_{blk} = 1$ | Single block for simplicity                                                             |
+| Generic volume constraints | $n_{gvc} = 0$ | None                                                                                    |
+
+**Column layout (SS2.1):**
+
+State dimension: $n_{state} = N \cdot (1 + L) = 3 \cdot (1 + 2) = 9$.
+
+| Column | Formula                 | Contents               |
+| -----: | ----------------------- | ---------------------- |
+|      0 | $h = 0$                 | $v_0$ — storage H0     |
+|      1 | $h = 1$                 | $v_1$ — storage H1     |
+|      2 | $h = 2$                 | $v_2$ — storage H2     |
+|      3 | $N + 0 \cdot N + 0 = 3$ | $a_{0,0}$ — H0 lag 0   |
+|      4 | $N + 0 \cdot N + 1 = 4$ | $a_{1,0}$ — H1 lag 0   |
+|      5 | $N + 0 \cdot N + 2 = 5$ | $a_{2,0}$ — H2 lag 0   |
+|      6 | $N + 1 \cdot N + 0 = 6$ | $a_{0,1}$ — H0 lag 1   |
+|      7 | $N + 1 \cdot N + 1 = 7$ | $a_{1,1}$ — H1 lag 1   |
+|      8 | $N + 1 \cdot N + 2 = 8$ | $a_{2,1}$ — H2 lag 1   |
+|      9 | $N(1 + L) = 9$          | $\theta$ — future cost |
+|    10+ | $\geq N(1+L)+1 = 10$    | Decision variables     |
+
+Note: H0 uses PAR(1) and H2 uses PAR(1), so their lag-1 positions (columns 6 and 8) have zero AR coefficients ($\psi_2 = 0$) but are still allocated for uniform stride.
+
+State transfer copies `primal[0..6]` — that is, $n_{transfer} = N \cdot L = 3 \cdot 2 = 6$ values: 3 storages + 3 lag-0 values. The lag-1 values (columns 6-8) are dropped as the oldest lag.
+
+**Row layout (SS2.2):**
+
+FPHA rows: $n_{fpha} = M_1 \times N_{blk} = 4 \times 1 = 4$ (only H1 uses FPHA).
+
+Cut-relevant row count: $n_{cut\_relevant} = N + N \cdot L + n_{fpha} + n_{gvc} = 3 + 3 \cdot 2 + 4 + 0 = 13$.
+
+| Row | Formula                       | Contents                           | Dual                 |
+| --: | ----------------------------- | ---------------------------------- | -------------------- |
+|   0 | $h = 0$                       | Water balance H0                   | $\pi^{wb}_0$         |
+|   1 | $h = 1$                       | Water balance H1                   | $\pi^{wb}_1$         |
+|   2 | $h = 2$                       | Water balance H2                   | $\pi^{wb}_2$         |
+|   3 | $N + 0 \cdot N + 0 = 3$       | AR lag fixing H0, $\ell=0$         | $\pi^{lag}_{0,0}$    |
+|   4 | $N + 0 \cdot N + 1 = 4$       | AR lag fixing H1, $\ell=0$         | $\pi^{lag}_{1,0}$    |
+|   5 | $N + 0 \cdot N + 2 = 5$       | AR lag fixing H2, $\ell=0$         | $\pi^{lag}_{2,0}$    |
+|   6 | $N + 1 \cdot N + 0 = 6$       | AR lag fixing H0, $\ell=1$         | $\pi^{lag}_{0,1}$    |
+|   7 | $N + 1 \cdot N + 1 = 7$       | AR lag fixing H1, $\ell=1$         | $\pi^{lag}_{1,1}$    |
+|   8 | $N + 1 \cdot N + 2 = 8$       | AR lag fixing H2, $\ell=1$         | $\pi^{lag}_{2,1}$    |
+|   9 | $N + N \cdot L + 0 = 9$       | FPHA plane 0 for H1, block 0       | $\pi^{fpha}_{1,0,0}$ |
+|  10 | $N + N \cdot L + 1 = 10$      | FPHA plane 1 for H1, block 0       | $\pi^{fpha}_{1,1,0}$ |
+|  11 | $N + N \cdot L + 2 = 11$      | FPHA plane 2 for H1, block 0       | $\pi^{fpha}_{1,2,0}$ |
+|  12 | $N + N \cdot L + 3 = 12$      | FPHA plane 3 for H1, block 0       | $\pi^{fpha}_{1,3,0}$ |
+| 13+ | $\geq n_{cut\_relevant} = 13$ | Middle region (load balance, etc.) |                      |
+
+**Summary for this example:**
+
+| Quantity               | Value |
+| ---------------------- | ----- |
+| $N$ (operating hydros) | 3     |
+| $L$ (max PAR order)    | 2     |
+| $n_{state}$            | 9     |
+| $n_{transfer}$         | 6     |
+| $\theta$ column        | 9     |
+| $n_{fpha}$             | 4     |
+| $n_{gvc}$              | 0     |
+| $n_{cut\_relevant}$    | 13    |
+
+**Verification**: A developer applying the formulas to this system should obtain the exact column and row indices shown in the tables above. The symmetry between column and row indices for the first $N + N \cdot L = 9$ positions confirms that the cut coefficient for state variable at column $c$ comes from the dual of row $c$.
+
+### 2.5 Performance Notes
+
+**SIMD alignment**: State vector arrays (primal solution buffer, cut coefficient vectors) should be allocated with 64-byte alignment. This is the AVX-512 register width, accommodating 8 `f64` values per SIMD lane. The alignment requirement is stated as a specification constraint — specific Rust allocator APIs (e.g., `std::alloc::Layout::from_size_align`) are an implementation choice.
+
+**Cache locality of the state prefix**: The state prefix occupies the first $N \cdot (1 + L) \times 8$ bytes of the primal vector. At production scale ($N = 160$, $L = 12$):
+
+$$n_{state} = 160 \times (1 + 12) = 2{,}080$$
+
+$$\text{State prefix size} = 2{,}080 \times 8 = 16{,}640 \text{ bytes} = 260 \text{ cache lines (64 B each)}$$
+
+This fits comfortably in the L2 cache of modern server CPUs (typically 1-2 MB per core) and represents a small fraction of L1 data cache (32-48 KB). State transfer, cut coefficient dot products, and dual extraction all operate within this cache-hot region.
+
+For a smaller production configuration ($N = 160$, $L = 6$):
+
+$$n_{state} = 160 \times (1 + 6) = 1{,}120$$
+
+$$\text{State prefix size} = 1{,}120 \times 8 = 8{,}960 \text{ bytes} = 140 \text{ cache lines}$$
+
+This fits entirely in L1 data cache.
+
+**Contiguous dual extraction**: The first $n_{cut\_relevant}$ values of the dual vector contain all duals needed for cut coefficient computation. Reading them is a single contiguous memory access:
+
+```
+cut_duals = dual[0 .. n_cut_relevant]
+```
+
+No index indirection or gather operation is required. For the state-linking duals (water balance + AR lag fixing), the dual values map directly to cut coefficients at the corresponding state variable positions, enabling a single `memcpy`-equivalent operation for the first $N + N \cdot L$ coefficients. The FPHA and generic constraint duals require the precomputed sparse mapping from [Cut Management Implementation SS5](./cut-management-impl.md).
+
+**Cut coefficient dot product**: The most frequent numerical operation on state vectors is the dot product $\alpha_k + \boldsymbol{\pi}_k^\top \mathbf{x}$ evaluated for each active cut during the forward pass (to compute $\theta$'s lower bound). With uniform stride and 64-byte aligned arrays, this reduces to a SIMD-friendly dense dot product of length $n_{state}$.
 
 ## 3. Abstraction Hierarchy
 

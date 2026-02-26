@@ -72,9 +72,9 @@ Epic 4 (High-Severity Gaps)      [blocked by Epics 1-3, outline tickets]
 | ticket-005 | Resolve Decommissioned Operative State                  | epic-02 | completed | Detailed     | 0.83      | 1.00    | EXCELLENT |
 | ticket-006 | Specify rkyv Serialization for MPI Broadcast            | epic-02 | completed | Detailed     | 0.94      | 1.00    | EXCELLENT |
 | ticket-007 | Update Gap Inventory for GAP-001/002/003                | epic-02 | completed | Detailed     | 0.91      | 1.00    | EXCELLENT |
-| ticket-008 | Specify LP Memory Layout with Index Formulas            | epic-03 | pending   | Detailed     | 0.93      | --      | --        |
-| ticket-009 | Specify State Vectors and Indexer Structs               | epic-03 | pending   | Detailed     | 0.94      | --      | --        |
-| ticket-010 | Update Gap Inventory for GAP-004/005                    | epic-03 | pending   | Detailed     | 0.77      | --      | --        |
+| ticket-008 | Specify LP Memory Layout with Index Formulas            | epic-03 | completed | Detailed     | 0.93      | 0.90    | EXCELLENT |
+| ticket-009 | Specify State Vectors and Indexer Structs               | epic-03 | completed | Detailed     | 0.94      | 0.90    | EXCELLENT |
+| ticket-010 | Update Gap Inventory for GAP-004/005                    | epic-03 | completed | Detailed     | 0.77      | 0.88    | EXCELLENT |
 | ticket-011 | Specify State Vector MPI Wire Format                    | epic-04 | pending   | Outline      | --        | --      | --        |
 | ticket-012 | Specify Cut Synchronization MPI Wire Format             | epic-04 | pending   | Outline      | --        | --      | --        |
 | ticket-013 | Add AR Lag Fixing Constraints to LP Formulation         | epic-04 | pending   | Outline      | --        | --      | --        |

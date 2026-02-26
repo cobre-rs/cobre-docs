@@ -147,6 +147,73 @@ For each forward trajectory:
      f. **Transition** — Pass $\hat{x}_t$ as the incoming state to stage $t+1$
 3. **Aggregate** — Compute total trajectory cost $\sum_{t=1}^{T} c_t$
 
+### 4.2a Forward Pass Patch Sequence
+
+Step c above ("Build stage LP") decomposes into the LP rebuild sequence ([Solver Abstraction SS11.2](./solver-abstraction.md)): load template, add active cuts, patch scenario-dependent RHS values, and warm-start. This subsection specifies the **exact `patch_rhs_bounds` calls** for the forward pass — the patches that transform a generic stage template into the LP for a specific (incoming state, scenario realization) pair.
+
+Three categories of patches are applied, all targeting constraint RHS values:
+
+**Category 1 — Incoming state (water balance RHS)**
+
+For each operating hydro $h \in [0, N)$, fix the incoming storage in the water balance constraint:
+
+```
+patch(row = h, value = state[h])
+```
+
+This sets $\hat{v}_{h}$ (the incoming storage from the previous stage) as the RHS contribution to water balance row $h$ ([Solver Abstraction SS2.2](./solver-abstraction.md)). The water balance row's RHS encodes the incoming storage term so that the LP solves for the outgoing storage $v_h$.
+
+**Category 2 — Incoming state (AR lag fixing RHS)**
+
+For each operating hydro $h \in [0, N)$ and each lag $\ell \in [0, L)$, fix the inflow lag value:
+
+```
+patch(row = N + ℓ·N + h, value = state[N + ℓ·N + h])
+```
+
+This sets $\hat{a}_{h,\ell}$ (the inflow lag from the incoming state) as the RHS of the lag fixing constraint at row $N + \ell \cdot N + h$ ([Solver Abstraction SS2.2](./solver-abstraction.md)). The row index formula mirrors the column index formula for the lag state variable — this symmetry is by design (see [Solver Abstraction SS2.2](./solver-abstraction.md)).
+
+**Category 3 — Noise innovation (AR dynamics RHS)**
+
+For each operating hydro $h \in [0, N)$, fix the stochastic innovation term $\varepsilon_{h,t}$ in the AR dynamics equation:
+
+```
+patch(row = ar_dynamics_row(h), value = εₕ)
+```
+
+where `ar_dynamics_row(h)` is the row index of hydro $h$'s inflow AR dynamics constraint in the middle region of the row layout ([Solver Abstraction SS2.2](./solver-abstraction.md)). The noise value $\varepsilon_{h,t}$ comes from the sampling scheme's realization (step a) — whether sampled from the opening tree, inverted from external data, or inverted from historical data.
+
+**Patch count formula:**
+
+$$n_{patches} = \underbrace{N}_{\text{water balance}} + \underbrace{N \cdot L}_{\text{lag fixing}} + \underbrace{N}_{\text{noise fixing}} = N \cdot (2 + L)$$
+
+At production scale ($N = 160$, $L = 12$): $n_{patches} = 160 \times (2 + 12) = 2{,}240$.
+
+**Worked example (3-hydro AR(2) system):**
+
+Using the system from [Solver Abstraction SS2.4](./solver-abstraction.md) ($N = 3$, $L = 2$):
+
+| Patch # | Category      | Row Formula             |  Row | Value                          |
+| ------: | ------------- | ----------------------- | ---: | ------------------------------ |
+|       0 | Water balance | $h = 0$                 |    0 | $\hat{v}_0$ (storage H0)       |
+|       1 | Water balance | $h = 1$                 |    1 | $\hat{v}_1$ (storage H1)       |
+|       2 | Water balance | $h = 2$                 |    2 | $\hat{v}_2$ (storage H2)       |
+|       3 | AR lag fixing | $N + 0 \cdot N + 0 = 3$ |    3 | $\hat{a}_{0,0}$ (H0 lag 0)     |
+|       4 | AR lag fixing | $N + 0 \cdot N + 1 = 4$ |    4 | $\hat{a}_{1,0}$ (H1 lag 0)     |
+|       5 | AR lag fixing | $N + 0 \cdot N + 2 = 5$ |    5 | $\hat{a}_{2,0}$ (H2 lag 0)     |
+|       6 | AR lag fixing | $N + 1 \cdot N + 0 = 6$ |    6 | $\hat{a}_{0,1}$ (H0 lag 1)     |
+|       7 | AR lag fixing | $N + 1 \cdot N + 1 = 7$ |    7 | $\hat{a}_{1,1}$ (H1 lag 1)     |
+|       8 | AR lag fixing | $N + 1 \cdot N + 2 = 8$ |    8 | $\hat{a}_{2,1}$ (H2 lag 1)     |
+|       9 | Noise fixing  | `ar_dynamics_row(0)`    | (\*) | $\varepsilon_{0,t}$ (H0 noise) |
+|      10 | Noise fixing  | `ar_dynamics_row(1)`    | (\*) | $\varepsilon_{1,t}$ (H1 noise) |
+|      11 | Noise fixing  | `ar_dynamics_row(2)`    | (\*) | $\varepsilon_{2,t}$ (H2 noise) |
+
+(\*) AR dynamics rows are in the middle region ([Solver Abstraction SS2.2](./solver-abstraction.md)), starting at offset $n_{cut\_relevant} + N_{bus} \times N_{blk}$ (after load balance rows). The exact row indices depend on the system's bus and block counts.
+
+Total: $n_{patches} = 3 \times (2 + 2) = 12$ patches, matching the formula.
+
+**Backward pass similarity:** The backward pass applies the same three patch categories with different values: the incoming state is the trial point $\hat{x}_{t-1}$ from the forward pass, and the noise innovations are drawn from the fixed opening tree rather than the sampling scheme. The patch count formula and row indices are identical.
+
 ### 4.3 Parallel Distribution
 
 Scenarios are distributed across MPI ranks in contiguous blocks. Within each rank, scenarios are parallelized across OpenMP threads with **thread-trajectory affinity**: each thread owns one or more complete trajectories and solves all stages sequentially for its assigned trajectories. This preserves cache locality — the solver basis, scenario data, and LP coefficients remain warm in the thread's cache lines across stages.
@@ -181,7 +248,77 @@ The state vector carries all information needed to transition between stages and
 
 Future extensions (batteries, GNL pipeline) may add additional state dimensions — see [SDDP Algorithm SS5](../math/sddp-algorithm.md).
 
-### 5.2 State Lifecycle
+#### 5.1.1 Concrete Type Definition
+
+The state vector is a flat `[f64]` array whose layout matches the LP column prefix defined in [Solver Abstraction SS2.1](./solver-abstraction.md):
+
+```rust
+/// Flat state vector matching the LP column prefix layout.
+/// Position i corresponds to cut coefficient i.
+/// Layout: [v_0, v_1, ..., v_{N-1}, a_{0,0}, a_{1,0}, ..., a_{N-1,0}, a_{0,1}, ..., a_{N-1,L-1}]
+/// where v_h = storage for hydro h, a_{h,l} = inflow lag l for hydro h.
+/// Total dimension: N * (1 + L)
+///
+/// Aligned to 64 bytes for AVX-512 SIMD dot product operations.
+type StateVector = Vec<f64>;  // len = n_state, allocated with 64-byte alignment
+```
+
+The state dimension is $n_{state} = N \cdot (1 + L)$, where $N$ is the number of operating hydros and $L$ is the maximum PAR order across all operating hydros — both defined in [Solver Abstraction SS2.1](./solver-abstraction.md).
+
+**Memory alignment**: State vectors are allocated with 64-byte alignment (the AVX-512 register width, accommodating 8 `f64` values per SIMD lane). This alignment constraint also applies to cut coefficient arrays in the cut pool ([Solver Abstraction SS2.5](./solver-abstraction.md)), ensuring that the primary operation on state vectors — the dot product — can use aligned SIMD loads.
+
+#### 5.1.2 Dot Product as Primary Operation
+
+The primary numerical operation on state vectors is the dot product between a state vector $\mathbf{x}$ and a cut coefficient vector $\boldsymbol{\pi}$:
+
+$$\theta_k = \alpha_k + \boldsymbol{\pi}_k^\top \mathbf{x}$$
+
+This operation occurs in two critical contexts:
+
+1. **Forward pass** — Evaluating the current FCF at a visited state to determine the value of $\theta$. For each active cut $k$, compute $\alpha_k + \boldsymbol{\pi}_k^\top \mathbf{x}$ and take the maximum. This determines the lower bound contribution from the future cost approximation.
+2. **Backward pass** — Computing the cut intercept after solving a backward LP:
+
+$$\alpha = Q_t(\hat{x}_{t-1}, \omega) - \boldsymbol{\pi}^\top \hat{x}_{t-1}$$
+
+Both contexts involve a dense dot product of length $n_{state}$ between two 64-byte-aligned `f64` arrays. Implementations should use BLAS-like vectorized routines when available (e.g., SIMD-accelerated `ddot`). At production scale ($n_{state} = 2{,}080$), this is a 16.6 KB operation that fits entirely in L1 data cache — see [Solver Abstraction SS2.5](./solver-abstraction.md) for cache locality analysis.
+
+### 5.2 State Extraction from LP Solution
+
+After solving the stage LP, the state vector is extracted from the LP primal solution. Because the state variables occupy the contiguous prefix of the column layout ([Solver Abstraction SS2.1](./solver-abstraction.md)), extraction is a single contiguous memory copy:
+
+```rust
+// Extract state from LP solution — single contiguous memcpy
+let state: &[f64] = &solution.primal[0..n_state];
+```
+
+This copies:
+
+- `state[0..N]` — Storage volumes $v_0, v_1, \ldots, v_{N-1}$ from the LP primal vector
+- `state[N..N*(1+L)]` — Inflow lag values $a_{0,0}, a_{1,0}, \ldots, a_{N-1,L-1}$ from the LP primal vector
+
+No index gathering or scattering is required — the LP column layout is designed so that state extraction is a single contiguous slice read.
+
+### 5.3 State Transfer Between Stages
+
+Transferring state from stage $t$ to stage $t+1$ requires patching the next stage's LP with the outgoing state values. This uses the `patch_rhs_bounds` interface ([Solver Interface Trait SS2.3](./solver-interface-trait.md)) with two categories of patches:
+
+**Storage transfer**: For each operating hydro $h \in [0, N)$, patch the water balance constraint RHS:
+
+```
+patch(row = h, value = state[h])
+```
+
+**Inflow lag transfer**: For each hydro $h \in [0, N)$ and lag $\ell \in [0, L)$, patch the lag fixing constraint RHS:
+
+```
+patch(row = N + ℓ·N + h, value = state[N + ℓ·N + h])
+```
+
+Both use the row index formulas from [Solver Abstraction SS2.2](./solver-abstraction.md). The patch row index for lag values matches the column index of the corresponding state variable — this symmetry is by design and simplifies the transfer logic to iterating over state indices.
+
+The state transfer patches are a subset of the full forward pass patch sequence (§4.2a, categories 1 and 2). The noise innovation patches (category 3) are separate because they depend on the scenario realization, not the incoming state.
+
+### 5.4 State Lifecycle
 
 1. **Initialization** — The initial state $x_0$ is constructed from:
    - Storage: initial reservoir volumes from `initial_conditions.json` (see [Input Constraints SS1](../data-model/input-constraints.md))
@@ -189,15 +326,122 @@ Future extensions (batteries, GNL pipeline) may add additional state dimensions 
 
 2. **Update** — At each stage, the state is updated in two steps:
    - **Inflow computation**: The PAR model (or external/historical lookup) produces the stage inflow $a_{h,t}$. The lag buffer is shifted: the oldest lag drops off, all remaining lags shift by one position, and $a_{h,t}$ becomes the new lag-1 value
-   - **Storage extraction**: End-of-stage storage volumes are read from the LP solution's state variable values
+   - **Storage extraction**: End-of-stage storage volumes are read from the LP solution's state variable values (§5.2)
 
 3. **Extraction for backward pass** — After the forward pass, the visited states at each stage are collected across all ranks via `allgatherv`. State deduplication (merging duplicate visited states to reduce backward pass LP solves) is a potential optimization deferred to [Deferred Features](../deferred.md).
+
+### 5.5 StageIndexer
+
+The `StageIndexer` provides a read-only index map for accessing LP primal and dual positions by semantic name. It eliminates magic index numbers from the training loop and centralizes all LP layout arithmetic in one place.
+
+```rust
+/// Read-only index map for accessing LP primal/dual positions by semantic name.
+/// Built once at initialization from the stage definition.
+/// Shared across all threads within an MPI rank (`Send + Sync`).
+/// Equal on all ranks (since LPs differ only by noise innovations, not structure).
+pub struct StageIndexer {
+    /// Column range for storage volumes: [0, N).
+    pub storage: Range<usize>,
+    /// Column range for inflow lag variables: [N, N*(1+L)).
+    pub inflow_lags: Range<usize>,
+    /// Column index of the future cost variable θ: N*(1+L).
+    pub theta: usize,
+    /// Total state dimension: N*(1+L). Equal to storage.len() + inflow_lags.len().
+    pub n_state: usize,
+    /// Row range for water balance constraints: [0, N).
+    pub water_balance: Range<usize>,
+    /// Row range for AR lag fixing constraints: [N, N+N*L).
+    pub lag_fixing: Range<usize>,
+    /// Row range for FPHA hyperplane constraints: [N+N*L, N+N*L+n_fpha).
+    pub fpha_hyperplanes: Range<usize>,
+    /// Row range for generic volume constraints: [N+N*L+n_fpha, n_cut_relevant).
+    pub generic_volume: Range<usize>,
+    /// Total count of cut-relevant constraint rows: N + N*L + n_fpha + n_gvc.
+    pub n_cut_relevant: usize,
+    /// Number of operating hydros at this stage.
+    pub hydro_count: usize,
+    /// Maximum PAR order across all operating hydros at this stage.
+    pub max_par_order: usize,
+}
+```
+
+#### 5.5.1 Indexer Properties
+
+- **Built at initialization**: The indexer is constructed once per stage from the `System` struct ([Internal Structures SS1](../data-model/internal-structures.md)) and the stage configuration. The construction cost is negligible — pure arithmetic on system dimensions.
+- **Immutable after construction** (`Send + Sync`): The indexer contains only `usize` values and `Range<usize>` values. It is never mutated after construction, making it safe to share across all threads within an MPI rank without synchronization.
+- **Equal across all ranks**: All MPI ranks construct the same LP structure for each stage — the LP layout depends only on the system definition and stage configuration, not on the rank's assigned scenarios. Only noise innovation values differ across ranks and scenarios. Therefore, all ranks produce identical indexers.
+- **Owned by the stage definition**: The indexer is associated with the stage template ([Solver Interface Trait SS4.4](./solver-interface-trait.md)), not with any solver instance. It outlives individual solver invocations and is shared read-only.
+
+#### 5.5.2 Indexer Usage Examples
+
+```rust
+// Extract full state vector from LP solution (single contiguous slice)
+let state = &solution.primal[indexer.storage.start..indexer.inflow_lags.end];
+assert_eq!(state.len(), indexer.n_state);
+
+// Extract cut-relevant duals for cut coefficient computation
+let cut_duals = &solution.dual[0..indexer.n_cut_relevant];
+
+// Access a specific hydro's storage value (hydro 3)
+let h3_storage = solution.primal[indexer.storage.start + 3];
+
+// Access a specific lag value (hydro 2, lag 1)
+// Formula: inflow_lags.start + lag * hydro_count + hydro
+let h2_lag1 = solution.primal[indexer.inflow_lags.start + 1 * indexer.hydro_count + 2];
+
+// Patch water balance RHS for incoming storage (hydro h)
+let wb_row = indexer.water_balance.start + h;
+
+// Patch lag fixing RHS for (hydro h, lag ℓ)
+let lag_row = indexer.lag_fixing.start + l * indexer.hydro_count + h;
+
+// Access θ variable value
+let theta_value = solution.primal[indexer.theta];
+```
+
+**Lag indexing verification**: The formula `inflow_lags.start + l * hydro_count + h` produces the correct index given the LP column layout `[..., a_{0,0}, a_{1,0}, ..., a_{N-1,0}, a_{0,1}, ..., a_{N-1,L-1}]`. For hydro $h$ at lag $\ell$: the column index is $N + \ell \cdot N + h$, and since `inflow_lags.start = N` and `hydro_count = N`, the formula gives $N + \ell \cdot N + h$ — matching [Solver Abstraction SS2.1](./solver-abstraction.md).
+
+#### 5.5.3 Worked Example (3-Hydro AR(2) System)
+
+Using the system from [Solver Abstraction SS2.4](./solver-abstraction.md) ($N = 3$, $L = 2$, $n_{fpha} = 4$, $n_{gvc} = 0$):
+
+```rust
+let indexer = StageIndexer {
+    storage: 0..3,          // columns 0, 1, 2
+    inflow_lags: 3..9,      // columns 3, 4, 5, 6, 7, 8
+    theta: 9,               // column 9
+    n_state: 9,             // 3 * (1 + 2)
+    water_balance: 0..3,    // rows 0, 1, 2
+    lag_fixing: 3..9,       // rows 3, 4, 5, 6, 7, 8
+    fpha_hyperplanes: 9..13, // rows 9, 10, 11, 12
+    generic_volume: 13..13, // empty range (n_gvc = 0)
+    n_cut_relevant: 13,     // 3 + 6 + 4 + 0
+    hydro_count: 3,
+    max_par_order: 2,
+};
+
+// Extract state: primal[0..9] — a single contiguous slice of 9 f64 values
+let state = &solution.primal[indexer.storage.start..indexer.inflow_lags.end];
+// state = [v_0, v_1, v_2, a_{0,0}, a_{1,0}, a_{2,0}, a_{0,1}, a_{1,1}, a_{2,1}]
+
+// H1 storage (hydro 1): primal[0 + 1] = primal[1]
+let h1_storage = solution.primal[indexer.storage.start + 1];
+
+// H2 lag 1 (hydro 2, lag 1): primal[3 + 1*3 + 2] = primal[8]
+let h2_lag1 = solution.primal[indexer.inflow_lags.start + 1 * indexer.hydro_count + 2];
+
+// Cut-relevant duals: dual[0..13] — includes water balance, lag fixing, FPHA
+let cut_duals = &solution.dual[0..indexer.n_cut_relevant];
+// The first 9 duals map directly to cut coefficients for state variables 0..8
+// Duals 9..12 are FPHA plane duals contributing to storage coefficients via
+// the precomputed mapping (see Cut Management Implementation SS5)
+```
 
 ## 6. Backward Pass
 
 ### 6.1 Overview
 
-The backward pass improves the FCF by generating new Benders cuts. It walks stages in reverse order from $T$ down to 2. The trial points $\{\hat{x}_t\}$ used here are the visited states from **all** forward scenarios across **all** MPI ranks (gathered via `allgatherv` in §5.2). At each stage, the cost-to-go from each trial point is evaluated under **all** openings from the fixed opening tree.
+The backward pass improves the FCF by generating new Benders cuts. It walks stages in reverse order from $T$ down to 2. The trial points $\{\hat{x}_t\}$ used here are the visited states from **all** forward scenarios across **all** MPI ranks (gathered via `allgatherv` in §5.4). At each stage, the cost-to-go from each trial point is evaluated under **all** openings from the fixed opening tree.
 
 ### 6.2 Cut Generation per Stage
 
