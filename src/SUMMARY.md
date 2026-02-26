@@ -61,6 +61,8 @@
   - [Design Principles](./specs/overview/design-principles.md)
   - [Notation Conventions](./specs/overview/notation-conventions.md)
   - [Production Scale Reference](./specs/overview/production-scale-reference.md)
+  - [Implementation Ordering](./specs/overview/implementation-ordering.md)
+  - [Spec Gap Inventory](./specs/overview/spec-gap-inventory.md)
 - [Cross-Reference Index](./specs/cross-reference-index.md)
 - [Mathematical Formulations](./specs/math.md)
   - [SDDP Algorithm](./specs/math/sddp-algorithm.md)

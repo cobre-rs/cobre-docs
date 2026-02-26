@@ -17,7 +17,7 @@ Prepare the Cobre SDDP specification corpus for Rust implementation by formalizi
 | epic-02 | Medium-Priority Trait Formalization  | 4       | Complete |
 | epic-03 | Solver Interface Trait Formalization | 4       | Complete |
 | epic-04 | Spec Consistency Final Pass          | 4       | Complete |
-| epic-05 | Implementation Readiness Assessment  | 3       | Pending  |
+| epic-05 | Implementation Readiness Assessment  | 3       | Complete |
 
 ## Dependency Graph
 
@@ -89,6 +89,6 @@ Recommended execution order (respecting dependencies, maximizing parallelism):
 | ticket-016 | Audit naming consistency across trait specs                  | epic-04 | completed | Refined      |
 | ticket-017 | Validate free-threaded Python note consistency               | epic-04 | completed | Refined      |
 | ticket-018 | Verify traits-as-guidelines convention propagation           | epic-04 | completed | Refined      |
-| ticket-019 | Create implementation ordering document                      | epic-05 | pending   | Outline      |
-| ticket-020 | Create spec gap inventory                                    | epic-05 | pending   | Outline      |
-| ticket-021 | Update SUMMARY and cross-reference-index for readiness docs  | epic-05 | pending   | Outline      |
+| ticket-019 | Create implementation ordering document                      | epic-05 | completed | Refined      |
+| ticket-020 | Create spec gap inventory                                    | epic-05 | completed | Refined      |
+| ticket-021 | Update SUMMARY and cross-reference-index for readiness docs  | epic-05 | completed | Refined      |
