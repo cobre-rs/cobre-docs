@@ -18,16 +18,16 @@ This plan resolves the 5 Blocker-severity and 15 High-severity specification gap
 
 ## Progressive Planning
 
-This plan uses **progressive planning mode**. Epics 1-3 have fully detailed tickets ready for implementation dispatch. Epic 4 has outline tickets that will be refined with learnings from Epics 1-3.
+This plan uses **progressive planning mode**. Epics 1-3 have fully detailed tickets ready for implementation dispatch. Epic 4 has outline tickets that were refined with learnings from Epics 1-3.
 
 ## Epic Summary
 
-| Epic | Name                         | Tickets                       | Status  | Detail Level |
-| ---- | ---------------------------- | ----------------------------- | ------- | ------------ |
-| 01   | Ecosystem Guidelines         | 3 (ticket-001 to ticket-003)  | pending | Detailed     |
-| 02   | Core Data Model Blockers     | 4 (ticket-004 to ticket-007)  | pending | Detailed     |
-| 03   | LP Layout and State Vectors  | 3 (ticket-008 to ticket-010)  | pending | Detailed     |
-| 04   | High-Severity Gap Resolution | 15 (ticket-011 to ticket-025) | pending | Outline      |
+| Epic | Name                         | Tickets                       | Status    | Detail Level |
+| ---- | ---------------------------- | ----------------------------- | --------- | ------------ |
+| 01   | Ecosystem Guidelines         | 3 (ticket-001 to ticket-003)  | completed | Detailed     |
+| 02   | Core Data Model Blockers     | 4 (ticket-004 to ticket-007)  | completed | Detailed     |
+| 03   | LP Layout and State Vectors  | 3 (ticket-008 to ticket-010)  | completed | Detailed     |
+| 04   | High-Severity Gap Resolution | 15 (ticket-011 to ticket-025) | completed | Refined      |
 
 ## Dependency Graph
 
@@ -43,7 +43,7 @@ Epic 2 (Core Data Model)         [independent of Epic 1]
 
 Epic 3 (LP Layout and State)     [blocked by Epic 2]
   ticket-008 --> ticket-009 --> ticket-010
-                                ticket-008 --> ticket-010
+                               ticket-008 --> ticket-010
 
 Epic 4 (High-Severity Gaps)      [blocked by Epics 1-3, outline tickets]
   ticket-009 --> ticket-011 --> ticket-012
@@ -75,18 +75,18 @@ Epic 4 (High-Severity Gaps)      [blocked by Epics 1-3, outline tickets]
 | ticket-008 | Specify LP Memory Layout with Index Formulas            | epic-03 | completed | Detailed     | 0.93      | 0.90    | EXCELLENT |
 | ticket-009 | Specify State Vectors and Indexer Structs               | epic-03 | completed | Detailed     | 0.94      | 0.90    | EXCELLENT |
 | ticket-010 | Update Gap Inventory for GAP-004/005                    | epic-03 | completed | Detailed     | 0.77      | 0.88    | EXCELLENT |
-| ticket-011 | Specify State Vector MPI Wire Format                    | epic-04 | pending   | Outline      | --        | --      | --        |
-| ticket-012 | Specify Cut Synchronization MPI Wire Format             | epic-04 | pending   | Outline      | --        | --      | --        |
-| ticket-013 | Add AR Lag Fixing Constraints to LP Formulation         | epic-04 | pending   | Outline      | --        | --      | --        |
-| ticket-014 | Split patch_rhs_bounds into Row and Column Methods      | epic-04 | pending   | Outline      | --        | --      | --        |
-| ticket-015 | Adopt Single-Phase LP Scaling as Baseline               | epic-04 | pending   | Outline      | --        | --      | --        |
-| ticket-016 | Adopt Selective Cut Addition as Baseline                | epic-04 | pending   | Outline      | --        | --      | --        |
-| ticket-017 | Define load_case API and System Crate Boundary Type     | epic-04 | pending   | Outline      | --        | --      | --        |
-| ticket-018 | Define TrainingEvent Enum in cobre-core                 | epic-04 | pending   | Outline      | --        | --      | --        |
-| ticket-019 | Specify Deterministic Hash Function for Seed Derivation | epic-04 | pending   | Outline      | --        | --      | --        |
-| ticket-020 | Specify Simulation-Based Stopping Rule Interaction      | epic-04 | pending   | Outline      | --        | --      | --        |
-| ticket-021 | Audit CLI Lifecycle for Training Loop Consistency       | epic-04 | pending   | Outline      | --        | --      | --        |
-| ticket-022 | Specify ferrompi Standalone API                         | epic-04 | pending   | Outline      | --        | --      | --        |
-| ticket-023 | Specify Solver Workspace Lifecycle                      | epic-04 | pending   | Outline      | --        | --      | --        |
-| ticket-024 | Clarify Lower Bound Computation                         | epic-04 | pending   | Outline      | --        | --      | --        |
-| ticket-025 | Specify Upper Bound Variance Aggregation                | epic-04 | pending   | Outline      | --        | --      | --        |
+| ticket-011 | Specify State Vector MPI Wire Format                    | epic-04 | completed | Refined      | 0.98      | 1.00    | EXCELLENT |
+| ticket-012 | Specify Cut Synchronization MPI Wire Format             | epic-04 | completed | Refined      | 0.98      | 1.00    | EXCELLENT |
+| ticket-013 | Add AR Lag Fixing Constraints to LP Formulation         | epic-04 | completed | Refined      | 0.98      | 1.00    | EXCELLENT |
+| ticket-014 | Split patch_rhs_bounds into Row and Column Methods      | epic-04 | completed | Refined      | 0.96      | 1.00    | EXCELLENT |
+| ticket-015 | Adopt Single-Phase LP Scaling as Baseline               | epic-04 | completed | Refined      | 0.98      | 0.90    | EXCELLENT |
+| ticket-016 | Adopt Selective Cut Addition as Baseline                | epic-04 | completed | Refined      | 0.98      | 1.00    | EXCELLENT |
+| ticket-017 | Define load_case API and System Crate Boundary Type     | epic-04 | completed | Refined      | 0.96      | 1.00    | EXCELLENT |
+| ticket-018 | Define TrainingEvent Enum in cobre-core                 | epic-04 | completed | Refined      | 0.98      | 1.00    | EXCELLENT |
+| ticket-019 | Specify Deterministic Hash Function for Seed Derivation | epic-04 | completed | Refined      | 0.98      | 0.90    | EXCELLENT |
+| ticket-020 | Specify Simulation-Based Stopping Rule Interaction      | epic-04 | completed | Refined      | 0.96      | 0.89    | EXCELLENT |
+| ticket-021 | Audit CLI Lifecycle for Training Loop Consistency       | epic-04 | completed | Refined      | 0.98      | 1.00    | EXCELLENT |
+| ticket-022 | Specify ferrompi Standalone API                         | epic-04 | completed | Refined      | 0.98      | 0.94    | EXCELLENT |
+| ticket-023 | Specify Solver Workspace Lifecycle                      | epic-04 | completed | Refined      | 0.98      | 1.00    | EXCELLENT |
+| ticket-024 | Clarify Lower Bound Computation                         | epic-04 | completed | Refined      | 0.98      | 1.00    | EXCELLENT |
+| ticket-025 | Specify Upper Bound Variance Aggregation                | epic-04 | completed | Refined      | 0.96      | 1.00    | EXCELLENT |

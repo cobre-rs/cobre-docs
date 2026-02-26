@@ -8,7 +8,7 @@ This spec defines the `SolverInterface` trait -- the backend abstraction through
 
 ## 1. Trait Definition
 
-The solver interface is modeled as a Rust trait with 9 methods. Each method corresponds to one operation from the solver interface contract ([Solver Abstraction SS4.1](./solver-abstraction.md)), plus a `name()` method for diagnostics.
+The solver interface is modeled as a Rust trait with 10 methods. Each method corresponds to one operation from the solver interface contract ([Solver Abstraction SS4.1](./solver-abstraction.md)), plus a `name()` method for diagnostics.
 
 ```rust
 /// Backend abstraction for LP solver operations in the SDDP training loop.
@@ -43,18 +43,32 @@ pub trait SolverInterface: Send {
     /// Maps to `Highs_addRows` (HiGHS) or `Clp_addRows` (CLP).
     fn add_cut_rows(&mut self, cuts: &CutBatch);
 
-    /// Update scenario-dependent RHS values and variable bounds.
+    /// Update scenario-dependent row bounds (constraint RHS values).
     ///
-    /// Each patch is a (row_or_col_index, new_value) pair. The patches
-    /// update inflow RHS, state-fixing constraints, and noise-fixing
-    /// values without modifying the structural LP. This is the only
-    /// modification performed between successive solves at the same
-    /// stage (within-stage incremental updates per
+    /// Each patch is a (row_index, new_lower, new_upper) triple. The
+    /// patches update inflow RHS, state-fixing constraints, and
+    /// noise-fixing values without modifying the structural LP. For
+    /// equality constraints, set new_lower = new_upper = value.
+    /// This is the primary modification performed between successive
+    /// solves at the same stage (within-stage incremental updates per
     /// [Solver Abstraction SS11.4](./solver-abstraction.md)).
     ///
     /// Maps to `Highs_changeRowsBoundsBySet` (HiGHS) or mutable pointer
     /// access via `Clp_rowLower()`/`Clp_rowUpper()` (CLP).
-    fn patch_rhs_bounds(&mut self, patches: &[(usize, f64)]);
+    fn patch_row_bounds(&mut self, patches: &[(usize, f64, f64)]);
+
+    /// Update column bounds (variable lower/upper bounds).
+    ///
+    /// Each patch is a (col_index, new_lower, new_upper) triple. The
+    /// patches update variable bounds without modifying the structural
+    /// LP. This method is not used in minimal viable SDDP but is
+    /// included for completeness — future extensions (e.g., thermal
+    /// unit commitment bounds, battery state-of-charge limits) may
+    /// require per-scenario column bound patching.
+    ///
+    /// Maps to `Highs_changeColsBoundsBySet` (HiGHS) or mutable pointer
+    /// access via `Clp_colLower()`/`Clp_colUpper()` (CLP).
+    fn patch_col_bounds(&mut self, patches: &[(usize, f64, f64)]);
 
     /// Solve the loaded LP.
     ///
@@ -118,7 +132,7 @@ pub trait SolverInterface: Send {
 
 **Thread safety model:** The `Send` bound allows solver instances to be transferred between threads (e.g., during thread pool initialization), but the absence of `Sync` prevents concurrent access. This matches the reality of C-library solver handles, which maintain mutable internal state (factorization workspace, working arrays) that is not safe to share. The thread-local workspace pattern in [Solver Workspaces SS1.1](./solver-workspaces.md) ensures each OpenMP thread owns exactly one solver instance for the entire training run.
 
-**Mutability:** All methods that modify solver state (`load_model`, `add_cut_rows`, `patch_rhs_bounds`, `solve`, `solve_with_basis`, `reset`) take `&mut self`. Read-only accessors (`get_basis`, `statistics`, `name`) take `&self`.
+**Mutability:** All methods that modify solver state (`load_model`, `add_cut_rows`, `patch_row_bounds`, `patch_col_bounds`, `solve`, `solve_with_basis`, `reset`) take `&mut self`. Read-only accessors (`get_basis`, `statistics`, `name`) take `&self`.
 
 ## 2. Method Contracts
 
@@ -166,27 +180,67 @@ pub trait SolverInterface: Send {
 
 **Infallibility:** This method does not return `Result`. The cut batch is assembled from the pre-validated cut pool ([Solver Abstraction SS5](./solver-abstraction.md)); invalid CSR data is a programming error (panic on violation).
 
-### 2.3 patch_rhs_bounds
+### 2.3 patch_row_bounds
 
-`patch_rhs_bounds` updates scenario-dependent values (inflow RHS, state-fixing constraint RHS, noise-fixing values) without structural LP changes. This is step 3 of the LP rebuild sequence and the only modification between successive solves at the same stage ([Solver Abstraction SS11.4](./solver-abstraction.md)).
+`patch_row_bounds` updates scenario-dependent row bounds (constraint RHS values) without structural LP changes. This is step 3 of the LP rebuild sequence and the primary modification between successive solves at the same stage ([Solver Abstraction SS11.4](./solver-abstraction.md)). Each patch is a `(row_index, new_lower, new_upper)` triple. For equality constraints (water balance, lag fixing, noise fixing), set `new_lower = new_upper = value`.
 
 **Preconditions:**
 
-| Condition                          | Description                                                     |
-| ---------------------------------- | --------------------------------------------------------------- |
-| `load_model` has been called       | A model must be loaded before patching                          |
-| All indices in `patches` are valid | Each index references a valid row or column in the loaded model |
-| All values in `patches` are finite | No NaN or infinity                                              |
+| Condition                                | Description                                           |
+| ---------------------------------------- | ----------------------------------------------------- |
+| `load_model` has been called             | A model must be loaded before patching                |
+| All row indices in `patches` are valid   | Each index references a valid row in the loaded model |
+| All bound values in `patches` are finite | No NaN or infinity                                    |
+| `new_lower <= new_upper` for each patch  | Lower bound does not exceed upper bound               |
 
 **Postconditions:**
 
-| Condition                                                      | Description                                         |
-| -------------------------------------------------------------- | --------------------------------------------------- |
-| RHS or bound at each patched index is updated to the new value | The LP reflects the current scenario realization    |
-| Non-patched rows and columns are unchanged                     | Only the specified indices are modified             |
-| Solver basis is preserved                                      | Patching does not invalidate a previously set basis |
+| Condition                                                    | Description                                         |
+| ------------------------------------------------------------ | --------------------------------------------------- |
+| Row lower and upper bounds at each patched index are updated | The LP reflects the current scenario realization    |
+| Non-patched rows are unchanged                               | Only the specified row indices are modified         |
+| Column bounds are unchanged                                  | Row patching does not affect column bounds          |
+| Solver basis is preserved                                    | Patching does not invalidate a previously set basis |
 
 **Infallibility:** This method does not return `Result`. Patch indices are computed from the LP layout convention ([Solver Abstraction SS2](./solver-abstraction.md)); out-of-bounds indices are a programming error (panic on violation).
+
+**Solver API mapping:**
+
+| Solver | API Call                                                             |
+| ------ | -------------------------------------------------------------------- |
+| HiGHS  | `Highs_changeRowsBoundsBySet(model, num_set, indices, lower, upper)` |
+| CLP    | Mutable `double*` via `Clp_rowLower()` / `Clp_rowUpper()`            |
+
+### 2.3a patch_col_bounds
+
+`patch_col_bounds` updates column bounds (variable lower/upper bounds) without structural LP changes. Each patch is a `(col_index, new_lower, new_upper)` triple. This method is not used in minimal viable SDDP but is included for completeness -- future extensions (e.g., thermal unit commitment bounds, battery state-of-charge limits) may require per-scenario column bound patching.
+
+**Preconditions:**
+
+| Condition                                 | Description                                              |
+| ----------------------------------------- | -------------------------------------------------------- |
+| `load_model` has been called              | A model must be loaded before patching                   |
+| All column indices in `patches` are valid | Each index references a valid column in the loaded model |
+| All bound values in `patches` are finite  | No NaN or infinity                                       |
+| `new_lower <= new_upper` for each patch   | Lower bound does not exceed upper bound                  |
+
+**Postconditions:**
+
+| Condition                                                       | Description                                         |
+| --------------------------------------------------------------- | --------------------------------------------------- |
+| Column lower and upper bounds at each patched index are updated | The LP reflects the current scenario realization    |
+| Non-patched columns are unchanged                               | Only the specified column indices are modified      |
+| Row bounds are unchanged                                        | Column patching does not affect row bounds          |
+| Solver basis is preserved                                       | Patching does not invalidate a previously set basis |
+
+**Infallibility:** This method does not return `Result`. Patch indices are computed from the LP layout convention ([Solver Abstraction SS2](./solver-abstraction.md)); out-of-bounds indices are a programming error (panic on violation).
+
+**Solver API mapping:**
+
+| Solver | API Call                                                             |
+| ------ | -------------------------------------------------------------------- |
+| HiGHS  | `Highs_changeColsBoundsBySet(model, num_set, indices, lower, upper)` |
+| CLP    | Mutable `double*` via `Clp_colLower()` / `Clp_colUpper()`            |
 
 ### 2.4 solve
 

@@ -315,12 +315,13 @@ The solver abstraction separates concerns into four layers:
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
-> **Open point — scaling strategy**: Two approaches are under consideration:
+> **Stakeholder decision (GAP-010)**: The minimal viable solver delegates LP scaling to the solver backend (`SolverAuto` method from [Solver Workspaces SS2.3](./solver-workspaces.md)). Cobre does **not** apply its own scaling in the minimal viable solver.
 >
-> - **Single-phase scaling** — Compute row/column scaling factors once from the stage template and apply them for the entire run. Simpler, deterministic, but may not adapt to numerical conditioning changes as cuts accumulate.
-> - **Two-phase scaling** — Apply an initial scaling from the template, then optionally re-scale after cuts are added if numerical diagnostics indicate poor conditioning. More adaptive, but adds complexity (scaling factors must be composed, cut coefficients may need re-transformation).
+> - **HiGHS**: internal scaling is enabled by default (built-in geometric mean strategy, `kSimplexScaleStrategy = 2`).
+> - **CLP**: internal scaling is enabled by default (CLP's automatic scaling).
+> - **Cobre-managed scaling**: the `GeometricMean` and `Equilibration` methods defined in [Solver Workspaces SS2.2--2.4](./solver-workspaces.md) are retained as reference material but are **not active** in the minimal viable solver. Two-phase scaling (re-scale after cuts accumulate) is likewise deferred.
 >
-> The trade-offs depend on the practical conditioning behavior of SDDP LPs as cuts accumulate. This decision is deferred until profiling with realistic problem instances reveals whether single-phase scaling is sufficient or re-scaling is needed. See [Solver Workspaces](./solver-workspaces.md) for current scaling design.
+> **Rationale**: (a) HiGHS and CLP both have mature, well-tested internal scaling that handles the coefficient magnitude ranges typical of SDDP LPs; (b) applying Cobre-managed scaling on top of solver-internal scaling risks double-scaling, where the combined effect degrades rather than improves conditioning; (c) deferring Cobre-managed scaling reduces initial implementation complexity -- the `col_scale`/`row_scale` arrays, the unscaling transforms in solution extraction, and the cut coefficient re-transformation are all eliminated from the critical path; (d) this decision can be revisited if profiling with production-scale problems shows numerical difficulties (excessive retries, poor convergence) attributable to solver-internal scaling alone. See [Solver Workspaces SS2.5](./solver-workspaces.md) for the impact on the stage solve workflow.
 
 **Stage Template vs Transient Solver State:**
 
@@ -339,16 +340,17 @@ The solver interface defines the behavioral contract that all solver implementat
 
 ### 4.1 Required Operations
 
-| Operation        | Input                             | Output                    | Description                                                                                                          |
-| ---------------- | --------------------------------- | ------------------------- | -------------------------------------------------------------------------------------------------------------------- |
-| Load model       | Stage LP template (CSC)           | —                         | Bulk-load the pre-assembled structural LP into the solver via `passModel`/`loadProblem`. Fast memcpy-like operation. |
-| Add cut rows     | Active cuts in CSR format (batch) | —                         | Batch-add all active Benders cuts via a single `addRows` call. Cuts are appended at the bottom per §2.2.             |
-| Patch RHS/bounds | Set of (index, value) pairs       | —                         | Update scenario-dependent values (inflows, state fixing constraints) without structural LP changes.                  |
-| Solve            | —                                 | Solution or error         | Solve the loaded LP. Handles retries internally, extracts solution with normalized duals.                            |
-| Solve with basis | Basis from prior solve            | Solution or error         | Set basis for warm-start, then solve. Reduces simplex iterations.                                                    |
-| Reset            | —                                 | —                         | Clear all internal solver state (caches, basis, factorization).                                                      |
-| Get basis        | —                                 | Current basis             | Extract the current simplex basis for caching.                                                                       |
-| Statistics       | —                                 | Accumulated solve metrics | Total solves, total iterations, retries, failures, timing.                                                           |
+| Operation        | Input                                    | Output                    | Description                                                                                                          |
+| ---------------- | ---------------------------------------- | ------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| Load model       | Stage LP template (CSC)                  | —                         | Bulk-load the pre-assembled structural LP into the solver via `passModel`/`loadProblem`. Fast memcpy-like operation. |
+| Add cut rows     | Active cuts in CSR format (batch)        | —                         | Batch-add all active Benders cuts via a single `addRows` call. Cuts are appended at the bottom per §2.2.             |
+| Patch row bounds | Set of (row_index, lower, upper) triples | —                         | Update scenario-dependent constraint RHS values (inflows, state fixing constraints) without structural LP changes.   |
+| Patch col bounds | Set of (col_index, lower, upper) triples | —                         | Update variable bounds. Not used in minimal viable SDDP; included for completeness.                                  |
+| Solve            | —                                        | Solution or error         | Solve the loaded LP. Handles retries internally, extracts solution with normalized duals.                            |
+| Solve with basis | Basis from prior solve                   | Solution or error         | Set basis for warm-start, then solve. Reduces simplex iterations.                                                    |
+| Reset            | —                                        | —                         | Clear all internal solver state (caches, basis, factorization).                                                      |
+| Get basis        | —                                        | Current basis             | Extract the current simplex basis for caching.                                                                       |
+| Statistics       | —                                        | Accumulated solve metrics | Total solves, total iterations, retries, failures, timing.                                                           |
 
 ### 4.2 Contract Guarantees
 
@@ -361,15 +363,15 @@ The solver interface defines the behavioral contract that all solver implementat
 
 Every operation in the interface contract above must be verifiable against both reference solver APIs:
 
-| Operation           | HiGHS C API                       | CLP C API / C++                                               |
-| ------------------- | --------------------------------- | ------------------------------------------------------------- |
-| Load model          | `Highs_passModel`                 | `Clp_loadProblem`                                             |
-| Add cut rows        | `Highs_addRows` (CSR batch)       | `Clp_addRows` (CSR batch)                                     |
-| Patch RHS           | `Highs_changeRowsBoundsBySet`     | Mutable `double*` via `Clp_rowLower()`/`Clp_rowUpper()`       |
-| Patch column bounds | `Highs_changeColsBoundsBySet`     | Mutable `double*` via `Clp_columnLower()`/`Clp_columnUpper()` |
-| Solve               | `Highs_run`                       | `Clp_dual` (warm-start) or `Clp_initialSolve` (cold)          |
-| Set/get basis       | `Highs_setBasis`/`Highs_getBasis` | `Clp_copyinStatus`/`Clp_statusArray`                          |
-| Reset               | `Highs_clearSolver`               | Reconstruct or `Clp_initialSolve`                             |
+| Operation        | HiGHS C API                       | CLP C API / C++                                         |
+| ---------------- | --------------------------------- | ------------------------------------------------------- |
+| Load model       | `Highs_passModel`                 | `Clp_loadProblem`                                       |
+| Add cut rows     | `Highs_addRows` (CSR batch)       | `Clp_addRows` (CSR batch)                               |
+| Patch row bounds | `Highs_changeRowsBoundsBySet`     | Mutable `double*` via `Clp_rowLower()`/`Clp_rowUpper()` |
+| Patch col bounds | `Highs_changeColsBoundsBySet`     | Mutable `double*` via `Clp_colLower()`/`Clp_colUpper()` |
+| Solve            | `Highs_run`                       | `Clp_dual` (warm-start) or `Clp_initialSolve` (cold)    |
+| Set/get basis    | `Highs_setBasis`/`Highs_getBasis` | `Clp_copyinStatus`/`Clp_statusArray`                    |
+| Reset            | `Highs_clearSolver`               | Reconstruct or `Clp_initialSolve`                       |
 
 See [HiGHS Implementation](./solver-highs-impl.md) and [CLP Implementation](./solver-clp-impl.md) for solver-specific details.
 
@@ -427,12 +429,22 @@ For details on cut generation and selection, see [Cut Management](../math/cut-ma
 
 ### 5.4 How Active Cuts Enter the Solver LP
 
-> **Open question — selective vs bulk cut loading**: Two strategies are under consideration for loading cuts into the solver LP at each stage transition:
->
-> - **Selective addition (current baseline)** — Only active cuts are added via `addRows`. Inactive cuts are excluded entirely. The solver sees a smaller LP (fewer rows, smaller factorization). This is the natural fit for Option A rebuild, where the LP is transient anyway.
-> - **Bulk load with bound deactivation** — All cuts (active + inactive) are loaded in a single bulk operation. Inactive cuts are "deactivated" by setting their lower bound to $-\infty$ (making the constraint non-binding). The solver's presolve step eliminates these redundant rows before factorization. This approach simplifies the cut loading logic (one bulk call, no bitmap filtering) and may interact favorably with solver-internal optimizations, but increases the nominal LP size and depends on presolve being effective.
->
-> The choice depends on: (1) whether presolve overhead for redundant rows is negligible compared to the bitmap-filtered CSR assembly cost, (2) whether presolve is even enabled in our configuration (currently disabled for warm-start compatibility), and (3) the ratio of active to total cuts in practice. This decision is deferred until benchmarking with realistic cut pool sizes.
+**Stakeholder Decision: Selective addition is the adopted baseline for the minimal viable solver.**
+
+Only active cuts (as determined by the cut pool activity bitmap) are added via a single `addRows` call at each stage transition. Inactive cuts are excluded from the solver LP entirely -- they are never loaded, and no bound-toggling deactivation is performed.
+
+**Rationale:**
+
+1. **Smaller LPs.** Selective addition produces LPs with fewer rows and a smaller basis factorization. At production scale with Level-1 cut selection, the active ratio $n_\text{active} / n_\text{total}$ can be substantially below 1.0, so excluding inactive cuts yields a meaningful row-count reduction.
+2. **Natural fit for full-rebuild strategy.** Under the Option A full-rebuild strategy (SS11.2), the solver LP is transient -- rebuilt from scratch at every stage transition. There is no persistent LP to keep inactive rows "parked" in; selective addition aligns directly with the rebuild-from-template workflow (load template, add active cuts, patch, warm-start, solve).
+3. **Presolve is disabled.** Presolve is currently disabled for warm-start basis compatibility (see SS11.2 step 4 and the retry escalation in SS7.2). Bulk loading with bound deactivation relies on presolve to eliminate the redundant inactive rows before factorization. With presolve off, those rows would remain in the LP as non-binding constraints, increasing factorization cost for no benefit.
+4. **O(1) per-cut activity status.** The activity bitmap in the cut pool ([Cut Management Implementation](./cut-management-impl.md) SS1.1) already provides O(1) lookup for whether a cut is active, so filtering during `CutBatch` assembly adds negligible overhead.
+
+**CutBatch assembly implications.** The `CutBatch` struct ([Solver Interface Trait](./solver-interface-trait.md) SS4.5) contains only active cuts. Assembly iterates the activity bitmap and copies only active cut data (intercepts and dense coefficient rows) into the CSR arrays. The assembly cost is $O(n_\text{active} \times n_\text{state})$, not $O(n_\text{total} \times n_\text{state})$. At production scale ($n_\text{state} = 2{,}080$), the per-cut assembly cost is dominated by the coefficient copy (2,081 doubles per cut row including the $\theta$ column), so the active-only filtering provides a directly proportional speedup relative to the active ratio.
+
+**Presolve interaction note.** With selective addition, presolve can remain disabled as required for warm-start basis compatibility. If bulk loading were adopted in a future optimization pass, the presolve interaction would need re-evaluation: presolve would be required to eliminate inactive rows, but enabling presolve may invalidate the warm-start basis, creating a tension that selective addition avoids entirely.
+
+**Deferred optimization: bulk loading with bound deactivation.** An alternative approach loads all cuts (active + inactive) in a single bulk operation and "deactivates" inactive cuts by setting their lower bound to $-\infty$ (making the constraint non-binding). This simplifies the cut loading logic (one bulk call, no bitmap filtering) and may interact favorably with solver-internal optimizations, but increases the nominal LP size and depends on presolve being effective. This alternative is deferred to a later optimization pass, contingent on benchmarking with realistic cut pool sizes and resolution of the presolve/warm-start tension.
 
 The current baseline approach loads active cuts via a single batch `addRows` call in CSR format:
 
@@ -554,7 +566,7 @@ Memory constraints prevent keeping all stage LPs with their full cut sets reside
 
 1. **Load template** — Bulk-load the pre-assembled stage template into the solver via `passModel`/`loadProblem`. Since the template is already in CSC form (the native internal format for both HiGHS and CLP), this is a fast bulk memory operation — no per-constraint construction loops and no format transposition.
 2. **Add active cuts** — Batch-add all active cuts from the cut pool via a single `addRows` call in CSR format (see §5.4).
-3. **Patch scenario values** — Update the ~2,240 scenario-dependent values (incoming storage as RHS of water balance, AR lag fixing constraint RHS, current-stage noise fixing) via batch bound modification.
+3. **Patch scenario values** — Update the ~2,240 scenario-dependent row bounds (incoming storage as RHS of water balance, AR lag fixing constraint RHS, current-stage noise fixing) via `patch_row_bounds` ([Solver Interface Trait SS2.3](./solver-interface-trait.md)).
 4. **Warm-start** — Apply the cached basis from the previous iteration's solve at this stage (structural rows reused directly, new cut rows set to Basic per §2.3).
 5. **Solve** — Solve the LP.
 
@@ -564,12 +576,12 @@ See [Binary Formats SS3, SSA](../data-model/binary-formats.md) for the full anal
 
 Option A is the **portable baseline** that works identically across all solver backends. The spec explicitly anticipates solver-specific optimizations that could reduce rebuild cost further:
 
-| Optimization                 | Solver | Mechanism                                                                                                         | Status                                                       |
-| ---------------------------- | ------ | ----------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------ |
-| Pre-assembled CSC templates  | All    | Stage template in solver-ready CSC → fast `passModel`/`loadProblem` with no format transposition                  | **Adopted** (§11.1)                                          |
-| Direct memory patching       | CLP    | Mutable `double*` pointers (`Clp_rowLower()`, `Clp_columnLower()`) for zero-copy in-place RHS patching            | Anticipated — see [CLP Implementation](./solver-clp-impl.md) |
-| LP template cloning          | CLP    | C++ `makeBaseModel()`/`setToBaseModel()` or copy constructor via thin C wrapper                                   | Anticipated — could reduce rebuild to clone + cut addition   |
-| Pre-assembled CSR cut blocks | All    | Cut pool layout (binary-formats §3.4) is CSR-friendly → `addRows` uses pre-built data (CSR is native for addRows) | Anticipated                                                  |
+| Optimization                 | Solver | Mechanism                                                                                                                                                                         | Status                                                       |
+| ---------------------------- | ------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------ |
+| Pre-assembled CSC templates  | All    | Stage template in solver-ready CSC → fast `passModel`/`loadProblem` with no format transposition                                                                                  | **Adopted** (§11.1)                                          |
+| Direct memory patching       | CLP    | Mutable `double*` pointers (`Clp_rowLower()`/`Clp_rowUpper()`, `Clp_colLower()`/`Clp_colUpper()`) for zero-copy in-place bound patching via `patch_row_bounds`/`patch_col_bounds` | Anticipated — see [CLP Implementation](./solver-clp-impl.md) |
+| LP template cloning          | CLP    | C++ `makeBaseModel()`/`setToBaseModel()` or copy constructor via thin C wrapper                                                                                                   | Anticipated — could reduce rebuild to clone + cut addition   |
+| Pre-assembled CSR cut blocks | All    | Cut pool layout (binary-formats §3.4) is CSR-friendly → `addRows` uses pre-built data (CSR is native for addRows)                                                                 | Anticipated                                                  |
 
 These optimizations do not change the interface contract (§4) — they are internal to each solver implementation.
 
@@ -577,7 +589,7 @@ These optimizations do not change the interface contract (§4) — they are inte
 
 Within the same stage (e.g., multiple backward pass scenarios at stage $t$, or multiple forward passes at the same stage within a batch), only scenario-dependent values change — the structural LP and cuts are identical. In this case, the solver skips steps 1–2 and only performs:
 
-- **Patch scenario values** (step 3)
+- **Patch scenario values** via `patch_row_bounds` (step 3)
 - **Solve** with implicit warm-start from the previous solve's basis (step 5)
 
 This is significantly faster than a full rebuild and is the common case in the backward pass.

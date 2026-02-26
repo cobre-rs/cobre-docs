@@ -175,6 +175,91 @@ The MPI wire format is a compact binary representation optimized for bandwidth, 
 
 At production scale with 192 forward passes per iteration and 16 ranks, each rank generates 12 cuts per stage. The `MPI_Allgatherv` payload is ~192 cuts × 16,660 bytes ≈ 3.2 MB per stage — modest for InfiniBand interconnects.
 
+### 4.2a Wire Format Specification
+
+This subsection specifies the **exact byte-level layout** for cut data exchanged via `allgatherv` ([Communicator Trait SS2.1](../hpc/communicator-trait.md)) during the backward pass cut synchronization (§4.1 step 3). It resolves the ambiguity in §4.2 regarding endianness, alignment, and serialization strategy.
+
+**Serialization: raw `#[repr(C)]` reinterpretation.** Cut records are transmitted as raw bytes obtained by reinterpreting a `#[repr(C)]` struct as `&[u8]` — **not** serialized via `rkyv`, FlatBuffers, or any structured format. This is the same hot-path convention used for state vector exchange ([Training Loop SS5.4a](./training-loop.md)): per-iteration collective operations use raw reinterpretation for zero overhead. The `rkyv` serialization path ([Input Loading Pipeline SS6](./input-loading-pipeline.md)) is reserved for initialization-time broadcast of heterogeneous structures.
+
+**Endianness: native, with same-architecture assumption.** All ranks in an MPI job run the same compiled binary on nodes with the same CPU architecture. This is standard MPI practice — heterogeneous-endianness MPI jobs are not supported. No byte-swapping is performed. This assumption is shared with the state vector wire format ([Training Loop SS5.4a](./training-loop.md)).
+
+**No version byte.** The wire format does not include a version tag, magic number, or schema identifier. All ranks run the same binary and therefore agree on the struct layout at compile time. Adding a version byte would waste one byte per cut record (multiplied by thousands of cuts per iteration across 119 stages) for a scenario that cannot occur within a single MPI job.
+
+**Struct layout.** Each cut is represented as a `CutWireRecord` with the following `#[repr(C)]` field ordering:
+
+```rust
+/// Wire format for a single cut transmitted via allgatherv.
+///
+/// The struct uses #[repr(C)] to guarantee field ordering and
+/// platform-standard alignment. The explicit `_padding` field
+/// ensures that the `intercept` field (and the variable-length
+/// `coefficients` tail) are 8-byte aligned regardless of the
+/// preceding u32 fields.
+///
+/// This type is NOT constructed directly — it is a layout
+/// specification for raw byte reinterpretation.
+#[repr(C)]
+struct CutWireRecord {
+    /// Deterministic slot index (§1.2): warm_start_count + iteration * forward_passes + forward_pass_index
+    slot_index: u32,         // offset  0, size 4
+    /// Iteration at which this cut was generated
+    iteration: u32,          // offset  4, size 4
+    /// Forward pass index within the iteration
+    forward_pass_index: u32, // offset  8, size 4
+    /// Explicit padding to align intercept to 8-byte boundary
+    _padding: u32,           // offset 12, size 4
+    /// Cut intercept: α_k
+    intercept: f64,          // offset 16, size 8
+    /// Cut coefficients: β_k (variable-length, n_state elements)
+    /// Declared as zero-length array — actual length is n_state.
+    coefficients: [f64; 0],  // offset 24, size 0 (variable-length tail)
+}
+```
+
+**Alignment.** The 4-byte `_padding` field between `forward_pass_index` (offset 12) and `intercept` (offset 16) ensures that `intercept` and all subsequent `coefficients` elements are 8-byte aligned. This is critical for correctness on architectures that require aligned `f64` loads (e.g., some ARM targets) and for performance on x86-64 (unaligned `f64` loads may cross cache line boundaries). The `#[repr(C)]` layout guarantee ensures no compiler-inserted padding beyond the explicit `_padding` field.
+
+**Per-cut size.** The fixed header occupies 24 bytes (3 × `u32` + 1 × `u32` padding + 1 × `f64`). The variable-length coefficient tail adds $n_{state} \times 8$ bytes, where $n_{state} = N \cdot (1 + L)$ is the state dimension ([Solver Abstraction SS2.1](./solver-abstraction.md)):
+
+$$\text{cut\_size} = 24 + n_{state} \times 8 \text{ bytes}$$
+
+At production scale ($N = 160$ hydros, $L = 12$ AR lags, $n_{state} = 160 \times 13 = 2{,}080$):
+
+| Component    | Size                                 |
+| ------------ | ------------------------------------ |
+| Fixed header | 24 bytes                             |
+| Coefficients | $2{,}080 \times 8 = 16{,}640$ bytes  |
+| **Total**    | **$24 + 16{,}640 = 16{,}664$ bytes** |
+
+This corrects the approximate "~16,660 bytes" estimate in §4.2 — the exact value is **16,664 bytes** per cut.
+
+**allgatherv type parameter.** Because `CutWireRecord` has variable length (the coefficient tail depends on $n_{state}$, which is a runtime value), the `allgatherv` call uses `T = u8` (raw bytes) rather than `T = CutWireRecord`. Each rank serializes its local cuts into a contiguous `Vec<u8>` send buffer and provides byte counts and displacements to the collective operation:
+
+| Parameter    | Formula                             | Description                              |
+| ------------ | ----------------------------------- | ---------------------------------------- |
+| `counts[r]`  | $M_r \times \text{cut\_size}$       | Byte count contributed by rank $r$       |
+| `displs[r]`  | $\sum_{j=0}^{r-1} \text{counts}[j]$ | Byte offset where rank $r$'s data begins |
+| `send.len()` | $M_r \times \text{cut\_size}$       | This rank's send buffer length in bytes  |
+| `recv.len()` | $M \times \text{cut\_size}$         | Total receive buffer length in bytes     |
+
+where $M_r$ is the number of forward passes assigned to rank $r$ ([Work Distribution SS3.1](../hpc/work-distribution.md)) and $M = \sum_{r=0}^{R-1} M_r$ is the total forward passes per iteration.
+
+**Serialization (send).** Each rank constructs the send buffer by writing each local cut as a contiguous byte sequence:
+
+1. Write the 24-byte header (`slot_index`, `iteration`, `forward_pass_index`, `_padding = 0`, `intercept`)
+2. Copy $n_{state}$ `f64` coefficient values (16,640 bytes at production scale)
+3. Advance write pointer by `cut_size` bytes
+4. Repeat for each local cut at this stage
+
+**Deserialization (receive).** Each rank reads received cuts by reinterpreting the byte buffer:
+
+1. Read the 24-byte header from the current offset
+2. Read $n_{state}$ `f64` values from offset + 24
+3. Write the cut into the local cut pool at the slot position indicated by `slot_index`
+4. Advance read pointer by `cut_size` bytes
+5. Repeat for each received cut
+
+Both serialization and deserialization are simple `memcpy`-equivalent operations — no parsing, no allocation, no schema lookup. The `unsafe` boundary for byte reinterpretation is encapsulated in a helper function that enforces the alignment and size invariants.
+
 ### 4.3 Deterministic Integration
 
 Because slot indices are computed from `(iteration, forward_pass_index)` and forward passes are distributed to ranks in contiguous blocks, each rank can compute the correct slot position for every received cut without negotiation. All ranks end up with identical cut pools after synchronization.

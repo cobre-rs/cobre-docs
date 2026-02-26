@@ -202,15 +202,34 @@ a_h = \underbrace{\left( \mu_t - \sum_{\ell=1}^{P_h} \psi_\ell \mu_{t-\ell} \rig
 + \underbrace{\sigma_t \cdot \eta_t}_{\text{stochastic innovation}}
 $$
 
-**State expansion**: To maintain the Markov property, lagged inflows are state variables with fixing constraints:
-
-$$
-a_{h,\ell} = \hat{a}_{h,\ell} \quad \forall h \in \mathcal{H}, \; \ell \in \{1, \ldots, P_h\}
-$$
-
-**Dual variable**: $\pi^{lag}_{h,\ell}$ (value of inflow history, used for cut coefficients — see [cut management](cut-management.md))
+To maintain the Markov property, lagged inflows $a_{h,\ell}$ are promoted to state variables with explicit fixing constraints — see [SS5a](#5a-ar-lag-fixing-constraints) below.
 
 See [PAR(p) inflow model](par-inflow-model.md) for the complete PAR(p) model specification.
+
+## 5a. AR Lag Fixing Constraints
+
+The AR dynamics equation (SS5) uses lagged inflows $a_{h,\ell}$ as LP variables. To maintain the Markov property in the SDDP decomposition, each lag variable must be fixed to its incoming state value via an explicit equality constraint. These constraints serve a dual purpose: they bind the lag variables to the known incoming state, and their dual multipliers $\pi^{lag}_{h,\ell}$ provide the cut coefficients for the inflow lag dimensions of the Benders cuts (SS11).
+
+For each hydro $h \in \mathcal{H}$ and each lag $\ell \in \{1, \ldots, L\}$:
+
+$$
+a_{h,\ell} = \hat{a}_{h,\ell}
+$$
+
+where:
+
+- $a_{h,\ell}$ = LP variable representing the inflow at lag $\ell$ for hydro $h$
+- $\hat{a}_{h,\ell}$ = incoming state value (inflow observation from $\ell$ stages ago, fixed via RHS patching)
+- $L$ = maximum AR order across all hydros (uniform lag storage convention)
+
+**Constraint count**: $N \times L$ total constraints, where $N = |\mathcal{H}|$ is the number of operating hydros and $L$ is the system-wide maximum lag. All hydros store $L$ lags regardless of their individual AR order $P_h$; hydros with $P_h < L$ have zero-valued AR coefficients ($\psi_\ell = 0$ for $\ell > P_h$) in the dynamics equation, but their lag fixing constraints are still present. This uniform layout enables contiguous memory access and SIMD-friendly cut coefficient extraction — see [Solver Abstraction SS2.2](../architecture/solver-abstraction.md) for the row layout.
+
+**Dual variable**: $\pi^{lag}_{h,\ell}$ (marginal value of inflow history at lag $\ell$ for hydro $h$, used as the cut coefficient for the corresponding inflow lag state variable — see [cut management](cut-management.md))
+
+> **Implementation notes**:
+>
+> - The RHS value $\hat{a}_{h,\ell}$ is patched per scenario during the forward pass ([Training Loop SS4.2a](../architecture/training-loop.md)) and backward pass, following the same index formula as the column layout: row $N + \ell \cdot N + h$ for hydro $h$, lag $\ell$ ([Solver Abstraction SS2.2](../architecture/solver-abstraction.md)).
+> - The dual extraction for cut coefficients reads $\pi^{lag}_{h,\ell}$ from the contiguous top region of the dual vector, where the row-column index symmetry enables a single slice read ([Training Loop SS7.2](../architecture/training-loop.md)).
 
 ## 6. Hydro Generation Constraints
 

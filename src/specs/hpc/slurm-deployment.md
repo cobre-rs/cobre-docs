@@ -9,7 +9,7 @@ This spec defines SLURM job scripts and deployment patterns for Cobre on HPC clu
 > **Important**: SLURM scripts are shell scripts that configure the job environment — they are preserved as-is (not Rust code). The Rust binary launched by `srun` uses `ferrompi` to detect placement:
 >
 > - **SLURM scripts** → set `--ntasks`, `--cpus-per-task`, `--mem-bind`, bind policies, module loads
-> - **Rust startup** → calls `ferrompi::init_with_threading(Multiple)` to initialize MPI with thread support, and `ferrompi::slurm::local_rank()` to read SLURM topology variables (`SLURM_LOCALID`, `SLURM_CPUS_PER_TASK`, etc.)
+> - **Rust startup** → calls `ferrompi::Mpi::init_thread(Multiple)` to initialize MPI with thread support, and `ferrompi::slurm::local_rank()` to read SLURM topology variables (`SLURM_LOCALID`, `SLURM_CPUS_PER_TASK`, etc.)
 >
 > See [Hybrid Parallelism §5](./hybrid-parallelism.md) for the full initialization sequence and [Hybrid Parallelism §3](./hybrid-parallelism.md) for `ParallelConfig::from_environment()` which delegates to `ferrompi::slurm` helpers.
 

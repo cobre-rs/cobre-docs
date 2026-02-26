@@ -130,6 +130,39 @@ This design ensures:
 - **Restart reproducibility** — Resuming from a checkpoint produces identical noise for subsequent iterations
 - **Order independence** — Results are identical regardless of the order in which scenarios or stages are processed
 
+### 2.2a Seed Derivation Function
+
+The deterministic hash function referenced in SS2.2 is **SipHash-1-3**, provided by the [`siphasher`](https://crates.io/crates/siphasher) crate (version `1.x`). The `siphasher` crate guarantees output stability across crate versions, making it suitable for cross-platform and cross-build reproducibility. The hash does **not** need to be cryptographic — SipHash-1-3 is chosen for speed and sufficient collision resistance over the small $(iteration, scenario, stage)$ input domain, not for security properties.
+
+> **Convention:** The standard library's `std::collections::hash_map::DefaultHasher` MUST NOT be used. Its output is explicitly not guaranteed to be stable across Rust compiler versions or platforms.
+
+**Input encoding (forward pass).** The hash input is a fixed-width, little-endian byte sequence constructed by concatenating four integers:
+
+```
+input = base_seed.to_le_bytes()       // u64, 8 bytes
+     ++ iteration.to_le_bytes()        // u32, 4 bytes
+     ++ scenario.to_le_bytes()         // u32, 4 bytes
+     ++ stage.to_le_bytes()            // u32, 4 bytes
+```
+
+Total input: **20 bytes**. The `++` operator denotes byte-level concatenation (no separators, no length prefixes).
+
+**Input encoding (opening tree).** For opening tree generation (SS2.3), the input replaces `iteration` and `scenario` with a single `opening_index`:
+
+```
+input = base_seed.to_le_bytes()       // u64, 8 bytes
+     ++ opening_index.to_le_bytes()    // u32, 4 bytes
+     ++ stage.to_le_bytes()            // u32, 4 bytes
+```
+
+Total input: **16 bytes**.
+
+**Output.** The derived seed is the full 64-bit SipHash-1-3 output. This 64-bit value is used to initialize a `Pcg64` (or equivalent) pseudo-random number generator, which then produces the noise vector $\eta$ for the corresponding tuple.
+
+**Endianness requirement.** Little-endian encoding is **mandatory**. Native byte encoding is not acceptable because it would produce different hash inputs on big-endian and little-endian architectures, breaking cross-platform reproducibility. All integer-to-bytes conversions use explicit `.to_le_bytes()` calls.
+
+**Crate version requirement.** The `siphasher` crate version must be pinned to `1.x` (i.e., `siphasher = "1"` in `Cargo.toml`). The 1.x series provides the `SipHasher13` type and guarantees output stability within the major version. Any future major version upgrade requires verification that hash outputs remain identical for the same inputs, or a migration path for checkpoint compatibility.
+
 ### 2.3 Opening Tree
 
 The backward pass in SDDP evaluates an aggregated cut by solving **all** $N_{\text{openings}}$ branchings at each stage. These branchings must be identical across all iterations — the backward pass always "sees the same tree." The opening tree is therefore **generated once before training begins** and remains fixed throughout.

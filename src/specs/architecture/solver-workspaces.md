@@ -81,6 +81,23 @@ Workspace initialization follows the first-touch NUMA allocation policy:
 5. Allocate and zero-fill all buffers — solution buffers, RHS patch buffer, and per-stage basis cache (T slots, all initially empty) — ensuring first-touch on the local NUMA node
 6. Store workspace in shared array at position `thread_id`
 
+### 1.3a Workspace Lifecycle Summary
+
+The preceding subsections define workspace creation (SS1.3), reuse (SS1.4--1.5), thread safety (SS1.8), and management (SS1.7) in separate sections. This subsection consolidates the complete workspace lifecycle into a single reference for implementers.
+
+| Phase                    | Frequency                                     | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  | Relevant Sections   |
+| ------------------------ | --------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------- |
+| **Creation**             | Once, at Initialization phase start           | Within a parallel region, each thread creates its own workspace on its NUMA node via first-touch allocation (SS1.3). The solver instance is created (`Highs_create()` or `Clp_newModel()`), all buffers are zero-filled, and the per-stage basis cache is initialized with `T` empty slots. The workspace manager allocates the workspace array. After creation, the workspace array is structurally immutable -- the number of workspaces equals the number of threads and does not change. | SS1.2, SS1.3, SS1.7 |
+| **Per-iteration reuse**  | Many times, across all training iterations    | Each thread reuses its workspace for every LP solve. The per-stage basis cache (SS1.5) carries warm-start state across iterations -- the basis from solving stage `t` in iteration `i` is reused to warm-start stage `t` in iteration `i+1`. Solution buffers, RHS patch buffers, and reduced cost buffers are single-solve scratch buffers overwritten on each solve -- no per-iteration allocation occurs on the hot path.                                                                 | SS1.2, SS1.4, SS1.5 |
+| **Per-stage transition** | Many times, within each forward/backward pass | When transitioning between stages, the workspace executes the full 7-step solve sequence (SS1.4): load stage template, add active cuts, patch scenario values, set basis, solve, extract solution, update statistics. Within a stage (multiple backward pass scenarios or batched forward passes at the same stage), steps 1--2 are skipped since the structural LP and cuts are identical. This is the hot path.                                                                            | SS1.4, SS1.5        |
+| **Destruction**          | Once, at Finalize phase end                   | Solver instances are freed via their C API destructor: `Highs_destroy()` for HiGHS, `Clp_deleteModel()` for CLP. All buffers (solution, RHS patch, reduced cost, per-stage basis cache) are deallocated. The workspace manager drops the workspace array. Destruction runs sequentially on the main thread after the last parallel region completes.                                                                                                                                         | SS1.2, SS1.7        |
+
+> **Threading model interaction**: The workspace design assumes a **fixed-size thread pool** that is created at program start and persists until program exit. Workspaces are indexed by `thread_id` from this fixed pool. If the underlying runtime's work-stealing scheduler (e.g., rayon in test harnesses) moves a task to a different thread, the task must still access the workspace indexed by the executing thread's `rayon::current_thread_index()`, not by any task-local state. This is the key correctness invariant -- each physical thread always uses its own workspace, regardless of which logical task it is executing. See [Hybrid Parallelism SS1](../hpc/hybrid-parallelism.md) for the threading model specification.
+
+> **Simulation reuse**: Workspace memory is **not** freed between the Training phase and the Simulation phase. The same workspaces are reused for simulation forward passes. This avoids re-initialization overhead (solver instance creation, NUMA-aware buffer allocation) and preserves the per-stage basis caches, which remain useful for simulation solves at the same stages the training phase visited. Phase boundaries are defined in [CLI and Lifecycle SS5.2](./cli-and-lifecycle.md).
+
+**Cross-references**: [Hybrid Parallelism SS1](../hpc/hybrid-parallelism.md) (threading model, thread pool lifetime), [Training Loop SS4.3](./training-loop.md) (thread-trajectory affinity, parallel distribution), [CLI and Lifecycle SS5.2](./cli-and-lifecycle.md) (Initialization and Finalize phase boundaries).
+
 ### 1.4 Stage Solve Workflow
 
 Each workspace provides a unified solve entry point that handles the full stage solve lifecycle. This is the main interface used by the forward and backward pass:
@@ -89,7 +106,7 @@ Each workspace provides a unified solve entry point that handles the full stage 
 
 1. **Load stage template** (if stage changed) — Bulk-load the pre-assembled CSC stage template ([Solver Abstraction SS11](./solver-abstraction.md)) into the solver via `passModel`/`loadProblem`.
 2. **Add active cuts** (if stage changed) — Batch-add active cuts from the cut pool via `addRows` in CSR format.
-3. **Patch scenario values** — Write scenario-dependent values (incoming storage, AR lag fixing, noise fixing) into the RHS patch buffer, then apply via batch bound modification.
+3. **Patch scenario values** — Write scenario-dependent values (incoming storage, AR lag fixing, noise fixing) into the RHS patch buffer, then apply via `patch_row_bounds` ([Solver Interface Trait SS2.3](./solver-interface-trait.md)).
 4. **Set basis** (if warm-starting) — Look up the cached basis for the target stage from the per-stage basis cache. If a basis exists for this stage, apply it to the solver.
 5. **Solve** — Call the solver. Retry logic is encapsulated within the solver implementation ([Solver Abstraction SS7](./solver-abstraction.md)).
 6. **Extract solution** — Copy primal values, dual values, and reduced costs into pre-allocated buffers. Extract the basis and store it in the per-stage cache at the solved stage's slot, overwriting any previous basis for that stage.
@@ -201,7 +218,7 @@ Production SDDP LPs often suffer from numerical ill-conditioning due to:
 
 LP scaling transforms the problem to improve solver numerical stability by normalizing coefficient magnitudes.
 
-> **Open point — scaling strategy**: The choice between single-phase scaling (compute once from template) and two-phase scaling (re-scale after cuts accumulate) is deferred until profiling. See [Solver Abstraction SS3](./solver-abstraction.md) for the full discussion. This section defines the scaling mechanics that apply regardless of the chosen strategy.
+> **Scaling strategy resolved**: The minimal viable solver delegates LP scaling to the solver backend (`SolverAuto`). Cobre does not apply its own scaling. See [Solver Abstraction SS3](./solver-abstraction.md) for the full stakeholder decision and rationale. The scaling mechanics defined in SS2.2--2.4 below are retained as reference material for a future Cobre-managed scaling optimization pass.
 
 ### 2.2 Scaling Transformation
 
@@ -291,11 +308,13 @@ When scaling is active, the stage solve workflow (§1.4) is augmented at specifi
 | 6. Extract solution      | After extracting raw solver output, unscale: primal ×= D_c, duals ×= D_r, reduced costs ×= D_c⁻¹. Cut coefficients use the unscaled duals. |
 | 7. Update statistics     | No change.                                                                                                                                 |
 
-**Interaction with solver-internal scaling**: If Cobre manages its own scaling (augmentations above), solver-internal scaling should be disabled to avoid double-scaling. If Cobre delegates scaling to the solver (`SolverAuto` method), all scaling augmentations are skipped — the solver handles scaling internally. See the solver-specific scaling configuration in [HiGHS Implementation SS4.2](./solver-highs-impl.md) and [CLP Implementation SS4.2](./solver-clp-impl.md).
+> **Note (`SolverAuto` baseline)**: Under the minimal viable solver's `SolverAuto` scaling strategy ([Solver Abstraction SS3](./solver-abstraction.md)), all Cobre-managed scaling augmentation steps in the table above are **skipped**. The only active rows are "4--5. Set basis, Solve" and "7. Update statistics," which require no scaling transforms. Steps 1 (load stage template), 2 (add active cuts), 3 (patch scenario values), and 6 (extract solution) proceed without any `col_scale`/`row_scale` multiplication or division -- the solver's internal scaling handles numerical conditioning transparently. This means the stage solve workflow in SS1.4 executes exactly as written, with no scaling-related augmentation, until Cobre-managed scaling is activated in a future optimization pass.
+
+**Interaction with solver-internal scaling**: If Cobre manages its own scaling (augmentations above), solver-internal scaling should be disabled to avoid double-scaling. If Cobre delegates scaling to the solver (`SolverAuto` method), all scaling augmentations are skipped -- the solver handles scaling internally. See the solver-specific scaling configuration in [HiGHS Implementation SS4.2](./solver-highs-impl.md) and [CLP Implementation SS4.2](./solver-clp-impl.md).
 
 ## Cross-References
 
-- [Solver Abstraction](./solver-abstraction.md) — Interface contract (SS4), LP layout convention (SS2), cut pool design (SS5), stage LP templates in CSC form (SS11), scaling open point (SS3)
+- [Solver Abstraction](./solver-abstraction.md) — Interface contract (SS4), LP layout convention (SS2), cut pool design (SS5), stage LP templates in CSC form (SS11), scaling decision (SS3)
 - [HiGHS Implementation](./solver-highs-impl.md) — HiGHS-specific solver configuration, batch bound operations, scaling options
 - [CLP Implementation](./solver-clp-impl.md) — CLP-specific solver configuration, mutable pointer patching, scaling options
 - [LP Formulation](../math/lp-formulation.md) — Constraint structure that defines LP dimensions and row/column layout

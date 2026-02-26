@@ -66,6 +66,213 @@ Each step in the iteration lifecycle (§2.1) emits a typed event to the shared e
 
 The event channel uses an `Option<broadcast::Sender<TrainingEvent>>` pattern: when `None`, no events are emitted (zero overhead for library-mode callers). When `Some(sender)`, events are emitted at each step boundary. Consumers are additive -- multiple can subscribe simultaneously. See [Convergence Monitoring SS4.1](./convergence-monitoring.md) for the JSON-lines schema, [Terminal UI](../interfaces/terminal-ui.md) for TUI consumption, and [MCP Server](../interfaces/mcp-server.md) for MCP progress notifications.
 
+### 2.1b TrainingEvent Type Definitions
+
+This subsection provides the concrete Rust type definitions for the `TrainingEvent` enum and its payload structs. The enum lives in **cobre-core** (not cobre-sddp) because event types are consumed by cobre-cli, cobre-tui, and cobre-mcp -- all of which depend on cobre-core but not on cobre-sddp. This placement avoids a reverse dependency from interface crates back into the algorithm crate.
+
+#### Derive traits
+
+`TrainingEvent` and all payload structs derive `Clone` and `Debug`. They do **not** require `Send + Sync` because the event channel transfers ownership: the sender moves events into the channel, and each consumer receives an owned clone. There is no shared mutable access to event values.
+
+#### Timestamp policy
+
+Events do **not** carry wall-clock timestamps. The consumer (text logger, JSON-lines writer, TUI renderer) is responsible for capturing `Instant::now()` or `SystemTime::now()` upon receipt. This avoids `clock_gettime` syscall overhead in the hot path (forward and backward pass events are emitted thousands of times per training run). The single exception is the `timestamp` field in `TrainingStarted`, which records the training start wall-clock time once at entry -- this is not a per-event timestamp but a run-level metadata field.
+
+#### Helper struct: StoppingRuleResult
+
+The `ConvergenceUpdate` variant carries a vector of stopping rule evaluation results. Each element reports one rule's outcome for the current iteration:
+
+```rust
+/// Result of evaluating a single stopping rule at a given iteration.
+#[derive(Clone, Debug)]
+pub struct StoppingRuleResult {
+    /// Rule identifier matching the variant name in the stopping rules config
+    /// (e.g., "gap_tolerance", "bound_stalling", "iteration_limit", "time_limit", "simulation").
+    pub rule_name: String,
+    /// Whether this rule's condition is satisfied at the current iteration.
+    pub triggered: bool,
+    /// Human-readable description of the rule's current state
+    /// (e.g., "gap 0.42% <= 1.00%", "LB stable for 12/10 iterations").
+    pub detail: String,
+}
+```
+
+See [Convergence Monitoring](./convergence-monitoring.md) SS2 for the stopping rule definitions and evaluation logic.
+
+#### TrainingEvent enum
+
+The enum has exactly 11 variants: 7 per-iteration events (one per lifecycle step in SS2.1a) and 4 lifecycle events (emitted once per training or simulation run).
+
+```rust
+/// Typed events emitted by the SDDP training loop and simulation runner.
+/// Defined in cobre-core. Consumed by cobre-cli, cobre-tui, and cobre-mcp.
+#[derive(Clone, Debug)]
+pub enum TrainingEvent {
+    // ── Per-iteration events (7) ────────────────────────────────────
+
+    /// Step 1: Forward pass completed for this iteration on the local rank.
+    ForwardPassComplete {
+        iteration: u64,
+        /// Number of forward scenarios evaluated on this rank.
+        scenarios: u32,
+        /// First-stage objective (candidate lower bound) before global reduction.
+        lb_candidate: f64,
+        /// Mean total forward cost across local scenarios.
+        ub_mean: f64,
+        /// Standard deviation of total forward cost across local scenarios.
+        ub_std: f64,
+        /// Wall-clock time for the forward pass on this rank, in milliseconds.
+        elapsed_ms: u64,
+    },
+
+    /// Step 2: Forward synchronization (allreduce) completed.
+    ForwardSyncComplete {
+        iteration: u64,
+        /// Global lower bound after allreduce across all ranks.
+        global_lb: f64,
+        /// Global upper bound mean after allreduce.
+        global_ub_mean: f64,
+        /// Global upper bound standard deviation after allreduce.
+        global_ub_std: f64,
+        /// Wall-clock time for the MPI synchronization, in milliseconds.
+        sync_time_ms: u64,
+    },
+
+    /// Step 3: Backward pass completed for this iteration.
+    BackwardPassComplete {
+        iteration: u64,
+        /// Number of new cuts generated across all stages.
+        cuts_generated: u32,
+        /// Number of stages processed in the backward sweep.
+        stages_processed: u32,
+        /// Wall-clock time for the backward pass, in milliseconds.
+        elapsed_ms: u64,
+    },
+
+    /// Step 4: Cut synchronization (allgatherv) completed.
+    CutSyncComplete {
+        iteration: u64,
+        /// Number of cuts distributed to all ranks via allgatherv.
+        cuts_distributed: u32,
+        /// Total number of active cuts in the FCF after synchronization.
+        cuts_active: u32,
+        /// Number of cuts removed by cut selection after synchronization.
+        cuts_removed: u32,
+        /// Wall-clock time for the MPI synchronization, in milliseconds.
+        sync_time_ms: u64,
+    },
+
+    /// Step 5: Convergence check completed.
+    ConvergenceUpdate {
+        iteration: u64,
+        /// Current lower bound (non-decreasing).
+        lower_bound: f64,
+        /// Current upper bound (statistical estimate).
+        upper_bound: f64,
+        /// Standard deviation of the upper bound estimate.
+        upper_bound_std: f64,
+        /// Relative optimality gap: (UB - LB) / |UB|.
+        gap: f64,
+        /// Evaluation result for each configured stopping rule.
+        rules_evaluated: Vec<StoppingRuleResult>,
+    },
+
+    /// Step 6: Checkpoint written (only emitted when the checkpoint interval triggers).
+    CheckpointComplete {
+        iteration: u64,
+        /// Filesystem path where the checkpoint was written.
+        checkpoint_path: String,
+        /// Wall-clock time for the checkpoint write, in milliseconds.
+        elapsed_ms: u64,
+    },
+
+    /// Step 7: Full iteration summary with aggregated timings.
+    IterationSummary {
+        iteration: u64,
+        lower_bound: f64,
+        upper_bound: f64,
+        /// Relative optimality gap: (UB - LB) / |UB|.
+        gap: f64,
+        /// Cumulative wall-clock time since training started, in milliseconds.
+        wall_time_ms: u64,
+        /// Wall-clock time for this iteration only, in milliseconds.
+        iteration_time_ms: u64,
+        /// Forward pass time for this iteration, in milliseconds.
+        forward_ms: u64,
+        /// Backward pass time for this iteration, in milliseconds.
+        backward_ms: u64,
+        /// Total number of LP solves in this iteration (forward + backward).
+        lp_solves: u64,
+        /// Peak resident memory in megabytes (from platform allocator stats).
+        memory_peak_mb: f64,
+    },
+
+    // ── Lifecycle events (4) ────────────────────────────────────────
+
+    /// Emitted once when the training loop begins.
+    TrainingStarted {
+        /// Case study name from the input data directory.
+        case_name: String,
+        /// Total number of stages in the horizon.
+        stages: u32,
+        /// Number of hydro plants in the system.
+        hydros: u32,
+        /// Number of thermal plants in the system.
+        thermals: u32,
+        /// Number of MPI ranks participating in training.
+        ranks: u32,
+        /// Number of threads per rank (rayon thread pool size).
+        threads_per_rank: u32,
+        /// Wall-clock time at training start (run-level metadata, not a per-event timestamp).
+        timestamp: String,
+    },
+
+    /// Emitted once when the training loop exits (converged or limit reached).
+    TrainingFinished {
+        /// Termination reason: which stopping rule(s) triggered, or "iteration_limit", "time_limit".
+        reason: String,
+        /// Total number of iterations completed.
+        iterations: u64,
+        /// Final lower bound at termination.
+        final_lb: f64,
+        /// Final upper bound at termination.
+        final_ub: f64,
+        /// Total wall-clock time for the training run, in milliseconds.
+        total_time_ms: u64,
+        /// Total number of cuts in the FCF at termination.
+        total_cuts: u64,
+    },
+
+    /// Emitted periodically during policy simulation (not during training).
+    SimulationProgress {
+        /// Number of simulation scenarios completed so far.
+        scenarios_complete: u32,
+        /// Total number of simulation scenarios to run.
+        scenarios_total: u32,
+        /// Wall-clock time since simulation started, in milliseconds.
+        elapsed_ms: u64,
+    },
+
+    /// Emitted once when policy simulation completes.
+    SimulationFinished {
+        /// Total number of simulation scenarios evaluated.
+        scenarios: u32,
+        /// Directory where simulation output files were written.
+        output_dir: String,
+        /// Total wall-clock time for the simulation run, in milliseconds.
+        elapsed_ms: u64,
+    },
+}
+```
+
+#### Cross-references
+
+- **SS2.1a** (above): Event emission points and payload summary table that this subsection formalizes.
+- **[Convergence Monitoring SS4.1](./convergence-monitoring.md)**: JSON-lines streaming schema consumed by the text logger and JSON-lines writer. The `IterationSummary` and `ConvergenceUpdate` events are the primary data sources for each JSON-lines record.
+- **[Structured Output](../interfaces/structured-output.md)**: Streaming protocol for external consumers (MCP server, programmatic callers). `TrainingEvent` variants map to the structured output event types.
+- **[Convergence Monitoring SS2](./convergence-monitoring.md)**: Stopping rule definitions referenced by `StoppingRuleResult.rule_name`.
+- **GAP-032** (event channel implementation): The channel type and backpressure policy are **not** specified here. GAP-032 remains open for the channel mechanism design.
+
 ### 2.2 Termination Conditions
 
 The loop terminates based on the configured `stopping_mode` (`"any"` or `"all"`) applied to the following conditions:
@@ -149,7 +356,7 @@ For each forward trajectory:
 
 ### 4.2a Forward Pass Patch Sequence
 
-Step c above ("Build stage LP") decomposes into the LP rebuild sequence ([Solver Abstraction SS11.2](./solver-abstraction.md)): load template, add active cuts, patch scenario-dependent RHS values, and warm-start. This subsection specifies the **exact `patch_rhs_bounds` calls** for the forward pass — the patches that transform a generic stage template into the LP for a specific (incoming state, scenario realization) pair.
+Step c above ("Build stage LP") decomposes into the LP rebuild sequence ([Solver Abstraction SS11.2](./solver-abstraction.md)): load template, add active cuts, patch scenario-dependent RHS values, and warm-start. This subsection specifies the **exact `patch_row_bounds` calls** for the forward pass — the patches that transform a generic stage template into the LP for a specific (incoming state, scenario realization) pair.
 
 Three categories of patches are applied, all targeting constraint RHS values:
 
@@ -224,12 +431,47 @@ When $M > N_{\text{threads}}$, threads process multiple trajectories in batches.
 
 After all ranks complete their trajectories, `allreduce` aggregates:
 
-- **Lower bound** — First-stage LP objective value (the deterministic lower bound, monotonically increasing across iterations)
+- **Lower bound** — First-stage LP objective value; see [SS4.3b](#43b-lower-bound-extraction) for the extraction and aggregation mechanism
 - **Upper bound statistics** — Mean and variance of total forward costs across all trajectories
 
 ### 4.3a Single-Rank Forward Pass Variant
 
 When `comm.size() == 1` (single-process mode, used by `cobre-python` and `cobre-mcp`, or single-rank MPI execution), all scenarios are assigned to the single rank. The `allreduce` for bound aggregation becomes a local computation -- the rank's local statistics are the global statistics. For the `LocalBackend`, this is an identity copy operation (see [Local Backend SS2.2](../hpc/backend-local.md)). No inter-rank communication occurs. OpenMP thread-level parallelism remains active: scenarios are distributed across threads within the single rank using the same thread-trajectory affinity pattern (§4.3). See [Hybrid Parallelism §1](../hpc/hybrid-parallelism.md) for the single-process mode initialization sequence.
+
+### 4.3b Lower Bound Extraction
+
+The lower bound (LB) is the objective value of the stage-1 LP, which includes both the immediate stage-1 cost and the future cost approximation $\theta_2$ constrained by all accumulated cuts:
+
+$$
+LB = \min_{x_1} \left\{ c_1^\top x_1 + \theta_2 \;\middle|\; \text{stage-1 constraints} \right\}
+$$
+
+The LB is a **single `f64` value**, not a per-scenario statistic. Because all scenarios share the same initial state $x_0$ and the same cut set, the stage-1 LP is identical regardless of which scenario trajectory it belongs to. Every rank solves the stage-1 LP as the first step of its forward pass (for each of its assigned trajectories), and in exact arithmetic every such solve produces the same objective value.
+
+#### Source
+
+The LB is extracted from the **first** stage-1 LP solve on any rank. No special-case computation is required -- the LB is a side effect of the normal forward pass. Each rank records the stage-1 objective from its first trajectory solve and uses that value as its local LB candidate.
+
+#### Aggregation
+
+The LB is aggregated across ranks via `allreduce` with `ReduceOp::Min`. Since all ranks compute the same value in exact arithmetic, `Min` is a no-op in the ideal case. The `Min` operation serves as a **defensive guard against numerical noise**: if floating-point non-determinism across different solver instances, NUMA nodes, or thread scheduling produces slightly different stage-1 objective values, `Min` selects the most conservative (lowest) bound, preserving the mathematical guarantee that $LB \leq z^*$.
+
+> **Rationale.** Using `Max` or `Sum/count` (averaging) could produce a value that marginally exceeds the true optimal $z^*$ due to upward numerical perturbation, which would violate the lower-bound invariant. `Min` is safe by construction.
+
+#### Two-Call Baseline
+
+The forward synchronization uses **two separate `allreduce` calls** as the baseline:
+
+1. **LB aggregation** — `allreduce` on a single `f64` with `ReduceOp::Min`
+2. **UB aggregation** — `allreduce` on a 3-element `[f64; 3]` array `[cost_sum, cost_sum_sq, scenario_count]` with `ReduceOp::Sum`
+
+The UB sufficient statistics are defined in [Convergence Monitoring SS3.1](./convergence-monitoring.md). From the global aggregates, the upper bound mean, variance, and 95% confidence interval are computed as specified there.
+
+> **Optimization note.** The two calls can be fused into a single `allreduce` on a 4-element `[f64; 4]` array `[lb_candidate, cost_sum, cost_sum_sq, scenario_count]` using a custom MPI reduction operation that applies `Min` to the first element and `Sum` to the remaining three. This eliminates one synchronization barrier but requires registering a user-defined `MPI_Op`. The two-call approach is the baseline for simplicity; the fused variant is a valid optimization.
+
+#### Single-Rank Mode
+
+In single-rank mode ([SS4.3a](#43a-single-rank-forward-pass-variant)), the LB extraction is trivial: the rank's stage-1 objective is the global LB with no communication. The `allreduce` for the LB degenerates to an identity operation (or is skipped entirely by the `LocalBackend`).
 
 ### 4.4 Warm-Starting
 
@@ -300,7 +542,7 @@ No index gathering or scattering is required — the LP column layout is designe
 
 ### 5.3 State Transfer Between Stages
 
-Transferring state from stage $t$ to stage $t+1$ requires patching the next stage's LP with the outgoing state values. This uses the `patch_rhs_bounds` interface ([Solver Interface Trait SS2.3](./solver-interface-trait.md)) with two categories of patches:
+Transferring state from stage $t$ to stage $t+1$ requires patching the next stage's LP with the outgoing state values. This uses the `patch_row_bounds` interface ([Solver Interface Trait SS2.3](./solver-interface-trait.md)) with two categories of patches:
 
 **Storage transfer**: For each operating hydro $h \in [0, N)$, patch the water balance constraint RHS:
 
@@ -329,6 +571,72 @@ The state transfer patches are a subset of the full forward pass patch sequence 
    - **Storage extraction**: End-of-stage storage volumes are read from the LP solution's state variable values (§5.2)
 
 3. **Extraction for backward pass** — After the forward pass, the visited states at each stage are collected across all ranks via `allgatherv`. State deduplication (merging duplicate visited states to reduce backward pass LP solves) is a potential optimization deferred to [Deferred Features](../deferred.md).
+
+### 5.4a State Vector Wire Format
+
+Step 3 above collects visited states from all MPI ranks via `allgatherv` ([Communicator Trait SS2.1](../hpc/communicator-trait.md)). This subsection specifies the **exact wire format** for state vector exchange -- the byte-level layout, indexing scheme, and collective operation parameters that all ranks must agree on.
+
+**Serialization: raw `[f64]` reinterpretation.** State vectors are transmitted as raw `f64` arrays reinterpreted as bytes -- **not** serialized via `rkyv` or any structured format. This is consistent with the hot-path convention for cut wire format ([Cut Management Implementation SS4.2](./cut-management-impl.md)): data that flows through per-iteration collective operations uses raw reinterpretation for zero-copy semantics and minimal latency. The `rkyv` serialization path ([Input Loading Pipeline SS6](./input-loading-pipeline.md)) is reserved for initialization-time broadcast of heterogeneous structures, not for hot-path homogeneous `f64` arrays.
+
+**Granularity: one `allgatherv` per stage $t$.** The state vector exchange issues one `allgatherv` call per stage, not a single call for all stages combined. Each call at stage $t$ gathers the $M$ visited states for that stage from all ranks:
+
+$$\text{allgatherv}_t : \quad \text{rank } r \text{ sends } M_r \text{ state vectors of dimension } n_{state}$$
+
+where $M_r$ is the number of forward trajectories assigned to rank $r$ by the contiguous block assignment ([Work Distribution SS3.1](../hpc/work-distribution.md)), and $n_{state} = N \cdot (1 + L)$ is the state dimension ([Solver Abstraction SS2.1](./solver-abstraction.md)).
+
+> **Rationale for per-stage granularity.** A single `allgatherv` for all stages would require either (a) a stage index tag per state vector (adding overhead) or (b) a fixed stage ordering assumption that prevents future per-stage deduplication or variable-count extensions. Per-stage calls are simpler, naturally composable with per-stage backward pass processing (§6.2), and allow future per-stage count variation without protocol changes.
+
+**Indexing: scenario-major within each stage.** Within each rank's send buffer for stage $t$, state vectors are packed in scenario order -- the state from scenario $m$ occupies positions $[m \cdot n_{state}, \; (m+1) \cdot n_{state})$. Across ranks, the `allgatherv` receive buffer is populated in rank order (rank 0's states first, then rank 1's, etc.), matching the rank-ordered receive semantics of [Communicator Trait SS2.1](../hpc/communicator-trait.md).
+
+**Send buffer layout (rank $r$, stage $t$):**
+
+```
+send_buf[0 .. M_r * n_state]  =  [x_{t}^{(s_0)}, x_{t}^{(s_1)}, ..., x_{t}^{(s_{M_r - 1})}]
+```
+
+where $s_0, s_1, \ldots, s_{M_r - 1}$ are the scenario indices assigned to rank $r$, and each $x_t^{(s)}$ is a contiguous `[f64; n_state]` array in the LP column prefix layout ([Solver Abstraction SS2.1](./solver-abstraction.md)).
+
+**Collective operation parameters:**
+
+| Parameter    | Formula                             | Description                                             |
+| ------------ | ----------------------------------- | ------------------------------------------------------- |
+| `counts[r]`  | $M_r \times n_{state}$              | Number of `f64` elements rank $r$ contributes           |
+| `displs[r]`  | $\sum_{j=0}^{r-1} \text{counts}[j]$ | Offset into receive buffer where rank $r$'s data begins |
+| `send.len()` | $M_r \times n_{state}$              | This rank's send buffer length (in `f64` elements)      |
+| `recv.len()` | $M \times n_{state}$                | Total receive buffer length (in `f64` elements)         |
+
+where $M = \sum_{r=0}^{R-1} M_r$ is the total number of forward trajectories across all ranks.
+
+**Counts and displacements derivation.** The counts array is computed from the contiguous block assignment ([Work Distribution SS3.1](../hpc/work-distribution.md)):
+
+$$\text{counts}[r] = M_r \times n_{state}$$
+
+The displacements are the exclusive prefix sum of counts:
+
+$$\text{displs}[r] = \sum_{j=0}^{r-1} \text{counts}[j]$$
+
+These arrays are computed once at training initialization (since $M$, $R$, and $n_{state}$ are fixed for the entire training run) and reused for every stage's `allgatherv` call.
+
+**Receive buffer indexing.** After the `allgatherv` completes, the state vector for global scenario $m$ at stage $t$ is located at:
+
+```
+recv_buf[m * n_state .. (m + 1) * n_state]
+```
+
+This flat indexing works because the rank-ordered receive layout and the contiguous block assignment together produce a globally contiguous scenario ordering in the receive buffer.
+
+**No alignment padding in wire format.** The wire format contains no padding bytes between state vectors. The 64-byte alignment requirement for SIMD dot products (§5.1.1) is a **local** concern: each rank copies received state vectors into locally aligned buffers before use in the backward pass. The wire format prioritizes minimal bandwidth and simple indexing over alignment.
+
+**Production-scale sizing.** At production scale ($M = 192$ trajectories, $n_{state} = 2{,}080 = 160 \times (1 + 12)$):
+
+| Metric                       | Value                                                |
+| ---------------------------- | ---------------------------------------------------- |
+| Bytes per state vector       | $2{,}080 \times 8 = 16{,}640$ bytes                  |
+| Total `f64` values per stage | $192 \times 2{,}080 = 399{,}360$                     |
+| Total bytes per stage        | $399{,}360 \times 8 = 3{,}194{,}880 \approx 3.19$ MB |
+| Total bytes across 60 stages | $3.19 \times 60 \approx 191$ MB                      |
+
+With $R = 4$ ranks: $M_r = 48$ trajectories per rank, `counts[r]` $= 48 \times 2{,}080 = 99{,}840$ `f64` elements, `send.len()` $= 99{,}840 \times 8 = 798{,}720$ bytes $\approx 0.80$ MB per rank per stage.
 
 ### 5.5 StageIndexer
 

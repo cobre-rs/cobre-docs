@@ -84,7 +84,7 @@ The following flags apply to all subcommands:
 
 | Flag              | Values                        | Default | Description                                                                                                                          |
 | ----------------- | ----------------------------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------ |
-| `--output-format` | `human`, `json`, `json-lines` | `human` | Output presentation format. Does not affect computation. See [Structured Output SS5](../interfaces/structured-output.md)              |
+| `--output-format` | `human`, `json`, `json-lines` | `human` | Output presentation format. Does not affect computation. See [Structured Output SS5](../interfaces/structured-output.md)             |
 | `--quiet`         | (flag)                        | off     | Suppress non-essential output (progress bars, decorative headers). In `json` mode, suppresses `warnings` array                       |
 | `--no-progress`   | (flag)                        | off     | Suppress progress streaming. In `json-lines` mode, suppresses `progress` events (only `started`, `terminated`, `result` are emitted) |
 
@@ -137,6 +137,38 @@ Each subcommand accepts specific positional and keyword arguments:
 | Training       | All (parallel) | SDDP iterations                                 |
 | Simulation     | All (parallel) | Policy evaluation                               |
 | Finalize       | All            | Output writing, cleanup                         |
+
+### 5.2a Phase-Training Loop Alignment
+
+This subsection documents the correspondence between CLI execution phases (§5.2) and the spec sections that define each phase's operations. The purpose is to ensure that every phase boundary assumed by the [Training Loop](./training-loop.md) is explicitly sequenced in the lifecycle, and that implementers can trace each phase to its authoritative specification.
+
+| Phase              | Operation                                              | Authoritative Spec                                                  | Ordering Constraint                                                           |
+| ------------------ | ------------------------------------------------------ | ------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
+| **Startup**        | MPI backend initialization (`create_communicator`)     | [Hybrid Parallelism SS6, Step 1](../hpc/hybrid-parallelism.md)      | Must be the first operation; precedes all file I/O and thread creation        |
+| **Startup**        | Topology detection (rank, size, intra-node split)      | [Hybrid Parallelism SS6, Steps 2--3](../hpc/hybrid-parallelism.md)  | Requires MPI backend initialized                                              |
+| **Startup**        | Scheduler detection (SLURM, PBS, local)                | [CLI and Lifecycle SS6.3](#63-scheduler-detection)                  | Reads environment variables; no MPI dependency                                |
+| **Startup**        | CLI argument parsing and subcommand routing            | [CLI and Lifecycle SS3](#3-command-line-interface)                  | Determines execution mode before Validation                                   |
+| **Validation**     | Rank-0 file loading and validation (`load_case`)       | [Input Loading Pipeline SS8.1](./input-loading-pipeline.md)         | Rank 0 only; produces the `System` struct                                     |
+| **Initialization** | rkyv broadcast of `System` to worker ranks             | [Input Loading Pipeline SS6](./input-loading-pipeline.md)           | Requires `System` from Validation; all ranks receive identical validated data |
+| **Initialization** | OpenMP configuration and NUMA allocation policy        | [Hybrid Parallelism SS6, Steps 4--6](../hpc/hybrid-parallelism.md)  | Must precede workspace allocation (first-touch policy)                        |
+| **Initialization** | Solver workspace allocation (thread-local, NUMA-aware) | [Solver Workspaces SS1.3](./solver-workspaces.md)                   | Each thread creates its own workspace on its NUMA node                        |
+| **Initialization** | Stage LP template construction                         | [Solver Abstraction SS11.1](./solver-abstraction.md)                | Built from resolved `System`; shared read-only across threads                 |
+| **Initialization** | Parallel policy loading (warm-start only)              | [Input Loading Pipeline SS7](./input-loading-pipeline.md)           | All ranks load in parallel after `System` broadcast                           |
+| **Initialization** | FPHA hyperplane fitting (computed source only)         | [Input Loading Pipeline SS8](./input-loading-pipeline.md)           | Requires geometry and topology from `System`                                  |
+| **Scenario Gen**   | PAR model preprocessing                                | [Scenario Generation SS1](./scenario-generation.md)                 | Transforms raw PAR parameters into contiguous cache-friendly layout           |
+| **Scenario Gen**   | Opening tree generation (fixed before training)        | [Scenario Generation SS2.3](./scenario-generation.md)               | Generated once; remains fixed throughout training                             |
+| **Scenario Gen**   | Cholesky decomposition of correlation matrices         | [Scenario Generation SS2.1](./scenario-generation.md)               | Pre-decomposed during preprocessing; used at runtime                          |
+| **Training**       | SDDP iteration loop (forward/backward/convergence)     | [Training Loop SS2.1](./training-loop.md)                           | Requires all preceding phases complete                                        |
+| **Simulation**     | Policy evaluation on large scenario sets               | [Simulation Architecture SS1](./simulation-architecture.md)         | Requires trained FCF from Training (or loaded policy from Initialization)     |
+| **Finalize**       | Output writing (Parquet, policy FlatBuffers, manifest) | [Output Infrastructure SS1](../data-model/output-infrastructure.md) | Rank 0 writes manifest; all ranks may write partitioned output                |
+| **Finalize**       | MPI finalize and process exit                          | [Hybrid Parallelism SS6](../hpc/hybrid-parallelism.md)              | Must be the last MPI operation                                                |
+
+**Key invariants enforced by phase ordering:**
+
+1. **MPI-first**: MPI initialization is the first operation in Startup, before any file I/O or thread creation. This is required by the MPI standard when using `MPI_THREAD_MULTIPLE` ([Hybrid Parallelism SS6, Step 1](../hpc/hybrid-parallelism.md)).
+2. **Rank-0 validation before broadcast**: The `load_case` function ([Input Loading Pipeline SS8.1](./input-loading-pipeline.md)) executes on rank 0 only during the Validation phase. The resulting `System` struct is broadcast via rkyv during Initialization. This ensures all ranks receive identical, validated data.
+3. **Workspaces before training**: Solver workspace allocation ([Solver Workspaces SS1.3](./solver-workspaces.md)) and stage template construction ([Solver Abstraction SS11.1](./solver-abstraction.md)) complete during Initialization, before the Training phase begins. The Training Loop assumes these are ready at entry.
+4. **Scenarios before training**: PAR preprocessing and opening tree generation complete during Scenario Gen. The backward pass requires the fixed opening tree ([Scenario Generation SS2.3](./scenario-generation.md)) from iteration 1 onward.
 
 ### 5.3 Conditional Execution
 

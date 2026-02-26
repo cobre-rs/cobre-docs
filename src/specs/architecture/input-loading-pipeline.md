@@ -246,6 +246,114 @@ After loading and broadcasting, each rank constructs its in-memory data model fr
 
 The key invariant is: **after the Initialization phase completes, all ranks hold identical copies of the validated case data** (except for per-rank scenario assignments, which are determined during Scenario Generation). See [CLI and Lifecycle](./cli-and-lifecycle.md) SS5.2 for the phase sequence.
 
+### 8.1 `load_case` Public API
+
+`load_case` is the primary entry point from `cobre-cli` (rank 0) into `cobre-io`. It performs the complete loading sequence (SS2.1--2.6), cross-reference validation (SS2.6), and returns a fully resolved `System` value ready for rkyv broadcast.
+
+**Function signature:**
+
+```rust
+/// Load, validate, and resolve a Cobre case from the input directory.
+///
+/// This is the primary entry point from cobre-cli (rank 0) into cobre-io.
+/// Returns the fully resolved System struct ready for rkyv broadcast.
+///
+/// # Errors
+/// Returns LoadError if any file cannot be read, parsed, or validated.
+pub fn load_case(path: &Path) -> Result<System, LoadError>
+```
+
+**Parameters:**
+
+- `path: &Path` -- the case directory containing `config.json` and all subdirectories (`system/`, `scenarios/`, `constraints/`, `policy/`). This is the root directory of the case, not a path to any individual file.
+
+**Return type:**
+
+- `System` -- an owned value (not `Arc<System>`). The caller (`cobre-cli` or `cobre-python`) owns the returned `System` and is responsible for broadcasting it to worker ranks via the rkyv serialization protocol (SS6.1). After broadcast, each rank owns its own deserialized copy. Ownership transfer is the simplest pattern: no reference counting, no shared-memory coordination, no lifetime entanglement between the loading phase and the algorithm phase.
+
+**Config loading:**
+
+`load_case` does NOT accept a `Config` parameter. The `config.json` file is loaded as step 1 within `load_case` itself, per the loading sequence (SS2.1). The config governs conditional loading decisions (SS4) such as whether to require FPHA hyperplanes or scenario model files. Accepting a pre-loaded config would split the loading sequence across two call sites, creating a risk that conditional loading decisions are evaluated against a config that does not match the case directory contents.
+
+**Responsibility boundary:**
+
+`load_case` performs the following steps, in order:
+
+1. Load and validate `config.json` (SS2.1).
+2. Load root-level files: `stages.json`, `penalties.json`, `initial_conditions.json` (SS2.1).
+3. Load system entity registries (SS2.2).
+4. Load system extension data (SS2.3).
+5. Load scenario data (SS2.4).
+6. Load constraints and overrides (SS2.5).
+7. Apply sparse time-series expansion (SS5).
+8. Perform cross-reference validation (SS2.6).
+9. Construct and return the `System` struct with all collections in canonical order.
+
+`load_case` does NOT load policy files (SS2.7). Policy loading follows a different pattern -- all ranks load in parallel (SS7) -- and is a separate operation invoked after the `System` broadcast. See [CLI and Lifecycle](./cli-and-lifecycle.md) SS5.2 for the phase sequence that separates case loading from policy loading.
+
+**`LoadError` enum:**
+
+```rust
+/// Errors that can occur during case loading.
+#[derive(Debug, thiserror::Error)]
+pub enum LoadError {
+    /// Filesystem read failure (file not found, permission denied, I/O error).
+    #[error("I/O error reading {path}: {source}")]
+    IoError {
+        path: PathBuf,
+        source: std::io::Error,
+    },
+
+    /// JSON or Parquet parsing failure (malformed content, encoding error).
+    #[error("parse error in {path}: {message}")]
+    ParseError {
+        path: PathBuf,
+        message: String,
+    },
+
+    /// Schema validation failure (missing required field, wrong type, value out of range).
+    #[error("schema error in {path}, field {field}: {message}")]
+    SchemaError {
+        path: PathBuf,
+        field: String,
+        message: String,
+    },
+
+    /// Cross-reference validation failure (dangling entity ID, broken foreign key).
+    #[error("cross-reference error: {source_entity} in {source_file} references \
+             non-existent {target_entity} in {target_collection}")]
+    CrossReferenceError {
+        source_file: PathBuf,
+        source_entity: String,
+        target_collection: String,
+        target_entity: String,
+    },
+
+    /// Semantic constraint violation (acyclic cascade, complete coverage, consistency).
+    #[error("constraint violation: {description}")]
+    ConstraintError {
+        description: String,
+    },
+}
+```
+
+The variants are ordered by the phase in which they typically occur:
+
+| Variant               | Typical Phase              | Example                                                             |
+| --------------------- | -------------------------- | ------------------------------------------------------------------- |
+| `IoError`             | File read (any step)       | `system/hydros.json` not found                                      |
+| `ParseError`          | File parse (any step)      | Malformed JSON in `stages.json`                                     |
+| `SchemaError`         | Schema validation          | `hydros.json` entry missing required field `bus_id`                 |
+| `CrossReferenceError` | Cross-reference validation | Hydro `bus_id = "BUS_99"` not found in bus registry                 |
+| `ConstraintError`     | Semantic validation        | Hydro cascade contains a cycle; inflow model coverage is incomplete |
+
+All variants carry enough context for the caller to produce a diagnostic message without re-reading the input files.
+
+**Cross-references:**
+
+- [Internal Structures](../data-model/internal-structures.md) SS1 -- defines the `System` struct returned by `load_case`
+- [CLI and Lifecycle](./cli-and-lifecycle.md) SS5.2 -- Validation phase where `load_case` is invoked on rank 0
+
 ## Cross-References
 
 - [Input Directory Structure](../data-model/input-directory-structure.md) — File inventory, directory layout, `config.json` schema

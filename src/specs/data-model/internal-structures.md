@@ -226,7 +226,7 @@ All fields of `System` are either inherently `Send + Sync` (`Vec<T>` where `T: S
 
 The `System` struct is the primary data type that crosses the `cobre-io` / `cobre-core` / `cobre-sddp` crate boundaries:
 
-- **`cobre_io::load_case(path: &Path) -> Result<System, LoadError>`** -- loads, validates, and resolves all input files from the case directory into a `System`. See [Input Loading Pipeline](../architecture/input-loading-pipeline.md) section 8 for the transition to in-memory model.
+- **`cobre_io::load_case(path: &Path) -> Result<System, LoadError>`** -- loads, validates, and resolves all input files from the case directory into a `System`. See [Input Loading Pipeline](../architecture/input-loading-pipeline.md) SS8.1 for the full function signature, `LoadError` enum, and responsibility boundary.
 - **`cobre_sddp::train(system: &System, config: &TrainingConfig, comm: &C) -> Result<TrainingResult, TrainError>`** -- consumes the `System` by shared reference to build performance-adapted views, construct stage LP templates, and execute the SDDP training loop. See [Training Loop](../architecture/training-loop.md) section 1 for the algorithm overview.
 - **`cobre_sddp::simulate(system: &System, policy: &Policy, config: &SimulationConfig, comm: &C) -> Result<SimulationResult, SimError>`** -- consumes the `System` by shared reference for simulation.
 

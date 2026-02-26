@@ -50,7 +50,7 @@ ferrompi provides safe, idiomatic Rust bindings for MPI. The capabilities used b
 | Intra-node communicator   | `split_local()` (for ferrompi, returns an intra-node MPI sub-communicator)                                       | Group co-located ranks for shared memory operations                   |
 | Collectives               | `allreduce()`, `allgatherv()`, `broadcast()`                                                                     | Bound aggregation, cut synchronization, statistics                    |
 | SLURM/NUMA detection      | Topology query APIs                                                                                              | Read resource allocations from scheduler environment                  |
-| Threading level           | `init_with_threading(ThreadLevel::Multiple)`                                                                     | Full MPI thread support for hybrid parallelism                        |
+| Threading level           | `Mpi::init_thread(ThreadLevel::Multiple)`                                                                        | Full MPI thread support for hybrid parallelism                        |
 
 ### 1.3 Shared Memory Layout
 
@@ -199,7 +199,7 @@ In addition to the wrapper primitives, the Rust FFI layer provides direct bindin
 
 The parallel environment is initialized during the Startup phase (see [CLI and Lifecycle §5](../architecture/cli-and-lifecycle.md)). The ordering is critical -- the communication backend must be initialized before OpenMP because some backends (notably MPI) require initialization before the threading runtime starts.
 
-**Step 1 -- Backend initialization**: Call `create_communicator()` (see [Backend Selection §4](./backend-selection.md)) to initialize the selected communication backend. For the `mpi` feature, the factory internally calls `ferrompi::init_with_threading(ThreadLevel::Multiple)` (see [Ferrompi Backend §2.1](./backend-ferrompi.md)). For other backends, initialization is backend-specific (TCP: coordinator handshake; shm: segment creation; local: no-op).
+**Step 1 -- Backend initialization**: Call `create_communicator()` (see [Backend Selection §4](./backend-selection.md)) to initialize the selected communication backend. For the `mpi` feature, the factory internally calls `ferrompi::Mpi::init_thread(ThreadLevel::Multiple)` (see [Ferrompi Backend §2.1](./backend-ferrompi.md)). For other backends, initialization is backend-specific (TCP: coordinator handshake; shm: segment creation; local: no-op).
 
 **Step 2 -- Topology detection**: Query `comm.rank()` and `comm.size()` (see [Communicator Trait §2.5](./communicator-trait.md)) to determine rank count and rank ID. Detect the scheduler environment (SLURM, PBS, or local) to read resource allocations. Validate rank count if the job script specifies an expected value.
 
