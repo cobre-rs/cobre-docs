@@ -52,10 +52,10 @@ The Cobre specification corpus has progressively narrowed its framing from "a po
 | ticket-009 | Update solver-interface-testing.md                  | epic-02 | completed | Detailed     | 0.91      | 0.90    | EXCELLENT |
 | ticket-010 | Update workspaces and training-loop                 | epic-02 | completed | Detailed     | 0.87      | 0.93    | EXCELLENT |
 | ticket-011 | Update communicator-trait.md purpose                | epic-02 | completed | Detailed     | 0.94      | 0.98    | EXCELLENT |
-| ticket-012 | Reframe sampling-scheme-trait.md                    | epic-03 | pending   | Detailed     | 0.92      | --      | --        |
-| ticket-013 | Reframe scenario-generation.md                      | epic-03 | pending   | Detailed     | 0.93      | --      | --        |
-| ticket-014 | Create ecosystem-vision.md                          | epic-03 | pending   | Detailed     | 0.88      | --      | --        |
-| ticket-015 | Update cross-reference index                        | epic-03 | pending   | Detailed     | 0.89      | --      | --        |
+| ticket-012 | Reframe sampling-scheme-trait.md                    | epic-03 | completed | Detailed     | 0.92      | 0.88    | EXCELLENT |
+| ticket-013 | Reframe scenario-generation.md                      | epic-03 | completed | Detailed     | 0.93      | 0.93    | EXCELLENT |
+| ticket-014 | Create ecosystem-vision.md                          | epic-03 | completed | Detailed     | 0.88      | 0.88    | EXCELLENT |
+| ticket-015 | Update cross-reference index                        | epic-03 | completed | Detailed     | 0.89      | 0.93    | EXCELLENT |
 
 ## Dependency Graph
 

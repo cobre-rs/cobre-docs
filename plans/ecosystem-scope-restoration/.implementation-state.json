@@ -1,6 +1,6 @@
 {
   "plan": "ecosystem-scope-restoration",
-  "last_updated": "2026-02-27T20:43:15Z",
+  "last_updated": "2026-02-27T21:04:42Z",
   "progressive": false,
   "tickets": {
     "ticket-001-restore-cobre-core-framing.md": {
@@ -268,7 +268,7 @@
       "agent": "open-source-documentation-writer"
     },
     "ticket-012-reframe-sampling-scheme.md": {
-      "status": "pending",
+      "status": "completed",
       "detail_level": "detailed",
       "scores": {
         "readiness": 0.92,
@@ -278,11 +278,21 @@
           "boundary": 0.85,
           "dependency_clarity": 1.0,
           "atomicity": 0.85
+        },
+        "quality": 0.875,
+        "quality_breakdown": {
+          "conformance": 1.0,
+          "scope_adherence": 0.5,
+          "lint_cleanliness": 1.0,
+          "type_safety": 1.0,
+          "test_delta": 1.0
         }
-      }
+      },
+      "workflow_step": null,
+      "agent": "open-source-documentation-writer"
     },
     "ticket-013-reframe-scenario-generation.md": {
-      "status": "pending",
+      "status": "completed",
       "detail_level": "detailed",
       "scores": {
         "readiness": 0.93,
@@ -292,11 +302,21 @@
           "boundary": 0.9,
           "dependency_clarity": 1.0,
           "atomicity": 0.9
+        },
+        "quality": 0.925,
+        "quality_breakdown": {
+          "conformance": 1.0,
+          "scope_adherence": 1.0,
+          "lint_cleanliness": 1.0,
+          "type_safety": 1.0,
+          "test_delta": 0.5
         }
-      }
+      },
+      "workflow_step": null,
+      "agent": "open-source-documentation-writer"
     },
     "ticket-014-create-ecosystem-vision.md": {
-      "status": "pending",
+      "status": "completed",
       "detail_level": "detailed",
       "scores": {
         "readiness": 0.88,
@@ -306,11 +326,21 @@
           "boundary": 0.85,
           "dependency_clarity": 1.0,
           "atomicity": 0.8
+        },
+        "quality": 0.875,
+        "quality_breakdown": {
+          "conformance": 1.0,
+          "scope_adherence": 0.5,
+          "lint_cleanliness": 1.0,
+          "type_safety": 1.0,
+          "test_delta": 1.0
         }
-      }
+      },
+      "workflow_step": null,
+      "agent": "open-source-documentation-writer"
     },
     "ticket-015-update-cross-reference-index.md": {
-      "status": "pending",
+      "status": "completed",
       "detail_level": "detailed",
       "scores": {
         "readiness": 0.89,
@@ -320,8 +350,18 @@
           "boundary": 0.85,
           "dependency_clarity": 1.0,
           "atomicity": 0.8
+        },
+        "quality": 0.925,
+        "quality_breakdown": {
+          "conformance": 1.0,
+          "scope_adherence": 1.0,
+          "lint_cleanliness": 1.0,
+          "type_safety": 1.0,
+          "test_delta": 1.0
         }
-      }
+      },
+      "workflow_step": null,
+      "agent": "open-source-documentation-writer"
     }
   },
   "epics": {

@@ -2,7 +2,7 @@
 
 ## Purpose
 
-This spec defines the Cobre scenario generation pipeline: PAR model preprocessing, correlated noise generation, the sampling scheme abstraction that governs how scenarios are selected in forward and backward passes, external scenario integration, load scenario generation, and the scenario memory layout optimized for the forward pass hot-path. For the mathematical definition of the PAR(p) model, see [PAR(p) Inflow Model](../math/par-inflow-model.md).
+This spec defines the Cobre scenario generation pipeline. The framework supports pluggable stochastic process models for generating scenarios used by iterative optimization algorithms. The current implementation provides PAR(p) autoregressive inflow models for hydrothermal dispatch, including: PAR model preprocessing, correlated noise generation, the sampling scheme abstraction that governs how scenarios are selected in forward and backward passes, external scenario integration, load scenario generation, and the scenario memory layout optimized for the solution hot-path. For the mathematical definition of the PAR(p) model, see [PAR(p) Inflow Model](../math/par-inflow-model.md).
 
 ## 1. PAR Model Preprocessing
 
