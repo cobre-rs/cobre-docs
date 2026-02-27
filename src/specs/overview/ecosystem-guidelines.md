@@ -384,20 +384,20 @@ Key planning documents for the first implementation plan:
 
 - [Implementation Ordering](./implementation-ordering.md) — 8-phase build sequence, per-phase
   spec reading lists
-- [Spec Gap Inventory](./spec-gap-inventory.md) — 38 gaps (5 Blocker, 15 High, 13 Medium,
+- [Spec Gap Inventory](./spec-gap-inventory.md) — 39 gaps (5 Blocker, 16 High, 13 Medium,
   5 Low)
 
-All 5 Blockers must be resolved before Phase 1 coding starts:
+All 5 Blockers have been resolved:
 
 | Gap ID  | Description                                                                         |
 | ------- | ----------------------------------------------------------------------------------- |
-| GAP-001 | `SystemRepresentation` struct definition                                            |
-| GAP-002 | Decommissioned LP treatment                                                         |
+| GAP-001 | `SystemRepresentation` struct definition — **Resolved**: defined in [Internal Structures](../data-model/internal-structures.md) |
+| GAP-002 | Decommissioned LP treatment — **Resolved**: specified in [Training Loop](../architecture/training-loop.md) |
 | GAP-003 | Broadcast serialization format — **Resolved**: `postcard` adopted for MPI broadcast |
-| GAP-004 | `StageTemplate` construction and LP variable layout                                 |
-| GAP-005 | Forward pass patch sequence                                                         |
+| GAP-004 | `StageTemplate` construction and LP variable layout — **Resolved**: specified in [Internal Structures](../data-model/internal-structures.md) |
+| GAP-005 | Forward pass patch sequence — **Resolved**: specified in [Training Loop](../architecture/training-loop.md) |
 
-The dominant gap crate is `cobre-sddp` (~20 of 38 gaps). The minimal viable build sequence
+The dominant gap crate is `cobre-sddp` (~20 of 39 gaps). The minimal viable build sequence
 is bottom-up: `cobre-core` first, then `cobre-solver` + `ferrompi` in parallel (Phase 3), up
 to `cobre-cli` (Phase 8).
 

@@ -130,7 +130,7 @@ This design ensures:
 - **Restart reproducibility** — Resuming from a checkpoint produces identical noise for subsequent iterations
 - **Order independence** — Results are identical regardless of the order in which scenarios or stages are processed
 
-> **Architectural note:** Because every rank can independently derive the same noise for any `(iteration, scenario, stage)` tuple by hashing identical inputs with the same RNG, no MPI broadcast of noise data is required. This is a key architectural property: rank 0 does not generate all noise and broadcast it to worker ranks. Instead, each rank generates only the noise it needs, exactly when it needs it. This property is what makes the previously identified GAP-039 ("scenario innovation noise broadcast format") a false gap — the seed-based architecture already resolves the distribution problem.
+> **Architectural note:** Because every rank can independently derive the same noise for any `(iteration, scenario, stage)` tuple by hashing identical inputs with the same RNG, no MPI broadcast of noise data is required. This is a key architectural property: rank 0 does not generate all noise and broadcast it to worker ranks. Instead, each rank generates only the noise it needs, exactly when it needs it. This property eliminates the need for a dedicated scenario innovation noise broadcast format — the seed-based architecture already resolves the distribution problem.
 
 ### 2.2a Seed Derivation Function
 

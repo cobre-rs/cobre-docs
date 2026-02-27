@@ -315,7 +315,7 @@ The solver abstraction separates concerns into four layers:
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
-> **Stakeholder decision (GAP-010)**: The minimal viable solver delegates LP scaling to the solver backend (`SolverAuto` method from [Solver Workspaces SS2.3](./solver-workspaces.md)). Cobre does **not** apply its own scaling in the minimal viable solver.
+> **Stakeholder decision:** The minimal viable solver delegates LP scaling to the solver backend (`SolverAuto` method from [Solver Workspaces SS2.3](./solver-workspaces.md)). Cobre does **not** apply its own scaling in the minimal viable solver.
 >
 > - **HiGHS**: internal scaling is enabled by default (built-in geometric mean strategy, `kSimplexScaleStrategy = 2`).
 > - **CLP**: internal scaling is enabled by default (CLP's automatic scaling).

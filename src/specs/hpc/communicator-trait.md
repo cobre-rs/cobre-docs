@@ -637,7 +637,7 @@ pub enum CommError {
 
 For the `HeapFallback`, `create_shared_region` delegates to standard heap allocation, which follows Rust's standard allocation failure semantics (abort on OOM by default). The `AllocationFailed` variant is relevant only for true shared memory backends where the OS may reject the allocation for reasons other than total memory exhaustion (e.g., shared memory segment limits, permission errors).
 
-### 4.7 Minimal Viable Simplification (GAP-033)
+### 4.7 Minimal Viable Simplification
 
 > **Minimal viable note (Phase 5).** For the minimal viable implementation, the training entry point uses `C: Communicator` only -- the `SharedMemoryProvider` bound is **not** part of the `train()` generic constraint. Each MPI rank operates with isolated per-rank heap memory: the `System` struct, opening tree, and cut pool are replicated in each rank's heap. No MPI shared memory windows (`SharedWindow<T>`) are created or used. The `HeapFallback` semantics described in §4.4 apply uniformly to all backends in Phase 5, including the ferrompi backend.
 

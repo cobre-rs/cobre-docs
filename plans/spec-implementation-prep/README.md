@@ -17,15 +17,15 @@ Prepare the cobre-docs specification corpus to be a clean, navigable reference f
 
 ## Progress
 
-| Ticket     | Title                                                                                   | Epic    | Status  | Detail Level | Readiness | Quality | Badge |
-| ---------- | --------------------------------------------------------------------------------------- | ------- | ------- | ------------ | --------- | ------- | ----- |
-| ticket-001 | Remove inline GAP markers from spec prose                                               | epic-01 | pending | Detailed     | 0.98      | --      | --    |
-| ticket-002 | Update ecosystem-guidelines blocker table                                               | epic-01 | pending | Detailed     | 1.00      | --      | --    |
-| ticket-003 | Fix §-convention violations in high-count architecture files                            | epic-02 | pending | Detailed     | 1.00      | --      | --    |
-| ticket-004 | Fix §-convention violations in medium-count architecture files                          | epic-02 | pending | Detailed     | 0.98      | --      | --    |
-| ticket-005 | Fix §-convention violations in low-count architecture files and audit OpenMP references | epic-02 | pending | Detailed     | 0.94      | --      | --    |
-| ticket-006 | Update implementation-ordering blocker status and per-phase reading lists               | epic-03 | pending | Outline      | --        | --      | --    |
-| ticket-007 | Add Minimum Viable Reading List to implementation-ordering                              | epic-03 | pending | Outline      | --        | --      | --    |
+| Ticket     | Title                                                                                   | Epic    | Status    | Detail Level | Readiness | Quality | Badge     |
+| ---------- | --------------------------------------------------------------------------------------- | ------- | --------- | ------------ | --------- | ------- | --------- |
+| ticket-001 | Remove inline GAP markers from spec prose                                               | epic-01 | completed | Detailed     | 0.98      | 0.93    | EXCELLENT |
+| ticket-002 | Update ecosystem-guidelines blocker table                                               | epic-01 | completed | Detailed     | 1.00      | 1.00    | EXCELLENT |
+| ticket-003 | Fix §-convention violations in high-count architecture files                            | epic-02 | pending   | Detailed     | 1.00      | --      | --        |
+| ticket-004 | Fix §-convention violations in medium-count architecture files                          | epic-02 | pending   | Detailed     | 0.98      | --      | --        |
+| ticket-005 | Fix §-convention violations in low-count architecture files and audit OpenMP references | epic-02 | pending   | Detailed     | 0.94      | --      | --        |
+| ticket-006 | Update implementation-ordering blocker status and per-phase reading lists               | epic-03 | pending   | Outline      | --        | --      | --        |
+| ticket-007 | Add Minimum Viable Reading List to implementation-ordering                              | epic-03 | pending   | Outline      | --        | --      | --        |
 
 ## Readiness Scores (Detailed Tickets)
 
