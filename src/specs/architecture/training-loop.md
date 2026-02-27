@@ -64,7 +64,9 @@ Each step in the iteration lifecycle (§2.1) emits a typed event to the shared e
 | `SimulationProgress` | Simulation batch completion | scenarios_complete, scenarios_total, elapsed_ms                         |
 | `SimulationFinished` | Simulation completion       | scenarios, output_dir, elapsed_ms                                       |
 
-The event channel uses an `Option<broadcast::Sender<TrainingEvent>>` pattern: when `None`, no events are emitted (zero overhead for library-mode callers). When `Some(sender)`, events are emitted at each step boundary. Consumers are additive -- multiple can subscribe simultaneously. See [Convergence Monitoring SS4.1](./convergence-monitoring.md) for the JSON-lines schema, [Terminal UI](../interfaces/terminal-ui.md) for TUI consumption, and [MCP Server](../interfaces/mcp-server.md) for MCP progress notifications.
+The event channel uses an `Option<std::sync::mpsc::Sender<TrainingEvent>>` pattern: when `None`, no events are emitted (zero overhead for library-mode callers). When `Some(sender)`, events are emitted at each step boundary. The channel has a single receiver. Multiple output sinks (text logger, JSON-lines writer, TUI renderer, Parquet convergence writer) are served by a single consumer thread that dispatches each received event to all registered sinks. This fan-out is internal to the consumer, not a property of the channel. See [Convergence Monitoring SS4.1](./convergence-monitoring.md) for the JSON-lines schema, [Terminal UI](../interfaces/terminal-ui.md) for TUI consumption, and [MCP Server](../interfaces/mcp-server.md) for MCP progress notifications.
+
+> **Design note (GAP-032).** The event channel uses `std::sync::mpsc` from the Rust standard library. This avoids introducing `tokio` or `crossbeam` as dependencies in `cobre-sddp` or `cobre-core`. The training loop is synchronous -- it runs inside an MPI process with no async runtime. The channel is unbounded (`mpsc::channel()`) because events are small (< 1 KB each) and emitted at most 7 times per iteration (one per lifecycle step in SS2.1a), so memory pressure from buffered events is negligible. Deferred async interface crates (`cobre-python`, `cobre-mcp`) may bridge to `tokio::sync::broadcast` or equivalent async channels in their own event adapters.
 
 ### 2.1b TrainingEvent Type Definitions
 
@@ -271,7 +273,6 @@ pub enum TrainingEvent {
 - **[Convergence Monitoring SS4.1](./convergence-monitoring.md)**: JSON-lines streaming schema consumed by the text logger and JSON-lines writer. The `IterationSummary` and `ConvergenceUpdate` events are the primary data sources for each JSON-lines record.
 - **[Structured Output](../interfaces/structured-output.md)**: Streaming protocol for external consumers (MCP server, programmatic callers). `TrainingEvent` variants map to the structured output event types.
 - **[Convergence Monitoring SS2](./convergence-monitoring.md)**: Stopping rule definitions referenced by `StoppingRuleResult.rule_name`.
-- **GAP-032** (event channel implementation): The channel type and backpressure policy are **not** specified here. GAP-032 remains open for the channel mechanism design.
 
 ### 2.2 Termination Conditions
 
@@ -817,6 +818,8 @@ At each stage $t$, for each trial point $\hat{x}_{t-1}$ collected during the for
 ### 6.3 Parallel Distribution
 
 Trial states at each stage are distributed across MPI ranks. Within each rank, each thread evaluates its assigned states sequentially, reusing the warm solver basis saved from the forward pass at that stage (§4.4). The branching scenarios (openings) for each state are evaluated sequentially by the same thread, keeping the solver state hot.
+
+**Contiguous block assignment.** The backward pass distributes trial states using the same **contiguous block assignment** as the forward pass (SS4.3). After the forward pass, visited states from all ranks are gathered via `allgatherv` (SS5.4a), producing a receive buffer ordered by rank. The $M$ total trial points are then assigned to $R$ ranks: the first $M \bmod R$ ranks each receive $\lceil M/R \rceil$ trial points, and the remaining ranks each receive $\lfloor M/R \rfloor$ trial points. Each rank $r$ receives a contiguous subset $[\text{start}_r, \text{start}_r + M_r)$ into the gathered buffer, where $M_r$ and $\text{start}_r$ are computed by the contiguous block formula in [Work Distribution SS3.1](../hpc/work-distribution.md). Because the `allgatherv` receive buffer is populated in rank order and the block assignment uses the same rank ordering, trial points are directly indexable from the receive buffer without any reindexing or redistribution. State deduplication (reducing the trial point set before distribution) is deferred to [Deferred Features](../deferred.md).
 
 **Stage synchronization barrier**: All threads across all ranks must complete cut generation at stage $t$ before any thread proceeds to stage $t-1$. This is because the new cuts at stage $t$ must be available to all ranks before they solve backward LPs at stage $t-1$ (which include stage $t$'s cuts in their FCF approximation).
 

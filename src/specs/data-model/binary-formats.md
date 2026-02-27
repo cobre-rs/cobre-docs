@@ -329,6 +329,16 @@ Under Option A, each LP is rebuilt from scratch per stage transition. Without ba
 
 See [Internal Structures](internal-structures.md) for the logical data model that this layout implements.
 
+### 3.5 Access Pattern Requirements
+
+The FlatBuffers schema and the runtime cut pool layout must satisfy two access pattern requirements. These requirements constrain any future revision of the schema in SS3.1 and complement the memory layout specification in SS3.4.
+
+**Batch extraction.** The FlatBuffers schema and the runtime cut pool layout must support extracting all active cuts for a given stage in a single sequential pass. The CSR assembly loop (SS3.4) iterates the `active_cut_indices` list, and for each index reads the corresponding cut's coefficient vector as a contiguous `[f64; state_dimension]` slice. No indirection beyond the index list is permitted on this path. The schema in SS3.1 satisfies this via the `StageCuts.active_cut_indices` field and per-`BendersCut` `coefficients: [double]` vectors.
+
+**Per-cut cache locality.** At production scale, a single cut coefficient vector is $2{,}080 \times 8 = 16{,}640$ bytes ($\approx 16.3$ KB). This fits within the L1 data cache of modern CPUs (32-48 KB), ensuring that the CSR copy loop for one cut executes entirely from L1. The full active cut set (up to 15,000 cuts, $\approx 238$ MB of coefficients) vastly exceeds all cache levels. The performance model therefore assumes **streaming access**: the CPU prefetcher loads the next cut's coefficient vector while the current cut is being copied to the CSR output buffer. Cache-line alignment (64 bytes, per SS3.4) ensures that prefetch requests align with hardware prefetch boundaries.
+
+> **Schema evolution note.** The `.fbs` schema in SS3.1 is the current specification based on the architectural analysis in SS3.0. It may be revised during implementation when actual data access patterns (cut generation rate, active cut ratio, warm-start coefficient reuse) are measured under production-scale workloads. Any revision must preserve the batch extraction and per-cut cache locality requirements stated above. Schema backward compatibility is maintained through FlatBuffers' field ID mechanism — new fields receive new IDs, deprecated fields are retained but ignored, and readers compiled against an older schema version can still deserialize buffers produced by a newer version.
+
 ## 4. Cut Pool Persistence
 
 > **Cut Preallocation Strategy**: Full preallocation with dynamic capacity.

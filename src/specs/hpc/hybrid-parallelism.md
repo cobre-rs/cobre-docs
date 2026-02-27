@@ -69,6 +69,8 @@ Ranks on the same physical node share two large data regions via `SharedRegion<T
 
 > The exact memory sizing for shared regions and per-rank resources depends on the problem scale. See [Memory Architecture](./memory-architecture.md) for budget computation and [Production Scale Reference](../overview/production-scale-reference.md) for representative dimensions.
 
+> **Minimal viable note.** The shared memory layout above describes the **target architecture**. In the minimal viable implementation (Phase 5), all data -- including the opening tree, input case data, and cut pool -- is replicated per rank via `HeapFallback` ([Communicator Trait §4.7](./communicator-trait.md)). No `SharedRegion<T>` instances backed by MPI windows are created. The memory overhead of per-rank replication is acceptable at initial scale and will be re-evaluated after profiling against the trigger conditions in [Communicator Trait §4.7](./communicator-trait.md).
+
 ## 2. Design Rationale: Why Rayon (OpenMP Deferred)
 
 Rayon is used for intra-rank data parallelism. The decision is driven by four factors:
@@ -237,6 +239,8 @@ The parallel environment is initialized during the Startup phase (see [CLI and L
 **Step 2 -- Topology detection**: Query `comm.rank()` and `comm.size()` (see [Communicator Trait §2.5](./communicator-trait.md)) to determine rank count and rank ID. Detect the scheduler environment (SLURM, PBS, or local) to read resource allocations. Validate rank count if the job script specifies an expected value.
 
 **Step 3 -- Shared memory communicator**: Create an intra-node communicator via `comm.split_local()` (see [Communicator Trait §4.1](./communicator-trait.md)). For the ferrompi backend, this groups ranks on the same physical node. For local and TCP backends, this returns a `LocalBackend` (see [Local Backend §3.3](./backend-local.md)). For the shm backend, this returns a clone of the full communicator (see [Shm Backend §1.3](./backend-shm.md)).
+
+> **Minimal viable note.** In the minimal viable implementation (Phase 5), Step 3 still calls `split_local()` for API consistency, but no shared memory regions are created in subsequent steps. All `SharedMemoryProvider` operations use `HeapFallback` semantics -- `create_shared_region` allocates per-rank heap memory, `is_leader()` returns `true` on every rank, and `fence()` is a no-op. The intra-node communicator returned by `split_local()` is not used for shared memory coordination; it is retained only so that the initialization sequence does not diverge between the minimal viable and target architectures. See [Communicator Trait §4.7](./communicator-trait.md) for the deferral rationale and trigger conditions.
 
 **Step 4 — Rayon thread pool creation**: Build the global Rayon thread pool with the resolved thread count (see §4.2 for resolution order):
 

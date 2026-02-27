@@ -94,31 +94,35 @@ Domain-specific rules that require understanding of the model semantics. Rules a
 
 #### Thermal System
 
-| Rule              | Description                                                                                                                                |
-| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
-| Generation bounds | `generation_min ≤ generation_max` for each thermal                                                                                         |
+| Rule              | Description                                                                                                                                 |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| Generation bounds | `generation_min ≤ generation_max` for each thermal                                                                                          |
 | GNL rejection     | Thermals with `gnl_config` are rejected with a diagnostic error — GNL is not yet implemented. See [Deferred Features](../deferred.md) SSC.1 |
 
 #### Stages, Blocks, and Policy Graph
 
-| Rule                     | Description                                                                                                                          |
-| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------ |
-| Stage IDs                | Unique and non-negative                                                                                                              |
-| Block IDs                | Contiguous starting at 0 within each stage                                                                                           |
-| Block hours sum          | Sum of block hours within each stage equals the total stage duration (derived from `end_date - start_date`)                          |
-| Season alignment         | Stage `[start_date, end_date)` falls within the corresponding season calendar period                                                 |
-| Same-season duration     | Stages assigned to the same season have identical total duration                                                                     |
-| Transition probabilities | Outgoing transition probabilities sum to 1.0 per source stage in the policy graph                                                    |
+| Rule                     | Description                                                                                                                           |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------- |
+| Stage IDs                | Unique and non-negative                                                                                                               |
+| Block IDs                | Contiguous starting at 0 within each stage                                                                                            |
+| Block hours sum          | Sum of block hours within each stage equals the total stage duration (derived from `end_date - start_date`)                           |
+| Season alignment         | Stage `[start_date, end_date)` falls within the corresponding season calendar period                                                  |
+| Same-season duration     | Stages assigned to the same season have identical total duration                                                                      |
+| Transition probabilities | Outgoing transition probabilities sum to 1.0 per source stage in the policy graph                                                     |
 | Iteration limit          | At least one `iteration_limit` stopping rule is present (mandatory safety bound). See [Stopping Rules](../math/stopping-rules.md) SS2 |
 
 #### Penalty System
 
-| Rule                 | Description                                                                                                                                                     |
-| -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Penalty values       | All penalty values in `penalties.json` are strictly positive                                                                                                    |
-| Priority ordering    | Penalty hierarchy maintained: recourse slacks > constraint violation penalties > regularization costs. See [Penalty System](../data-model/penalty-system.md) SS3 |
-| Deficit last segment | Last deficit cost segment must have `depth_mw: null` (uncapped final segment)                                                                                   |
-| Deficit monotonicity | Piecewise-linear deficit cost segments have monotonically increasing cost per MW                                                                                |
+| Rule                          | Description                                                                                                                                                                                                                                          |
+| ----------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Penalty values                | All penalty values in `penalties.json` are strictly positive                                                                                                                                                                                         |
+| **Filling > storage**         | **Warning.** `filling_target_violation_cost` should exceed `storage_violation_below_cost` per hydro (post-resolution). See [Penalty System](../data-model/penalty-system.md) Penalty Ordering Validation                                             |
+| **Storage > deficit**         | **Warning.** Per-hydro `storage_violation_below_cost` should exceed the bus's highest deficit segment cost (post-resolution). See [Penalty System](../data-model/penalty-system.md) Penalty Ordering Validation                                      |
+| **Deficit > constraint**      | **Warning.** Highest deficit segment cost should exceed all constraint violation penalties per hydro (post-resolution). See [Penalty System](../data-model/penalty-system.md) Penalty Ordering Validation                                            |
+| **Constraint > resource**     | **Warning.** Minimum constraint violation penalty on any hydro connected to a bus should exceed the maximum thermal generation cost on that bus (post-resolution). See [Penalty System](../data-model/penalty-system.md) Penalty Ordering Validation |
+| **Resource > regularization** | **Warning.** Minimum resource or deficit cost should exceed the maximum regularization cost system-wide (post-resolution). See [Penalty System](../data-model/penalty-system.md) Penalty Ordering Validation                                         |
+| Deficit last segment          | Last deficit cost segment must have `depth_mw: null` (uncapped final segment)                                                                                                                                                                        |
+| Deficit monotonicity          | Piecewise-linear deficit cost segments have monotonically increasing cost per MW                                                                                                                                                                     |
 
 #### PAR Inflow Model
 
@@ -155,16 +159,16 @@ Domain-specific rules that require understanding of the model semantics. Rules a
 
 #### Risk and Discounting
 
-| Rule                    | Description                                                                                                                                                                          |
-| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Rule                    | Description                                                                                                                                                                           |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Discount rate in cycles | Cyclic policy graphs require `annual_discount_rate > 0`; cumulative discount factor around any cycle must be < 1.0 for convergence. See [Discount Rate](../math/discount-rate.md) SS4 |
 | CVaR confidence level   | $\alpha \in (0, 1]$. See [Risk Measures](../math/risk-measures.md) SS2                                                                                                                |
 | Risk aversion weight    | $\lambda \in [0, 1]$. See [Risk Measures](../math/risk-measures.md) SS3                                                                                                               |
 
 #### Declaration Order Invariance
 
-| Rule              | Description                                                                                                                                                                                                                                                                |
-| ----------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Rule              | Description                                                                                                                                                                                                                                                                 |
+| ----------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **ID uniqueness** | Entity IDs unique within each registry (hydros, thermals, buses, lines, etc.) — combined with canonicalization during loading, this guarantees bit-for-bit identical results regardless of declaration order. See [Design Principles](../overview/design-principles.md) SS3 |
 
 #### General Warnings
@@ -230,22 +234,22 @@ After all layers complete, the validation context is evaluated:
 
 ## 4. Error Type Catalog
 
-| Error Kind              | Severity | Description                                | Example                                                                                                         |
-| ----------------------- | -------- | ------------------------------------------ | --------------------------------------------------------------------------------------------------------------- |
-| `FileNotFound`          | Error    | Required file missing                      | `hydros.json` not found                                                                                         |
-| `ParseError`            | Error    | Invalid JSON or Parquet format             | Malformed JSON syntax                                                                                           |
-| `SchemaViolation`       | Error    | Schema mismatch                            | Missing required field `bus_id`                                                                                 |
-| `InvalidReference`      | Error    | Foreign key references non-existent entity | `bus_id: 999` not in `buses.json`                                                                               |
-| `DuplicateId`           | Error    | ID uniqueness violation                    | Two hydros with `id: 42`                                                                                        |
-| `InvalidValue`          | Error    | Value out of valid range                   | `storage_max < storage_min`                                                                                     |
-| `CycleDetected`         | Error    | Invalid graph structure                    | Hydro cascade forms a cycle                                                                                     |
-| `DimensionMismatch`     | Error    | Cross-file coverage gap                    | Missing inflow params for hydro                                                                                 |
-| `BusinessRuleViolation` | Error    | Semantic rule violated                     | `fpha_turbined_cost ≤ spillage_cost` for a hydro                                                                |
-| `WarmStartIncompatible` | Error    | Policy incompatible with current system    | State dimension mismatch                                                                                        |
-| `ResumeIncompatible`    | Error    | Resume state incompatible with current run | Config hash mismatch or missing partitioned files                                                               |
-| `NotImplemented`        | Error    | Feature used but not yet implemented       | Thermal with `gnl_config` present                                                                               |
-| `UnusedEntity`          | Warning  | Entity defined but appears inactive        | Thermal with `max_generation = 0` everywhere                                                                    |
-| `ModelQuality`          | Warning  | Statistical quality concern in input model | PAR seasonal polynomial has root inside unit circle; residual bias detected; filling inflow may be insufficient |
+| Error Kind              | Severity | Description                                | Example                                                                                                                                               |
+| ----------------------- | -------- | ------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `FileNotFound`          | Error    | Required file missing                      | `hydros.json` not found                                                                                                                               |
+| `ParseError`            | Error    | Invalid JSON or Parquet format             | Malformed JSON syntax                                                                                                                                 |
+| `SchemaViolation`       | Error    | Schema mismatch                            | Missing required field `bus_id`                                                                                                                       |
+| `InvalidReference`      | Error    | Foreign key references non-existent entity | `bus_id: 999` not in `buses.json`                                                                                                                     |
+| `DuplicateId`           | Error    | ID uniqueness violation                    | Two hydros with `id: 42`                                                                                                                              |
+| `InvalidValue`          | Error    | Value out of valid range                   | `storage_max < storage_min`                                                                                                                           |
+| `CycleDetected`         | Error    | Invalid graph structure                    | Hydro cascade forms a cycle                                                                                                                           |
+| `DimensionMismatch`     | Error    | Cross-file coverage gap                    | Missing inflow params for hydro                                                                                                                       |
+| `BusinessRuleViolation` | Error    | Semantic rule violated                     | `fpha_turbined_cost ≤ spillage_cost` for a hydro                                                                                                      |
+| `WarmStartIncompatible` | Error    | Policy incompatible with current system    | State dimension mismatch                                                                                                                              |
+| `ResumeIncompatible`    | Error    | Resume state incompatible with current run | Config hash mismatch or missing partitioned files                                                                                                     |
+| `NotImplemented`        | Error    | Feature used but not yet implemented       | Thermal with `gnl_config` present                                                                                                                     |
+| `UnusedEntity`          | Warning  | Entity defined but appears inactive        | Thermal with `max_generation = 0` everywhere                                                                                                          |
+| `ModelQuality`          | Warning  | Statistical quality concern in input model | PAR seasonal polynomial has root inside unit circle; residual bias detected; filling inflow may be insufficient; penalty ordering violated (5 checks) |
 
 Each error carries: **file path**, **entity identifier** (if applicable), **error kind** (from table above), and **message** (human-readable description).
 

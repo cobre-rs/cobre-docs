@@ -89,6 +89,28 @@ The filling target violation cost must be the highest penalty in the system — 
 
 **FPHA validation rule**: For each hydro using the `fpha` production model, `fpha_turbined_cost > spillage_cost` must hold. The concave FPHA geometry allows interior LP solutions where generation is less than the physical production function would yield — the turbined flow penalty prevents the solver from "spilling through the turbines." See [Internal Structures §3](internal-structures.md) for the full explanation.
 
+### Penalty Ordering Validation
+
+The qualitative ordering above is enforced by five adjacent-pair validation checks. Each check compares a higher-priority penalty against the next lower-priority penalty in the hierarchy. All five checks produce **warnings**, not errors — violating the ordering degrades policy quality but does not break algorithmic correctness. The FPHA validation rule (`fpha_turbined_cost > spillage_cost`) is a separate **error** because it affects LP solution correctness (interior FPHA solutions), not merely policy quality.
+
+Validation runs on **post-resolution** penalty values — after the three-tier cascade (global defaults, entity overrides, stage overrides) has been applied. Each (entity, stage) pair is checked independently, so a stage override that inverts the ordering for a specific entity will trigger a warning for that entity at that stage.
+
+| Check | Higher Priority                              | Lower Priority                                                     | Comparison Scope  | Severity |
+| ----- | -------------------------------------------- | ------------------------------------------------------------------ | ----------------- | -------- |
+| 1     | `filling_target_violation_cost`              | `storage_violation_below_cost`                                     | Per hydro         | Warning  |
+| 2     | `storage_violation_below_cost`               | `max(deficit_segments[-1].cost)` (last deficit segment on the bus) | Per hydro vs. bus | Warning  |
+| 3     | `max(deficit_segments[-1].cost)`             | `max(constraint_violation_costs)` (see below)                      | Per hydro vs. bus | Warning  |
+| 4     | `min(constraint_violation_costs)`            | `max(resource_costs)` (thermal generation costs)                   | Per bus           | Warning  |
+| 5     | `min(resource_costs)` or `min(deficit_cost)` | `max(regularization_costs)` (see below)                            | System-wide       | Warning  |
+
+**Constraint violation costs** (used in checks 3 and 4): the set {`turbined_violation_below_cost`, `outflow_violation_below_cost`, `outflow_violation_above_cost`, `generation_violation_below_cost`, `evaporation_violation_cost`, `water_withdrawal_violation_cost`} for the hydro being checked.
+
+**Resource costs** (used in checks 4 and 5): thermal generation costs (`cost_per_mwh`) for thermals connected to the bus being checked.
+
+**Regularization costs** (used in check 5): the set {`spillage_cost`, `fpha_turbined_cost`, `diversion_cost`, `curtailment_cost`, `exchange_cost`} across all entities in the system.
+
+**Warning aggregation**: To avoid excessive output when many (entity, stage) pairs violate the same check, warnings are aggregated: one warning per violated check across all entities and stages. The warning message reports the total violation count and the most extreme example (the pair with the largest inversion magnitude).
+
 ## 3. Global Penalty Defaults (`penalties.json`)
 
 This file defines default penalty values for all entities. It is **required** and must be present in the case directory root.

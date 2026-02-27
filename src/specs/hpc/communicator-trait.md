@@ -637,6 +637,24 @@ pub enum CommError {
 
 For the `HeapFallback`, `create_shared_region` delegates to standard heap allocation, which follows Rust's standard allocation failure semantics (abort on OOM by default). The `AllocationFailed` variant is relevant only for true shared memory backends where the OS may reject the allocation for reasons other than total memory exhaustion (e.g., shared memory segment limits, permission errors).
 
+### 4.7 Minimal Viable Simplification (GAP-033)
+
+> **Minimal viable note (Phase 5).** For the minimal viable implementation, the training entry point uses `C: Communicator` only -- the `SharedMemoryProvider` bound is **not** part of the `train()` generic constraint. Each MPI rank operates with isolated per-rank heap memory: the `System` struct, opening tree, and cut pool are replicated in each rank's heap. No MPI shared memory windows (`SharedWindow<T>`) are created or used. The `HeapFallback` semantics described in §4.4 apply uniformly to all backends in Phase 5, including the ferrompi backend.
+
+The `SharedMemoryProvider` trait definition (§4.1), the `SharedRegion<T>` type (§4.2), the leader/follower pattern (§4.3), the combined generic bound shown in §4.5, and the `AllocationFailed` error variant (§4.6) remain in this spec as the **target architecture** for a post-profiling optimization pass. They are not dead spec content -- they represent the design that will be activated when memory pressure warrants it.
+
+**Constraint preventing early implementation.** True shared memory requires MPI window management (`MPI_Win_create`, `MPI_Win_fence`, `MPI_Win_free`) with correct leader/follower lifecycle coordination across ranks on the same node. Implementing this before the training loop, cut pool, and scenario generation are stable would couple the shared memory lifecycle to components still under active development. The `HeapFallback` path eliminates this coupling while remaining functionally correct.
+
+**Trigger conditions for re-introducing shared memory.** The optimization will be activated when production-scale profiling (120 stages, 160 hydro plants, 15,000 cuts per stage) demonstrates any of the following:
+
+| Trigger | Condition                                                              | Measurement                                                                                                      |
+| ------- | ---------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| T1      | Per-rank memory exceeds 80% of NUMA domain memory                      | `peak_rss` from `/proc/self/status` per rank vs. NUMA domain capacity from `libnuma`                             |
+| T2      | Cut pool replication causes swap activity or OOM on standard HPC nodes | `vmstat` swap-in/swap-out counters during training; OOM killer invocations in `dmesg`                            |
+| T3      | Significant time spent in data replication during initialization       | Wall-clock time for `System` struct broadcast + per-rank deserialization exceeds 5% of total initialization time |
+
+Until at least one trigger fires on a representative production workload, per-rank heap replication is the correct trade-off: it is simpler, avoids shared memory lifecycle complexity, and imposes no correctness risk.
+
 ## Cross-References
 
 - [Communication Patterns §1.1](./communication-patterns.md) -- Three collective operations per iteration, ferrompi API signatures, operation frequency

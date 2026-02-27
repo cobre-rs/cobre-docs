@@ -14,8 +14,8 @@ Incorporate confirmed architectural decisions from a stakeholder design review i
 | ------- | ---------------------------- | ------- | --------- |
 | epic-01 | Gap Inventory Update         | 1       | completed |
 | epic-02 | High-Impact Spec Content     | 4       | completed |
-| epic-03 | Configuration and Data Model | 3       | executing |
-| epic-04 | Remaining Spec Content       | 5       | outline   |
+| epic-03 | Configuration and Data Model | 3       | completed |
+| epic-04 | Remaining Spec Content       | 5       | executing |
 
 ## Progress
 
@@ -29,11 +29,11 @@ Incorporate confirmed architectural decisions from a stakeholder design review i
 | ticket-006 | Update configuration reference for GAP-019, 024, 027, 035       | epic-03 | completed | Refined      | 0.98      | 1.00    | EXCELLENT |
 | ticket-007 | Uniformize scenario notation and remove legacy Stage fields     | epic-03 | completed | Refined      | 0.96      | 0.88    | EXCELLENT |
 | ticket-008 | Document forward_passes immutability precondition               | epic-03 | completed | Refined      | 1.00      | 1.00    | EXCELLENT |
-| ticket-009 | Document backward pass trial state distribution strategy        | epic-04 | pending   | Outline      | --        | --      | --        |
-| ticket-010 | Replace event channel with std::sync::mpsc                      | epic-04 | pending   | Outline      | --        | --      | --        |
-| ticket-011 | Simplify SharedMemoryProvider bound for minimal viable          | epic-04 | pending   | Outline      | --        | --      | --        |
-| ticket-012 | Design penalty ordering validation checks                       | epic-04 | pending   | Outline      | --        | --      | --        |
-| ticket-013 | Document FlatBuffers requirements for cut persistence           | epic-04 | pending   | Outline      | --        | --      | --        |
+| ticket-009 | Document backward pass trial state distribution strategy        | epic-04 | completed | Refined      | 1.00      | 1.00    | EXCELLENT |
+| ticket-010 | Replace event channel with std::sync::mpsc                      | epic-04 | completed | Refined      | 1.00      | 1.00    | EXCELLENT |
+| ticket-011 | Simplify SharedMemoryProvider bound for minimal viable          | epic-04 | completed | Refined      | 1.00      | 0.89    | EXCELLENT |
+| ticket-012 | Design penalty ordering validation checks                       | epic-04 | completed | Refined      | 1.00      | 0.85    | EXCELLENT |
+| ticket-013 | Document FlatBuffers requirements for cut persistence           | epic-04 | completed | Refined      | 1.00      | 1.00    | EXCELLENT |
 
 ## Gap-to-Ticket Mapping
 
