@@ -12,7 +12,7 @@ The SDDP algorithm must be solver-agnostic. The solver interface abstracts LP so
 
 Key design decisions:
 
-1. **Dual-solver validation** — The interface is designed against both HiGHS (C API) and CLP (C API + thin C++ wrappers) as first-class reference implementations. Every operation in the interface contract (§3) must be naturally expressible through both solver APIs. This prevents designing an interface that maps cleanly to one solver but awkwardly to another.
+1. **Dual-solver validation** — The interface is designed against both HiGHS (C API) and CLP (C API + thin C++ wrappers) as first-class reference implementations. Every operation in the interface contract (SS3) must be naturally expressible through both solver APIs. This prevents designing an interface that maps cleanly to one solver but awkwardly to another.
 2. **Compile-time solver selection** — The active solver is selected at compile time to avoid virtual dispatch overhead on the hot path (millions of LP solves)
 3. **Encapsulated retry logic** — Each solver handles its own numerical difficulties internally; the SDDP algorithm only sees success or failure
 4. **Cuts stored in physical units** — Scaling transformations are applied at solve time, not stored in the cut pool
@@ -343,7 +343,7 @@ The solver interface defines the behavioral contract that all solver implementat
 | Operation        | Input                                    | Output                    | Description                                                                                                          |
 | ---------------- | ---------------------------------------- | ------------------------- | -------------------------------------------------------------------------------------------------------------------- |
 | Load model       | Stage LP template (CSC)                  | —                         | Bulk-load the pre-assembled structural LP into the solver via `passModel`/`loadProblem`. Fast memcpy-like operation. |
-| Add cut rows     | Active cuts in CSR format (batch)        | —                         | Batch-add all active Benders cuts via a single `addRows` call. Cuts are appended at the bottom per §2.2.             |
+| Add cut rows     | Active cuts in CSR format (batch)        | —                         | Batch-add all active Benders cuts via a single `addRows` call. Cuts are appended at the bottom per SS2.2.             |
 | Patch row bounds | Set of (row_index, lower, upper) triples | —                         | Update scenario-dependent constraint RHS values (inflows, state fixing constraints) without structural LP changes.   |
 | Patch col bounds | Set of (col_index, lower, upper) triples | —                         | Update variable bounds. Not used in minimal viable SDDP; included for completeness.                                  |
 | Solve            | —                                        | Solution or error         | Solve the loaded LP. Handles retries internally, extracts solution with normalized duals.                            |
@@ -355,8 +355,8 @@ The solver interface defines the behavioral contract that all solver implementat
 ### 4.2 Contract Guarantees
 
 - **Thread safety** — Each solver instance is exclusively owned by one thread. No concurrent access.
-- **Retry encapsulation** — The SDDP algorithm never sees retry attempts. It calls solve and receives either a valid solution or a terminal error (see §6 and §7).
-- **Dual normalization** — All returned dual values use the canonical sign convention (see §8). Solver-specific sign differences are handled internally.
+- **Retry encapsulation** — The SDDP algorithm never sees retry attempts. It calls solve and receives either a valid solution or a terminal error (see SS6 and SS7).
+- **Dual normalization** — All returned dual values use the canonical sign convention (see SS8). Solver-specific sign differences are handled internally.
 - **Solver identification** — Each implementation exposes a name string for logging and diagnostics.
 
 ### 4.3 Dual-Solver Validation
@@ -388,7 +388,7 @@ Two distinct concepts must be clearly separated:
 | **Cut pool**  | In-memory shared data structure holding all cuts (active + inactive) for all stages | Shared across threads, one per MPI rank    | Yes — deterministic slot assignment, activity bitmap, contiguous dense coefficients |
 | **Solver LP** | Transient LP loaded into a thread-local solver instance for a single solve          | Thread-local, rebuilt per stage transition | No — only active cuts are added via `addRows`                                       |
 
-Under the adopted LP rebuild strategy (§11), the solver LP is transient — it is constructed, used, and discarded at every stage transition. Pre-allocating inactive cut rows in the solver LP would add memory pressure and solver overhead (larger factorization) with no benefit. Only the cut pool uses preallocation.
+Under the adopted LP rebuild strategy (SS11), the solver LP is transient — it is constructed, used, and discarded at every stage transition. Pre-allocating inactive cut rows in the solver LP would add memory pressure and solver overhead (larger factorization) with no benefit. Only the cut pool uses preallocation.
 
 ### 5.2 Cut Pool Preallocation
 
@@ -460,7 +460,7 @@ Since all cuts have dense coefficients (every state variable participates), the 
 
 ## 6. Error Categories
 
-The solver interface returns a categorized error when a solve fails. The SDDP algorithm uses the error category to determine its response. Solver-internal errors (e.g., factorization failures) are resolved by the retry logic (§7) before reaching this level.
+The solver interface returns a categorized error when a solve fails. The SDDP algorithm uses the error category to determine its response. Solver-internal errors (e.g., factorization failures) are resolved by the retry logic (SS7) before reaching this level.
 
 | Error Category       | Meaning                                     | SDDP Response                                               | May Have Partial Solution |
 | -------------------- | ------------------------------------------- | ----------------------------------------------------------- | :-----------------------: |
@@ -537,7 +537,7 @@ A basis consists of one status value per column (variable) and one per row (cons
 - Bases are stored in the **original problem space** (not presolved), ensuring portability across solver versions and presolve strategies
 - The forward pass basis at each stage is retained for warm-starting the backward pass at the same stage (see [Training Loop SS4.4](./training-loop.md))
 - Basis storage uses compact representation (one byte per variable/constraint)
-- Basis structure splits naturally at the cut boundary per §2.3: structural rows are position-stable, cut rows are appended/truncated
+- Basis structure splits naturally at the cut boundary per SS2.3: structural rows are position-stable, cut rows are appended/truncated
 
 ## 10. Compile-Time Solver Selection
 
@@ -558,7 +558,7 @@ HiGHS and CLP are first-class reference implementations — the solver abstracti
 At initialization, each stage's structural LP (matrix, bounds, objective — everything except cuts and scenario-dependent RHS) is assembled once into a canonical CSC (column-major) representation called the **stage template**. This template:
 
 - Is built from the resolved internal structures (see [Internal Structures](../data-model/internal-structures.md)) with full clarity and correctness — this is the initialization phase where data clarity matters more than performance
-- Follows the column and row layout convention defined in §2
+- Follows the column and row layout convention defined in SS2
 - Stores the CSC arrays (`col_starts`, `row_indices`, `values`, `col_lower`, `col_upper`, `row_lower`, `row_upper`, `objective`) in solver-ready format — CSC is used because both reference solvers (HiGHS and CLP) internally store LP matrices in column-major format; passing CSC avoids per-stage-transition transposition overhead
 - Is shared read-only across all threads within an MPI rank
 
@@ -569,9 +569,9 @@ At initialization, each stage's structural LP (matrix, bounds, objective — eve
 Memory constraints prevent keeping all stage LPs with their full cut sets resident simultaneously. At each stage transition, each thread:
 
 1. **Load template** — Bulk-load the pre-assembled stage template into the solver via `passModel`/`loadProblem`. Since the template is already in CSC form (the native internal format for both HiGHS and CLP), this is a fast bulk memory operation — no per-constraint construction loops and no format transposition.
-2. **Add active cuts** — Batch-add all active cuts from the cut pool via a single `addRows` call in CSR format (see §5.4).
+2. **Add active cuts** — Batch-add all active cuts from the cut pool via a single `addRows` call in CSR format (see SS5.4).
 3. **Patch scenario values** — Update the ~2,240 scenario-dependent row bounds (incoming storage as RHS of water balance, AR lag fixing constraint RHS, current-stage noise fixing) via `patch_row_bounds` ([Solver Interface Trait SS2.3](./solver-interface-trait.md)).
-4. **Warm-start** — Apply the cached basis from the previous iteration's solve at this stage (structural rows reused directly, new cut rows set to Basic per §2.3).
+4. **Warm-start** — Apply the cached basis from the previous iteration's solve at this stage (structural rows reused directly, new cut rows set to Basic per SS2.3).
 5. **Solve** — Solve the LP.
 
 See [Binary Formats SS3, SSA](../data-model/binary-formats.md) for the full analysis, memory estimates, and solver API survey that informed the Option A decision. For quantified analysis of the cut loading cost (which dominates stage transitions at production scale) and two-level storage considerations, see [Solver Workspaces SS1.10](./solver-workspaces.md).
@@ -582,12 +582,12 @@ Option A is the **portable baseline** that works identically across all solver b
 
 | Optimization                 | Solver | Mechanism                                                                                                                                                                         | Status                                                       |
 | ---------------------------- | ------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------ |
-| Pre-assembled CSC templates  | All    | Stage template in solver-ready CSC → fast `passModel`/`loadProblem` with no format transposition                                                                                  | **Adopted** (§11.1)                                          |
+| Pre-assembled CSC templates  | All    | Stage template in solver-ready CSC → fast `passModel`/`loadProblem` with no format transposition                                                                                  | **Adopted** (SS11.1)                                          |
 | Direct memory patching       | CLP    | Mutable `double*` pointers (`Clp_rowLower()`/`Clp_rowUpper()`, `Clp_colLower()`/`Clp_colUpper()`) for zero-copy in-place bound patching via `patch_row_bounds`/`patch_col_bounds` | Anticipated — see [CLP Implementation](./solver-clp-impl.md) |
 | LP template cloning          | CLP    | C++ `makeBaseModel()`/`setToBaseModel()` or copy constructor via thin C wrapper                                                                                                   | Anticipated — could reduce rebuild to clone + cut addition   |
-| Pre-assembled CSR cut blocks | All    | Cut pool layout (binary-formats §3.4) is CSR-friendly → `addRows` uses pre-built data (CSR is native for addRows)                                                                 | Anticipated                                                  |
+| Pre-assembled CSR cut blocks | All    | Cut pool layout (binary-formats SS3.4) is CSR-friendly → `addRows` uses pre-built data (CSR is native for addRows)                                                                 | Anticipated                                                  |
 
-These optimizations do not change the interface contract (§4) — they are internal to each solver implementation.
+These optimizations do not change the interface contract (SS4) — they are internal to each solver implementation.
 
 ### 11.4 Within-Stage Incremental Updates
 
@@ -600,7 +600,7 @@ This is significantly faster than a full rebuild and is the common case in the b
 
 ## Cross-References
 
-- Solver Architecture Decisions — The 5 architectural decisions are documented inline throughout this spec (§2 LP layout, §4.3 dual-solver validation, §5 cut preallocation, §10 compile-time solver selection, §11 pre-assembled templates and rebuild strategy)
+- Solver Architecture Decisions — The 5 architectural decisions are documented inline throughout this spec (SS2 LP layout, SS4.3 dual-solver validation, SS5 cut preallocation, SS10 compile-time solver selection, SS11 pre-assembled templates and rebuild strategy)
 - [Solver Workspaces & LP Scaling](./solver-workspaces.md) — Thread-local solver infrastructure and LP scaling specification
 - [HiGHS Implementation](./solver-highs-impl.md) — HiGHS-specific implementation: retry strategy, batch operations, memory footprint
 - [CLP Implementation](./solver-clp-impl.md) — CLP-specific implementation: C++ wrapper strategy, mutable pointer access, cloning optimization path

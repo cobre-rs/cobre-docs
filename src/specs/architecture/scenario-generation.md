@@ -34,7 +34,7 @@ For the full PAR(p) model definition, parameter set, and fitting theory, see [PA
 │  Step 2: Compute Residual Standard Deviation                                   │
 │  For each (hydro h, stage t):                                                  │
 │    Reverse-standardize AR coefficients to get ψ*                               │
-│    Compute σ[h][t] from s[h][t] and ψ* (see par-inflow-model.md §3)           │
+│    Compute σ[h][t] from s[h][t] and ψ* (see par-inflow-model.md SS3)           │
 │                              │                                                  │
 │                              ▼                                                  │
 │  Step 3: Precompute Stage-Specific Deterministic Components                    │
@@ -174,8 +174,8 @@ The per-stage branching factor $N_t$ comes from `ScenarioSourceConfig.branching_
 **Tree generation:**
 
 1. Before the first SDDP iteration, generate $N_t$ noise vectors per stage $t$, producing a fixed opening tree with total element count $\sum_t N_t \times \text{dim}$
-2. Each noise vector is generated from the base seed using deterministic seed derivation per (opening_index, stage) — ensuring reproducibility across restarts and MPI configurations (see §2.2)
-3. Correlation is applied per the active profile for each stage (see §2.5)
+2. Each noise vector is generated from the base seed using deterministic seed derivation per (opening_index, stage) — ensuring reproducibility across restarts and MPI configurations (see SS2.2)
+3. Correlation is applied per the active profile for each stage (see SS2.5)
 
 **Backward pass usage:** At each stage $t$, the backward pass iterates over **all** $N_t$ noise vectors, solving one subproblem per opening, then aggregates the resulting cuts. Because the tree is fixed, every iteration produces cuts that refine the same set of future cost scenarios. Note that $N_t$ may vary per stage.
 
@@ -369,7 +369,7 @@ The SDDP algorithm has three independently configurable concerns that govern how
 
 These three concerns are **orthogonal** — each can be configured independently without affecting the others. The forward pass model and backward sampling are fixed in the initial implementation (Default and Complete respectively), with alternatives deferred. The sampling scheme is the primary configurable dimension.
 
-**Forward and backward noise source separation** is a natural consequence of this design: the sampling scheme controls the forward pass noise source, while backward sampling always draws from the fixed opening tree (§2.3). These two sources may differ — for example, the forward pass may sample from external scenarios while the backward pass evaluates all openings generated from a PAR model fitted to those scenarios.
+**Forward and backward noise source separation** is a natural consequence of this design: the sampling scheme controls the forward pass noise source, while backward sampling always draws from the fixed opening tree (SS2.3). These two sources may differ — for example, the forward pass may sample from external scenarios while the backward pass evaluates all openings generated from a PAR model fitted to those scenarios.
 
 ### 3.2 Forward Sampling Schemes
 
@@ -390,8 +390,8 @@ This is SDDP.jl's `InSampleMonteCarlo`: the forward pass samples from the same n
 The forward pass draws from user-provided scenario data (`external_scenarios.parquet`). At each stage $t$, select a scenario from the external set — either by random sampling or by sequential iteration through the external scenarios.
 
 - **Noise source**: External scenario values (not the opening tree)
-- **Realization computation**: The external scenario provides inflow values, but these are **not used directly as LP inputs**. The SDDP LP formulation includes the AR dynamics equation as a constraint, with inflow lags and the current-stage noise term as variables fixed via fixing constraints. Therefore, external inflow values must always be **inverted to noise terms** (ε) before they can be used in the LP. This noise inversion is described in §4.3.
-- **Backward pass interaction**: The backward pass still uses the fixed opening tree. When external scenarios are the forward source, the opening tree noise is generated from a **PAR model fitted to the external data**, ensuring the backward branchings reflect the statistical properties of the external scenarios (see §4.2)
+- **Realization computation**: The external scenario provides inflow values, but these are **not used directly as LP inputs**. The SDDP LP formulation includes the AR dynamics equation as a constraint, with inflow lags and the current-stage noise term as variables fixed via fixing constraints. Therefore, external inflow values must always be **inverted to noise terms** (ε) before they can be used in the LP. This noise inversion is described in SS4.3.
+- **Backward pass interaction**: The backward pass still uses the fixed opening tree. When external scenarios are the forward source, the opening tree noise is generated from a **PAR model fitted to the external data**, ensuring the backward branchings reflect the statistical properties of the external scenarios (see SS4.2)
 - **Use case**: Training with historical data, imported Monte Carlo scenarios, or stress-test scenarios
 
 This corresponds to SDDP.jl's `OutOfSampleMonteCarlo`: the forward pass uses noise terms different from those defined in the model.
@@ -408,7 +408,7 @@ The selection mode within the external set is configured via `selection_mode`:
 Replay actual historical inflow sequences mapped to stages via `season_definitions`. The forward pass deterministically follows historical data in order, cycling through available years when the number of forward passes exceeds the historical record.
 
 - **Noise source**: Historical inflow values (mapped from `inflow_history.parquet` to stage structure)
-- **Realization computation**: Like external scenarios, historical inflow values must be **inverted to noise terms** (ε) before use in the LP. The same noise inversion procedure applies (see §4.3).
+- **Realization computation**: Like external scenarios, historical inflow values must be **inverted to noise terms** (ε) before use in the LP. The same noise inversion procedure applies (see SS4.3).
 - **Backward pass interaction**: Same as External — the backward pass uses a PAR model fitted to the historical data
 - **Use case**: Policy validation against observed conditions, historical replay analysis
 
@@ -438,7 +438,7 @@ The sampling scheme is configured in `stages.json` via the `scenario_source` obj
 
 | Sampling Scheme | `scenario_source` config                                        | Required inputs                                 |
 | --------------- | --------------------------------------------------------------- | ----------------------------------------------- |
-| InSample        | `{ "sampling_scheme": "in_sample", "seed": 42 }`                | Uncertainty models (§1) or inflow history       |
+| InSample        | `{ "sampling_scheme": "in_sample", "seed": 42 }`                | Uncertainty models (SS1) or inflow history       |
 | External        | `{ "sampling_scheme": "external", "selection_mode": "random" }` | `external_scenarios.parquet`                    |
 | Historical      | `{ "sampling_scheme": "historical" }`                           | `inflow_history.parquet` + `season_definitions` |
 
@@ -462,8 +462,8 @@ When the `External` or `Historical` sampling scheme is active during training, t
 
 The lifecycle is:
 
-1. **PAR fitting** — Fit a PAR model to the external scenario data (or historical inflow data), treating the external values as a synthetic history. The fitting follows the same procedure as §1.4: seasonal statistics and AR coefficients are estimated from the external data.
-2. **Opening tree generation** — Generate the fixed opening tree (§2.3) using noise from the fitted PAR model. The branchings reflect the distributional characteristics of the external scenarios.
+1. **PAR fitting** — Fit a PAR model to the external scenario data (or historical inflow data), treating the external values as a synthetic history. The fitting follows the same procedure as SS1.4: seasonal statistics and AR coefficients are estimated from the external data.
+2. **Opening tree generation** — Generate the fixed opening tree (SS2.3) using noise from the fitted PAR model. The branchings reflect the distributional characteristics of the external scenarios.
 3. **Training** — Forward pass samples from external data; backward pass evaluates all openings from the PAR-fitted tree.
 
 **Rationale:** Using external scenarios directly in the backward pass would violate SDDP's requirement for proper probabilistic branchings. By fitting a PAR model to the external data, the backward pass preserves the statistical signature of the scenarios while producing valid cuts.
@@ -531,7 +531,7 @@ Cobre distributes scenario work across two levels: **MPI ranks** (inter-node / i
 
 **Thread level — dynamic work-stealing.** Within each rank, the assigned scenarios are processed by a thread pool using dynamic work-stealing scheduling. This is critical because **per-scenario processing costs are not uniform** — iteration counts for LP convergence vary depending on the noise realization, active constraints, and warm-start quality. Dynamic work-stealing at the thread level absorbs this variability without requiring inter-rank communication.
 
-**Deployment strategy.** The shared-memory architecture favors **fewer MPI ranks with more threads per rank** — typically one rank per NUMA domain (or per node). This minimizes MPI communication overhead while maximizing the benefit of thread-level dynamic scheduling and shared L3 cache for scenario data (see §5.1).
+**Deployment strategy.** The shared-memory architecture favors **fewer MPI ranks with more threads per rank** — typically one rank per NUMA domain (or per node). This minimizes MPI communication overhead while maximizing the benefit of thread-level dynamic scheduling and shared L3 cache for scenario data (see SS5.1).
 
 ### 5.3 NUMA-Aware Allocation
 
@@ -563,7 +563,7 @@ where $f_{b,t,k}$ is the block factor from `load_factors.json`. If `load_factors
 
 ### 6.3 Load Correlation
 
-If load entities are included in correlation groups defined in `correlation.json`, their noise terms are correlated with inflow noise via the same Cholesky transform described in §2.1. Otherwise, load noise is independent of inflow noise.
+If load entities are included in correlation groups defined in `correlation.json`, their noise terms are correlated with inflow noise via the same Cholesky transform described in SS2.1. Otherwise, load noise is independent of inflow noise.
 
 ## 7. Complete Tree Mode
 
@@ -581,7 +581,7 @@ The scenario tree is defined by per-stage branching counts $N_t$ for $t = 1, \ld
 - **Total leaf nodes**: $\prod_{t=1}^{T} N_t$
 - **Total tree nodes**: $\sum_{t=1}^{T} \prod_{s=1}^{t} N_s$
 
-Each node at stage $t$ has $N_t$ children, each corresponding to a distinct realization (noise vector or external scenario value). The branchings at each stage are drawn from the opening tree (§2.3), so $N_t = N_{\text{openings}}$ when using uniform branching, or the tree can have variable branching factors per stage.
+Each node at stage $t$ has $N_t$ children, each corresponding to a distinct realization (noise vector or external scenario value). The branchings at each stage are drawn from the opening tree (SS2.3), so $N_t = N_{\text{openings}}$ when using uniform branching, or the tree can have variable branching factors per stage.
 
 **DECOMP special case:** $N_t = 1$ for all stages except the last ($t = T$), where $N_T$ equals the number of external scenario branchings. This produces a deterministic trunk with branching only at the final stage — a common structure for weekly/monthly short-term planning where uncertainty is resolved at the end of the horizon.
 
@@ -614,7 +614,7 @@ Total nodes at stage 3: N_1 × N_2 × N_3
 
 Complete tree mode is closely related to standard SDDP with external scenarios. Consider the case where:
 
-- External scenarios are used in training (§3.2 External scheme)
+- External scenarios are used in training (SS3.2 External scheme)
 - $N_{\text{forward\_passes}} = N_{\text{openings}}$ at the last stage
 - All branchings at the last stage are visited exactly once (no repetition)
 

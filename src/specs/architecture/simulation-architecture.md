@@ -22,7 +22,7 @@ The simulation phase evaluates the trained SDDP policy on a large number of scen
 │                                                                   │
 │  SCENARIO SELECTION                                               │
 │  Sampling scheme: InSample | External | Historical                │
-│  (see scenario-generation.md §3)                                  │
+│  (see scenario-generation.md SS3)                                  │
 │                                                                   │
 │  PARALLEL EXECUTION                                               │
 │  Scenarios statically distributed across MPI ranks                │
@@ -124,7 +124,7 @@ For each assigned scenario, the simulation executes a complete forward pass thro
 
    c. **Solve LP** — Solve the stage LP. The simulation LP should always be feasible due to recourse slack variables (deficit, excess). If infeasibility occurs, it indicates a system error.
 
-   d. **Apply non-convex refinements** — If non-convex extensions are configured (see §5), refine the LP solution through post-processing.
+   d. **Apply non-convex refinements** — If non-convex extensions are configured (see SS5), refine the LP solution through post-processing.
 
    e. **Extract results** — Record stage-level outputs: generation, storage, flows, costs, violations, marginal values. See [Output Schemas SS5](../data-model/output-schemas.md) for column definitions.
 
@@ -132,21 +132,21 @@ For each assigned scenario, the simulation executes a complete forward pass thro
 
 3. **Compute scenario cost** — Sum immediate costs across all stages, applying discount factors. See [Discount Rate](../math/discount-rate.md).
 
-4. **Stream results** — Send the scenario results to the output writer for streaming to disk (see §6).
+4. **Stream results** — Send the scenario results to the output writer for streaming to disk (see SS6).
 
 > **Shared record type.** The simulation forward pass reuses the [TrajectoryRecord](./training-loop.md) type (SS4.2b) from the training loop rather than defining a separate simulation record struct. Training populates only the `state` and `stage_cost` fields for backward pass consumption; simulation additionally reads `primal` and `dual` for per-entity result extraction and Parquet output.
 
 ### 3.3 Memory Management
 
-Individual scenario results are streamed to the output writer immediately upon completion (see §6). This prevents accumulation of all scenario results in memory, which is critical when simulating thousands of scenarios. Each thread releases the scenario's LP workspace and result buffers before proceeding to its next scenario. Per-scenario scalar costs (total and per-category) are retained in a compact buffer for final statistics computation (see §4.4).
+Individual scenario results are streamed to the output writer immediately upon completion (see SS6). This prevents accumulation of all scenario results in memory, which is critical when simulating thousands of scenarios. Each thread releases the scenario's LP workspace and result buffers before proceeding to its next scenario. Per-scenario scalar costs (total and per-category) are retained in a compact buffer for final statistics computation (see SS4.4).
 
 ### 3.4 Result Types
 
-This section defines the Rust types that carry simulation results from the SDDP forward pass loop to the output writer. These types are the payload of the bounded channel described in §6.1 and the return type of the `fn simulate()` entry point.
+This section defines the Rust types that carry simulation results from the SDDP forward pass loop to the output writer. These types are the payload of the bounded channel described in SS6.1 and the return type of the `fn simulate()` entry point.
 
 **Design rationale — nested vs. flat layout.** The result types use a nested design (per-entity-type `Vec`s grouped by stage) rather than a flat columnar layout. The simulation loop produces results stage-by-stage; the output writer is responsible for columnar conversion during Parquet serialization (see [Output Schemas SS5](../data-model/output-schemas.md)). The nested layout matches the production flow and avoids a premature columnar transpose inside the simulation hot path.
 
-**Design rationale — streaming vs. batch return.** The `fn simulate()` function does **not** return `Vec<SimulationScenarioResult>`. Instead, it accepts a `Sender<SimulationScenarioResult>` channel handle (the sending end of the bounded channel from §6.1). Each scenario result is sent through the channel as soon as it completes, enabling the background I/O thread to begin writing before all scenarios finish. The function returns `Result<SimulationSummary, SimulationError>` containing only the aggregate statistics from §4.
+**Design rationale — streaming vs. batch return.** The `fn simulate()` function does **not** return `Vec<SimulationScenarioResult>`. Instead, it accepts a `Sender<SimulationScenarioResult>` channel handle (the sending end of the bounded channel from SS6.1). Each scenario result is sent through the channel as soon as it completes, enabling the background I/O thread to begin writing before all scenarios finish. The function returns `Result<SimulationSummary, SimulationError>` containing only the aggregate statistics from SS4.
 
 **Derived columns excluded.** The result structs contain only values produced directly by the LP solve and state propagation. Columns that are computed during output writing are excluded:
 
@@ -168,7 +168,7 @@ This section defines the Rust types that carry simulation results from the SDDP 
 | `curtailment_mwh`        | `curtailment_mw × block_duration_hours`          | NCS      |
 | `generation_mwh`         | `generation_mw × block_duration_hours`           | NCS      |
 
-Block duration is known to the output writer from `Stage::blocks` ([Internal Structures §12.2](../data-model/internal-structures.md)). Keeping the conversion in the writer avoids redundant `f64` fields in the hot-path result payload.
+Block duration is known to the output writer from `Stage::blocks` ([Internal Structures SS12.2](../data-model/internal-structures.md)). Keeping the conversion in the writer avoids redundant `f64` fields in the hot-path result payload.
 
 #### 3.4.1 Per-Entity Result Sub-Structs
 
@@ -383,12 +383,12 @@ pub struct SimulationStageResult {
 
 #### 3.4.3 SimulationScenarioResult
 
-The top-level per-scenario payload sent through the bounded channel (§6.1). Each completed scenario produces exactly one `SimulationScenarioResult` instance.
+The top-level per-scenario payload sent through the bounded channel (SS6.1). Each completed scenario produces exactly one `SimulationScenarioResult` instance.
 
 ```rust
 /// Complete simulation result for one scenario. This is the payload
 /// type of the bounded channel connecting simulation threads to the
-/// background I/O thread (§6.1).
+/// background I/O thread (SS6.1).
 ///
 /// # Send bound
 ///
@@ -403,7 +403,7 @@ The top-level per-scenario payload sent through the bounded channel (§6.1). Eac
 /// Each instance is produced by a simulation thread, sent through
 /// the channel, consumed by the I/O thread for Parquet writing,
 /// and then dropped. At most `channel_capacity` instances exist
-/// simultaneously (bounded by channel backpressure). See §3.3.
+/// simultaneously (bounded by channel backpressure). See SS3.3.
 pub struct SimulationScenarioResult {
     /// 0-based scenario identifier. Unique across all MPI ranks.
     /// Determines the Hive partition path:
@@ -417,13 +417,13 @@ pub struct SimulationScenarioResult {
     pub total_cost: f64,
 
     /// Per-category cost components for this scenario, summed
-    /// across all stages. Used for per-category statistics (§4.2)
-    /// and retained in the compact cost buffer (§3.3) even after
+    /// across all stages. Used for per-category statistics (SS4.2)
+    /// and retained in the compact cost buffer (SS3.3) even after
     /// per-stage detail is streamed to the output writer.
     pub per_category_costs: ScenarioCategoryCosts,
 
     /// Per-stage detailed results. Present when the output detail
-    /// level (§6.2) is Stage-level or Full. Empty (zero-length Vec)
+    /// level (SS6.2) is Stage-level or Full. Empty (zero-length Vec)
     /// when detail level is Summary — in that case, only
     /// `scenario_id`, `total_cost`, and `per_category_costs` are
     /// populated.
@@ -431,7 +431,7 @@ pub struct SimulationScenarioResult {
 }
 
 /// Per-category cost totals for one scenario, summed across all stages.
-/// Matches the category breakdown in §4.2.
+/// Matches the category breakdown in SS4.2.
 pub struct ScenarioCategoryCosts {
     /// thermal_cost + contract_cost
     pub resource_cost: f64,
@@ -449,14 +449,14 @@ pub struct ScenarioCategoryCosts {
 
 #### 3.4.4 SimulationSummary
 
-Aggregate statistics returned by `fn simulate()` after all scenarios complete and MPI aggregation (§4.4) finishes. This is the `Ok` variant of the function's return type.
+Aggregate statistics returned by `fn simulate()` after all scenarios complete and MPI aggregation (SS4.4) finishes. This is the `Ok` variant of the function's return type.
 
 ```rust
 /// Aggregate simulation statistics computed after all scenarios
-/// complete. Produced by MPI aggregation on rank 0 (§4.4) and
+/// complete. Produced by MPI aggregation on rank 0 (SS4.4) and
 /// returned as the Ok value of fn simulate().
 pub struct SimulationSummary {
-    // -- §4.1 Cost Statistics --
+    // -- SS4.1 Cost Statistics --
 
     /// Mean total cost across all scenarios:
     /// $\bar{C} = \frac{1}{S} \sum_{s=1}^{S} C_s$
@@ -480,13 +480,13 @@ pub struct SimulationSummary {
     /// Confidence level used for CVaR computation.
     pub cvar_alpha: f64,
 
-    // -- §4.2 Per-Category Cost Statistics --
+    // -- SS4.2 Per-Category Cost Statistics --
 
     /// Per-category cost statistics (mean, max, frequency) for each
-    /// of the five cost categories defined in §4.2.
+    /// of the five cost categories defined in SS4.2.
     pub category_stats: Vec<CategoryCostStats>,
 
-    // -- §4.3 Operational Statistics --
+    // -- SS4.3 Operational Statistics --
 
     /// Fraction of scenarios with at least one stage having deficit > 0.
     pub deficit_frequency: f64,
@@ -507,7 +507,7 @@ pub struct SimulationSummary {
 
 /// Per-category cost statistics for one cost category.
 pub struct CategoryCostStats {
-    /// Category name (matches §4.2 table: "resource", "recourse",
+    /// Category name (matches SS4.2 table: "resource", "recourse",
     /// "violation", "regularization", "imputed").
     pub category: String,
     /// Mean cost across all scenarios.
@@ -562,7 +562,7 @@ pub enum SimulationError {
         message: String,
     },
 
-    /// Policy compatibility validation failed (§2). The trained policy
+    /// Policy compatibility validation failed (SS2). The trained policy
     /// is incompatible with the current system configuration.
     PolicyIncompatible {
         message: String,
@@ -587,17 +587,17 @@ The `fn simulate()` entry point executes the simulation phase. It is generic ove
 /// # Parameters
 ///
 /// - `system`: Shared reference to the fully loaded and validated
-///   system representation ([Internal Structures §1](../data-model/internal-structures.md)).
+///   system representation ([Internal Structures SS1](../data-model/internal-structures.md)).
 ///   Immutable and shared across all threads within this rank.
 ///
 /// - `policy`: The trained FCF (Future Cost Function) policy to
 ///   evaluate. Contains the optimality cuts accumulated during
 ///   training, loaded from the policy directory
-///   ([Binary Formats §3.2](../data-model/binary-formats.md)).
+///   ([Binary Formats SS3.2](../data-model/binary-formats.md)).
 ///
 /// - `config`: Simulation configuration parameters (number of
 ///   scenarios, output detail level, sampling scheme, etc.).
-///   See §1.1 for the configuration surface.
+///   See SS1.1 for the configuration surface.
 ///
 /// - `solver_factory`: Factory closure that creates one
 ///   `SolverInterface` instance per thread. Each simulation thread
@@ -605,23 +605,23 @@ The `fn simulate()` entry point executes the simulation phase. It is generic ove
 ///   See [Solver Interface Trait SS5](./solver-interface-trait.md).
 ///
 /// - `comm`: Communicator backend for MPI collective operations
-///   (scenario distribution §3.1, statistics aggregation §4.4).
+///   (scenario distribution SS3.1, statistics aggregation SS4.4).
 ///   See [Communicator Trait §3](../hpc/communicator-trait.md).
 ///
 /// - `result_tx`: Sending end of the bounded channel connecting
-///   simulation threads to the background I/O thread (§6.1).
+///   simulation threads to the background I/O thread (SS6.1).
 ///   Each completed scenario is sent as a `SimulationScenarioResult`
 ///   through this channel. Channel backpressure throttles simulation
 ///   when the I/O thread falls behind.
 ///
 /// # Returns
 ///
-/// - `Ok(SimulationSummary)`: Aggregate statistics (§4.1–4.4) after
+/// - `Ok(SimulationSummary)`: Aggregate statistics (SS4.1–4.4) after
 ///   all scenarios complete and MPI aggregation finishes. On
 ///   non-rank-0 processes, the summary contains only locally
 ///   computed statistics (min/max from allreduce); the full
 ///   statistics (mean, std, CVaR, per-category) are authoritative
-///   only on rank 0 (§4.4).
+///   only on rank 0 (SS4.4).
 ///
 /// - `Err(SimulationError)`: A fatal error prevented simulation
 ///   from completing. Partial results already sent through
@@ -630,7 +630,7 @@ The `fn simulate()` entry point executes the simulation phase. It is generic ove
 /// # Thread safety
 ///
 /// This function spawns a thread pool internally for scenario-level
-/// parallelism (§3.1). The `system` and `policy` references are
+/// parallelism (SS3.1). The `system` and `policy` references are
 /// shared read-only across threads. Each thread creates its own
 /// solver via `solver_factory`. The `result_tx` sender is cloned
 /// per thread (standard mpsc/crossbeam channel semantics).
@@ -642,22 +642,22 @@ pub fn simulate<S: SolverInterface, C: Communicator>(
     comm: &C,
     result_tx: Sender<SimulationScenarioResult>,
 ) -> Result<SimulationSummary, SimulationError> {
-    // 1. Validate policy compatibility (§2)
-    // 2. Compute local scenario assignment (§3.1)
+    // 1. Validate policy compatibility (SS2)
+    // 2. Compute local scenario assignment (SS3.1)
     // 3. Spawn thread pool, distribute scenarios with work-stealing
-    // 4. Per scenario: forward pass (§3.2), send result through channel
+    // 4. Per scenario: forward pass (SS3.2), send result through channel
     // 5. After all local scenarios complete, participate in MPI
-    //    aggregation (§4.4)
+    //    aggregation (SS4.4)
     // 6. Return SimulationSummary
     todo!()
 }
 ```
 
-**Consistency with `internal-structures.md`**: The `fn simulate()` signature above refines the placeholder in [Internal Structures §1.7](../data-model/internal-structures.md) (`cobre_sddp::simulate(system: &System, policy: &Policy, config: &SimulationConfig, comm: &C) -> Result<SimulationResult, SimError>`) by adding the `solver_factory` parameter (matching the `fn train()` pattern), the `result_tx` channel handle, and renaming the return types to their concrete definitions (`SimulationSummary`, `SimulationError`).
+**Consistency with `internal-structures.md`**: The `fn simulate()` signature above refines the placeholder in [Internal Structures SS1.7](../data-model/internal-structures.md) (`cobre_sddp::simulate(system: &System, policy: &Policy, config: &SimulationConfig, comm: &C) -> Result<SimulationResult, SimError>`) by adding the `solver_factory` parameter (matching the `fn train()` pattern), the `result_tx` channel handle, and renaming the return types to their concrete definitions (`SimulationSummary`, `SimulationError`).
 
 ## 4. Simulation Statistics
 
-The simulation phase computes aggregate statistics across all scenarios. Each rank stores per-scenario total costs and per-category cost components in a local buffer during execution. After all ranks complete, costs are gathered to rank 0 for final statistics computation (see §4.4).
+The simulation phase computes aggregate statistics across all scenarios. Each rank stores per-scenario total costs and per-category cost components in a local buffer during execution. After all ranks complete, costs are gathered to rank 0 for final statistics computation (see SS4.4).
 
 ### 4.1 Cost Statistics
 
@@ -668,7 +668,7 @@ The simulation phase computes aggregate statistics across all scenarios. Each ra
 | Minimum / Maximum cost      | Range of total scenario costs                                                                                                        |
 | CVaR at confidence $\alpha$ | Conditional Value-at-Risk: mean of the worst $(1-\alpha)$ fraction of scenario costs. See [Risk Measures](../math/risk-measures.md). |
 
-CVaR computation requires all individual scenario costs (for sorting and tail averaging), which are gathered to rank 0 via `MPI_Gatherv` after all ranks complete (see §4.3). Since the gathered array is already available, the mean and standard deviation are also computed directly from it — avoiding the numerical instability of running sum-of-squares formulas. Min and max are computed via `MPI_Allreduce` without gathering.
+CVaR computation requires all individual scenario costs (for sorting and tail averaging), which are gathered to rank 0 via `MPI_Gatherv` after all ranks complete (see SS4.3). Since the gathered array is already available, the mean and standard deviation are also computed directly from it — avoiding the numerical instability of running sum-of-squares formulas. Min and max are computed via `MPI_Allreduce` without gathering.
 
 ### 4.2 Per-Category Cost Statistics
 
@@ -729,7 +729,7 @@ All non-convex extensions are **deferred**. This section documents _what_ they a
 
 With potentially thousands of scenarios, storing all results in memory before writing is impractical. The output writer uses a streaming architecture:
 
-- A **bounded channel** of type `Sender<SimulationScenarioResult>` / `Receiver<SimulationScenarioResult>` connects the simulation threads to a dedicated **background I/O thread**. The `SimulationScenarioResult` type (§3.4.3) is the channel payload.
+- A **bounded channel** of type `Sender<SimulationScenarioResult>` / `Receiver<SimulationScenarioResult>` connects the simulation threads to a dedicated **background I/O thread**. The `SimulationScenarioResult` type (SS3.4.3) is the channel payload.
 - Simulation threads send completed scenario results through the channel as they finish. Each scenario produces exactly one `SimulationScenarioResult` instance.
 - The I/O thread receives `SimulationScenarioResult` values and writes them to Parquet files asynchronously via the `SimulationParquetWriter` ([Output Infrastructure SS6.2](../data-model/output-infrastructure.md)), converting the nested per-entity-type layout to the columnar Parquet schemas defined in [Output Schemas SS5](../data-model/output-schemas.md).
 - The channel backpressure prevents simulation from running too far ahead of I/O. At most `channel_capacity` `SimulationScenarioResult` instances exist simultaneously in the channel buffer.
@@ -752,7 +752,7 @@ For the complete column definitions at each detail level, see [Output Schemas SS
 
 Each MPI rank writes its simulation results independently using **per-rank output files**. This avoids MPI coordination during I/O and enables each rank to write at full local disk bandwidth.
 
-The output uses Hive-style partitioning by `scenario_id`, where each rank writes exclusively to the partitions corresponding to its assigned scenarios. No coordination between ranks is needed during writing — the partition assignment is determined by the deterministic scenario distribution (§3.1).
+The output uses Hive-style partitioning by `scenario_id`, where each rank writes exclusively to the partitions corresponding to its assigned scenarios. No coordination between ranks is needed during writing — the partition assignment is determined by the deterministic scenario distribution (SS3.1).
 
 After all ranks complete, rank 0 writes the simulation manifest (`_manifest.json`) with checksums, row counts, and partition listings. The `_SUCCESS` marker file is written atomically on successful completion. See [Output Infrastructure SS1.1](../data-model/output-infrastructure.md).
 
@@ -763,13 +763,13 @@ After all ranks complete, rank 0 writes the simulation manifest (`_manifest.json
 - [Training Loop](./training-loop.md) — Training phase that produces the policy evaluated by simulation
 - [Solver Interface Trait](./solver-interface-trait.md) — Compile-time monomorphization pattern for `fn simulate()` (SS5)
 - [Communicator Trait](../hpc/communicator-trait.md) — Generic communicator backend for MPI operations (§3)
-- [Internal Structures](../data-model/internal-structures.md) — `System` struct (§1), `EntityId` type (§1.8), `Stage`/`Block` definitions (§12)
-- [Binary Formats](../data-model/binary-formats.md) — Policy file format for FCF cuts (§3.2)
+- [Internal Structures](../data-model/internal-structures.md) — `System` struct (SS1), `EntityId` type (SS1.8), `Stage`/`Block` definitions (SS12)
+- [Binary Formats](../data-model/binary-formats.md) — Policy file format for FCF cuts (SS3.2)
 - [Block Formulations](../math/block-formulations.md) — Block structure (parallel/chronological) within simulation LP stages
 - [Risk Measures](../math/risk-measures.md) — CVaR computation for simulation cost statistics
 - [Discount Rate](../math/discount-rate.md) — Discount factors applied to scenario costs
 - [LP Formulation](../math/lp-formulation.md) — Stage LP construction shared between training and simulation
-- [Penalty System](../data-model/penalty-system.md) — Three-category cost taxonomy referenced by `ScenarioCategoryCosts` (§2)
+- [Penalty System](../data-model/penalty-system.md) — Three-category cost taxonomy referenced by `ScenarioCategoryCosts` (SS2)
 - [Output Schemas](../data-model/output-schemas.md) — Parquet column definitions for all simulation output files (SS5.1--5.11)
 - [Output Infrastructure](../data-model/output-infrastructure.md) — Manifests and crash recovery (SS1), MPI Hive partitioning (SS2-SS4), `SimulationParquetWriter` output writer API (SS6.2)
 - [Deferred Features SSC.1](../deferred.md) — GNL / thermal unit commitment (simulation-only MIP)
