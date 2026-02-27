@@ -1,6 +1,6 @@
 {
   "plan": "spec-implementation-prep",
-  "last_updated": "2026-02-27T18:56:17Z",
+  "last_updated": "2026-02-27T20:15:00Z",
   "progressive": true,
   "tickets": {
     "ticket-001-remove-inline-gap-markers.md": {
@@ -125,15 +125,45 @@
     },
     "ticket-006-update-implementation-ordering-reading-lists.md": {
       "status": "pending",
-      "detail_level": "outline"
+      "detail_level": "refined",
+      "scores": {
+        "readiness": 0.96,
+        "readiness_breakdown": {
+          "structure": 1.0,
+          "testability": 1.0,
+          "boundary": 1.0,
+          "dependency_clarity": 1.0,
+          "atomicity": 0.6
+        }
+      }
     },
     "ticket-007-add-minimum-viable-reading-list.md": {
       "status": "pending",
-      "detail_level": "outline"
+      "detail_level": "refined",
+      "scores": {
+        "readiness": 0.98,
+        "readiness_breakdown": {
+          "structure": 1.0,
+          "testability": 1.0,
+          "boundary": 1.0,
+          "dependency_clarity": 1.0,
+          "atomicity": 0.8
+        }
+      }
     },
     "ticket-008-add-spec-usage-guide.md": {
       "status": "pending",
-      "detail_level": "outline"
+      "detail_level": "refined",
+      "scores": {
+        "readiness": 0.96,
+        "readiness_breakdown": {
+          "structure": 1.0,
+          "testability": 1.0,
+          "boundary": 1.0,
+          "dependency_clarity": 1.0,
+          "atomicity": 0.6
+        }
+      }
     }
   },
   "epics": {
@@ -146,7 +176,7 @@
       "learning_extracted": true
     },
     "epic-03-navigation-layer": {
-      "phase": "outline",
+      "phase": "executing",
       "learning_extracted": false
     }
   }
