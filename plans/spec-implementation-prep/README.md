@@ -13,7 +13,7 @@ Prepare the cobre-docs specification corpus to be a clean, navigable reference f
 | ------- | ------------------ | ------- | --------- |
 | epic-01 | GAP Marker Cleanup | 2       | completed |
 | epic-02 | Consistency Pass   | 3       | completed |
-| epic-03 | Navigation Layer   | 3       | executing |
+| epic-03 | Navigation Layer   | 3       | completed |
 
 ## Progress
 
@@ -25,8 +25,8 @@ Prepare the cobre-docs specification corpus to be a clean, navigable reference f
 | ticket-004 | Fix section-prefix violations in medium-count architecture files                          | epic-02 | completed | Detailed     | 0.98      | 1.00    | EXCELLENT |
 | ticket-005 | Fix section-prefix violations in low-count architecture files and audit OpenMP references | epic-02 | completed | Detailed     | 0.94      | 1.00    | EXCELLENT |
 | ticket-006 | Update implementation-ordering per-phase reading lists                                    | epic-03 | completed | Refined      | 0.96      | 0.95    | EXCELLENT |
-| ticket-007 | Add Minimum Viable Reading List to implementation-ordering                                | epic-03 | pending   | Refined      | 0.98      | --      | --        |
-| ticket-008 | Add "How to Use This Specification" guide                                                 | epic-03 | pending   | Refined      | 0.96      | --      | --        |
+| ticket-007 | Add Minimum Viable Reading List to implementation-ordering                                | epic-03 | completed | Refined      | 0.98      | 1.00    | EXCELLENT |
+| ticket-008 | Add "How to Use This Specification" guide                                                 | epic-03 | completed | Refined      | 0.96      | 1.00    | EXCELLENT |
 
 ## Readiness Scores
 

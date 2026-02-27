@@ -229,3 +229,21 @@ The minimal viable solver fully models four element types and provides code-path
 | [Communicator Trait](../hpc/communicator-trait.md)                     | MPI backend via ferrompi selected for minimal viable                    |
 | [Backend Selection](../hpc/backend-selection.md)                       | Feature flag mechanism for compile-time backend selection               |
 | [Configuration Reference](../configuration/configuration-reference.md) | `config.json` and `stages.json` schema definitions                      |
+| [How to Use This Specification](./spec-usage-guide.md) | Abstraction boundary between specs and implementation; worked example |
+
+## 9. Minimum Viable Reading List
+
+The 10 specs below are the entry point for any developer starting on the Cobre implementation. They are ordered by conceptual dependency: conventions and notation first, then mathematical foundations, then data model, then architecture, then HPC execution model. After reading these 10 files, a developer has the context needed to understand behavioral contracts across all crates and to draft implementation tickets for any phase.
+
+1. [Design Principles](../overview/design-principles.md) — Format selection criteria, declaration-order invariance, and agent-readability rules that govern every spec in the corpus.
+2. [Notation Conventions](../overview/notation-conventions.md) — Mathematical notation used throughout all math and architecture specs; establish this vocabulary before reading anything else.
+3. [SDDP Algorithm](../math/sddp-algorithm.md) — The core algorithm: forward/backward passes, cut generation, state transitions, and convergence — the mathematical heart of Cobre.
+4. [LP Formulation](../math/lp-formulation.md) — Stage LP structure, variable layout, constraint categories, and dual variable semantics — defines what the solver must solve at each stage.
+5. [Internal Structures](../data-model/internal-structures.md) — `SystemRepresentation`, `StageTemplate`, LP variable layout, and the in-memory data model shared across all crates.
+6. [Training Loop](../architecture/training-loop.md) — Iteration lifecycle, forward/backward pass orchestration, `TrajectoryRecord`, state management, and event emission.
+7. [Solver Interface Trait](../architecture/solver-interface-trait.md) — LP solver abstraction, dispatch mechanism, error contracts, warm-start protocol, and dual normalization guarantee.
+8. [Communicator Trait](../hpc/communicator-trait.md) — Communication abstraction, collective operations, thread-safety contract, and backend interchangeability.
+9. [Hybrid Parallelism](../hpc/hybrid-parallelism.md) — MPI+threads execution model, rank/thread topology, rayon integration, and NUMA placement strategy.
+10. [Implementation Ordering](../overview/implementation-ordering.md) (this document, sections 1–8) — Build sequence, phase dependencies, minimal viable solver definition, and trait variant selection.
+
+For phase-specific deep dives, consult the per-phase reading lists in section 5. For an overview of the abstraction boundary between specs and implementation planning, see [How to Use This Specification](./spec-usage-guide.md).
