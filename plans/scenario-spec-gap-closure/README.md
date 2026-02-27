@@ -25,9 +25,9 @@ Close GAP-039 definitively (false gap -- seed-based architecture eliminates broa
 | ticket-002 | Add sampling_method section to scenario-generation.md                        | epic-01 | completed | Detailed     | 0.98      | 0.88    | EXCELLENT |
 | ticket-003 | Reclassify GAP-039 as resolved false gap                                     | epic-02 | completed | Detailed     | 0.96      | 0.96    | EXCELLENT |
 | ticket-004 | Fix GAP-036/037/038 Resolved markers in section 3                            | epic-02 | completed | Detailed     | 1.00      | 1.00    | EXCELLENT |
-| ticket-005 | Add missing cross-references in simulation-architecture and binary-formats   | epic-03 | pending   | Detailed     | 0.98      | --      | --        |
-| ticket-006 | Batch-update cross-reference index for F4 through F8                         | epic-03 | pending   | Detailed     | 0.98      | --      | --        |
-| ticket-007 | Fix low-priority Cross-References entry precision in simulation-architecture | epic-03 | pending   | Detailed     | 1.00      | --      | --        |
+| ticket-005 | Add missing cross-references in simulation-architecture and binary-formats   | epic-03 | completed | Detailed     | 0.98      | 1.00    | EXCELLENT |
+| ticket-006 | Batch-update cross-reference index for F4 through F8                         | epic-03 | completed | Detailed     | 0.98      | 1.00    | EXCELLENT |
+| ticket-007 | Fix low-priority Cross-References entry precision in simulation-architecture | epic-03 | completed | Detailed     | 1.00      | 1.00    | EXCELLENT |
 
 ## Dependency Graph
 

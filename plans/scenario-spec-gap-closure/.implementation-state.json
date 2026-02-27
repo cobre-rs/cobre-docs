@@ -1,6 +1,6 @@
 {
   "plan": "scenario-spec-gap-closure",
-  "last_updated": "2026-02-27T12:20:48Z",
+  "last_updated": "2026-02-27T12:37:18Z",
   "progressive": false,
   "tickets": {
     "ticket-001-fix-insample-description-and-seed-clarification.md": {
@@ -100,9 +100,17 @@
       "agent": "sddp-specialist"
     },
     "ticket-005-add-missing-crossrefs-in-spec-files.md": {
-      "status": "pending",
+      "status": "completed",
       "detail_level": "detailed",
       "scores": {
+        "quality": 1.0,
+        "quality_breakdown": {
+          "conformance": 1.0,
+          "scope_adherence": 1.0,
+          "lint_cleanliness": 1.0,
+          "type_safety": 1.0,
+          "test_delta": 1.0
+        },
         "readiness": 0.98,
         "readiness_breakdown": {
           "structure": 1.0,
@@ -111,12 +119,22 @@
           "dependency_clarity": 1.0,
           "atomicity": 0.8
         }
-      }
+      },
+      "workflow_step": null,
+      "agent": "sddp-specialist"
     },
     "ticket-006-batch-update-cross-reference-index.md": {
-      "status": "pending",
+      "status": "completed",
       "detail_level": "detailed",
       "scores": {
+        "quality": 1.0,
+        "quality_breakdown": {
+          "conformance": 1.0,
+          "scope_adherence": 1.0,
+          "lint_cleanliness": 1.0,
+          "type_safety": 1.0,
+          "test_delta": 1.0
+        },
         "readiness": 0.98,
         "readiness_breakdown": {
           "structure": 1.0,
@@ -125,12 +143,22 @@
           "dependency_clarity": 1.0,
           "atomicity": 0.8
         }
-      }
+      },
+      "workflow_step": null,
+      "agent": "sddp-specialist"
     },
     "ticket-007-fix-crossref-entry-precision.md": {
-      "status": "pending",
+      "status": "completed",
       "detail_level": "detailed",
       "scores": {
+        "quality": 1.0,
+        "quality_breakdown": {
+          "conformance": 1.0,
+          "scope_adherence": 1.0,
+          "lint_cleanliness": 1.0,
+          "type_safety": 1.0,
+          "test_delta": 1.0
+        },
         "readiness": 1.0,
         "readiness_breakdown": {
           "structure": 1.0,
@@ -139,7 +167,9 @@
           "dependency_clarity": 1.0,
           "atomicity": 1.0
         }
-      }
+      },
+      "workflow_step": null,
+      "agent": "sddp-specialist"
     }
   },
   "epics": {

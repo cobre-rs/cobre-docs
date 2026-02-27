@@ -727,7 +727,7 @@ With potentially thousands of scenarios, storing all results in memory before wr
 
 - A **bounded channel** of type `Sender<SimulationScenarioResult>` / `Receiver<SimulationScenarioResult>` connects the simulation threads to a dedicated **background I/O thread**. The `SimulationScenarioResult` type (§3.4.3) is the channel payload.
 - Simulation threads send completed scenario results through the channel as they finish. Each scenario produces exactly one `SimulationScenarioResult` instance.
-- The I/O thread receives `SimulationScenarioResult` values and writes them to Parquet files asynchronously, converting the nested per-entity-type layout to the columnar Parquet schemas defined in [Output Schemas SS5](../data-model/output-schemas.md).
+- The I/O thread receives `SimulationScenarioResult` values and writes them to Parquet files asynchronously via the `SimulationParquetWriter` ([Output Infrastructure SS6.2](../data-model/output-infrastructure.md)), converting the nested per-entity-type layout to the columnar Parquet schemas defined in [Output Schemas SS5](../data-model/output-schemas.md).
 - The channel backpressure prevents simulation from running too far ahead of I/O. At most `channel_capacity` `SimulationScenarioResult` instances exist simultaneously in the channel buffer.
 
 > **Placeholder** — The output streaming pipeline diagram (`../../diagrams/exports/svg/data/output-streaming-pipeline.svg`) will be revised after the text review is complete.
@@ -767,7 +767,7 @@ After all ranks complete, rank 0 writes the simulation manifest (`_manifest.json
 - [LP Formulation](../math/lp-formulation.md) — Stage LP construction shared between training and simulation
 - [Penalty System](../data-model/penalty-system.md) — Three-category cost taxonomy referenced by `ScenarioCategoryCosts` (§2)
 - [Output Schemas](../data-model/output-schemas.md) — Parquet column definitions for all simulation output files (SS5.1--5.11)
-- [Output Infrastructure](../data-model/output-infrastructure.md) — Manifests, MPI partitioning, crash recovery
+- [Output Infrastructure](../data-model/output-infrastructure.md) — Manifests and crash recovery (SS1), MPI Hive partitioning (SS2-SS4), `SimulationParquetWriter` output writer API (SS6.2)
 - [Deferred Features SSC.1](../deferred.md) — GNL / thermal unit commitment (simulation-only MIP)
 - [Deferred Features SSC.6](../deferred.md) — FPHA enhancements including head-dependent refinement
 - [Deferred Features SSC.9](../deferred.md) — Policy compatibility validation specification

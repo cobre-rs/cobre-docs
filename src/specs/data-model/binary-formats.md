@@ -25,6 +25,7 @@ This framework is the authoritative reference for all format choices across the 
 | Policy / binary           | FlatBuffers    | Policy cuts, states, vertices, checkpoint data      | Zero-copy deserialization, SIMD-friendly dense arrays                    |
 | High-volume output        | Parquet        | Simulation results, training outputs                | Columnar compression, partition pruning, analytics tooling               |
 | Metadata / dictionary     | CSV / JSON     | variables.csv, entities.csv, codes.json             | Human-readable, small volume                                             |
+| MPI broadcast             | postcard       | `System` struct rank-0-to-all broadcast             | Fast `serde`-based serialization for one-time internal transfer          |
 
 ### Format Selection Criteria
 
@@ -41,20 +42,21 @@ This framework is the authoritative reference for all format choices across the 
 
 ## 2. Format Summary by Category
 
-| Data Category     | Read/Write | Format         | Rationale                                       |
-| ----------------- | ---------- | -------------- | ----------------------------------------------- |
-| Algorithm Config  | Read       | JSON           | Small, editable                                 |
-| System Registry   | Read       | JSON           | Structured objects                              |
-| Stage/Block Def   | Read       | JSON           | Graph structure                                 |
-| Scenario Pipeline | Read       | JSON + Parquet | Complex nested config + tabular data in Parquet |
-| Correlation       | Read       | JSON           | Sparse, small                                   |
-| Stage Overrides   | Read       | Parquet        | Sparse per-entity/per-stage tabular overrides   |
-| Policy Cuts       | Read/Write | FlatBuffers    | Zero-copy, in-memory training                   |
-| Policy States     | Read/Write | FlatBuffers    | Zero-copy, in-memory training                   |
-| Policy Vertices   | Read/Write | FlatBuffers    | Zero-copy, in-memory training                   |
-| Training Results  | Write      | Parquet        | Analytics-ready                                 |
-| Simulation Detail | Write      | Parquet        | Large volume                                    |
-| Dictionaries      | Write      | CSV            | Human-readable                                  |
+| Data Category     | Read/Write | Format         | Rationale                                                                                                                                             |
+| ----------------- | ---------- | -------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Algorithm Config  | Read       | JSON           | Small, editable                                                                                                                                       |
+| System Registry   | Read       | JSON           | Structured objects                                                                                                                                    |
+| Stage/Block Def   | Read       | JSON           | Graph structure                                                                                                                                       |
+| Scenario Pipeline | Read       | JSON + Parquet | Complex nested config + tabular data in Parquet                                                                                                       |
+| Correlation       | Read       | JSON           | Sparse, small                                                                                                                                         |
+| Stage Overrides   | Read       | Parquet        | Sparse per-entity/per-stage tabular overrides                                                                                                         |
+| Policy Cuts       | Read/Write | FlatBuffers    | Zero-copy, in-memory training                                                                                                                         |
+| Policy States     | Read/Write | FlatBuffers    | Zero-copy, in-memory training                                                                                                                         |
+| Policy Vertices   | Read/Write | FlatBuffers    | Zero-copy, in-memory training                                                                                                                         |
+| Training Results  | Write      | Parquet        | Analytics-ready                                                                                                                                       |
+| Simulation Detail | Write      | Parquet        | Large volume                                                                                                                                          |
+| Dictionaries      | Write      | CSV            | Human-readable                                                                                                                                        |
+| MPI Broadcast     | Internal   | postcard       | Fast serialization for rank-0-to-all broadcast of the `System` struct. See [Input Loading Pipeline SS6.1](../architecture/input-loading-pipeline.md). |
 
 ## 3. FlatBuffers for Policy Data
 
@@ -402,6 +404,7 @@ For output schema definitions, see [Output Schemas](output-schemas.md). For prod
 - [SDDP Algorithm](../math/sddp-algorithm.md) — Algorithm that produces/consumes cuts
 - [Cut Management](../math/cut-management.md) — Cut selection strategies using cut pool
 - [Solver Abstraction](../architecture/solver-abstraction.md) — Solver interface design
+- [Input Loading Pipeline](../architecture/input-loading-pipeline.md) — MPI broadcast serialization format using `postcard` (SS6.1)
 
 ---
 
