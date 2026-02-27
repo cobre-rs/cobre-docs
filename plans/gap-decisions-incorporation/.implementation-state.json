@@ -1,0 +1,137 @@
+{
+  "plan": "gap-decisions-incorporation",
+  "last_updated": "2026-02-27T14:15:00Z",
+  "progressive": true,
+  "tickets": {
+    "ticket-001-batch-update-gap-inventory.md": {
+      "status": "completed",
+      "detail_level": "detailed",
+      "scores": {
+        "quality": 1.0,
+        "quality_breakdown": {
+          "conformance": 1.0,
+          "scope_adherence": 1.0,
+          "lint_cleanliness": 1.0,
+          "type_safety": 1.0,
+          "test_delta": 1.0
+        },
+        "readiness": 1.0,
+        "readiness_breakdown": {
+          "structure": 1.0,
+          "testability": 1.0,
+          "boundary": 1.0,
+          "dependency_clarity": 1.0,
+          "atomicity": 1.0
+        }
+      },
+      "workflow_step": null,
+      "agent": "sddp-specialist"
+    },
+    "ticket-002-add-par-to-lp-transformation.md": {
+      "status": "pending",
+      "detail_level": "detailed",
+      "scores": {
+        "readiness": 1.0,
+        "readiness_breakdown": {
+          "structure": 1.0,
+          "testability": 1.0,
+          "boundary": 1.0,
+          "dependency_clarity": 1.0,
+          "atomicity": 1.0
+        }
+      }
+    },
+    "ticket-003-define-trajectory-record-type.md": {
+      "status": "pending",
+      "detail_level": "detailed",
+      "scores": {
+        "readiness": 1.0,
+        "readiness_breakdown": {
+          "structure": 1.0,
+          "testability": 1.0,
+          "boundary": 1.0,
+          "dependency_clarity": 1.0,
+          "atomicity": 1.0
+        }
+      }
+    },
+    "ticket-004-specify-warm-start-validation.md": {
+      "status": "pending",
+      "detail_level": "detailed",
+      "scores": {
+        "readiness": 1.0,
+        "readiness_breakdown": {
+          "structure": 1.0,
+          "testability": 1.0,
+          "boundary": 1.0,
+          "dependency_clarity": 1.0,
+          "atomicity": 1.0
+        }
+      }
+    },
+    "ticket-005-replace-openmp-with-rayon.md": {
+      "status": "pending",
+      "detail_level": "detailed",
+      "scores": {
+        "readiness": 1.0,
+        "readiness_breakdown": {
+          "structure": 1.0,
+          "testability": 1.0,
+          "boundary": 1.0,
+          "dependency_clarity": 1.0,
+          "atomicity": 1.0
+        }
+      }
+    },
+    "ticket-006-update-configuration-reference.md": {
+      "status": "pending",
+      "detail_level": "outline"
+    },
+    "ticket-007-uniformize-scenario-notation.md": {
+      "status": "pending",
+      "detail_level": "outline"
+    },
+    "ticket-008-document-forward-passes-immutability.md": {
+      "status": "pending",
+      "detail_level": "outline"
+    },
+    "ticket-009-document-backward-pass-distribution.md": {
+      "status": "pending",
+      "detail_level": "outline"
+    },
+    "ticket-010-replace-event-channel-with-mpsc.md": {
+      "status": "pending",
+      "detail_level": "outline"
+    },
+    "ticket-011-simplify-shared-memory-provider.md": {
+      "status": "pending",
+      "detail_level": "outline"
+    },
+    "ticket-012-design-penalty-ordering-validation.md": {
+      "status": "pending",
+      "detail_level": "outline"
+    },
+    "ticket-013-document-flatbuffers-requirements.md": {
+      "status": "pending",
+      "detail_level": "outline"
+    }
+  },
+  "epics": {
+    "epic-01-gap-inventory-update": {
+      "phase": "completed",
+      "learning_extracted": true
+    },
+    "epic-02-high-impact-spec-content": {
+      "phase": "executing",
+      "learning_extracted": false
+    },
+    "epic-03-configuration-and-data-model": {
+      "phase": "outline",
+      "learning_extracted": false
+    },
+    "epic-04-remaining-spec-content": {
+      "phase": "outline",
+      "learning_extracted": false
+    }
+  }
+}
