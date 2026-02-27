@@ -16,7 +16,7 @@ Input loading follows a **rank-0 centric** pattern: rank 0 loads and validates a
 - Reduces complexity of error handling across ranks
 - Ensures all ranks receive identical, validated data
 
-The one exception is **policy loading for warm-start** (§7), where all ranks load in parallel to avoid bottlenecking on large policy files.
+The one exception is **policy loading for warm-start** (SS7), where all ranks load in parallel to avoid bottlenecking on large policy files.
 
 > **Placeholder** — The input loading pipeline diagram (`../../diagrams/exports/svg/data/input-loading-pipeline.svg`) will be revised after the text review is complete.
 
@@ -131,11 +131,11 @@ The following table enumerates **all 26 cross-reference validation rules**. Rule
 | ----- | ---------- | ------------ | --------------------------------------------------------- |
 | 34    | `policy/*` | All above    | State dictionary matches current system, cut format valid |
 
-Policy loading uses a different pattern — see §7 Parallel Policy Loading.
+Policy loading uses a different pattern — see SS7 Parallel Policy Loading.
 
 ## 3. Dependency Graph
 
-Input files form a directed acyclic graph (DAG) of dependencies. The loading sequence in §2 is a valid topological ordering of this DAG. Files at the same dependency level may be loaded in any order relative to each other.
+Input files form a directed acyclic graph (DAG) of dependencies. The loading sequence in SS2 is a valid topological ordering of this DAG. Files at the same dependency level may be loaded in any order relative to each other.
 
 > **Placeholder** — The dependency graph diagram (`../../diagrams/exports/svg/data/json-schema-dependencies.svg`) will be revised after the text review is complete.
 
@@ -147,10 +147,10 @@ Some files are loaded only when certain conditions are met. Missing optional fil
 | --------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
 | `training.enabled = false` in `config.json`               | Skip scenario noise generation (but still load models if simulation needs them)                |
 | `simulation.enabled = false` in `config.json`             | Skip simulation-specific scenario setup                                                        |
-| `policy.mode = "warm_start"` in `config.json`             | Load `policy/*` files (§7)                                                                     |
+| `policy.mode = "warm_start"` in `config.json`             | Load `policy/*` files (SS7)                                                                     |
 | Policy graph has cycle (`stages.json`)                    | Validate cycle structure per [Infinite Horizon](../math/infinite-horizon.md)                   |
 | Hydros with FPHA production model, source `"precomputed"` | Require `fpha_hyperplanes.parquet`                                                             |
-| Hydros with FPHA production model, source `"computed"`    | FPHA hyperplanes computed during Initialization phase from geometry and topology data (see §8) |
+| Hydros with FPHA production model, source `"computed"`    | FPHA hyperplanes computed during Initialization phase from geometry and topology data (see SS8) |
 | `pumping_stations.json` present                           | Load pumping bounds, validate hydro/bus references                                             |
 | `energy_contracts.json` present                           | Load contract bounds                                                                           |
 | `non_controllable_sources.json` present                   | Load NCS penalty overrides                                                                     |
@@ -183,9 +183,9 @@ After rank 0 loads and validates all data, it broadcasts to worker ranks. Data i
 | Entity registries | Buses, lines, hydros, thermals, NCS, pumping, contracts    | Single `MPI_Bcast`                               |
 | Scenario models   | PAR parameters, correlation matrices, load models          | Single `MPI_Bcast`                               |
 | Bounds/overrides  | All constraint bounds, penalty overrides, exchange factors | Single `MPI_Bcast` (sparse form, expand locally) |
-| Policy cuts       | FCF cuts for warm-start                                    | Parallel load (§7)                               |
+| Policy cuts       | FCF cuts for warm-start                                    | Parallel load (SS7)                               |
 
-**Sparse broadcast optimization:** Bounds and penalty override files are broadcast in their sparse Parquet form. Each rank performs the sparse-to-dense expansion locally (§5). This reduces broadcast volume — only non-default values are transmitted.
+**Sparse broadcast optimization:** Bounds and penalty override files are broadcast in their sparse Parquet form. Each rank performs the sparse-to-dense expansion locally (SS5). This reduces broadcast volume — only non-default values are transmitted.
 
 ### 6.1 Serialization Format
 

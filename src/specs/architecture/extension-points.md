@@ -12,10 +12,10 @@ The training loop has a fixed structure (forward pass, backward pass, MPI synchr
 
 | Abstraction Point   | Determines                                                 | Configured In | Current Variants                    |
 | ------------------- | ---------------------------------------------------------- | ------------- | ----------------------------------- |
-| **Risk Measure**    | How backward outcomes are aggregated into cut coefficients | `stages.json` | Expectation, CVaR (§2)              |
-| **Cut Formulation** | Structure of cuts added to the FCF                         | Fixed         | Single-cut (§3)                     |
-| **Horizon Mode**    | Stage transitions, terminal conditions, discount factors   | `stages.json` | Finite, Cyclic (§4)                 |
-| **Sampling Scheme** | How the forward pass selects scenario realizations         | `stages.json` | InSample, External, Historical (§5) |
+| **Risk Measure**    | How backward outcomes are aggregated into cut coefficients | `stages.json` | Expectation, CVaR (SS2)              |
+| **Cut Formulation** | Structure of cuts added to the FCF                         | Fixed         | Single-cut (SS3)                     |
+| **Horizon Mode**    | Stage transitions, terminal conditions, discount factors   | `stages.json` | Finite, Cyclic (SS4)                 |
+| **Sampling Scheme** | How the forward pass selects scenario realizations         | `stages.json` | InSample, External, Historical (SS5) |
 
 **Fixed components** (not configurable — same behavior regardless of variant selection):
 
@@ -207,8 +207,8 @@ At startup, the variant selection pipeline resolves configuration into concrete 
 | 2    | Select horizon mode                   | `policy_graph.type`                  | Finite or Cyclic mode            |
 | 3    | Select per-stage risk measures        | `stages[].risk_measure`              | Risk measure per stage           |
 | 4    | Select sampling scheme                | `scenario_source.sampling_scheme`    | Sampling scheme                  |
-| 5    | Validate individual variants          | Per-variant rules (§2.3, §4.3, §5.3) | Reject invalid configurations    |
-| 6    | Validate cross-variant composition    | Composition rules (§8)               | Reject incompatible combinations |
+| 5    | Validate individual variants          | Per-variant rules (SS2.3, SS4.3, SS5.3) | Reject invalid configurations    |
+| 6    | Validate cross-variant composition    | Composition rules (SS8)               | Reject incompatible combinations |
 | 7    | Construct training loop               | All resolved variants                | Parameterized training loop      |
 
 The risk measure is per-stage (step 3 produces a mapping from stage ID to risk measure variant). All other abstraction points are global (one selection for the entire run).
@@ -223,7 +223,7 @@ The risk measure is per-stage (step 3 produces a mapping from stage ID to risk m
 | **Enum dispatch**                 | Each abstraction point uses a flat enum (e.g., `enum RiskMeasure { Expectation, CVaR { alpha, lambda } }`). Match at each call site.       | No heap allocation, inlineable, supports per-stage variation naturally. Small match overhead at each backward pass iteration.                   |
 | **Trait objects**                 | `Box<dyn RiskMeasure>` with dynamic dispatch.                                                                                              | Maximum flexibility, supports arbitrary nesting (e.g., convex combination of arbitrary inner risk measures). Virtual call overhead on hot path. |
 
-The per-stage risk measure requirement (§2.2) rules out pure compile-time monomorphization for the risk measure dimension. Enum dispatch is the natural fit for a small, fixed set of variants.
+The per-stage risk measure requirement (SS2.2) rules out pure compile-time monomorphization for the risk measure dimension. Enum dispatch is the natural fit for a small, fixed set of variants.
 
 > **Note**: The solver abstraction uses compile-time `cfg`-feature selection for the LP solver backend (CLP vs HiGHS) — see [Solver Abstraction SS10](./solver-abstraction.md). The algorithm variant dispatch mechanism is a separate decision and need not use the same approach.
 

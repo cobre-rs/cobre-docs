@@ -11,7 +11,7 @@ This spec defines the thread-local solver workspace infrastructure and the LP sc
 LP solvers (HiGHS, CLP, CPLEX) are **not thread-safe**. Each OpenMP thread requires its own solver instance. The workspace pattern provides:
 
 1. **Exclusive ownership** — Each thread owns one solver instance for the entire SDDP run (no pool-based borrow/return). This eliminates synchronization overhead and enables optimal warm-starting.
-2. **Per-stage basis cache** — The workspace stores one basis per stage. The basis from solving stage `t` in iteration `i` is reused to warm-start stage `t` in iteration `i+1`, without external basis save/restore. For checkpoint/restart, the cache is serialized to FlatBuffers (see §1.2).
+2. **Per-stage basis cache** — The workspace stores one basis per stage. The basis from solving stage `t` in iteration `i` is reused to warm-start stage `t` in iteration `i+1`, without external basis save/restore. For checkpoint/restart, the cache is serialized to FlatBuffers (see SS1.2).
 3. **Pre-allocated buffers** — All solution extraction, RHS patching, and basis storage buffers are allocated once at initialization and reused for every solve, eliminating hot-path allocations.
 4. **NUMA-local memory** — Each workspace is allocated on the NUMA node local to its owning thread, maximizing memory bandwidth during LP solves.
 
@@ -26,8 +26,8 @@ Each thread-local workspace contains the following components:
 | Primal buffer         | Pre-allocated array for primal solution extraction. These are **single-solve scratch buffers** — the SDDP algorithm copies the values it needs (state variables, generation, etc.) after each solve. The buffer is overwritten on the next solve.                                                             | 8,360 × 8 = ~65 KB                                |
 | Dual buffer           | Pre-allocated array for dual solution extraction. Same single-solve semantics as primal buffer.                                                                                                                                                                                                               | 80,628 × 8 = ~630 KB                              |
 | Reduced cost buffer   | Pre-allocated array for reduced cost extraction. Same single-solve semantics as primal buffer.                                                                                                                                                                                                                | 8,360 × 8 = ~65 KB                                |
-| Per-stage basis cache | Array of `T` basis slots (one per stage). Each slot stores the basis from the last successful solve at that stage, used for warm-starting the same stage in the next iteration. See §1.5.                                                                                                                     | T × (num_cols + num_rows) × 1–4 bytes (see below) |
-| Solve statistics      | Accumulated per-thread counters (see §1.6).                                                                                                                                                                                                                                                                   | ~64 bytes                                         |
+| Per-stage basis cache | Array of `T` basis slots (one per stage). Each slot stores the basis from the last successful solve at that stage, used for warm-starting the same stage in the next iteration. See SS1.5.                                                                                                                     | T × (num_cols + num_rows) × 1–4 bytes (see below) |
+| Solve statistics      | Accumulated per-thread counters (see SS1.6).                                                                                                                                                                                                                                                                   | ~64 bytes                                         |
 | NUMA node ID          | Which NUMA node this workspace's memory is allocated on.                                                                                                                                                                                                                                                      | scalar                                            |
 
 **Cache line padding**: Workspaces should be padded to cache line boundaries (64 bytes) to prevent false sharing between adjacent workspaces in an array.
@@ -77,7 +77,7 @@ Workspace initialization follows the first-touch NUMA allocation policy:
 1. Each thread computes its NUMA node: `numa_node = thread_id / threads_per_numa`
 2. Pin to NUMA node (NUMA bind guard)
 3. Create solver instance via `Highs_create()` or `Clp_newModel()`
-4. Configure solver with SDDP-tuned settings (see solver impl specs §4)
+4. Configure solver with SDDP-tuned settings (see solver impl specs SS4)
 5. Allocate and zero-fill all buffers — solution buffers, RHS patch buffer, and per-stage basis cache (T slots, all initially empty) — ensuring first-touch on the local NUMA node
 6. Store workspace in shared array at position `thread_id`
 
@@ -114,7 +114,7 @@ Each workspace provides a unified solve entry point that handles the full stage 
 
 Steps 1–2 are skipped for **within-stage solves** (multiple backward pass scenarios at the same stage, or multiple forward passes at the same stage within a batch). Only steps 3–7 are needed, since the structural LP and cuts are identical.
 
-When LP scaling is active, steps 1–3 and 6 are augmented with scaling transformations. See §2.5 for the mapping.
+When LP scaling is active, steps 1–3 and 6 are augmented with scaling transformations. See SS2.5 for the mapping.
 
 ### 1.5 Warm-Start Eligibility
 
@@ -184,7 +184,7 @@ The key invariant: **no locking is required on the hot path**. Stage templates a
 
 ### 1.10 Open Point — Cut Loading Cost and Two-Level Storage
 
-> **Open point — cut loading dominates stage transitions**: Under Option A (full LP rebuild per stage transition), the cut loading cost via `addRows` is significantly larger than the basis warm-start cost that §1.2 already addresses with a two-level storage design (in-memory cache + FlatBuffers checkpoint). The cut data dwarfs the basis data:
+> **Open point — cut loading dominates stage transitions**: Under Option A (full LP rebuild per stage transition), the cut loading cost via `addRows` is significantly larger than the basis warm-start cost that SS1.2 already addresses with a two-level storage design (in-memory cache + FlatBuffers checkpoint). The cut data dwarfs the basis data:
 >
 > | Data                     | Per-stage size (production)      | Frequency              |
 > | ------------------------ | -------------------------------- | ---------------------- |
@@ -291,18 +291,18 @@ When adding a cut to a scaled LP, the physical cut coefficients must be transfor
 
 β̃[j] = β_physical[j] × col_scale[j]
 
-This transformation is applied during the `addRows` step (§1.4 step 2) and reversed when extracting solution duals (§1.4 step 6).
+This transformation is applied during the `addRows` step (SS1.4 step 2) and reversed when extracting solution duals (SS1.4 step 6).
 
 **Key invariant**: The cut pool always stores cuts in physical units. Scaling is a transient transformation applied only within the solver workspace.
 
 ### 2.5 Scaling Integration with Stage Solve Workflow
 
-When scaling is active, the stage solve workflow (§1.4) is augmented at specific steps. The following table maps each scaling operation to the §1.4 step it modifies:
+When scaling is active, the stage solve workflow (SS1.4) is augmented at specific steps. The following table maps each scaling operation to the SS1.4 step it modifies:
 
-| §1.4 Step                | Scaling Augmentation                                                                                                                       |
+| SS1.4 Step                | Scaling Augmentation                                                                                                                       |
 | ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------ |
 | 1. Load stage template   | After loading, apply pre-computed scaling factors (D_r, D_c) to transform the LP into scaled space.                                        |
-| 2. Add active cuts       | Transform cut coefficients from physical to scaled space (§2.4) before passing to `addRows`.                                               |
+| 2. Add active cuts       | Transform cut coefficients from physical to scaled space (SS2.4) before passing to `addRows`.                                               |
 | 3. Patch scenario values | RHS values are patched in scaled space: multiply each bound by the corresponding row_scale[i].                                             |
 | 4–5. Set basis, Solve    | No change — the basis is scale-independent (status codes, not values), and the solver operates entirely in scaled space.                   |
 | 6. Extract solution      | After extracting raw solver output, unscale: primal ×= D_c, duals ×= D_r, reduced costs ×= D_c⁻¹. Cut coefficients use the unscaled duals. |

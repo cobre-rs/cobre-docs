@@ -33,9 +33,9 @@ The training orchestrator manages the iterative SDDP loop and coordinates the fo
 
 Each iteration follows a fixed sequence:
 
-1. **Forward pass** — Execute $M$ scenario trajectories (§4)
+1. **Forward pass** — Execute $M$ scenario trajectories (SS4)
 2. **Forward synchronization** — `allreduce` ([Communicator Trait SS2.2](../hpc/communicator-trait.md)) aggregates global statistics (lower bound, upper bound) across ranks
-3. **Backward pass** — Generate cuts from visited states (§6)
+3. **Backward pass** — Generate cuts from visited states (SS6)
 4. **Cut synchronization** — `allgatherv` ([Communicator Trait SS2.1](../hpc/communicator-trait.md)) distributes new cuts to all ranks
 5. **Convergence update** — Update bound estimates, evaluate stopping rules (see [Convergence Monitoring](./convergence-monitoring.md))
 6. **Checkpoint** — If the checkpoint interval has elapsed, persist current FCF and iteration state (see [Checkpointing](../hpc/checkpointing.md))
@@ -43,7 +43,7 @@ Each iteration follows a fixed sequence:
 
 ### 2.1a Event Emission Points
 
-Each step in the iteration lifecycle (§2.1) emits a typed event to the shared event channel when an event sender is registered. These events feed all runtime consumers: text logger, JSON-lines writer, TUI renderer, MCP progress notifications, and Parquet convergence writer. Event types are defined in `cobre-core`.
+Each step in the iteration lifecycle (SS2.1) emits a typed event to the shared event channel when an event sender is registered. These events feed all runtime consumers: text logger, JSON-lines writer, TUI renderer, MCP progress notifications, and Parquet convergence writer. Event types are defined in `cobre-core`.
 
 | Step | Lifecycle Phase         | Event Type             | Payload Summary                                                                                                               |
 | ---- | ----------------------- | ---------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
@@ -479,7 +479,7 @@ After all ranks complete their trajectories, `allreduce` aggregates:
 
 ### 4.3a Single-Rank Forward Pass Variant
 
-When `comm.size() == 1` (single-process mode, used by `cobre-python` and `cobre-mcp`, or single-rank MPI execution), all scenarios are assigned to the single rank. The `allreduce` for bound aggregation becomes a local computation -- the rank's local statistics are the global statistics. For the `LocalBackend`, this is an identity copy operation (see [Local Backend SS2.2](../hpc/backend-local.md)). No inter-rank communication occurs. Rayon thread-level parallelism remains active: scenarios are distributed across threads within the single rank using the same thread-trajectory affinity pattern (§4.3). See [Hybrid Parallelism §1](../hpc/hybrid-parallelism.md) for the single-process mode initialization sequence.
+When `comm.size() == 1` (single-process mode, used by `cobre-python` and `cobre-mcp`, or single-rank MPI execution), all scenarios are assigned to the single rank. The `allreduce` for bound aggregation becomes a local computation -- the rank's local statistics are the global statistics. For the `LocalBackend`, this is an identity copy operation (see [Local Backend SS2.2](../hpc/backend-local.md)). No inter-rank communication occurs. Rayon thread-level parallelism remains active: scenarios are distributed across threads within the single rank using the same thread-trajectory affinity pattern (SS4.3). See [Hybrid Parallelism §1](../hpc/hybrid-parallelism.md) for the single-process mode initialization sequence.
 
 ### 4.3b Lower Bound Extraction
 
@@ -601,7 +601,7 @@ patch(row = N + ℓ·N + h, value = state[N + ℓ·N + h])
 
 Both use the row index formulas from [Solver Abstraction SS2.2](./solver-abstraction.md). The patch row index for lag values matches the column index of the corresponding state variable — this symmetry is by design and simplifies the transfer logic to iterating over state indices.
 
-The state transfer patches are a subset of the full forward pass patch sequence (§4.2a, categories 1 and 2). The noise innovation patches (category 3) are separate because they depend on the scenario realization, not the incoming state.
+The state transfer patches are a subset of the full forward pass patch sequence (SS4.2a, categories 1 and 2). The noise innovation patches (category 3) are separate because they depend on the scenario realization, not the incoming state.
 
 ### 5.4 State Lifecycle
 
@@ -611,7 +611,7 @@ The state transfer patches are a subset of the full forward pass patch sequence 
 
 2. **Update** — At each stage, the state is updated in two steps:
    - **Inflow computation**: The PAR model (or external/historical lookup) produces the stage inflow $a_{h,t}$. The lag buffer is shifted: the oldest lag drops off, all remaining lags shift by one position, and $a_{h,t}$ becomes the new lag-1 value
-   - **Storage extraction**: End-of-stage storage volumes are read from the LP solution's state variable values (§5.2)
+   - **Storage extraction**: End-of-stage storage volumes are read from the LP solution's state variable values (SS5.2)
 
 3. **Extraction for backward pass** — After the forward pass, the visited states at each stage are collected across all ranks via `allgatherv`. State deduplication (merging duplicate visited states to reduce backward pass LP solves) is a potential optimization deferred to [Deferred Features](../deferred.md).
 
@@ -627,7 +627,7 @@ $$\text{allgatherv}_t : \quad \text{rank } r \text{ sends } M_r \text{ state vec
 
 where $M_r$ is the number of forward trajectories assigned to rank $r$ by the contiguous block assignment ([Work Distribution SS3.1](../hpc/work-distribution.md)), and $n_{state} = N \cdot (1 + L)$ is the state dimension ([Solver Abstraction SS2.1](./solver-abstraction.md)).
 
-> **Rationale for per-stage granularity.** A single `allgatherv` for all stages would require either (a) a stage index tag per state vector (adding overhead) or (b) a fixed stage ordering assumption that prevents future per-stage deduplication or variable-count extensions. Per-stage calls are simpler, naturally composable with per-stage backward pass processing (§6.2), and allow future per-stage count variation without protocol changes.
+> **Rationale for per-stage granularity.** A single `allgatherv` for all stages would require either (a) a stage index tag per state vector (adding overhead) or (b) a fixed stage ordering assumption that prevents future per-stage deduplication or variable-count extensions. Per-stage calls are simpler, naturally composable with per-stage backward pass processing (SS6.2), and allow future per-stage count variation without protocol changes.
 
 **Indexing: scenario-major within each stage.** Within each rank's send buffer for stage $t$, state vectors are packed in scenario order -- the state from scenario $m$ occupies positions $[m \cdot n_{state}, \; (m+1) \cdot n_{state})$. Across ranks, the `allgatherv` receive buffer is populated in rank order (rank 0's states first, then rank 1's, etc.), matching the rank-ordered receive semantics of [Communicator Trait SS2.1](../hpc/communicator-trait.md).
 
@@ -668,7 +668,7 @@ recv_buf[m * n_state .. (m + 1) * n_state]
 
 This flat indexing works because the rank-ordered receive layout and the contiguous block assignment together produce a globally contiguous scenario ordering in the receive buffer.
 
-**No alignment padding in wire format.** The wire format contains no padding bytes between state vectors. The 64-byte alignment requirement for SIMD dot products (§5.1.1) is a **local** concern: each rank copies received state vectors into locally aligned buffers before use in the backward pass. The wire format prioritizes minimal bandwidth and simple indexing over alignment.
+**No alignment padding in wire format.** The wire format contains no padding bytes between state vectors. The 64-byte alignment requirement for SIMD dot products (SS5.1.1) is a **local** concern: each rank copies received state vectors into locally aligned buffers before use in the backward pass. The wire format prioritizes minimal bandwidth and simple indexing over alignment.
 
 **Production-scale sizing.** At production scale ($M = 192$ trajectories, $n_{state} = 2{,}080 = 160 \times (1 + 12)$):
 
@@ -792,7 +792,7 @@ let cut_duals = &solution.dual[0..indexer.n_cut_relevant];
 
 ### 6.1 Overview
 
-The backward pass improves the FCF by generating new Benders cuts. It walks stages in reverse order from $T$ down to 2. The trial points $\{\hat{x}_t\}$ used here are the visited states from **all** forward scenarios across **all** MPI ranks (gathered via `allgatherv` in §5.4). At each stage, the cost-to-go from each trial point is evaluated under **all** openings from the fixed opening tree.
+The backward pass improves the FCF by generating new Benders cuts. It walks stages in reverse order from $T$ down to 2. The trial points $\{\hat{x}_t\}$ used here are the visited states from **all** forward scenarios across **all** MPI ranks (gathered via `allgatherv` in SS5.4). At each stage, the cost-to-go from each trial point is evaluated under **all** openings from the fixed opening tree.
 
 ### 6.2 Cut Generation per Stage
 
@@ -817,7 +817,7 @@ At each stage $t$, for each trial point $\hat{x}_{t-1}$ collected during the for
 
 ### 6.3 Parallel Distribution
 
-Trial states at each stage are distributed across MPI ranks. Within each rank, each thread evaluates its assigned states sequentially, reusing the warm solver basis saved from the forward pass at that stage (§4.4). The branching scenarios (openings) for each state are evaluated sequentially by the same thread, keeping the solver state hot.
+Trial states at each stage are distributed across MPI ranks. Within each rank, each thread evaluates its assigned states sequentially, reusing the warm solver basis saved from the forward pass at that stage (SS4.4). The branching scenarios (openings) for each state are evaluated sequentially by the same thread, keeping the solver state hot.
 
 **Contiguous block assignment.** The backward pass distributes trial states using the same **contiguous block assignment** as the forward pass (SS4.3). After the forward pass, visited states from all ranks are gathered via `allgatherv` (SS5.4a), producing a receive buffer ordered by rank. The $M$ total trial points are then assigned to $R$ ranks: the first $M \bmod R$ ranks each receive $\lceil M/R \rceil$ trial points, and the remaining ranks each receive $\lfloor M/R \rfloor$ trial points. Each rank $r$ receives a contiguous subset $[\text{start}_r, \text{start}_r + M_r)$ into the gathered buffer, where $M_r$ and $\text{start}_r$ are computed by the contiguous block formula in [Work Distribution SS3.1](../hpc/work-distribution.md). Because the `allgatherv` receive buffer is populated in rank order and the block assignment uses the same rank ordering, trial points are directly indexable from the receive buffer without any reindexing or redistribution. State deduplication (reducing the trial point set before distribution) is deferred to [Deferred Features](../deferred.md).
 
