@@ -59,26 +59,28 @@ Power system terminology used in Cobre, with Portuguese equivalents where they a
 
 ## SDDP Algorithm
 
-| English                      | Portuguese                    | Definition                                                                                                                                      |
-| ---------------------------- | ----------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
-| Cut (Benders cut)            | Corte (de Benders)            | A linear inequality approximating the future cost function                                                                                      |
-| Cost-to-go function          | Função de custo futuro (FCF)  | Expected cost from the current stage to the end of the horizon                                                                                  |
-| Forward pass                 | Passagem direta               | Simulation phase: solve stages sequentially under sampled scenarios                                                                             |
-| Backward pass                | Passagem reversa              | Optimization phase: generate cuts by solving from the last stage backward                                                                       |
-| Lower bound                  | Limite inferior               | Estimate from the first-stage problem (improves with more cuts)                                                                                 |
-| Upper bound                  | Limite superior               | Statistical estimate from simulation (converges to true cost)                                                                                   |
-| Optimality gap               | Gap de otimalidade            | Difference between upper and lower bounds, as a percentage                                                                                      |
-| Dual variable                | Variável dual / Multiplicador | Shadow price from LP solution; indicates marginal value of a resource                                                                           |
-| Marginal cost (CMO)          | Custo Marginal de Operação    | Shadow price of the demand constraint — the cost of one additional MWh                                                                          |
-| Cut pool                     | Conjunto de cortes            | Collection of all generated Benders cuts for a given stage                                                                                      |
-| Discount factor              | Fator de desconto             | Multiplicative factor $d \in (0,1]$ applied to future costs reflecting the time value of money; required for infinite-horizon SDDP convergence  |
-| Epigraph variable            | -                             | The auxiliary LP variable $\theta$ that lower-bounds the true cost-to-go function $V_{t+1}(x_t)$; named after the epigraph of a convex function |
-| Infinite horizon             | Horizonte infinito            | Policy graph with cyclic transitions, used for long-term planning                                                                               |
-| Opening                      | Abertura                      | A pre-generated scenario noise vector used in the backward pass                                                                                 |
-| Outer approximation          | Aproximação exterior          | The piecewise-linear lower bound on the cost-to-go function constructed from Benders cuts; the primary output of SDDP training                  |
-| Policy graph                 | Grafo de política             | Directed graph defining the stage structure and transitions in an SDDP problem                                                                  |
-| Relatively complete recourse | Recurso completo relativo     | Property that every LP subproblem is feasible for all incoming states and scenario realizations; ensured in Cobre via penalty slack variables   |
-| Trial point                  | Ponto de prova                | The state visited during a forward pass, used to construct cuts in the backward pass                                                            |
+| English                      | Portuguese                    | Definition                                                                                                                                                                                                                                                             |
+| ---------------------------- | ----------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Cut (Benders cut)            | Corte (de Benders)            | A linear inequality approximating the future cost function                                                                                                                                                                                                             |
+| Cost-to-go function          | Função de custo futuro (FCF)  | Expected cost from the current stage to the end of the horizon                                                                                                                                                                                                         |
+| Forward pass                 | Passagem direta               | Simulation phase: solve stages sequentially under sampled scenarios                                                                                                                                                                                                    |
+| Backward pass                | Passagem reversa              | Optimization phase: generate cuts by solving from the last stage backward                                                                                                                                                                                              |
+| Lower bound                  | Limite inferior               | Estimate from the first-stage problem (improves with more cuts)                                                                                                                                                                                                        |
+| Upper bound                  | Limite superior               | Statistical estimate from simulation (converges to true cost)                                                                                                                                                                                                          |
+| Optimality gap               | Gap de otimalidade            | Difference between upper and lower bounds, as a percentage                                                                                                                                                                                                             |
+| Dual variable                | Variável dual / Multiplicador | Shadow price from LP solution; indicates marginal value of a resource                                                                                                                                                                                                  |
+| Marginal cost (CMO)          | Custo Marginal de Operação    | Shadow price of the demand constraint — the cost of one additional MWh                                                                                                                                                                                                 |
+| Cut pool                     | Conjunto de cortes            | Collection of all generated Benders cuts for a given stage                                                                                                                                                                                                             |
+| Discount factor              | Fator de desconto             | Multiplicative factor $d \in (0,1]$ applied to future costs reflecting the time value of money; required for infinite-horizon SDDP convergence                                                                                                                         |
+| Epigraph variable            | -                             | The auxiliary LP variable $\theta$ that lower-bounds the true cost-to-go function $V_{t+1}(x_t)$; named after the epigraph of a convex function                                                                                                                        |
+| Infinite horizon             | Horizonte infinito            | Policy graph with cyclic transitions, used for long-term planning                                                                                                                                                                                                      |
+| Opening                      | Abertura                      | A pre-generated scenario noise vector used in the backward pass                                                                                                                                                                                                        |
+| Opening tree                 | Árvore de aberturas           | The fixed set of pre-generated noise vectors used in the backward pass; generated once before training begins and reused across all iterations. Each stage has `num_scenarios` noise vectors. See [Scenario Generation](../specs/architecture/scenario-generation.md). |
+| Outer approximation          | Aproximação exterior          | The piecewise-linear lower bound on the cost-to-go function constructed from Benders cuts; the primary output of SDDP training                                                                                                                                         |
+| Policy graph                 | Grafo de política             | Directed graph defining the stage structure and transitions in an SDDP problem                                                                                                                                                                                         |
+| Relatively complete recourse | Recurso completo relativo     | Property that every LP subproblem is feasible for all incoming states and scenario realizations; ensured in Cobre via penalty slack variables                                                                                                                          |
+| Trajectory record            | Registro de trajetória        | Data structure capturing one stage's forward pass result: primal solution, dual solution, stage cost, and end-of-stage state. Used for cut coefficient extraction in the backward pass and for simulation output                                                       |
+| Trial point                  | Ponto de prova                | The state visited during a forward pass, used to construct cuts in the backward pass                                                                                                                                                                                   |
 
 ## Risk Measures
 
@@ -105,14 +107,15 @@ Power system terminology used in Cobre, with Portuguese equivalents where they a
 
 ## Solver
 
-| English             | Portuguese             | Definition                                                                            |
-| ------------------- | ---------------------- | ------------------------------------------------------------------------------------- |
-| Basis               | Base                   | The set of basic variables defining a vertex of the LP feasible region                |
-| CLP                 | -                      | Open-source LP solver from COIN-OR, used as a reference backend in cobre-solver       |
-| HiGHS               | -                      | Open-source LP/MIP solver used as the default backend in cobre-solver                 |
-| LP (Linear Program) | Programa Linear        | An optimization problem with a linear objective and linear constraints                |
-| Simplex method      | Método Simplex         | Algorithm for solving linear programs by traversing vertices of the feasible polytope |
-| Warm-start          | Inicialização a quente | Reusing a previous solution basis to accelerate solving a modified LP                 |
+| English             | Portuguese             | Definition                                                                                                             |
+| ------------------- | ---------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| Basis               | Base                   | The set of basic variables defining a vertex of the LP feasible region                                                 |
+| CLP                 | -                      | Open-source LP solver from COIN-OR, used as a reference backend in cobre-solver                                        |
+| HiGHS               | -                      | Open-source LP/MIP solver used as the default backend in cobre-solver                                                  |
+| LP (Linear Program) | Programa Linear        | An optimization problem with a linear objective and linear constraints                                                 |
+| RowBatch            | -                      | A batch of LP rows (constraints) in CSR sparse format for bulk addition to a solver instance via the `add_rows` method |
+| Simplex method      | Método Simplex         | Algorithm for solving linear programs by traversing vertices of the feasible polytope                                  |
+| Warm-start          | Inicialização a quente | Reusing a previous solution basis to accelerate solving a modified LP                                                  |
 
 ## Data Formats
 
@@ -126,10 +129,18 @@ Power system terminology used in Cobre, with Portuguese equivalents where they a
 
 ## HPC (High-Performance Computing)
 
-| English         | Portuguese | Definition                                                                                                   |
-| --------------- | ---------- | ------------------------------------------------------------------------------------------------------------ |
-| MPI             | -          | Message Passing Interface — standard for distributed-memory parallel computing                               |
-| NUMA            | -          | Non-Uniform Memory Access — hardware topology where memory access time depends on processor-memory proximity |
-| OpenMP          | -          | API for shared-memory parallel programming via compiler directives                                           |
-| Rank            | -          | An MPI process; each rank has its own address space                                                          |
-| Thread affinity | -          | Binding of threads to specific CPU cores to prevent migration and ensure NUMA-local memory access            |
+| English         | Portuguese | Definition                                                                                                                                                                   |
+| --------------- | ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| MPI             | -          | Message Passing Interface — standard for distributed-memory parallel computing                                                                                               |
+| NUMA            | -          | Non-Uniform Memory Access — hardware topology where memory access time depends on processor-memory proximity                                                                 |
+| OpenMP          | -          | API for shared-memory parallel programming via compiler directives; **Cobre uses Rayon (Rust data-parallelism library) instead of OpenMP for intra-node thread parallelism** |
+| Rayon           | -          | Rust data-parallelism library used for intra-node thread parallelism in Cobre; provides work-stealing parallel iterators as a safe, idiomatic alternative to OpenMP          |
+| Rank            | -          | An MPI process; each rank has its own address space                                                                                                                          |
+| Thread affinity | -          | Binding of threads to specific CPU cores to prevent migration and ensure NUMA-local memory access                                                                            |
+
+## Cobre Ecosystem
+
+| English          | Portuguese | Definition                                                                                                                                     |
+| ---------------- | ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| Solver vertical  | -          | A complete solver algorithm stack built on the Cobre ecosystem (e.g., SDDP for hydrothermal dispatch, OPF for power flow)                      |
+| Ecosystem vision | -          | The design goal of Cobre as a generic power system ecosystem with multiple solver verticals sharing a common data model and HPC infrastructure |

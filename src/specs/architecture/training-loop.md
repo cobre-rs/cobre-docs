@@ -456,7 +456,7 @@ struct TrajectoryRecord {
 | Field        | Type       | Description                                                                                                                                                                                                      |
 | ------------ | ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `primal`     | `Vec<f64>` | Full primal solution vector for the stage LP. Length equals the stage's column count from `StageTemplate` ([Solver Abstraction SS2.1](./solver-abstraction.md)). Includes state variables, controls, and slacks. |
-| `dual`       | `Vec<f64>` | Full dual solution vector (constraint shadow prices). Length equals the stage's row count, including both static constraints and active FCF dynamic constraint rows.                                                        |
+| `dual`       | `Vec<f64>` | Full dual solution vector (constraint shadow prices). Length equals the stage's row count, including both static constraints and active FCF dynamic constraint rows.                                             |
 | `stage_cost` | `f64`      | LP objective value at this stage, representing the immediate stage cost contribution (excluding the future cost variable $\theta$).                                                                              |
 | `state`      | `Vec<f64>` | End-of-stage state vector: storage volumes followed by AR inflow lags, in the LP column prefix layout from SS5.1. Length equals $n_{state} = N \cdot (1 + L)$.                                                   |
 
@@ -783,7 +783,7 @@ let h2_lag1 = solution.primal[indexer.inflow_lags.start + 1 * indexer.hydro_coun
 
 // Cut-relevant duals: dual[0..13] — includes water balance, lag fixing, FPHA
 let cut_duals = &solution.dual[0..indexer.n_cut_relevant];
-// The first 9 duals map directly to cut coefficients for state variables 0..8
+// The first 9 duals are the cut coefficients (state variables appear as RHS with coefficient +1) for state variables 0..8
 // Duals 9..12 are FPHA plane duals contributing to storage coefficients via
 // the precomputed mapping (see Cut Management Implementation SS5)
 ```
@@ -863,8 +863,8 @@ where:
 
 The cut coefficients are derived from the dual variables of the backward LP's state-linking constraints:
 
-- **Storage**: The water balance constraint links incoming storage $v_{h,t-1}$ to outgoing storage. Its dual $\pi^v_h$ is the cut coefficient, representing the marginal value of an additional unit of storage at the previous stage.
-- **AR inflow lags**: The lag fixing constraints bind each lag variable to its incoming value. Their duals $\pi^{lag}_{h,\ell}$ are the cut coefficients, representing the marginal value of inflow history.
+- **Storage**: The water balance constraint links incoming storage $v_{h,t-1}$ to outgoing storage. Its dual $\pi^v_h$ is the cut coefficient, representing the marginal value of an additional unit of storage at the previous stage (the incoming storage appears on the RHS with coefficient +1).
+- **AR inflow lags**: The lag fixing constraints bind each lag variable to its incoming value. Their duals $\pi^{lag}_{h,\ell}$ are the cut coefficients, representing the marginal value of inflow history (the incoming lag appears on the RHS of each fixing constraint with coefficient +1; the AR autoregressive coefficients $\psi_\ell$ appear in the dynamics constraint on the LP variable, not on the incoming state).
 - **FPHA duals**: For hydros using FPHA, the hyperplane constraint duals contribute additional terms to $\pi^v_h$ because the FPHA planes depend on storage (head). See [Cut Management SS2](../math/cut-management.md).
 - **Generic constraint duals**: When generic constraints involve state variables, their duals also contribute to cut coefficients. The mapping from generic constraint duals to state variable coefficients is static (determined at input loading time) and should be precomputed once. See [Cut Management Implementation](./cut-management-impl.md).
 

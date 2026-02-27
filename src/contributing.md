@@ -45,7 +45,7 @@ cobre/
 │   ├── cobre-solver/       # LP solver abstraction + HiGHS bindings
 │   ├── cobre-sddp/         # SDDP algorithm
 │   └── cobre-cli/          # Command-line interface
-├── specs/                   # Specification documents
+├── docs/                    # Usage guides (detailed specs in cobre-docs repository)
 ├── examples/                # Example studies and configurations
 └── assets/                  # Logos, diagrams
 ```
@@ -190,8 +190,7 @@ If you're a **power systems engineer** new to Rust:
 
 If you're a **Rust developer** new to power systems:
 
-- The `specs/` directory contains background on the algorithms and domain
-- The `cobre-docs` repository has algorithm documentation
+- The `cobre-docs` repository contains the full specification corpus covering algorithms, data model, and HPC architecture
 - Ask questions in [Discussions](https://github.com/cobre-rs/cobre/discussions) — no question is too basic
 
 If you're a **researcher** with algorithmic improvements:

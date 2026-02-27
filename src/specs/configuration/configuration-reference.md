@@ -8,10 +8,10 @@ For the file layout and `config.json` schema overview, see [Input Directory Stru
 
 ## 1. Configuration File Split
 
-| File          | Scope                                                                                                   | Where Defined                                                              |
-| ------------- | ------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
-| `config.json` | Solver behavior: modeling options, training parameters, simulation, HPC, I/O                            | [Input Directory Structure §2](../data-model/input-directory-structure.md) |
-| `stages.json` | Temporal structure: stages, blocks, block_mode, policy graph, risk measure, scenario source, n_openings | [Input Scenarios](../data-model/input-scenarios.md)                        |
+| File          | Scope                                                                                                                | Where Defined                                                              |
+| ------------- | -------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
+| `config.json` | Solver behavior: modeling options, training parameters, simulation, HPC, I/O                                         | [Input Directory Structure §2](../data-model/input-directory-structure.md) |
+| `stages.json` | Temporal structure: stages, blocks, block_mode, policy graph, risk measure, scenario source, per-stage num_scenarios | [Input Scenarios](../data-model/input-scenarios.md)                        |
 
 **Design rationale**: Settings that are inherently per-stage (block mode, risk measure, scenario source) live in `stages.json` alongside the stage definitions. Settings that are global solver parameters (training iteration count, cut selection, inflow non-negativity method, upper bound evaluation) live in `config.json`.
 
@@ -249,13 +249,13 @@ The `scenario_source` field configures how inflow scenarios are selected during 
 
 ### 6.4 Opening Tree Size
 
-| Option       | Location    | Default | Effect                                   | Reference                                                          |
-| ------------ | ----------- | ------- | ---------------------------------------- | ------------------------------------------------------------------ |
-| `n_openings` | stages.json | —       | Number of backward pass noise branchings | [Scenario Generation §2.3](../architecture/scenario-generation.md) |
+| Option          | Location                | Default | Effect                                               | Reference                                                          |
+| --------------- | ----------------------- | ------- | ---------------------------------------------------- | ------------------------------------------------------------------ |
+| `num_scenarios` | stages.json → stages[i] | —       | Number of backward pass noise branchings for stage i | [Scenario Generation §2.3](../architecture/scenario-generation.md) |
 
-The opening tree is generated once before training and remains fixed throughout. Larger values improve cut quality but increase backward pass cost linearly.
+The opening tree is generated once before training and remains fixed throughout. Larger values improve cut quality but increase backward pass cost linearly. Each stage can have a different branching factor — this is required for complete tree mode where near-term stages use `num_scenarios: 1` and the final stage uses the full branching count.
 
-> **Deferred**: Monte Carlo backward sampling — sample $n < n_{\text{openings}}$ noise terms per backward step. See [Deferred Features §C.14](../deferred.md).
+> **Deferred**: Monte Carlo backward sampling — sample $n < \text{num\_scenarios}$ noise terms per backward step. See [Deferred Features §C.14](../deferred.md).
 
 ### 6.5 Production Function
 
@@ -331,7 +331,6 @@ Options that control simulation output and streaming behavior. All fields are op
     ]
   },
   "scenario_source": { "sampling_scheme": "in_sample", "seed": 42 },
-  "n_openings": 20,
   "stages": [
     {
       "id": 0,
@@ -340,6 +339,7 @@ Options that control simulation output and streaming behavior. All fields are op
       "season_id": 0,
       "block_mode": "chronological",
       "risk_measure": { "cvar": { "alpha": 0.95, "lambda": 0.5 } },
+      "num_scenarios": 20,
       "blocks": [
         { "id": 0, "name": "LEVE", "hours": 168 },
         { "id": 1, "name": "MEDIA", "hours": 336 },
@@ -354,6 +354,7 @@ Options that control simulation output and streaming behavior. All fields are op
       "season_id": 1,
       "block_mode": "parallel",
       "risk_measure": "expectation",
+      "num_scenarios": 20,
       "blocks": [{ "id": 0, "name": "UNICO", "hours": 696 }],
       "state_variables": { "storage": true, "inflow_lags": true }
     }
@@ -361,7 +362,7 @@ Options that control simulation output and streaming behavior. All fields are op
 }
 ```
 
-> **Note**: `block_mode`, `risk_measure`, and `state_variables` vary by stage. `scenario_source` and `n_openings` are top-level in `stages.json` (global for the run). `policy_graph` defines the horizon mode and discount rate. See [Input Scenarios](../data-model/input-scenarios.md) for the full schema.
+> **Note**: `block_mode`, `risk_measure`, `num_scenarios`, and `state_variables` vary by stage. `scenario_source` is top-level in `stages.json` (global for the run). `policy_graph` defines the horizon mode and discount rate. See [Input Scenarios](../data-model/input-scenarios.md) for the full schema.
 
 ## 8. Formulation-to-Configuration Mapping
 

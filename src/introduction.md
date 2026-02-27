@@ -18,7 +18,7 @@ The name comes from the Portuguese word for **copper** — the metal that conduc
 
 **Production performance.** Rust gives us C/C++-level speed with memory safety guarantees. For software that dispatches national power grids, both matter.
 
-**Interoperability.** Standard data formats (JSON, Parquet, Arrow) for input and output. Planned support for NEWAVE (CEPEL) legacy file formats to enable migration from existing tools.
+**Interoperability.** Standard data formats (JSON, Parquet, Arrow) for input and output. Planned support for NEWAVE/DECOMP legacy file formats to enable migration from existing tools.
 
 **Modularity.** Pick the crates you need. Use `cobre-core` for data modeling without pulling in solver dependencies. Use `cobre-sddp` without caring about power flow.
 

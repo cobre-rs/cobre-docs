@@ -26,6 +26,8 @@ The cut coefficients are dense — every state variable (all storage volumes and
 
 After solving the stage $t$ subproblem for trial state $\hat{x}_{t-1}$ and scenario $\omega_t$, the cut coefficients are derived from the LP dual variables:
 
+The general formula follows from the LP envelope theorem: for state variable $\hat{x}_j$ that appears as the RHS of constraint $i$ with coefficient $c_{ij}$, its contribution to the cut gradient is $\pi_i \cdot c_{ij}$. When $c_{ij} = 1$ (state variable appears directly as the RHS), the cut coefficient equals the dual. When $c_{ij} \neq 1$, a scaling factor is required.
+
 | Constraint                            | Dual Variable        | Cut Coefficient                             | Units     |
 | ------------------------------------- | -------------------- | ------------------------------------------- | --------- |
 | Water balance (hydro $h$)             | $\pi^{wb}_h$         | $\pi^v_{t,h} = \pi^{wb}_h$                  | \$/hm³    |
@@ -39,7 +41,7 @@ $$
 
 where $Q_t(\hat{x}_{t-1}, \omega_t)$ is the optimal objective value of the stage $t$ subproblem.
 
-**Sign convention**: For minimization LPs with $\leq$ constraints, $\pi \geq 0$. For equality constraints (water balance), the sign depends on constraint orientation. The incoming state $\hat{v}_h$ appears on the RHS with coefficient $+1$, so no scaling factor is needed. See [Notation Conventions §5.4](../overview/notation-conventions.md) for the complete derivation.
+**Sign convention and coefficient factors**: By the LP envelope theorem, $\partial Q_t / \partial \hat{x}_j = \sum_i \pi_i \cdot c_{ij}$ where $c_{ij}$ is the coefficient of $\hat{x}_j$ in constraint $i$'s RHS. For the **water balance constraint**, the incoming storage $\hat{v}_h$ appears on the RHS with coefficient $+1$ (the constraint is $v_h^{end} = \hat{v}_h + \text{flows}$), so the cut coefficient equals the water balance dual directly. For the **AR lag fixing constraints**, the incoming lag $\hat{a}_{h,\ell}$ appears on the RHS with coefficient $+1$ (the constraint is $a_{h,\ell} = \hat{a}_{h,\ell}$), so no scaling is needed here either. Note that the AR autoregressive coefficients $\psi_\ell$ appear in the AR dynamics constraint (see [LP Formulation §5](lp-formulation.md)) multiplying the LP variable $a_{h,\ell}$, not the incoming state $\hat{a}_{h,\ell}$ — these are separate constraints. For the FPHA and generic constraint cases below, $c_{ij} \neq 1$, requiring the scaling factors described in the notes. See [Notation Conventions §5.4](../overview/notation-conventions.md) for the complete derivation.
 
 > **Note on FPHA contribution**: For hydros using the FPHA production model, the storage cut coefficient has an additional term from the FPHA hyperplane duals. The FPHA constraints involve $v^{avg}_h = (\hat{v}_h + v_h)/2$, so the incoming storage $\hat{v}_h$ contributes with a factor of $\frac{1}{2}$:
 >
