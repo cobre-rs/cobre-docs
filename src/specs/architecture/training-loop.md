@@ -223,7 +223,7 @@ pub enum TrainingEvent {
         thermals: u32,
         /// Number of MPI ranks participating in training.
         ranks: u32,
-        /// Number of threads per rank (OpenMP thread count per [Memory Architecture §3](../hpc/memory-architecture.md)).
+        /// Number of threads per rank (rayon thread pool size per [Hybrid Parallelism §2](../hpc/hybrid-parallelism.md)).
         threads_per_rank: u32,
         /// Wall-clock time at training start (run-level metadata, not a per-event timestamp).
         timestamp: String,
@@ -435,7 +435,7 @@ The `TrajectoryRecord` struct captures the complete LP solution for one scenario
 ///
 /// Memory layout: records for a full trial are stored contiguously in a flat
 /// buffer indexed by `scenario * n_stages + stage`, giving cache-friendly
-/// sequential access during the backward pass sweep.
+/// strided access during the backward pass sweep (stride = n_stages).
 struct TrajectoryRecord {
     /// Full primal solution vector for this stage's LP.
     /// Length equals the stage's column count from `StageTemplate`.
@@ -460,13 +460,13 @@ struct TrajectoryRecord {
 | `stage_cost` | `f64`      | LP objective value at this stage, representing the immediate stage cost contribution (excluding the future cost variable $\theta$).                                                                              |
 | `state`      | `Vec<f64>` | End-of-stage state vector: storage volumes followed by AR inflow lags, in the LP column prefix layout from SS5.1. Length equals $n_{state} = N \cdot (1 + L)$.                                                   |
 
-**Memory layout.** During a training trial, one `TrajectoryRecord` is created per (scenario, stage) pair. The full trial's records are stored in a flat `Vec<TrajectoryRecord>` of length $M \times T$ (where $M$ is the number of forward scenarios on this rank and $T$ is the number of stages), indexed as `records[i * n_stages + t]` for scenario $i$ at stage $t$. The `[scenario][stage]` indexing order gives sequential access during the backward pass, which iterates stage-by-stage across all scenarios simultaneously: for a given stage $t$, the backward pass reads `records[0 * T + t], records[1 * T + t], \ldots, records[(M-1) * T + t]`, which are spaced $T$ elements apart. This stride is small enough (each `TrajectoryRecord` is on the order of kilobytes) that hardware prefetchers handle the access pattern efficiently.
+**Memory layout.** During a training trial, one `TrajectoryRecord` is created per (scenario, stage) pair. The full trial's records are stored in a flat `Vec<TrajectoryRecord>` of length $M \times T$ (where $M$ is the number of forward scenarios on this rank and $T$ is the number of stages), indexed as `records[i * n_stages + t]` for scenario $i$ at stage $t$. The `[scenario][stage]` indexing order gives stride-$T$ access during the backward pass, which iterates stage-by-stage across all scenarios simultaneously: for a given stage $t$, the backward pass reads `records[0 * T + t], records[1 * T + t], \ldots, records[(M-1) * T + t]`, which are spaced $T$ elements apart. This stride is small enough (each `TrajectoryRecord` is on the order of kilobytes) that hardware prefetchers handle the access pattern efficiently.
 
 **Dual-use design note.** The `TrajectoryRecord` struct serves as both the training forward pass record and the simulation output record. Training uses `state` (for patching the next stage's incoming state and for cut gradient computation in the backward pass) and `stage_cost` (for the upper bound estimate and future cost function update). Simulation additionally reads `primal` and `dual` for per-entity result extraction and Parquet output writing ([Output Schemas SS5](../data-model/output-schemas.md)). No separate simulation record type is needed — the simulation forward pass (see [Simulation Architecture SS3.2](./simulation-architecture.md)) populates the same `TrajectoryRecord` and streams it to the output writer. The `primal` and `dual` fields are allocated but unused during training; this is an acceptable memory trade-off because the training forward pass processes only $M$ scenarios per iteration (typically 1--20), so the overhead is bounded by $M \times T \times (n_{cols} + n_{rows}) \times 8$ bytes, which is negligible relative to the cut pool and LP workspace memory.
 
 ### 4.3 Parallel Distribution
 
-Scenarios are distributed across MPI ranks in contiguous blocks. Within each rank, scenarios are parallelized across OpenMP threads with **thread-trajectory affinity**: each thread owns one or more complete trajectories and solves all stages sequentially for its assigned trajectories. This preserves cache locality — the solver basis, scenario data, and LP coefficients remain warm in the thread's cache lines across stages.
+Scenarios are distributed across MPI ranks in contiguous blocks. Within each rank, scenarios are parallelized across rayon threads with **thread-trajectory affinity**: each thread owns one or more complete trajectories and solves all stages sequentially for its assigned trajectories. This preserves cache locality — the solver basis, scenario data, and LP coefficients remain warm in the thread's cache lines across stages.
 
 The training loop is generic over `C: Communicator` (see [Communicator Trait SS3](../hpc/communicator-trait.md) for the function signature pattern), enabling compile-time specialization to any communication backend.
 
@@ -479,7 +479,7 @@ After all ranks complete their trajectories, `allreduce` aggregates:
 
 ### 4.3a Single-Rank Forward Pass Variant
 
-When `comm.size() == 1` (single-process mode, used by `cobre-python` and `cobre-mcp`, or single-rank MPI execution), all scenarios are assigned to the single rank. The `allreduce` for bound aggregation becomes a local computation -- the rank's local statistics are the global statistics. For the `LocalBackend`, this is an identity copy operation (see [Local Backend SS2.2](../hpc/backend-local.md)). No inter-rank communication occurs. OpenMP thread-level parallelism remains active: scenarios are distributed across threads within the single rank using the same thread-trajectory affinity pattern (§4.3). See [Hybrid Parallelism §1](../hpc/hybrid-parallelism.md) for the single-process mode initialization sequence.
+When `comm.size() == 1` (single-process mode, used by `cobre-python` and `cobre-mcp`, or single-rank MPI execution), all scenarios are assigned to the single rank. The `allreduce` for bound aggregation becomes a local computation -- the rank's local statistics are the global statistics. For the `LocalBackend`, this is an identity copy operation (see [Local Backend SS2.2](../hpc/backend-local.md)). No inter-rank communication occurs. Rayon thread-level parallelism remains active: scenarios are distributed across threads within the single rank using the same thread-trajectory affinity pattern (§4.3). See [Hybrid Parallelism §1](../hpc/hybrid-parallelism.md) for the single-process mode initialization sequence.
 
 ### 4.3b Lower Bound Extraction
 
@@ -827,7 +827,7 @@ After processing each stage, `allgatherv` collects all new cuts from all ranks a
 
 ### 6.3a Single-Rank Backward Pass Variant
 
-When `comm.size() == 1`, the `allgatherv` for cut synchronization becomes an identity operation -- all cuts generated by the single rank are immediately available locally (for the `LocalBackend`, this is a memcpy; see [Local Backend SS2.2](../hpc/backend-local.md)). The per-stage synchronization barrier reduces to an OpenMP barrier only (ensuring all threads complete cut generation at stage $t$ before proceeding to stage $t-1$). All trial states are local, so no state broadcasting is needed. The backward pass logic is otherwise identical to the multi-rank case.
+When `comm.size() == 1`, the `allgatherv` for cut synchronization becomes an identity operation -- all cuts generated by the single rank are immediately available locally (for the `LocalBackend`, this is a memcpy; see [Local Backend SS2.2](../hpc/backend-local.md)). The per-stage synchronization barrier reduces to a rayon join barrier only (ensuring all threads complete cut generation at stage $t$ before proceeding to stage $t-1$). All trial states are local, so no state broadcasting is needed. The backward pass logic is otherwise identical to the multi-rank case.
 
 ### 6.4 LP Rebuild Considerations
 
@@ -893,7 +893,7 @@ The active count is used by cut selection strategies to prune dominated or inact
 - [Cut Management Implementation](./cut-management-impl.md) — FCF structure, cut selection strategies, serialization, and cross-rank cut synchronization
 - [Stopping Rules](../math/stopping-rules.md) — Convergence criteria and termination conditions
 - [Risk Measures](../math/risk-measures.md) — CVaR mathematical formulation and cut weight computation
-- [Work Distribution](../hpc/work-distribution.md) — Detailed communication+OpenMP parallelism patterns for forward and backward pass distribution
+- [Work Distribution](../hpc/work-distribution.md) — Detailed communication+rayon parallelism patterns for forward and backward pass distribution
 - [Convergence Monitoring](./convergence-monitoring.md) — Convergence criteria, bound computation, and stopping rules applied within this loop
 - [Input Loading Pipeline](./input-loading-pipeline.md) — How case data and warm-start policy cuts are loaded before training begins
 - [Input Constraints](../data-model/input-constraints.md) — Initial conditions (SS1) that provide the starting state $x_0$

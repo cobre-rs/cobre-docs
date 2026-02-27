@@ -189,7 +189,10 @@ Certain rules apply only when specific configuration modes or optional files are
 
 ##### Warm-Start (`policy.mode = "warm_start"`)
 
-- State dictionary exists and dimension matches current system (entity count, state variable mapping)
+For the four structural compatibility checks (hydro count, max PAR order per hydro, production method per hydro, PAR model parameters per hydro), see [Input Loading Pipeline SS7.1](./input-loading-pipeline.md). All four checks produce `LoadError::PolicyIncompatible`.
+
+Additional policy-graph checks:
+
 - Cut stage IDs exist in current policy graph
 - Entity IDs in state dictionary exist in current registries
 - At least one stage has stored cuts
@@ -245,7 +248,7 @@ After all layers complete, the validation context is evaluated:
 | `CycleDetected`         | Error    | Invalid graph structure                    | Hydro cascade forms a cycle                                                                                                                           |
 | `DimensionMismatch`     | Error    | Cross-file coverage gap                    | Missing inflow params for hydro                                                                                                                       |
 | `BusinessRuleViolation` | Error    | Semantic rule violated                     | `fpha_turbined_cost ≤ spillage_cost` for a hydro                                                                                                      |
-| `WarmStartIncompatible` | Error    | Policy incompatible with current system    | State dimension mismatch                                                                                                                              |
+| `WarmStartIncompatible` | Error    | Policy incompatible with current system    | Hydro count, PAR order, production method, or PAR parameter mismatch (see [Input Loading Pipeline SS7.1](./input-loading-pipeline.md))                |
 | `ResumeIncompatible`    | Error    | Resume state incompatible with current run | Config hash mismatch or missing partitioned files                                                                                                     |
 | `NotImplemented`        | Error    | Feature used but not yet implemented       | Thermal with `gnl_config` present                                                                                                                     |
 | `UnusedEntity`          | Warning  | Entity defined but appears inactive        | Thermal with `max_generation = 0` everywhere                                                                                                          |
