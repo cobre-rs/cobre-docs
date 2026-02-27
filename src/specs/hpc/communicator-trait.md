@@ -367,7 +367,7 @@ pub trait SharedMemoryProvider: Send + Sync {
     ///
     /// The returned communicator is used for coordinating shared memory
     /// operations (determining leader/follower roles, distributing generation
-    /// work within a node). This corresponds to `comm.split_shared_memory()`
+    /// work within a node). This corresponds to `comm.split_shared()`
     /// in the ferrompi API ([Hybrid Parallelism §6 Step 3]).
     ///
     /// The returned communicator uses dynamic dispatch (`Box<dyn Communicator>`)
@@ -509,7 +509,7 @@ The leader/follower allocation pattern is central to shared memory usage. It mir
 | **Training**        | Reads via `as_slice()` (zero-copy)       | Reads via `as_slice()` (zero-copy into leader's memory)   |
 | **Deallocation**    | Drop releases the backing memory         | Drop releases the handle (memory freed when leader drops) |
 
-**Leader determination:** The leader is the rank with local rank 0 in the intra-node communicator returned by `split_local()`. This is consistent with the `split_shared_memory()` convention in ferrompi ([Hybrid Parallelism §6 Step 3](./hybrid-parallelism.md)).
+**Leader determination:** The leader is the rank with local rank 0 in the intra-node communicator returned by `split_local()`. This is consistent with the `split_shared()` convention in ferrompi ([Hybrid Parallelism §6 Step 3](./hybrid-parallelism.md)).
 
 **Distributed population:** For large shared regions (e.g., the opening tree), population work can be distributed across all ranks on the node, not just the leader. Each rank computes its assigned portion and writes directly to the shared region at the correct offset. The generation protocol from [Shared Memory Aggregation §1.2](./shared-memory-aggregation.md):
 
@@ -650,7 +650,7 @@ For the `HeapFallback`, `create_shared_region` delegates to standard heap alloca
 - [Hybrid Parallelism §1.2](./hybrid-parallelism.md) -- ferrompi capabilities table: `Communicator` is `Send + Sync`, `SharedWindow<T>`, collectives API signatures
 - [Hybrid Parallelism §1.3](./hybrid-parallelism.md) -- Shared memory layout: scenario storage and cut pool regions shared within a node
 - [Hybrid Parallelism §1.0a](./hybrid-parallelism.md) -- Single-process mode: `SharedWindow<T>` not used, shared data allocated as regular heap memory
-- [Hybrid Parallelism §6 Step 3](./hybrid-parallelism.md) -- Shared memory communicator creation via `split_shared_memory()`
+- [Hybrid Parallelism §6 Step 3](./hybrid-parallelism.md) -- Shared memory communicator creation via `split_shared()`
 - [Memory Architecture §2.2](./memory-architecture.md) -- SharedWindow savings: per-node memory reduction from sharing opening tree and case data
 - [Work Distribution §3.2](./work-distribution.md) -- MPI collective parameters: `sendcount`, `recvcounts`, `displs` computation from contiguous block assignment
 - [Design Principles §5](../overview/design-principles.md) -- Rust implementation strategy, zero-cost abstractions, `unsafe` FFI boundary for MPI (ferrompi)

@@ -102,7 +102,7 @@ Modern HPC nodes have multiple NUMA domains. Memory access latency varies signif
 
 The initialization of per-thread resources follows the sequence documented in [Solver Workspaces §1.3](../architecture/solver-workspaces.md):
 
-1. Main thread determines NUMA topology via `ferrompi::slurm` helpers (see [Hybrid Parallelism §1.2](./hybrid-parallelism.md))
+1. Main thread determines NUMA topology via `cobre_comm::slurm` helpers (see [Hybrid Parallelism §1.2](./hybrid-parallelism.md))
 2. OpenMP parallel region is entered
 3. Each thread creates its solver instance (first-touch allocates solver internals on local NUMA)
 4. Each thread initializes its per-stage basis cache, solution buffers, and scratch arrays

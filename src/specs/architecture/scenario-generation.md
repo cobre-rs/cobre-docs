@@ -165,87 +165,91 @@ Total input: **16 bytes**.
 
 ### 2.3 Opening Tree
 
-The backward pass in SDDP evaluates an aggregated cut by solving **all** $N_{\text{openings}}$ branchings at each stage. These branchings must be identical across all iterations — the backward pass always "sees the same tree." The opening tree is therefore **generated once before training begins** and remains fixed throughout.
+The backward pass in SDDP evaluates an aggregated cut by solving **all** $N_t$ branchings at each stage $t$. These branchings must be identical across all iterations — the backward pass always "sees the same tree." The opening tree is therefore **generated once before training begins** and remains fixed throughout.
+
+The per-stage branching factor $N_t$ comes from `StageSamplingConfig.num_scenarios` ([Internal Structures SS12.5](../data-model/internal-structures.md)). Uniform branching ($N_t = N$ for all $t$) is the common case in standard SDDP, but per-stage variable branching is supported — this is required for complete tree mode (SS7.2), where the DECOMP special case uses $N_t = 1$ for $t < T$ and $N_T = K$.
 
 **Tree generation:**
 
-1. Before the first SDDP iteration, generate $N_{\text{openings}}$ noise vectors per stage, producing a fixed opening tree of shape $(T \times N_{\text{openings}} \times N_{\text{entities}})$
+1. Before the first SDDP iteration, generate $N_t$ noise vectors per stage $t$, producing a fixed opening tree with total element count $\sum_t N_t \times \text{dim}$
 2. Each noise vector is generated from the base seed using deterministic seed derivation per (opening_index, stage) — ensuring reproducibility across restarts and MPI configurations (see §2.2)
 3. Correlation is applied per the active profile for each stage (see §2.5)
 
-**Backward pass usage:** At each stage $t$, the backward pass iterates over **all** $N_{\text{openings}}$ noise vectors, solving one subproblem per opening, then aggregates the resulting cuts. Because the tree is fixed, every iteration produces cuts that refine the same set of future cost scenarios.
+**Backward pass usage:** At each stage $t$, the backward pass iterates over **all** $N_t$ noise vectors, solving one subproblem per opening, then aggregates the resulting cuts. Because the tree is fixed, every iteration produces cuts that refine the same set of future cost scenarios. Note that $N_t$ may vary per stage.
 
-**Forward pass usage (default):** When the `InSample` sampling scheme is active (see §3.2), the forward pass samples a random index $j \in \{0, \ldots, N_{\text{openings}} - 1\}$ at each stage and uses the corresponding noise vector $\eta_{t,j}$ to generate the stage realization. The sampling is a single random integer per stage — no noise generation occurs during the forward pass.
+**Forward pass usage (InSample only):** When the `InSample` sampling scheme is active (see SS3.2), the forward pass samples a random index $j \in \{0, \ldots, N_t - 1\}$ at each stage and uses the corresponding noise vector $\eta_{t,j}$ to generate the stage realization. The sampling is a single random integer per stage — no noise generation occurs during the forward pass. Other sampling schemes (`External`, `Historical`) use entirely separate data sources and do **not** access the opening tree; the forward pass noise path is governed by the `SamplingScheme` abstraction (SS3), not by `OpeningTree` directly.
 
-**Memory layout:** The opening tree uses **stage-major ordering** for backward pass locality. At each backward pass stage, all $N_{\text{openings}}$ noise vectors are accessed sequentially; stage-major layout places these vectors contiguously in memory, enabling linear prefetch and avoiding large strides across openings:
+**Memory layout:** The opening tree uses **stage-major ordering** for backward pass locality. At each backward pass stage, all $N_t$ noise vectors are accessed sequentially; stage-major layout places these vectors contiguously in memory, enabling linear prefetch and avoiding large strides across openings:
 
 ```
-[stage_0_opening_0_entity_0, ..., stage_0_opening_0_entity_E,
- stage_0_opening_1_entity_0, ..., stage_0_opening_1_entity_E,
+[stage_0_opening_0_entity_0, ..., stage_0_opening_0_entity_E,   ← N_0 openings
+ stage_0_opening_1_entity_0, ..., stage_0_opening_1_entity_E,      for stage 0
  ...
- stage_0_opening_N_entity_0, ..., stage_0_opening_N_entity_E,
- stage_1_opening_0_entity_0, ...,
- ...
- stage_T_opening_N_entity_0, ..., stage_T_opening_N_entity_E]
+ stage_1_opening_0_entity_0, ...,                                ← N_1 openings
+ ...                                                                for stage 1
+ stage_T_opening_0_entity_0, ..., stage_T_opening_Nt_entity_E]  ← N_T openings
 ```
 
-**Stride formula:** The noise vector for `(stage, opening_idx)` occupies the contiguous slice:
+**Offset-based access:** The noise vector for `(stage, opening_idx)` occupies the contiguous slice:
 
 ```
-data[stage * n_openings * dim + opening_idx * dim .. + dim]
+data[stage_offsets[stage] + opening_idx * dim .. + dim]
 ```
 
-where `dim` = $N_{\text{entities}}$ (number of random variables per stage).
+where `dim` = $N_{\text{entities}}$ (number of random variables per stage) and `stage_offsets[t]` = $\sum_{s=0}^{t-1} N_s \times \text{dim}$ is the cumulative offset for stage $t$. For uniform branching, this reduces to `stage * n_openings * dim + opening_idx * dim`.
 
-Total size: $T \times N_{\text{openings}} \times N_{\text{entities}} \times 8$ bytes. For typical production cases (120 stages $\times$ 200 openings $\times$ 160 hydros = ~30 MB), the entire tree fits in L3 cache. For the reference configuration in [Memory Architecture §2.1](../hpc/memory-architecture.md) (60 stages $\times$ 10 openings $\times$ 160 entities = ~0.8 MB), the tree fits in L2 cache.
+Total size: $\sum_t N_t \times \text{dim} \times 8$ bytes. For typical production cases with uniform branching (120 stages $\times$ 200 openings $\times$ 160 hydros = ~30 MB), the entire tree fits in L3 cache. For the reference configuration in [Memory Architecture §2.1](../hpc/memory-architecture.md) (60 stages $\times$ 10 openings $\times$ 160 entities = ~0.8 MB), the tree fits in L2 cache.
 
 ### 2.3a OpeningTree Rust Type
 
-The `OpeningTree` struct is the concrete Rust type that holds the pre-generated noise realizations described in SS2.3. It is defined in **cobre-stochastic** and consumed read-only by **cobre-sddp** during the training loop's backward pass ([Training Loop SS6.2](./training-loop.md)) and forward pass in-sample selection ([Training Loop SS4](./training-loop.md)).
+The `OpeningTree` struct is the concrete Rust type that holds the pre-generated noise realizations described in SS2.3. It is defined in **cobre-stochastic** and consumed read-only by **cobre-sddp** during the training loop's backward pass ([Training Loop SS6.2](./training-loop.md)).
 
 #### Type Definition
 
 ```rust
-/// Fixed opening tree holding pre-generated noise realizations for the
-/// SDDP backward pass. Generated once before training begins; immutable
-/// and shared read-only across all MPI ranks and OpenMP threads for the
-/// duration of training.
-///
-/// The data is stored in a flat contiguous `f64` array with stage-major
-/// ordering. The stride formula `stage * n_openings * dim + opening_idx * dim`
-/// places all openings for a given stage in a contiguous block, optimizing
-/// the backward pass access pattern (iterate over all openings at each stage).
-///
-/// Total size: `n_stages * n_openings * dim * size_of::<f64>()` bytes.
 pub struct OpeningTree {
     /// Flat contiguous storage for all noise values.
-    /// Length: `n_stages * n_openings * dim`.
-    /// Layout: stage-major, opening-minor, entity-innermost.
+    /// Layout: stage-major with variable branching per stage.
+    /// Length: sum(openings_per_stage[t] * dim for t in 0..n_stages).
     data: Box<[f64]>,
+
+    /// Cumulative offset array for stage-based indexing.
+    /// Length: n_stages + 1.
+    /// stage_offsets[t] = sum(openings_per_stage[s] * dim for s in 0..t).
+    /// stage_offsets[n_stages] = data.len().
+    stage_offsets: Box<[usize]>,
+
+    /// Number of openings (branchings) per stage.
+    /// Length: n_stages.
+    /// For uniform branching: all entries are equal.
+    openings_per_stage: Box<[usize]>,
 
     /// Number of stages in the planning horizon (T).
     n_stages: usize,
 
-    /// Number of openings (branchings) per stage.
-    n_openings: usize,
-
-    /// Number of random variables per stage (N_entities).
-    /// Equals the number of hydros in correlation groups plus independent
-    /// entities plus load entities with stochastic models.
+    /// Number of random variables per noise vector.
     dim: usize,
 }
 ```
 
 **Field descriptions:**
 
-| Field        | Type         | Description                                                                                                        |
-| ------------ | ------------ | ------------------------------------------------------------------------------------------------------------------ |
-| `data`       | `Box<[f64]>` | Flat contiguous storage. Length = `n_stages * n_openings * dim`. Heap-allocated, non-resizable after construction. |
-| `n_stages`   | `usize`      | Number of stages $T$ in the planning horizon. Determines the outer stride.                                         |
-| `n_openings` | `usize`      | Number of openings (branchings) per stage $N_{\text{openings}}$. Determines the middle stride.                     |
-| `dim`        | `usize`      | Number of random variables (entities) per noise vector $N_{\text{entities}}$. Determines the inner stride.         |
+| Field                | Type           | Description                                                                                                                                                                    |
+| -------------------- | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `data`               | `Box<[f64]>`   | Flat contiguous storage. Length = $\sum_t N_t \times \text{dim}$. Heap-allocated, non-resizable after construction.                                                            |
+| `stage_offsets`      | `Box<[usize]>` | Cumulative offset array. `stage_offsets[t]` = $\sum_{s=0}^{t-1} N_s \times \text{dim}$. Length = `n_stages + 1`. The sentinel `stage_offsets[n_stages]` = `data.len()`.        |
+| `openings_per_stage` | `Box<[usize]>` | Per-stage branching factors $N_t$. Length = `n_stages`. Sourced from `StageSamplingConfig.num_scenarios` ([Internal Structures SS12.5](../data-model/internal-structures.md)). |
+| `n_stages`           | `usize`        | Number of stages $T$ in the planning horizon.                                                                                                                                  |
+| `dim`                | `usize`        | Number of random variables (entities) per noise vector $N_{\text{entities}}$.                                                                                                  |
 
-**Why `Box<[f64]>` and not `Vec<f64>`:** The opening tree is allocated once and never resized. `Box<[f64]>` communicates this invariant at the type level -- there is no capacity field, no growth path, and no accidental reallocation. The box is created from a `Vec<f64>` via `into_boxed_slice()` after generation completes.
+**Why `Box<[f64]>` and not `Vec<f64>`:** The opening tree is allocated once and never resized. `Box<[f64]>` communicates this invariant at the type level — there is no capacity field, no growth path, and no accidental reallocation. The box is created from a `Vec<f64>` via `into_boxed_slice()` after generation completes. The same reasoning applies to `stage_offsets` and `openings_per_stage`.
+
+**Why this layout:**
+
+- `stage_offsets` enables O(1) access to any (stage, opening) pair without iterating
+- All openings for a given stage are contiguous — same cache-friendly backward pass pattern as described in SS2.3
+- Uniform branching is a degenerate case where all `openings_per_stage` entries are equal and `stage_offsets` is a simple arithmetic progression
+- No wasted space: total data length = $\sum_t N_t \times \text{dim}$ exactly
 
 #### Access Method
 
@@ -254,28 +258,24 @@ impl OpeningTree {
     /// Return the noise vector for the given (stage, opening_idx) pair
     /// as a contiguous `f64` slice of length `self.dim`.
     ///
-    /// The returned slice points directly into the flat backing array
-    /// at offset `stage * n_openings * dim + opening_idx * dim`. No
-    /// allocation or copy occurs.
-    ///
     /// # Panics
     ///
-    /// Panics if `stage >= self.n_stages` or `opening_idx >= self.n_openings`.
-    /// These bounds are programming errors (the caller controls the loop
-    /// bounds from the same config that sized the tree) and are not
-    /// recoverable at runtime.
+    /// Panics if `stage >= self.n_stages` or
+    /// `opening_idx >= self.openings_per_stage[stage]`.
     pub fn opening(&self, stage: usize, opening_idx: usize) -> &[f64] {
-        assert!(stage < self.n_stages, "stage {stage} out of bounds (n_stages={})", self.n_stages);
-        assert!(opening_idx < self.n_openings, "opening_idx {opening_idx} out of bounds (n_openings={})", self.n_openings);
-        let offset = stage * self.n_openings * self.dim + opening_idx * self.dim;
+        assert!(stage < self.n_stages);
+        assert!(opening_idx < self.openings_per_stage[stage]);
+        let offset = self.stage_offsets[stage] + opening_idx * self.dim;
         &self.data[offset..offset + self.dim]
+    }
+
+    /// Return the number of openings at the given stage.
+    pub fn n_openings(&self, stage: usize) -> usize {
+        self.openings_per_stage[stage]
     }
 
     /// Return the number of stages.
     pub fn n_stages(&self) -> usize { self.n_stages }
-
-    /// Return the number of openings per stage.
-    pub fn n_openings(&self) -> usize { self.n_openings }
 
     /// Return the dimension (entities per noise vector).
     pub fn dim(&self) -> usize { self.dim }
@@ -288,100 +288,41 @@ impl OpeningTree {
 }
 ```
 
+Note: `n_openings()` takes a `stage` parameter because the branching factor can vary per stage. For uniform branching, the caller can use `n_openings(0)` or check any stage.
+
 **Backward pass usage pattern** ([Training Loop SS6.2](./training-loop.md)):
 
 ```rust
 // At stage t, evaluate all openings for trial point x_hat
-for j in 0..opening_tree.n_openings() {
+for j in 0..opening_tree.n_openings(t) {
     let noise: &[f64] = opening_tree.opening(t, j);
     // noise[h] is the correlated noise value for entity h at opening j
     // Compute realized inflows via PAR model, patch LP, solve, extract duals
 }
 ```
 
-The inner loop accesses `n_openings` contiguous blocks of `dim` f64 values, each separated by exactly `dim * 8` bytes. This is the optimal access pattern for hardware prefetchers.
+The inner loop accesses `n_openings(t)` contiguous blocks of `dim` f64 values, each separated by exactly `dim * 8` bytes. This is the optimal access pattern for hardware prefetchers.
 
-#### Ownership Model
+#### Forward/Backward Separation
 
-The `OpeningTree` is generated once during initialization and consumed read-only for the entire training run. Two ownership strategies are evaluated:
+The `OpeningTree` is the backward pass's primary noise data structure. At every backward pass stage, all $N_t$ openings are evaluated to generate Benders cuts. The forward pass does NOT always use the opening tree — only the `InSample` sampling scheme draws from it (via random index selection into the stage's openings). The `External` and `Historical` schemes use entirely separate data sources (external scenarios, historical records). The forward pass noise path is governed by the `SamplingScheme` abstraction (SS3), not by `OpeningTree` directly.
 
-**Option A: `Arc<OpeningTree>` (reference-counted heap allocation)**
-
-Each MPI rank allocates and populates its own `OpeningTree` on the heap. An `Arc` wrapper enables shared read-only access across all threads within the rank without copying. Multiple ranks on the same physical node each hold independent copies of the same data.
-
-| Property           | Assessment                                                                                 |
-| ------------------ | ------------------------------------------------------------------------------------------ |
-| Memory footprint   | One full copy per MPI rank. At production scale: 30 MB $\times$ $R_{\text{node}}$ per node |
-| Thread sharing     | Zero-cost via `Arc::clone()` (atomic reference count increment only)                       |
-| NUMA locality      | Data allocated by the generating thread; other threads may incur remote NUMA access        |
-| Implementation     | Standard Rust pattern; no unsafe code, no platform dependencies                            |
-| Cross-rank sharing | None -- each rank has an independent copy                                                  |
-
-**Option B: `SharedRegion<f64>` (intra-node shared memory)**
-
-The intra-node leader rank allocates a `SharedRegion<f64>` via `SharedMemoryProvider::create_shared_region` ([Communicator Trait §4](../hpc/communicator-trait.md)). All ranks on the same physical node access the same physical memory pages through shared memory mapping. Population is distributed: each intra-node rank generates its assigned portion, then a `fence()` call publishes all writes ([Communicator Trait §4.3](../hpc/communicator-trait.md)).
-
-| Property           | Assessment                                                                                                          |
-| ------------------ | ------------------------------------------------------------------------------------------------------------------- |
-| Memory footprint   | One copy per physical node, regardless of ranks-per-node. At production scale: 30 MB per node (fixed)               |
-| Thread sharing     | Zero-copy read access via `SharedRegion::as_slice()`                                                                |
-| NUMA locality      | The leader's NUMA domain owns the pages; followers on remote NUMA domains incur cross-NUMA latency (~1.5-2.5x)      |
-| Implementation     | Requires `SharedMemoryProvider` trait ([Communicator Trait §4.1](../hpc/communicator-trait.md)); platform-dependent |
-| Cross-rank sharing | True zero-copy across all ranks on the same node                                                                    |
-
-**Recommendation: `SharedRegion<f64>` as the primary strategy, with `Arc<OpeningTree>` as the `HeapFallback` path.**
-
-The justification is based on three factors:
-
-1. **Memory savings scale with ranks-per-node.** The recommended deployment is multiple ranks per node ([Memory Architecture §3.1](../hpc/memory-architecture.md), Principle 2). With 4 ranks per node, `SharedRegion` saves ~90 MB of redundant opening tree copies at production scale (30 MB $\times$ 3 eliminated copies). While 90 MB is modest relative to the ~3 GB per-rank solver workspace budget, it is free memory that can be allocated to cut pool capacity or additional solver instances.
-
-2. **The `HeapFallback` makes `SharedRegion` a strict generalization.** Per [Communicator Trait §4.4](../hpc/communicator-trait.md), all four communicator backends implement `SharedMemoryProvider` -- the `LocalComm` and `TcpComm` backends use `HeapFallback`, which is semantically equivalent to per-rank `Arc<OpeningTree>` (every rank allocates its own copy, `is_leader()` returns `true`). Code written against `SharedRegion` works correctly on all backends without conditional logic.
-
-3. **Distributed population amortizes generation cost.** When true shared memory is available, the opening tree generation work is split across intra-node ranks ([Communicator Trait §4.3](../hpc/communicator-trait.md), distributed population protocol), reducing initialization time proportionally to ranks-per-node. The `HeapFallback` path requires each rank to generate the full tree independently.
-
-**NUMA consideration:** With `SharedRegion`, the leader rank's NUMA domain owns the backing pages. On multi-socket nodes where ranks span NUMA domains, follower ranks accessing the opening tree incur cross-NUMA latency. This is acceptable because: (a) the opening tree is small enough to fit in L3 cache, which mitigates NUMA effects after the first access, (b) the backward pass LP solve dominates iteration time by orders of magnitude, making opening tree access latency negligible, and (c) the alternative (per-rank replication) avoids NUMA penalties but increases memory pressure. See [Memory Architecture §3.4](../hpc/memory-architecture.md) for NUMA latency characteristics.
-
-**Type at the training loop boundary:** The training loop receives the opening tree as a `&[f64]` slice obtained from `SharedRegion::as_slice()`. The training loop code does not depend on whether the backing memory is shared or heap-allocated -- it only sees a contiguous `&[f64]` and the `OpeningTree` accessor struct that provides the stride-based `opening()` method. This is achieved by wrapping the slice reference in an `OpeningTree` view:
+#### Borrowed View Type
 
 ```rust
-/// Read-only view over opening tree data, providing stride-based access.
-/// Borrows the underlying storage (SharedRegion or Box<[f64]>).
-/// Used by the training loop; does not own the data.
+/// Read-only view over opening tree data, providing offset-based access.
+/// Borrows the underlying storage. Used by the training loop; does not
+/// own the data.
 pub struct OpeningTreeView<'a> {
     data: &'a [f64],
+    stage_offsets: &'a [usize],
+    openings_per_stage: &'a [usize],
     n_stages: usize,
-    n_openings: usize,
     dim: usize,
-}
-
-impl<'a> OpeningTreeView<'a> {
-    /// Construct a view from a raw slice and dimensions.
-    ///
-    /// # Panics
-    ///
-    /// Panics if `data.len() != n_stages * n_openings * dim`.
-    pub fn new(data: &'a [f64], n_stages: usize, n_openings: usize, dim: usize) -> Self {
-        assert_eq!(
-            data.len(),
-            n_stages * n_openings * dim,
-            "OpeningTreeView: data length {} != {} * {} * {} = {}",
-            data.len(), n_stages, n_openings, dim,
-            n_stages * n_openings * dim,
-        );
-        Self { data, n_stages, n_openings, dim }
-    }
-
-    /// Return the noise vector for (stage, opening_idx) as a contiguous slice.
-    pub fn opening(&self, stage: usize, opening_idx: usize) -> &[f64] {
-        assert!(stage < self.n_stages);
-        assert!(opening_idx < self.n_openings);
-        let offset = stage * self.n_openings * self.dim + opening_idx * self.dim;
-        &self.data[offset..offset + self.dim]
-    }
 }
 ```
 
-The dual-type design (`OpeningTree` for owned generation, `OpeningTreeView` for borrowed access) follows the dual-nature principle established in [Internal Structures SS1.1](../data-model/internal-structures.md): `cobre-stochastic` owns the generation and the `OpeningTree` struct, while `cobre-sddp` consumes it through `OpeningTreeView<'a>` without taking ownership.
+The `OpeningTreeView` provides the same access API as `OpeningTree` (`opening()`, `n_openings()`, `n_stages()`, `dim()`) but borrows the data instead of owning it. The dual-type design (`OpeningTree` for owned generation, `OpeningTreeView` for borrowed consumption) follows the dual-nature principle established in [Internal Structures SS1.1](../data-model/internal-structures.md): `cobre-stochastic` owns the generation and the `OpeningTree` struct, while `cobre-sddp` consumes it through `OpeningTreeView<'a>` without taking ownership.
 
 ### 2.4 Time-Varying Correlation Profiles
 

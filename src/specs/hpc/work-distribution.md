@@ -102,11 +102,11 @@ This produces at most a difference of 1 between the largest and smallest block �
 
 For `allgatherv`, each rank must know the counts and displacements for all ranks:
 
-| Parameter       | Computation                                 | Type       |
-| --------------- | ------------------------------------------- | ---------- |
-| `sendcount`     | Number of items this rank contributes       | `i32`      |
-| `recvcounts[r]` | Number of items rank $r$ contributes (§3.1) | `Vec<i32>` |
-| `displs[r]`     | Cumulative sum of `recvcounts[0..r]`        | `Vec<i32>` |
+| Parameter       | Computation                                 | Type         |
+| --------------- | ------------------------------------------- | ------------ |
+| `sendcount`     | Number of items this rank contributes       | `usize`      |
+| `recvcounts[r]` | Number of items rank $r$ contributes (§3.1) | `Vec<usize>` |
+| `displs[r]`     | Cumulative sum of `recvcounts[0..r]`        | `Vec<usize>` |
 
 These are computed once per iteration (or once at startup if $M$ is fixed) and reused for both forward state gathering and backward cut gathering.
 

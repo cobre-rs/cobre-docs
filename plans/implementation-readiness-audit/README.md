@@ -47,13 +47,13 @@ Systematic, evidence-based audit of the Cobre specification corpus to determine 
 | ticket-019 | Define Stage, Block, and PolicyGraph Struct Definitions        | epic-05 | completed | Detailed     | 0.80      | 0.96    | EXCELLENT |
 | ticket-020 | Enumerate Entity Cross-Reference Validation Checks             | epic-05 | completed | Detailed     | 0.98      | 0.99    | EXCELLENT |
 | ticket-021 | Define OpeningTree Rust Type with Ownership Model              | epic-05 | completed | Detailed     | 0.94      | 0.98    | EXCELLENT |
-| ticket-022 | Fix Solver Testing Spec Naming and Add patch_col_bounds Tests  | epic-06 | pending   | Detailed     | --        | --      | --        |
-| ticket-023 | Clarify StageTemplate Ownership and Fix Ferrompi Stale Names   | epic-06 | pending   | Detailed     | --        | --      | --        |
-| ticket-024 | Fix Notation Drift and Threading References                    | epic-06 | pending   | Detailed     | --        | --      | --        |
-| ticket-025 | Fix CLI Config and SLURM Cross-Spec Inconsistencies            | epic-06 | pending   | Detailed     | --        | --      | --        |
-| ticket-026 | Update Cross-Reference Index and Resolve Ferrompi Slurm Module | epic-06 | pending   | Detailed     | --        | --      | --        |
-| ticket-027 | Evaluate rkyv Serialization Fitness for System Broadcast       | epic-07 | pending   | Outline      | --        | --      | --        |
-| ticket-028 | Define SimulationScenarioResult Type and Simulate Signature    | epic-07 | pending   | Outline      | --        | --      | --        |
-| ticket-029 | Define Output Writer API                                       | epic-07 | pending   | Outline      | --        | --      | --        |
+| ticket-022 | Fix Solver Testing Spec Naming and Add patch_col_bounds Tests  | epic-06 | completed | Detailed     | 1.00      | 0.95    | EXCELLENT |
+| ticket-023 | Clarify StageTemplate Ownership and Fix Ferrompi Stale Names   | epic-06 | completed | Detailed     | 0.86      | 0.99    | EXCELLENT |
+| ticket-024 | Fix Notation Drift and Threading References                    | epic-06 | completed | Detailed     | 0.95      | 0.99    | EXCELLENT |
+| ticket-025 | Fix CLI Config and SLURM Cross-Spec Inconsistencies            | epic-06 | completed | Detailed     | --        | --      | --        |
+| ticket-026 | Update Cross-Reference Index and Resolve Ferrompi Slurm Module | epic-06 | completed | Detailed     | --        | --      | --        |
+| ticket-027 | Evaluate rkyv Serialization Fitness for System Broadcast       | epic-07 | completed | Refined      | 0.98      | 0.93    | EXCELLENT |
+| ticket-028 | Define SimulationScenarioResult Type and Simulate Signature    | epic-07 | completed | Refined      | 0.98      | 0.98    | EXCELLENT |
+| ticket-029 | Define Output Writer API                                       | epic-07 | completed | Refined      | 0.98      | 0.93    | EXCELLENT |
 | ticket-030 | Verify Cross-Reference Integrity After All Edits               | epic-08 | pending   | Outline      | --        | --      | --        |
 | ticket-031 | Confirm All 19 Conditions Resolved and Produce Final Verdict   | epic-08 | pending   | Outline      | --        | --      | --        |

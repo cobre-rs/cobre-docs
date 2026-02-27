@@ -551,6 +551,8 @@ HiGHS and CLP are first-class reference implementations — the solver abstracti
 
 ### 11.1 Pre-Assembled Stage LP Templates
 
+**Crate ownership:** `StageTemplate` and `StageIndexer` belong to `cobre-solver`. They encode LP-specific structure (variable counts, constraint counts, coefficient offsets) derived from the `System` struct during solver initialization. The temporal structure (`Stage`, `Block`, `PolicyGraph`) lives in `cobre-core`; the LP structure derived from it lives in `cobre-solver`. Construction of `StageTemplate` is performed by `cobre-sddp`, which calls a builder function that takes a reference to the resolved `System` and produces the populated struct (see [Solver Interface Trait SS4.4](./solver-interface-trait.md) for the construction signature). `cobre-solver` receives `StageTemplate` as an opaque data holder and bulk-loads its CSC arrays into the underlying LP solver without interpreting column or row semantics. `StageIndexer` (see [Training Loop SS5.5](./training-loop.md)) is likewise defined in `cobre-solver` and shared read-only across all threads and ranks.
+
 At initialization, each stage's structural LP (matrix, bounds, objective — everything except cuts and scenario-dependent RHS) is assembled once into a canonical CSC (column-major) representation called the **stage template**. This template:
 
 - Is built from the resolved internal structures (see [Internal Structures](../data-model/internal-structures.md)) with full clarity and correctness — this is the initialization phase where data clarity matters more than performance

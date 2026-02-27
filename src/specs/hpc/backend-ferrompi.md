@@ -18,6 +18,14 @@ The `FerrompiBackend` struct holds the MPI communicator handles obtained during 
 /// (see §4.1).
 #[cfg(feature = "mpi")]
 pub struct FerrompiBackend {
+    // SAFETY: `mpi` must be declared before `world` and `shared` to ensure
+    // Rust's reverse-declaration drop order drops the communicators before
+    // the MPI guard. Dropping `mpi` calls `MPI_Finalize`, which must happen
+    // only after all communicators and windows have been freed.
+    /// MPI RAII guard. Its `Drop` calls `MPI_Finalize`.
+    /// Must outlive all communicators and shared memory windows.
+    mpi: ferrompi::Mpi,
+
     /// World communicator for all collective operations and rank/size queries.
     world: ferrompi::Communicator,
 
@@ -159,6 +167,7 @@ impl FerrompiBackend {
             })?;
 
         Ok(FerrompiBackend {
+            mpi,
             world,
             shared: Some(shared),
         })

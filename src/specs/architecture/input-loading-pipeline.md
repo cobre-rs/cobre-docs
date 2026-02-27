@@ -189,17 +189,19 @@ After rank 0 loads and validates all data, it broadcasts to worker ranks. Data i
 
 ### 6.1 Serialization Format
 
-The serialization format for MPI broadcast is **rkyv** (version 0.8+).
+The serialization format for MPI broadcast is **postcard** (via serde).
 
-rkyv ("archive") provides zero-copy deserialization: the archived representation can be accessed directly from the byte buffer without deserializing into owned Rust types. When rank 0 serializes the `System` struct, the resulting byte buffer is broadcast via `MPI_Bcast`. Receiving ranks access the archived data directly from the receive buffer, then convert to owned types only once. This avoids the double allocation overhead (deserialize into intermediate representation, then copy into final types) that traditional serialization frameworks impose. For a `System` struct at production scale — containing 160 hydros, 120 stages, thousands of resolved bounds entries, and PAR model parameters — this eliminates a significant allocation burst on every worker rank during startup.
+postcard is a compact binary serde format. Rank 0 serializes the `System` struct via `postcard::to_vec(&system)`, producing a `Vec<u8>` byte buffer. The buffer is broadcast via `MPI_Bcast` (two-step: size first, then contents). Receiving ranks deserialize via `postcard::from_bytes::<System>(&buffer)` into an owned `System` value. The format uses variable-length integer encoding (varint) for compact payloads and serde's trait-based dispatch for handling all Rust types including `Vec`, `String`, `Option`, enums with data, and nested structs.
 
-**Why not bincode:** bincode was considered but is unmaintained. Its last release predates the current Rust edition, and it lacks the zero-copy access pattern that rkyv provides. Given that the broadcast payload can reach tens of megabytes for production-scale systems, the allocation-free archived access is a material advantage.
+**Why postcard over rkyv:** rkyv was previously specified for this use case based on its zero-copy deserialization capability. An evidence-based evaluation (see `plans/implementation-readiness-audit/epic-07-serialization-eval-and-output-api/report-027-rkyv-evaluation.md`) found that the zero-copy benefit is immaterial for a once-per-execution operation: the marginal deserialization saving is under 2 ms for a ~6 MB payload, occurring exactly once in a program that runs for minutes to hours. Meanwhile, rkyv imposes 129 additional derive annotations across 43 types (on top of the 86 serde derives already required for JSON loading), requires wrapper types for external types like `chrono::NaiveDate`, and is pre-1.0 with a history of breaking API changes. postcard reuses the serde derives that all cobre-core types must implement for JSON input loading, adding zero additional trait burden. It is post-1.0 stable, has a minimal dependency footprint, and produces slightly smaller payloads than rkyv due to varint encoding.
 
-**Sparse broadcast and Parquet pass-through:** For bounds and penalty override data broadcast in sparse Parquet form (see broadcast categories table above), rkyv serializes only the metadata envelope (entity IDs, stage ranges, file identity). The raw Parquet bytes are passed through as-is in a separate broadcast buffer — they are not re-serialized through rkyv. Each rank deserializes the metadata envelope via rkyv and then performs sparse-to-dense expansion locally from the Parquet bytes.
+**Why not bincode:** bincode was considered but is unmaintained. Its last release predates the current Rust edition.
+
+**Sparse broadcast and Parquet pass-through:** For bounds and penalty override data broadcast in sparse Parquet form (see broadcast categories table above), postcard serializes only the metadata envelope (entity IDs, stage ranges, file identity). The raw Parquet bytes are passed through as-is in a separate broadcast buffer — they are not re-serialized through postcard. Each rank deserializes the metadata envelope via postcard and then performs sparse-to-dense expansion locally from the Parquet bytes.
 
 ### 6.2 Required Trait Bounds
 
-All types that participate in the `System` broadcast must derive `rkyv::Archive`, `rkyv::Serialize`, and `rkyv::Deserialize`. The complete list of types requiring these trait bounds:
+All types that participate in the `System` broadcast must derive `serde::Serialize` and `serde::Deserialize`. These are the same trait bounds already required for JSON input loading — no additional broadcast-specific derives are needed. The complete list of types requiring these trait bounds:
 
 **Entity types:**
 
@@ -221,40 +223,30 @@ All types that participate in the `System` broadcast must derive `rkyv::Archive`
 
 - `InitialConditions`, `GenericConstraint`
 
-All nested types within these top-level types (e.g., tagged union variants within `Hydro`, individual bound entries within `ResolvedBounds`) must also satisfy the same trait bounds transitively.
+All nested types within these top-level types (e.g., tagged union variants within `Hydro`, individual bound entries within `ResolvedBounds`) must also satisfy the same trait bounds transitively. External types such as `chrono::NaiveDate` implement serde traits natively via the `chrono/serde` feature flag.
 
 **Derive example:**
 
 ```rust
-#[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
-#[rkyv(compare(PartialEq))]
+#[derive(serde::Serialize, serde::Deserialize)]
 pub struct Hydro { /* ... */ }
 ```
 
-**HashMap lookup indices are NOT serialized.** The `System` struct contains `HashMap<EntityId, usize>` fields (`bus_index`, `hydro_index`, `thermal_index`, etc.) that serve as O(1) lookup indices from entity ID to position in the corresponding `Vec`. These indices are **excluded** from rkyv serialization. Each receiving rank rebuilds them locally from the deserialized entity collections. This is correct because the indices are derived data — they are deterministically reconstructable from the entity vectors — and excluding them reduces the broadcast payload size and avoids serializing HashMap internal layout, which is not stable across allocator states.
+**HashMap lookup indices are NOT serialized.** The `System` struct contains `HashMap<EntityId, usize>` fields (`bus_index`, `hydro_index`, `thermal_index`, etc.) that serve as O(1) lookup indices from entity ID to position in the corresponding `Vec`. These indices are **excluded** from serialization via `#[serde(skip)]`. Each receiving rank rebuilds them locally from the deserialized entity collections. This is correct because the indices are derived data — they are deterministically reconstructable from the entity vectors — and excluding them reduces the broadcast payload size and avoids serializing HashMap internal layout, which is not stable across allocator states.
 
-### 6.3 Alignment and Buffer Allocation
+### 6.3 Buffer Allocation
 
-rkyv requires **16-byte alignment** for archived data by default. The archived root object must begin at a 16-byte-aligned address for zero-copy access to function correctly.
+postcard produces a standard `Vec<u8>` with no special alignment requirements. The MPI receive buffer on worker ranks is a standard `Vec<u8>` allocated to the exact required size.
 
-The MPI receive buffer on worker ranks must be allocated with appropriate alignment. Standard `Vec<u8>` allocation does not guarantee 16-byte alignment. Instead, use explicit aligned allocation:
-
-```rust
-use std::alloc::{alloc, Layout};
-
-let layout = Layout::from_size_align(size, 16).expect("valid layout");
-let ptr = unsafe { alloc(layout) };
-```
-
-Rank 0 serializes via `rkyv::to_bytes` (or equivalent), which produces an aligned buffer. The two-step broadcast protocol (size first, then contents) allows worker ranks to allocate a correctly aligned receive buffer of the exact required size before the second `MPI_Bcast` call.
+Rank 0 serializes via `postcard::to_vec(&system)`, which returns a `Vec<u8>`. The two-step broadcast protocol (size first, then contents) allows worker ranks to allocate a receive buffer of the exact required size before the second `MPI_Bcast` call. No aligned allocation or special allocator is needed.
 
 ### 6.4 Versioning Scope
 
-rkyv does **not** provide built-in schema evolution. The archived byte format is tied directly to the Rust struct layout — any change to field order, field types, or field count produces an incompatible archive. There is no field tagging, no optional field mechanism, and no forward/backward compatibility guarantee.
+postcard does **not** provide built-in schema evolution. The binary format is derived from the serde `Serialize`/`Deserialize` implementations, which are tied to the Rust struct layout — any change to field order, field types, or field count produces an incompatible archive. There is no field tagging, no optional field mechanism, and no forward/backward compatibility guarantee.
 
-This is acceptable because rkyv is used **exclusively for in-memory MPI broadcast** within a single program execution. All ranks run the same binary, so the struct layout is identical on the serializing and deserializing sides. There is no cross-version compatibility requirement for broadcast data — the buffer exists only for the duration of the broadcast operation and is never persisted to disk.
+This is acceptable because postcard is used **exclusively for in-memory MPI broadcast** within a single program execution. All ranks run the same binary, so the struct layout is identical on the serializing and deserializing sides. There is no cross-version compatibility requirement for broadcast data — the buffer exists only for the duration of the broadcast operation and is never persisted to disk.
 
-**rkyv is NOT suitable for long-term storage.** Any data that must survive across program versions (policy cuts, checkpoints, warm-start files) uses FlatBuffers, which provides schema evolution and cross-version compatibility. See [Binary Formats](../data-model/binary-formats.md) SS3 for the FlatBuffers policy persistence format.
+**postcard is NOT suitable for long-term storage.** Any data that must survive across program versions (policy cuts, checkpoints, warm-start files) uses FlatBuffers, which provides schema evolution and cross-version compatibility. See [Binary Formats](../data-model/binary-formats.md) SS3 for the FlatBuffers policy persistence format.
 
 ## 7. Parallel Policy Loading (Warm-Start)
 
@@ -277,7 +269,7 @@ The key invariant is: **after the Initialization phase completes, all ranks hold
 
 ### 8.1 `load_case` Public API
 
-`load_case` is the primary entry point from `cobre-cli` (rank 0) into `cobre-io`. It performs the complete loading sequence (SS2.1--2.6), cross-reference validation (SS2.6), and returns a fully resolved `System` value ready for rkyv broadcast.
+`load_case` is the primary entry point from `cobre-cli` (rank 0) into `cobre-io`. It performs the complete loading sequence (SS2.1--2.6), cross-reference validation (SS2.6), and returns a fully resolved `System` value ready for MPI broadcast via postcard serialization (SS6.1).
 
 **Function signature:**
 
@@ -285,7 +277,7 @@ The key invariant is: **after the Initialization phase completes, all ranks hold
 /// Load, validate, and resolve a Cobre case from the input directory.
 ///
 /// This is the primary entry point from cobre-cli (rank 0) into cobre-io.
-/// Returns the fully resolved System struct ready for rkyv broadcast.
+/// Returns the fully resolved System struct ready for MPI broadcast.
 ///
 /// # Errors
 /// Returns LoadError if any file cannot be read, parsed, or validated.
@@ -298,7 +290,7 @@ pub fn load_case(path: &Path) -> Result<System, LoadError>
 
 **Return type:**
 
-- `System` -- an owned value (not `Arc<System>`). The caller (`cobre-cli` or `cobre-python`) owns the returned `System` and is responsible for broadcasting it to worker ranks via the rkyv serialization protocol (SS6.1). After broadcast, each rank owns its own deserialized copy. Ownership transfer is the simplest pattern: no reference counting, no shared-memory coordination, no lifetime entanglement between the loading phase and the algorithm phase.
+- `System` -- an owned value (not `Arc<System>`). The caller (`cobre-cli` or `cobre-python`) owns the returned `System` and is responsible for broadcasting it to worker ranks via the postcard serialization protocol (SS6.1). After broadcast, each rank owns its own deserialized copy. Ownership transfer is the simplest pattern: no reference counting, no shared-memory coordination, no lifetime entanglement between the loading phase and the algorithm phase.
 
 **Config loading:**
 

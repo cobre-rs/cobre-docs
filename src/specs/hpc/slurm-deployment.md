@@ -9,9 +9,9 @@ This spec defines SLURM job scripts and deployment patterns for Cobre on HPC clu
 > **Important**: SLURM scripts are shell scripts that configure the job environment — they are preserved as-is (not Rust code). The Rust binary launched by `srun` uses `ferrompi` to detect placement:
 >
 > - **SLURM scripts** → set `--ntasks`, `--cpus-per-task`, `--mem-bind`, bind policies, module loads
-> - **Rust startup** → calls `ferrompi::Mpi::init_thread(Multiple)` to initialize MPI with thread support, and `ferrompi::slurm::local_rank()` to read SLURM topology variables (`SLURM_LOCALID`, `SLURM_CPUS_PER_TASK`, etc.)
+> - **Rust startup** → calls `ferrompi::Mpi::init_thread(Multiple)` to initialize MPI with thread support, and `cobre_comm::slurm::local_rank()` to read SLURM topology variables (`SLURM_LOCALID`, `SLURM_CPUS_PER_TASK`, etc.)
 >
-> See [Hybrid Parallelism §5](./hybrid-parallelism.md) for the full initialization sequence and [Hybrid Parallelism §3](./hybrid-parallelism.md) for `ParallelConfig::from_environment()` which delegates to `ferrompi::slurm` helpers.
+> See [Hybrid Parallelism §5](./hybrid-parallelism.md) for the full initialization sequence and [Hybrid Parallelism §3](./hybrid-parallelism.md) for `ParallelConfig::from_environment()` which delegates to `cobre_comm::slurm` helpers.
 
 ## 1. Single-Node Job (Development/Testing)
 
@@ -33,7 +33,7 @@ export OMP_NUM_THREADS=${SLURM_CPUS_PER_TASK}
 export OMP_PROC_BIND=close
 export OMP_PLACES=cores
 
-srun cobre train --config /path/to/case/config.json
+srun cobre run /path/to/case
 ```
 
 **Notes:**
@@ -41,7 +41,7 @@ srun cobre train --config /path/to/case/config.json
 - 4 ranks × 24 threads = 96 cores (single-socket or half a dual-socket node)
 - `OMP_NUM_THREADS` is derived from `SLURM_CPUS_PER_TASK` — never hardcoded
 - `debug` partition typically has shorter queue wait and 1-hour wall time limits
-- The Rust binary reads `SLURM_CPUS_PER_TASK` via `ferrompi::slurm::cpus_per_task()`
+- The Rust binary reads `SLURM_CPUS_PER_TASK` via `cobre_comm::slurm::cpus_per_task()`
 
 ## 2. Multi-Node Production Job (Recommended)
 
@@ -74,7 +74,7 @@ export OMPI_MCA_mpi_yield_when_idle=1
 srun --signal=TERM@60 \
      --cpu-bind=verbose \
      --distribution=block:block \
-     cobre train --config /scratch/user/case/config.json
+     cobre run /scratch/user/case
 ```
 
 **Design choices:**
@@ -115,7 +115,7 @@ export OMP_PROC_BIND=close
 export OMP_PLACES=cores
 
 srun --signal=TERM@60 \
-     cobre train --config /scratch/user/case/config.json
+     cobre run /scratch/user/case
 ```
 
 **Trade-offs vs. recommended deployment (§2):**
@@ -152,7 +152,7 @@ N_SCENARIOS=${SCENARIOS[$SLURM_ARRAY_TASK_ID]}
 CASE_DIR=/scratch/user/sweep_${N_SCENARIOS}
 cp -r /home/user/base_case "$CASE_DIR"
 
-jq ".training.forward_scenarios = ${N_SCENARIOS}" \
+jq ".training.forward_passes = ${N_SCENARIOS}" \
     "$CASE_DIR/config.json" > "$CASE_DIR/config_tmp.json"
 mv "$CASE_DIR/config_tmp.json" "$CASE_DIR/config.json"
 
@@ -160,7 +160,7 @@ export OMP_NUM_THREADS=${SLURM_CPUS_PER_TASK}
 export OMP_PROC_BIND=close
 export OMP_PLACES=cores
 
-srun cobre train --config "$CASE_DIR/config.json"
+srun cobre run "$CASE_DIR"
 ```
 
 **Notes:**
@@ -173,7 +173,7 @@ srun cobre train --config "$CASE_DIR/config.json"
 
 ### 5.1 SLURM Variables Read by Cobre
 
-The Rust binary reads these SLURM environment variables via `ferrompi::slurm` helpers during initialization (see [Hybrid Parallelism §3](./hybrid-parallelism.md)):
+The Rust binary reads these SLURM environment variables via `cobre_comm::slurm` helpers during initialization (see [Hybrid Parallelism §3](./hybrid-parallelism.md)):
 
 | Variable                | Usage                                             |
 | ----------------------- | ------------------------------------------------- |
@@ -211,14 +211,14 @@ To resume from a checkpoint, submit the same job script pointing to the same cas
 ```bash
 # Same script as §2 — resume is automatic if checkpoint exists
 srun --signal=TERM@60 \
-     cobre train --config /scratch/user/case/config.json
+     cobre run /scratch/user/case
 ```
 
 No script changes are needed. The execution mode (`fresh` vs. `resume`) is determined at runtime by the presence of a checkpoint in the case directory.
 
 ## Cross-References
 
-- [Hybrid Parallelism §3](./hybrid-parallelism.md) — `ParallelConfig::from_environment()`, `ferrompi::slurm` helpers
+- [Hybrid Parallelism §3](./hybrid-parallelism.md) — `ParallelConfig::from_environment()`, `cobre_comm::slurm` helpers
 - [Hybrid Parallelism §4.4](./hybrid-parallelism.md) — NUMA binding policy, one rank per NUMA domain recommendation
 - [Hybrid Parallelism §5](./hybrid-parallelism.md) — Full initialization sequence (MPI init, thread discovery)
 - [Memory Architecture §3](./memory-architecture.md) — NUMA-aware allocation principles, NUMA latency impact

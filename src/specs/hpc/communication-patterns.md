@@ -205,7 +205,7 @@ Non-MPI backends (TCP, shm) produce deterministic reduction results because they
 - [Work Distribution §2.2](./work-distribution.md) -- Per-stage backward pass execution, `allgatherv` for cuts
 - [Work Distribution §3](./work-distribution.md) -- Contiguous block assignment arithmetic, `allgatherv` parameters
 - [Cut Management Implementation §4](../architecture/cut-management-impl.md) -- Wire format, deterministic slot assignment, synchronization protocol
-- [Hybrid Parallelism §1.2](./hybrid-parallelism.md) -- ferrompi capabilities table, `SharedWindow<T>`, `split_shared_memory()`
+- [Hybrid Parallelism §1.2](./hybrid-parallelism.md) -- ferrompi capabilities table, `SharedWindow<T>`, `split_shared()`
 - [Convergence Monitoring §3](../architecture/convergence-monitoring.md) -- Cross-rank bound aggregation
 - [Training Loop §5.2](../architecture/training-loop.md) -- `allgatherv` for trial point collection
 - [Training Loop §6.3](../architecture/training-loop.md) -- `allgatherv` for cut distribution

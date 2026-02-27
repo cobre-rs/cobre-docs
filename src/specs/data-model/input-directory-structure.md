@@ -103,7 +103,7 @@ The input case directory is organized into four top-level groups plus root-level
 
   "training": {
     "seed": 42,
-    "num_forward_passes": 192,
+    "forward_passes": 192,
     "stopping_rules": [{ "type": "iteration_limit", "limit": 50 }]
   }
 }
@@ -153,7 +153,7 @@ All omitted sections (`mpi`, `modeling`, `upper_bound_evaluation`, `policy`, `si
 
   "training": {
     "seed": 42,
-    "num_forward_passes": 192,
+    "forward_passes": 192,
     "stopping_rules": [
       { "type": "iteration_limit", "limit": 50 },
       { "type": "bound_stalling", "iterations": 10, "tolerance": 0.0001 }

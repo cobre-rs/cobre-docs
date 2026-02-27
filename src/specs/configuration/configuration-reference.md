@@ -62,13 +62,19 @@ Priority ordering: Filling target > Storage violation > Deficit > Constraint vio
 
 ## 3. Training Options (`config.json` → `training`)
 
-### 3.1 Forward Pass Count
+### 3.1 Training Enabled
+
+| Option           | Type | Default | Description                                                                                                                                                       |
+| ---------------- | ---- | ------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| training.enabled | bool | `true`  | When `false`, skip the Training phase and proceed directly to Simulation. See [CLI and Lifecycle SS5](../architecture/cli-and-lifecycle.md) for lifecycle phases. |
+
+### 3.2 Forward Pass Count
 
 | Option                  | Type | Default | Description                                       |
 | ----------------------- | ---- | ------- | ------------------------------------------------- |
 | training.forward_passes | int  | —       | Number of scenario trajectories $M$ per iteration |
 
-### 3.2 Cut Selection
+### 3.3 Cut Selection
 
 | Option                                 | Value          | LP Effect                               | Reference                                                                  |
 | -------------------------------------- | -------------- | --------------------------------------- | -------------------------------------------------------------------------- |
@@ -85,7 +91,7 @@ Priority ordering: Filling target > Storage violation > Deficit > Constraint vio
 | `lml1`       | Keep most recently active cuts per state            |
 | `domination` | Remove Pareto-dominated cuts (pointwise comparison) |
 
-### 3.3 Stopping Rules
+### 3.4 Stopping Rules
 
 | Option                  | Type   | Description                               |
 | ----------------------- | ------ | ----------------------------------------- |
@@ -262,6 +268,7 @@ The hydro production model is configured **per-hydro** (not globally) in `hydros
     }
   },
   "training": {
+    "enabled": true,
     "forward_passes": 10,
     "cut_selection": {
       "enabled": true,

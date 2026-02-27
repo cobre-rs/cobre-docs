@@ -28,6 +28,16 @@ cost function approximation.
 
 ## Key Concepts
 
+- **StageTemplate and StageIndexer ownership** -- `cobre-solver` owns the type
+  definitions for `StageTemplate` (the pre-assembled structural LP in CSC form)
+  and `StageIndexer` (the read-only index map for LP primal/dual positions).
+  These types encode LP-specific structure (variable counts, constraint counts,
+  coefficient offsets) that is not meaningful to other crates. Construction of
+  `StageTemplate` is performed by `cobre-sddp`; `cobre-solver` receives it as
+  an opaque data holder and bulk-loads its CSC arrays into the underlying LP
+  solver. See [Solver Abstraction SS11.1](../specs/architecture/solver-abstraction.md)
+  and [Training Loop SS5.5](../specs/architecture/training-loop.md).
+
 - **LP layout convention** -- A fixed column/row ordering that places state
   variables (reservoir volumes, AR lags) in a contiguous prefix and groups
   cut-relevant constraints at the top of the row vector. This enables

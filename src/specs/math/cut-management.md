@@ -9,7 +9,7 @@ This spec defines the complete Benders cut lifecycle in Cobre: what cuts represe
 A **Benders cut** at stage $t-1$ is a linear inequality that provides a lower bound on the cost-to-go function $V_t(x)$:
 
 $$
-\theta \geq \alpha + \sum_{h \in \mathcal{H}} \pi^v_h \cdot v_h + \sum_{h \in \mathcal{H}} \sum_{\ell=1}^{p_h} \pi^{lag}_{h,\ell} \cdot a_{h,\ell}
+\theta \geq \alpha + \sum_{h \in \mathcal{H}} \pi^v_h \cdot v_h + \sum_{h \in \mathcal{H}} \sum_{\ell=1}^{P_h} \pi^{lag}_{h,\ell} \cdot a_{h,\ell}
 $$
 
 where:
@@ -34,7 +34,7 @@ After solving the stage $t$ subproblem for trial state $\hat{x}_{t-1}$ and scena
 The cut intercept ensures the cut passes through the trial point:
 
 $$
-\alpha_t = Q_t(\hat{x}_{t-1}, \omega_t) - \sum_{h \in \mathcal{H}} \pi^v_{t,h} \cdot \hat{v}_h - \sum_{h \in \mathcal{H}} \sum_{\ell=1}^{p_h} \pi^{lag}_{t,h,\ell} \cdot \hat{a}_{h,\ell}
+\alpha_t = Q_t(\hat{x}_{t-1}, \omega_t) - \sum_{h \in \mathcal{H}} \pi^v_{t,h} \cdot \hat{v}_h - \sum_{h \in \mathcal{H}} \sum_{\ell=1}^{P_h} \pi^{lag}_{t,h,\ell} \cdot \hat{a}_{h,\ell}
 $$
 
 where $Q_t(\hat{x}_{t-1}, \omega_t)$ is the optimal objective value of the stage $t$ subproblem.
