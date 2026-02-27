@@ -210,13 +210,13 @@ Cross-cutting documents (no single owning crate) go into **all 11 per-crate read
 Key planning documents for the first implementation plan:
 
 - `src/specs/overview/implementation-ordering.md` — 8-phase build sequence, per-phase spec reading lists
-- `src/specs/overview/spec-gap-inventory.md` — 38 gaps (5 Blocker, 15 High, 13 Medium, 5 Low)
+- `src/specs/overview/spec-gap-inventory.md` — 39 gaps (5 Blocker, 16 High, 13 Medium, 5 Low)
 
 **All 5 Blockers must be resolved before Phase 1 coding starts:**
 
 - GAP-001: `SystemRepresentation` struct definition
 - GAP-002: Decommissioned LP treatment
-- GAP-003: Broadcast serialization format (use `rkyv`; `bincode` is unmaintained)
+- GAP-003: Broadcast serialization format (use `postcard` for MPI; `bincode` is unmaintained)
 - GAP-004: `StageTemplate` construction and LP variable layout
 - GAP-005: Forward pass patch sequence
 
@@ -236,5 +236,5 @@ The dominant gap crate is `cobre-sddp` (~20 of 38 gaps). The minimal viable buil
 - Use section prefix `SS` or `§` in overview/planning spec sections (use plain numbered headings).
 - Update the cross-reference index for a single spec in isolation — always batch.
 - Write gap summary statistics without verifying them against the detailed table.
-- Use `bincode` for serialization — use `rkyv` instead.
+- Use `bincode` for serialization — use `postcard` for MPI broadcast and `FlatBuffers` for policy persistence.
 - Allocate on the hot path inside the SDDP training loop iteration.

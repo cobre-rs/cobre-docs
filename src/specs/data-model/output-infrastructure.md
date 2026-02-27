@@ -401,7 +401,7 @@ pub fn write_results(
 `write_results` performs the following steps, in order:
 
 1. Create `output_dir/training/` and `output_dir/simulation/` directories if they do not exist.
-2. Write dictionary files via `write_dictionaries` (§6.6).
+2. Write dictionary files via `write_dictionaries` (§6.5).
 3. Write training Parquet files via `TrainingParquetWriter` (§6.3).
 4. Write training manifest via `write_training_manifest` (§6.5).
 5. Write metadata via `write_metadata` (§6.5).

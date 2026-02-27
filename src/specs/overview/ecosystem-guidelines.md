@@ -287,9 +287,13 @@ for accessing specific primal or dual slices. These structs should be read-only 
 across threads and ranks, since all LPs at the same stage share the same structure. The spec
 for any trait that exposes LP access methods should reference the corresponding indexer struct.
 
-**Serialization format.** Use `rkyv` for binary serialization of policy data (cuts, states,
-vertices). `bincode` is unmaintained and must not be used. This is an ecosystem-level decision
-— any new spec that introduces a serialization requirement must specify `rkyv` as the format.
+**Serialization format.** The ecosystem uses three distinct binary serialization formats, each with a specific role:
+
+- **`postcard`** for MPI broadcast of the `System` initialization struct (once per execution, hot path). Zero runtime overhead; reuses existing `serde` derives. See [Input Loading Pipeline](../architecture/input-loading-pipeline.md) SS6.1–6.4.
+- **`FlatBuffers`** for persistent policy data (cuts, state vectors, vertices). Zero-copy read access from disk; schema evolution via file-identifier versioning. See [Output Infrastructure §6.6](../data-model/output-infrastructure.md).
+- **`#[repr(C)]` raw `f64` arrays** for cut wire format on the backward-pass hot path (already in use; zero serialization overhead). See [Cut Management](../math/cut-management.md).
+
+`bincode` is unmaintained and must not be used. Any new spec that introduces a serialization requirement must specify which of the three approved formats applies and why.
 
 ---
 
@@ -385,13 +389,13 @@ Key planning documents for the first implementation plan:
 
 All 5 Blockers must be resolved before Phase 1 coding starts:
 
-| Gap ID  | Description                                                            |
-| ------- | ---------------------------------------------------------------------- |
-| GAP-001 | `SystemRepresentation` struct definition                               |
-| GAP-002 | Decommissioned LP treatment                                            |
-| GAP-003 | Broadcast serialization format (use `rkyv`; `bincode` is unmaintained) |
-| GAP-004 | `StageTemplate` construction and LP variable layout                    |
-| GAP-005 | Forward pass patch sequence                                            |
+| Gap ID  | Description                                                                         |
+| ------- | ----------------------------------------------------------------------------------- |
+| GAP-001 | `SystemRepresentation` struct definition                                            |
+| GAP-002 | Decommissioned LP treatment                                                         |
+| GAP-003 | Broadcast serialization format — **Resolved**: `postcard` adopted for MPI broadcast |
+| GAP-004 | `StageTemplate` construction and LP variable layout                                 |
+| GAP-005 | Forward pass patch sequence                                                         |
 
 The dominant gap crate is `cobre-sddp` (~20 of 38 gaps). The minimal viable build sequence
 is bottom-up: `cobre-core` first, then `cobre-solver` + `ferrompi` in parallel (Phase 3), up
@@ -419,7 +423,7 @@ as a pre-submission checklist:
 - [ ] Trait spec Cross-References section has 10–14 entries with section-level detail.
 - [ ] Cross-reference index updated in a batch — not for a single spec in isolation.
 - [ ] Gap summary statistics computed from and verified against the detailed gap table.
-- [ ] No `bincode` in serialization specs — use `rkyv`.
+- [ ] No `bincode` in serialization specs — use `postcard` (MPI broadcast), `FlatBuffers` (policy persistence), or `#[repr(C)]` raw arrays (cut wire format).
 - [ ] No allocation inside the training-loop iteration hot path.
 - [ ] Dominated-cut detection algorithm gated behind a Cargo feature flag.
 

@@ -255,7 +255,23 @@ The hydro production model is configured **per-hydro** (not globally) in `hydros
 | `fpha`                  | Piecewise-linear head approximation | Training + Simulation | [Hydro Production Models §2](../math/hydro-production-models.md) |
 | `linearized_head`       | Bilinear $q \times v^{avg}$         | Simulation only       | [Hydro Production Models §3](../math/hydro-production-models.md) |
 
-## 7. Complete Example
+## 7. Simulation I/O Options (`config.json` → `simulation`)
+
+Options that control simulation output and streaming behavior. All fields are optional; defaults are suitable for production use.
+
+| Option                           | Type | Default | Description                                                                                                                                                                               | Reference                                                            |
+| -------------------------------- | ---- | ------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
+| `simulation.io_channel_capacity` | int  | 64      | Bounded channel capacity between simulation threads and the I/O writer thread. Higher values reduce backpressure under fast simulation / slow disk, at the cost of increased peak memory. | [Output Infrastructure §6.2](../data-model/output-infrastructure.md) |
+
+```json
+{
+  "simulation": {
+    "io_channel_capacity": 128
+  }
+}
+```
+
+## 8. Complete Example
 
 ### `config.json`
 
