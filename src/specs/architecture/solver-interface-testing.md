@@ -105,7 +105,7 @@ Row form: $-5 x_0 + x_1 \geq 20$. With $x_0 = 6$: $x_1 \geq 50$.
 
 Row form: $3 x_0 + x_1 \geq 80$. With $x_0 = 6$: $x_1 \geq 62$.
 
-**CutBatch CSR data (both cuts):**
+**RowBatch CSR data (both cuts):**
 
 | Array         | Values                 | Description                                      |
 | ------------- | ---------------------- | ------------------------------------------------ |
@@ -164,7 +164,7 @@ For `set_row_bounds` tests, the state-fixing constraint (Row 0) RHS is changed f
 | --------------------------------------- | -------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- | ------- |
 | `test_solver_highs_add_rows_tightens`   | Load shared fixture. Add both cuts from SS1.2 via `add_rows`. Solve.                                     | Objective = 162.0. Primal: $x_0 = 6.0$, $x_1 = 62.0$, $x_2 = 2.0$. The cuts tighten the objective from 100.0 to 162.0. | HiGHS   |
 | `test_solver_clp_add_rows_tightens`     | Same as above.                                                                                           | Objective = 162.0. Primal: $x_0 = 6.0$, $x_1 = 62.0$, $x_2 = 2.0$.                                                     | CLP     |
-| `test_solver_highs_add_rows_single_cut` | Load shared fixture. Add only Cut 1 ($x_1 \geq 20 + 5 x_0$) via `add_rows` with a 1-row CutBatch. Solve. | Objective = 150.0 (= 0 + 50 + 100). Primal: $x_0 = 6.0$, $x_1 = 50.0$, $x_2 = 2.0$.                                    | HiGHS   |
+| `test_solver_highs_add_rows_single_cut` | Load shared fixture. Add only Cut 1 ($x_1 \geq 20 + 5 x_0$) via `add_rows` with a 1-row `RowBatch`. Solve. | Objective = 150.0 (= 0 + 50 + 100). Primal: $x_0 = 6.0$, $x_1 = 50.0$, $x_2 = 2.0$.                                    | HiGHS   |
 | `test_solver_clp_add_rows_single_cut`   | Same as above.                                                                                           | Objective = 150.0. Primal: $x_0 = 6.0$, $x_1 = 50.0$, $x_2 = 2.0$.                                                     | CLP     |
 
 ### SS1.6 set_row_bounds Conformance
@@ -224,7 +224,7 @@ These tests verify the `set_col_bounds` method contract from [Solver Interface T
 
 | Test Name                                | Input Scenario                                                                                                                         | Expected Observable Behavior                                                                                                                                                                                   | Variant |
 | ---------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- |
-| `test_solver_highs_get_basis_dimensions` | Load shared fixture. Solve. Call `get_basis`.                                                                                          | `basis.col_status.len() == 3` (3 columns). `basis.row_status.len() == 2` (2 structural rows, no cuts). Basis dimensions match loaded LP per [Solver Interface Trait SS2.7](./solver-interface-trait.md).       | HiGHS   |
+| `test_solver_highs_get_basis_dimensions` | Load shared fixture. Solve. Call `get_basis`.                                                                                          | `basis.col_status.len() == 3` (3 columns). `basis.row_status.len() == 2` (2 static rows, no dynamic constraints). Basis dimensions match loaded LP per [Solver Interface Trait SS2.7](./solver-interface-trait.md).       | HiGHS   |
 | `test_solver_clp_get_basis_dimensions`   | Same as above.                                                                                                                         | Same dimensions: 3 column statuses, 2 row statuses.                                                                                                                                                            | CLP     |
 | `test_solver_highs_get_basis_roundtrip`  | Load shared fixture. Solve. Extract basis via `get_basis`. Reset. Load same fixture. Call `solve_with_basis` with the extracted basis. | Solve returns `Ok` with 0 or 1 simplex iterations. The basis round-trips through extract-reload without information loss.                                                                                      | HiGHS   |
 | `test_solver_clp_get_basis_roundtrip`    | Same as above.                                                                                                                         | Same: 0 or 1 iterations on basis reload.                                                                                                                                                                       | CLP     |
@@ -364,15 +364,15 @@ These tests specifically target the dual normalization contract from [Solver Abs
 
 ## Cross-References
 
-- [Solver Interface Trait](./solver-interface-trait.md) -- Trait definition (SS1), method contracts for `load_model` (SS2.1), `add_rows` (SS2.2), `set_row_bounds` (SS2.3), `set_col_bounds` (SS2.3a), `solve` (SS2.4), `solve_with_basis` (SS2.5), `reset` (SS2.6), `get_basis` (SS2.7), `statistics` (SS2.8), `name` (SS2.9), `SolverError` enum (SS3), `LpSolution` type (SS4.1), `Basis` type (SS4.2), `SolverStatistics` type (SS4.3), `StageTemplate` type (SS4.4), `CutBatch` type (SS4.5), dual normalization contract (SS7)
-- [Solver Abstraction](./solver-abstraction.md) -- LP layout convention (SS2), column layout (SS2.1), row layout with cut-relevant prefix (SS2.2), basis persistence with cut boundary (SS2.3), solver interface contract (SS4), cut pool design (SS5), error categories (SS6), retry logic contract (SS7), dual normalization canonical convention (SS8), basis storage (SS9), compile-time solver selection (SS10), stage template and rebuild strategy (SS11)
+- [Solver Interface Trait](./solver-interface-trait.md) -- Trait definition (SS1), method contracts for `load_model` (SS2.1), `add_rows` (SS2.2), `set_row_bounds` (SS2.3), `set_col_bounds` (SS2.3a), `solve` (SS2.4), `solve_with_basis` (SS2.5), `reset` (SS2.6), `get_basis` (SS2.7), `statistics` (SS2.8), `name` (SS2.9), `SolverError` enum (SS3), `LpSolution` type (SS4.1), `Basis` type (SS4.2), `SolverStatistics` type (SS4.3), `StageTemplate` type (SS4.4), `RowBatch` type (SS4.5), dual normalization contract (SS7)
+- [Solver Abstraction](./solver-abstraction.md) -- LP layout convention (SS2), column layout (SS2.1), row layout with dual-extraction region (SS2.2), basis persistence with cut boundary (SS2.3), solver interface contract (SS4), cut pool design (SS5), error categories (SS6), retry logic contract (SS7), dual normalization canonical convention (SS8), basis storage (SS9), compile-time solver selection (SS10), stage template and rebuild strategy (SS11)
 - [HiGHS Implementation](./solver-highs-impl.md) -- HiGHS-specific API mapping, retry strategy, dual sign convention before normalization
 - [CLP Implementation](./solver-clp-impl.md) -- CLP-specific API mapping, C++ wrapper strategy, native dual sign convention
 - [Backend Testing](../hpc/backend-testing.md) -- Conformance test suite structure, parameterized-by-backend pattern, interchangeability verification approach
 - [Risk Measure Testing](./risk-measure-testing.md) -- Sibling conformance test spec: shared fixture design, requirements tables, variant equivalence tests
 - [Cut Selection Testing](./cut-selection-testing.md) -- Sibling conformance test spec: hand-computable fixtures, cross-variant comparison
 - [Training Loop](./training-loop.md) -- Forward pass (SS4) and backward pass (SS6) that drive the load-patch-solve-basis lifecycle tested in SS4
-- [Cut Management Implementation](./cut-management-impl.md) -- Cut pool activity bitmap (SS1.1), CSR assembly for `addRows` (SS1) that produces the `CutBatch` input tested in SS1.5
+- [Cut Management Implementation](./cut-management-impl.md) -- Cut pool activity bitmap (SS1.1), CSR assembly for `addRows` (SS1) that produces the `RowBatch` input tested in SS1.5
 - [LP Formulation](../math/lp-formulation.md) -- Constraint structure defining which row duals are cut-relevant; the fixture Row 0 models the state-linking constraint type
 - [Binary Formats](../data-model/binary-formats.md) -- Cut pool memory layout (SS3.4) and CSC/CSR format conventions used in the fixture data
 - [Solver Workspaces](./solver-workspaces.md) -- Thread-local solver infrastructure (SS1), per-stage basis cache (SS1.5) that the lifecycle tests in SS4 exercise

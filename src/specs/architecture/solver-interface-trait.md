@@ -84,7 +84,7 @@ pub trait SolverInterface: Send {
     ///
     /// Loads the provided basis into the solver before invoking the
     /// solve sequence. The basis structure splits at the cut boundary:
-    /// structural rows are reused directly, new cut rows are initialized
+    /// static rows are reused directly, new dynamic constraint rows are initialized
     /// as Basic per [Solver Abstraction SS2.3](./solver-abstraction.md).
     ///
     /// Maps to `Highs_setBasis` + `Highs_run` (HiGHS) or
@@ -174,8 +174,8 @@ pub trait SolverInterface: Send {
 
 | Condition                                                                          | Description                                                                                |
 | ---------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
-| Active cuts are appended as rows at `[n_structural, n_structural + cuts.num_rows)` | Cut row positions follow [Solver Abstraction SS2.2](./solver-abstraction.md) bottom region |
-| Structural rows `[0, n_structural)` are unchanged                                  | Adding cuts does not modify the structural LP                                              |
+| Active cuts are appended as rows at `[n_static, n_static + cuts.num_rows)` | Cut row positions follow [Solver Abstraction SS2.2](./solver-abstraction.md) bottom region |
+| Structural rows `[0, n_static)` are unchanged                                  | Adding cuts does not modify the structural LP                                              |
 | Solver basis is not automatically set                                              | Caller must use `solve_with_basis` to apply a cached basis                                 |
 
 **Infallibility:** This method does not return `Result`. The cut batch is assembled from the pre-validated cut pool ([Solver Abstraction SS5](./solver-abstraction.md)); invalid CSR data is a programming error (panic on violation).
@@ -302,7 +302,7 @@ pub trait SolverInterface: Send {
 
 **Fallibility:** Same as `solve()` -- returns `Result<LpSolution, SolverError>`.
 
-**Basis dimension mismatch handling:** If the provided basis dimensions do not match the current LP (e.g., because cuts were added since the basis was saved), the solver implementation must handle this gracefully. Per [Solver Abstraction SS2.3](./solver-abstraction.md), the structural portion of the basis is position-stable; only the cut portion needs extension (new cut rows initialized as Basic) or truncation.
+**Basis dimension mismatch handling:** If the provided basis dimensions do not match the current LP (e.g., because cuts were added since the basis was saved), the solver implementation must handle this gracefully. Per [Solver Abstraction SS2.3](./solver-abstraction.md), the static portion of the basis is position-stable; only the dynamic constraint portion needs extension (new dynamic constraint rows initialized as Basic) or truncation.
 
 ### 2.6 reset
 
@@ -480,7 +480,7 @@ pub struct LpSolution {
 
     /// Dual multipliers (shadow prices), indexed by row.
     /// Length equals `num_rows` (structural + cuts). Cut-relevant
-    /// constraint duals occupy the contiguous prefix `[0, n_cut_relevant)`
+    /// constraint duals occupy the contiguous prefix `[0, n_dual_relevant)`
     /// per [Solver Abstraction SS2.2](./solver-abstraction.md).
     ///
     /// Sign convention: normalized per SS7 before returning.
@@ -511,7 +511,7 @@ pub struct Basis {
     pub col_status: Vec<BasisStatus>,
 
     /// Basis status for each row (constraint).
-    /// Includes both structural rows and cut rows.
+    /// Includes both static rows and dynamic constraint rows.
     pub row_status: Vec<BasisStatus>,
 }
 
@@ -590,7 +590,7 @@ The `StageTemplate` holds the pre-assembled structural LP for one stage in solve
 pub struct StageTemplate {
     /// Number of columns (variables).
     pub num_cols: usize,
-    /// Number of structural rows (constraints, excluding cuts).
+    /// Number of static rows (constraints, excluding dynamic constraints).
     pub num_rows: usize,
     /// Number of non-zero entries in the structural matrix.
     pub num_nz: usize,
@@ -623,7 +623,7 @@ pub struct StageTemplate {
     pub n_transfer: usize,
     /// Number of cut-relevant constraint rows (contiguous prefix of rows).
     /// Equal to N + N*L + n_fpha + n_gvc per [Solver Abstraction SS2.2](./solver-abstraction.md).
-    pub n_cut_relevant: usize,
+    pub n_dual_relevant: usize,
     /// Number of operating hydros at this stage.
     pub n_hydro: usize,
     /// Maximum PAR order across all operating hydros at this stage.
@@ -717,7 +717,7 @@ All dual multipliers in `LpSolution.dual` are **pre-normalized** to the canonica
 
 **Canonical convention:** A positive dual on a $\leq$ constraint means that increasing the RHS increases the objective ($\partial z^* / \partial b > 0$).
 
-**Why this matters:** The cut coefficient computation in the backward pass extracts dual multipliers from the cut-relevant constraint rows (`[0, n_cut_relevant)`) and uses them directly as cut gradients:
+**Why this matters:** The cut coefficient computation in the backward pass extracts dual multipliers from the cut-relevant constraint rows (`[0, n_dual_relevant)`) and uses them directly as cut gradients:
 
 $$\beta_t^k = W_t^\top \pi_t^*$$
 
