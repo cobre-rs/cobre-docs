@@ -1,0 +1,139 @@
+{
+  "plan": "scenario-spec-gap-closure",
+  "last_updated": "2026-02-27T12:05:39Z",
+  "progressive": false,
+  "tickets": {
+    "ticket-001-fix-insample-description-and-seed-clarification.md": {
+      "status": "completed",
+      "detail_level": "detailed",
+      "scores": {
+        "readiness": 1.0,
+        "readiness_breakdown": {
+          "structure": 1.0,
+          "testability": 1.0,
+          "boundary": 1.0,
+          "dependency_clarity": 1.0,
+          "atomicity": 1.0
+        },
+        "quality": 0.90,
+        "quality_breakdown": {
+          "conformance": 1.0,
+          "scope_adherence": 1.0,
+          "lint_cleanliness": 1.0,
+          "type_safety": 1.0,
+          "test_delta": 0.0
+        }
+      },
+      "workflow_step": null,
+      "agent": "sddp-specialist"
+    },
+    "ticket-002-add-sampling-method-section.md": {
+      "status": "completed",
+      "detail_level": "detailed",
+      "scores": {
+        "readiness": 0.98,
+        "readiness_breakdown": {
+          "structure": 1.0,
+          "testability": 1.0,
+          "boundary": 1.0,
+          "dependency_clarity": 1.0,
+          "atomicity": 0.8
+        },
+        "quality": 0.875,
+        "quality_breakdown": {
+          "conformance": 1.0,
+          "scope_adherence": 0.50,
+          "lint_cleanliness": 1.0,
+          "type_safety": 1.0,
+          "test_delta": 1.0
+        }
+      },
+      "workflow_step": null,
+      "agent": "sddp-specialist"
+    },
+    "ticket-003-reclassify-gap039-as-resolved.md": {
+      "status": "pending",
+      "detail_level": "detailed",
+      "scores": {
+        "readiness": 0.96,
+        "readiness_breakdown": {
+          "structure": 1.0,
+          "testability": 1.0,
+          "boundary": 1.0,
+          "dependency_clarity": 1.0,
+          "atomicity": 0.6
+        }
+      }
+    },
+    "ticket-004-fix-gap036-037-038-resolved-markers.md": {
+      "status": "pending",
+      "detail_level": "detailed",
+      "scores": {
+        "readiness": 1.0,
+        "readiness_breakdown": {
+          "structure": 1.0,
+          "testability": 1.0,
+          "boundary": 1.0,
+          "dependency_clarity": 1.0,
+          "atomicity": 1.0
+        }
+      }
+    },
+    "ticket-005-add-missing-crossrefs-in-spec-files.md": {
+      "status": "pending",
+      "detail_level": "detailed",
+      "scores": {
+        "readiness": 0.98,
+        "readiness_breakdown": {
+          "structure": 1.0,
+          "testability": 1.0,
+          "boundary": 1.0,
+          "dependency_clarity": 1.0,
+          "atomicity": 0.8
+        }
+      }
+    },
+    "ticket-006-batch-update-cross-reference-index.md": {
+      "status": "pending",
+      "detail_level": "detailed",
+      "scores": {
+        "readiness": 0.98,
+        "readiness_breakdown": {
+          "structure": 1.0,
+          "testability": 1.0,
+          "boundary": 1.0,
+          "dependency_clarity": 1.0,
+          "atomicity": 0.8
+        }
+      }
+    },
+    "ticket-007-fix-crossref-entry-precision.md": {
+      "status": "pending",
+      "detail_level": "detailed",
+      "scores": {
+        "readiness": 1.0,
+        "readiness_breakdown": {
+          "structure": 1.0,
+          "testability": 1.0,
+          "boundary": 1.0,
+          "dependency_clarity": 1.0,
+          "atomicity": 1.0
+        }
+      }
+    }
+  },
+  "epics": {
+    "epic-01-scenario-generation-spec-updates": {
+      "phase": "executing",
+      "learning_extracted": false
+    },
+    "epic-02-gap-inventory-cleanup": {
+      "phase": "executing",
+      "learning_extracted": false
+    },
+    "epic-03-cross-reference-fixes": {
+      "phase": "executing",
+      "learning_extracted": false
+    }
+  }
+}

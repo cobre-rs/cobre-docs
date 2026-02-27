@@ -130,6 +130,8 @@ This design ensures:
 - **Restart reproducibility** — Resuming from a checkpoint produces identical noise for subsequent iterations
 - **Order independence** — Results are identical regardless of the order in which scenarios or stages are processed
 
+> **Architectural note:** Because every rank can independently derive the same noise for any `(iteration, scenario, stage)` tuple by hashing identical inputs with the same RNG, no MPI broadcast of noise data is required. This is a key architectural property: rank 0 does not generate all noise and broadcast it to worker ranks. Instead, each rank generates only the noise it needs, exactly when it needs it. This property is what makes the previously identified GAP-039 ("scenario innovation noise broadcast format") a false gap — the seed-based architecture already resolves the distribution problem.
+
 ### 2.2a Seed Derivation Function
 
 The deterministic hash function referenced in SS2.2 is **SipHash-1-3**, provided by the [`siphasher`](https://crates.io/crates/siphasher) crate (version `1.x`). The `siphasher` crate guarantees output stability across crate versions, making it suitable for cross-platform and cross-build reproducibility. The hash does **not** need to be cryptographic — SipHash-1-3 is chosen for speed and sufficient collision resistance over the small $(iteration, scenario, stage)$ input domain, not for security properties.
@@ -324,6 +326,26 @@ pub struct OpeningTreeView<'a> {
 
 The `OpeningTreeView` provides the same access API as `OpeningTree` (`opening()`, `n_openings()`, `n_stages()`, `dim()`) but borrows the data instead of owning it. The dual-type design (`OpeningTree` for owned generation, `OpeningTreeView` for borrowed consumption) follows the dual-nature principle established in [Internal Structures SS1.1](../data-model/internal-structures.md): `cobre-stochastic` owns the generation and the `OpeningTree` struct, while `cobre-sddp` consumes it through `OpeningTreeView<'a>` without taking ownership.
 
+### 2.3b Sampling Method and Opening Tree Generation
+
+The `sampling_method` field on each stage in `stages.json` (see [Input Scenarios SS1.8](../data-model/input-scenarios.md)) controls the algorithm used to generate the $N_t$ noise vectors for that stage's opening tree entries (SS2.3). This is **orthogonal** to the `SamplingScheme` abstraction (SS3): `sampling_method` governs _how_ the opening tree is populated with noise vectors; `SamplingScheme` governs _which_ noise source the forward pass uses.
+
+**SAA — the Phase 5 implementation.** For the minimal viable solver, the only implemented `sampling_method` is `"saa"` (Sample Average Approximation): uniform Monte Carlo random sampling from the RNG seeded by the deterministic seed function (SS2.2a). Each noise vector component $z_i$ is drawn as an independent standard normal $\mathcal{N}(0,1)$, then transformed by the Cholesky correlation factor (SS2.1) to produce the correlated noise vector $\eta$. SAA is the default when `sampling_method` is `"saa"` or omitted from the stage definition.
+
+**Summary of sampling methods:**
+
+| Method       | Description                                                               | Phase 5 Status |
+| ------------ | ------------------------------------------------------------------------- | -------------- |
+| `saa`        | Sample Average Approximation — uniform Monte Carlo from seeded RNG        | Implemented    |
+| `lhs`        | Latin Hypercube Sampling — stratified, uniform marginal coverage          | Deferred       |
+| `qmc_sobol`  | Quasi-Monte Carlo (Sobol sequences) — low-discrepancy deterministic-like  | Deferred       |
+| `qmc_halton` | Quasi-Monte Carlo (Halton sequences) — alternative low-discrepancy method | Deferred       |
+| `selective`  | Selective/Representative Sampling — clustering on historical data         | Deferred       |
+
+The deferred methods (`lhs`, `qmc_sobol`, `qmc_halton`, `selective`) are listed in [Deferred Features](../deferred.md) and are not implemented in Phase 5.
+
+**Per-stage variation.** The `sampling_method` field can vary per stage (as permitted by [Input Scenarios SS1.8](../data-model/input-scenarios.md)), enabling mixed strategies in a single run. The minimal viable solver uses uniform SAA across all stages; per-stage method variation is a deferred capability.
+
 ### 2.4 Time-Varying Correlation Profiles
 
 The correlation structure can vary across stages via the **profile + schedule** pattern defined in [Input Scenarios SS5.3](../data-model/input-scenarios.md):
@@ -355,10 +377,10 @@ The sampling scheme determines how the forward pass selects a scenario realizati
 
 #### InSample (Default)
 
-At each stage $t$, sample a random index $j \in \{0, \ldots, N_{\text{openings}} - 1\}$ and use the corresponding noise vector from the fixed opening tree (§2.3). The sampled noise feeds the PAR model to produce inflow realizations.
+At each stage $t$, sample a random index $j \in \{0, \ldots, N_{\text{openings}} - 1\}$ and use the corresponding noise vector $\eta_{t,j}$ from the fixed opening tree (SS2.3). The noise values are injected into the stage LP by fixing the noise variable $\varepsilon$ via `patch_row_bounds` on the AR dynamics constraint row (see [Training Loop SS4.2a](./training-loop.md)). The PAR model dynamics equation is already embedded in the LP as a constraint ([LP Formulation SS5a](../math/lp-formulation.md)); the solver evaluates the inflow realization implicitly when it solves the LP with the fixed noise.
 
 - **Noise source**: Opening tree (same as backward pass)
-- **Realization computation**: PAR model evaluation with sampled noise
+- **Realization computation**: LP solve with noise epsilon fixed via `patch_row_bounds` on the AR dynamics constraint row
 - **Use case**: Standard SDDP training — forward and backward passes see the same noise distribution
 
 This is SDDP.jl's `InSampleMonteCarlo`: the forward pass samples from the same noise terms defined in the model.
