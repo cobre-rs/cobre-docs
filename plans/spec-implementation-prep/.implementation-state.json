@@ -1,0 +1,99 @@
+{
+  "plan": "spec-implementation-prep",
+  "last_updated": "2026-02-27T12:00:00Z",
+  "progressive": true,
+  "tickets": {
+    "ticket-001-remove-inline-gap-markers.md": {
+      "status": "pending",
+      "detail_level": "detailed",
+      "scores": {
+        "readiness": 0.98,
+        "readiness_breakdown": {
+          "structure": 1.0,
+          "testability": 1.0,
+          "boundary": 1.0,
+          "dependency_clarity": 1.0,
+          "atomicity": 0.8
+        }
+      }
+    },
+    "ticket-002-update-ecosystem-guidelines-blocker-table.md": {
+      "status": "pending",
+      "detail_level": "detailed",
+      "scores": {
+        "readiness": 1.0,
+        "readiness_breakdown": {
+          "structure": 1.0,
+          "testability": 1.0,
+          "boundary": 1.0,
+          "dependency_clarity": 1.0,
+          "atomicity": 1.0
+        }
+      }
+    },
+    "ticket-003-fix-section-prefix-high-count-files.md": {
+      "status": "pending",
+      "detail_level": "detailed",
+      "scores": {
+        "readiness": 1.0,
+        "readiness_breakdown": {
+          "structure": 1.0,
+          "testability": 1.0,
+          "boundary": 1.0,
+          "dependency_clarity": 1.0,
+          "atomicity": 1.0
+        }
+      }
+    },
+    "ticket-004-fix-section-prefix-medium-count-files.md": {
+      "status": "pending",
+      "detail_level": "detailed",
+      "scores": {
+        "readiness": 0.98,
+        "readiness_breakdown": {
+          "structure": 1.0,
+          "testability": 1.0,
+          "boundary": 1.0,
+          "dependency_clarity": 1.0,
+          "atomicity": 0.8
+        }
+      }
+    },
+    "ticket-005-fix-section-prefix-low-count-and-openmp-audit.md": {
+      "status": "pending",
+      "detail_level": "detailed",
+      "scores": {
+        "readiness": 0.94,
+        "readiness_breakdown": {
+          "structure": 1.0,
+          "testability": 1.0,
+          "boundary": 1.0,
+          "dependency_clarity": 1.0,
+          "atomicity": 0.4
+        }
+      }
+    },
+    "ticket-006-update-implementation-ordering-reading-lists.md": {
+      "status": "pending",
+      "detail_level": "outline"
+    },
+    "ticket-007-add-minimum-viable-reading-list.md": {
+      "status": "pending",
+      "detail_level": "outline"
+    }
+  },
+  "epics": {
+    "epic-01-gap-marker-cleanup": {
+      "phase": "executing",
+      "learning_extracted": false
+    },
+    "epic-02-consistency-pass": {
+      "phase": "executing",
+      "learning_extracted": false
+    },
+    "epic-03-navigation-layer": {
+      "phase": "outline",
+      "learning_extracted": false
+    }
+  }
+}
