@@ -169,7 +169,7 @@ Total input: **16 bytes**.
 
 The backward pass in SDDP evaluates an aggregated cut by solving **all** $N_t$ branchings at each stage $t$. These branchings must be identical across all iterations — the backward pass always "sees the same tree." The opening tree is therefore **generated once before training begins** and remains fixed throughout.
 
-The per-stage branching factor $N_t$ comes from `StageSamplingConfig.num_scenarios` ([Internal Structures SS12.5](../data-model/internal-structures.md)). Uniform branching ($N_t = N$ for all $t$) is the common case in standard SDDP, but per-stage variable branching is supported — this is required for complete tree mode (SS7.2), where the DECOMP special case uses $N_t = 1$ for $t < T$ and $N_T = K$.
+The per-stage branching factor $N_t$ comes from `ScenarioSourceConfig.branching_factor` ([Internal Structures SS12.5](../data-model/internal-structures.md)). Uniform branching ($N_t = N$ for all $t$) is the common case in standard SDDP, but per-stage variable branching is supported — this is required for complete tree mode (SS7.2), where the DECOMP special case uses $N_t = 1$ for $t < T$ and $N_T = K$.
 
 **Tree generation:**
 
@@ -236,13 +236,13 @@ pub struct OpeningTree {
 
 **Field descriptions:**
 
-| Field                | Type           | Description                                                                                                                                                                    |
-| -------------------- | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `data`               | `Box<[f64]>`   | Flat contiguous storage. Length = $\sum_t N_t \times \text{dim}$. Heap-allocated, non-resizable after construction.                                                            |
-| `stage_offsets`      | `Box<[usize]>` | Cumulative offset array. `stage_offsets[t]` = $\sum_{s=0}^{t-1} N_s \times \text{dim}$. Length = `n_stages + 1`. The sentinel `stage_offsets[n_stages]` = `data.len()`.        |
-| `openings_per_stage` | `Box<[usize]>` | Per-stage branching factors $N_t$. Length = `n_stages`. Sourced from `StageSamplingConfig.num_scenarios` ([Internal Structures SS12.5](../data-model/internal-structures.md)). |
-| `n_stages`           | `usize`        | Number of stages $T$ in the planning horizon.                                                                                                                                  |
-| `dim`                | `usize`        | Number of random variables (entities) per noise vector $N_{\text{entities}}$.                                                                                                  |
+| Field                | Type           | Description                                                                                                                                                                        |
+| -------------------- | -------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `data`               | `Box<[f64]>`   | Flat contiguous storage. Length = $\sum_t N_t \times \text{dim}$. Heap-allocated, non-resizable after construction.                                                                |
+| `stage_offsets`      | `Box<[usize]>` | Cumulative offset array. `stage_offsets[t]` = $\sum_{s=0}^{t-1} N_s \times \text{dim}$. Length = `n_stages + 1`. The sentinel `stage_offsets[n_stages]` = `data.len()`.            |
+| `openings_per_stage` | `Box<[usize]>` | Per-stage branching factors $N_t$. Length = `n_stages`. Sourced from `ScenarioSourceConfig.branching_factor` ([Internal Structures SS12.5](../data-model/internal-structures.md)). |
+| `n_stages`           | `usize`        | Number of stages $T$ in the planning horizon.                                                                                                                                      |
+| `dim`                | `usize`        | Number of random variables (entities) per noise vector $N_{\text{entities}}$.                                                                                                      |
 
 **Why `Box<[f64]>` and not `Vec<f64>`:** The opening tree is allocated once and never resized. `Box<[f64]>` communicates this invariant at the type level — there is no capacity field, no growth path, and no accidental reallocation. The box is created from a `Vec<f64>` via `into_boxed_slice()` after generation completes. The same reasoning applies to `stage_offsets` and `openings_per_stage`.
 

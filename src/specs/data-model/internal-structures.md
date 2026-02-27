@@ -1145,13 +1145,19 @@ pub enum SeasonCycleType {
     Custom,
 }
 
-/// Scenario sampling method for a stage.
+/// Opening tree noise generation algorithm for a stage.
 ///
-/// Controls how noise vectors are drawn for the forward pass at this
-/// stage. See [Input Scenarios §1.8](input-scenarios.md) for the
+/// Controls which algorithm is used to generate noise vectors for
+/// the opening tree at this stage. This is orthogonal to
+/// `SamplingScheme`, which selects the forward-pass noise *source*
+/// (in_sample, external, historical). `NoiseMethod` governs *how*
+/// the noise vectors are produced (SAA, LHS, QMC-Sobol, QMC-Halton,
+/// Selective).
+///
+/// See [Input Scenarios §1.8](input-scenarios.md) for the
 /// full method catalog and use cases.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SamplingMethod {
+pub enum NoiseMethod {
     /// Sample Average Approximation. Pure Monte Carlo random sampling.
     Saa,
     /// Latin Hypercube Sampling. Stratified sampling ensuring uniform coverage.
@@ -1261,26 +1267,29 @@ pub enum StageRiskConfig {
 }
 ```
 
-### 12.5 StageSamplingConfig
+### 12.5 ScenarioSourceConfig
 
 ```rust
-/// Per-stage scenario sampling configuration, grouping the branching
-/// factor and sampling method for a single stage.
+/// Scenario source configuration for one stage.
 ///
-/// Source: `stages.json` `stages[].num_scenarios` and
-/// `stages[].sampling_method`.
+/// Groups the scenario-related settings that were formerly separate
+/// `num_scenarios` and `sampling_method` fields. Sourced from
+/// `stages.json scenario_source` and per-stage overrides.
+///
 /// See [Input Scenarios §1.4, §1.8](input-scenarios.md).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct StageSamplingConfig {
-    /// Number of scenarios (branching factor) for this stage.
-    /// Must be positive. Controls the number of noise realizations
-    /// sampled at this stage during forward and backward passes.
-    pub num_scenarios: usize,
+pub struct ScenarioSourceConfig {
+    /// Number of noise realizations per stage for both the opening
+    /// tree and forward pass. Formerly `num_scenarios`.
+    /// Must be positive. Controls the per-stage branching factor.
+    pub branching_factor: usize,
 
-    /// Sampling method used to draw noise vectors at this stage.
+    /// Algorithm for generating noise vectors in the opening tree.
+    /// Orthogonal to `SamplingScheme`, which selects the noise
+    /// source (in_sample, external, historical).
     /// Can vary per stage, allowing adaptive strategies (e.g., LHS
     /// for near-term, SAA for distant stages).
-    pub sampling_method: SamplingMethod,
+    pub noise_method: NoiseMethod,
 }
 ```
 
@@ -1360,25 +1369,25 @@ pub struct Stage {
     /// for distant stages).
     pub risk_config: StageRiskConfig,
 
-    /// Scenario sampling configuration (branching factor and method).
-    pub sampling_config: StageSamplingConfig,
+    /// Scenario source configuration (branching factor and noise method).
+    pub scenario_config: ScenarioSourceConfig,
 }
 ```
 
 **Field descriptions**:
 
-| Field             | Source                                                             | Description                                                                                                                                               |
-| ----------------- | ------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `index`           | Assigned during loading                                            | 0-based canonical index in the `System.stages` vector. Assigned after sorting by `id`.                                                                    |
-| `id`              | `stages.json` `stages[].id`                                        | Domain-level identifier. Non-negative for study, negative for pre-study.                                                                                  |
-| `start_date`      | `stages.json` `stages[].start_date`                                | Stage start date (inclusive). Parsed from ISO 8601 string.                                                                                                |
-| `end_date`        | `stages.json` `stages[].end_date`                                  | Stage end date (exclusive). Duration = `end_date - start_date`.                                                                                           |
-| `season_id`       | `stages.json` `stages[].season_id`                                 | Season index for PAR model cycling. `None` when null in JSON. Validated against `season_definitions`.                                                     |
-| `blocks`          | `stages.json` `stages[].blocks`                                    | Ordered block list. Resolves the `System` field `pub stages: Vec<Stage>` block structure.                                                                 |
-| `block_mode`      | `stages.json` `stages[].block_mode`                                | Parallel or Chronological. Default: Parallel. See [Block Formulations](../math/block-formulations.md).                                                    |
-| `state_config`    | `stages.json` `stages[].state_variables`                           | State variable flags (storage, inflow_lags). Defaults resolved during loading.                                                                            |
-| `risk_config`     | `stages.json` `stages[].risk_measure`                              | Risk measure parameters. Expectation or CVaR(alpha, lambda). Validated by rules R1-R4 in [Risk Measure Trait SS5](../architecture/risk-measure-trait.md). |
-| `sampling_config` | `stages.json` `stages[].num_scenarios`, `stages[].sampling_method` | Branching factor and sampling method. Both can vary per stage.                                                                                            |
+| Field             | Source                                                              | Description                                                                                                                                               |
+| ----------------- | ------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `index`           | Assigned during loading                                             | 0-based canonical index in the `System.stages` vector. Assigned after sorting by `id`.                                                                    |
+| `id`              | `stages.json` `stages[].id`                                         | Domain-level identifier. Non-negative for study, negative for pre-study.                                                                                  |
+| `start_date`      | `stages.json` `stages[].start_date`                                 | Stage start date (inclusive). Parsed from ISO 8601 string.                                                                                                |
+| `end_date`        | `stages.json` `stages[].end_date`                                   | Stage end date (exclusive). Duration = `end_date - start_date`.                                                                                           |
+| `season_id`       | `stages.json` `stages[].season_id`                                  | Season index for PAR model cycling. `None` when null in JSON. Validated against `season_definitions`.                                                     |
+| `blocks`          | `stages.json` `stages[].blocks`                                     | Ordered block list. Resolves the `System` field `pub stages: Vec<Stage>` block structure.                                                                 |
+| `block_mode`      | `stages.json` `stages[].block_mode`                                 | Parallel or Chronological. Default: Parallel. See [Block Formulations](../math/block-formulations.md).                                                    |
+| `state_config`    | `stages.json` `stages[].state_variables`                            | State variable flags (storage, inflow_lags). Defaults resolved during loading.                                                                            |
+| `risk_config`     | `stages.json` `stages[].risk_measure`                               | Risk measure parameters. Expectation or CVaR(alpha, lambda). Validated by rules R1-R4 in [Risk Measure Trait SS5](../architecture/risk-measure-trait.md). |
+| `scenario_config` | `stages.json` `scenario_source` (top-level and per-stage overrides) | Branching factor and noise method. Both can vary per stage.                                                                                               |
 
 ### 12.7 SeasonDefinition
 

@@ -12,9 +12,9 @@ Incorporate confirmed architectural decisions from a stakeholder design review i
 
 | Epic    | Name                         | Tickets | Status    |
 | ------- | ---------------------------- | ------- | --------- |
-| epic-01 | Gap Inventory Update         | 1       | executing |
-| epic-02 | High-Impact Spec Content     | 4       | executing |
-| epic-03 | Configuration and Data Model | 3       | outline   |
+| epic-01 | Gap Inventory Update         | 1       | completed |
+| epic-02 | High-Impact Spec Content     | 4       | completed |
+| epic-03 | Configuration and Data Model | 3       | executing |
 | epic-04 | Remaining Spec Content       | 5       | outline   |
 
 ## Progress
@@ -26,9 +26,9 @@ Incorporate confirmed architectural decisions from a stakeholder design review i
 | ticket-003 | Define TrajectoryRecord type with contiguous LP solution layout | epic-02 | completed | Detailed     | 1.00      | 1.00    | EXCELLENT |
 | ticket-004 | Specify warm-start compatibility validation checks              | epic-02 | completed | Detailed     | 1.00      | 0.93    | EXCELLENT |
 | ticket-005 | Replace OpenMP with rayon for intra-rank parallelism            | epic-02 | completed | Detailed     | 1.00      | 0.93    | EXCELLENT |
-| ticket-006 | Update configuration reference for GAP-019, 024, 027, 035       | epic-03 | pending   | Outline      | --        | --      | --        |
-| ticket-007 | Uniformize scenario notation and remove legacy Stage fields     | epic-03 | pending   | Outline      | --        | --      | --        |
-| ticket-008 | Document forward_passes immutability precondition               | epic-03 | pending   | Outline      | --        | --      | --        |
+| ticket-006 | Update configuration reference for GAP-019, 024, 027, 035       | epic-03 | completed | Refined      | 0.98      | 1.00    | EXCELLENT |
+| ticket-007 | Uniformize scenario notation and remove legacy Stage fields     | epic-03 | completed | Refined      | 0.96      | 0.88    | EXCELLENT |
+| ticket-008 | Document forward_passes immutability precondition               | epic-03 | completed | Refined      | 1.00      | 1.00    | EXCELLENT |
 | ticket-009 | Document backward pass trial state distribution strategy        | epic-04 | pending   | Outline      | --        | --      | --        |
 | ticket-010 | Replace event channel with std::sync::mpsc                      | epic-04 | pending   | Outline      | --        | --      | --        |
 | ticket-011 | Simplify SharedMemoryProvider bound for minimal viable          | epic-04 | pending   | Outline      | --        | --      | --        |

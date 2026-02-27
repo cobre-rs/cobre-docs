@@ -46,6 +46,11 @@ The pool is fully pre-allocated at initialization:
 
 See [Binary Formats SS4.3](../data-model/binary-formats.md) for the full sizing breakdown.
 
+> **Precondition:** `forward_passes` is immutable after initialization. The cut pool
+> capacity formula depends on this invariant — a runtime change to `forward_passes`
+> would invalidate the pre-allocated slot assignment. A dynamic forward-passes scheduler
+> is deferred (see [Deferred Features SSC.19](../deferred.md)).
+
 ### 1.4 FCF-Level Operations
 
 The FCF provides the following operations to the training loop:

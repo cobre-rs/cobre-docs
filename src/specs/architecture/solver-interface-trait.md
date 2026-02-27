@@ -699,7 +699,7 @@ The key distinction is that exactly one solver backend is active per build (sele
 
 ## 6. Retry Logic Encapsulation
 
-Retry logic for numerical difficulties is **encapsulated within each `SolverInterface` implementation**. The `solve()` and `solve_with_basis()` methods handle retries internally and return only the final result (success or terminal error) to the caller. The SDDP training loop never sees intermediate retry attempts.
+Retry logic for numerical difficulties is **encapsulated within each `SolverInterface` implementation**. The `solve()` and `solve_with_basis()` methods handle retries internally and return only the final result (success or terminal error) to the caller. The SDDP training loop never sees intermediate retry attempts. The `retry_max_attempts` and `retry_time_budget_seconds` parameters are sourced from `config.json` (see [Configuration Reference section 3.5](../configuration/configuration-reference.md)).
 
 The retry behavioral contract is defined in [Solver Abstraction SS7](./solver-abstraction.md):
 

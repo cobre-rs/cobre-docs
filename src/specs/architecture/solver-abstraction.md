@@ -419,6 +419,8 @@ slot = warm_start_count + iteration × forward_passes + forward_pass_index
 
 This is a pure function with no side effects — the same inputs always produce the same slot. This eliminates thread-safety concerns and non-determinism.
 
+`forward_passes_per_iteration` is immutable after initialization — see [Cut Management Implementation SS1.3](./cut-management-impl.md) for the precondition rationale.
+
 An activity bitmap tracks which slots are currently active. The count of active slots is maintained alongside the bitmap to avoid scanning.
 
 ### 5.3 Mathematical Basis

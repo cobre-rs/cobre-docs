@@ -70,20 +70,23 @@ Priority ordering: Filling target > Storage violation > Deficit > Constraint vio
 
 ### 3.2 Forward Pass Count
 
-| Option                  | Type | Default | Description                                       |
-| ----------------------- | ---- | ------- | ------------------------------------------------- |
-| training.forward_passes | int  | —       | Number of scenario trajectories $M$ per iteration |
+| Option                  | Type | Default                    | Description                                       |
+| ----------------------- | ---- | -------------------------- | ------------------------------------------------- |
+| training.forward_passes | int  | **mandatory** (no default) | Number of scenario trajectories $M$ per iteration |
+
+The loader must reject any configuration that omits `training.forward_passes`. This field has no default because the optimal value depends on the problem structure and the available MPI ranks; an absent value would silently produce incorrect cut pool sizing (see [Cut Management Implementation SS1.3](../architecture/cut-management-impl.md)).
 
 ### 3.3 Cut Selection
 
-| Option                                 | Value          | LP Effect                               | Reference                                                                  |
-| -------------------------------------- | -------------- | --------------------------------------- | -------------------------------------------------------------------------- |
-| training.cut_selection.enabled         | bool           | Enable/disable cut pruning              | [Cut Management](../math/cut-management.md)                                |
-| training.cut_selection.method          | `"level1"`     | Keep ever-active cuts                   | [Cut Management §7](../math/cut-management.md)                             |
-| training.cut_selection.method          | `"lml1"`       | Limited memory level-1                  | [Cut Management §7](../math/cut-management.md)                             |
-| training.cut_selection.method          | `"domination"` | Remove dominated cuts                   | [Cut Management §7](../math/cut-management.md)                             |
-| training.cut_selection.threshold       | int            | Minimum iterations before first pruning | [Cut Management Implementation §2](../architecture/cut-management-impl.md) |
-| training.cut_selection.check_frequency | int            | Iterations between pruning checks       | [Cut Management Implementation §2](../architecture/cut-management-impl.md) |
+| Option                                          | Value          | LP Effect                               | Reference                                                                                                                                                                                       |
+| ----------------------------------------------- | -------------- | --------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| training.cut_selection.enabled                  | bool           | Enable/disable cut pruning              | [Cut Management](../math/cut-management.md)                                                                                                                                                     |
+| training.cut_selection.method                   | `"level1"`     | Keep ever-active cuts                   | [Cut Management §7](../math/cut-management.md)                                                                                                                                                  |
+| training.cut_selection.method                   | `"lml1"`       | Limited memory level-1                  | [Cut Management §7](../math/cut-management.md)                                                                                                                                                  |
+| training.cut_selection.method                   | `"domination"` | Remove dominated cuts                   | [Cut Management §7](../math/cut-management.md)                                                                                                                                                  |
+| training.cut_selection.threshold                | int            | Minimum iterations before first pruning | [Cut Management Implementation §2](../architecture/cut-management-impl.md)                                                                                                                      |
+| training.cut_selection.check_frequency          | int            | Iterations between pruning checks       | [Cut Management Implementation §2](../architecture/cut-management-impl.md)                                                                                                                      |
+| `training.cut_selection.cut_activity_tolerance` | float          | `1e-6`                                  | Minimum dual multiplier value for a cut to be considered binding (active). Used by all selection strategies. See [Cut Management Implementation SS6.1](../architecture/cut-management-impl.md). |
 
 | Method       | Algorithm                                           |
 | ------------ | --------------------------------------------------- |
@@ -118,6 +121,15 @@ Available rule types:
   }
 }
 ```
+
+### 3.5 Solver Retry Configuration
+
+| Option                                      | Type  | Default | Description                                                                  |
+| ------------------------------------------- | ----- | ------- | ---------------------------------------------------------------------------- |
+| `training.solver.retry_max_attempts`        | int   | `5`     | Maximum number of solver retry attempts before propagating a hard error.     |
+| `training.solver.retry_time_budget_seconds` | float | `30.0`  | Total time budget (seconds) across all retry attempts for a single LP solve. |
+
+The retry escalation strategy — which solver parameters are varied across attempts — is encapsulated within each solver implementation and is not user-configurable. The external config parameters above control only the stopping conditions for the retry loop. See [Solver Interface Trait SS6](../architecture/solver-interface-trait.md) and [Solver Abstraction SS7](../architecture/solver-abstraction.md) for the encapsulation contract.
 
 ## 4. Upper Bound Evaluation (`config.json` → `upper_bound_evaluation`)
 
@@ -288,7 +300,7 @@ Options that control simulation output and streaming behavior. All fields are op
     "forward_passes": 10,
     "cut_selection": {
       "enabled": true,
-      "method": "domination",
+      "method": "level1",
       "threshold": 0,
       "check_frequency": 10
     },
@@ -333,9 +345,7 @@ Options that control simulation output and streaming behavior. All fields are op
         { "id": 1, "name": "MEDIA", "hours": 336 },
         { "id": 2, "name": "PESADA", "hours": 240 }
       ],
-      "state_variables": { "storage": true, "inflow_lags": true },
-      "num_scenarios": 20,
-      "sampling_method": "saa"
+      "state_variables": { "storage": true, "inflow_lags": true }
     },
     {
       "id": 1,
@@ -345,9 +355,7 @@ Options that control simulation output and streaming behavior. All fields are op
       "block_mode": "parallel",
       "risk_measure": "expectation",
       "blocks": [{ "id": 0, "name": "UNICO", "hours": 696 }],
-      "state_variables": { "storage": true, "inflow_lags": true },
-      "num_scenarios": 20,
-      "sampling_method": "saa"
+      "state_variables": { "storage": true, "inflow_lags": true }
     }
   ]
 }
