@@ -2,7 +2,7 @@
 
 ## Purpose
 
-This spec defines the `SolverInterface` trait -- the backend abstraction through which the SDDP training loop performs LP operations: loading stage templates, adding Benders cuts, patching scenario-dependent RHS/bounds, solving, warm-starting from a cached basis, and extracting solution data. The solver is resolved as a generic type parameter at compile time, following the same monomorphization pattern used by the Communicator trait ([Communicator Trait §3](../hpc/communicator-trait.md)). Because LP solvers wrap FFI calls to C libraries (HiGHS, CLP) on a per-thread exclusive-ownership basis, the trait requires `Send` but not `Sync`. The operations contract originates from [Solver Abstraction SS4](./solver-abstraction.md), which defines the behavioral requirements validated against both reference solver APIs.
+This spec defines the `SolverInterface` trait -- the backend abstraction through which optimization algorithms perform LP operations: loading models, adding constraint rows, updating row and column bounds, solving, warm-starting from a cached basis, and extracting solution data. The solver is resolved as a generic type parameter at compile time, following the same monomorphization pattern used by the Communicator trait ([Communicator Trait §3](../hpc/communicator-trait.md)). Because LP solvers wrap FFI calls to C libraries (HiGHS, CLP) on a per-thread exclusive-ownership basis, the trait requires `Send` but not `Sync`. The operations contract originates from [Solver Abstraction SS4](./solver-abstraction.md), which defines the behavioral requirements validated against both reference solver APIs.
 
 > **Convention: Rust traits as specification guidelines.** The Rust trait definitions, method signatures, and struct declarations throughout this specification corpus serve as _guidelines for implementation_, not as absolute source-of-truth contracts that must be reproduced verbatim. Their purpose is twofold: (1) to express behavioral contracts, preconditions, postconditions, and type-level invariants more precisely than prose alone, and (2) to anchor conformance test suites that verify backend interchangeability (see [Backend Testing §1](../hpc/backend-testing.md)). Implementation may diverge in naming, parameter ordering, error representation, or internal organization when practical considerations demand it -- provided the behavioral contracts and conformance tests continue to pass. When a trait signature and a prose description conflict, the prose description (which captures the domain intent) takes precedence; the conflict should be resolved by updating the trait signature. This convention applies to all trait-bearing specification documents in `src/specs/`.
 
@@ -11,7 +11,7 @@ This spec defines the `SolverInterface` trait -- the backend abstraction through
 The solver interface is modeled as a Rust trait with 10 methods. Each method corresponds to one operation from the solver interface contract ([Solver Abstraction SS4.1](./solver-abstraction.md)), plus a `name()` method for diagnostics.
 
 ```rust
-/// Backend abstraction for LP solver operations in the SDDP training loop.
+/// Backend abstraction for LP solver operations in optimization algorithms.
 ///
 /// Implementations wrap a single solver instance (HiGHS `void*` handle,
 /// CLP `Clp_Simplex*` handle, etc.) and encapsulate all solver-specific
@@ -34,16 +34,16 @@ pub trait SolverInterface: Send {
     /// Maps to `Highs_passLp` (HiGHS) or `Clp_loadProblem` (CLP).
     fn load_model(&mut self, template: &StageTemplate);
 
-    /// Batch-add active Benders cuts as LP rows.
+    /// Batch-add constraint rows to the LP (dynamic constraint region).
     ///
     /// The cut batch contains active cuts in CSR format, ready for a
     /// single `addRows` call. Cuts are appended at the bottom of the
     /// constraint matrix per [Solver Abstraction SS2.2](./solver-abstraction.md).
     ///
     /// Maps to `Highs_addRows` (HiGHS) or `Clp_addRows` (CLP).
-    fn add_cut_rows(&mut self, cuts: &CutBatch);
+    fn add_rows(&mut self, cuts: &RowBatch);
 
-    /// Update scenario-dependent row bounds (constraint RHS values).
+    /// Update row bounds (constraint RHS values).
     ///
     /// Each patch is a (row_index, new_lower, new_upper) triple. The
     /// patches update inflow RHS, state-fixing constraints, and
@@ -55,20 +55,20 @@ pub trait SolverInterface: Send {
     ///
     /// Maps to `Highs_changeRowsBoundsBySet` (HiGHS) or mutable pointer
     /// access via `Clp_rowLower()`/`Clp_rowUpper()` (CLP).
-    fn patch_row_bounds(&mut self, patches: &[(usize, f64, f64)]);
+    fn set_row_bounds(&mut self, patches: &[(usize, f64, f64)]);
 
     /// Update column bounds (variable lower/upper bounds).
     ///
-    /// Each patch is a (col_index, new_lower, new_upper) triple. The
-    /// patches update variable bounds without modifying the structural
+    /// Each entry is a (col_index, new_lower, new_upper) triple. It
+    /// updates variable bounds without modifying the structural
     /// LP. This method is not used in minimal viable SDDP but is
     /// included for completeness — future extensions (e.g., thermal
     /// unit commitment bounds, battery state-of-charge limits) may
-    /// require per-scenario column bound patching.
+    /// require per-scenario column bound updates.
     ///
     /// Maps to `Highs_changeColsBoundsBySet` (HiGHS) or mutable pointer
     /// access via `Clp_colLower()`/`Clp_colUpper()` (CLP).
-    fn patch_col_bounds(&mut self, patches: &[(usize, f64, f64)]);
+    fn set_col_bounds(&mut self, patches: &[(usize, f64, f64)]);
 
     /// Solve the loaded LP.
     ///
@@ -132,7 +132,7 @@ pub trait SolverInterface: Send {
 
 **Thread safety model:** The `Send` bound allows solver instances to be transferred between threads (e.g., during thread pool initialization), but the absence of `Sync` prevents concurrent access. This matches the reality of C-library solver handles, which maintain mutable internal state (factorization workspace, working arrays) that is not safe to share. The thread-local workspace pattern in [Solver Workspaces SS1.1](./solver-workspaces.md) ensures each OpenMP thread owns exactly one solver instance for the entire training run.
 
-**Mutability:** All methods that modify solver state (`load_model`, `add_cut_rows`, `patch_row_bounds`, `patch_col_bounds`, `solve`, `solve_with_basis`, `reset`) take `&mut self`. Read-only accessors (`get_basis`, `statistics`, `name`) take `&self`.
+**Mutability:** All methods that modify solver state (`load_model`, `add_rows`, `set_row_bounds`, `set_col_bounds`, `solve`, `solve_with_basis`, `reset`) take `&mut self`. Read-only accessors (`get_basis`, `statistics`, `name`) take `&self`.
 
 ## 2. Method Contracts
 
@@ -153,14 +153,14 @@ pub trait SolverInterface: Send {
 | Condition                                      | Description                                                                                         |
 | ---------------------------------------------- | --------------------------------------------------------------------------------------------------- |
 | Solver holds the structural LP from `template` | Previous model (if any) is fully replaced                                                           |
-| No cuts are present                            | The loaded model contains only structural constraints; cuts are added separately via `add_cut_rows` |
+| No cuts are present                            | The loaded model contains only structural constraints; constraint rows are added separately via `add_rows` |
 | Solver basis is cleared                        | Any cached basis from a previous model is invalidated                                               |
 
 **Infallibility:** This method does not return `Result`. The stage template is validated during initialization ([Solver Abstraction SS11.1](./solver-abstraction.md)); passing an invalid template is a programming error (panic on violation).
 
-### 2.2 add_cut_rows
+### 2.2 add_rows
 
-`add_cut_rows` appends active Benders cuts to the bottom of the constraint matrix in a single batch call. This is step 2 of the LP rebuild sequence ([Solver Abstraction SS11.2](./solver-abstraction.md)). The cut batch is assembled from the cut pool's activity bitmap for the current stage.
+`add_rows` appends constraint rows to the dynamic constraint region in a single batch call. In SDDP, this is used to add Benders cuts. This is step 2 of the LP rebuild sequence ([Solver Abstraction SS11.2](./solver-abstraction.md)). The row batch is assembled from the cut pool's activity bitmap for the current stage.
 
 **Preconditions:**
 
@@ -180,9 +180,9 @@ pub trait SolverInterface: Send {
 
 **Infallibility:** This method does not return `Result`. The cut batch is assembled from the pre-validated cut pool ([Solver Abstraction SS5](./solver-abstraction.md)); invalid CSR data is a programming error (panic on violation).
 
-### 2.3 patch_row_bounds
+### 2.3 set_row_bounds
 
-`patch_row_bounds` updates scenario-dependent row bounds (constraint RHS values) without structural LP changes. This is step 3 of the LP rebuild sequence and the primary modification between successive solves at the same stage ([Solver Abstraction SS11.4](./solver-abstraction.md)). Each patch is a `(row_index, new_lower, new_upper)` triple. For equality constraints (water balance, lag fixing, noise fixing), set `new_lower = new_upper = value`.
+`set_row_bounds` updates row bounds (constraint RHS values) without structural LP changes. This is step 3 of the LP rebuild sequence and the primary modification between successive solves at the same stage ([Solver Abstraction SS11.4](./solver-abstraction.md)). Each patch is a `(row_index, new_lower, new_upper)` triple. For equality constraints (water balance, lag fixing, noise fixing), set `new_lower = new_upper = value`.
 
 **Preconditions:**
 
@@ -211,9 +211,9 @@ pub trait SolverInterface: Send {
 | HiGHS  | `Highs_changeRowsBoundsBySet(model, num_set, indices, lower, upper)` |
 | CLP    | Mutable `double*` via `Clp_rowLower()` / `Clp_rowUpper()`            |
 
-### 2.3a patch_col_bounds
+### 2.3a set_col_bounds
 
-`patch_col_bounds` updates column bounds (variable lower/upper bounds) without structural LP changes. Each patch is a `(col_index, new_lower, new_upper)` triple. This method is not used in minimal viable SDDP but is included for completeness -- future extensions (e.g., thermal unit commitment bounds, battery state-of-charge limits) may require per-scenario column bound patching.
+`set_col_bounds` updates column bounds (variable lower/upper bounds) without structural LP changes. Each entry is a `(col_index, new_lower, new_upper)` triple. This method is not used in minimal viable SDDP but is included for completeness -- future extensions (e.g., thermal unit commitment bounds, battery state-of-charge limits) may require per-scenario column bound updates.
 
 **Preconditions:**
 
@@ -631,18 +631,18 @@ pub struct StageTemplate {
 }
 ```
 
-### 4.5 CutBatch
+### 4.5 RowBatch
 
-The `CutBatch` holds active Benders cuts for a single stage in CSR (row-major) form, ready for a single `addRows` call. The batch is assembled from the cut pool's activity bitmap before each LP rebuild.
+The `RowBatch` holds constraint rows for batch addition in CSR (row-major) form, ready for a single `add_rows` call. In SDDP, it is assembled from the cut pool's activity bitmap before each LP rebuild.
 
 ```rust
-/// Batch of active Benders cuts for one stage, in CSR (row-major) form.
+/// Batch of constraint rows for addition, in CSR (row-major) form.
 ///
-/// Assembled from the cut pool activity bitmap for the current stage.
-/// Passed to `add_cut_rows` for a single batch row-addition call.
+/// In SDDP, assembled from the cut pool activity bitmap for the current stage.
+/// Passed to `add_rows` for a single batch row-addition call.
 /// See [Solver Abstraction SS5.4](./solver-abstraction.md) for the
 /// assembly protocol.
-pub struct CutBatch {
+pub struct RowBatch {
     /// Number of active cuts in this batch.
     pub num_rows: usize,
 
@@ -699,7 +699,7 @@ The key distinction is that exactly one solver backend is active per build (sele
 
 ## 6. Retry Logic Encapsulation
 
-Retry logic for numerical difficulties is **encapsulated within each `SolverInterface` implementation**. The `solve()` and `solve_with_basis()` methods handle retries internally and return only the final result (success or terminal error) to the caller. The SDDP training loop never sees intermediate retry attempts. The `retry_max_attempts` and `retry_time_budget_seconds` parameters are sourced from `config.json` (see [Configuration Reference section 3.5](../configuration/configuration-reference.md)).
+Retry logic for numerical difficulties is **encapsulated within each `SolverInterface` implementation**. The `solve()` and `solve_with_basis()` methods handle retries internally and return only the final result (success or terminal error) to the caller. The calling algorithm never sees intermediate retry attempts. The `retry_max_attempts` and `retry_time_budget_seconds` parameters are sourced from `config.json` (see [Configuration Reference section 3.5](../configuration/configuration-reference.md)).
 
 The retry behavioral contract is defined in [Solver Abstraction SS7](./solver-abstraction.md):
 
@@ -737,7 +737,7 @@ A sign error in $\pi_t^*$ produces cuts that point in the wrong direction, leadi
 - [Training Loop](./training-loop.md) -- Forward pass (SS4) and backward pass (SS6) that drive solver invocations; abstraction points (SS3) parameterizing the training loop
 - [Cut Management Implementation](./cut-management-impl.md) -- Cut pool activity bitmap (SS1.1), CSR assembly for `addRows` (SS1), cut coefficient computation using duals from `LpSolution`
 - [LP Formulation](../math/lp-formulation.md) -- Constraint structure that defines which duals are cut-relevant and feed into the cut coefficient formula
-- [Binary Formats](../data-model/binary-formats.md) -- Cut pool memory layout (SS3.4) that produces `CutBatch` inputs; LP rebuild strategy analysis (SS3, Appendix A)
+- [Binary Formats](../data-model/binary-formats.md) -- Cut pool memory layout (SS3.4) that produces `RowBatch` inputs; LP rebuild strategy analysis (SS3, Appendix A)
 - [Internal Structures](../data-model/internal-structures.md) -- Logical in-memory data model from which `StageTemplate` is built
 - [Hybrid Parallelism](../hpc/hybrid-parallelism.md) -- OpenMP threading model (SS3) requiring thread-local solvers with `Send` but not `Sync`
 - [Memory Architecture](../hpc/memory-architecture.md) -- NUMA-aware allocation (SS2) for solver workspaces

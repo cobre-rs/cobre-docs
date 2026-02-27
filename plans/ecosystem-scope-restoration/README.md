@@ -46,8 +46,8 @@ The Cobre specification corpus has progressively narrowed its framing from "a po
 | ticket-003 | Restore generic framing in comm and ferrompi        | epic-01 | completed | Detailed     | 0.88      | 0.93    | EXCELLENT |
 | ticket-004 | Restore generic framing in cli, stochastic, and io  | epic-01 | completed | Detailed     | 0.87      | 0.93    | EXCELLENT |
 | ticket-005 | Restore generic framing in guidelines and CLAUDE.md | epic-01 | completed | Detailed     | 0.92      | 0.88    | EXCELLENT |
-| ticket-006 | Generalize LP layout terminology                    | epic-02 | pending   | Detailed     | 0.86      | --      | --        |
-| ticket-007 | Rename SolverInterface methods                      | epic-02 | pending   | Detailed     | 0.93      | --      | --        |
+| ticket-006 | Generalize LP layout terminology                    | epic-02 | completed | Detailed     | 0.86      | 0.90    | EXCELLENT |
+| ticket-007 | Rename SolverInterface methods                      | epic-02 | completed | Detailed     | 0.93      | 0.88    | EXCELLENT |
 | ticket-008 | Update solver implementation specs                  | epic-02 | pending   | Detailed     | 0.90      | --      | --        |
 | ticket-009 | Update solver-interface-testing.md                  | epic-02 | pending   | Detailed     | 0.91      | --      | --        |
 | ticket-010 | Update workspaces and training-loop                 | epic-02 | pending   | Detailed     | 0.87      | --      | --        |

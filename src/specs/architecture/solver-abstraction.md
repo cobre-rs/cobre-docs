@@ -2,19 +2,19 @@
 
 ## Purpose
 
-This spec defines the multi-solver abstraction layer: the unified interface through which the SDDP algorithm interacts with LP solvers, including the solver interface contract, LP layout convention, cut pool design, error categories, retry logic contract, dual normalization, basis storage, compile-time solver selection, stage LP template strategy, and solver-specific optimization paths.
+This spec defines the multi-solver abstraction layer: the unified interface through which optimization algorithms interact with LP solvers, including the solver interface contract, LP layout convention, cut pool design, error categories, retry logic contract, dual normalization, basis storage, compile-time solver selection, stage LP template strategy, and solver-specific optimization paths.
 
 For thread-local solver infrastructure and LP scaling, see [Solver Workspaces & LP Scaling](./solver-workspaces.md). For solver-specific implementations, see [HiGHS Implementation](./solver-highs-impl.md) and [CLP Implementation](./solver-clp-impl.md).
 
 ## 1. Design Rationale
 
-The SDDP algorithm must be solver-agnostic. The solver interface abstracts LP solver details behind a unified contract, designed and validated against both HiGHS and CLP to avoid single-solver bias.
+Optimization algorithms using this layer must be solver-agnostic. The solver interface abstracts LP solver details behind a unified contract, designed and validated against both HiGHS and CLP to avoid single-solver bias.
 
 Key design decisions:
 
 1. **Dual-solver validation** — The interface is designed against both HiGHS (C API) and CLP (C API + thin C++ wrappers) as first-class reference implementations. Every operation in the interface contract (SS3) must be naturally expressible through both solver APIs. This prevents designing an interface that maps cleanly to one solver but awkwardly to another.
 2. **Compile-time solver selection** — The active solver is selected at compile time to avoid virtual dispatch overhead on the hot path (millions of LP solves)
-3. **Encapsulated retry logic** — Each solver handles its own numerical difficulties internally; the SDDP algorithm only sees success or failure
+3. **Encapsulated retry logic** — Each solver handles its own numerical difficulties internally; the calling algorithm only sees success or failure
 4. **Cuts stored in physical units** — Scaling transformations are applied at solve time, not stored in the cut pool
 5. **Pre-assembled stage templates** — Each stage's structural LP is assembled once at initialization in solver-ready CSC form (both HiGHS and CLP use column-major internally), minimizing per-iteration rebuild cost
 
@@ -90,21 +90,21 @@ $$n_{transfer} = N \cdot (1 + (L - 1)) = N \cdot L$$
 
 Constraints are ordered in three regions. All index formulas use 0-based indexing. Let $N$ and $L$ be defined as in SS2.1.
 
-| Region     | Row Range                                      | Contents                                                                                                      | Lifecycle                                            |
-| ---------- | ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------- |
-| **Top**    | `[0, n_cut_relevant)`                          | All constraints whose duals contribute to cut coefficient computation (sub-regions defined below)             | Static structure per stage; RHS patched per scenario |
-| **Middle** | `[n_cut_relevant, n_structural)`               | All other structural constraints: load balance, generation/flow bounds, penalty bounds, remaining constraints | Static per stage                                     |
-| **Bottom** | `[n_structural, n_structural + n_active_cuts)` | Benders cuts (active only)                                                                                    | Rebuilt each iteration via batch `addRows`           |
+| Region                        | Row Range                          | Contents                                                                                                  | Lifecycle                                            |
+| ----------------------------- | ---------------------------------- | --------------------------------------------------------------------------------------------------------- | ---------------------------------------------------- |
+| **Dual-extraction region**    | `[0, n_dual_relevant)`             | All constraints whose duals contribute to subgradient/gradient computation (sub-regions defined below)    | Static structure per stage; RHS patched per scenario |
+| **Static non-dual region**    | `[n_dual_relevant, n_static)`      | All other static constraints: load balance, generation/flow bounds, penalty bounds, remaining constraints | Static per stage                                     |
+| **Dynamic constraint region** | `[n_static, n_static + n_dynamic)` | Dynamic constraints (added at runtime via batch `add_rows`; e.g., Benders cuts in SDDP)                   | Rebuilt each iteration via batch `add_rows`          |
 
-**Top region — cut-relevant constraints with exact sub-region boundaries:**
+**Top region — dual-extraction constraints with exact sub-region boundaries:**
 
-The top region groups all constraints whose dual multipliers are needed for Benders cut coefficient computation. Placing them contiguously enables a single slice read from the dual vector rather than gathering from scattered positions. The sub-regions within the top region have exact index formulas:
+The dual-extraction region groups all constraints whose dual multipliers are needed for Benders cut coefficient computation. Placing them contiguously enables a single slice read from the dual vector rather than gathering from scattered positions. The sub-regions within the dual-extraction region have exact index formulas:
 
-**Row layout diagram (top region):**
+**Row layout diagram (dual-extraction region):**
 
 ```
 Row index:
-  0          N         N+N·L        N+N·L+n_fpha       n_cut_relevant
+  0          N         N+N·L        N+N·L+n_fpha       n_dual_relevant
   ├──────────┼──────────┼─────────────┼───────────────────┤
   │ water    │ AR lag   │ FPHA        │ generic volume    │
   │ balance  │ fixing   │ hyperplanes │ constraints       │
@@ -112,7 +112,7 @@ Row index:
   └──────────┴──────────┴─────────────┴───────────────────┘
 ```
 
-**Exact row index formulas (top region):**
+**Exact row index formulas (dual-extraction region):**
 
 | Row Index Formula              | Contents                                                                                                                                                                                                                                                 | Count       | Dual Symbol          |
 | ------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------- | -------------------- |
@@ -121,15 +121,15 @@ Row index:
 | $N + N \cdot L + f$            | FPHA hyperplane constraint $f \in [0, n_{fpha})$ where $n_{fpha} = \sum_{h \in \mathcal{H}^{fpha}} M_h \cdot N_{blk}$ is the total number of FPHA planes across all FPHA-model hydros times blocks — see [LP Formulation SS6](../math/lp-formulation.md) | $n_{fpha}$  | $\pi^{fpha}_{h,m,k}$ |
 | $N + N \cdot L + n_{fpha} + g$ | Generic volume constraint $g \in [0, n_{gvc})$ — user-defined constraints referencing storage ([LP Formulation SS10](../math/lp-formulation.md))                                                                                                         | $n_{gvc}$   | $\pi^{gen}_g$        |
 
-**Cut-relevant row count:**
+**Dual-relevant row count:**
 
-$$n_{cut\_relevant} = N + N \cdot L + n_{fpha} + n_{gvc}$$
+$$n_{dual\_relevant} = N + N \cdot L + n_{fpha} + n_{gvc}$$
 
-The row index formulas for water balance and AR lag fixing use the same structure as the column index formulas in SS2.1 (index $h$ and $N + \ell \cdot N + h$ respectively). This symmetry is intentional: the dual of row $r$ contributes to the cut coefficient for column $r$ within the state prefix, simplifying the cut coefficient extraction to a contiguous slice read of the first $n_{cut\_relevant}$ dual values. See [Cut Management Implementation SS5](./cut-management-impl.md) for FPHA and generic constraint dual preprocessing.
+The row index formulas for water balance and AR lag fixing use the same structure as the column index formulas in SS2.1 (index $h$ and $N + \ell \cdot N + h$ respectively). This symmetry is intentional: the dual of row $r$ contributes to the cut coefficient for column $r$ within the state prefix, simplifying the cut coefficient extraction to a contiguous slice read of the first $n_{dual\_relevant}$ dual values. See [Cut Management Implementation SS5](./cut-management-impl.md) for FPHA and generic constraint dual preprocessing.
 
-**Middle region — structural, non-cut-relevant constraints:**
+**Middle region — static, non-dual-relevant constraints:**
 
-The middle region contains all structural constraints whose duals do not contribute to cut coefficients. Their exact internal ordering follows the [LP Formulation](../math/lp-formulation.md) convention:
+The static non-dual region contains all static constraints whose duals do not contribute to cut coefficients. Their exact internal ordering follows the [LP Formulation](../math/lp-formulation.md) convention:
 
 | Sub-region (in order) | Contents                                                                                             |
 | --------------------- | ---------------------------------------------------------------------------------------------------- |
@@ -145,26 +145,26 @@ The middle region contains all structural constraints whose duals do not contrib
 | Storage bounds        | $\underline{V}_h - \sigma^{v-}_h \leq v_h \leq \bar{V}_h$ -- $N$ rows                                |
 | Generic (non-volume)  | User-defined constraints not referencing storage -- varies                                           |
 
-**Bottom region — Benders cuts:**
+**Dynamic constraint region:**
 
-Benders cuts are appended at rows $[n_{structural}, \; n_{structural} + n_{active\_cuts})$ via batch `addRows`. Each cut row has the form $\theta - \boldsymbol{\pi}^\top \mathbf{x} \geq \alpha$ where $\boldsymbol{\pi}$ is the cut coefficient vector and $\alpha$ is the intercept (see [Solver Abstraction SS5.3](./solver-abstraction.md)).
+Dynamic constraints are appended at rows $[n_{static}, \; n_{static} + n_{dynamic})$ via batch `add_rows` (e.g., Benders cuts in SDDP). Each cut row has the form $\theta - \boldsymbol{\pi}^\top \mathbf{x} \geq \alpha$ where $\boldsymbol{\pi}$ is the cut coefficient vector and $\alpha$ is the intercept (see [Solver Abstraction SS5.3](./solver-abstraction.md)).
 
 **Key benefits**:
 
-- **Cut-relevant constraints at top** — All duals needed for cut coefficient computation are in the first $n_{cut\_relevant}$ rows. Extracting them is a contiguous slice read from the dual vector: `dual[0 .. n_cut_relevant]` — no index gathering required.
+- **Dual-relevant constraints at top** — All duals needed for cut coefficient computation are in the first $n_{dual\_relevant}$ rows. Extracting them is a contiguous slice read from the dual vector: `dual[0 .. n_dual_relevant]` — no index gathering required.
 - **Symmetric index structure** — Water balance row $h$ corresponds to storage column $h$; lag fixing row $N + \ell \cdot N + h$ corresponds to lag column $N + \ell \cdot N + h$. This alignment means the first $N + N \cdot L$ cut coefficients can be read directly from the first $N + N \cdot L$ dual values (with appropriate sign convention per [Solver Abstraction SS8](./solver-abstraction.md)).
-- **Cuts at bottom** — Everything above the cut boundary is identical across iterations within a stage. A cached basis from the previous iteration applies directly to the structural portion (rows `[0, n_structural)`). Only the new cut rows need their basis status initialized.
-- **Structural middle region** — All non-cut-relevant, non-cut constraints. Their ordering within this region follows the [LP Formulation](../math/lp-formulation.md) convention.
+- **Dynamic constraints at bottom** — Everything above the dynamic constraint boundary is identical across iterations within a stage. A cached basis from the previous iteration applies directly to the static portion (rows `[0, n_static)`). Only the new dynamic constraint rows need their basis status initialized.
+- **Static non-dual region** — All non-dual-relevant, non-dynamic constraints. Their ordering within this region follows the [LP Formulation](../math/lp-formulation.md) convention.
 
 ### 2.3 Interaction with Basis Persistence
 
-When warm-starting from a cached basis after adding new cuts:
+When warm-starting from a cached basis after adding new dynamic constraints:
 
-1. The basis status codes for rows `[0, n_structural)` are reused directly from the cached basis
-2. New cut rows (appended at the bottom) are initialized with status **Basic** — meaning the slack variable for each new cut constraint is in the basis. The solver will price these rows in and pivot as needed during the solve.
+1. The basis status codes for rows `[0, n_static)` are reused directly from the cached basis
+2. New dynamic constraint rows (appended at the bottom) are initialized with status **Basic** — meaning the slack variable for each new constraint is in the basis. The solver will price these rows in and pivot as needed during the solve.
 3. If cuts were removed since the cached basis was saved, the basis is truncated to match the new row count
 
-This is possible precisely because cuts are at the bottom — the structural portion of the basis is position-stable across iterations.
+This is possible precisely because dynamic constraints are at the bottom — the static portion of the basis is position-stable across iterations.
 
 ### 2.4 Worked Example
 
@@ -208,24 +208,24 @@ State transfer copies `primal[0..6]` — that is, $n_{transfer} = N \cdot L = 3 
 
 FPHA rows: $n_{fpha} = M_1 \times N_{blk} = 4 \times 1 = 4$ (only H1 uses FPHA).
 
-Cut-relevant row count: $n_{cut\_relevant} = N + N \cdot L + n_{fpha} + n_{gvc} = 3 + 3 \cdot 2 + 4 + 0 = 13$.
+Dual-relevant row count: $n_{dual\_relevant} = N + N \cdot L + n_{fpha} + n_{gvc} = 3 + 3 \cdot 2 + 4 + 0 = 13$.
 
-| Row | Formula                       | Contents                           | Dual                 |
-| --: | ----------------------------- | ---------------------------------- | -------------------- |
-|   0 | $h = 0$                       | Water balance H0                   | $\pi^{wb}_0$         |
-|   1 | $h = 1$                       | Water balance H1                   | $\pi^{wb}_1$         |
-|   2 | $h = 2$                       | Water balance H2                   | $\pi^{wb}_2$         |
-|   3 | $N + 0 \cdot N + 0 = 3$       | AR lag fixing H0, $\ell=0$         | $\pi^{lag}_{0,0}$    |
-|   4 | $N + 0 \cdot N + 1 = 4$       | AR lag fixing H1, $\ell=0$         | $\pi^{lag}_{1,0}$    |
-|   5 | $N + 0 \cdot N + 2 = 5$       | AR lag fixing H2, $\ell=0$         | $\pi^{lag}_{2,0}$    |
-|   6 | $N + 1 \cdot N + 0 = 6$       | AR lag fixing H0, $\ell=1$         | $\pi^{lag}_{0,1}$    |
-|   7 | $N + 1 \cdot N + 1 = 7$       | AR lag fixing H1, $\ell=1$         | $\pi^{lag}_{1,1}$    |
-|   8 | $N + 1 \cdot N + 2 = 8$       | AR lag fixing H2, $\ell=1$         | $\pi^{lag}_{2,1}$    |
-|   9 | $N + N \cdot L + 0 = 9$       | FPHA plane 0 for H1, block 0       | $\pi^{fpha}_{1,0,0}$ |
-|  10 | $N + N \cdot L + 1 = 10$      | FPHA plane 1 for H1, block 0       | $\pi^{fpha}_{1,1,0}$ |
-|  11 | $N + N \cdot L + 2 = 11$      | FPHA plane 2 for H1, block 0       | $\pi^{fpha}_{1,2,0}$ |
-|  12 | $N + N \cdot L + 3 = 12$      | FPHA plane 3 for H1, block 0       | $\pi^{fpha}_{1,3,0}$ |
-| 13+ | $\geq n_{cut\_relevant} = 13$ | Middle region (load balance, etc.) |                      |
+| Row | Formula                        | Contents                                    | Dual                 |
+| --: | ------------------------------ | ------------------------------------------- | -------------------- |
+|   0 | $h = 0$                        | Water balance H0                            | $\pi^{wb}_0$         |
+|   1 | $h = 1$                        | Water balance H1                            | $\pi^{wb}_1$         |
+|   2 | $h = 2$                        | Water balance H2                            | $\pi^{wb}_2$         |
+|   3 | $N + 0 \cdot N + 0 = 3$        | AR lag fixing H0, $\ell=0$                  | $\pi^{lag}_{0,0}$    |
+|   4 | $N + 0 \cdot N + 1 = 4$        | AR lag fixing H1, $\ell=0$                  | $\pi^{lag}_{1,0}$    |
+|   5 | $N + 0 \cdot N + 2 = 5$        | AR lag fixing H2, $\ell=0$                  | $\pi^{lag}_{2,0}$    |
+|   6 | $N + 1 \cdot N + 0 = 6$        | AR lag fixing H0, $\ell=1$                  | $\pi^{lag}_{0,1}$    |
+|   7 | $N + 1 \cdot N + 1 = 7$        | AR lag fixing H1, $\ell=1$                  | $\pi^{lag}_{1,1}$    |
+|   8 | $N + 1 \cdot N + 2 = 8$        | AR lag fixing H2, $\ell=1$                  | $\pi^{lag}_{2,1}$    |
+|   9 | $N + N \cdot L + 0 = 9$        | FPHA plane 0 for H1, block 0                | $\pi^{fpha}_{1,0,0}$ |
+|  10 | $N + N \cdot L + 1 = 10$       | FPHA plane 1 for H1, block 0                | $\pi^{fpha}_{1,1,0}$ |
+|  11 | $N + N \cdot L + 2 = 11$       | FPHA plane 2 for H1, block 0                | $\pi^{fpha}_{1,2,0}$ |
+|  12 | $N + N \cdot L + 3 = 12$       | FPHA plane 3 for H1, block 0                | $\pi^{fpha}_{1,3,0}$ |
+| 13+ | $\geq n_{dual\_relevant} = 13$ | Static non-dual region (load balance, etc.) |                      |
 
 **Summary for this example:**
 
@@ -238,7 +238,7 @@ Cut-relevant row count: $n_{cut\_relevant} = N + N \cdot L + n_{fpha} + n_{gvc} 
 | $\theta$ column        | 9     |
 | $n_{fpha}$             | 4     |
 | $n_{gvc}$              | 0     |
-| $n_{cut\_relevant}$    | 13    |
+| $n_{dual\_relevant}$   | 13    |
 
 **Verification**: A developer applying the formulas to this system should obtain the exact column and row indices shown in the tables above. The symmetry between column and row indices for the first $N + N \cdot L = 9$ positions confirms that the cut coefficient for state variable at column $c$ comes from the dual of row $c$.
 
@@ -262,10 +262,10 @@ $$\text{State prefix size} = 1{,}120 \times 8 = 8{,}960 \text{ bytes} = 140 \tex
 
 This fits entirely in L1 data cache.
 
-**Contiguous dual extraction**: The first $n_{cut\_relevant}$ values of the dual vector contain all duals needed for cut coefficient computation. Reading them is a single contiguous memory access:
+**Contiguous dual extraction**: The first $n_{dual\_relevant}$ values of the dual vector contain all duals needed for cut coefficient computation. Reading them is a single contiguous memory access:
 
 ```
-cut_duals = dual[0 .. n_cut_relevant]
+dual_relevant = dual[0 .. n_dual_relevant]
 ```
 
 No index indirection or gather operation is required. For the state-linking duals (water balance + AR lag fixing), the dual values map directly to cut coefficients at the corresponding state variable positions, enabling a single `memcpy`-equivalent operation for the first $N + N \cdot L$ coefficients. The FPHA and generic constraint duals require the precomputed sparse mapping from [Cut Management Implementation SS5](./cut-management-impl.md).
@@ -336,26 +336,26 @@ This separation enables the key optimization: template data is read-only and sha
 
 ## 4. Solver Interface Contract
 
-The solver interface defines the behavioral contract that all solver implementations must satisfy. The SDDP algorithm interacts with solvers exclusively through this interface.
+The solver interface defines the behavioral contract that all solver implementations must satisfy. Optimization algorithms interact with solvers exclusively through this interface.
 
 ### 4.1 Required Operations
 
-| Operation        | Input                                    | Output                    | Description                                                                                                          |
-| ---------------- | ---------------------------------------- | ------------------------- | -------------------------------------------------------------------------------------------------------------------- |
-| Load model       | Stage LP template (CSC)                  | —                         | Bulk-load the pre-assembled structural LP into the solver via `passModel`/`loadProblem`. Fast memcpy-like operation. |
-| Add cut rows     | Active cuts in CSR format (batch)        | —                         | Batch-add all active Benders cuts via a single `addRows` call. Cuts are appended at the bottom per SS2.2.             |
-| Patch row bounds | Set of (row_index, lower, upper) triples | —                         | Update scenario-dependent constraint RHS values (inflows, state fixing constraints) without structural LP changes.   |
-| Patch col bounds | Set of (col_index, lower, upper) triples | —                         | Update variable bounds. Not used in minimal viable SDDP; included for completeness.                                  |
-| Solve            | —                                        | Solution or error         | Solve the loaded LP. Handles retries internally, extracts solution with normalized duals.                            |
-| Solve with basis | Basis from prior solve                   | Solution or error         | Set basis for warm-start, then solve. Reduces simplex iterations.                                                    |
-| Reset            | —                                        | —                         | Clear all internal solver state (caches, basis, factorization).                                                      |
-| Get basis        | —                                        | Current basis             | Extract the current simplex basis for caching.                                                                       |
-| Statistics       | —                                        | Accumulated solve metrics | Total solves, total iterations, retries, failures, timing.                                                           |
+| Operation           | Input                                     | Output                    | Description                                                                                                                      |
+| ------------------- | ----------------------------------------- | ------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| Load model          | Stage LP template (CSC)                   | —                         | Bulk-load the pre-assembled structural LP into the solver via `passModel`/`loadProblem`. Fast memcpy-like operation.             |
+| Add constraint rows | Dynamic constraints in CSR format (batch) | —                         | Batch-add dynamic constraints via a single `add_rows` call. Constraints are appended at the dynamic constraint region per SS2.2. |
+| Patch row bounds    | Set of (row_index, lower, upper) triples  | —                         | Update scenario-dependent constraint RHS values (inflows, state fixing constraints) without structural LP changes.               |
+| Patch col bounds    | Set of (col_index, lower, upper) triples  | —                         | Update variable bounds. Not used in minimal viable SDDP; included for completeness.                                              |
+| Solve               | —                                         | Solution or error         | Solve the loaded LP. Handles retries internally, extracts solution with normalized duals.                                        |
+| Solve with basis    | Basis from prior solve                    | Solution or error         | Set basis for warm-start, then solve. Reduces simplex iterations.                                                                |
+| Reset               | —                                         | —                         | Clear all internal solver state (caches, basis, factorization).                                                                  |
+| Get basis           | —                                         | Current basis             | Extract the current simplex basis for caching.                                                                                   |
+| Statistics          | —                                         | Accumulated solve metrics | Total solves, total iterations, retries, failures, timing.                                                                       |
 
 ### 4.2 Contract Guarantees
 
 - **Thread safety** — Each solver instance is exclusively owned by one thread. No concurrent access.
-- **Retry encapsulation** — The SDDP algorithm never sees retry attempts. It calls solve and receives either a valid solution or a terminal error (see SS6 and SS7).
+- **Retry encapsulation** — The calling algorithm never sees retry attempts. It calls solve and receives either a valid solution or a terminal error (see SS6 and SS7).
 - **Dual normalization** — All returned dual values use the canonical sign convention (see SS8). Solver-specific sign differences are handled internally.
 - **Solver identification** — Each implementation exposes a name string for logging and diagnostics.
 
@@ -363,15 +363,15 @@ The solver interface defines the behavioral contract that all solver implementat
 
 Every operation in the interface contract above must be verifiable against both reference solver APIs:
 
-| Operation        | HiGHS C API                       | CLP C API / C++                                         |
-| ---------------- | --------------------------------- | ------------------------------------------------------- |
-| Load model       | `Highs_passModel`                 | `Clp_loadProblem`                                       |
-| Add cut rows     | `Highs_addRows` (CSR batch)       | `Clp_addRows` (CSR batch)                               |
-| Patch row bounds | `Highs_changeRowsBoundsBySet`     | Mutable `double*` via `Clp_rowLower()`/`Clp_rowUpper()` |
-| Patch col bounds | `Highs_changeColsBoundsBySet`     | Mutable `double*` via `Clp_colLower()`/`Clp_colUpper()` |
-| Solve            | `Highs_run`                       | `Clp_dual` (warm-start) or `Clp_initialSolve` (cold)    |
-| Set/get basis    | `Highs_setBasis`/`Highs_getBasis` | `Clp_copyinStatus`/`Clp_statusArray`                    |
-| Reset            | `Highs_clearSolver`               | Reconstruct or `Clp_initialSolve`                       |
+| Operation           | HiGHS C API                       | CLP C API / C++                                         |
+| ------------------- | --------------------------------- | ------------------------------------------------------- |
+| Load model          | `Highs_passModel`                 | `Clp_loadProblem`                                       |
+| Add constraint rows | `Highs_addRows` (CSR batch)       | `Clp_addRows` (CSR batch)                               |
+| Patch row bounds    | `Highs_changeRowsBoundsBySet`     | Mutable `double*` via `Clp_rowLower()`/`Clp_rowUpper()` |
+| Patch col bounds    | `Highs_changeColsBoundsBySet`     | Mutable `double*` via `Clp_colLower()`/`Clp_colUpper()` |
+| Solve               | `Highs_run`                       | `Clp_dual` (warm-start) or `Clp_initialSolve` (cold)    |
+| Set/get basis       | `Highs_setBasis`/`Highs_getBasis` | `Clp_copyinStatus`/`Clp_statusArray`                    |
+| Reset               | `Highs_clearSolver`               | Reconstruct or `Clp_initialSolve`                       |
 
 See [HiGHS Implementation](./solver-highs-impl.md) and [CLP Implementation](./solver-clp-impl.md) for solver-specific details.
 
@@ -388,7 +388,7 @@ Two distinct concepts must be clearly separated:
 | **Cut pool**  | In-memory shared data structure holding all cuts (active + inactive) for all stages | Shared across threads, one per MPI rank    | Yes — deterministic slot assignment, activity bitmap, contiguous dense coefficients |
 | **Solver LP** | Transient LP loaded into a thread-local solver instance for a single solve          | Thread-local, rebuilt per stage transition | No — only active cuts are added via `addRows`                                       |
 
-Under the adopted LP rebuild strategy (SS11), the solver LP is transient — it is constructed, used, and discarded at every stage transition. Pre-allocating inactive cut rows in the solver LP would add memory pressure and solver overhead (larger factorization) with no benefit. Only the cut pool uses preallocation.
+Under the adopted LP rebuild strategy (SS11), the solver LP is transient — it is constructed, used, and discarded at every stage transition. Pre-allocating inactive dynamic constraint rows in the solver LP would add memory pressure and solver overhead (larger factorization) with no benefit. Only the cut pool uses preallocation.
 
 ### 5.2 Cut Pool Preallocation
 
@@ -460,7 +460,7 @@ Since all cuts have dense coefficients (every state variable participates), the 
 
 ## 6. Error Categories
 
-The solver interface returns a categorized error when a solve fails. The SDDP algorithm uses the error category to determine its response. Solver-internal errors (e.g., factorization failures) are resolved by the retry logic (SS7) before reaching this level.
+The solver interface returns a categorized error when a solve fails. The calling algorithm uses the error category to determine its response. Solver-internal errors (e.g., factorization failures) are resolved by the retry logic (SS7) before reaching this level.
 
 | Error Category       | Meaning                                     | SDDP Response                                               | May Have Partial Solution |
 | -------------------- | ------------------------------------------- | ----------------------------------------------------------- | :-----------------------: |
@@ -477,7 +477,7 @@ The solver interface returns a categorized error when a solve fails. The SDDP al
 
 ## 7. Retry Logic Contract
 
-Retry logic is **encapsulated within each solver implementation**. The SDDP algorithm never sees retry details — it only receives the final result.
+Retry logic is **encapsulated within each solver implementation**. The calling algorithm never sees retry details — it only receives the final result.
 
 ### 7.1 Behavioral Contract
 
@@ -537,7 +537,7 @@ A basis consists of one status value per column (variable) and one per row (cons
 - Bases are stored in the **original problem space** (not presolved), ensuring portability across solver versions and presolve strategies
 - The forward pass basis at each stage is retained for warm-starting the backward pass at the same stage (see [Training Loop SS4.4](./training-loop.md))
 - Basis storage uses compact representation (one byte per variable/constraint)
-- Basis structure splits naturally at the cut boundary per SS2.3: structural rows are position-stable, cut rows are appended/truncated
+- Basis structure splits naturally at the dynamic constraint boundary per SS2.3: static rows are position-stable, dynamic constraint rows are appended/truncated
 
 ## 10. Compile-Time Solver Selection
 
@@ -571,7 +571,7 @@ Memory constraints prevent keeping all stage LPs with their full cut sets reside
 1. **Load template** — Bulk-load the pre-assembled stage template into the solver via `passModel`/`loadProblem`. Since the template is already in CSC form (the native internal format for both HiGHS and CLP), this is a fast bulk memory operation — no per-constraint construction loops and no format transposition.
 2. **Add active cuts** — Batch-add all active cuts from the cut pool via a single `addRows` call in CSR format (see SS5.4).
 3. **Patch scenario values** — Update the ~2,240 scenario-dependent row bounds (incoming storage as RHS of water balance, AR lag fixing constraint RHS, current-stage noise fixing) via `patch_row_bounds` ([Solver Interface Trait SS2.3](./solver-interface-trait.md)).
-4. **Warm-start** — Apply the cached basis from the previous iteration's solve at this stage (structural rows reused directly, new cut rows set to Basic per SS2.3).
+4. **Warm-start** — Apply the cached basis from the previous iteration's solve at this stage (static rows reused directly, new dynamic constraint rows set to Basic per SS2.3).
 5. **Solve** — Solve the LP.
 
 See [Binary Formats SS3, SSA](../data-model/binary-formats.md) for the full analysis, memory estimates, and solver API survey that informed the Option A decision. For quantified analysis of the cut loading cost (which dominates stage transitions at production scale) and two-level storage considerations, see [Solver Workspaces SS1.10](./solver-workspaces.md).
@@ -582,10 +582,10 @@ Option A is the **portable baseline** that works identically across all solver b
 
 | Optimization                 | Solver | Mechanism                                                                                                                                                                         | Status                                                       |
 | ---------------------------- | ------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------ |
-| Pre-assembled CSC templates  | All    | Stage template in solver-ready CSC → fast `passModel`/`loadProblem` with no format transposition                                                                                  | **Adopted** (SS11.1)                                          |
+| Pre-assembled CSC templates  | All    | Stage template in solver-ready CSC → fast `passModel`/`loadProblem` with no format transposition                                                                                  | **Adopted** (SS11.1)                                         |
 | Direct memory patching       | CLP    | Mutable `double*` pointers (`Clp_rowLower()`/`Clp_rowUpper()`, `Clp_colLower()`/`Clp_colUpper()`) for zero-copy in-place bound patching via `patch_row_bounds`/`patch_col_bounds` | Anticipated — see [CLP Implementation](./solver-clp-impl.md) |
 | LP template cloning          | CLP    | C++ `makeBaseModel()`/`setToBaseModel()` or copy constructor via thin C wrapper                                                                                                   | Anticipated — could reduce rebuild to clone + cut addition   |
-| Pre-assembled CSR cut blocks | All    | Cut pool layout (binary-formats SS3.4) is CSR-friendly → `addRows` uses pre-built data (CSR is native for addRows)                                                                 | Anticipated                                                  |
+| Pre-assembled CSR cut blocks | All    | Cut pool layout (binary-formats SS3.4) is CSR-friendly → `addRows` uses pre-built data (CSR is native for addRows)                                                                | Anticipated                                                  |
 
 These optimizations do not change the interface contract (SS4) — they are internal to each solver implementation.
 

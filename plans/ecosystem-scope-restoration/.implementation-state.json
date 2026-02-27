@@ -1,6 +1,6 @@
 {
   "plan": "ecosystem-scope-restoration",
-  "last_updated": "2026-02-27T20:03:10Z",
+  "last_updated": "2026-02-27T20:22:34Z",
   "progressive": false,
   "tickets": {
     "ticket-001-restore-cobre-core-framing.md": {
@@ -124,9 +124,17 @@
       "agent": "open-source-documentation-writer"
     },
     "ticket-006-generalize-lp-layout.md": {
-      "status": "pending",
+      "status": "completed",
       "detail_level": "detailed",
       "scores": {
+        "quality": 0.9025,
+        "quality_breakdown": {
+          "conformance": 1.0,
+          "scope_adherence": 1.0,
+          "lint_cleanliness": 1.0,
+          "type_safety": 1.0,
+          "test_delta": 1.0
+        },
         "readiness": 0.86,
         "readiness_breakdown": {
           "structure": 1.0,
@@ -135,12 +143,22 @@
           "dependency_clarity": 1.0,
           "atomicity": 0.7
         }
-      }
+      },
+      "workflow_step": null,
+      "agent": "open-source-documentation-writer"
     },
     "ticket-007-rename-solver-interface-methods.md": {
-      "status": "pending",
+      "status": "completed",
       "detail_level": "detailed",
       "scores": {
+        "quality": 0.875,
+        "quality_breakdown": {
+          "conformance": 1.0,
+          "scope_adherence": 0.5,
+          "lint_cleanliness": 1.0,
+          "type_safety": 1.0,
+          "test_delta": 1.0
+        },
         "readiness": 0.93,
         "readiness_breakdown": {
           "structure": 1.0,
@@ -149,7 +167,9 @@
           "dependency_clarity": 1.0,
           "atomicity": 0.8
         }
-      }
+      },
+      "workflow_step": null,
+      "agent": "open-source-documentation-writer"
     },
     "ticket-008-update-solver-impl-specs.md": {
       "status": "pending",
