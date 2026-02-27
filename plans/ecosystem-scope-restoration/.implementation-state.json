@@ -1,12 +1,20 @@
 {
   "plan": "ecosystem-scope-restoration",
-  "last_updated": "2026-02-27T00:00:00Z",
+  "last_updated": "2026-02-27T20:03:10Z",
   "progressive": false,
   "tickets": {
     "ticket-001-restore-cobre-core-framing.md": {
-      "status": "pending",
+      "status": "completed",
       "detail_level": "detailed",
       "scores": {
+        "quality": 0.88,
+        "quality_breakdown": {
+          "conformance": 1.0,
+          "scope_adherence": 0.5,
+          "lint_cleanliness": 1.0,
+          "type_safety": 1.0,
+          "test_delta": 1.0
+        },
         "readiness": 0.91,
         "readiness_breakdown": {
           "structure": 1.0,
@@ -15,12 +23,22 @@
           "dependency_clarity": 1.0,
           "atomicity": 0.9
         }
-      }
+      },
+      "workflow_step": null,
+      "agent": "open-source-documentation-writer"
     },
     "ticket-002-restore-cobre-solver-framing.md": {
-      "status": "pending",
+      "status": "completed",
       "detail_level": "detailed",
       "scores": {
+        "quality": 0.94,
+        "quality_breakdown": {
+          "conformance": 1.0,
+          "scope_adherence": 1.0,
+          "lint_cleanliness": 1.0,
+          "type_safety": 1.0,
+          "test_delta": 1.0
+        },
         "readiness": 0.9,
         "readiness_breakdown": {
           "structure": 1.0,
@@ -29,12 +47,22 @@
           "dependency_clarity": 1.0,
           "atomicity": 0.85
         }
-      }
+      },
+      "workflow_step": null,
+      "agent": "open-source-documentation-writer"
     },
     "ticket-003-restore-comm-ferrompi-framing.md": {
-      "status": "pending",
+      "status": "completed",
       "detail_level": "detailed",
       "scores": {
+        "quality": 0.93,
+        "quality_breakdown": {
+          "conformance": 1.0,
+          "scope_adherence": 1.0,
+          "lint_cleanliness": 1.0,
+          "type_safety": 1.0,
+          "test_delta": 1.0
+        },
         "readiness": 0.88,
         "readiness_breakdown": {
           "structure": 1.0,
@@ -43,12 +71,22 @@
           "dependency_clarity": 1.0,
           "atomicity": 0.8
         }
-      }
+      },
+      "workflow_step": null,
+      "agent": "open-source-documentation-writer"
     },
     "ticket-004-restore-cli-stochastic-io-framing.md": {
-      "status": "pending",
+      "status": "completed",
       "detail_level": "detailed",
       "scores": {
+        "quality": 0.925,
+        "quality_breakdown": {
+          "conformance": 1.0,
+          "scope_adherence": 1.0,
+          "lint_cleanliness": 1.0,
+          "type_safety": 1.0,
+          "test_delta": 1.0
+        },
         "readiness": 0.87,
         "readiness_breakdown": {
           "structure": 1.0,
@@ -57,12 +95,22 @@
           "dependency_clarity": 1.0,
           "atomicity": 0.8
         }
-      }
+      },
+      "workflow_step": null,
+      "agent": "open-source-documentation-writer"
     },
     "ticket-005-restore-guidelines-claude-framing.md": {
-      "status": "pending",
+      "status": "completed",
       "detail_level": "detailed",
       "scores": {
+        "quality": 0.875,
+        "quality_breakdown": {
+          "conformance": 1.0,
+          "scope_adherence": 0.5,
+          "lint_cleanliness": 1.0,
+          "type_safety": 1.0,
+          "test_delta": 1.0
+        },
         "readiness": 0.92,
         "readiness_breakdown": {
           "structure": 1.0,
@@ -71,7 +119,9 @@
           "dependency_clarity": 1.0,
           "atomicity": 0.85
         }
-      }
+      },
+      "workflow_step": null,
+      "agent": "open-source-documentation-writer"
     },
     "ticket-006-generalize-lp-layout.md": {
       "status": "pending",

@@ -11,17 +11,17 @@ exposed by ferrompi implement `Send + Sync`, enabling hybrid MPI+threads
 parallelism without `unsafe` sharing of raw `MPI_Comm` handles.
 
 A central capability is `SharedWindow<T>`, which allows MPI ranks on the same
-physical node to share memory regions without replication. In SDDP workloads,
-this is used for scenario storage and the cut pool -- large data structures
-that would otherwise be duplicated across every rank within a node. Combined
-with `split_shared_memory()` for grouping co-located ranks, `SharedWindow<T>`
-reduces per-node memory footprint by an order of magnitude compared to
-per-rank replication.
+physical node to share memory regions without replication. In distributed
+optimization workloads, this is used for large shared data structures (scenario
+data, cut pools, policy tables) that would otherwise be duplicated across every
+rank within a node. Combined with `split_shared_memory()` for grouping
+co-located ranks, `SharedWindow<T>` reduces per-node memory footprint by an
+order of magnitude compared to per-rank replication.
 
 ferrompi also provides collective operations (`allreduce`, `allgatherv`,
-`broadcast`) used for cut synchronization, bound aggregation, and
-configuration broadcast during SDDP training. MPI 4.0 persistent collective
-support (`allgatherv_init`, `allreduce_init`) allows pre-negotiating
+`broadcast`) used for data synchronization, result aggregation, and
+configuration broadcast during distributed computation. MPI 4.0 persistent
+collective support (`allgatherv_init`, `allreduce_init`) allows pre-negotiating
 communication patterns at initialization and reusing them across iterations,
 amortizing setup cost. Topology query APIs and SLURM integration enable
 automatic detection of node boundaries and NUMA domain layout, which drives
@@ -40,17 +40,17 @@ functionality in Cobre.
   See [Hybrid Parallelism](../specs/hpc/hybrid-parallelism.md).
 
 - **SharedWindow\<T\>** -- Zero-copy shared memory regions across ranks on
-  the same physical node. Used for scenario storage (read-only) and the cut
-  pool (read-heavy, written at stage boundaries). Write visibility is ensured
-  via `window.fence()`.
+  the same physical node. Used for large shared data structures that are
+  read-only or read-heavy (e.g., scenario data, cut pools) to avoid
+  per-rank replication within a node. Write visibility is ensured via
+  `window.fence()`.
   See [Communication Patterns](../specs/hpc/communication-patterns.md) and
   [Shared Memory Aggregation](../specs/hpc/shared-memory-aggregation.md).
 
 - **Collective operations** -- `allreduce()`, `allgatherv()`, and
-  `broadcast()` with generic, type-safe APIs. These are the only MPI
-  operations used during SDDP training -- no point-to-point messaging.
-  Persistent collective variants are available for amortizing setup cost
-  across iterations.
+  `broadcast()` with generic, type-safe APIs. Persistent collective variants
+  are available for amortizing setup cost across iterations in iterative
+  algorithms.
   See [Communication Patterns](../specs/hpc/communication-patterns.md).
 
 - **SLURM integration** -- Topology query APIs that read resource allocations
@@ -63,10 +63,10 @@ functionality in Cobre.
   mapping supports the one-rank-per-NUMA-domain deployment model.
   See [Hybrid Parallelism](../specs/hpc/hybrid-parallelism.md).
 
-- **Synchronization protocol** -- MPI synchronization points in the SDDP
-  training loop: three collective calls per iteration (forward `Allreduce`,
-  backward `Allgatherv`, convergence `Allreduce`), forward-to-backward
-  transition barriers, and per-stage backward synchronization.
+- **Synchronization protocol** -- MPI synchronization points for iterative
+  distributed algorithms: collective calls per iteration (allreduce,
+  allgatherv), transition barriers between computation phases, and per-stage
+  synchronization.
   See [Synchronization](../specs/hpc/synchronization.md).
 
 ## Status

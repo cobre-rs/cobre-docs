@@ -9,7 +9,7 @@ It captures durable conventions extracted from the spec-readiness plan learnings
 ## Project Overview
 
 This is an **mdBook project** (`book.toml`, `src = "src"`) containing the specification
-corpus for the Cobre ecosystem — an HPC SDDP solver written in Rust. The book builds
+corpus for the Cobre ecosystem — a power system analysis and optimization platform written in Rust, with SDDP-based hydrothermal dispatch as the first solver vertical. The book builds
 with `mdbook build` from the repo root. Spec source files live exclusively under
 `src/specs/`. This file (`CLAUDE.md`) is outside `src/` and is never processed by
 mdBook.

@@ -4,20 +4,20 @@
 
 ## Overview
 
-cobre-comm provides the pluggable communication backend abstraction for Cobre's
-distributed SDDP execution. It defines the `Communicator` trait (collective
+cobre-comm provides the pluggable communication backend abstraction for distributed
+computing in the Cobre ecosystem. It defines the `Communicator` trait (collective
 operations: allgatherv, allreduce, broadcast, barrier) and the
 `SharedMemoryProvider` trait (intra-node shared memory regions), a backend
 selection factory with compile-time feature flags and optional runtime selection,
-and feature-gated backend implementations. The crate decouples the SDDP training
-loop from specific communication technologies, enabling MPI, TCP, shared-memory,
-and single-process execution through a unified interface with zero-cost
-abstraction via static dispatch.
+and feature-gated backend implementations. The crate decouples optimization
+algorithms and analysis tools from specific communication technologies, enabling
+MPI, TCP, shared-memory, and single-process execution through a unified interface
+with zero-cost abstraction via static dispatch.
 
 ## Key Concepts
 
-- **Communicator trait** -- The backend abstraction through which the SDDP
-  training loop performs collective operations (allgatherv, allreduce, broadcast,
+- **Communicator trait** -- The backend abstraction through which distributed
+  algorithms perform collective operations (allgatherv, allreduce, broadcast,
   barrier). Defines method signatures, preconditions, postconditions, error
   semantics, and the determinism invariants required by SDDP. Static dispatch
   via generics eliminates dynamic dispatch overhead on the hot path.

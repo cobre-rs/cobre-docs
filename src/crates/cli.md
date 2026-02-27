@@ -4,9 +4,9 @@
 
 ## Overview
 
-cobre-cli is the top-level binary crate and single entrypoint for the Cobre
-SDDP solver. It orchestrates the full execution lifecycle -- from MPI
-initialization through input loading, validation, training, simulation, and
+cobre-cli is the top-level binary crate and execution entrypoint for the Cobre
+ecosystem. It orchestrates the full execution lifecycle -- from process
+initialization through input loading, validation, solver execution, and
 finalization -- and translates outcomes into well-defined exit codes for HPC
 batch schedulers. All runtime behavior is controlled via the case directory's
 `config.json`; the CLI itself accepts only the case path and a minimal set of

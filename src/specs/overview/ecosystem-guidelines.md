@@ -20,7 +20,7 @@ in particular exist because the violation was observed and caused a guardian rej
 ## 1. Repository Layout
 
 This is an mdBook project (`book.toml`, `src = "src"`) containing the specification corpus for
-the Cobre ecosystem — an HPC SDDP solver written in Rust. The book builds with `mdbook build`
+the Cobre ecosystem — a power system analysis and optimization platform written in Rust, with SDDP-based hydrothermal dispatch as the first solver vertical. The book builds with `mdbook build`
 from the repo root. Spec source files live exclusively under `src/specs/`. The `CLAUDE.md` file
 at the repository root is outside `src/` and is never processed by mdBook.
 
@@ -389,13 +389,13 @@ Key planning documents for the first implementation plan:
 
 All 5 Blockers have been resolved:
 
-| Gap ID  | Description                                                                         |
-| ------- | ----------------------------------------------------------------------------------- |
-| GAP-001 | `SystemRepresentation` struct definition — **Resolved**: defined in [Internal Structures](../data-model/internal-structures.md) |
-| GAP-002 | Decommissioned LP treatment — **Resolved**: specified in [Training Loop](../architecture/training-loop.md) |
-| GAP-003 | Broadcast serialization format — **Resolved**: `postcard` adopted for MPI broadcast |
+| Gap ID  | Description                                                                                                                                  |
+| ------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| GAP-001 | `SystemRepresentation` struct definition — **Resolved**: defined in [Internal Structures](../data-model/internal-structures.md)              |
+| GAP-002 | Decommissioned LP treatment — **Resolved**: specified in [Training Loop](../architecture/training-loop.md)                                   |
+| GAP-003 | Broadcast serialization format — **Resolved**: `postcard` adopted for MPI broadcast                                                          |
 | GAP-004 | `StageTemplate` construction and LP variable layout — **Resolved**: specified in [Internal Structures](../data-model/internal-structures.md) |
-| GAP-005 | Forward pass patch sequence — **Resolved**: specified in [Training Loop](../architecture/training-loop.md) |
+| GAP-005 | Forward pass patch sequence — **Resolved**: specified in [Training Loop](../architecture/training-loop.md)                                   |
 
 The dominant gap crate is `cobre-sddp` (~20 of 39 gaps). The minimal viable build sequence
 is bottom-up: `cobre-core` first, then `cobre-solver` + `ferrompi` in parallel (Phase 3), up

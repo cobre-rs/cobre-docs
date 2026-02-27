@@ -4,12 +4,13 @@
 
 ## Overview
 
-cobre-stochastic implements the scenario generation pipeline for SDDP training
-and simulation. It preprocesses PAR(p) model parameters into cache-friendly
-contiguous arrays, generates spatially correlated noise vectors, constructs the
-opening tree used by the backward pass, and supports external scenario injection
-for cases where inflows are supplied directly rather than generated from the
-autoregressive model.
+cobre-stochastic implements the scenario generation framework for the Cobre
+ecosystem. Its current implementation provides PAR(p) autoregressive models for
+hydrothermal dispatch, including: preprocessing PAR(p) model parameters into
+cache-friendly contiguous arrays, generating spatially correlated noise vectors,
+constructing the opening tree used by the backward pass, and supporting external
+scenario injection for cases where inflows are supplied directly rather than
+generated from the autoregressive model.
 
 During preprocessing, raw PAR parameters (seasonal means, standard deviations,
 and autoregressive coefficients loaded from Parquet files) are

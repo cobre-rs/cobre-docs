@@ -4,8 +4,8 @@
 
 ## Overview
 
-cobre-solver provides the backend-agnostic LP solver interface used by the SDDP
-training and simulation loops. It defines a solver trait contract, a standardized
+cobre-solver provides the backend-agnostic LP solver interface used by optimization
+algorithms in the Cobre ecosystem. It defines a solver trait contract, a standardized
 LP layout convention (column and row regions), and the workspace lifecycle that
 manages thread-local solver instances. Every LP operation in Cobre -- building
 stage templates, patching scenario data, solving, and extracting duals -- flows
@@ -15,16 +15,16 @@ Two solver backends are provided as first-class implementations: HiGHS (via its
 C API) and CLP (via C API with thin C++ wrappers). The active backend is selected
 at compile time to eliminate virtual dispatch overhead on the hot path. Both
 implementations satisfy the same trait contract and are validated against
-identical test suites, ensuring that the SDDP algorithm is genuinely
+identical test suites, ensuring that optimization algorithms are genuinely
 solver-agnostic.
 
-The workspace pattern gives each OpenMP thread an exclusive solver instance with
+The workspace pattern gives each worker thread an exclusive solver instance with
 pre-allocated solution buffers, a per-stage basis cache for warm-starting, and
 NUMA-aware memory placement. Workspaces are created once at initialization and
-reused across all iterations, eliminating hot-path allocations. The cut pool
-integration path allows the backward pass to inject new Benders cuts into the
-LP via batch row addition, keeping the solver in sync with the evolving future
-cost function approximation.
+reused across all iterations, eliminating hot-path allocations. The dynamic
+constraint addition path allows callers to inject new constraints into the LP
+via batch row addition, keeping the solver in sync with the evolving constraint
+set.
 
 ## Key Concepts
 
@@ -40,13 +40,14 @@ cost function approximation.
 
 - **LP layout convention** -- A fixed column/row ordering that places state
   variables (reservoir volumes, AR lags) in a contiguous prefix and groups
-  cut-relevant constraints at the top of the row vector. This enables
-  slice-based state transfer, fast dual extraction, and efficient cut injection.
+  dual-relevant constraints at the top of the row vector. This enables
+  slice-based state transfer, fast dual extraction, and efficient dynamic
+  constraint addition.
   See [Solver Abstraction](../specs/architecture/solver-abstraction.md).
 
 - **Solver trait interface** -- The unified contract that both HiGHS and CLP
   implement: load model, patch RHS, solve, extract primals/duals/reduced costs,
-  add cut rows, and manage basis. Compile-time selection via generics avoids
+  add constraint rows, and manage basis. Compile-time selection via generics avoids
   dynamic dispatch.
   See [HiGHS Implementation](../specs/architecture/solver-highs-impl.md) and
   [CLP Implementation](../specs/architecture/solver-clp-impl.md).
@@ -63,9 +64,10 @@ cost function approximation.
   $i+1$, reducing simplex iterations. Bases are serialized to FlatBuffers for
   checkpoint/resume.
 
-- **Cut pool integration** -- New Benders cuts generated during the backward
-  pass are injected into the LP bottom row region via batch `addRows`. Cuts are
-  stored in physical units; scaling is applied at solve time.
+- **Dynamic constraint addition** -- New constraints are injected into the LP
+  bottom row region via batch `addRows`. Constraints are stored in physical
+  units; scaling is applied at solve time. In SDDP, this mechanism is used to
+  inject Benders cuts generated during the backward pass.
 
 ## Status
 
