@@ -16,7 +16,7 @@ CLP and HiGHS are both **first-class reference implementations** — the solver 
 | Solution          | `Clp_primalColumnSolution`, `Clp_dualRowSolution`, `Clp_objectiveValue` | Mutable `double*` pointers into solver internals       |
 | Solve (warm)      | `Clp_dual(model, 0)`                                                    | Dual simplex with warm-start from current basis        |
 | Solve (cold)      | `Clp_initialDualSolve(model)`                                           | Dual simplex with full initialization                  |
-| LP cloning        | `ClpSimplex::makeBaseModel()` / `setToBaseModel()` (C++ only)           | Requires thin C wrapper — see §5                       |
+| LP cloning        | `ClpSimplex::makeBaseModel()` / `setToBaseModel()` (C++ only)           | Requires thin C wrapper — see SS5                       |
 | Raw C++ access    | `Clp_getClpSimplex(model)` → cast to `ClpSimplex*`                      | Escape hatch for C++ features not exposed in the C API |
 
 ### 1.1 CLP API Layers
@@ -28,7 +28,7 @@ CLP exposes two API layers relevant to Cobre:
 | **C API** (`Clp_C_Interface.h`) | Pure C functions operating on opaque `Clp_Simplex*` | Direct FFI (`extern "C"`)                               | Load, solve, add rows, mutable pointer access, basis, tolerances, scaling                   |
 | **C++ API** (`ClpSimplex.hpp`)  | Class methods on `ClpSimplex`                       | Via thin C wrapper functions compiled as C++ and linked | Template cloning (`makeBaseModel`/`setToBaseModel`), copy constructor, `setPersistenceFlag` |
 
-The C API is sufficient for the Option A baseline. The C++ API enables the anticipated cloning optimization (§5). The bridge between them is `Clp_getClpSimplex(model)`, which returns the underlying `ClpSimplex*`.
+The C API is sufficient for the Option A baseline. The C++ API enables the anticipated cloning optimization (SS5). The bridge between them is `Clp_getClpSimplex(model)`, which returns the underlying `ClpSimplex*`.
 
 ## 2. Solver Interface Mapping
 
@@ -87,7 +87,7 @@ Alternatively, CLP provides bulk array replacement via `Clp_chgRowLower(model, r
 
 **Status interpretation** after solve:
 
-| `Clp_status(model)` | Meaning                    | Maps To (Solver Abstraction §6)          |
+| `Clp_status(model)` | Meaning                    | Maps To (Solver Abstraction SS6)          |
 | ------------------- | -------------------------- | ---------------------------------------- |
 | 0                   | Optimal                    | Success                                  |
 | 1                   | Primal infeasible          | `Infeasible`                             |
@@ -124,7 +124,7 @@ unsigned char* status = Clp_statusArray(model);
 
 **Status codes** (2 bits used from each byte):
 
-| Code | Meaning        | Maps To (Solver Abstraction §9) |
+| Code | Meaning        | Maps To (Solver Abstraction SS9) |
 | ---- | -------------- | ------------------------------- |
 | 0    | Free           | Free                            |
 | 1    | Basic          | Basic                           |
@@ -286,7 +286,7 @@ CLP's `setPersistenceFlag(int value)` controls memory reuse behavior:
 | 1     | Reuse arrays if bigger needed (avoid reallocation) |
 | 2     | As 1 but allocate a bit extra (amortized growth)   |
 
-For SDDP where the LP is rebuilt many times with similar (but not identical) sizes, `setPersistenceFlag(2)` reduces allocation overhead by keeping internal arrays sized for the largest LP seen so far. This is a CLP-specific micro-optimization accessible via the C++ wrapper (§5.2).
+For SDDP where the LP is rebuilt many times with similar (but not identical) sizes, `setPersistenceFlag(2)` reduces allocation overhead by keeping internal arrays sized for the largest LP seen so far. This is a CLP-specific micro-optimization accessible via the C++ wrapper (SS5.2).
 
 ## Cross-References
 

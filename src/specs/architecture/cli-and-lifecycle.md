@@ -74,7 +74,7 @@ cobre report /path/to/output --output-format json
 | Argument          | Required | Description                                                  |
 | ----------------- | -------- | ------------------------------------------------------------ |
 | `CASE_DIR`        | Yes      | Path to case directory containing `config.json`              |
-| `--validate-only` | No       | Run Startup and Validation phases only, then exit (see §5.3) |
+| `--validate-only` | No       | Run Startup and Validation phases only, then exit (see SS5.3) |
 | `--version`       | No       | Print version and exit                                       |
 | `--help`          | No       | Print usage and exit                                         |
 
@@ -140,7 +140,7 @@ Each subcommand accepts specific positional and keyword arguments:
 
 ### 5.2a Phase-Training Loop Alignment
 
-This subsection documents the correspondence between CLI execution phases (§5.2) and the spec sections that define each phase's operations. The purpose is to ensure that every phase boundary assumed by the [Training Loop](./training-loop.md) is explicitly sequenced in the lifecycle, and that implementers can trace each phase to its authoritative specification.
+This subsection documents the correspondence between CLI execution phases (SS5.2) and the spec sections that define each phase's operations. The purpose is to ensure that every phase boundary assumed by the [Training Loop](./training-loop.md) is explicitly sequenced in the lifecycle, and that implementers can trace each phase to its authoritative specification.
 
 | Phase              | Operation                                              | Authoritative Spec                                                  | Ordering Constraint                                                           |
 | ------------------ | ------------------------------------------------------ | ------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
@@ -281,7 +281,7 @@ The structured output protocol defines how Cobre CLI responses are formatted for
 
 ### 8.1 Output Format Negotiation
 
-The `--output-format` global flag (§3.1) selects between three presentation modes:
+The `--output-format` global flag (SS3.1) selects between three presentation modes:
 
 | Mode       | Flag Value        | Transport                        | Use Case                                         |
 | ---------- | ----------------- | -------------------------------- | ------------------------------------------------ |

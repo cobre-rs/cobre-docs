@@ -140,7 +140,7 @@ At production scale ($T = 120$ stages, $N_{\text{rep}} = 100$ replications, $R =
 
 ### 2.4 Per-Iteration Output Record
 
-Each iteration produces a record with the following fields, used for logging (§4) and output persistence:
+Each iteration produces a record with the following fields, used for logging (SS4) and output persistence:
 
 | Field             | Description                                                         |
 | ----------------- | ------------------------------------------------------------------- |
@@ -314,7 +314,7 @@ The termination reason is one of: `BOUND_STALLING`, `SIMULATION`, `ITERATION_LIM
 
 ### 4.1 JSON-Lines Streaming Schema
 
-When `--output-format json-lines` is specified, the training log is emitted as newline-delimited JSON instead of the text format above. Each line is a self-describing JSON object with a `type` field. The field values match the per-iteration output record defined in §2.4.
+When `--output-format json-lines` is specified, the training log is emitted as newline-delimited JSON instead of the text format above. Each line is a self-describing JSON object with a `type` field. The field values match the per-iteration output record defined in SS2.4.
 
 **Progress event** (one per iteration):
 

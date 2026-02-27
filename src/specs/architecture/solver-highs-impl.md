@@ -94,7 +94,7 @@ HiGHS determines its solve strategy internally based on:
 
 **Status interpretation** after solve:
 
-| `Highs_getModelStatus(highs)` | Constant                                 | Maps To (Solver Abstraction §6)          |
+| `Highs_getModelStatus(highs)` | Constant                                 | Maps To (Solver Abstraction SS6)          |
 | ----------------------------- | ---------------------------------------- | ---------------------------------------- |
 | 7                             | `kHighsModelStatusOptimal`               | Success                                  |
 | 8                             | `kHighsModelStatusInfeasible`            | `Infeasible`                             |
@@ -134,7 +134,7 @@ Both arrays are `HighsInt[]` (one integer per variable/constraint).
 
 **Status codes**:
 
-| Code | Constant                    | Meaning        | Maps To (Solver Abstraction §9) |
+| Code | Constant                    | Meaning        | Maps To (Solver Abstraction SS9) |
 | ---- | --------------------------- | -------------- | ------------------------------- |
 | 0    | `kHighsBasisStatusLower`    | At lower bound | At lower                        |
 | 1    | `kHighsBasisStatusBasic`    | Basic          | Basic                           |

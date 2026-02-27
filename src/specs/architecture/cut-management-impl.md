@@ -60,7 +60,7 @@ The FCF provides the following operations to the training loop:
 | Add cut           | Write a new cut's coefficients, intercept, and metadata into the deterministic slot. Set the slot as active in the bitmap. O(1).         |
 | Get active cuts   | Return the active cut indices and coefficient/intercept data for a given stage. Used by the solver workspace for `addRows` CSR assembly. |
 | Evaluate at state | Compute max over all active cuts: $\max_k \{ \alpha_k + \pi_k^\top x \}$. Used for upper bound evaluation and dominated cut detection.   |
-| Run selection     | Apply the configured cut selection strategy (§2) to deactivate cuts. Updates the activity bitmap.                                        |
+| Run selection     | Apply the configured cut selection strategy (SS2) to deactivate cuts. Updates the activity bitmap.                                        |
 | Aggregate stats   | Return total cuts, active cuts per stage, cuts added this iteration — for logging and convergence monitoring.                            |
 
 ## 2. Cut Selection Strategies
@@ -182,7 +182,7 @@ At production scale with 192 forward passes per iteration and 16 ranks, each ran
 
 ### 4.2a Wire Format Specification
 
-This subsection specifies the **exact byte-level layout** for cut data exchanged via `allgatherv` ([Communicator Trait SS2.1](../hpc/communicator-trait.md)) during the backward pass cut synchronization (§4.1 step 3). It resolves the ambiguity in §4.2 regarding endianness, alignment, and serialization strategy.
+This subsection specifies the **exact byte-level layout** for cut data exchanged via `allgatherv` ([Communicator Trait SS2.1](../hpc/communicator-trait.md)) during the backward pass cut synchronization (SS4.1 step 3). It resolves the ambiguity in SS4.2 regarding endianness, alignment, and serialization strategy.
 
 **Serialization: raw `#[repr(C)]` reinterpretation.** Cut records are transmitted as raw bytes obtained by reinterpreting a `#[repr(C)]` struct as `&[u8]` — **not** serialized via `rkyv`, FlatBuffers, or any structured format. This is the same hot-path convention used for state vector exchange ([Training Loop SS5.4a](./training-loop.md)): per-iteration collective operations use raw reinterpretation for zero overhead. The `rkyv` serialization path ([Input Loading Pipeline SS6](./input-loading-pipeline.md)) is reserved for initialization-time broadcast of heterogeneous structures.
 
@@ -205,7 +205,7 @@ This subsection specifies the **exact byte-level layout** for cut data exchanged
 /// specification for raw byte reinterpretation.
 #[repr(C)]
 struct CutWireRecord {
-    /// Deterministic slot index (§1.2): warm_start_count + iteration * forward_passes + forward_pass_index
+    /// Deterministic slot index (SS1.2): warm_start_count + iteration * forward_passes + forward_pass_index
     slot_index: u32,         // offset  0, size 4
     /// Iteration at which this cut was generated
     iteration: u32,          // offset  4, size 4
@@ -235,7 +235,7 @@ At production scale ($N = 160$ hydros, $L = 12$ AR lags, $n_{state} = 160 \times
 | Coefficients | $2{,}080 \times 8 = 16{,}640$ bytes  |
 | **Total**    | **$24 + 16{,}640 = 16{,}664$ bytes** |
 
-This corrects the approximate "~16,660 bytes" estimate in §4.2 — the exact value is **16,664 bytes** per cut.
+This corrects the approximate "~16,660 bytes" estimate in SS4.2 — the exact value is **16,664 bytes** per cut.
 
 **allgatherv type parameter.** Because `CutWireRecord` has variable length (the coefficient tail depends on $n_{state}$, which is a runtime value), the `allgatherv` call uses `T = u8` (raw bytes) rather than `T = CutWireRecord`. Each rank serializes its local cuts into a contiguous `Vec<u8>` send buffer and provides byte counts and displacements to the collective operation:
 
@@ -316,7 +316,7 @@ A cut is binding if its dual multiplier (shadow price) in the LP solution is pos
 | LML1      | Set `last_active_iter` to the current iteration                        |
 | Dominated | Reset `domination_count` to 0 (the cut is not dominated at this state) |
 
-These updates happen on the thread-local solver's cut rows. Since each thread processes its own trajectories and the backward pass has per-stage synchronization barriers, no locking is needed — each thread updates the activity data for the cuts it evaluated, and the results are reconciled during the cut synchronization step (§4).
+These updates happen on the thread-local solver's cut rows. Since each thread processes its own trajectories and the backward pass has per-stage synchronization barriers, no locking is needed — each thread updates the activity data for the cuts it evaluated, and the results are reconciled during the cut synchronization step (SS4).
 
 ## Cross-References
 
