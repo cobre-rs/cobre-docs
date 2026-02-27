@@ -1,0 +1,231 @@
+{
+  "plan": "ecosystem-scope-restoration",
+  "last_updated": "2026-02-27T00:00:00Z",
+  "progressive": false,
+  "tickets": {
+    "ticket-001-restore-cobre-core-framing.md": {
+      "status": "pending",
+      "detail_level": "detailed",
+      "scores": {
+        "readiness": 0.91,
+        "readiness_breakdown": {
+          "structure": 1.0,
+          "testability": 0.85,
+          "boundary": 0.9,
+          "dependency_clarity": 1.0,
+          "atomicity": 0.9
+        }
+      }
+    },
+    "ticket-002-restore-cobre-solver-framing.md": {
+      "status": "pending",
+      "detail_level": "detailed",
+      "scores": {
+        "readiness": 0.9,
+        "readiness_breakdown": {
+          "structure": 1.0,
+          "testability": 0.85,
+          "boundary": 0.85,
+          "dependency_clarity": 1.0,
+          "atomicity": 0.85
+        }
+      }
+    },
+    "ticket-003-restore-comm-ferrompi-framing.md": {
+      "status": "pending",
+      "detail_level": "detailed",
+      "scores": {
+        "readiness": 0.88,
+        "readiness_breakdown": {
+          "structure": 1.0,
+          "testability": 0.8,
+          "boundary": 0.85,
+          "dependency_clarity": 1.0,
+          "atomicity": 0.8
+        }
+      }
+    },
+    "ticket-004-restore-cli-stochastic-io-framing.md": {
+      "status": "pending",
+      "detail_level": "detailed",
+      "scores": {
+        "readiness": 0.87,
+        "readiness_breakdown": {
+          "structure": 1.0,
+          "testability": 0.8,
+          "boundary": 0.8,
+          "dependency_clarity": 1.0,
+          "atomicity": 0.8
+        }
+      }
+    },
+    "ticket-005-restore-guidelines-claude-framing.md": {
+      "status": "pending",
+      "detail_level": "detailed",
+      "scores": {
+        "readiness": 0.92,
+        "readiness_breakdown": {
+          "structure": 1.0,
+          "testability": 0.9,
+          "boundary": 0.9,
+          "dependency_clarity": 1.0,
+          "atomicity": 0.85
+        }
+      }
+    },
+    "ticket-006-generalize-lp-layout.md": {
+      "status": "pending",
+      "detail_level": "detailed",
+      "scores": {
+        "readiness": 0.86,
+        "readiness_breakdown": {
+          "structure": 1.0,
+          "testability": 0.8,
+          "boundary": 0.8,
+          "dependency_clarity": 1.0,
+          "atomicity": 0.7
+        }
+      }
+    },
+    "ticket-007-rename-solver-interface-methods.md": {
+      "status": "pending",
+      "detail_level": "detailed",
+      "scores": {
+        "readiness": 0.93,
+        "readiness_breakdown": {
+          "structure": 1.0,
+          "testability": 0.95,
+          "boundary": 0.85,
+          "dependency_clarity": 1.0,
+          "atomicity": 0.8
+        }
+      }
+    },
+    "ticket-008-update-solver-impl-specs.md": {
+      "status": "pending",
+      "detail_level": "detailed",
+      "scores": {
+        "readiness": 0.9,
+        "readiness_breakdown": {
+          "structure": 1.0,
+          "testability": 0.9,
+          "boundary": 0.85,
+          "dependency_clarity": 1.0,
+          "atomicity": 0.75
+        }
+      }
+    },
+    "ticket-009-update-solver-testing.md": {
+      "status": "pending",
+      "detail_level": "detailed",
+      "scores": {
+        "readiness": 0.91,
+        "readiness_breakdown": {
+          "structure": 1.0,
+          "testability": 0.9,
+          "boundary": 0.85,
+          "dependency_clarity": 1.0,
+          "atomicity": 0.8
+        }
+      }
+    },
+    "ticket-010-update-workspaces-training-loop.md": {
+      "status": "pending",
+      "detail_level": "detailed",
+      "scores": {
+        "readiness": 0.87,
+        "readiness_breakdown": {
+          "structure": 1.0,
+          "testability": 0.8,
+          "boundary": 0.8,
+          "dependency_clarity": 1.0,
+          "atomicity": 0.75
+        }
+      }
+    },
+    "ticket-011-update-communicator-trait-purpose.md": {
+      "status": "pending",
+      "detail_level": "detailed",
+      "scores": {
+        "readiness": 0.94,
+        "readiness_breakdown": {
+          "structure": 1.0,
+          "testability": 0.95,
+          "boundary": 0.9,
+          "dependency_clarity": 1.0,
+          "atomicity": 0.9
+        }
+      }
+    },
+    "ticket-012-reframe-sampling-scheme.md": {
+      "status": "pending",
+      "detail_level": "detailed",
+      "scores": {
+        "readiness": 0.92,
+        "readiness_breakdown": {
+          "structure": 1.0,
+          "testability": 0.9,
+          "boundary": 0.85,
+          "dependency_clarity": 1.0,
+          "atomicity": 0.85
+        }
+      }
+    },
+    "ticket-013-reframe-scenario-generation.md": {
+      "status": "pending",
+      "detail_level": "detailed",
+      "scores": {
+        "readiness": 0.93,
+        "readiness_breakdown": {
+          "structure": 1.0,
+          "testability": 0.9,
+          "boundary": 0.9,
+          "dependency_clarity": 1.0,
+          "atomicity": 0.9
+        }
+      }
+    },
+    "ticket-014-create-ecosystem-vision.md": {
+      "status": "pending",
+      "detail_level": "detailed",
+      "scores": {
+        "readiness": 0.88,
+        "readiness_breakdown": {
+          "structure": 1.0,
+          "testability": 0.8,
+          "boundary": 0.85,
+          "dependency_clarity": 1.0,
+          "atomicity": 0.8
+        }
+      }
+    },
+    "ticket-015-update-cross-reference-index.md": {
+      "status": "pending",
+      "detail_level": "detailed",
+      "scores": {
+        "readiness": 0.89,
+        "readiness_breakdown": {
+          "structure": 1.0,
+          "testability": 0.85,
+          "boundary": 0.85,
+          "dependency_clarity": 1.0,
+          "atomicity": 0.8
+        }
+      }
+    }
+  },
+  "epics": {
+    "epic-01-framing-restoration": {
+      "phase": "executing",
+      "learning_extracted": false
+    },
+    "epic-02-solver-generalization": {
+      "phase": "executing",
+      "learning_extracted": false
+    },
+    "epic-03-stochastic-and-vision": {
+      "phase": "executing",
+      "learning_extracted": false
+    }
+  }
+}
