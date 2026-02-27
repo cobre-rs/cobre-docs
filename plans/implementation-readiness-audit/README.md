@@ -55,5 +55,5 @@ Systematic, evidence-based audit of the Cobre specification corpus to determine 
 | ticket-027 | Evaluate rkyv Serialization Fitness for System Broadcast       | epic-07 | completed | Refined      | 0.98      | 0.93    | EXCELLENT |
 | ticket-028 | Define SimulationScenarioResult Type and Simulate Signature    | epic-07 | completed | Refined      | 0.98      | 0.98    | EXCELLENT |
 | ticket-029 | Define Output Writer API                                       | epic-07 | completed | Refined      | 0.98      | 0.93    | EXCELLENT |
-| ticket-030 | Verify Cross-Reference Integrity After All Edits               | epic-08 | pending   | Outline      | --        | --      | --        |
-| ticket-031 | Confirm All 19 Conditions Resolved and Produce Final Verdict   | epic-08 | pending   | Outline      | --        | --      | --        |
+| ticket-030 | Verify Cross-Reference Integrity After All Edits               | epic-08 | completed | Refined      | 1.00      | 0.93    | EXCELLENT |
+| ticket-031 | Confirm All 19 Conditions Resolved and Produce Final Verdict   | epic-08 | completed | Refined      | 0.98      | 1.00    | EXCELLENT |
