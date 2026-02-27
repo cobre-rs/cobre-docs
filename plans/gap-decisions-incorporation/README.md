@@ -22,10 +22,10 @@ Incorporate confirmed architectural decisions from a stakeholder design review i
 | Ticket     | Title                                                           | Epic    | Status    | Detail Level | Readiness | Quality | Badge     |
 | ---------- | --------------------------------------------------------------- | ------- | --------- | ------------ | --------- | ------- | --------- |
 | ticket-001 | Batch-update gap inventory for 15 resolved gaps                 | epic-01 | completed | Detailed     | 1.00      | 1.00    | EXCELLENT |
-| ticket-002 | Add PAR-to-LP transformation flow and PrecomputedParLp struct   | epic-02 | pending   | Detailed     | 1.00      | --      | --        |
-| ticket-003 | Define TrajectoryRecord type with contiguous LP solution layout | epic-02 | pending   | Detailed     | 1.00      | --      | --        |
-| ticket-004 | Specify warm-start compatibility validation checks              | epic-02 | pending   | Detailed     | 1.00      | --      | --        |
-| ticket-005 | Replace OpenMP with rayon for intra-rank parallelism            | epic-02 | pending   | Detailed     | 1.00      | --      | --        |
+| ticket-002 | Add PAR-to-LP transformation flow and PrecomputedParLp struct   | epic-02 | completed | Detailed     | 1.00      | 1.00    | EXCELLENT |
+| ticket-003 | Define TrajectoryRecord type with contiguous LP solution layout | epic-02 | completed | Detailed     | 1.00      | 1.00    | EXCELLENT |
+| ticket-004 | Specify warm-start compatibility validation checks              | epic-02 | completed | Detailed     | 1.00      | 0.93    | EXCELLENT |
+| ticket-005 | Replace OpenMP with rayon for intra-rank parallelism            | epic-02 | completed | Detailed     | 1.00      | 0.93    | EXCELLENT |
 | ticket-006 | Update configuration reference for GAP-019, 024, 027, 035       | epic-03 | pending   | Outline      | --        | --      | --        |
 | ticket-007 | Uniformize scenario notation and remove legacy Stage fields     | epic-03 | pending   | Outline      | --        | --      | --        |
 | ticket-008 | Document forward_passes immutability precondition               | epic-03 | pending   | Outline      | --        | --      | --        |

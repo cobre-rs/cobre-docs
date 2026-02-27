@@ -94,6 +94,8 @@ Before simulation begins, the system validates that the current input data is co
 
 Any mismatch results in a **hard error** — the simulation does not proceed with an incompatible policy.
 
+Warm-start compatibility validation rules are specified in [Input Loading Pipeline SS7.1](./input-loading-pipeline.md).
+
 The full policy compatibility validation specification, including the metadata format persisted by training and the validation algorithm, is documented in [Deferred Features SSC.9](../deferred.md).
 
 ## 3. Simulation Execution
@@ -131,6 +133,8 @@ For each assigned scenario, the simulation executes a complete forward pass thro
 3. **Compute scenario cost** — Sum immediate costs across all stages, applying discount factors. See [Discount Rate](../math/discount-rate.md).
 
 4. **Stream results** — Send the scenario results to the output writer for streaming to disk (see §6).
+
+> **Shared record type.** The simulation forward pass reuses the [TrajectoryRecord](./training-loop.md) type (SS4.2b) from the training loop rather than defining a separate simulation record struct. Training populates only the `state` and `stage_cost` fields for backward pass consumption; simulation additionally reads `primal` and `dual` for per-entity result extraction and Parquet output.
 
 ### 3.3 Memory Management
 

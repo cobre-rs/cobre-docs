@@ -2,38 +2,38 @@
 
 ## Purpose
 
-This spec defines the hybrid parallelization strategy used by Cobre: a pluggable communication backend (selected at compile time via Cargo feature flags; see [Backend Selection](./backend-selection.md)) for inter-node communication, intra-node shared memory, and topology detection; OpenMP via C FFI as the threading layer for intra-rank parallelism; the design rationale for this split; configuration; initialization; and build integration.
+This spec defines the hybrid parallelization strategy used by Cobre: a pluggable communication backend (selected at compile time via Cargo feature flags; see [Backend Selection](./backend-selection.md)) for inter-node communication, intra-node shared memory, and topology detection; Rayon as the threading layer for intra-rank parallelism; the design rationale for this split; configuration; initialization; and build integration.
 
 ## 1. Hybrid Architecture Overview
 
-Cobre employs a hybrid parallelization strategy optimized for modern HPC architectures with multi-socket, many-core nodes. A **pluggable communication backend** implementing the `Communicator` and `SharedMemoryProvider` traits ([Communicator Trait §1](./communicator-trait.md), [Communicator Trait §4](./communicator-trait.md)) is the backbone for all process-level parallelism and shared memory. The production backend is **ferrompi** (safe Rust MPI bindings; see [Ferrompi Backend](./backend-ferrompi.md)), but alternative backends (local, TCP, shared-memory) can be selected at compile time via Cargo feature flags (see [Backend Selection §1](./backend-selection.md)). **OpenMP via C FFI** fills the one gap inter-process communication cannot cover: thread-level parallelism within a single rank.
+Cobre employs a hybrid parallelization strategy optimized for modern HPC architectures with multi-socket, many-core nodes. A **pluggable communication backend** implementing the `Communicator` and `SharedMemoryProvider` traits ([Communicator Trait §1](./communicator-trait.md), [Communicator Trait §4](./communicator-trait.md)) is the backbone for all process-level parallelism and shared memory. The production backend is **ferrompi** (safe Rust MPI bindings; see [Ferrompi Backend](./backend-ferrompi.md)), but alternative backends (local, TCP, shared-memory) can be selected at compile time via Cargo feature flags (see [Backend Selection §1](./backend-selection.md)). **Rayon** fills the one gap inter-process communication cannot cover: thread-level parallelism within a single rank.
 
 | Level                        | Technology                                                                                                     | Scope                            | Responsibility                                                                         |
 | ---------------------------- | -------------------------------------------------------------------------------------------------------------- | -------------------------------- | -------------------------------------------------------------------------------------- |
 | **Inter-node / Inter-NUMA**  | `Communicator` trait ([Communicator Trait §1](./communicator-trait.md))                                        | Across NUMA domains and nodes    | Work distribution, cut synchronization (`allgatherv`), bound aggregation (`allreduce`) |
 | **Intra-node shared memory** | `SharedMemoryProvider` trait ([Communicator Trait §4](./communicator-trait.md))                                | Ranks on the same physical node  | `SharedRegion<T>` for scenario storage and cut pool shared without replication         |
 | **Topology detection**       | `SharedMemoryProvider::split_local()` ([Communicator Trait §4.1](./communicator-trait.md)) + SLURM integration | Node and NUMA discovery          | Identify co-located ranks, NUMA domain mapping                                         |
-| **Intra-rank threading**     | OpenMP via C FFI                                                                                               | Threads within a single MPI rank | Parallel LP solves across scenario trajectories                                        |
+| **Intra-rank threading**     | Rayon                                                                                                          | Threads within a single MPI rank | Parallel LP solves across scenario trajectories                                        |
 
 ### 1.0a Single-Process Mode
 
-For interface layers that do not use MPI (`cobre-mcp`, `cobre-python`, `cobre-tui`), Cobre operates in **single-process mode**: OpenMP threads provide intra-process parallelism without any inter-process communication. In this mode, the `local` communication backend is selected (see [Local Backend](./backend-local.md)). No inter-process communication occurs. Specifically:
+For interface layers that do not use MPI (`cobre-mcp`, `cobre-python`, `cobre-tui`), Cobre operates in **single-process mode**: Rayon threads provide intra-process parallelism without any inter-process communication. In this mode, the `local` communication backend is selected (see [Local Backend](./backend-local.md)). No inter-process communication occurs. Specifically:
 
 - There is exactly one "rank" (the process itself) with all scenarios assigned to it.
 - All `Communicator` trait methods ([Communicator Trait §1.1](./communicator-trait.md)) are identity operations or no-ops, as specified in [Local Backend §2](./backend-local.md).
 - `SharedMemoryProvider` uses `HeapFallback` -- shared read-only data (opening tree, case data) is allocated as regular per-process heap memory (see [Local Backend §3](./backend-local.md)).
-- OpenMP thread-level parallelism for LP solves remains fully active with the same scheduling, affinity, and NUMA policies.
+- Rayon thread-level parallelism for LP solves remains fully active with the same thread pool configuration and NUMA policies.
 
 Single-process mode is the required execution mode for Python bindings (GIL/MPI incompatibility -- see [Python Bindings §4](../interfaces/python-bindings.md)) and for the MCP server (long-lived server process incompatible with MPI launchers). See §6a below for the alternative initialization sequence.
 
-### 1.1 Why a Communication Backend + OpenMP
+### 1.1 Why a Communication Backend + Rayon
 
-The communication backend covers inter-node communication, intra-node shared memory, and topology detection -- everything at the process level. For production HPC deployments, the **ferrompi backend** (see [Ferrompi Backend](./backend-ferrompi.md)) is the recommended choice because MPI provides battle-tested, vendor-optimized collectives and shared memory windows. The one thing the communication backend does not provide is **thread-level parallelism within a single rank**. To parallelize LP solves across cores within a NUMA domain, a threading model is needed. OpenMP (via a thin C FFI wrapper) fills this gap, providing vendor-optimized scheduling, affinity control, and NUMA-aware thread placement that Rust's standard threading libraries (Rayon) cannot match on HPC hardware.
+The communication backend covers inter-node communication, intra-node shared memory, and topology detection -- everything at the process level. For production HPC deployments, the **ferrompi backend** (see [Ferrompi Backend](./backend-ferrompi.md)) is the recommended choice because MPI provides battle-tested, vendor-optimized collectives and shared memory windows. The one thing the communication backend does not provide is **thread-level parallelism within a single rank**. To parallelize LP solves across cores within a NUMA domain, a threading model is needed. Rayon fills this gap, providing safe, ergonomic data parallelism that integrates naturally with Rust's ownership model and borrow checker.
 
 SDDP's compute pattern — many independent small LP solves sharing large read-only data (scenarios, cuts) — maps naturally to this split:
 
 - **Communication backend ranks** (MPI ranks under the ferrompi backend) provide memory isolation between NUMA domains and between nodes. Each rank has its own address space, avoiding false sharing across NUMA boundaries. Shared memory regions (via the `SharedMemoryProvider` trait) allow ranks on the same node to share large read-only data without replication, reducing memory footprint by an order of magnitude compared to per-rank replication.
-- **OpenMP threads** within each rank share the rank's address space, enabling fine-grained parallelism over LP solves without data replication within a NUMA domain.
+- **Rayon threads** within each rank share the rank's address space, enabling fine-grained parallelism over LP solves without data replication within a NUMA domain.
 
 The typical deployment is one MPI rank per NUMA domain. See [SLURM Deployment](./slurm-deployment.md) for concrete job configurations.
 
@@ -63,48 +63,48 @@ Ranks on the same physical node share two large data regions via `SharedRegion<T
 
 **Per-rank resources** (not shared):
 
-- One LP solver instance per OpenMP thread (LP solvers are not thread-safe — see [Solver Workspaces §1.1](../architecture/solver-workspaces.md))
+- One LP solver instance per Rayon worker thread (LP solvers are not thread-safe — see [Solver Workspaces §1.1](../architecture/solver-workspaces.md))
 - Thread-local solution buffers, RHS patch buffers, basis cache
 - Per-thread state for forward pass trajectory tracking
 
 > The exact memory sizing for shared regions and per-rank resources depends on the problem scale. See [Memory Architecture](./memory-architecture.md) for budget computation and [Production Scale Reference](../overview/production-scale-reference.md) for representative dimensions.
 
-## 2. Design Rationale: Why OpenMP (Not Rayon)
+## 2. Design Rationale: Why Rayon (OpenMP Deferred)
 
-Native OpenMP is used via C FFI rather than Rayon (Rust's standard parallelism library). The decision is driven by SDDP's specific compute pattern: many small LP solves with shared data on NUMA-aware HPC hardware.
+Rayon is used for intra-rank data parallelism. The decision is driven by four factors:
 
-| Criterion                  | Native OpenMP via FFI                                | Rayon                                     |
-| -------------------------- | ---------------------------------------------------- | ----------------------------------------- |
-| **Vendor optimization**    | Full (Intel, AMD, GCC runtimes)                      | Limited (generic work-stealing)           |
-| **Scheduling control**     | `static`, `dynamic`, `guided`                        | Work-stealing only                        |
-| **Affinity control**       | `OMP_PLACES`, `OMP_PROC_BIND`                        | None                                      |
-| **NUMA awareness**         | First-touch placement, explicit binding              | Opaque scheduler decisions                |
-| **Reduction primitives**   | Hardware-optimized tree reduction                    | Manual implementation required            |
-| **HPC ecosystem**          | Standard (SLURM, modules, profilers like VTune, MAP) | Limited HPC tool integration              |
-| **LP solver coordination** | Explicit single-thread forcing via environment       | Potential conflicts with solver threading |
+1. **Pure Rust, no FFI.** Rayon is a native Rust crate. It requires no C compiler, no `#pragma` wrappers, and no `extern "C"` callback trampolines. This eliminates an entire class of build complexity and `unsafe` code.
 
-For SDDP's compute pattern, the ability to control scheduling and affinity translates to significantly better performance on NUMA systems — work-stealing can move tasks across NUMA boundaries, causing remote memory access penalties on every LP solve.
+2. **Ecosystem standard.** Rayon is the de facto standard for data parallelism in the Rust ecosystem. Its `ParallelIterator` trait is well-documented, well-tested, and familiar to Rust developers. Libraries across the ecosystem (including numerical and scientific crates) integrate with Rayon's thread pool.
 
-## 3. MPI vs OpenMP Responsibility Split
+3. **Borrow checker integration.** Rayon's API is designed around Rust's ownership and borrowing model. The `par_iter()` family requires `&self` (shared reference) on the data being iterated, and closures must be `Send + Sync`. This means the compiler statically prevents data races — a guarantee that OpenMP's C FFI bridge cannot provide without manual `unsafe` reasoning.
 
-| Aspect            | MPI Ranks                                                                                         | OpenMP Threads                                                                |
-| ----------------- | ------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
-| **Purpose**       | Distributed memory, inter-node communication                                                      | Shared memory, intra-NUMA parallelism                                         |
-| **Granularity**   | Coarse: contiguous blocks of scenario trajectories                                                | Fine: individual stage LP solves within assigned trajectories                 |
-| **Communication** | Explicit: cut synchronization (`MPI_Allgatherv`), bound aggregation (`MPI_Allreduce`), statistics | Implicit: shared read-only case data, scenario tree, cut pool                 |
-| **Memory model**  | Replicated (per-rank solver instances) or shared (MPI windows for scenarios/cuts)                 | Shared within rank (read-only data), thread-local (solver instances, buffers) |
-| **Load balance**  | Static distribution: scenarios assigned in contiguous blocks to ranks                             | Dynamic scheduling within rank: `schedule(dynamic,1)` for LP solves           |
+4. **Sufficient for the initial implementation.** SDDP's intra-rank workload is embarrassingly parallel: independent LP solves across scenario trajectories with shared read-only data. Rayon's work-stealing scheduler handles this pattern efficiently. The one MPI rank per NUMA domain deployment (§8) confines each Rayon thread pool to a single NUMA domain, mitigating cross-NUMA work migration.
 
-**Thread-trajectory affinity**: Each OpenMP thread owns one or more complete forward trajectories and also executes the backward pass for those trajectories. This preserves cache locality — the solver basis, scenario data, and LP coefficients remain warm in the thread's cache lines across stages. When the number of forward passes $M$ exceeds the total thread count $N$, threads process multiple trajectories in batches with state save/restore at stage boundaries. See [Training Loop §4.3](../architecture/training-loop.md) and [SDDP Algorithm §3.4](../math/sddp-algorithm.md).
+**OpenMP is deferred to post-profiling.** OpenMP would only be reconsidered if production profiling demonstrates that NUMA thread pinning or vendor-optimized scheduling (Intel/AMD runtime libraries) provides a measurable improvement that Rayon cannot match. The three scenarios where OpenMP might be needed are: (a) Rayon's work-stealing causes excessive cross-NUMA memory traffic within a rank, (b) vendor-tuned `schedule(guided)` outperforms work-stealing for the LP solve workload, or (c) HPC profiling tools (VTune, MAP) require OpenMP annotations for thread-level analysis.
 
-**Forward pass**: Scenarios are distributed across MPI ranks in contiguous blocks. Within each rank, scenarios are parallelized across OpenMP threads. No inter-rank synchronization during the forward pass — each rank processes its assigned trajectories independently. After all ranks complete, `MPI_Allreduce` aggregates lower bound and upper bound statistics.
+**Escape hatch: `ThreadPoolBuilder::spawn_handler`.** If fine-grained thread placement becomes necessary without adopting OpenMP, Rayon's `ThreadPoolBuilder::spawn_handler` callback allows custom thread spawning logic. This callback receives a `ThreadBuilder` and can set CPU affinity (via `libc::sched_setaffinity` or `hwloc`) and NUMA memory policy (via `libnuma`) before the worker thread enters the Rayon run loop. This provides NUMA-aware thread placement within pure Rust, deferring the OpenMP dependency indefinitely.
+
+## 3. MPI vs Rayon Responsibility Split
+
+| Aspect            | MPI Ranks                                                                                         | Rayon Threads                                                                                         |
+| ----------------- | ------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| **Purpose**       | Distributed memory, inter-node communication                                                      | Shared memory, intra-NUMA parallelism                                                                 |
+| **Granularity**   | Coarse: contiguous blocks of scenario trajectories                                                | Fine: individual stage LP solves within assigned trajectories                                         |
+| **Communication** | Explicit: cut synchronization (`MPI_Allgatherv`), bound aggregation (`MPI_Allreduce`), statistics | Implicit: shared read-only case data, scenario tree, cut pool                                         |
+| **Memory model**  | Replicated (per-rank solver instances) or shared (MPI windows for scenarios/cuts)                 | Shared within rank (read-only data), thread-local (solver instances, buffers)                         |
+| **Load balance**  | Static distribution: scenarios assigned in contiguous blocks to ranks                             | Work-stealing within rank: `par_iter()` dynamically distributes LP solves across Rayon worker threads |
+
+**Thread-trajectory affinity**: Each Rayon worker thread owns one or more complete forward trajectories and also executes the backward pass for those trajectories. This preserves cache locality — the solver basis, scenario data, and LP coefficients remain warm in the thread's cache lines across stages. When the number of forward passes $M$ exceeds the total thread count $N$, threads process multiple trajectories in batches with state save/restore at stage boundaries. See [Training Loop §4.3](../architecture/training-loop.md) and [SDDP Algorithm §3.4](../math/sddp-algorithm.md).
+
+**Forward pass**: Scenarios are distributed across MPI ranks in contiguous blocks. Within each rank, scenarios are parallelized across Rayon worker threads via `par_iter()`. No inter-rank synchronization during the forward pass — each rank processes its assigned trajectories independently. After all ranks complete, `MPI_Allreduce` aggregates lower bound and upper bound statistics.
 
 **Backward pass**: Per-stage synchronization barrier — all threads across all ranks must complete cut generation at stage $t$ before proceeding to stage $t-1$. Within each stage:
 
-| Level      | Operation                                                                     | Result                                                    |
-| ---------- | ----------------------------------------------------------------------------- | --------------------------------------------------------- |
-| 1 — OpenMP | Each thread evaluates its assigned trial points and all openings sequentially | Thread-local cut contributions                            |
-| 2 — MPI    | `MPI_Allgatherv` collects new cuts from all ranks                             | All ranks have the complete set of new cuts for stage $t$ |
+| Level     | Operation                                                                     | Result                                                    |
+| --------- | ----------------------------------------------------------------------------- | --------------------------------------------------------- |
+| 1 — Rayon | Each worker evaluates its assigned trial points and all openings sequentially | Thread-local cut contributions                            |
+| 2 — MPI   | `MPI_Allgatherv` collects new cuts from all ranks                             | All ranks have the complete set of new cuts for stage $t$ |
 
 See [Training Loop §6.3](../architecture/training-loop.md) and [Synchronization](./synchronization.md).
 
@@ -116,35 +116,43 @@ Parallel configuration follows the two-category separation established in [CLI a
 
 These parameters are determined by the MPI launcher and job scheduler. The program reads them from the environment and **must not override them**.
 
-| Parameter        | Source                                     | Description                   |
-| ---------------- | ------------------------------------------ | ----------------------------- |
-| MPI rank count   | MPI launcher (`mpiexec -n`, `srun`)        | Number of processes           |
-| Threads per rank | `SLURM_CPUS_PER_TASK` or `OMP_NUM_THREADS` | OpenMP threads per rank       |
-| Memory per node  | `SLURM_MEM_PER_NODE`                       | Memory budget for pool sizing |
+| Parameter        | Source                                       | Description                   |
+| ---------------- | -------------------------------------------- | ----------------------------- |
+| MPI rank count   | MPI launcher (`mpiexec -n`, `srun`)          | Number of processes           |
+| Threads per rank | `SLURM_CPUS_PER_TASK` or `RAYON_NUM_THREADS` | Rayon worker threads per rank |
+| Memory per node  | `SLURM_MEM_PER_NODE`                         | Memory budget for pool sizing |
 
-If `OMP_NUM_THREADS` is not set and no scheduler is detected, the program defaults to 1 thread per rank.
+If `RAYON_NUM_THREADS` is not set and no scheduler is detected, the program defaults to 1 thread per rank.
 
-### 4.2 OpenMP Runtime Parameters (Environment Variables)
+### 4.2 Rayon Thread Pool Configuration
 
-These parameters are set by the user in the job script or shell environment **before** launching the program. Cobre reads but does not modify them — per the OpenMP specification, internal control variables (ICVs) derived from environment variables are read once at runtime initialization and cannot be reliably changed afterward.
+The Rayon thread pool is configured programmatically at startup using `rayon::ThreadPoolBuilder`. The thread count is resolved from the following sources in priority order:
 
-| Variable          | Recommended Value | Description                                                                 |
-| ----------------- | ----------------- | --------------------------------------------------------------------------- |
-| `OMP_PROC_BIND`   | `close`           | Bind threads to cores within NUMA domain (best for compute-bound LP solves) |
-| `OMP_PLACES`      | `cores`           | Bind to physical cores (avoid SMT contention)                               |
-| `OMP_WAIT_POLICY` | `passive`         | Sleep idle threads (reduce power; `active` spin-wait for lowest latency)    |
-| `OMP_STACKSIZE`   | `64M`             | Stack size per thread (needed for deep LP solver recursion)                 |
-| `OMP_SCHEDULE`    | `dynamic,1`       | Default schedule for parallel regions                                       |
+1. Explicit value from `TrainingConfig` (set by the caller or CLI argument)
+2. `RAYON_NUM_THREADS` environment variable
+3. `SLURM_CPUS_PER_TASK` environment variable (when running under SLURM)
+4. Default: 1 thread (conservative fallback)
+
+The global thread pool is built once during initialization (see §6):
+
+```rust
+rayon::ThreadPoolBuilder::new()
+    .num_threads(n_threads)
+    .build_global()
+    .expect("rayon global thread pool");
+```
+
+**NUMA-aware thread placement (deferred).** By default, Rayon's work-stealing scheduler does not pin threads to specific cores or NUMA domains. For the initial implementation, NUMA locality is achieved by deploying one MPI rank per NUMA domain (§8), which confines each Rayon pool to a single domain via the OS process affinity inherited from the MPI launcher. If profiling reveals that Rayon threads migrate across cores within the domain, `ThreadPoolBuilder::spawn_handler` can be used to set per-thread CPU affinity without introducing an OpenMP dependency (see §2).
 
 ### 4.3 LP Solver Threading Suppression
 
 LP solvers must be forced to single-threaded mode because Cobre handles parallelism at the outer level (one solver per thread). The following environment variables are validated at startup:
 
-| Variable                            | Required Value | Affected Solver                                             |
-| ----------------------------------- | -------------- | ----------------------------------------------------------- |
-| `HIGHS_PARALLEL`                    | `false`        | HiGHS                                                       |
-| `MKL_NUM_THREADS`                   | `1`            | Any solver using MKL (CPLEX, etc.)                          |
-| `OMP_NUM_THREADS` (solver-internal) | N/A            | Controlled by outer OpenMP; solver uses calling thread only |
+| Variable          | Required Value | Affected Solver                                                               |
+| ----------------- | -------------- | ----------------------------------------------------------------------------- |
+| `HIGHS_PARALLEL`  | `false`        | HiGHS                                                                         |
+| `MKL_NUM_THREADS` | `1`            | Any solver using MKL (CPLEX, etc.)                                            |
+| `OMP_NUM_THREADS` | `1`            | Solvers that use OpenMP internally (prevents solver-internal thread spawning) |
 
 See [Solver Abstraction §4](../architecture/solver-abstraction.md) for the solver interface contract requiring non-thread-safe solvers.
 
@@ -159,45 +167,70 @@ NUMA memory allocation is configured at startup via the Linux `libnuma` API:
 
 See [Memory Architecture](./memory-architecture.md) for detailed NUMA-aware allocation strategy and budget computation.
 
-## 5. OpenMP C FFI Strategy
+## 5. Rayon Parallel Patterns
 
-OpenMP parallel regions require compiler pragma support (`#pragma omp parallel`), which is unavailable in `rustc`. Cobre bridges this gap with a thin C wrapper compiled with an OpenMP-capable compiler, linked as a static library into the Rust binary.
+Rayon provides intra-rank data parallelism through its `ParallelIterator` trait. No C FFI wrapper, callback trampoline, or `unsafe` code is needed — the parallel iteration API is pure safe Rust.
 
-### 5.1 Why a C Wrapper
+### 5.1 Core Pattern: Parallel Scenario Solving
 
-The C wrapper exists solely to provide `#pragma omp` constructs. The wrapper functions are minimal — they set up the parallel region and call back into Rust via function pointers. All application logic remains in Rust.
+The fundamental parallel pattern in Cobre is distributing LP solves across Rayon worker threads. Each MPI rank receives a contiguous slice of scenario trajectories; within the rank, `par_iter()` distributes individual trajectory solves across the Rayon thread pool:
 
-### 5.2 Wrapper Primitives
+```rust
+// Per-rank scenario slice -> parallel iteration -> per-worker LP solve
+scenario_slice
+    .par_iter()
+    .map(|scenario| {
+        let solver = workspace.acquire_solver();  // thread-local solver instance
+        let result = solve_forward_trajectory(solver, scenario, &cuts, &system);
+        workspace.release_solver(solver);
+        result
+    })
+    .collect::<Vec<TrajectoryResult>>()
+```
 
-The C wrapper exposes three primitives:
+Each Rayon worker thread acquires a thread-local LP solver workspace (see [Solver Workspaces §1](../architecture/solver-workspaces.md)), solves the LP for its assigned scenario, and returns the result. Rayon's work-stealing scheduler dynamically balances the load — if one LP solve takes longer than others, idle workers steal remaining work items.
 
-| Primitive                      | OpenMP Construct                                         | SDDP Use Case                                                                                         |
-| ------------------------------ | -------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
-| **Parallel for (dynamic)**     | `#pragma omp parallel for schedule(dynamic, chunk_size)` | Forward pass: distribute scenario trajectories across threads. Backward pass: distribute trial points |
-| **Parallel reduce (sum)**      | `#pragma omp parallel reduction(+:total)`                | Aggregate stage costs, compute per-rank bound contributions                                           |
-| **First-touch initialization** | `#pragma omp parallel` with thread-partitioned writes    | NUMA-aware initialization of large arrays (solver buffers, scenario storage)                          |
+### 5.2 Backward Pass Pattern
 
-### 5.3 Callback Trampoline Pattern
+The backward pass uses the same `par_iter()` pattern to distribute trial point evaluations across worker threads within each stage:
 
-Each wrapper function accepts a C function pointer and an opaque `void*` user_data pointer. On the Rust side, a type-erased trampoline function (`extern "C"`) casts the user_data back to the original Rust closure, enabling ergonomic parallel iteration from Rust while crossing the C FFI boundary.
+```rust
+// Per-stage: parallel evaluation of trial points across all openings
+trial_points
+    .par_iter()
+    .flat_map(|trial_point| {
+        openings.iter().map(move |opening| {
+            let solver = workspace.acquire_solver();
+            let cut = evaluate_and_extract_cut(solver, trial_point, opening, &cuts);
+            workspace.release_solver(solver);
+            cut
+        })
+    })
+    .collect::<Vec<Cut>>()
+```
 
-**Safety invariants**: The trampoline pattern requires that (1) the closure outlives the parallel region (guaranteed because the caller blocks until completion), and (2) the closure is `Sync` (the Rust type system enforces this via the bound `F: Fn + Sync`).
+### 5.3 First-Touch Initialization
 
-### 5.4 Direct OpenMP Runtime Functions
+NUMA-aware first-touch initialization of large arrays uses Rayon's `par_chunks_mut()` to ensure each worker thread writes to its partition, placing the corresponding memory pages on the worker's NUMA node:
 
-In addition to the wrapper primitives, the Rust FFI layer provides direct bindings to standard OpenMP runtime functions:
+```rust
+// First-touch: each worker initializes its chunk on the local NUMA node
+buffer
+    .par_chunks_mut(chunk_size)
+    .for_each(|chunk| {
+        for elem in chunk.iter_mut() {
+            *elem = 0.0;
+        }
+    });
+```
 
-| Function                | Purpose                                                              |
-| ----------------------- | -------------------------------------------------------------------- |
-| `omp_get_thread_num()`  | Thread ID within the current parallel region                         |
-| `omp_get_num_threads()` | Active thread count                                                  |
-| `omp_get_wtime()`       | Wall-clock timer (for per-thread timing)                             |
-| `omp_set_num_threads()` | Set thread count (called once at initialization)                     |
-| `omp_set_dynamic(0)`    | Disable dynamic thread adjustment (thread count must be predictable) |
+### 5.4 Encapsulation Boundary
+
+Rayon is a `cobre-sddp` dependency only. No Rayon types (`ParallelIterator`, `ThreadPool`, `par_iter`) appear in public crate APIs. Other crates interact with the training loop through domain types (`&System`, `&TrainingConfig`, `&CutPool`, etc.). This ensures that the threading implementation is an internal detail of the SDDP training loop and can be changed without affecting downstream crates or interface layers.
 
 ## 6. Initialization Sequence
 
-The parallel environment is initialized during the Startup phase (see [CLI and Lifecycle §5](../architecture/cli-and-lifecycle.md)). The ordering is critical -- the communication backend must be initialized before OpenMP because some backends (notably MPI) require initialization before the threading runtime starts.
+The parallel environment is initialized during the Startup phase (see [CLI and Lifecycle §5](../architecture/cli-and-lifecycle.md)). The ordering is critical -- the communication backend must be initialized before the Rayon thread pool because some backends (notably MPI) require initialization before any threading activity.
 
 **Step 1 -- Backend initialization**: Call `create_communicator()` (see [Backend Selection §4](./backend-selection.md)) to initialize the selected communication backend. For the `mpi` feature, the factory internally calls `ferrompi::Mpi::init_thread(ThreadLevel::Multiple)` (see [Ferrompi Backend §2.1](./backend-ferrompi.md)). For other backends, initialization is backend-specific (TCP: coordinator handshake; shm: segment creation; local: no-op).
 
@@ -205,13 +238,22 @@ The parallel environment is initialized during the Startup phase (see [CLI and L
 
 **Step 3 -- Shared memory communicator**: Create an intra-node communicator via `comm.split_local()` (see [Communicator Trait §4.1](./communicator-trait.md)). For the ferrompi backend, this groups ranks on the same physical node. For local and TCP backends, this returns a `LocalBackend` (see [Local Backend §3.3](./backend-local.md)). For the shm backend, this returns a clone of the full communicator (see [Shm Backend §1.3](./backend-shm.md)).
 
-**Step 4 — OpenMP configuration**: The OpenMP runtime initializes implicitly on the first parallel region entry (or explicitly via `omp_set_num_threads()`). The environment variables `OMP_PROC_BIND`, `OMP_PLACES`, `OMP_WAIT_POLICY`, `OMP_STACKSIZE` must already be set in the process environment (by the job script) before this point. The program calls `omp_set_dynamic(0)` to disable dynamic thread adjustment.
+**Step 4 — Rayon thread pool creation**: Build the global Rayon thread pool with the resolved thread count (see §4.2 for resolution order):
 
-**Step 5 — LP solver suppression**: Validate that LP solver threading environment variables are set correctly (`HIGHS_PARALLEL=false`, `MKL_NUM_THREADS=1`). If not set, set them before any solver instance is created. These are process-level settings and do not conflict with OpenMP (they affect solver-internal threading, not the outer parallelism).
+```rust
+rayon::ThreadPoolBuilder::new()
+    .num_threads(n_threads)
+    .build_global()
+    .expect("rayon global thread pool");
+```
+
+This must happen before any `par_iter()` call. The `build_global()` call is idempotent — if called more than once, subsequent calls return an error (which is why it is called exactly once during initialization).
+
+**Step 5 — LP solver suppression**: Validate that LP solver threading environment variables are set correctly (`HIGHS_PARALLEL=false`, `MKL_NUM_THREADS=1`, `OMP_NUM_THREADS=1`). If not set, set them before any solver instance is created. These are process-level settings that prevent LP solvers from spawning their own internal threads — they do not conflict with Rayon (which manages its own thread pool independently of OpenMP).
 
 **Step 6 — NUMA allocation policy**: On Linux, set the NUMA local allocation policy via `libnuma`. This must happen before any large memory allocation so that subsequent allocations respect NUMA locality.
 
-**Step 7 — Workspace allocation**: Allocate thread-local solver workspaces on each thread's NUMA domain using first-touch initialization. See [Solver Workspaces §1](../architecture/solver-workspaces.md).
+**Step 7 — Workspace allocation**: Allocate thread-local solver workspaces on each thread's NUMA domain using first-touch initialization (see §5.3). See [Solver Workspaces §1](../architecture/solver-workspaces.md).
 
 **Step 8 — Startup logging**: Rank 0 logs the parallel configuration summary (rank count, threads per rank, total cores, detected scheduler, NUMA topology).
 
@@ -219,7 +261,7 @@ The parallel environment is initialized during the Startup phase (see [CLI and L
 
 When operating in single-process mode (library-mode callers such as `cobre-mcp` and `cobre-python`), the `local` backend is selected via `create_communicator()` (either by explicit `COBRE_COMM_BACKEND=local` or by auto-detection -- see [Backend Selection §2](./backend-selection.md)). `LocalBackend` handles Steps 1-3 as no-ops: `rank()` returns 0, `size()` returns 1, `split_local()` returns `Box::new(LocalBackend)`, and `SharedMemoryProvider` uses `HeapFallback` (see [Local Backend](./backend-local.md)). The initialization sequence continues at Step 4:
 
-**Step 4 -- OpenMP configuration**: Identical to the MPI mode. The OpenMP runtime initializes with the thread count from `OMP_NUM_THREADS` or a caller-provided value. For Python bindings, the GIL is released before entering any OpenMP parallel region.
+**Step 4 -- Rayon thread pool creation**: Identical to the MPI mode. The global thread pool is built with the thread count from `RAYON_NUM_THREADS`, a caller-provided value, or the default. For Python bindings, the GIL is released before entering any Rayon parallel region (the `par_iter()` closures do not hold the GIL).
 
 **Step 5 -- LP solver suppression**: Identical to the MPI mode. Solver threading environment variables are validated and set.
 
@@ -233,43 +275,26 @@ The key difference is that `LocalBackend` implements Steps 1-3 as identity/no-op
 
 ## 7. Build Integration
 
-The OpenMP C wrapper must be compiled with an OpenMP-capable C compiler and linked as a static library into the Rust binary. The build script (`build.rs`) handles this:
+Rayon is a pure Rust crate dependency. No C compiler detection, no wrapper compilation, and no special linker flags are needed for the threading layer.
 
-### 7.1 Compiler Detection
-
-The build script probes for OpenMP-capable compilers in priority order:
-
-| Priority | Compiler             | OpenMP Flag | Runtime Library |
-| -------- | -------------------- | ----------- | --------------- |
-| 1        | Intel oneAPI (`icx`) | `-qopenmp`  | `iomp5`         |
-| 2        | GCC (`gcc`)          | `-fopenmp`  | `gomp`          |
-| 3        | Clang (`clang`)      | `-fopenmp`  | `omp`           |
-
-The build fails if no OpenMP-capable compiler is found.
-
-### 7.2 Compilation and Linking
-
-The C wrapper file is compiled with the detected compiler using `-O3 -march=native -fPIC` and the appropriate OpenMP flag, then archived into a static library (`libopenmp_wrapper.a`). Cargo link directives add the static library and the OpenMP runtime library to the final binary.
-
-MPI linking is handled entirely by the ferrompi crate dependency -- no manual MPI link flags are needed in the build script.
-
-Communication backend linking is managed by the `cobre-comm` crate (see [cobre-comm](../../crates/comm.md)). The `mpi` Cargo feature gates the `ferrompi` dependency; when disabled, no MPI headers or libraries are required at build time. See [Backend Selection §1](./backend-selection.md) for the complete feature flag matrix.
-
-### 7.3 Rebuild Triggers
-
-The build script registers `cargo:rerun-if-changed` for the C wrapper source file, so the wrapper is recompiled only when modified.
+| Concern                    | Status                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Rayon dependency**       | Added to `cobre-sddp/Cargo.toml` as a regular dependency. Cargo handles compilation and linking automatically.                                                                                                                                                                                                                                                                                                                  |
+| **C compiler requirement** | Not needed for threading. A C compiler is only required if the LP solver FFI bindings (e.g., HiGHS C API) need compilation, which is handled by the solver crate, not by Cobre's threading layer.                                                                                                                                                                                                                               |
+| **MPI linking**            | Handled entirely by the ferrompi crate dependency -- no manual MPI link flags are needed. Communication backend linking is managed by the `cobre-comm` crate (see [cobre-comm](../../crates/comm.md)). The `mpi` Cargo feature gates the `ferrompi` dependency; when disabled, no MPI headers or libraries are required at build time. See [Backend Selection §1](./backend-selection.md) for the complete feature flag matrix. |
+| **LP solver suppression**  | `OMP_NUM_THREADS=1`, `HIGHS_PARALLEL=false`, and `MKL_NUM_THREADS=1` are runtime environment variables set in the job script or validated at startup (§4.3). They are not build-time concerns.                                                                                                                                                                                                                                  |
 
 ## 8. Reference Deployment
 
 Example deployment on a 2-socket AMD EPYC node (64 cores/socket, 4 NUMA domains/socket = 128 cores, 8 NUMA domains):
 
-| Parameter        | Value   | Rationale                             |
-| ---------------- | ------- | ------------------------------------- |
-| MPI ranks        | 8       | 1 per NUMA domain                     |
-| Threads per rank | 16      | All cores in the NUMA domain          |
-| Total cores      | 128     | Full node utilization                 |
-| `OMP_PROC_BIND`  | `close` | Keep threads within their NUMA domain |
-| `OMP_PLACES`     | `cores` | Bind to physical cores (avoid SMT)    |
+| Parameter            | Value | Rationale                                                                     |
+| -------------------- | ----- | ----------------------------------------------------------------------------- |
+| MPI ranks            | 8     | 1 per NUMA domain                                                             |
+| Rayon threads / rank | 16    | All cores in the NUMA domain                                                  |
+| Total cores          | 128   | Full node utilization                                                         |
+| `RAYON_NUM_THREADS`  | `16`  | Matches cores per NUMA domain (or set via `ThreadPoolBuilder::num_threads()`) |
+| `OMP_NUM_THREADS`    | `1`   | Suppress solver-internal OpenMP threading                                     |
 
 For complete SLURM job scripts and multi-node deployment patterns, see [SLURM Deployment](./slurm-deployment.md).
 

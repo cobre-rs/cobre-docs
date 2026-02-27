@@ -259,6 +259,33 @@ Policy files (cuts, states, vertices, basis) can be large. Loading them on rank 
 
 For the policy file format (FlatBuffers `.bin` files), see [Binary Formats](../data-model/binary-formats.md) SS3.2.
 
+### SS7.1 Warm-Start Compatibility Validation
+
+Cuts encode state-variable coefficients $\beta_t^k \in \mathbb{R}^{n_x}$ whose dimension and semantic ordering are determined by the system that produced them. If the state dimension changes (different hydro count), or the state vector structure changes (different PAR orders, different production models), loaded cuts become dimensionally inconsistent with the current LP and produce silent numerical errors — wrong dual coefficients applied to wrong state variables. Therefore, warm-start loading verifies structural compatibility before accepting any cuts.
+
+The following four checks run in order after `policy/metadata.json` and `policy/state_dictionary.json` are broadcast (SS7 step 1) and before any cut deserialization begins (SS7 step 3). All four must pass; the first failure aborts loading with `LoadError::PolicyIncompatible` (SS8.1).
+
+| Check                          | Policy Source                                                                | System Source                                                   | Comparison                          | Failure                         |
+| ------------------------------ | ---------------------------------------------------------------------------- | --------------------------------------------------------------- | ----------------------------------- | ------------------------------- |
+| Hydro count                    | `PolicyMetadata.state_dimension` (derived from hydro count at training time) | `system.n_hydros()`                                             | Exact equality                      | `LoadError::PolicyIncompatible` |
+| Maximum PAR order per hydro    | Stored per-hydro in policy metadata                                          | `max(system.par_models[h].order for each season)` per hydro `h` | Exact equality per hydro            | `LoadError::PolicyIncompatible` |
+| Production method per hydro    | Stored per-hydro variant tag in policy metadata                              | `system.hydros[h].generation_model` variant tag                 | Exact equality per hydro            | `LoadError::PolicyIncompatible` |
+| PAR model parameters per hydro | Stored per-hydro PAR coefficients and seasonal statistics in policy metadata | `system.par_models[h]` (all seasons)                            | Exact equality per hydro per season | `LoadError::PolicyIncompatible` |
+
+**Safe modifications.** The following system properties may change between the training run that produced the policy and the current warm-start run without invalidating the loaded cuts:
+
+- Exchange limits (line bounds)
+- Load profiles (demand values)
+- Inflow scenarios (opening realizations)
+- Block durations
+- Penalty values
+- Thermal costs
+- Demand
+
+These properties affect the right-hand side or objective coefficients of the stage LP but do not alter the state variable dimension or the structural mapping between cut coefficients and state variables.
+
+**Error behavior.** All four validation failures are hard errors — `LoadError::PolicyIncompatible` — and training cannot proceed with an incompatible policy. This check runs on every rank (since all ranks received the metadata broadcast in SS7 step 1) and runs before any cut deserialization begins (SS7 step 3). If validation fails, no cut files are read, avoiding wasted I/O on an incompatible policy.
+
 ## 8. Transition to In-Memory Model
 
 After loading and broadcasting, each rank constructs its in-memory data model from the loaded data. The in-memory structures are defined in [Internal Structures](../data-model/internal-structures.md) and are not specified here.
@@ -355,18 +382,29 @@ pub enum LoadError {
     ConstraintError {
         description: String,
     },
+
+    /// Warm-start policy is structurally incompatible with the current system.
+    /// See SS7.1 for the four compatibility checks.
+    #[error("policy incompatible: {check} mismatch — policy has {policy_value}, \
+             system has {system_value}")]
+    PolicyIncompatible {
+        check: String,
+        policy_value: String,
+        system_value: String,
+    },
 }
 ```
 
 The variants are ordered by the phase in which they typically occur:
 
-| Variant               | Typical Phase              | Example                                                             |
-| --------------------- | -------------------------- | ------------------------------------------------------------------- |
-| `IoError`             | File read (any step)       | `system/hydros.json` not found                                      |
-| `ParseError`          | File parse (any step)      | Malformed JSON in `stages.json`                                     |
-| `SchemaError`         | Schema validation          | `hydros.json` entry missing required field `bus_id`                 |
-| `CrossReferenceError` | Cross-reference validation | Hydro `bus_id = "BUS_99"` not found in bus registry                 |
-| `ConstraintError`     | Semantic validation        | Hydro cascade contains a cycle; inflow model coverage is incomplete |
+| Variant               | Typical Phase                 | Example                                                             |
+| --------------------- | ----------------------------- | ------------------------------------------------------------------- |
+| `IoError`             | File read (any step)          | `system/hydros.json` not found                                      |
+| `ParseError`          | File parse (any step)         | Malformed JSON in `stages.json`                                     |
+| `SchemaError`         | Schema validation             | `hydros.json` entry missing required field `bus_id`                 |
+| `CrossReferenceError` | Cross-reference validation    | Hydro `bus_id = "BUS_99"` not found in bus registry                 |
+| `ConstraintError`     | Semantic validation           | Hydro cascade contains a cycle; inflow model coverage is incomplete |
+| `PolicyIncompatible`  | Warm-start validation (SS7.1) | Policy trained with 45 hydros, system now has 47                    |
 
 All variants carry enough context for the caller to produce a diagnostic message without re-reading the input files.
 

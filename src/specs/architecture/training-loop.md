@@ -350,7 +350,7 @@ For each forward trajectory:
      b. **Compute inflows and fix noise** — The PAR model evaluates with the selected noise to produce inflow values. The noise terms $\varepsilon_{h,t}$ (whether sampled, inverted from external data, or inverted from historical data) are fixed into the LP via fixing constraints on the AR dynamics equation — the LP always receives noise, never raw inflow values directly (see [Scenario Generation SS3.2](./scenario-generation.md))
      c. **Build stage LP** — Construct the stage LP with incoming state $\hat{x}_{t-1}$, scenario realization, and all current FCF cuts as constraints on $\theta$
      d. **Solve** — Solve the LP. Feasibility is guaranteed by the recourse slack system (see [Penalty System](../data-model/penalty-system.md))
-     e. **Record** — Store the stage cost and the end-of-stage state $\hat{x}_t$ (storage volumes and updated AR lags)
+     e. **Record** — Populate a `TrajectoryRecord` (see SS4.2b) with the primal solution, dual solution, stage cost, and end-of-stage state
      f. **Transition** — Pass $\hat{x}_t$ as the incoming state to stage $t+1$
 3. **Aggregate** — Compute total trajectory cost $\sum_{t=1}^{T} c_t$
 
@@ -420,6 +420,48 @@ Using the system from [Solver Abstraction SS2.4](./solver-abstraction.md) ($N = 
 Total: $n_{patches} = 3 \times (2 + 2) = 12$ patches, matching the formula.
 
 **Backward pass similarity:** The backward pass applies the same three patch categories with different values: the incoming state is the trial point $\hat{x}_{t-1}$ from the forward pass, and the noise innovations are drawn from the fixed opening tree rather than the sampling scheme. The patch count formula and row indices are identical.
+
+### 4.2b TrajectoryRecord Type
+
+The `TrajectoryRecord` struct captures the complete LP solution for one scenario at one stage. It is the unit of data produced by step (e) of the forward pass (SS4.2) and consumed by both the backward pass and the simulation output writer.
+
+```rust
+/// Complete LP solution for one scenario trajectory, stored per stage.
+///
+/// This struct is a superset shared between the training forward pass and
+/// simulation. Training consumes only `state` and `stage_cost` for the
+/// backward pass; simulation uses all fields for output writing.
+///
+/// Memory layout: records for a full trial are stored contiguously in a flat
+/// buffer indexed by `scenario * n_stages + stage`, giving cache-friendly
+/// sequential access during the backward pass sweep.
+struct TrajectoryRecord {
+    /// Full primal solution vector for this stage's LP.
+    /// Length equals the stage's column count from `StageTemplate`.
+    primal: Vec<f64>,
+    /// Full dual solution vector for this stage's LP (constraint duals).
+    /// Length equals the stage's row count (structural + cut rows).
+    dual: Vec<f64>,
+    /// LP objective value at this stage (stage cost contribution).
+    stage_cost: f64,
+    /// End-of-stage state vector (storage levels + AR inflow lags).
+    /// Length equals `state_dimension` from SS5.1.
+    state: Vec<f64>,
+}
+```
+
+**Field descriptions:**
+
+| Field        | Type       | Description                                                                                                                                                                                                      |
+| ------------ | ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `primal`     | `Vec<f64>` | Full primal solution vector for the stage LP. Length equals the stage's column count from `StageTemplate` ([Solver Abstraction SS2.1](./solver-abstraction.md)). Includes state variables, controls, and slacks. |
+| `dual`       | `Vec<f64>` | Full dual solution vector (constraint shadow prices). Length equals the stage's row count, including both structural constraints and active FCF cut rows.                                                        |
+| `stage_cost` | `f64`      | LP objective value at this stage, representing the immediate stage cost contribution (excluding the future cost variable $\theta$).                                                                              |
+| `state`      | `Vec<f64>` | End-of-stage state vector: storage volumes followed by AR inflow lags, in the LP column prefix layout from SS5.1. Length equals $n_{state} = N \cdot (1 + L)$.                                                   |
+
+**Memory layout.** During a training trial, one `TrajectoryRecord` is created per (scenario, stage) pair. The full trial's records are stored in a flat `Vec<TrajectoryRecord>` of length $M \times T$ (where $M$ is the number of forward scenarios on this rank and $T$ is the number of stages), indexed as `records[i * n_stages + t]` for scenario $i$ at stage $t$. The `[scenario][stage]` indexing order gives sequential access during the backward pass, which iterates stage-by-stage across all scenarios simultaneously: for a given stage $t$, the backward pass reads `records[0 * T + t], records[1 * T + t], \ldots, records[(M-1) * T + t]`, which are spaced $T$ elements apart. This stride is small enough (each `TrajectoryRecord` is on the order of kilobytes) that hardware prefetchers handle the access pattern efficiently.
+
+**Dual-use design note.** The `TrajectoryRecord` struct serves as both the training forward pass record and the simulation output record. Training uses `state` (for patching the next stage's incoming state and for cut gradient computation in the backward pass) and `stage_cost` (for the upper bound estimate and future cost function update). Simulation additionally reads `primal` and `dual` for per-entity result extraction and Parquet output writing ([Output Schemas SS5](../data-model/output-schemas.md)). No separate simulation record type is needed — the simulation forward pass (see [Simulation Architecture SS3.2](./simulation-architecture.md)) populates the same `TrajectoryRecord` and streams it to the output writer. The `primal` and `dual` fields are allocated but unused during training; this is an acceptable memory trade-off because the training forward pass processes only $M$ scenarios per iteration (typically 1--20), so the overhead is bounded by $M \times T \times (n_{cols} + n_{rows}) \times 8$ bytes, which is negligible relative to the cut pool and LP workspace memory.
 
 ### 4.3 Parallel Distribution
 

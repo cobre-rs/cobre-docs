@@ -1593,6 +1593,46 @@ Source: user-provided `inflow_seasonal_stats.parquet` (mu, sigma, ar_order) + op
 
 Source: user-provided `correlation.json` OR estimated from AR residuals of inflow history. See [Input Scenarios §5](input-scenarios.md).
 
+### PrecomputedParLp
+
+The `PrecomputedParLp` struct caches LP-ready values derived from the PAR(p) model parameters. It is built once during initialization and consumed at every forward-pass stage transition when patching the LP right-hand side for the inflow balance constraint. The derivation of the three cached components is in [PAR Inflow Model §7](../math/par-inflow-model.md).
+
+At each (stage, hydro) pair, the LP RHS contribution is computed as a single multiply-add:
+
+$$
+\text{RHS}_{h,t} = \sum_{\ell=1}^{p} \psi_{m(t),\ell} \cdot a_{h,t-\ell} + b_{h,m(t)} + \sigma_{m(t)} \cdot \varepsilon_t
+$$
+
+```rust
+/// LP-ready precomputed values derived from PAR(p) model parameters.
+///
+/// Cached once after model fitting; consumed at every forward-pass stage transition
+/// when patching the LP right-hand side for the inflow balance constraint.
+/// At each (stage, hydro) pair the LP RHS contribution is:
+///   sum_l(psi[l] * a_lag[l]) + deterministic_base + sigma * noise_draw
+struct PrecomputedParLp {
+    /// ψ coefficients in original units, indexed [stage][hydro][lag].
+    /// Shape: [T][H][p_max] where p_max is the maximum PAR order across all seasons.
+    psi: Vec<Vec<Vec<f64>>>,
+    /// Deterministic base b_{h,m(t)} = μ_{m(t)} - Σ ψ_{m(t),ℓ} μ_{m(t-ℓ)},
+    /// indexed [stage][hydro].
+    deterministic_base: Vec<Vec<f64>>,
+    /// Per-season σ_{m(t)} (original units), indexed [stage][hydro].
+    /// Used as the noise scale in the LP RHS multiply-add.
+    sigma: Vec<Vec<f64>>,
+}
+```
+
+**Field descriptions**:
+
+| Field                | Type                 | Description                                                                                                                                                                                                                        |
+| -------------------- | -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `psi`                | `Vec<Vec<Vec<f64>>>` | AR lag coefficients $\psi_{m(t),\ell}$ in original units, indexed `[stage][hydro][lag]`. Shape is `[T][H][p_max]` where `p_max` is the maximum PAR order across all seasons. Trailing entries are 0.0 for hydros with lower order. |
+| `deterministic_base` | `Vec<Vec<f64>>`      | Precomputed constant $b_{h,m(t)} = \mu_{m(t)} - \sum_{\ell} \psi_{m(t),\ell} \cdot \mu_{m(t-\ell)}$ per (stage, hydro). Absorbs the mean-adjustment arithmetic so the hot path avoids repeated subtraction and multiplication.     |
+| `sigma`              | `Vec<Vec<f64>>`      | Residual standard deviation $\sigma_{m(t)}$ per (stage, hydro) in original units (m3/s). Multiplied by the scenario noise draw $\varepsilon_t$ to produce the stochastic innovation component of the LP RHS.                       |
+
+Caching these three arrays eliminates repeated multiply-divide operations (coefficient conversion, mean subtraction, standard deviation scaling) on the hot forward-pass path. The struct belongs to the `cobre-sddp` performance layer, not `cobre-core`, following the dual-nature design in §1.1: `cobre-core` stores the raw PAR parameters (`ParModel` in §1.3) while `cobre-sddp` builds this precomputed view at initialization from `&System`. The conversion is a one-time $O(T \cdot H \cdot p_{\max})$ cost that pays for itself over thousands of forward-pass iterations.
+
 ## 15. Generic Constraints
 
 User-defined linear constraints parsed and validated during loading. See [Input Constraints §3](input-constraints.md).
