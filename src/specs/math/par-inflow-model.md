@@ -280,29 +280,37 @@ $$
 
 ### 7.5 LP RHS Patching Operation
 
-At each forward-pass stage transition, the solver patches the LP right-hand side for the inflow balance constraint. Using the `PrecomputedParLp` cache (defined in [Internal Structures §14](../data-model/internal-structures.md)), this reduces to a single multiply-add sequence:
+The lagged inflows $a_{h,t-\ell}$ are **LP variables**, not substituted values. In the LP (see [LP Formulation §5](lp-formulation.md)), they appear with coefficients $-\psi_{m(t),\ell}$ in the AR dynamics constraint row, and separate equality constraints fix each lag variable to its incoming state value (see [LP Formulation §5a](lp-formulation.md)):
 
 $$
-\text{RHS}_{h,t} = \sum_{\ell=1}^{p} \psi_{m(t),\ell} \cdot a_{h,t-\ell} + b_{h,m(t)} + \sigma_{m(t)} \cdot \varepsilon_t
+a_{h,t-\ell} = \hat{a}_{h,t-\ell}
+$$
+
+where $\hat{a}_{h,t-\ell}$ is patched per scenario to the actual lagged inflow from the trajectory record.
+
+Because the lag contribution $\sum_\ell \psi \cdot a_{h,t-\ell}$ is carried by the constraint matrix (not the RHS), the AR dynamics constraint RHS reduces to:
+
+$$
+\text{RHS}_{h,t} = b_{h,m(t)} + \sigma_{m(t)} \cdot \varepsilon_t
 $$
 
 where:
 
-- $\psi_{m(t),\ell}$ are read from `PrecomputedParLp.psi[stage][hydro][lag]`
 - $b_{h,m(t)}$ is read from `PrecomputedParLp.deterministic_base[stage][hydro]`
 - $\sigma_{m(t)}$ is read from `PrecomputedParLp.sigma[stage][hydro]`
-- $a_{h,t-\ell}$ are the lagged inflow values from the current state
 - $\varepsilon_t$ is the scenario noise draw for this (stage, hydro)
+
+The $\psi_{m(t),\ell}$ coefficients from `PrecomputedParLp.psi[stage][hydro][lag]` are written into the constraint matrix **once at LP construction time** as the coefficients on the lagged inflow variables; they are not recomputed per scenario.
 
 No division, no mean subtraction, no repeated coefficient transformation — the precomputation in `PrecomputedParLp` eliminates all redundant arithmetic from the hot path.
 
 ### 7.6 Summary of LP Components
 
-| Component          | Symbol             | Shape per stage      | Source                                |
-| ------------------ | ------------------ | -------------------- | ------------------------------------- |
-| Lag coefficients   | $\psi_{m(t),\ell}$ | One per (hydro, lag) | Stored in input files (section 2)     |
-| Deterministic base | $b_{h,m(t)}$       | One per hydro        | Precomputed from $\mu$ and $\psi$     |
-| Noise scale        | $\sigma_{m(t)}$    | One per hydro        | Derived at initialization (section 3) |
+| Component          | Symbol             | Shape per stage      | LP Role                                   | Source                                |
+| ------------------ | ------------------ | -------------------- | ----------------------------------------- | ------------------------------------- |
+| Lag coefficients   | $\psi_{m(t),\ell}$ | One per (hydro, lag) | Constraint matrix (AR dynamics row)       | Stored in input files (section 2)     |
+| Deterministic base | $b_{h,m(t)}$       | One per hydro        | AR dynamics constraint RHS (fixed term)   | Precomputed from $\mu$ and $\psi$     |
+| Noise scale        | $\sigma_{m(t)}$    | One per hydro        | AR dynamics constraint RHS (noise factor) | Derived at initialization (section 3) |
 
 ## Cross-References
 
