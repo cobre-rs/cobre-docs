@@ -2,7 +2,7 @@
 
 ## Purpose
 
-This spec provides implementation guidance specific to CLP (Coin-OR Linear Programming) integration as the second open-source LP solver reference implementation for Cobre. It complements the [Solver Abstraction Layer](./solver-abstraction.md) with CLP-specific patterns for the C API baseline, mutable pointer optimization for scenario patching, the C++ wrapper strategy for LP template cloning, retry strategy, basis management, memory footprint, and SDDP-tuned configuration. For thread-local workspace management, see [Solver Workspaces](./solver-workspaces.md).
+This spec provides implementation guidance specific to CLP (Coin-OR Linear Programming) integration as the second open-source LP solver reference implementation for Cobre. It complements the [Solver Abstraction Layer](./solver-abstraction.md) with CLP-specific patterns for the C API baseline, mutable pointer optimization for bound updates, the C++ wrapper strategy for LP template cloning, retry strategy, basis management, memory footprint, and optimization-tuned configuration. For thread-local workspace management, see [Solver Workspaces](./solver-workspaces.md).
 
 CLP and HiGHS are both **first-class reference implementations** — the solver abstraction interface is designed and validated against both (see [Solver Abstraction](./solver-abstraction.md), Decision 5).
 
@@ -16,7 +16,7 @@ CLP and HiGHS are both **first-class reference implementations** — the solver 
 | Solution          | `Clp_primalColumnSolution`, `Clp_dualRowSolution`, `Clp_objectiveValue` | Mutable `double*` pointers into solver internals       |
 | Solve (warm)      | `Clp_dual(model, 0)`                                                    | Dual simplex with warm-start from current basis        |
 | Solve (cold)      | `Clp_initialDualSolve(model)`                                           | Dual simplex with full initialization                  |
-| LP cloning        | `ClpSimplex::makeBaseModel()` / `setToBaseModel()` (C++ only)           | Requires thin C wrapper — see SS5                       |
+| LP cloning        | `ClpSimplex::makeBaseModel()` / `setToBaseModel()` (C++ only)           | Requires thin C wrapper — see SS5                      |
 | Raw C++ access    | `Clp_getClpSimplex(model)` → cast to `ClpSimplex*`                      | Escape hatch for C++ features not exposed in the C API |
 
 ### 1.1 CLP API Layers
@@ -47,7 +47,7 @@ Clp_loadProblem(model, numcols, numrows,
 
 **Format note**: `Clp_loadProblem` expects **column-major** (CSC) format (column starts, row indices, values). The stage LP templates (see [Solver Abstraction SS11](./solver-abstraction.md)) store the structural matrix in CSC form — this is CLP's native internal format (CLP stores the LP matrix as a `ClpPackedMatrix` in column-ordered form). The CLP implementation passes the template CSC arrays directly to `Clp_loadProblem` with no format transposition needed.
 
-### 2.2 Add Cut Rows
+### 2.2 Add Rows
 
 `Clp_addRows` adds multiple rows in a single batch call:
 
@@ -58,23 +58,23 @@ Clp_addRows(model, number, rowLower, rowUpper,
 
 The `rowStarts`/`columns`/`elements` arrays follow the standard CSR (row-major) format. This is the natural format for cut addition since cut pool storage is already CSR-friendly (see [Binary Formats SS3.4](../data-model/binary-formats.md)).
 
-### 2.3 Patch Scenario-Dependent Values
+### 2.3 Set Row Bounds
 
 CLP's mutable pointer access is a **key differentiator** from HiGHS. The C API functions `Clp_rowLower()`, `Clp_rowUpper()`, `Clp_columnLower()`, `Clp_columnUpper()`, and `Clp_objective()` return writable `double*` pointers directly into the solver's internal arrays.
 
-| Operation          | CLP C API                               | Access Pattern                                   |
-| ------------------ | --------------------------------------- | ------------------------------------------------ |
-| Patch row lower    | `Clp_rowLower(model)[row_idx] = val`    | Direct memory write, zero function call overhead |
-| Patch row upper    | `Clp_rowUpper(model)[row_idx] = val`    | Direct memory write                              |
-| Patch column lower | `Clp_columnLower(model)[col_idx] = val` | Direct memory write                              |
-| Patch column upper | `Clp_columnUpper(model)[col_idx] = val` | Direct memory write                              |
-| Patch objective    | `Clp_objective(model)[col_idx] = val`   | Direct memory write                              |
+| Operation        | CLP C API                               | Access Pattern                                   |
+| ---------------- | --------------------------------------- | ------------------------------------------------ |
+| Set row lower    | `Clp_rowLower(model)[row_idx] = val`    | Direct memory write, zero function call overhead |
+| Set row upper    | `Clp_rowUpper(model)[row_idx] = val`    | Direct memory write                              |
+| Set column lower | `Clp_columnLower(model)[col_idx] = val` | Direct memory write                              |
+| Set column upper | `Clp_columnUpper(model)[col_idx] = val` | Direct memory write                              |
+| Set objective    | `Clp_objective(model)[col_idx] = val`   | Direct memory write                              |
 
-**Performance implication**: Scenario patching (the ~2,240 RHS updates per solve — incoming storage, AR lag fixing, noise fixing) can be done as direct memory writes with no function call overhead per element. The LP layout convention ([Solver Abstraction SS2](./solver-abstraction.md)) places state-linking constraints at the top, so these patches target a contiguous prefix of the row arrays — cache-friendly sequential writes.
+**Performance implication**: Row bound updates can be done as direct memory writes with no function call overhead per element. In SDDP, the ~2,240 RHS updates per solve (incoming storage, AR lag fixing, noise fixing) are the primary use case. The LP layout convention ([Solver Abstraction SS2](./solver-abstraction.md)) places state-linking constraints at the top, so these updates target a contiguous prefix of the row arrays — cache-friendly sequential writes.
 
-Alternatively, CLP provides bulk array replacement via `Clp_chgRowLower(model, rowLower)` and `Clp_chgRowUpper(model, rowUpper)`, which copy entire arrays. This is only useful if the majority of values change — for SDDP scenario patching where only ~2,240 of potentially 10,000+ rows change, direct pointer writes to specific indices are more efficient.
+Alternatively, CLP provides bulk array replacement via `Clp_chgRowLower(model, rowLower)` and `Clp_chgRowUpper(model, rowUpper)`, which copy entire arrays. This is only useful if the majority of values change — for use cases where only a subset (e.g., ~2,240 of potentially 10,000+ rows in SDDP) changes, direct pointer writes to specific indices are more efficient.
 
-**Safety note**: These mutable pointers are valid only while the solver model is unchanged (no `Clp_addRows`, `Clp_loadProblem`, etc.). After any structural modification, the pointers must be re-obtained. Within the SDDP hot path, structural modifications only occur at stage transitions (load template + add cuts), after which new pointers are obtained for the patching phase.
+**Safety note**: These mutable pointers are valid only while the solver model is unchanged (no `Clp_addRows`, `Clp_loadProblem`, etc.). After any structural modification, the pointers must be re-obtained. Within the SDDP hot path, structural modifications only occur at stage transitions (load template + add dynamic constraints), after which new pointers are obtained for the bound-update phase.
 
 ### 2.4 Solve
 
@@ -87,7 +87,7 @@ Alternatively, CLP provides bulk array replacement via `Clp_chgRowLower(model, r
 
 **Status interpretation** after solve:
 
-| `Clp_status(model)` | Meaning                    | Maps To (Solver Abstraction SS6)          |
+| `Clp_status(model)` | Meaning                    | Maps To (Solver Abstraction SS6)         |
 | ------------------- | -------------------------- | ---------------------------------------- |
 | 0                   | Optimal                    | Success                                  |
 | 1                   | Primal infeasible          | `Infeasible`                             |
@@ -125,13 +125,13 @@ unsigned char* status = Clp_statusArray(model);
 **Status codes** (2 bits used from each byte):
 
 | Code | Meaning        | Maps To (Solver Abstraction SS9) |
-| ---- | -------------- | ------------------------------- |
-| 0    | Free           | Free                            |
-| 1    | Basic          | Basic                           |
-| 2    | At upper bound | At upper                        |
-| 3    | At lower bound | At lower                        |
-| 4    | Superbasic     | Free (superbasic)               |
-| 5    | Fixed          | Fixed                           |
+| ---- | -------------- | -------------------------------- |
+| 0    | Free           | Free                             |
+| 1    | Basic          | Basic                            |
+| 2    | At upper bound | At upper                         |
+| 3    | At lower bound | At lower                         |
+| 4    | Superbasic     | Free (superbasic)                |
+| 5    | Fixed          | Fixed                            |
 
 **Setting basis**: `Clp_copyinStatus(model, statusArray)` copies a status array into the solver. The array must be sized `numcols + numrows`.
 
@@ -140,7 +140,7 @@ unsigned char* status = Clp_statusArray(model);
 **Interaction with LP layout convention**: Per [Solver Abstraction SS2.3](./solver-abstraction.md), the structural portion of the basis (rows `[0, n_structural)`) is position-stable across iterations. When warm-starting after adding cuts, the implementation:
 
 1. Copies the cached basis (truncated or extended to match the new row count)
-2. Sets new cut rows to status `1` (Basic — slack in basis)
+2. Sets new dynamic constraint rows to status `1` (Basic — slack in basis)
 3. Calls `Clp_copyinStatus` with the assembled array
 4. Calls `Clp_dual(model, 0)` for warm-start solve
 
@@ -178,16 +178,16 @@ After each successful retry, the implementation restores default settings for th
 
 ### 4.1 SDDP-Tuned Settings
 
-| Setting          | CLP Call                                 | Value        | Rationale                                                                                                 |
-| ---------------- | ---------------------------------------- | ------------ | --------------------------------------------------------------------------------------------------------- |
-| Algorithm        | `Clp_setAlgorithm(model, -1)`            | -1 (dual)    | Dual simplex is the standard for SDDP — cut addition modifies RHS, which is a bound change in the dual    |
+| Setting          | CLP Call                                 | Value        | Rationale                                                                                                  |
+| ---------------- | ---------------------------------------- | ------------ | ---------------------------------------------------------------------------------------------------------- |
+| Algorithm        | `Clp_setAlgorithm(model, -1)`            | -1 (dual)    | Dual simplex is the standard for SDDP — cut addition modifies RHS, which is a bound change in the dual     |
 | Scaling          | `Clp_scaling(model, 0)`                  | 0 (off)      | Disabled for warm-start compatibility; see open point in [Solver Abstraction SS3](./solver-abstraction.md) |
-| Log level        | `Clp_setLogLevel(model, 0)`              | 0 (none)     | Quiet for production; millions of solves per run                                                          |
-| Primal tolerance | `Clp_setPrimalTolerance(model, 1e-7)`    | 1e-7         | Match HiGHS defaults for cross-solver reproducibility                                                     |
-| Dual tolerance   | `Clp_setDualTolerance(model, 1e-7)`      | 1e-7         | Match HiGHS defaults                                                                                      |
-| Max iterations   | `Clp_setMaximumIterations(model, value)` | Configurable | Per-solve iteration limit; prevents runaway solves                                                        |
-| Max seconds      | `Clp_setMaximumSeconds(model, value)`    | Configurable | Per-solve time limit                                                                                      |
-| Perturbation     | `Clp_setPerturbation(model, 100)`        | 100 (auto)   | Auto-perturb if degenerate; override to 50 (force on) in retry                                            |
+| Log level        | `Clp_setLogLevel(model, 0)`              | 0 (none)     | Quiet for production; millions of solves per run                                                           |
+| Primal tolerance | `Clp_setPrimalTolerance(model, 1e-7)`    | 1e-7         | Match HiGHS defaults for cross-solver reproducibility                                                      |
+| Dual tolerance   | `Clp_setDualTolerance(model, 1e-7)`      | 1e-7         | Match HiGHS defaults                                                                                       |
+| Max iterations   | `Clp_setMaximumIterations(model, value)` | Configurable | Per-solve iteration limit; prevents runaway solves                                                         |
+| Max seconds      | `Clp_setMaximumSeconds(model, value)`    | Configurable | Per-solve time limit                                                                                       |
+| Perturbation     | `Clp_setPerturbation(model, 100)`        | 100 (auto)   | Auto-perturb if degenerate; override to 50 (force on) in retry                                             |
 
 ### 4.2 Scaling Note
 
@@ -214,7 +214,7 @@ The C API is sufficient for the Option A baseline (full rebuild per stage transi
 - `setToBaseModel(nullptr)` — Resets the model to the saved base state
 - `ClpSimplex(const ClpSimplex&)` — Copy constructor for full model duplication
 
-**Potential SDDP usage**: After loading a stage template via `Clp_loadProblem`, call `makeBaseModel()` to snapshot it. At each stage transition, call `setToBaseModel(nullptr)` to restore the structural LP instantly (without re-parsing CSR arrays), then add cuts via `Clp_addRows` and patch scenario values via mutable pointers.
+**Potential SDDP usage**: After loading a stage template via `Clp_loadProblem`, call `makeBaseModel()` to snapshot it. At each stage transition, call `setToBaseModel(nullptr)` to restore the structural LP instantly (without re-parsing CSR arrays), then add cuts via `Clp_addRows` and update bound values via mutable pointers.
 
 ### 5.2 Thin C Wrapper
 
@@ -266,7 +266,7 @@ This is within acceptable bounds for production HPC nodes (256+ GB RAM). The clo
 
 `Clp_loadProblem` expects column-major (CSC) format, which matches the stage LP template format directly — templates store their structural matrix in CSC form (see [Solver Abstraction SS11](./solver-abstraction.md)). No format transposition is needed at stage transitions.
 
-`Clp_addRows` for cut addition accepts row-major (CSR) format (row starts, column indices, elements), which matches the cut pool's CSR-friendly storage layout. No transposition needed for cut addition either.
+`Clp_addRows` for dynamic constraint addition accepts row-major (CSR) format (row starts, column indices, elements), which matches the cut pool's CSR-friendly storage layout. No transposition needed for cut addition either.
 
 ### 7.2 Dual Sign Convention
 

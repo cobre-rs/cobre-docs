@@ -2,7 +2,7 @@
 
 ## Purpose
 
-This spec provides implementation guidance specific to HiGHS integration as the first open-source LP solver reference implementation for Cobre. It complements the [Solver Abstraction Layer](./solver-abstraction.md) with HiGHS-specific patterns for the C API, batch bound operations for scenario patching, retry strategy, basis management, memory footprint, and SDDP-tuned configuration. For thread-local workspace management, see [Solver Workspaces](./solver-workspaces.md).
+This spec provides implementation guidance specific to HiGHS integration as the first open-source LP solver reference implementation for Cobre. It complements the [Solver Abstraction Layer](./solver-abstraction.md) with HiGHS-specific patterns for the C API, batch bound operations for row and column bound updates, retry strategy, basis management, memory footprint, and optimization-tuned configuration. For thread-local workspace management, see [Solver Workspaces](./solver-workspaces.md).
 
 HiGHS and CLP are both **first-class reference implementations** — the solver abstraction interface is designed and validated against both (see [Solver Abstraction](./solver-abstraction.md), Decision 5).
 
@@ -51,7 +51,7 @@ Highs_passLp(highs, num_col, num_row, num_nz,
 
 Since the stage LP templates ([Solver Abstraction SS11](./solver-abstraction.md)) store the structural matrix in CSC form, the HiGHS implementation passes them with `a_format = kHighsMatrixFormatColwise`. This avoids per-stage-transition transposition overhead — HiGHS internally stores the LP matrix in column-major (CSC) format, so passing CSC directly skips the internal `ensureColwise()` transposition that would occur if CSR were passed.
 
-### 2.2 Add Cut Rows
+### 2.2 Add Rows
 
 `Highs_addRows` adds multiple rows in a single batch call:
 
@@ -63,16 +63,16 @@ Highs_addRows(highs, num_new_row,
 
 The `starts`/`index`/`value` arrays follow the standard CSR (row-major) format. This matches the cut pool's CSR-friendly storage layout (see [Binary Formats SS3.4](../data-model/binary-formats.md)).
 
-### 2.3 Patch Scenario-Dependent Values
+### 2.3 Set Row Bounds
 
 HiGHS provides batch bound modification via index-set APIs. Unlike CLP's mutable pointer access (zero-copy direct writes), HiGHS requires function calls for each batch of updates.
 
-| Operation           | HiGHS C API                                                              | Access Pattern                         |
-| ------------------- | ------------------------------------------------------------------------ | -------------------------------------- |
-| Patch row bounds    | `Highs_changeRowsBoundsBySet(highs, num_set_entries, set, lower, upper)` | Batch: one call for all row updates    |
-| Patch column bounds | `Highs_changeColsBoundsBySet(highs, num_set_entries, set, lower, upper)` | Batch: one call for all column updates |
+| Operation         | HiGHS C API                                                              | Access Pattern                         |
+| ----------------- | ------------------------------------------------------------------------ | -------------------------------------- |
+| Set row bounds    | `Highs_changeRowsBoundsBySet(highs, num_set_entries, set, lower, upper)` | Batch: one call for all row updates    |
+| Set column bounds | `Highs_changeColsBoundsBySet(highs, num_set_entries, set, lower, upper)` | Batch: one call for all column updates |
 
-**Performance implication**: Scenario patching (the ~2,240 RHS updates per solve — incoming storage, AR lag fixing, noise fixing) should be assembled into a single batch call rather than individual per-row calls. The index array (`set`) identifies which rows to update; the `lower`/`upper` arrays provide the new bounds. Pre-allocating these batch buffers in the thread-local workspace (see [Solver Workspaces](./solver-workspaces.md)) eliminates allocation overhead on the hot path.
+**Performance implication**: Row and column bound updates should be assembled into a single batch call rather than individual per-row calls. In SDDP, the ~2,240 RHS updates per solve (incoming storage, AR lag fixing, noise fixing) are the primary use case. The index array (`set`) identifies which rows to update; the `lower`/`upper` arrays provide the new bounds. Pre-allocating these batch buffers in the thread-local workspace (see [Solver Workspaces](./solver-workspaces.md)) eliminates allocation overhead on the hot path.
 
 The LP layout convention ([Solver Abstraction SS2](./solver-abstraction.md)) places state-linking constraints at the top, so the row indices for scenario patching form a contiguous range starting at 0 — enabling efficient sequential index generation.
 
@@ -94,7 +94,7 @@ HiGHS determines its solve strategy internally based on:
 
 **Status interpretation** after solve:
 
-| `Highs_getModelStatus(highs)` | Constant                                 | Maps To (Solver Abstraction SS6)          |
+| `Highs_getModelStatus(highs)` | Constant                                 | Maps To (Solver Abstraction SS6)         |
 | ----------------------------- | ---------------------------------------- | ---------------------------------------- |
 | 7                             | `kHighsModelStatusOptimal`               | Success                                  |
 | 8                             | `kHighsModelStatusInfeasible`            | `Infeasible`                             |
@@ -135,19 +135,19 @@ Both arrays are `HighsInt[]` (one integer per variable/constraint).
 **Status codes**:
 
 | Code | Constant                    | Meaning        | Maps To (Solver Abstraction SS9) |
-| ---- | --------------------------- | -------------- | ------------------------------- |
-| 0    | `kHighsBasisStatusLower`    | At lower bound | At lower                        |
-| 1    | `kHighsBasisStatusBasic`    | Basic          | Basic                           |
-| 2    | `kHighsBasisStatusUpper`    | At upper bound | At upper                        |
-| 3    | `kHighsBasisStatusZero`     | Free (zero)    | Free                            |
-| 4    | `kHighsBasisStatusNonbasic` | Nonbasic       | At lower (default nonbasic)     |
+| ---- | --------------------------- | -------------- | -------------------------------- |
+| 0    | `kHighsBasisStatusLower`    | At lower bound | At lower                         |
+| 1    | `kHighsBasisStatusBasic`    | Basic          | Basic                            |
+| 2    | `kHighsBasisStatusUpper`    | At upper bound | At upper                         |
+| 3    | `kHighsBasisStatusZero`     | Free (zero)    | Free                             |
+| 4    | `kHighsBasisStatusNonbasic` | Nonbasic       | At lower (default nonbasic)      |
 
 **Key difference from CLP**: HiGHS uses separate column and row status arrays (`HighsInt[]`), while CLP uses a combined `unsigned char[]` array (`status[0..numcols-1]` = columns, `status[numcols..numcols+numrows-1]` = rows). The HiGHS representation is more natural for the basis management described in [Solver Abstraction SS2.3](./solver-abstraction.md).
 
 **Interaction with LP layout convention**: Per [Solver Abstraction SS2.3](./solver-abstraction.md), the structural portion of the basis is position-stable across iterations. When warm-starting after adding cuts, the implementation:
 
 1. Prepares the column status array (unchanged from cached basis)
-2. Prepares the row status array: cached structural rows + new cut rows set to `kHighsBasisStatusBasic` (1)
+2. Prepares the row status array: cached structural rows + new dynamic constraint rows set to `kHighsBasisStatusBasic` (1)
 3. Calls `Highs_setBasis` with both arrays
 4. Calls `Highs_run` for warm-start solve
 
@@ -182,17 +182,17 @@ After each successful retry, the implementation restores default settings for th
 
 ### 4.1 SDDP-Tuned Settings
 
-| Setting                    | HiGHS Option                              | Value        | Rationale                                                                                                 |
-| -------------------------- | ----------------------------------------- | ------------ | --------------------------------------------------------------------------------------------------------- |
-| Solver algorithm           | `"solver"` → `"simplex"`                  | `"simplex"`  | Simplex required for basis warm-starting                                                                  |
-| Simplex strategy           | `"simplex_strategy"` → `4`                | 4 (dual)     | Dual simplex is the standard for SDDP — cut addition modifies RHS, which is a bound change in dual        |
+| Setting                    | HiGHS Option                              | Value        | Rationale                                                                                                  |
+| -------------------------- | ----------------------------------------- | ------------ | ---------------------------------------------------------------------------------------------------------- |
+| Solver algorithm           | `"solver"` → `"simplex"`                  | `"simplex"`  | Simplex required for basis warm-starting                                                                   |
+| Simplex strategy           | `"simplex_strategy"` → `4`                | 4 (dual)     | Dual simplex is the standard for SDDP — cut addition modifies RHS, which is a bound change in dual         |
 | Presolve                   | `"presolve"` → `"off"`                    | `"off"`      | Disabled for warm-start compatibility; see open point in [Solver Abstraction SS3](./solver-abstraction.md) |
-| Parallel                   | `"parallel"` → `"off"`                    | `"off"`      | Each solver instance is single-threaded (thread safety via exclusive ownership)                           |
-| Output                     | `"output_flag"` → `0`                     | 0 (off)      | Quiet for production; millions of solves per run                                                          |
-| Primal tolerance           | `"primal_feasibility_tolerance"` → `1e-7` | 1e-7         | Match CLP defaults for cross-solver reproducibility                                                       |
-| Dual tolerance             | `"dual_feasibility_tolerance"` → `1e-7`   | 1e-7         | Match CLP defaults                                                                                        |
-| Max iterations (per solve) | `"simplex_iteration_limit"` → value       | Configurable | Per-solve iteration limit; prevents runaway solves                                                        |
-| Max time (per solve)       | `"time_limit"` → value                    | Configurable | Per-solve time limit                                                                                      |
+| Parallel                   | `"parallel"` → `"off"`                    | `"off"`      | Each solver instance is single-threaded (thread safety via exclusive ownership)                            |
+| Output                     | `"output_flag"` → `0`                     | 0 (off)      | Quiet for production; millions of solves per run                                                           |
+| Primal tolerance           | `"primal_feasibility_tolerance"` → `1e-7` | 1e-7         | Match CLP defaults for cross-solver reproducibility                                                        |
+| Dual tolerance             | `"dual_feasibility_tolerance"` → `1e-7`   | 1e-7         | Match CLP defaults                                                                                         |
+| Max iterations (per solve) | `"simplex_iteration_limit"` → value       | Configurable | Per-solve iteration limit; prevents runaway solves                                                         |
+| Max time (per solve)       | `"time_limit"` → value                    | Configurable | Per-solve time limit                                                                                       |
 
 ### 4.2 Scaling Note
 
@@ -225,7 +225,7 @@ This is within acceptable bounds for production HPC nodes (256+ GB RAM). The mem
 
 HiGHS's `Highs_passLp` accepts both CSR (`kHighsMatrixFormatRowwise = 2`) and CSC (`kHighsMatrixFormatColwise = 1`) formats. However, HiGHS internally stores the LP matrix in column-major (CSC) format — when CSR is passed, `Highs_passLp` internally calls `ensureColwise()` to transpose it (see `Highs.cpp:353`). Since stage LP templates are stored in CSC form, the HiGHS implementation passes them directly with `a_format = kHighsMatrixFormatColwise`, avoiding this per-stage-transition transposition overhead. Both solvers (HiGHS and CLP) use CSC internally, so using CSC templates is the common format that works natively with both.
 
-`Highs_addRows` for cut addition uses CSR format (row starts, column indices, values), which is the same for both solvers.
+`Highs_addRows` for dynamic constraint addition uses CSR format (row starts, column indices, values), which is the same for both solvers.
 
 ### 6.2 Dual Sign Convention
 

@@ -1,6 +1,6 @@
 {
   "plan": "ecosystem-scope-restoration",
-  "last_updated": "2026-02-27T20:22:34Z",
+  "last_updated": "2026-02-27T20:43:15Z",
   "progressive": false,
   "tickets": {
     "ticket-001-restore-cobre-core-framing.md": {
@@ -172,7 +172,7 @@
       "agent": "open-source-documentation-writer"
     },
     "ticket-008-update-solver-impl-specs.md": {
-      "status": "pending",
+      "status": "completed",
       "detail_level": "detailed",
       "scores": {
         "readiness": 0.9,
@@ -182,11 +182,21 @@
           "boundary": 0.85,
           "dependency_clarity": 1.0,
           "atomicity": 0.75
+        },
+        "quality": 0.925,
+        "quality_breakdown": {
+          "conformance": 1.0,
+          "scope_adherence": 1.0,
+          "lint_cleanliness": 1.0,
+          "type_safety": 1.0,
+          "test_delta": 1.0
         }
-      }
+      },
+      "agent": "open-source-documentation-writer",
+      "workflow_step": null
     },
     "ticket-009-update-solver-testing.md": {
-      "status": "pending",
+      "status": "completed",
       "detail_level": "detailed",
       "scores": {
         "readiness": 0.91,
@@ -196,11 +206,21 @@
           "boundary": 0.85,
           "dependency_clarity": 1.0,
           "atomicity": 0.8
+        },
+        "quality": 0.90,
+        "quality_breakdown": {
+          "conformance": 1.0,
+          "scope_adherence": 1.0,
+          "lint_cleanliness": 1.0,
+          "type_safety": 1.0,
+          "test_delta": 1.0
         }
-      }
+      },
+      "workflow_step": null,
+      "agent": "open-source-documentation-writer"
     },
     "ticket-010-update-workspaces-training-loop.md": {
-      "status": "pending",
+      "status": "completed",
       "detail_level": "detailed",
       "scores": {
         "readiness": 0.87,
@@ -210,11 +230,21 @@
           "boundary": 0.8,
           "dependency_clarity": 1.0,
           "atomicity": 0.75
+        },
+        "quality": 0.925,
+        "quality_breakdown": {
+          "conformance": 1.0,
+          "scope_adherence": 1.0,
+          "lint_cleanliness": 1.0,
+          "type_safety": 1.0,
+          "test_delta": 0.25
         }
-      }
+      },
+      "workflow_step": null,
+      "agent": "open-source-documentation-writer"
     },
     "ticket-011-update-communicator-trait-purpose.md": {
-      "status": "pending",
+      "status": "completed",
       "detail_level": "detailed",
       "scores": {
         "readiness": 0.94,
@@ -224,8 +254,18 @@
           "boundary": 0.9,
           "dependency_clarity": 1.0,
           "atomicity": 0.9
+        },
+        "quality": 0.975,
+        "quality_breakdown": {
+          "conformance": 1.0,
+          "scope_adherence": 1.0,
+          "lint_cleanliness": 1.0,
+          "type_safety": 1.0,
+          "test_delta": 1.0
         }
-      }
+      },
+      "workflow_step": null,
+      "agent": "open-source-documentation-writer"
     },
     "ticket-012-reframe-sampling-scheme.md": {
       "status": "pending",

@@ -48,10 +48,10 @@ The Cobre specification corpus has progressively narrowed its framing from "a po
 | ticket-005 | Restore generic framing in guidelines and CLAUDE.md | epic-01 | completed | Detailed     | 0.92      | 0.88    | EXCELLENT |
 | ticket-006 | Generalize LP layout terminology                    | epic-02 | completed | Detailed     | 0.86      | 0.90    | EXCELLENT |
 | ticket-007 | Rename SolverInterface methods                      | epic-02 | completed | Detailed     | 0.93      | 0.88    | EXCELLENT |
-| ticket-008 | Update solver implementation specs                  | epic-02 | pending   | Detailed     | 0.90      | --      | --        |
-| ticket-009 | Update solver-interface-testing.md                  | epic-02 | pending   | Detailed     | 0.91      | --      | --        |
-| ticket-010 | Update workspaces and training-loop                 | epic-02 | pending   | Detailed     | 0.87      | --      | --        |
-| ticket-011 | Update communicator-trait.md purpose                | epic-02 | pending   | Detailed     | 0.94      | --      | --        |
+| ticket-008 | Update solver implementation specs                  | epic-02 | completed | Detailed     | 0.90      | 0.93    | EXCELLENT |
+| ticket-009 | Update solver-interface-testing.md                  | epic-02 | completed | Detailed     | 0.91      | 0.90    | EXCELLENT |
+| ticket-010 | Update workspaces and training-loop                 | epic-02 | completed | Detailed     | 0.87      | 0.93    | EXCELLENT |
+| ticket-011 | Update communicator-trait.md purpose                | epic-02 | completed | Detailed     | 0.94      | 0.98    | EXCELLENT |
 | ticket-012 | Reframe sampling-scheme-trait.md                    | epic-03 | pending   | Detailed     | 0.92      | --      | --        |
 | ticket-013 | Reframe scenario-generation.md                      | epic-03 | pending   | Detailed     | 0.93      | --      | --        |
 | ticket-014 | Create ecosystem-vision.md                          | epic-03 | pending   | Detailed     | 0.88      | --      | --        |

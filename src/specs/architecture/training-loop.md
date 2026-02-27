@@ -357,7 +357,7 @@ For each forward trajectory:
 
 ### 4.2a Forward Pass Patch Sequence
 
-Step c above ("Build stage LP") decomposes into the LP rebuild sequence ([Solver Abstraction SS11.2](./solver-abstraction.md)): load template, add active cuts, patch scenario-dependent RHS values, and warm-start. This subsection specifies the **exact `patch_row_bounds` calls** for the forward pass — the patches that transform a generic stage template into the LP for a specific (incoming state, scenario realization) pair.
+Step c above ("Build stage LP") decomposes into the LP rebuild sequence ([Solver Abstraction SS11.2](./solver-abstraction.md)): load template, add active cuts, patch scenario-dependent RHS values, and warm-start. This subsection specifies the **exact `set_row_bounds` calls** for the forward pass — the patches that transform a generic stage template into the LP for a specific (incoming state, scenario realization) pair.
 
 Three categories of patches are applied, all targeting constraint RHS values:
 
@@ -441,7 +441,7 @@ struct TrajectoryRecord {
     /// Length equals the stage's column count from `StageTemplate`.
     primal: Vec<f64>,
     /// Full dual solution vector for this stage's LP (constraint duals).
-    /// Length equals the stage's row count (structural + cut rows).
+    /// Length equals the stage's row count (static + dynamic constraint rows).
     dual: Vec<f64>,
     /// LP objective value at this stage (stage cost contribution).
     stage_cost: f64,
@@ -456,7 +456,7 @@ struct TrajectoryRecord {
 | Field        | Type       | Description                                                                                                                                                                                                      |
 | ------------ | ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `primal`     | `Vec<f64>` | Full primal solution vector for the stage LP. Length equals the stage's column count from `StageTemplate` ([Solver Abstraction SS2.1](./solver-abstraction.md)). Includes state variables, controls, and slacks. |
-| `dual`       | `Vec<f64>` | Full dual solution vector (constraint shadow prices). Length equals the stage's row count, including both structural constraints and active FCF cut rows.                                                        |
+| `dual`       | `Vec<f64>` | Full dual solution vector (constraint shadow prices). Length equals the stage's row count, including both static constraints and active FCF dynamic constraint rows.                                                        |
 | `stage_cost` | `f64`      | LP objective value at this stage, representing the immediate stage cost contribution (excluding the future cost variable $\theta$).                                                                              |
 | `state`      | `Vec<f64>` | End-of-stage state vector: storage volumes followed by AR inflow lags, in the LP column prefix layout from SS5.1. Length equals $n_{state} = N \cdot (1 + L)$.                                                   |
 
@@ -585,7 +585,7 @@ No index gathering or scattering is required — the LP column layout is designe
 
 ### 5.3 State Transfer Between Stages
 
-Transferring state from stage $t$ to stage $t+1$ requires patching the next stage's LP with the outgoing state values. This uses the `patch_row_bounds` interface ([Solver Interface Trait SS2.3](./solver-interface-trait.md)) with two categories of patches:
+Transferring state from stage $t$ to stage $t+1$ requires patching the next stage's LP with the outgoing state values. This uses the `set_row_bounds` interface ([Solver Interface Trait SS2.3](./solver-interface-trait.md)) with two categories of patches:
 
 **Storage transfer**: For each operating hydro $h \in [0, N)$, patch the water balance constraint RHS:
 
