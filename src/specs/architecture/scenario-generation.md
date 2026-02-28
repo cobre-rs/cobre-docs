@@ -19,37 +19,37 @@ For the full PAR(p) model definition, parameter set, and fitting theory, see [PA
 │                       PAR Model Preprocessing Pipeline                          │
 ├─────────────────────────────────────────────────────────────────────────────────┤
 │                                                                                 │
-│  Input: inflow_seasonal_stats.parquet (μ, s per hydro × stage)                 │
-│         inflow_ar_coefficients.parquet (ψ per hydro × stage × lag)             │
+│  Input: inflow_seasonal_stats.parquet (μ, s per hydro × stage)                  │
+│         inflow_ar_coefficients.parquet (ψ per hydro × stage × lag)              │
 │         inflow_history.parquet (optional, for lag initialization)               │
 │                                                                                 │
-│  Step 1: Load PAR Parameters                                                   │
-│  For each (hydro h, stage t) with season m = season(t):                        │
-│    μ[h][t] = mean_m3s          (seasonal mean)                                 │
-│    s[h][t] = std_m3s           (seasonal sample std)                           │
-│    ψ[h][t][ℓ] = coefficient    (AR coefficients, original units)               │
-│    p[h][t] = ar_order          (AR order for this hydro/stage)                 │
+│  Step 1: Load PAR Parameters                                                    │
+│  For each (hydro h, stage t) with season m = season(t):                         │
+│    μ[h][t] = mean_m3s          (seasonal mean)                                  │
+│    s[h][t] = std_m3s           (seasonal sample std)                            │
+│    ψ[h][t][ℓ] = coefficient    (AR coefficients, original units)                │
+│    p[h][t] = ar_order          (AR order for this hydro/stage)                  │
 │                              │                                                  │
 │                              ▼                                                  │
-│  Step 2: Compute Residual Standard Deviation                                   │
-│  For each (hydro h, stage t):                                                  │
-│    Reverse-standardize AR coefficients to get ψ*                               │
-│    Compute σ[h][t] from s[h][t] and ψ* (see par-inflow-model.md SS3)           │
+│  Step 2: Compute Residual Standard Deviation                                    │
+│  For each (hydro h, stage t):                                                   │
+│    Reverse-standardize AR coefficients to get ψ*                                │
+│    Compute σ[h][t] from s[h][t] and ψ* (see par-inflow-model.md SS3)            │
 │                              │                                                  │
 │                              ▼                                                  │
-│  Step 3: Precompute Stage-Specific Deterministic Components                    │
-│  For each (hydro h, stage t) with season m = season(t):                        │
-│    base[h][t] = μ[h][t] − Σ_ℓ ψ[h][t][ℓ] · μ[h][t−ℓ]                        │
-│    coeff[h][t][ℓ] = ψ[h][t][ℓ]  for ℓ = 1..p[h][t]                           │
-│    scale[h][t] = σ[h][t]                                                       │
+│  Step 3: Precompute Stage-Specific Deterministic Components                     │
+│  For each (hydro h, stage t) with season m = season(t):                         │
+│    base[h][t] = μ[h][t] − Σ_ℓ ψ[h][t][ℓ] · μ[h][t−ℓ]                            │
+│    coeff[h][t][ℓ] = ψ[h][t][ℓ]  for ℓ = 1..p[h][t]                              │
+│    scale[h][t] = σ[h][t]                                                        │
 │                              │                                                  │
 │                              ▼                                                  │
 │  Step 4: Initialize Lag State from History                                      │
-│  From inflow_history.parquet (when present):                                   │
-│    lag_state[h][ℓ] = historical_inflow[h][t₀ − ℓ]  for ℓ = 1..max_order      │
+│  From inflow_history.parquet (when present):                                    │
+│    lag_state[h][ℓ] = historical_inflow[h][t₀ − ℓ]  for ℓ = 1..max_order         │
 │                              │                                                  │
 │                              ▼                                                  │
-│  Output: Precomputed PAR structure (contiguous arrays for hot-path access)     │
+│  Output: Precomputed PAR structure (contiguous arrays for hot-path access)      │
 │                                                                                 │
 └─────────────────────────────────────────────────────────────────────────────────┘
 ```
