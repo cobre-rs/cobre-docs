@@ -22,7 +22,7 @@ The specs have extensive cross-references, so reading order matters. The followi
 10. **[CLI and Lifecycle](./architecture/cli-and-lifecycle.md)** -- Program entrypoint, command-line interface, exit codes, execution phase lifecycle, conditional execution modes, configuration resolution hierarchy, and job scheduler integration.
 11. **[Validation Architecture](./architecture/validation-architecture.md)** -- Multi-layer input validation pipeline: the five validation layers, error collection strategy, error type catalog, and validation report format.
 12. **[Convergence Monitoring](./architecture/convergence-monitoring.md)** -- Convergence criteria, stopping rules, bound computation with cross-rank aggregation, and training log format for progress reporting.
-13. **[Cut Management Implementation](./architecture/cut-management-impl.md)** -- How the mathematical cut management concepts are implemented: future cost function runtime structure, cut selection on the pre-allocated cut pool, FlatBuffers serialization for checkpoint/resume, cross-rank cut synchronization via MPI, generic constraint dual preprocessing, and cut activity tracking.
+13. **[Cut Management Implementation](./architecture/cut-management-impl.md)** -- How the mathematical cut management concepts are implemented: future cost function runtime structure, cut selection on the pre-allocated cut pool, FlatBuffers serialization for checkpoint/resume, cross-rank cut synchronization via MPI, cut coefficient extraction via fixing constraint duals, and cut activity tracking.
 
 ## Spec Index
 

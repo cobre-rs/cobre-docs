@@ -42,7 +42,7 @@ This document follows [SDDP.jl](https://sddp.dev/stable/) notation conventions f
 | $\mathcal{S}_b$                             | Deficit segments for bus $b$                               | 1                                                          | Multiple segments optional                                   |
 | $\mathcal{M}_h$                             | FPHA planes for hydro $h$                                  | 125                                                        | Typical value; depends on grid resolution                    |
 | $\mathcal{U}_h$                             | Upstream hydros of $h$                                     | 1-2                                                        | Immediate upstream in cascade                                |
-| $\Omega_t$                                  | Scenario realizations at stage $t$                         | 20                                                         | Standard branching factor                             |
+| $\Omega_t$                                  | Scenario realizations at stage $t$                         | 20                                                         | Standard branching factor                                    |
 
 ## 3. Parameters
 
@@ -290,32 +290,30 @@ $$
 
 where $Q^*$ is the optimal objective value. This is the **marginal cost with respect to increasing the RHS**.
 
-#### Storage Dual ($\pi^{wb}_h$)
+#### Storage Dual ($\pi^{fix}_h$)
 
-For the water balance constraint:
+For the storage fixing constraint (see [LP Formulation §4a](../math/lp-formulation.md)):
 
 $$
-\underbrace{v_h - \zeta \cdot a_h - \zeta \sum_{k} w_k \cdot (\ldots)}_{\text{LHS}} = \underbrace{\hat{v}_h}_{\text{RHS}}
+\underbrace{v^{in}_h}_{\text{LHS}} = \underbrace{\hat{v}_h}_{\text{RHS}}
 $$
 
-The dual $\pi^{wb}_h$ measures: _"How does optimal cost change if incoming storage $\hat{v}_h$ increases by 1 hm³?"_
+The dual $\pi^{fix}_h$ measures: _"How does optimal cost change if incoming storage $\hat{v}_h$ increases by 1 hm³?"_
 
 **Economic interpretation**:
 
 - More incoming storage means more water available for generation
 - Water has value (can displace thermal generation or avoid deficit)
 - Therefore, increasing $\hat{v}_h$ **decreases** cost: $\frac{\partial Q^*}{\partial \hat{v}_h} < 0$
-- By LP convention (minimization), this gives $\pi^{wb}_h < 0$
+- By LP convention (minimization), this gives $\pi^{fix}_h < 0$
 
 **Cut coefficient**:
 
 $$
-\boxed{\pi^v_h = \pi^{wb}_h}
+\boxed{\pi^v_h = \pi^{fix}_h}
 $$
 
-No sign change is needed because the incoming state $\hat{v}_h$ appears directly on the RHS with coefficient $+1$.
-
-> **Note on the $\zeta$ factor**: Some formulations write the water balance as $\frac{v_h}{\zeta} - (\ldots) = \frac{\hat{v}_h}{\zeta}$, which scales the constraint. In that case, the dual would be $\zeta \cdot \pi^{wb}_h$. In our formulation, we keep units natural (hm³) and no scaling factor appears in the cut coefficient.
+No sign change is needed because the incoming state $\hat{v}_h$ appears directly on the RHS with coefficient $+1$. By the LP envelope theorem, this dual automatically captures all downstream effects — water balance, FPHA hyperplanes, and generic constraints — without manual combination of duals from multiple constraint types. See [Cut Management §2](../math/cut-management.md).
 
 #### AR Lag Dual ($\pi^{lag}_{h,\ell}$)
 
@@ -339,22 +337,23 @@ The cut coefficient for lag $\ell$ is the dual variable $\pi^{lag}_{h,\ell}$ dir
 
 ### 5.5 Summary Table
 
-| Symbol               | Constraint (LP Form)                           | RHS                | Cut Coefficient                                      |
-| -------------------- | ---------------------------------------------- | ------------------ | ---------------------------------------------------- |
-| $\pi^{wb}_h$         | $v_h - \zeta \cdot (\text{flows}) = \hat{v}_h$ | $\hat{v}_h$        | $\pi^v_h = \pi^{wb}_h$                               |
-| $\pi^{lag}_{h,\ell}$ | $a_{h,\ell} = \hat{a}_{h,\ell}$                | $\hat{a}_{h,\ell}$ | $\pi^{lag}_{h,\ell}$ (direct)                        |
-| $\pi^{lb}_{b,k}$     | Load balance                                   | $D_{b,k}$          | Marginal cost of energy                              |
-| $\pi_m^{fpha}$       | FPHA hyperplane $m$                            | -                  | Contributes to $\pi^v_h$ via $\frac{1}{2}\gamma_v^m$ |
-| $\pi^{gen}_c$        | Generic constraint $c$                         | -                  | Contributes to state cut coefficients                |
-| $\lambda_i$          | Benders cut $i$                                | $\alpha_i$         | Cut activity indicator                               |
+| Symbol               | Constraint (LP Form)                    | RHS                | Cut Coefficient                                           |
+| -------------------- | --------------------------------------- | ------------------ | --------------------------------------------------------- |
+| $\pi^{fix}_h$        | $v^{in}_h = \hat{v}_h$ (storage fixing) | $\hat{v}_h$        | $\pi^v_h = \pi^{fix}_h$ (captures all downstream effects) |
+| $\pi^{lag}_{h,\ell}$ | $a_{h,\ell} = \hat{a}_{h,\ell}$         | $\hat{a}_{h,\ell}$ | $\pi^{lag}_{h,\ell}$ (direct)                             |
+| $\pi^{lb}_{b,k}$     | Load balance                            | $D_{b,k}$          | Marginal cost of energy                                   |
+| $\pi^{wb}_h$         | Water balance                           | -                  | Not used directly for cut coefficients                    |
+| $\pi_m^{fpha}$       | FPHA hyperplane $m$                     | -                  | Captured via $\pi^{fix}_h$ automatically                  |
+| $\pi^{gen}_c$        | Generic constraint $c$                  | -                  | Captured via $\pi^{fix}_h$ automatically                  |
+| $\lambda_i$          | Benders cut $i$                         | $\alpha_i$         | Cut activity indicator                                    |
 
 ### 5.6 Implementation Notes
 
-The hot-path solver update pattern (modifying RHS via `changeRowBounds` for incoming state, extracting duals via `getRowDual` for cut coefficients) is documented in [Solver HiGHS Implementation §3](../architecture/solver-highs-impl.md) and [Solver Abstraction §3](../architecture/solver-abstraction.md). The key property: since incoming state variables appear on the RHS with coefficient $+1$, no sign change is needed when mapping duals to cut coefficients ($\pi^v_h = \pi^{wb}_h$; for AR lags, $\pi^{lag}_{h,\ell}$ is used directly).
+The hot-path solver update pattern (modifying RHS via `changeRowBounds` for incoming state, extracting duals via `getRowDual` for cut coefficients) is documented in [Solver HiGHS Implementation §3](../architecture/solver-highs-impl.md) and [Solver Abstraction §3](../architecture/solver-abstraction.md). The key property: since incoming state variables appear on the RHS of fixing constraints with coefficient $+1$, no sign change is needed when mapping duals to cut coefficients ($\pi^v_h = \pi^{fix}_h$; for AR lags, $\pi^{lag}_{h,\ell}$ is used directly). Cut coefficient extraction is a single contiguous slice read: `dual[0..n_state]`.
 
 **Verification check**: In a typical hydrothermal system:
 
-- $\pi^{wb}_h < 0$ (water has value, more storage reduces cost)
+- $\pi^{fix}_h < 0$ (water has value, more storage reduces cost)
 - $\pi^v_h < 0$ (cut value increases as storage decreases — future is more expensive with less water)
 - The cut $\theta \geq \alpha + \pi^v \cdot v$ correctly penalizes low storage
 

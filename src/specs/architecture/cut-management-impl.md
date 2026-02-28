@@ -2,7 +2,7 @@
 
 ## Purpose
 
-This spec defines how the mathematical cut management concepts from [Cut Management](../math/cut-management.md) are implemented in the Cobre architecture: the Future Cost Function (FCF) runtime structure, how cut selection strategies operate on the pre-allocated cut pool, cut serialization for checkpoint/resume via FlatBuffers, cross-rank cut synchronization via MPI, generic constraint dual preprocessing, and cut activity tracking.
+This spec defines how the mathematical cut management concepts from [Cut Management](../math/cut-management.md) are implemented in the Cobre architecture: the Future Cost Function (FCF) runtime structure, how cut selection strategies operate on the pre-allocated cut pool, cut serialization for checkpoint/resume via FlatBuffers, cross-rank cut synchronization via MPI, and cut activity tracking.
 
 For the mathematical foundations (cut definition, dual extraction, aggregation, validity, convergence), see [Cut Management](../math/cut-management.md). For the cut pool memory layout requirements and FlatBuffers schema, see [Binary Formats SS3](../data-model/binary-formats.md). For how cuts enter the solver LP, see [Solver Abstraction SS5](./solver-abstraction.md).
 
@@ -60,7 +60,7 @@ The FCF provides the following operations to the training loop:
 | Add cut           | Write a new cut's coefficients, intercept, and metadata into the deterministic slot. Set the slot as active in the bitmap. O(1).         |
 | Get active cuts   | Return the active cut indices and coefficient/intercept data for a given stage. Used by the solver workspace for `addRows` CSR assembly. |
 | Evaluate at state | Compute max over all active cuts: $\max_k \{ \alpha_k + \pi_k^\top x \}$. Used for upper bound evaluation and dominated cut detection.   |
-| Run selection     | Apply the configured cut selection strategy (SS2) to deactivate cuts. Updates the activity bitmap.                                        |
+| Run selection     | Apply the configured cut selection strategy (SS2) to deactivate cuts. Updates the activity bitmap.                                       |
 | Aggregate stats   | Return total cuts, active cuts per stage, cuts added this iteration — for logging and convergence monitoring.                            |
 
 ## 2. Cut Selection Strategies
@@ -271,31 +271,11 @@ Because slot indices are computed from `(iteration, forward_pass_index)` and for
 
 **Invariant**: After `MPI_Allgatherv` at stage $t$, every rank has the same set of active cuts at stage $t$, in the same slot positions, with the same coefficients. This is necessary for the forward pass at the next iteration to produce identical results regardless of which rank evaluates which trajectory.
 
-## 5. Generic Constraint Dual Preprocessing
+## 5. Cut Coefficient Extraction
 
-When generic constraints ([LP Formulation SS10](../math/lp-formulation.md)) involve state variables (storage volumes), their dual multipliers contribute to cut coefficients. The mapping from generic constraint duals to state variable cut coefficients is **static** — it depends only on the constraint structure, which is determined at input loading time and does not change during training.
+Cut coefficient extraction requires no dual preprocessing or mapping. Each state variable (storage and inflow lag) has a dedicated fixing constraint in the LP, and the fixing constraint's dual gives the cut coefficient directly. The dual-extraction region contains exactly `n_state` rows — the first $N$ are storage fixing duals and the remaining $N \cdot L$ are lag fixing duals — so cut coefficient extraction is a single contiguous slice read: `cut_coefficients[0..n_state] = dual[0..n_state]`.
 
-### 5.1 Preprocessing Step
-
-During initialization (after input loading, before training begins):
-
-1. For each generic constraint $c$ that references at least one state variable, extract the coefficient of each state variable in that constraint
-2. Build a **dual-to-cut mapping** — a sparse structure that, for each state variable $j$, stores the list of `(constraint_index, coefficient)` pairs from generic constraints
-
-This mapping is computed once and shared read-only across all threads.
-
-### 5.2 Runtime Usage
-
-During cut coefficient computation in the backward pass ([Training Loop SS7.2](./training-loop.md)):
-
-1. Extract the standard cut coefficients from water balance and AR lag constraint duals
-2. For each generic constraint dual $\pi^{gen}_c$, look up the precomputed mapping and add $\pi^{gen}_c \times \text{coefficient}_{c,j}$ to the cut coefficient for each state variable $j$ that appears in constraint $c$
-
-This is equivalent to a sparse matrix-vector multiply: `β_generic = G' × π_gen`, where `G` is the sparse state-variable participation matrix for generic constraints, precomputed at initialization.
-
-### 5.3 Interaction with FPHA Duals
-
-The FPHA hyperplane duals follow the same pattern — their contribution to storage cut coefficients is via a fixed mapping (the $\frac{1}{2} \gamma_v^m$ factor from [Cut Management SS2](../math/cut-management.md)). Unlike generic constraints, the FPHA mapping changes per stage (different hydros may use different production models at different stages), but within a stage it is static. Both FPHA and generic constraint contributions can use the same precomputed lookup structure.
+This design eliminates the need for precomputed dual-to-cut mappings for FPHA hyperplane duals and generic constraint duals. The LP solver resolves all downstream effects (water balance, FPHA, generic constraints) automatically through the fixing constraint dual, by the LP envelope theorem. See [Cut Management §2](../math/cut-management.md) for the mathematical derivation and [Solver Abstraction SS2.2](./solver-abstraction.md) for the row layout.
 
 ## 6. Cut Activity Tracking
 
@@ -327,7 +307,7 @@ These updates happen on the thread-local solver's cut rows. Since each thread pr
 - [Training Loop](./training-loop.md) — Forward/backward pass that drives cut generation (SS6), dual extraction for cut coefficients (SS7)
 - [Convergence Monitoring](./convergence-monitoring.md) — Uses FCF statistics (lower bound from stage 1 cuts)
 - [Risk Measures](../math/risk-measures.md) — CVaR modifies aggregation weights during cut generation
-- [LP Formulation](../math/lp-formulation.md) — Generic constraints (SS10) whose duals contribute to cut coefficients
+- [LP Formulation](../math/lp-formulation.md) — Storage fixing constraints (§4a) that produce cut coefficients directly; generic constraints (§10) whose effects are captured via fixing constraint duals
 - [Scenario Generation](./scenario-generation.md) — Fixed opening tree (SS2.3) that defines backward pass branchings
 - [Hybrid Parallelism](../hpc/hybrid-parallelism.md) — MPI rank topology for cut synchronization
 - [Checkpointing](../hpc/checkpointing.md) — Checkpoint trigger logic and graceful shutdown that invoke cut serialization

@@ -71,7 +71,7 @@ The backward pass improves the value function approximation by generating new Be
 At each stage $t$, for each trial point $\hat{x}_{t-1}$ collected during the forward pass:
 
 1. Solve the stage $t$ LP for **every** scenario $\omega \in \Omega_t$ (branching), using the trial state $\hat{x}_{t-1}$ as incoming state
-2. From each LP solution, extract the optimal objective value $Q_t(\hat{x}_{t-1}, \omega)$ and the dual variables of state-linking constraints (water balance, AR lag fixing). For hydros using FPHA, the FPHA hyperplane duals also contribute to storage cut coefficients — see [Cut Management §2](cut-management.md)
+2. From each LP solution, extract the optimal objective value $Q_t(\hat{x}_{t-1}, \omega)$ and the dual variables of the fixing constraints (storage fixing and AR lag fixing). The fixing constraint duals give the cut coefficients directly — no combination with FPHA or generic constraint duals is needed. See [Cut Management §2](cut-management.md)
 3. Compute per-scenario cut coefficients $(\alpha(\omega), \pi(\omega))$ from the duals and trial point
 4. Aggregate into a single cut via probability-weighted expectation — see [Cut Management §3](cut-management.md)
 5. Add the aggregated cut to stage $t-1$'s cut pool
@@ -120,7 +120,7 @@ The SDDP iteration structure has specific properties that guide the parallelizat
 
 **LP rebuild cost**: Memory constraints prevent keeping all stage LPs with their full cut sets resident simultaneously. The solver must rebuild LPs and add cut constraints when transitioning between stages, which lies on the critical performance path. The design must minimize this rebuild cost through strategies such as cut preallocation, basis persistence, and incremental constraint updates. See [Solver Abstraction](../architecture/solver-abstraction.md) and [Solver Workspaces](../architecture/solver-workspaces.md).
 
-**Generic constraint dual preprocessing**: When generic constraints involve state variables (storage volumes), their duals contribute to cut coefficients (see [Cut Management §2](cut-management.md)). Since the mapping from generic constraint duals to state variable coefficients is static (determined at input loading time), it should be precomputed once and reused across all iterations. See [Cut Management Implementation](../architecture/cut-management-impl.md).
+**Fixing constraint dual extraction**: Each state variable (storage and inflow lag) has a dedicated fixing constraint whose dual gives the cut coefficient directly — no preprocessing or dual combination is needed. FPHA hyperplane and generic constraint effects are captured automatically by the LP solver through the fixing constraint dual. See [Cut Management §2](cut-management.md) and [Cut Management Implementation SS5](../architecture/cut-management-impl.md).
 
 ## 4. Policy Graph Structure
 

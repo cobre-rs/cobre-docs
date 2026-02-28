@@ -243,10 +243,10 @@ These are **hard constraints** — no slack variables. Feasibility is ensured th
 The average storage $v^{avg}_h$ over the stage:
 
 $$
-v^{avg}_h = \frac{\hat{v}_h + v_h}{2}
+v^{avg}_h = \frac{v^{in}_h + v_h}{2}
 $$
 
-where $\hat{v}_h$ is incoming storage and $v_h$ is end-of-stage storage.
+where $v^{in}_h$ is the incoming storage LP variable (fixed to $\hat{v}_h$ via the storage fixing constraint — see [LP Formulation §4a](lp-formulation.md)) and $v_h$ is end-of-stage storage. Both are LP variables, so $v^{in}_h$ appears in the FPHA constraint with coefficient $\gamma_v^m / 2$. The LP solver automatically accounts for this when computing the dual of the storage fixing constraint.
 
 #### Generation as Independent Variable
 
@@ -275,13 +275,15 @@ For the full penalty taxonomy and priority ordering, see [Penalty System](../dat
 
 ### 2.10 Impact on Benders Cuts
 
-The FPHA formulation affects water value computation. The marginal value of incoming storage $\hat{v}_h$ includes the FPHA contribution via the dual variables of the hyperplane constraints:
+The FPHA formulation affects water value computation. Because the incoming storage variable $v^{in}_h$ appears in the FPHA constraint (via $v^{avg}_h = (v^{in}_h + v_h)/2$, §2.8), the FPHA hyperplane duals contribute to the marginal value of incoming storage. However, the implementation does **not** require manually combining duals from the water balance and FPHA constraints. Instead, the storage fixing constraint ($v^{in}_h = \hat{v}_h$, see [LP Formulation §4a](lp-formulation.md)) captures the total sensitivity $\partial Q_t / \partial \hat{v}_h$ automatically — the LP solver propagates the FPHA contribution through $v^{in}_h$.
+
+The cut coefficient for storage is simply the dual of the storage fixing constraint:
 
 $$
-\pi^v_h = \pi^{wb}_h + \frac{1}{2} \sum_m \pi_m^{fpha} \cdot \gamma_v^m
+\pi^v_h = \pi^{fix}_h
 $$
 
-The factor $\frac{1}{2}$ appears because $v^{avg} = (\hat{v}_h + v_h)/2$, so $\partial v^{avg}/\partial \hat{v}_h = 1/2$.
+This dual implicitly includes the water balance contribution ($\pi^{wb}_h$), the FPHA contribution ($\frac{1}{2} \sum_m \pi_m^{fpha} \cdot \gamma_v^m$), and any generic constraint contributions — all resolved by the LP solver without explicit dual combination.
 
 For the complete cut coefficient computation, see [cut management](cut-management.md).
 

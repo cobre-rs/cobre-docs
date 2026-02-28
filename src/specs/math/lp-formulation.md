@@ -160,7 +160,7 @@ For the physical meaning of each element in the balance, see [system elements](s
 For each hydro $h \in \mathcal{H}$ (parallel blocks formulation):
 
 $$
-v_h = \hat{v}_h + \zeta \Bigg[ a_h + \sum_{k \in \mathcal{K}} w_k \Big(
+v_h = v^{in}_h + \zeta \Bigg[ a_h + \sum_{k \in \mathcal{K}} w_k \Big(
   \underbrace{\sum_{i \in \mathcal{U}_h} (q_{i,k} + s_{i,k} + u_{i,k})}_{\text{Inflow from upstream}}
   + \underbrace{\sum_{i: \text{div}=h} u_{i,k}}_{\text{Diverted inflow}}
   + \underbrace{\sum_{j: \text{dest}=h} p_{j,k}}_{\text{Pumped inflow}}
@@ -176,7 +176,7 @@ $$
 
 where:
 
-- $\hat{v}_h$ = incoming storage (state from previous stage)
+- $v^{in}_h$ = incoming storage LP variable, fixed to the previous stage's value via the storage fixing constraint (§4a)
 - $a_h$ = incremental inflow (from AR model, see [PAR(p) inflow model](par-inflow-model.md))
 - $w_k = \tau_k / \sum_j \tau_j$ = block weight
 - $\zeta = 0.0036 \times \sum_k \tau_k$ = time conversion factor
@@ -184,13 +184,43 @@ where:
 > **Dimensional Consistency** (see [Variable Units Convention](system-elements.md)):
 >
 > - LHS: $v_h$ [hm³]
-> - RHS: $\hat{v}_h$ [hm³] + $\zeta$ [hm³/(m³/s)] × (flow terms [m³/s])
+> - RHS: $v^{in}_h$ [hm³] + $\zeta$ [hm³/(m³/s)] × (flow terms [m³/s])
 > - The factor $\zeta$ converts all flow rates (m³/s) to volumes (hm³) accumulated over the stage
 > - Block weights $w_k$ are dimensionless and sum to 1
 > - The AR inflow $a_h$ is in m³/s (average rate over the stage)
 > - All flow decision variables use rate units (m³/s) — the conversion to volume happens only through $\zeta$ in this constraint
 
-**Dual variable**: $\pi^{wb}_h$ (water value, used for cut coefficients — see [cut management](cut-management.md))
+**Dual variable**: $\pi^{wb}_h$ (water value — captures the marginal value of incoming storage as seen through the hydro balance, but is **not** used directly as a cut coefficient; the cut coefficient comes from the storage fixing constraint dual, see §4a and [cut management](cut-management.md))
+
+## 4a. Storage Fixing Constraints
+
+The water balance (§4), FPHA hyperplanes (§6), and generic constraints (§10) all involve the incoming storage value $\hat{v}_h$. Rather than embedding $\hat{v}_h$ as a constant in the RHS of each of these constraints (which would require collecting duals from all of them to compute cut coefficients), Cobre introduces an explicit **incoming storage LP variable** $v^{in}_h$ with a fixing constraint:
+
+For each hydro $h \in \mathcal{H}$:
+
+$$
+v^{in}_h = \hat{v}_h
+$$
+
+where:
+
+- $v^{in}_h$ = LP variable representing the incoming storage for hydro $h$ (unbounded)
+- $\hat{v}_h$ = incoming state value (end-of-stage storage from the previous stage, fixed via RHS patching)
+
+The variable $v^{in}_h$ then appears as an LP variable (not a constant) in all constraints that depend on incoming storage: the water balance (§4), the FPHA average storage computation (§6), and any generic constraints (§10) that reference incoming storage.
+
+**Dual variable**: $\pi^{fix}_h$ (marginal value of incoming storage for hydro $h$, used directly as the storage cut coefficient — see [cut management](cut-management.md))
+
+**Why this design**: By LP duality, the dual of the fixing constraint $v^{in}_h = \hat{v}_h$ captures the total sensitivity $\partial Q_t / \partial \hat{v}_h$, automatically accounting for all downstream effects through water balance, FPHA, and generic constraints. This eliminates the need to combine duals from multiple constraint types to compute the storage cut coefficient — a single dual value suffices. This is the same "fishing constraint" technique used by SDDP.jl and is analogous to how the AR lag fixing constraints (§5a) work for inflow lags.
+
+**Constraint count**: $N$ total constraints, where $N = |\mathcal{H}|$ is the number of operating hydros.
+
+> **Implementation notes**:
+>
+> - The incoming storage variable $v^{in}_h$ has **no bounds** — its value is entirely determined by the fixing constraint. The outgoing storage $v_h$ retains its original bounds (§8).
+> - The RHS value $\hat{v}_h$ is patched per scenario during the forward pass ([Training Loop SS4.2a](../architecture/training-loop.md)) and backward pass, at row $h$ ([Solver Abstraction SS2.2](../architecture/solver-abstraction.md)).
+> - The dual extraction for cut coefficients reads $\pi^{fix}_h$ from the contiguous top region of the dual vector, where the row-column index symmetry enables a single slice read for all storage cut coefficients ([Training Loop SS7.2](../architecture/training-loop.md)).
+> - The column for $v^{in}_h$ is placed after the state prefix (after outgoing storage and lag variables) — see [Solver Abstraction SS2.1](../architecture/solver-abstraction.md). The incoming storage variables are **not** part of the state vector; they are auxiliary variables whose only purpose is to provide a clean dual for cut coefficient extraction.
 
 ## 5. AR Inflow Dynamics
 
@@ -247,7 +277,7 @@ $$
 g_{h,k} \leq \gamma^m_0 + \gamma^m_v \cdot v^{avg}_h + \gamma^m_q \cdot q_{h,k} + \gamma^m_s \cdot s_{h,k}
 $$
 
-where $v^{avg}_h$ is the average storage during the stage.
+where $v^{avg}_h = (v^{in}_h + v_h)/2$ is the average storage during the stage, with $v^{in}_h$ being the incoming storage LP variable (§4a) and $v_h$ the end-of-stage storage.
 
 **Generation Bounds** (per hydro $h$, block $k$):
 

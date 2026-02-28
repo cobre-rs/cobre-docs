@@ -24,13 +24,13 @@ The cut coefficients are dense — every state variable (all storage volumes and
 
 ## 2. Dual Variable Extraction
 
-After solving the stage $t$ subproblem for trial state $\hat{x}_{t-1}$ and scenario $\omega_t$, the cut coefficients are derived from the LP dual variables:
+After solving the stage $t$ subproblem for trial state $\hat{x}_{t-1}$ and scenario $\omega_t$, the cut coefficients are derived from the LP dual variables of the **fixing constraints** — the equality constraints that bind each state variable to its incoming value.
 
-The general formula follows from the LP envelope theorem: for state variable $\hat{x}_j$ that appears as the RHS of constraint $i$ with coefficient $c_{ij}$, its contribution to the cut gradient is $\pi_i \cdot c_{ij}$. When $c_{ij} = 1$ (state variable appears directly as the RHS), the cut coefficient equals the dual. When $c_{ij} \neq 1$, a scaling factor is required.
+Both storage and inflow lags use the same pattern: an incoming-state LP variable is fixed to the trial value via an equality constraint, and the dual of that constraint gives the cut coefficient directly:
 
 | Constraint                            | Dual Variable        | Cut Coefficient                             | Units     |
 | ------------------------------------- | -------------------- | ------------------------------------------- | --------- |
-| Water balance (hydro $h$)             | $\pi^{wb}_h$         | $\pi^v_{t,h} = \pi^{wb}_h$                  | \$/hm³    |
+| Storage fixing (hydro $h$)            | $\pi^{fix}_h$        | $\pi^v_{t,h} = \pi^{fix}_h$                 | \$/hm³    |
 | AR lag fixing (hydro $h$, lag $\ell$) | $\pi^{lag}_{h,\ell}$ | $\pi^{lag}_{t,h,\ell} = \pi^{lag}_{h,\ell}$ | \$/(m³/s) |
 
 The cut intercept ensures the cut passes through the trial point:
@@ -41,15 +41,9 @@ $$
 
 where $Q_t(\hat{x}_{t-1}, \omega_t)$ is the optimal objective value of the stage $t$ subproblem.
 
-**Sign convention and coefficient factors**: By the LP envelope theorem, $\partial Q_t / \partial \hat{x}_j = \sum_i \pi_i \cdot c_{ij}$ where $c_{ij}$ is the coefficient of $\hat{x}_j$ in constraint $i$'s RHS. For the **water balance constraint**, the incoming storage $\hat{v}_h$ appears on the RHS with coefficient $+1$ (the constraint is $v_h^{end} = \hat{v}_h + \text{flows}$), so the cut coefficient equals the water balance dual directly. For the **AR lag fixing constraints**, the incoming lag $\hat{a}_{h,\ell}$ appears on the RHS with coefficient $+1$ (the constraint is $a_{h,\ell} = \hat{a}_{h,\ell}$), so no scaling is needed here either. Note that the AR autoregressive coefficients $\psi_\ell$ appear in the AR dynamics constraint (see [LP Formulation §5](lp-formulation.md)) multiplying the LP variable $a_{h,\ell}$, not the incoming state $\hat{a}_{h,\ell}$ — these are separate constraints. For the FPHA and generic constraint cases below, $c_{ij} \neq 1$, requiring the scaling factors described in the notes. See [Notation Conventions §5.4](../overview/notation-conventions.md) for the complete derivation.
+**Sign convention**: By the LP envelope theorem, $\partial Q_t / \partial \hat{x}_j = \pi_j$ where $\pi_j$ is the dual of the fixing constraint $x^{in}_j = \hat{x}_j$. Since the incoming state $\hat{x}_j$ appears on the RHS of its fixing constraint with coefficient $+1$, the cut coefficient equals the fixing constraint dual directly — no scaling factors are needed for either storage or inflow lags. The fixing constraint dual automatically captures all downstream effects: for storage, this includes contributions from the water balance, FPHA hyperplanes, and any generic constraints that reference the incoming storage variable $v^{in}_h$ (see [LP Formulation §4a](lp-formulation.md)).
 
-> **Note on FPHA contribution**: For hydros using the FPHA production model, the storage cut coefficient has an additional term from the FPHA hyperplane duals. The FPHA constraints involve $v^{avg}_h = (\hat{v}_h + v_h)/2$, so the incoming storage $\hat{v}_h$ contributes with a factor of $\frac{1}{2}$:
->
-> $$\pi^v_{t,h} = \pi^{wb}_h + \frac{1}{2} \sum_m \pi_m^{fpha} \cdot \gamma_v^m$$
->
-> where $\pi_m^{fpha}$ is the dual of FPHA hyperplane $m$ and $\gamma_v^m$ is its storage coefficient. This term captures how marginal changes in incoming storage affect generation capacity through head variation. See [Hydro Production Models §2.10](hydro-production-models.md) for details.
-
-> **Note on generic constraints**: If generic constraints (see [LP Formulation §10](lp-formulation.md)) involve state variables, their duals $\pi^{gen}_c$ also contribute to cut coefficients. The coefficient for each state variable is the sum of all dual contributions from constraints where that state variable appears on the RHS.
+> **Design note**: This "fishing constraint" approach (introducing an incoming-state LP variable fixed to the trial value) is the standard technique used by SDDP.jl and other modern SDDP implementations. It eliminates the need to combine duals from multiple constraint types (water balance, FPHA, generic) to compute storage cut coefficients — the LP solver handles this automatically through the fixing constraint dual. See [LP Formulation §4a](lp-formulation.md) for the constraint definition.
 
 ## 3. Single-Cut Aggregation
 

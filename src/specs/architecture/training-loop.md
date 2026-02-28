@@ -361,15 +361,15 @@ Step c above ("Build stage LP") decomposes into the LP rebuild sequence ([Solver
 
 Three categories of patches are applied, all targeting constraint RHS values:
 
-**Category 1 — Incoming state (water balance RHS)**
+**Category 1 — Incoming state (storage fixing RHS)**
 
-For each operating hydro $h \in [0, N)$, fix the incoming storage in the water balance constraint:
+For each operating hydro $h \in [0, N)$, fix the incoming storage in the storage fixing constraint:
 
 ```
 patch(row = h, value = state[h])
 ```
 
-This sets $\hat{v}_{h}$ (the incoming storage from the previous stage) as the RHS contribution to water balance row $h$ ([Solver Abstraction SS2.2](./solver-abstraction.md)). The water balance row's RHS encodes the incoming storage term so that the LP solves for the outgoing storage $v_h$.
+This sets $\hat{v}_{h}$ (the incoming storage from the previous stage) as the RHS of the storage fixing constraint at row $h$ ([Solver Abstraction SS2.2](./solver-abstraction.md)). The fixing constraint binds the incoming storage LP variable $v^{in}_h$ to this value; $v^{in}_h$ then propagates through the water balance, FPHA, and generic constraints as an LP variable (see [LP Formulation §4a](../math/lp-formulation.md)).
 
 **Category 2 — Incoming state (AR lag fixing RHS)**
 
@@ -393,7 +393,7 @@ where `ar_dynamics_row(h)` is the row index of hydro $h$'s inflow AR dynamics co
 
 **Patch count formula:**
 
-$$n_{patches} = \underbrace{N}_{\text{water balance}} + \underbrace{N \cdot L}_{\text{lag fixing}} + \underbrace{N}_{\text{noise fixing}} = N \cdot (2 + L)$$
+$$n_{patches} = \underbrace{N}_{\text{storage fixing}} + \underbrace{N \cdot L}_{\text{lag fixing}} + \underbrace{N}_{\text{noise fixing}} = N \cdot (2 + L)$$
 
 At production scale ($N = 160$, $L = 12$): $n_{patches} = 160 \times (2 + 12) = 2{,}240$.
 
@@ -401,22 +401,22 @@ At production scale ($N = 160$, $L = 12$): $n_{patches} = 160 \times (2 + 12) = 
 
 Using the system from [Solver Abstraction SS2.4](./solver-abstraction.md) ($N = 3$, $L = 2$):
 
-| Patch # | Category      | Row Formula             |  Row | Value                          |
-| ------: | ------------- | ----------------------- | ---: | ------------------------------ |
-|       0 | Water balance | $h = 0$                 |    0 | $\hat{v}_0$ (storage H0)       |
-|       1 | Water balance | $h = 1$                 |    1 | $\hat{v}_1$ (storage H1)       |
-|       2 | Water balance | $h = 2$                 |    2 | $\hat{v}_2$ (storage H2)       |
-|       3 | AR lag fixing | $N + 0 \cdot N + 0 = 3$ |    3 | $\hat{a}_{0,0}$ (H0 lag 0)     |
-|       4 | AR lag fixing | $N + 0 \cdot N + 1 = 4$ |    4 | $\hat{a}_{1,0}$ (H1 lag 0)     |
-|       5 | AR lag fixing | $N + 0 \cdot N + 2 = 5$ |    5 | $\hat{a}_{2,0}$ (H2 lag 0)     |
-|       6 | AR lag fixing | $N + 1 \cdot N + 0 = 6$ |    6 | $\hat{a}_{0,1}$ (H0 lag 1)     |
-|       7 | AR lag fixing | $N + 1 \cdot N + 1 = 7$ |    7 | $\hat{a}_{1,1}$ (H1 lag 1)     |
-|       8 | AR lag fixing | $N + 1 \cdot N + 2 = 8$ |    8 | $\hat{a}_{2,1}$ (H2 lag 1)     |
-|       9 | Noise fixing  | `ar_dynamics_row(0)`    | (\*) | $\varepsilon_{0,t}$ (H0 noise) |
-|      10 | Noise fixing  | `ar_dynamics_row(1)`    | (\*) | $\varepsilon_{1,t}$ (H1 noise) |
-|      11 | Noise fixing  | `ar_dynamics_row(2)`    | (\*) | $\varepsilon_{2,t}$ (H2 noise) |
+| Patch # | Category       | Row Formula             |  Row | Value                          |
+| ------: | -------------- | ----------------------- | ---: | ------------------------------ |
+|       0 | Storage fixing | $h = 0$                 |    0 | $\hat{v}_0$ (storage H0)       |
+|       1 | Storage fixing | $h = 1$                 |    1 | $\hat{v}_1$ (storage H1)       |
+|       2 | Storage fixing | $h = 2$                 |    2 | $\hat{v}_2$ (storage H2)       |
+|       3 | AR lag fixing  | $N + 0 \cdot N + 0 = 3$ |    3 | $\hat{a}_{0,0}$ (H0 lag 0)     |
+|       4 | AR lag fixing  | $N + 0 \cdot N + 1 = 4$ |    4 | $\hat{a}_{1,0}$ (H1 lag 0)     |
+|       5 | AR lag fixing  | $N + 0 \cdot N + 2 = 5$ |    5 | $\hat{a}_{2,0}$ (H2 lag 0)     |
+|       6 | AR lag fixing  | $N + 1 \cdot N + 0 = 6$ |    6 | $\hat{a}_{0,1}$ (H0 lag 1)     |
+|       7 | AR lag fixing  | $N + 1 \cdot N + 1 = 7$ |    7 | $\hat{a}_{1,1}$ (H1 lag 1)     |
+|       8 | AR lag fixing  | $N + 1 \cdot N + 2 = 8$ |    8 | $\hat{a}_{2,1}$ (H2 lag 1)     |
+|       9 | Noise fixing   | `ar_dynamics_row(0)`    | (\*) | $\varepsilon_{0,t}$ (H0 noise) |
+|      10 | Noise fixing   | `ar_dynamics_row(1)`    | (\*) | $\varepsilon_{1,t}$ (H1 noise) |
+|      11 | Noise fixing   | `ar_dynamics_row(2)`    | (\*) | $\varepsilon_{2,t}$ (H2 noise) |
 
-(\*) AR dynamics rows are in the middle region ([Solver Abstraction SS2.2](./solver-abstraction.md)), starting at offset $n_{cut\_relevant} + N_{bus} \times N_{blk}$ (after load balance rows). The exact row indices depend on the system's bus and block counts.
+(\*) AR dynamics rows are in the static non-dual region ([Solver Abstraction SS2.2](./solver-abstraction.md)). The exact row indices depend on the system's bus and block counts.
 
 Total: $n_{patches} = 3 \times (2 + 2) = 12$ patches, matching the formula.
 
@@ -587,7 +587,7 @@ No index gathering or scattering is required — the LP column layout is designe
 
 Transferring state from stage $t$ to stage $t+1$ requires patching the next stage's LP with the outgoing state values. This uses the `set_row_bounds` interface ([Solver Interface Trait SS2.3](./solver-interface-trait.md)) with two categories of patches:
 
-**Storage transfer**: For each operating hydro $h \in [0, N)$, patch the water balance constraint RHS:
+**Storage transfer**: For each operating hydro $h \in [0, N)$, patch the storage fixing constraint RHS:
 
 ```
 patch(row = h, value = state[h])
@@ -599,7 +599,7 @@ patch(row = h, value = state[h])
 patch(row = N + ℓ·N + h, value = state[N + ℓ·N + h])
 ```
 
-Both use the row index formulas from [Solver Abstraction SS2.2](./solver-abstraction.md). The patch row index for lag values matches the column index of the corresponding state variable — this symmetry is by design and simplifies the transfer logic to iterating over state indices.
+Both use the row index formulas from [Solver Abstraction SS2.2](./solver-abstraction.md). The patch row index for state variable $r$ matches column $r$ — the row-column symmetry is exact for the entire fixing constraint region $[0, n_{state})$.
 
 The state transfer patches are a subset of the full forward pass patch sequence (SS4.2a, categories 1 and 2). The noise innovation patches (category 3) are separate because they depend on the scenario realization, not the incoming state.
 
@@ -691,24 +691,22 @@ The `StageIndexer` provides a read-only index map for accessing LP primal and du
 /// Shared across all threads within an MPI rank (`Send + Sync`).
 /// Equal on all ranks (since LPs differ only by noise innovations, not structure).
 pub struct StageIndexer {
-    /// Column range for storage volumes: [0, N).
+    /// Column range for outgoing storage volumes: [0, N).
     pub storage: Range<usize>,
     /// Column range for inflow lag variables: [N, N*(1+L)).
     pub inflow_lags: Range<usize>,
-    /// Column index of the future cost variable θ: N*(1+L).
+    /// Column range for incoming storage variables: [N*(1+L), N*(2+L)).
+    pub storage_in: Range<usize>,
+    /// Column index of the future cost variable θ: N*(2+L).
     pub theta: usize,
     /// Total state dimension: N*(1+L). Equal to storage.len() + inflow_lags.len().
     pub n_state: usize,
-    /// Row range for water balance constraints: [0, N).
-    pub water_balance: Range<usize>,
+    /// Row range for storage fixing constraints: [0, N).
+    /// Dual of row h gives the storage cut coefficient π^v_h directly.
+    pub storage_fixing: Range<usize>,
     /// Row range for AR lag fixing constraints: [N, N+N*L).
+    /// Dual of row (N + ℓ*N + h) gives the lag cut coefficient π^lag_{h,ℓ} directly.
     pub lag_fixing: Range<usize>,
-    /// Row range for FPHA hyperplane constraints: [N+N*L, N+N*L+n_fpha).
-    pub fpha_hyperplanes: Range<usize>,
-    /// Row range for generic volume constraints: [N+N*L+n_fpha, n_cut_relevant).
-    pub generic_volume: Range<usize>,
-    /// Total count of cut-relevant constraint rows: N + N*L + n_fpha + n_gvc.
-    pub n_cut_relevant: usize,
     /// Number of operating hydros at this stage.
     pub hydro_count: usize,
     /// Maximum PAR order across all operating hydros at this stage.
@@ -722,6 +720,7 @@ pub struct StageIndexer {
 - **Immutable after construction** (`Send + Sync`): The indexer contains only `usize` values and `Range<usize>` values. It is never mutated after construction, making it safe to share across all threads within an MPI rank without synchronization.
 - **Equal across all ranks**: All MPI ranks construct the same LP structure for each stage — the LP layout depends only on the system definition and stage configuration, not on the rank's assigned scenarios. Only noise innovation values differ across ranks and scenarios. Therefore, all ranks produce identical indexers.
 - **Owned by the stage definition**: The indexer is associated with the stage template ([Solver Interface Trait SS4.4](./solver-interface-trait.md)), not with any solver instance. It outlives individual solver invocations and is shared read-only.
+- **Row–column symmetry for cut extraction**: The dual-extraction region contains exactly `n_state` rows (storage fixing + lag fixing), and the state prefix contains `n_state` columns (outgoing storage + lags). Row $r$'s dual is the cut coefficient for state variable at column $r$. This symmetry eliminates all index translation — `cut_coefficients[0..n_state] = dual[0..n_state]`.
 
 #### 5.5.2 Indexer Usage Examples
 
@@ -730,8 +729,9 @@ pub struct StageIndexer {
 let state = &solution.primal[indexer.storage.start..indexer.inflow_lags.end];
 assert_eq!(state.len(), indexer.n_state);
 
-// Extract cut-relevant duals for cut coefficient computation
-let cut_duals = &solution.dual[0..indexer.n_cut_relevant];
+// Extract cut coefficients directly from dual solution (single contiguous slice)
+let cut_coeffs = &solution.dual[indexer.storage_fixing.start..indexer.lag_fixing.end];
+assert_eq!(cut_coeffs.len(), indexer.n_state);
 
 // Access a specific hydro's storage value (hydro 3)
 let h3_storage = solution.primal[indexer.storage.start + 3];
@@ -740,8 +740,8 @@ let h3_storage = solution.primal[indexer.storage.start + 3];
 // Formula: inflow_lags.start + lag * hydro_count + hydro
 let h2_lag1 = solution.primal[indexer.inflow_lags.start + 1 * indexer.hydro_count + 2];
 
-// Patch water balance RHS for incoming storage (hydro h)
-let wb_row = indexer.water_balance.start + h;
+// Patch storage fixing RHS for incoming storage (hydro h)
+let fix_row = indexer.storage_fixing.start + h;
 
 // Patch lag fixing RHS for (hydro h, lag ℓ)
 let lag_row = indexer.lag_fixing.start + l * indexer.hydro_count + h;
@@ -754,19 +754,17 @@ let theta_value = solution.primal[indexer.theta];
 
 #### 5.5.3 Worked Example (3-Hydro AR(2) System)
 
-Using the system from [Solver Abstraction SS2.4](./solver-abstraction.md) ($N = 3$, $L = 2$, $n_{fpha} = 4$, $n_{gvc} = 0$):
+Using the system from [Solver Abstraction SS2.4](./solver-abstraction.md) ($N = 3$, $L = 2$):
 
 ```rust
 let indexer = StageIndexer {
-    storage: 0..3,          // columns 0, 1, 2
-    inflow_lags: 3..9,      // columns 3, 4, 5, 6, 7, 8
-    theta: 9,               // column 9
-    n_state: 9,             // 3 * (1 + 2)
-    water_balance: 0..3,    // rows 0, 1, 2
-    lag_fixing: 3..9,       // rows 3, 4, 5, 6, 7, 8
-    fpha_hyperplanes: 9..13, // rows 9, 10, 11, 12
-    generic_volume: 13..13, // empty range (n_gvc = 0)
-    n_cut_relevant: 13,     // 3 + 6 + 4 + 0
+    storage: 0..3,           // columns 0, 1, 2 (outgoing storage)
+    inflow_lags: 3..9,       // columns 3, 4, 5, 6, 7, 8
+    storage_in: 9..12,       // columns 9, 10, 11 (incoming storage)
+    theta: 12,               // column 12
+    n_state: 9,              // 3 * (1 + 2)
+    storage_fixing: 0..3,    // rows 0, 1, 2
+    lag_fixing: 3..9,        // rows 3, 4, 5, 6, 7, 8
     hydro_count: 3,
     max_par_order: 2,
 };
@@ -775,17 +773,16 @@ let indexer = StageIndexer {
 let state = &solution.primal[indexer.storage.start..indexer.inflow_lags.end];
 // state = [v_0, v_1, v_2, a_{0,0}, a_{1,0}, a_{2,0}, a_{0,1}, a_{1,1}, a_{2,1}]
 
+// Extract cut coefficients: dual[0..9] — a single contiguous slice of 9 f64 values
+let cut_coeffs = &solution.dual[indexer.storage_fixing.start..indexer.lag_fixing.end];
+// cut_coeffs = [π^fix_0, π^fix_1, π^fix_2, π^lag_{0,0}, ..., π^lag_{2,1}]
+// Row r's dual IS the cut coefficient for state variable at column r
+
 // H1 storage (hydro 1): primal[0 + 1] = primal[1]
 let h1_storage = solution.primal[indexer.storage.start + 1];
 
 // H2 lag 1 (hydro 2, lag 1): primal[3 + 1*3 + 2] = primal[8]
 let h2_lag1 = solution.primal[indexer.inflow_lags.start + 1 * indexer.hydro_count + 2];
-
-// Cut-relevant duals: dual[0..13] — includes water balance, lag fixing, FPHA
-let cut_duals = &solution.dual[0..indexer.n_cut_relevant];
-// The first 9 duals are the cut coefficients (state variables appear as RHS with coefficient +1) for state variables 0..8
-// Duals 9..12 are FPHA plane duals contributing to storage coefficients via
-// the precomputed mapping (see Cut Management Implementation SS5)
 ```
 
 ## 6. Backward Pass
@@ -861,12 +858,12 @@ where:
 
 ### 7.2 Derivation from LP Duality
 
-The cut coefficients are derived from the dual variables of the backward LP's state-linking constraints:
+The cut coefficients are derived from the dual variables of the **fixing constraints** — the equality constraints that bind each incoming state variable to its trial value. Both storage and inflow lags use the same pattern:
 
-- **Storage**: The water balance constraint links incoming storage $v_{h,t-1}$ to outgoing storage. Its dual $\pi^v_h$ is the cut coefficient, representing the marginal value of an additional unit of storage at the previous stage (the incoming storage appears on the RHS with coefficient +1).
-- **AR inflow lags**: The lag fixing constraints bind each lag variable to its incoming value. Their duals $\pi^{lag}_{h,\ell}$ are the cut coefficients, representing the marginal value of inflow history (the incoming lag appears on the RHS of each fixing constraint with coefficient +1; the AR autoregressive coefficients $\psi_\ell$ appear in the dynamics constraint on the LP variable, not on the incoming state).
-- **FPHA duals**: For hydros using FPHA, the hyperplane constraint duals contribute additional terms to $\pi^v_h$ because the FPHA planes depend on storage (head). See [Cut Management SS2](../math/cut-management.md).
-- **Generic constraint duals**: When generic constraints involve state variables, their duals also contribute to cut coefficients. The mapping from generic constraint duals to state variable coefficients is static (determined at input loading time) and should be precomputed once. See [Cut Management Implementation](./cut-management-impl.md).
+- **Storage**: The storage fixing constraint $v^{in}_h = \hat{v}_h$ binds the incoming storage LP variable to its trial value. Its dual $\pi^{fix}_h$ is the storage cut coefficient directly: $\pi^v_h = \pi^{fix}_h$. By the LP envelope theorem, this dual automatically captures all downstream effects — water balance, FPHA hyperplanes, and any generic constraints that reference $v^{in}_h$ — without manual combination. See [LP Formulation §4a](../math/lp-formulation.md).
+- **AR inflow lags**: The lag fixing constraint $a^{in}_{h,\ell} = \hat{a}_{h,\ell}$ binds each lag variable to its incoming value. Its dual $\pi^{lag}_{h,\ell}$ is the lag cut coefficient directly (the AR autoregressive coefficients $\psi_\ell$ appear in the dynamics constraint on the LP variable, not on the incoming state).
+
+Cut coefficient extraction is a single contiguous slice read from the dual solution: `cut_coefficients[0..n_state] = dual[0..n_state]`, where the first $N$ duals are storage fixing duals and the remaining $N \cdot L$ are lag fixing duals. See [Solver Abstraction SS2.2](./solver-abstraction.md) for the row layout and [Cut Management §2](../math/cut-management.md) for the mathematical derivation.
 
 The intercept $\alpha$ is computed from the LP objective value and the state-dependent terms:
 

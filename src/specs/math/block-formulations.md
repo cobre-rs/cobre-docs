@@ -77,15 +77,13 @@ Inter-block storages $v_{h,k}$ for $k < |\mathcal{K}|$ are internal LP variables
 
 ### 2.5 Dual Extraction for Cuts
 
-For cut generation, we need the dual of block 1's water balance (containing $\hat{v}_h$):
+In chronological mode, the storage fixing constraint $v^{in}_h = \hat{v}_h$ binds the incoming storage LP variable to its trial value (see [LP Formulation §4a](lp-formulation.md)). The dual of this fixing constraint gives the storage cut coefficient directly:
 
 $$
-\pi^v_h = \pi^{wb}_{h,1}
+\pi^v_h = \pi^{fix}_h
 $$
 
-For the full cut coefficient definition (including FPHA and generic constraint contributions), see [Cut Management §2](cut-management.md).
-
-> **FPHA dual propagation in chronological mode**: When a hydro uses the FPHA production model, the FPHA constraints involve $v^{avg}_h = (\hat{v}_h + v_h)/2$ where $v_h = v_{h,|\mathcal{K}|}$ (the last block's storage). The incoming storage $\hat{v}_h$ contributes to the FPHA constraint both directly (through $v^{avg}$) and indirectly (through the chain of inter-block water balances $\hat{v}_h \to v_{h,1} \to \ldots \to v_{h,|\mathcal{K}|}$). LP duality propagates this automatically: the dual of block 1's water balance $\pi^{wb}_{h,1}$ captures the full marginal value of incoming storage, including the downstream effect on FPHA constraints through the inter-block chain. No special handling is required beyond extracting block 1's dual.
+By the LP envelope theorem, this dual automatically captures all downstream effects through the chain of inter-block water balances ($v^{in}_h \to v_{h,1} \to \ldots \to v_{h,|\mathcal{K}|}$), FPHA constraints, and generic constraints. No special handling or dual combination is required. See [Cut Management §2](cut-management.md).
 
 ### 2.6 Characteristics
 
@@ -111,7 +109,7 @@ For the full cut coefficient definition (including FPHA and generic constraint c
 
 When running in **simulation-only**, **warm-start**, or **checkpoint resume** modes, the block configuration in the current input data must be compatible with the policy (cuts) that was previously trained. Specifically:
 
-1. **`block_mode` must match** per stage — cuts trained with parallel blocks encode a different water balance dual structure than cuts trained with chronological blocks. Using a policy with mismatched block mode produces incorrect future cost evaluations.
+1. **`block_mode` must match** per stage — cuts trained with parallel blocks encode a different LP structure (water balance, inter-block constraints) than cuts trained with chronological blocks. Using a policy with mismatched block mode produces incorrect future cost evaluations.
 
 2. **Block count and durations must match** per stage — the number of blocks, their ordering, and their durations (τ_k) affect the LP structure from which cut coefficients were derived. Any change invalidates the existing cuts.
 
@@ -143,7 +141,7 @@ See [Deferred Features §C.10](../deferred.md) for the full description.
 - [Notation conventions](../overview/notation-conventions.md) — variable and set definitions ($v_h$, $\hat{v}_h$, $\mathcal{K}$, $\tau_k$, $w_k$)
 - [System elements](system-elements.md) — hydro plant element description and decision variables
 - [LP formulation](lp-formulation.md) — how block formulations integrate into the assembled LP
-- [Cut management](cut-management.md) — cut coefficient extraction from water balance duals (§2.5)
+- [Cut management](cut-management.md) — cut coefficient extraction from fixing constraint duals (§2)
 - [Hydro production models](hydro-production-models.md) — production function constraints that operate within each block
 - [Input scenarios](../data-model/input-scenarios.md) — per-stage `block_mode` field in `stages.json` (§1.5)
 - [Training loop](../architecture/training-loop.md) — training phase that produces the policy (must persist block configuration metadata)

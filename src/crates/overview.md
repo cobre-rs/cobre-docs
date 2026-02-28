@@ -14,17 +14,17 @@ cobre-cli
   │           └── ferrompi (optional, mpi feature only)
   ├── cobre-io
   │     └── cobre-core
-  ├── cobre-tui                  [NEW]
+  ├── cobre-tui                  
   │     └── cobre-core           (event type definitions only)
   └── cobre-core
 
-cobre-mcp                        [NEW, standalone server binary]
+cobre-mcp                        [standalone server binary]
   ├── cobre-sddp
   ├── cobre-io
   ├── cobre-comm                 (tcp,shm features — no MPI dependency)
   └── cobre-core
 
-cobre-python                     [NEW, PyO3 cdylib]
+cobre-python                     [PyO3 cdylib]
   ├── cobre-sddp
   ├── cobre-io
   ├── cobre-comm                 (tcp,shm features — no MPI dependency)

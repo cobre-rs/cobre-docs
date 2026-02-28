@@ -30,26 +30,28 @@ State variables are placed contiguously at the beginning of the variable vector.
 
 ```
 Column index:
-  0          N        N+N       N+2N     ...  N+L·N   N+L·N+1     n_cols
-  ├──────────┼─────────┼─────────┼────────────┼────────┼───────────────┤
-  │ storage  │ lag 0   │ lag 1   │   ...      │ lag L-1│  θ  │ decision│
-  │ v_0..v_{N-1} │ a_{0,0}..a_{N-1,0} │ ...  │        │     │ vars    │
-  └──────────┴─────────┴─────────┴────────────┴────────┴─────┴─────────┘
-  ╰──────────── state prefix (n_state columns) ────────╯
+  0              N                   N+N       N+2N  ...  N+L·N     N+L·N+N    n_state+N+1          n_cols
+  ├──────────────┼────────────────────┼─────────┼────────────┼──────────┼──────────┼──────┼───────────┤
+  │ storage      │ lag 0              │ lag 1   │    ...     │ lag L-1  │   v^in   │  θ   │ decision  │
+  │ v_0..v_{N-1} │ a_{0,0}..a_{N-1,0} │  ...    │            │ v^in_0.. │          │      │   vars    │ └──────────────┴────────────────────┴─────────┴────────────┴──────────┴──────────┴──────┴───────────┘
+  ╰──────────────────────────── state prefix (n_state columns) ────────────────────╯╰───── aux ───────╯
 ```
 
 **Exact index formulas:**
 
-| Column Index Formula          | Contents                                                                   | Count       |
-| ----------------------------- | -------------------------------------------------------------------------- | ----------- |
-| $h$                           | Storage volume $v_h$ for hydro $h \in [0, N)$                              | $N$         |
-| $N + \ell \cdot N + h$        | AR inflow lag $a_{h,\ell}$ for hydro $h \in [0, N)$, lag $\ell \in [0, L)$ | $N \cdot L$ |
-| $N + L \cdot N = N(1 + L)$    | Future cost variable $\theta$                                              | $1$         |
-| $[N(1 + L) + 1, \; n_{cols})$ | Decision variables (see ordering convention below)                         | varies      |
+| Column Index Formula          | Contents                                                                                                   | Count       |
+| ----------------------------- | ---------------------------------------------------------------------------------------------------------- | ----------- |
+| $h$                           | Storage volume $v_h$ for hydro $h \in [0, N)$                                                              | $N$         |
+| $N + \ell \cdot N + h$        | AR inflow lag $a_{h,\ell}$ for hydro $h \in [0, N)$, lag $\ell \in [0, L)$                                 | $N \cdot L$ |
+| $N(1 + L) + h$                | Incoming storage $v^{in}_h$ for hydro $h \in [0, N)$ — see [LP Formulation §4a](../math/lp-formulation.md) | $N$         |
+| $N(1 + L) + N = N(2 + L)$     | Future cost variable $\theta$                                                                              | $1$         |
+| $[N(2 + L) + 1, \; n_{cols})$ | Decision variables (see ordering convention below)                                                         | varies      |
 
 **State dimension:**
 
 $$n_{state} = N + N \cdot L = N \cdot (1 + L)$$
+
+**Incoming storage variables**: The $N$ columns at positions $[N(1+L), N(2+L))$ hold the incoming storage variables $v^{in}_h$, introduced by the storage fixing constraint ([LP Formulation §4a](../math/lp-formulation.md)). These are **not** part of the state vector — they are auxiliary variables whose only purpose is to provide a clean dual for cut coefficient extraction. They have no bounds (their values are fully determined by the fixing constraints). Placing them after the state prefix but before $\theta$ keeps the state prefix contiguous and undisturbed.
 
 **Uniform lag storage**: All operating hydros store $L$ lags regardless of their individual AR order $P_h$. Hydros with $P_h < L$ have zero-valued AR coefficients ($\psi_\ell = 0$ for $\ell > P_h$) in their lag positions beyond their actual order. This uniform stride enables:
 
@@ -67,7 +69,7 @@ This copies $N$ storage values plus $N \cdot (L-1)$ lag values (lags $\ell = 0, 
 
 $$n_{transfer} = N \cdot (1 + (L - 1)) = N \cdot L$$
 
-**Decision variable ordering** (columns $[N(1+L)+1, \; n_{cols})$): Decision variables are ordered by entity type, then by entity ID within type, then by block within entity. This ordering is secondary to performance (decision variables are not in the state vector) but important for debugging and output interpretation.
+**Decision variable ordering** (columns $[N(2+L)+1, \; n_{cols})$): Decision variables are ordered by entity type, then by entity ID within type, then by block within entity. This ordering is secondary to performance (decision variables are not in the state vector) but important for debugging and output interpretation.
 
 | Sub-region (in order) | Contents                                                                                                                                                          | Count                                              |
 | --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------- |
@@ -83,7 +85,8 @@ $$n_{transfer} = N \cdot (1 + (L - 1)) = N \cdot L$$
 **Key benefits**:
 
 - The complete state vector (storage + AR lags) occupies columns $[0, n_{state})$. Transferring state from one stage to the next is a single contiguous slice copy -- no gathering from scattered column positions.
-- The $\theta$ variable sits at a fixed, easily computed position $n_{state}$ immediately after the state prefix.
+- The incoming storage variables $v^{in}_h$ occupy columns $[n_{state}, n_{state} + N)$, separated from the state prefix. They are auxiliary variables for dual extraction, not part of the state.
+- The $\theta$ variable sits at a fixed, easily computed position $n_{state} + N = N(2 + L)$ immediately after the incoming storage block.
 - Decision variables follow a predictable type-then-ID-then-block ordering for debuggability.
 
 ### 2.2 Row Layout (Constraints)
@@ -96,54 +99,60 @@ Constraints are ordered in three regions. All index formulas use 0-based indexin
 | **Static non-dual region**    | `[n_dual_relevant, n_static)`      | All other static constraints: load balance, generation/flow bounds, penalty bounds, remaining constraints | Static per stage                                     |
 | **Dynamic constraint region** | `[n_static, n_static + n_dynamic)` | Dynamic constraints (added at runtime via batch `add_rows`; e.g., Benders cuts in SDDP)                   | Rebuilt each iteration via batch `add_rows`          |
 
-**Top region — dual-extraction constraints with exact sub-region boundaries:**
+**Top region — fixing constraints for cut coefficient extraction:**
 
-The dual-extraction region groups all constraints whose dual multipliers are needed for Benders cut coefficient computation. Placing them contiguously enables a single slice read from the dual vector rather than gathering from scattered positions. The sub-regions within the dual-extraction region have exact index formulas:
+The dual-extraction region contains exactly the **fixing constraints** — the equality constraints that bind each incoming state variable to its trial value. Their duals are the cut coefficients, read as a single contiguous slice from the dual vector. No other constraints (water balance, FPHA, generic) appear in this region; their contributions to the marginal value of incoming state are captured automatically by LP duality through the fixing constraint duals (see [LP Formulation §4a](../math/lp-formulation.md) and [Cut Management §2](../math/cut-management.md)).
 
 **Row layout diagram (dual-extraction region):**
 
 ```
 Row index:
-  0          N         N+N·L        N+N·L+n_fpha       n_dual_relevant
-  ├──────────┼──────────┼─────────────┼───────────────────┤
-  │ water    │ AR lag   │ FPHA        │ generic volume    │
-  │ balance  │ fixing   │ hyperplanes │ constraints       │
-  │ (N rows) │(N·L rows)│(n_fpha rows)│ (n_gvc rows)      │
-  └──────────┴──────────┴─────────────┴───────────────────┘
+  0          N         N+N·L = n_state
+  ├──────────┼──────────┤
+  │ storage  │ AR lag   │
+  │ fixing   │ fixing   │
+  │ (N rows) │(N·L rows)│
+  └──────────┴──────────┘
 ```
 
 **Exact row index formulas (dual-extraction region):**
 
-| Row Index Formula              | Contents                                                                                                                                                                                                                                                 | Count       | Dual Symbol          |
-| ------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------- | -------------------- |
-| $h$                            | Water balance for hydro $h \in [0, N)$ — see [LP Formulation SS4](../math/lp-formulation.md)                                                                                                                                                             | $N$         | $\pi^{wb}_h$         |
-| $N + \ell \cdot N + h$         | AR lag fixing constraint for hydro $h \in [0, N)$, lag $\ell \in [0, L)$ — see [LP Formulation SS5](../math/lp-formulation.md)                                                                                                                           | $N \cdot L$ | $\pi^{lag}_{h,\ell}$ |
-| $N + N \cdot L + f$            | FPHA hyperplane constraint $f \in [0, n_{fpha})$ where $n_{fpha} = \sum_{h \in \mathcal{H}^{fpha}} M_h \cdot N_{blk}$ is the total number of FPHA planes across all FPHA-model hydros times blocks — see [LP Formulation SS6](../math/lp-formulation.md) | $n_{fpha}$  | $\pi^{fpha}_{h,m,k}$ |
-| $N + N \cdot L + n_{fpha} + g$ | Generic volume constraint $g \in [0, n_{gvc})$ — user-defined constraints referencing storage ([LP Formulation SS10](../math/lp-formulation.md))                                                                                                         | $n_{gvc}$   | $\pi^{gen}_g$        |
+| Row Index Formula      | Contents                                                                                                                                                       | Count       | Dual Symbol          |
+| ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------- | -------------------- |
+| $h$                    | Storage fixing constraint $v^{in}_h = \hat{v}_h$ for hydro $h \in [0, N)$ — see [LP Formulation §4a](../math/lp-formulation.md)                                | $N$         | $\pi^{fix}_h$        |
+| $N + \ell \cdot N + h$ | AR lag fixing constraint $a_{h,\ell} = \hat{a}_{h,\ell}$ for hydro $h \in [0, N)$, lag $\ell \in [0, L)$ — see [LP Formulation §5a](../math/lp-formulation.md) | $N \cdot L$ | $\pi^{lag}_{h,\ell}$ |
 
 **Dual-relevant row count:**
 
-$$n_{dual\_relevant} = N + N \cdot L + n_{fpha} + n_{gvc}$$
+$$n_{dual\_relevant} = N + N \cdot L = n_{state}$$
 
-The row index formulas for water balance and AR lag fixing use the same structure as the column index formulas in SS2.1 (index $h$ and $N + \ell \cdot N + h$ respectively). This symmetry is intentional: the dual of row $r$ contributes to the cut coefficient for column $r$ within the state prefix, simplifying the cut coefficient extraction to a contiguous slice read of the first $n_{dual\_relevant}$ dual values. See [Cut Management Implementation SS5](./cut-management-impl.md) for FPHA and generic constraint dual preprocessing.
+The dual-relevant row count equals the state dimension. The row index formulas use the same structure as the column index formulas in SS2.1 (index $h$ and $N + \ell \cdot N + h$ respectively). This symmetry is exact: the dual of row $r$ **is** the cut coefficient for state variable at column $r$. Cut coefficient extraction is a single contiguous slice read:
+
+```
+cut_coefficients[0..n_state] = dual[0..n_state]
+```
+
+No postprocessing, no dual combination, no FPHA scaling factors, no generic constraint mapping. The LP solver resolves all contributions through the fixing constraint duals automatically.
 
 **Middle region — static, non-dual-relevant constraints:**
 
-The static non-dual region contains all static constraints whose duals do not contribute to cut coefficients. Their exact internal ordering follows the [LP Formulation](../math/lp-formulation.md) convention:
+The static non-dual region contains all static constraints whose duals do not contribute directly to cut coefficients. Their exact internal ordering follows the [LP Formulation](../math/lp-formulation.md) convention:
 
-| Sub-region (in order) | Contents                                                                                             |
-| --------------------- | ---------------------------------------------------------------------------------------------------- |
-| Load balance          | Bus power balance ([LP Formulation SS3](../math/lp-formulation.md)) -- $N_{bus} \times N_{blk}$ rows |
-| Inflow AR dynamics    | PAR model dynamics equation ([LP Formulation SS5](../math/lp-formulation.md)) -- $N$ rows            |
-| Constant productivity | $g_{h,k} = \rho_h \cdot q_{h,k}$ for non-FPHA hydros -- $(N - N_{fpha}) \times N_{blk}$ rows         |
-| Outflow definition    | $o_{h,k} = q_{h,k} + s_{h,k}$ -- $N \times N_{blk}$ rows                                             |
-| Outflow bounds        | Min/max outflow -- $2 \times N \times N_{blk}$ rows                                                  |
-| Turbined flow min     | $q_{h,k} \geq \underline{Q}_h - \sigma^{q-}_{h,k}$ -- $N \times N_{blk}$ rows                        |
-| Generation min        | $g_{h,k} \geq \underline{G}_h - \sigma^{g-}_{h,k}$ -- $N \times N_{blk}$ rows                        |
-| Evaporation           | Evaporation constraints -- $N \times N_{blk}$ rows                                                   |
-| Water withdrawal      | Withdrawal constraints -- $N \times N_{blk}$ rows                                                    |
-| Storage bounds        | $\underline{V}_h - \sigma^{v-}_h \leq v_h \leq \bar{V}_h$ -- $N$ rows                                |
-| Generic (non-volume)  | User-defined constraints not referencing storage -- varies                                           |
+| Sub-region (in order) | Contents                                                                                            |
+| --------------------- | --------------------------------------------------------------------------------------------------- |
+| Water balance         | Hydro water balance ([LP Formulation §4](../math/lp-formulation.md)) -- $N$ rows                    |
+| Load balance          | Bus power balance ([LP Formulation §3](../math/lp-formulation.md)) -- $N_{bus} \times N_{blk}$ rows |
+| Inflow AR dynamics    | PAR model dynamics equation ([LP Formulation §5](../math/lp-formulation.md)) -- $N$ rows            |
+| FPHA hyperplanes      | FPHA production constraints ([LP Formulation §6](../math/lp-formulation.md)) -- $n_{fpha}$ rows     |
+| Constant productivity | $g_{h,k} = \rho_h \cdot q_{h,k}$ for non-FPHA hydros -- $(N - N_{fpha}) \times N_{blk}$ rows        |
+| Outflow definition    | $o_{h,k} = q_{h,k} + s_{h,k}$ -- $N \times N_{blk}$ rows                                            |
+| Outflow bounds        | Min/max outflow -- $2 \times N \times N_{blk}$ rows                                                 |
+| Turbined flow min     | $q_{h,k} \geq \underline{Q}_h - \sigma^{q-}_{h,k}$ -- $N \times N_{blk}$ rows                       |
+| Generation min        | $g_{h,k} \geq \underline{G}_h - \sigma^{g-}_{h,k}$ -- $N \times N_{blk}$ rows                       |
+| Evaporation           | Evaporation constraints -- $N \times N_{blk}$ rows                                                  |
+| Water withdrawal      | Withdrawal constraints -- $N \times N_{blk}$ rows                                                   |
+| Storage bounds        | $\underline{V}_h - \sigma^{v-}_h \leq v_h \leq \bar{V}_h$ -- $N$ rows                               |
+| Generic constraints   | All user-defined generic constraints ([LP Formulation §10](../math/lp-formulation.md)) -- varies    |
 
 **Dynamic constraint region:**
 
@@ -151,10 +160,10 @@ Dynamic constraints are appended at rows $[n_{static}, \; n_{static} + n_{dynami
 
 **Key benefits**:
 
-- **Dual-relevant constraints at top** — All duals needed for cut coefficient computation are in the first $n_{dual\_relevant}$ rows. Extracting them is a contiguous slice read from the dual vector: `dual[0 .. n_dual_relevant]` — no index gathering required.
-- **Symmetric index structure** — Water balance row $h$ corresponds to storage column $h$; lag fixing row $N + \ell \cdot N + h$ corresponds to lag column $N + \ell \cdot N + h$. This alignment means the first $N + N \cdot L$ cut coefficients can be read directly from the first $N + N \cdot L$ dual values (with appropriate sign convention per [Solver Abstraction SS8](./solver-abstraction.md)).
+- **Fixing constraints at top** — All duals needed for cut coefficient computation are in the first $n_{state}$ rows. Extracting them is a single contiguous slice read: `cut_coefficients = dual[0..n_state]` — no index gathering, no postprocessing, no FPHA/generic constraint dual mapping.
+- **Exact row-column symmetry** — Storage fixing row $h$ corresponds to storage column $h$; lag fixing row $N + \ell \cdot N + h$ corresponds to lag column $N + \ell \cdot N + h$. The dual of row $r$ is the cut coefficient for state variable at column $r$, for all $r \in [0, n_{state})$.
 - **Dynamic constraints at bottom** — Everything above the dynamic constraint boundary is identical across iterations within a stage. A cached basis from the previous iteration applies directly to the static portion (rows `[0, n_static)`). Only the new dynamic constraint rows need their basis status initialized.
-- **Static non-dual region** — All non-dual-relevant, non-dynamic constraints. Their ordering within this region follows the [LP Formulation](../math/lp-formulation.md) convention.
+- **Static non-dual region** — Water balance, FPHA, load balance, and all other non-dual-relevant constraints. Their ordering within this region follows the [LP Formulation](../math/lp-formulation.md) convention.
 
 ### 2.3 Interaction with Basis Persistence
 
@@ -172,60 +181,58 @@ This section applies the index formulas from SS2.1 and SS2.2 to a concrete small
 
 **System definition:**
 
-| Entity                     | Count         | Details                                                                                 |
-| -------------------------- | ------------- | --------------------------------------------------------------------------------------- |
-| Hydros                     | $N = 3$       | H0 (constant productivity), H1 (FPHA with $M_1 = 4$ planes), H2 (constant productivity) |
-| Max PAR order              | $L = 2$       | H0 uses PAR(1), H1 uses PAR(2), H2 uses PAR(1); all store $L = 2$ lags                  |
-| Buses                      | 2             | B0, B1                                                                                  |
-| Thermals                   | 1             | T0 (single cost segment)                                                                |
-| Lines                      | 1             | L0 (B0 $\to$ B1)                                                                        |
-| Blocks                     | $N_{blk} = 1$ | Single block for simplicity                                                             |
-| Generic volume constraints | $n_{gvc} = 0$ | None                                                                                    |
+| Entity        | Count         | Details                                                                                 |
+| ------------- | ------------- | --------------------------------------------------------------------------------------- |
+| Hydros        | $N = 3$       | H0 (constant productivity), H1 (FPHA with $M_1 = 4$ planes), H2 (constant productivity) |
+| Max PAR order | $L = 2$       | H0 uses PAR(1), H1 uses PAR(2), H2 uses PAR(1); all store $L = 2$ lags                  |
+| Buses         | 2             | B0, B1                                                                                  |
+| Thermals      | 1             | T0 (single cost segment)                                                                |
+| Lines         | 1             | L0 (B0 $\to$ B1)                                                                        |
+| Blocks        | $N_{blk} = 1$ | Single block for simplicity                                                             |
 
 **Column layout (SS2.1):**
 
 State dimension: $n_{state} = N \cdot (1 + L) = 3 \cdot (1 + 2) = 9$.
 
-| Column | Formula                 | Contents               |
-| -----: | ----------------------- | ---------------------- |
-|      0 | $h = 0$                 | $v_0$ — storage H0     |
-|      1 | $h = 1$                 | $v_1$ — storage H1     |
-|      2 | $h = 2$                 | $v_2$ — storage H2     |
-|      3 | $N + 0 \cdot N + 0 = 3$ | $a_{0,0}$ — H0 lag 0   |
-|      4 | $N + 0 \cdot N + 1 = 4$ | $a_{1,0}$ — H1 lag 0   |
-|      5 | $N + 0 \cdot N + 2 = 5$ | $a_{2,0}$ — H2 lag 0   |
-|      6 | $N + 1 \cdot N + 0 = 6$ | $a_{0,1}$ — H0 lag 1   |
-|      7 | $N + 1 \cdot N + 1 = 7$ | $a_{1,1}$ — H1 lag 1   |
-|      8 | $N + 1 \cdot N + 2 = 8$ | $a_{2,1}$ — H2 lag 1   |
-|      9 | $N(1 + L) = 9$          | $\theta$ — future cost |
-|    10+ | $\geq N(1+L)+1 = 10$    | Decision variables     |
+| Column | Formula                 | Contents                         |
+| -----: | ----------------------- | -------------------------------- |
+|      0 | $h = 0$                 | $v_0$ — storage H0               |
+|      1 | $h = 1$                 | $v_1$ — storage H1               |
+|      2 | $h = 2$                 | $v_2$ — storage H2               |
+|      3 | $N + 0 \cdot N + 0 = 3$ | $a_{0,0}$ — H0 lag 0             |
+|      4 | $N + 0 \cdot N + 1 = 4$ | $a_{1,0}$ — H1 lag 0             |
+|      5 | $N + 0 \cdot N + 2 = 5$ | $a_{2,0}$ — H2 lag 0             |
+|      6 | $N + 1 \cdot N + 0 = 6$ | $a_{0,1}$ — H0 lag 1             |
+|      7 | $N + 1 \cdot N + 1 = 7$ | $a_{1,1}$ — H1 lag 1             |
+|      8 | $N + 1 \cdot N + 2 = 8$ | $a_{2,1}$ — H2 lag 1             |
+|      9 | $N(1+L) + 0 = 9$        | $v^{in}_0$ — incoming storage H0 |
+|     10 | $N(1+L) + 1 = 10$       | $v^{in}_1$ — incoming storage H1 |
+|     11 | $N(1+L) + 2 = 11$       | $v^{in}_2$ — incoming storage H2 |
+|     12 | $N(2 + L) = 12$         | $\theta$ — future cost           |
+|    13+ | $\geq N(2+L)+1 = 13$    | Decision variables               |
 
-Note: H0 uses PAR(1) and H2 uses PAR(1), so their lag-1 positions (columns 6 and 8) have zero AR coefficients ($\psi_2 = 0$) but are still allocated for uniform stride.
+Note: H0 uses PAR(1) and H2 uses PAR(1), so their lag-1 positions (columns 6 and 8) have zero AR coefficients ($\psi_2 = 0$) but are still allocated for uniform stride. The incoming storage variables (columns 9-11) have no bounds — their values are determined by the storage fixing constraints.
 
-State transfer copies `primal[0..6]` — that is, $n_{transfer} = N \cdot L = 3 \cdot 2 = 6$ values: 3 storages + 3 lag-0 values. The lag-1 values (columns 6-8) are dropped as the oldest lag.
+State transfer copies `primal[0..6]` — that is, $n_{transfer} = N \cdot L = 3 \cdot 2 = 6$ values: 3 storages + 3 lag-0 values. The lag-1 values (columns 6-8) are dropped as the oldest lag. The incoming storage variables (columns 9-11) are not part of the state transfer.
 
 **Row layout (SS2.2):**
 
-FPHA rows: $n_{fpha} = M_1 \times N_{blk} = 4 \times 1 = 4$ (only H1 uses FPHA).
+Dual-relevant row count: $n_{dual\_relevant} = N + N \cdot L = n_{state} = 9$.
 
-Dual-relevant row count: $n_{dual\_relevant} = N + N \cdot L + n_{fpha} + n_{gvc} = 3 + 3 \cdot 2 + 4 + 0 = 13$.
+| Row | Formula                       | Contents                                           | Dual              |
+| --: | ----------------------------- | -------------------------------------------------- | ----------------- |
+|   0 | $h = 0$                       | Storage fixing $v^{in}_0 = \hat{v}_0$ (H0)         | $\pi^{fix}_0$     |
+|   1 | $h = 1$                       | Storage fixing $v^{in}_1 = \hat{v}_1$ (H1)         | $\pi^{fix}_1$     |
+|   2 | $h = 2$                       | Storage fixing $v^{in}_2 = \hat{v}_2$ (H2)         | $\pi^{fix}_2$     |
+|   3 | $N + 0 \cdot N + 0 = 3$       | AR lag fixing H0, $\ell=0$                         | $\pi^{lag}_{0,0}$ |
+|   4 | $N + 0 \cdot N + 1 = 4$       | AR lag fixing H1, $\ell=0$                         | $\pi^{lag}_{1,0}$ |
+|   5 | $N + 0 \cdot N + 2 = 5$       | AR lag fixing H2, $\ell=0$                         | $\pi^{lag}_{2,0}$ |
+|   6 | $N + 1 \cdot N + 0 = 6$       | AR lag fixing H0, $\ell=1$                         | $\pi^{lag}_{0,1}$ |
+|   7 | $N + 1 \cdot N + 1 = 7$       | AR lag fixing H1, $\ell=1$                         | $\pi^{lag}_{1,1}$ |
+|   8 | $N + 1 \cdot N + 2 = 8$       | AR lag fixing H2, $\ell=1$                         | $\pi^{lag}_{2,1}$ |
+|  9+ | $\geq n_{dual\_relevant} = 9$ | Static non-dual region (water balance, FPHA, etc.) |                   |
 
-| Row | Formula                        | Contents                                    | Dual                 |
-| --: | ------------------------------ | ------------------------------------------- | -------------------- |
-|   0 | $h = 0$                        | Water balance H0                            | $\pi^{wb}_0$         |
-|   1 | $h = 1$                        | Water balance H1                            | $\pi^{wb}_1$         |
-|   2 | $h = 2$                        | Water balance H2                            | $\pi^{wb}_2$         |
-|   3 | $N + 0 \cdot N + 0 = 3$        | AR lag fixing H0, $\ell=0$                  | $\pi^{lag}_{0,0}$    |
-|   4 | $N + 0 \cdot N + 1 = 4$        | AR lag fixing H1, $\ell=0$                  | $\pi^{lag}_{1,0}$    |
-|   5 | $N + 0 \cdot N + 2 = 5$        | AR lag fixing H2, $\ell=0$                  | $\pi^{lag}_{2,0}$    |
-|   6 | $N + 1 \cdot N + 0 = 6$        | AR lag fixing H0, $\ell=1$                  | $\pi^{lag}_{0,1}$    |
-|   7 | $N + 1 \cdot N + 1 = 7$        | AR lag fixing H1, $\ell=1$                  | $\pi^{lag}_{1,1}$    |
-|   8 | $N + 1 \cdot N + 2 = 8$        | AR lag fixing H2, $\ell=1$                  | $\pi^{lag}_{2,1}$    |
-|   9 | $N + N \cdot L + 0 = 9$        | FPHA plane 0 for H1, block 0                | $\pi^{fpha}_{1,0,0}$ |
-|  10 | $N + N \cdot L + 1 = 10$       | FPHA plane 1 for H1, block 0                | $\pi^{fpha}_{1,1,0}$ |
-|  11 | $N + N \cdot L + 2 = 11$       | FPHA plane 2 for H1, block 0                | $\pi^{fpha}_{1,2,0}$ |
-|  12 | $N + N \cdot L + 3 = 12$       | FPHA plane 3 for H1, block 0                | $\pi^{fpha}_{1,3,0}$ |
-| 13+ | $\geq n_{dual\_relevant} = 13$ | Static non-dual region (load balance, etc.) |                      |
+Note: The FPHA hyperplanes for H1 (4 planes × 1 block = 4 rows) and water balance constraints (3 rows) are now in the **static non-dual region** (rows 9+). Their duals are no longer needed for cut coefficient computation — the storage fixing constraint duals ($\pi^{fix}_h$) capture all contributions automatically.
 
 **Summary for this example:**
 
@@ -235,12 +242,10 @@ Dual-relevant row count: $n_{dual\_relevant} = N + N \cdot L + n_{fpha} + n_{gvc
 | $L$ (max PAR order)    | 2     |
 | $n_{state}$            | 9     |
 | $n_{transfer}$         | 6     |
-| $\theta$ column        | 9     |
-| $n_{fpha}$             | 4     |
-| $n_{gvc}$              | 0     |
-| $n_{dual\_relevant}$   | 13    |
+| $\theta$ column        | 12    |
+| $n_{dual\_relevant}$   | 9     |
 
-**Verification**: A developer applying the formulas to this system should obtain the exact column and row indices shown in the tables above. The symmetry between column and row indices for the first $N + N \cdot L = 9$ positions confirms that the cut coefficient for state variable at column $c$ comes from the dual of row $c$.
+**Verification**: A developer applying the formulas to this system should obtain the exact column and row indices shown in the tables above. The row-column symmetry is exact: `dual[0..9]` gives the cut coefficient vector for state variables at columns `[0..9)`. No postprocessing is needed.
 
 ### 2.5 Performance Notes
 
@@ -262,13 +267,13 @@ $$\text{State prefix size} = 1{,}120 \times 8 = 8{,}960 \text{ bytes} = 140 \tex
 
 This fits entirely in L1 data cache.
 
-**Contiguous dual extraction**: The first $n_{dual\_relevant}$ values of the dual vector contain all duals needed for cut coefficient computation. Reading them is a single contiguous memory access:
+**Contiguous dual extraction**: The first $n_{state}$ values of the dual vector contain all duals needed for cut coefficient computation. Reading them is a single contiguous memory access:
 
 ```
-dual_relevant = dual[0 .. n_dual_relevant]
+cut_coefficients = dual[0 .. n_state]
 ```
 
-No index indirection or gather operation is required. For the state-linking duals (water balance + AR lag fixing), the dual values map directly to cut coefficients at the corresponding state variable positions, enabling a single `memcpy`-equivalent operation for the first $N + N \cdot L$ coefficients. The FPHA and generic constraint duals require the precomputed sparse mapping from [Cut Management Implementation SS5](./cut-management-impl.md).
+No index indirection, gather operation, or postprocessing is required. Each dual value maps directly to the cut coefficient at the corresponding state variable position — a single `memcpy`-equivalent operation produces the complete cut coefficient vector. This is a significant simplification over designs that require combining duals from multiple constraint types (water balance, FPHA, generic constraints).
 
 **Cut coefficient dot product**: The most frequent numerical operation on state vectors is the dot product $\alpha_k + \boldsymbol{\pi}_k^\top \mathbf{x}$ evaluated for each active cut during the forward pass (to compute $\theta$'s lower bound). With uniform stride and 64-byte aligned arrays, this reduces to a SIMD-friendly dense dot product of length $n_{state}$.
 
@@ -285,7 +290,7 @@ The solver abstraction separates concerns into four layers:
 │  │                    Stage LP Template (Data Holder)                    │  │
 │  │  - Pre-assembled structural LP in CSC form (built once per stage)     │  │
 │  │  - Solver-agnostic problem representation                             │  │
-│  │  - Row/column layout follows SS2 convention                            │  │
+│  │  - Row/column layout follows SS2 convention                           │  │
 │  └───────────────────────────────────────────────────────────────────────┘  │
 │                                    │                                        │
 │                                    ▼                                        │
