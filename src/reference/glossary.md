@@ -7,10 +7,10 @@ Power system terminology used in Cobre, with Portuguese equivalents where they a
 | English     | Portuguese      | Definition                                                                                                                                                                |
 | ----------- | --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Block       | Patamar         | An intra-stage time period (e.g., peak, shoulder, off-peak) representing load level variation within a stage; can be parallel (independent) or chronological (sequential) |
-| Bus         | Barra           | A node in the electrical network where components connect                                                                                                                 |
-| Branch      | Ramo / Circuito | A transmission line or transformer connecting two buses                                                                                                                   |
+| Bus         | Barramento      | A node in the electrical network where components connect                                                                                                                 |
+| Line        | Linha / Circuito | A transmission line or transformer connecting two buses                                                                                                                   |
 | Subsystem   | Subsistema      | A region of the interconnected grid (e.g., SE/CO, S, NE, N in Brazil)                                                                                                     |
-| Interchange | Intercâmbio     | Power transfer between subsystems                                                                                                                                         |
+| Exchange    | Intercâmbio     | Power transfer between subsystems                                                                                                                                         |
 | Load        | Carga / Demanda | Electrical power consumption at a bus                                                                                                                                     |
 | Deficit     | Déficit         | Unmet demand — load that cannot be served by available generation                                                                                                         |
 
@@ -41,8 +41,8 @@ Power system terminology used in Cobre, with Portuguese equivalents where they a
 | English            | Portuguese               | Definition                                  |
 | ------------------ | ------------------------ | ------------------------------------------- |
 | Thermal unit       | Usina termelétrica (UTE) | A fossil-fuel or nuclear generating station |
-| Minimum generation | Geração mínima           | Minimum output when the unit is committed   |
-| Operating cost     | Custo de operação / CVU  | Variable cost per MWh of generation         |
+| Minimum generation | Geração mínima / Inflexibilidade          | Minimum output when the unit is committed   |
+| Operating cost     | Custo variável unitário / CVU  | Variable cost per MWh of generation         |
 | Startup cost       | Custo de partida         | Cost incurred when bringing a unit online   |
 
 ## Stochastic Modeling
@@ -66,7 +66,7 @@ Power system terminology used in Cobre, with Portuguese equivalents where they a
 | Forward pass                 | Passagem direta               | Simulation phase: solve stages sequentially under sampled scenarios                                                                                                                                                                                                    |
 | Backward pass                | Passagem reversa              | Optimization phase: generate cuts by solving from the last stage backward                                                                                                                                                                                              |
 | Lower bound                  | Limite inferior               | Estimate from the first-stage problem (improves with more cuts)                                                                                                                                                                                                        |
-| Upper bound                  | Limite superior               | Statistical estimate from simulation (converges to true cost)                                                                                                                                                                                                          |
+| Upper bound                  | Limite superior               | Statistical estimate from simulation (converges to true cost in risk-neutral setup)                                                                                                                                                                                                          |
 | Optimality gap               | Gap de otimalidade            | Difference between upper and lower bounds, as a percentage                                                                                                                                                                                                             |
 | Dual variable                | Variável dual / Multiplicador | Shadow price from LP solution; indicates marginal value of a resource                                                                                                                                                                                                  |
 | Marginal cost (CMO)          | Custo Marginal de Operação    | Shadow price of the demand constraint — the cost of one additional MWh                                                                                                                                                                                                 |
@@ -78,9 +78,9 @@ Power system terminology used in Cobre, with Portuguese equivalents where they a
 | Opening tree                 | Árvore de aberturas           | The fixed set of pre-generated noise vectors used in the backward pass; generated once before training begins and reused across all iterations. Each stage has `num_scenarios` noise vectors. See [Scenario Generation](../specs/architecture/scenario-generation.md). |
 | Outer approximation          | Aproximação exterior          | The piecewise-linear lower bound on the cost-to-go function constructed from Benders cuts; the primary output of SDDP training                                                                                                                                         |
 | Policy graph                 | Grafo de política             | Directed graph defining the stage structure and transitions in an SDDP problem                                                                                                                                                                                         |
-| Relatively complete recourse | Recurso completo relativo     | Property that every LP subproblem is feasible for all incoming states and scenario realizations; ensured in Cobre via penalty slack variables                                                                                                                          |
-| Trajectory record            | Registro de trajetória        | Data structure capturing one stage's forward pass result: primal solution, dual solution, stage cost, and end-of-stage state. Used for cut coefficient extraction in the backward pass and for simulation output                                                       |
-| Trial point                  | Ponto de prova                | The state visited during a forward pass, used to construct cuts in the backward pass                                                                                                                                                                                   |
+| Relatively complete recourse | Recurso relativamente completo     | Property that every LP subproblem is feasible for all incoming states and scenario realizations; ensured in Cobre via penalty slack variables                                                                                                                          |
+| Trajectory record            | Trajetória       | Data structure capturing one stage's forward pass result: primal solution, dual solution, stage cost, and end-of-stage state. Used for cut coefficient extraction in the backward pass and for simulation output                                                       |
+| Trial point                  | Ponto amostral                | The state visited during a forward pass, used to construct cuts in the backward pass                                                                                                                                                                                   |
 
 ## Risk Measures
 
@@ -102,7 +102,7 @@ Power system terminology used in Cobre, with Portuguese equivalents where they a
 | GEVAZP | Synthetic scenario generation tool                                          |
 | ONS    | Operador Nacional do Sistema Elétrico — Brazilian grid operator             |
 | CCEE   | Câmara de Comercialização de Energia Elétrica — electricity trading chamber |
-| CEPEL  | Centro de Pesquisas de Energia Elétrica — R&D center that develops NEWAVE   |
+| CEPEL  | Centro de Pesquisas de Energia Elétrica — R&D center that develops the official programs   |
 | SIN    | Sistema Interligado Nacional — the Brazilian interconnected power system    |
 
 ## Solver
@@ -115,7 +115,7 @@ Power system terminology used in Cobre, with Portuguese equivalents where they a
 | LP (Linear Program) | Programa Linear        | An optimization problem with a linear objective and linear constraints                                                 |
 | RowBatch            | -                      | A batch of LP rows (constraints) in CSR sparse format for bulk addition to a solver instance via the `add_rows` method |
 | Simplex method      | Método Simplex         | Algorithm for solving linear programs by traversing vertices of the feasible polytope                                  |
-| Warm-start          | Inicialização a quente | Reusing a previous solution basis to accelerate solving a modified LP                                                  |
+| Warm-start          | Partida a quente | Reusing a previous solution basis to accelerate solving a modified LP                                                  |
 
 ## Data Formats
 
