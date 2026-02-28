@@ -18,7 +18,7 @@ The name comes from the Portuguese word for **copper** — the metal that conduc
 
 **Production performance.** Rust gives us C/C++-level speed with memory safety guarantees. For software that dispatches national power grids, both matter.
 
-**Interoperability.** Standard data formats (JSON, Parquet, Arrow) for input and output. Planned support for NEWAVE/DECOMP legacy file formats to enable migration from existing tools.
+**Interoperability.** Standard data formats (JSON, Parquet, Arrow) for input and output. Planned support for other file formats to enable migration from existing tools.
 
 **Modularity.** Pick the crates you need. Use `cobre-core` for data modeling without pulling in solver dependencies. Use `cobre-sddp` without caring about power flow.
 
@@ -41,4 +41,4 @@ See the [roadmap](https://github.com/cobre-rs/cobre#roadmap) for planned milesto
 
 ## Context
 
-Cobre was born from the need for an open, modern alternative to the legacy FORTRAN-based tools used for power system planning in Brazil (NEWAVE, DECOMP, DESSEM) and alongside the commercial PSR SDDP suite. The project draws on algorithmic insights from SDDP.jl, architectural ideas from NREL Sienna and PowSyBl, and the auditable pre-processing approach from SPARHTACUS.
+Cobre was born from the need for an open, modern alternative to enabling power system planning research in Brazil. The project draws on algorithmic insights from SDDP.jl, architectural ideas from NREL Sienna and PowSyBl, and the auditable pre-processing approach from SPARHTACUS.

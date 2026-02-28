@@ -65,7 +65,7 @@ For numerical issues (wrong results, convergence failures), include:
 
 - The study configuration (TOML or code snippet)
 - System size (number of hydros, thermals, stages, scenarios)
-- Expected values and source (e.g., "NEWAVE produces X for the same case")
+- Expected values and source (e.g., "produces X for these inputs")
 
 ### Suggesting Features
 

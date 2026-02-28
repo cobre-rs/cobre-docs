@@ -151,7 +151,6 @@ Deliverables at Phase 0 completion:
 - Validated SDDP training and simulation binary
 - Python bindings for study automation
 - Benchmark suite for production-scale cases (164 hydros, 120 stages)
-- NEWAVE validation demonstrating result equivalence on reference cases
 
 ### 5.2 Phase 1 — Hardening and Ecosystem Tooling
 
@@ -160,8 +159,6 @@ Goal: ecosystem maturity and broad adoption readiness.
 - Python bindings (`cobre-python`): PyO3 API with zero-copy data paths for result analysis
 - Terminal UI (`cobre-tui`): convergence monitoring and interactive run management
 - MCP server (`cobre-mcp`): AI agent access to Cobre runs, results, and diagnostics
-- Additional I/O formats: NEWAVE input compatibility, additional Parquet schemas
-- NEWAVE validation suite: systematic comparison against the reference Brazilian hydrothermal dispatch tool
 
 ### 5.3 Phase 2 — Power System Expansion
 

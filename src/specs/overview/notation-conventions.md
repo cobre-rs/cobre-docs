@@ -42,7 +42,7 @@ This document follows [SDDP.jl](https://sddp.dev/stable/) notation conventions f
 | $\mathcal{S}_b$                             | Deficit segments for bus $b$                               | 1                                                          | Multiple segments optional                                   |
 | $\mathcal{M}_h$                             | FPHA planes for hydro $h$                                  | 125                                                        | Typical value; depends on grid resolution                    |
 | $\mathcal{U}_h$                             | Upstream hydros of $h$                                     | 1-2                                                        | Immediate upstream in cascade                                |
-| $\Omega_t$                                  | Scenario realizations at stage $t$                         | 20                                                         | Standard NEWAVE branching factor                             |
+| $\Omega_t$                                  | Scenario realizations at stage $t$                         | 20                                                         | Standard branching factor                             |
 
 ## 3. Parameters
 

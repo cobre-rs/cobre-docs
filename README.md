@@ -1,6 +1,6 @@
 # cobre-docs
 
-Documentation for the [Cobre](https://github.com/cobre-rs/cobre) ecosystem — algorithm references, user guides, crate documentation, and NEWAVE migration guides.
+Documentation for the [Cobre](https://github.com/cobre-rs/cobre) ecosystem — algorithm references, user guides, crate documentation, guides.
 
 Built with [mdBook](https://rust-lang.github.io/mdBook/).
 
@@ -27,8 +27,8 @@ src/
 ├── guide/                   # User-facing guides
 ├── crates/                  # Per-crate documentation
 ├── algorithms/              # Algorithm theory and references
-├── migration/               # NEWAVE migration guides
 ├── reference/               # Glossary, bibliography, FAQ
+├── specs/                   # Development specs
 └── contributing.md
 ```
 

@@ -1,6 +1,6 @@
 # Glossary
 
-Power system terminology used in Cobre, with Portuguese equivalents where they appear in NEWAVE/CEPEL documentation or Brazilian regulatory context.
+Power system terminology used in Cobre, with Portuguese equivalents where they appear in documentation or Brazilian regulatory context.
 
 ## Power System
 
