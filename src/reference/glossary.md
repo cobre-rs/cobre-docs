@@ -92,7 +92,7 @@ Power system terminology used in Cobre, with Portuguese equivalents where they a
 | Risk-neutral          | Neutro ao risco          | Optimization that minimizes expected cost only                                                                                                               |
 | Risk-averse           | Averso ao risco          | Optimization that penalizes high-cost tail scenarios                                                                                                         |
 
-## NEWAVE / CEPEL Ecosystem
+## Brazilian Ecosystem
 
 | Term   | Definition                                                                  |
 | ------ | --------------------------------------------------------------------------- |
