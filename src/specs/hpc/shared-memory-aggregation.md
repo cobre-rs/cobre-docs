@@ -21,13 +21,13 @@ The `SharedRegion<T>` type provides RAII semantics — `Drop` automatically free
 
 The StageLpCache ([Solver Abstraction SS11.4](../architecture/solver-abstraction.md)) is the **primary candidate** for `SharedRegion<T>` — it is the dominant memory structure at ~22.3 GB and provides the largest sharing benefit:
 
-| Property        | Value                                                                                               |
-| --------------- | --------------------------------------------------------------------------------------------------- |
-| Size            | ~22.3 GB (60 stages × ~378 MB per stage at 15K cut capacity)                                        |
-| Access pattern  | Read-only during forward/backward passes; updated between iterations by leader rank                 |
-| Sharing benefit | Eliminates ~67 GB replication (4 ranks × 22.3 GB → 1 copy)                                          |
-| Write phase     | Between iterations: leader rank writes new cuts and deactivation bounds, `region.fence()` + barrier |
-| Memory layout   | Per-stage CSC arrays (structural template + cut slots) — sequential access during `passModel`       |
+| Property        | Value                                                                                                                                                                                                                                                                                                                                 |
+| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Size            | ~22.3 GB (60 stages × ~378 MB per stage at 15K cut capacity)                                                                                                                                                                                                                                                                          |
+| Access pattern  | Read-only during forward/backward passes; updated between iterations by leader rank                                                                                                                                                                                                                                                   |
+| Sharing benefit | Eliminates ~67 GB replication (4 ranks × 22.3 GB → 1 copy)                                                                                                                                                                                                                                                                            |
+| Write phase     | Between iterations: leader rank writes new cuts and deactivation bounds, `region.fence()` + barrier. Cut selection computation is distributed across all ranks ([Cut Selection Strategy Trait SS2.2a](../architecture/cut-selection-trait.md)), but SharedRegion writes remain leader-only — the single-writer contract is preserved. |
+| Memory layout   | Per-stage CSC arrays (structural template + cut slots) — sequential access during `passModel`                                                                                                                                                                                                                                         |
 
 **NUMA-interleaved allocation** is mandatory for StageLpCache. At >5 GB, leader-only placement creates a memory controller bottleneck. `mbind(MPOL_INTERLEAVE)` distributes pages round-robin across all NUMA domains, providing ~44 GB/s effective read bandwidth (vs ~15–20 GB/s with leader-only). See [Memory Architecture §3.6](./memory-architecture.md).
 
@@ -40,10 +40,13 @@ The StageLpCache ([Solver Abstraction SS11.4](../architecture/solver-abstraction
 5. During training passes: all ranks read `StageLpCache[t]` via `region.as_slice()` (zero-copy)
 6. Between iterations: leader writes new cut data and deactivation bounds, then `region.fence()` + barrier
 
-**Update path** (between iterations, single-threaded by leader):
+> **Decision [DEC-016](../overview/decision-log.md#dec-016) (active):** Cut selection uses deferred parallel execution — stages distributed across ranks and threads, with DeactivationSet allgatherv and leader-only SharedRegion write.
 
-- Write new cut coefficients into pre-allocated CSC slots (~300 MB/iteration at ~5 ms)
-- Set deactivated cut row bounds to $-\infty$ (non-binding, no structural change)
+**Update path** (between iterations, leader-only writes):
+
+- Write new cut coefficients into pre-allocated CSC slots (~300 MB/iteration at ~5 ms) — every iteration
+- Apply deactivations from the parallel cut selection phase: set deactivated cut row bounds to $-\infty$ (non-binding, no structural change) — selection iterations only. The deactivation decisions are computed in parallel by all ranks ([Cut Management Implementation SS7.1a](../architecture/cut-management-impl.md)), but the SharedRegion writes are performed exclusively by the leader rank ([Cut Management Implementation SS7.1b](../architecture/cut-management-impl.md))
+- `region.fence()` + barrier after all writes
 - Read path: `passModel(StageLpCache[t])` = sequential bulk read at ~44 GB/s → **~8.6 ms** per stage transition
 
 ### 1.3 Shared Data: Cut Pool Metadata
@@ -193,7 +196,9 @@ The primary load balance indicator is the ratio of maximum to minimum `forward_t
 - [Scenario Generation §2.2](../architecture/scenario-generation.md) — Deterministic seed derivation, reproducible sampling
 - [Scenario Generation §2.3](../architecture/scenario-generation.md) — Fixed opening tree generation and memory layout
 - [Cut Management Implementation §4](../architecture/cut-management-impl.md) — Wire format, deterministic slot assignment
-- [Cut Management Implementation §7](../architecture/cut-management-impl.md) — StageLpCache update flow, MPI→CSC data path
+- [Cut Management Implementation §7](../architecture/cut-management-impl.md) — StageLpCache update flow, MPI→CSC data path, parallel selection phase (SS7.1a), leader-only update phase (SS7.1b)
+- [Cut Selection Strategy Trait SS2.2a](../architecture/cut-selection-trait.md) — Parallel work distribution for cut selection (distributed computation, leader-only SharedRegion write)
+- [Synchronization §1.4a](./synchronization.md) — DeactivationSet allgatherv wire format and payload sizing
 - [Work Distribution §3.1](./work-distribution.md) — Contiguous block distribution arithmetic
 - [Solver Abstraction SS5](../architecture/solver-abstraction.md) — Cut pool preallocation, slot assignment
 - [Solver Abstraction SS11.4](../architecture/solver-abstraction.md) — StageLpCache design, sizing, ownership, update/read contracts

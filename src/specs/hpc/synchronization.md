@@ -8,13 +8,14 @@ This spec defines the synchronization architecture for Cobre: the complete set o
 
 ### 1.1 Synchronization Summary
 
-The following table lists all communication synchronization points in a single SDDP iteration. There are three types of collective calls per iteration: one post-forward `allgatherv` for visited states, one `allgatherv` per backward stage ($T-1$ calls total), and one post-backward `allreduce` for convergence — totaling $T+1$ collective operations. For method contracts and determinism guarantees, see [Communicator Trait SS2](./communicator-trait.md).
+The following table lists all communication synchronization points in a single SDDP iteration. On normal iterations there are three types of collective calls: one post-forward `allgatherv` for visited states, one `allgatherv` per backward stage ($T-1$ calls total), and one post-backward `allreduce` for convergence — totaling $T+1$ collective operations. On selection iterations (when `should_run(iteration)` returns `true`), an additional `allgatherv` gathers DeactivationSets from the parallel cut selection phase, bringing the total to $T+2$ collective operations. For method contracts and determinism guarantees, see [Communicator Trait SS2](./communicator-trait.md).
 
-| Phase              | Operation    | Data Exchanged                                              | Direction       |
-| ------------------ | ------------ | ----------------------------------------------------------- | --------------- |
-| Forward → Backward | `allgatherv` | Visited states (trial points) from all forward trajectories | All ranks ↔ all |
-| Backward stage $t$ | `allgatherv` | New cuts generated at stage $t$ by each rank                | All ranks ↔ all |
-| Post-backward      | `allreduce`  | Convergence statistics (4 scalars — see §1.3)               | All ranks ↔ all |
+| Phase                 | Operation    | Data Exchanged                                              | Direction       | Frequency                        |
+| --------------------- | ------------ | ----------------------------------------------------------- | --------------- | -------------------------------- |
+| Forward → Backward    | `allgatherv` | Visited states (trial points) from all forward trajectories | All ranks ↔ all | Every iteration                  |
+| Backward stage $t$    | `allgatherv` | New cuts generated at stage $t$ by each rank                | All ranks ↔ all | Every iteration ($T-1$ per iter) |
+| Cut selection (§1.4a) | `allgatherv` | DeactivationSets from parallel selection across stages      | All ranks ↔ all | Selection iterations only        |
+| Post-backward         | `allreduce`  | Convergence statistics (4 scalars — see §1.3)               | All ranks ↔ all | Every iteration                  |
 
 ### 1.2 Forward Pass: No Per-Stage Synchronization
 
@@ -45,6 +46,42 @@ The backward pass has a **hard synchronization barrier at each stage boundary**.
 4. Only then do ranks proceed to stage $t-1$
 
 The `allgatherv` acts as an implicit barrier — no rank can proceed to stage $t-1$ until all ranks have contributed their cuts for stage $t$. This barrier is mandatory because the cuts generated at stage $t$ must be available when solving backward LPs at stage $t-1$ (the backward pass uses $V_{t+1}^k$, the current iteration's approximation). See [Training Loop §6.3](../architecture/training-loop.md) and [Work Distribution §2.2](./work-distribution.md).
+
+### 1.4a Cut Selection Synchronization
+
+> **Decision [DEC-016](../overview/decision-log.md#dec-016) (active):** Cut selection uses deferred parallel execution — stages distributed across ranks and threads, with DeactivationSet allgatherv and leader-only SharedRegion write.
+
+On selection iterations (when `should_run(iteration)` returns `true` — see [Cut Selection Strategy Trait SS2.1](../architecture/cut-selection-trait.md)), an additional `allgatherv` gathers the `DeactivationSet` results from the parallel cut selection phase. This occurs between the backward pass (§1.4) and the convergence check (§1.5), as step 4a in the iteration lifecycle ([Training Loop SS2.1](../architecture/training-loop.md)).
+
+**Context.** After the backward pass completes, every rank holds identical cut pool data (metadata, activity bitmap, visited states) because the per-stage `allgatherv` in §1.4 ensures all ranks have all cuts. The cut selection computation distributes stages across ranks ([Cut Selection Strategy Trait SS2.2a](../architecture/cut-selection-trait.md)) — each rank runs `select` on its assigned stages and produces `DeactivationSet` results for those stages only. The `allgatherv` in this subsection gathers these partial results so that every rank (and specifically the leader rank, which writes to the SharedRegion) has the complete deactivation picture.
+
+**Wire format.** The `DeactivationSet` payload for each stage uses a compact binary format:
+
+```
+Per stage: stage_index (u32) | count (u32) | indices ([u32; count])
+```
+
+| Field         | Type       | Size              | Description                              |
+| ------------- | ---------- | ----------------- | ---------------------------------------- |
+| `stage_index` | `u32`      | 4 bytes           | Stage number (2..T)                      |
+| `count`       | `u32`      | 4 bytes           | Number of deactivated cuts at this stage |
+| `indices`     | `[u32; N]` | `count × 4` bytes | Slot indices of deactivated cuts         |
+
+Each rank's send buffer contains one record per assigned stage, concatenated. Ranks with zero assigned stages contribute a zero-length buffer.
+
+**Payload sizing.**
+
+| Scenario                                                      | Payload                                                |
+| ------------------------------------------------------------- | ------------------------------------------------------ |
+| Typical (200 deactivations/stage, 59 stages, 16 ranks)        | 59 × (8 + 200 × 4) ≈ **~47 KB** total across all ranks |
+| Worst case (15K deactivations/stage, 59 stages)               | 59 × (8 + 15,000 × 4) ≈ **~3.4 MB** total              |
+| Best case (0 deactivations, selection runs but finds nothing) | 59 × 8 = **472 bytes** (headers only)                  |
+
+This is negligible relative to the backward pass cut `allgatherv` payload (~3.2 MB per stage × 59 stages ≈ 189 MB total).
+
+**Serialization convention.** Like the backward pass cut wire format ([Cut Management Implementation SS4.2a](../architecture/cut-management-impl.md)), the DeactivationSet payload uses raw `#[repr(C)]` byte reinterpretation — no structured serialization, no version byte, native endianness. The `allgatherv` type parameter is `T = u8` (raw bytes) with per-rank byte counts and displacements.
+
+**Post-gather sequence.** After the `allgatherv`, the leader rank applies all deactivations to the SharedRegion StageLpCache ([Cut Management Implementation SS7.1b](../architecture/cut-management-impl.md)), then `fence()` + barrier before the next forward pass.
 
 ### 1.5 Iteration Boundary
 
@@ -117,11 +154,15 @@ Adjacent thread buffers must not share cache lines. If two threads' buffers shar
 - [Training Loop §4.3](../architecture/training-loop.md) — Forward pass parallel distribution, post-forward `allreduce`
 - [Training Loop §5.2](../architecture/training-loop.md) — State extraction and `allgatherv` for trial point collection
 - [Training Loop §6.3](../architecture/training-loop.md) — Backward pass stage synchronization barrier, `allgatherv` for cuts
+- [Training Loop §6.4a](../architecture/training-loop.md) — Cut selection step in iteration lifecycle (step 4a)
 - [SDDP Algorithm §3.4](../math/sddp-algorithm.md) — Backward pass hard barrier, forward pass no barrier, thread-trajectory affinity
+- [Cut Selection Strategy Trait SS2.2a](../architecture/cut-selection-trait.md) — Parallel work distribution for cut selection, stage partitioning formula
+- [Cut Management Implementation SS7.1a-SS7.1b](../architecture/cut-management-impl.md) — Parallel selection phase and StageLpCache update phase
 - [Work Distribution §1.4](./work-distribution.md) — Post-forward `allreduce` with 4 convergence quantities
 - [Work Distribution §2.2](./work-distribution.md) — Per-stage backward pass execution (6 steps including barrier)
 - [Hybrid Parallelism §5](./hybrid-parallelism.md) — OpenMP C FFI wrapper primitives, implicit barriers
 - [Convergence Monitoring](../architecture/convergence-monitoring.md) — Stopping rule evaluation using aggregated statistics
 - [Communication Patterns](./communication-patterns.md) — collective operations via Communicator trait: `allgatherv`, `allreduce`
 - [Communicator Trait SS2](./communicator-trait.md) — Method contracts for allgatherv, allreduce, barrier
+- [Shared Memory Aggregation §1.2](./shared-memory-aggregation.md) — SharedRegion StageLpCache write model, single-writer contract
 - [Memory Architecture](./memory-architecture.md) — Cache-line alignment conventions, NUMA-local allocation

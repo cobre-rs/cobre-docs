@@ -302,16 +302,31 @@ These updates happen on the thread-local solver's cut rows. Since each thread pr
 
 ## 7. StageLpCache Update Flow
 
-Between training iterations, the leader rank updates the StageLpCache to reflect newly generated cuts and any cuts deactivated by the selection strategy. This update runs off the critical path (single-threaded, between iterations).
+Between training iterations, the StageLpCache is updated to reflect newly generated cuts and any cuts deactivated by the selection strategy. The update has two phases: a distributed parallel selection phase where all ranks participate, followed by a leader-only StageLpCache write phase that preserves the single-writer SharedRegion contract.
 
-### 7.1 Update Sequence
+### 7.1a Parallel Cut Selection Phase
 
-1. **Cut selection** — Run the configured strategy (SS2) on each stage's cut pool to determine the new active/inactive sets.
-2. **New cut insertion** — For each new cut generated in the preceding backward pass (typically ~200 cuts × 59 stages):
+> **Decision [DEC-016](../overview/decision-log.md#dec-016) (active):** Cut selection uses deferred parallel execution — stages distributed across ranks and threads, with DeactivationSet allgatherv and leader-only SharedRegion write.
+
+When `should_run(iteration)` returns `true` ([Cut Selection Strategy Trait SS2.1](./cut-selection-trait.md)), the cut selection computation is distributed across ranks and threads:
+
+1. **Stage partitioning** — Stages $\{2, \ldots, T\}$ are distributed across $R$ ranks via static contiguous block assignment ([Cut Selection Strategy Trait SS2.2a](./cut-selection-trait.md)). Each rank receives $\lceil (T-1) / R \rceil$ stages.
+2. **Parallel selection** — Each rank runs `select` on its assigned stages, distributing stages across threads via Rayon work-stealing. Each `select` call reads the stage's cut pool metadata (identical across all ranks after the backward pass `allgatherv`) and produces a `DeactivationSet`.
+3. **Result gathering** — `allgatherv` ([Communicator Trait SS2.1](../hpc/communicator-trait.md)) gathers the per-stage `DeactivationSet` payloads from all ranks. After this call, every rank has the complete set of deactivations across all stages. The wire format is specified in [Synchronization §1.4a](../hpc/synchronization.md).
+
+On non-selection iterations (`should_run` returns `false`), this phase is skipped entirely — no partitioning, no communication, no selection computation.
+
+### 7.1b StageLpCache Update Phase
+
+After the parallel selection phase (or immediately after the backward pass on non-selection iterations), the leader rank updates the SharedRegion StageLpCache:
+
+1. **New cut insertion** — For each new cut generated in the preceding backward pass (typically ~200 cuts × 59 stages):
    - Write the cut's coefficients into the pre-allocated CSC slot in `StageLpCache[t]`. The CSC slot positions are determined by the LP row layout: each cut occupies one row, with dense entries in the $n_{state}$ state columns plus the $\theta$ column (2,081 entries per cut).
    - Write the cut's intercept as the row lower bound.
-3. **Cut deactivation** — For each cut deactivated by the selection strategy, set its row lower bound to $-\infty$ in the StageLpCache CSC. This makes the constraint non-binding without modifying the CSC structure (no row removal, no column recount).
-4. **Fence and barrier** — `region.fence()` ensures all writes are visible, followed by an MPI barrier to synchronize all ranks before the next iteration's forward pass begins.
+2. **Cut deactivation** — For each cut in the `DeactivationSet` gathered in SS7.1a, set its row lower bound to $-\infty$ in the StageLpCache CSC. This makes the constraint non-binding without modifying the CSC structure (no row removal, no column recount).
+3. **Fence and barrier** — `region.fence()` ensures all writes are visible, followed by an MPI barrier to synchronize all ranks before the next iteration's forward pass begins.
+
+The single-writer SharedRegion contract ([Shared Memory Aggregation §1.2](../hpc/shared-memory-aggregation.md)) is preserved: only the leader rank writes to the SharedRegion, while all other ranks wait at the barrier.
 
 ### 7.2 MPI→StageLpCache Data Path
 
@@ -324,20 +339,38 @@ The coefficient write to StageLpCache ensures the per-stage CSC representation s
 
 ### 7.3 Performance
 
-Per-iteration update cost: ~200 new cuts × 59 stages × 2,081 entries × 12 bytes (4 row_index + 8 value) ≈ 300 MB written. At ~60 GB/s DRAM write bandwidth, this takes ~5 ms. The cut selection scan adds negligible overhead. Total between-iterations update: **~5–10 ms**, which is < 0.1% of the per-iteration compute time (~16.5 s).
+**Selection compute.** The selection phase distributes $T-1$ stages across $R$ ranks. Each stage's `select` call is dominated by the cut pool scan (Level1/LML1: linear in `populated_count`; Dominated: quadratic in active cuts × visited states). At production scale with 16 ranks, each rank processes ~4 stages. The selection compute time scales as $\sim 5 \text{ ms} / N_{\text{ranks}}$ — effectively < 1 ms per rank for the Level1/LML1 variants.
+
+**DeactivationSet allgatherv payload.** Each `DeactivationSet` contains a `stage_index` (4 bytes) + `count` (4 bytes) + deactivation indices (4 bytes each). At production scale with ~200 deactivations per stage across 59 stages:
+
+| Component              | Size                          |
+| ---------------------- | ----------------------------- |
+| Per-stage header       | 8 bytes (stage_index + count) |
+| Per-stage indices      | ~200 × 4 = 800 bytes          |
+| Total across 59 stages | 59 × 808 ≈ **~47 KB**         |
+
+This is negligible relative to the backward pass cut `allgatherv` payload (~3.2 MB per stage). Worst case (all 15K cuts deactivated at all stages): 59 × (8 + 15,000 × 4) ≈ **~3.4 MB** — still modest.
+
+**New cut insertion.** Per-iteration cost: ~200 new cuts × 59 stages × 2,081 entries × 12 bytes (4 row_index + 8 value) ≈ 300 MB written. At ~60 GB/s DRAM write bandwidth, this takes ~5 ms.
+
+**Total between-iterations update.** Selection compute (< 1 ms per rank) + DeactivationSet `allgatherv` (< 0.1 ms) + StageLpCache write (~5 ms) + `fence()` + barrier (< 0.5 ms) = **~5–7 ms**, which is < 0.1% of the per-iteration compute time (~16.5 s).
 
 ## Cross-References
 
 - [Cut Management (Math)](../math/cut-management.md) — Cut definition, dual extraction, aggregation, validity, selection theory, convergence guarantee
+- [Cut Selection Strategy Trait](./cut-selection-trait.md) — Parallel calling convention (SS2.2, SS2.2a), stage partitioning formula, conditional execution
 - [Solver Abstraction](./solver-abstraction.md) — Cut pool design (SS5), LP layout convention (SS2), how active cuts enter the solver LP (SS5.4), StageLpCache design (SS11.4)
 - [Solver Workspaces](./solver-workspaces.md) — Stage solve workflow (SS1.4) where cuts are loaded and activity is tracked, cut loading cost analysis (SS1.10)
-- [Shared Memory Aggregation](../hpc/shared-memory-aggregation.md) — SharedRegion for StageLpCache allocation and NUMA-interleaved placement
+- [Shared Memory Aggregation](../hpc/shared-memory-aggregation.md) — SharedRegion for StageLpCache allocation and NUMA-interleaved placement; single-writer contract (§1.2)
 - [Binary Formats](../data-model/binary-formats.md) — FlatBuffers schema (SS3.1), policy directory structure (SS3.2), cut pool memory layout requirements (SS3.4), checkpoint reproducibility (SS4)
-- [Training Loop](./training-loop.md) — Forward/backward pass that drives cut generation (SS6), dual extraction for cut coefficients (SS7)
+- [Training Loop](./training-loop.md) — Forward/backward pass that drives cut generation (SS6), dual extraction for cut coefficients (SS7), cut selection step in iteration lifecycle (SS2.1 step 4a)
 - [Convergence Monitoring](./convergence-monitoring.md) — Uses FCF statistics (lower bound from stage 1 cuts)
 - [Risk Measures](../math/risk-measures.md) — CVaR modifies aggregation weights during cut generation
 - [LP Formulation](../math/lp-formulation.md) — Storage fixing constraints (§4a) that produce cut coefficients directly; generic constraints (§10) whose effects are captured via fixing constraint duals
 - [Scenario Generation](./scenario-generation.md) — Fixed opening tree (SS2.3) that defines backward pass branchings
 - [Hybrid Parallelism](../hpc/hybrid-parallelism.md) — MPI rank topology for cut synchronization
+- [Synchronization](../hpc/synchronization.md) — DeactivationSet allgatherv wire format (§1.4a), per-stage backward pass barrier (§1.4)
+- [Communicator Trait](../hpc/communicator-trait.md) — allgatherv contract (SS2.1) for DeactivationSet gathering
+- [Work Distribution](../hpc/work-distribution.md) — Contiguous block assignment formula (§3.1) for stage partitioning
 - [Checkpointing](../hpc/checkpointing.md) — Checkpoint trigger logic and graceful shutdown that invoke cut serialization
 - [Configuration Reference](../configuration/configuration-reference.md) — `cut_selection` JSON schema parameters

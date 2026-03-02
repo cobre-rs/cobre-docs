@@ -117,7 +117,7 @@ impl CutSelectionStrategy {
 
 ### 2.2 select
 
-`select` is the primary method that scans the cut pool for a single stage and returns the set of cut indices to deactivate. The method is called once per stage at each selection check, iterating over all stages in the backward pass order. The returned deactivation set is applied to the activity bitmap by the caller (the training loop or FCF manager).
+`select` is the primary method that scans the cut pool for a single stage and returns the set of cut indices to deactivate. The method operates on a single stage and is invoked in parallel across all stages: stages are distributed across MPI ranks via static contiguous block assignment (the same formula used for forward pass trajectory distribution — see [Work Distribution §3.1](../hpc/work-distribution.md)), and threads work-steal stages within each rank's block. After all ranks complete their assigned stages, an `allgatherv` gathers the per-stage `DeactivationSet` results so that every rank has the complete deactivation picture. The leader rank then applies the deactivations to the SharedRegion StageLpCache. See SS2.2a for the full work distribution model.
 
 ```rust
 impl CutSelectionStrategy {
@@ -187,6 +187,31 @@ impl CutSelectionStrategy {
 | Computational cost is $\mathcal{O}(\lvert\text{active cuts}\rvert \times \lvert\text{visited states}\rvert)$ per stage | The most expensive strategy; cost is amortized by `check_frequency`                                                                           |
 
 **Infallibility:** This method does not return `Result`. The cut pool is guaranteed to be in a valid state because it is initialized at startup and modified only through the deterministic slot assignment protocol ([Cut Management Implementation SS1.2](./cut-management-impl.md)). Visited states are guaranteed to exist because `should_run` returns `false` at iteration 0 (before any forward pass has produced trial points).
+
+### 2.2a Work Distribution for Cut Selection
+
+> **Decision [DEC-016](../overview/decision-log.md#dec-016) (active):** Cut selection uses deferred parallel execution — stages distributed across ranks and threads, with DeactivationSet allgatherv and leader-only SharedRegion write.
+
+This subsection documents the parallel calling convention for `select`. Cut selection is embarrassingly parallel across stages because each stage's selection decision depends only on that stage's cut pool metadata and visited states — data that is already synchronized across all ranks by the backward pass per-stage `allgatherv` ([Synchronization §1.4](../hpc/synchronization.md)).
+
+**Why inputs are already synchronized.** The backward pass synchronizes cuts at every stage boundary via `allgatherv` ([Cut Management Implementation SS4.1](./cut-management-impl.md)). After the backward pass completes, every rank holds an identical copy of each stage's cut pool (same coefficients, same metadata, same activity bitmap). The `update_activity` calls during the backward pass update the metadata that `select` reads. Because all ranks process all received cuts identically, the metadata is consistent across ranks at the point where cut selection runs.
+
+**Stage partitioning formula.** Stages $\{2, 3, \ldots, T\}$ are distributed across $R$ ranks using static contiguous block assignment:
+
+| Parameter                           | Formula                                                        |
+| ----------------------------------- | -------------------------------------------------------------- |
+| Total stages eligible for selection | $S = T - 1$ (stages 2 through $T$; stage 1 has no FCF)         |
+| Block size                          | $B = \lceil S / R \rceil$                                      |
+| Rank $r$'s first stage              | $s_{\text{first}}(r) = 2 + r \cdot B$                          |
+| Rank $r$'s last stage               | $s_{\text{last}}(r) = \min(s_{\text{first}}(r) + B - 1, \; T)$ |
+
+This mirrors the forward pass trajectory distribution formula from [Work Distribution §3.1](../hpc/work-distribution.md), applied to stages instead of trajectories.
+
+**Within-rank threading model.** Each rank distributes its assigned stages across threads using Rayon's work-stealing pool. The `select` call for each stage is independent, so no synchronization is needed between threads within a rank. Each thread reads the stage's cut pool metadata (shared, read-only) and produces a `DeactivationSet` (thread-local output).
+
+**Result gathering.** After all ranks complete their assigned stages, an `allgatherv` ([Communicator Trait SS2.1](../hpc/communicator-trait.md)) gathers the per-stage `DeactivationSet` payloads so that every rank has the full set of deactivations across all stages. The wire format for `DeactivationSet` is specified in [Synchronization §1.4a](../hpc/synchronization.md). The leader rank then applies all deactivations to the SharedRegion StageLpCache (see [Cut Management Implementation SS7.1b](./cut-management-impl.md)).
+
+**Conditional execution.** The entire parallel selection phase — partitioning, parallel `select`, `allgatherv`, and StageLpCache update — only runs when `should_run(iteration)` returns `true` (SS2.1). On non-selection iterations, no stage distribution or communication occurs, and the iteration proceeds directly from backward pass to convergence check.
 
 ### 2.3 update_activity
 
@@ -435,4 +460,7 @@ This theorem is stated and cited in [Cut Management SS8](../math/cut-management.
 - [Risk Measure Trait](./risk-measure-trait.md) -- Sibling trait specification following the same enum dispatch pattern (SS4)
 - [Horizon Mode Trait](./horizon-mode-trait.md) -- Sibling trait specification following the same enum dispatch pattern (SS4)
 - [Sampling Scheme Trait](./sampling-scheme-trait.md) -- Sibling trait specification following the same enum dispatch pattern (SS4)
-- [Communicator Trait](../hpc/communicator-trait.md) -- Reference pattern for trait specification structure and convention blockquote
+- [Work Distribution](../hpc/work-distribution.md) -- Contiguous block assignment formula (§3.1) applied to stage partitioning for parallel selection (SS2.2a)
+- [Synchronization](../hpc/synchronization.md) -- Per-stage backward pass barrier (§1.4) ensuring inputs are synchronized; DeactivationSet allgatherv wire format (§1.4a)
+- [Shared Memory Aggregation](../hpc/shared-memory-aggregation.md) -- SharedRegion StageLpCache write model (§1.2) for leader-only deactivation application
+- [Communicator Trait](../hpc/communicator-trait.md) -- Reference pattern for trait specification structure and convention blockquote; allgatherv contract (SS2.1) used for DeactivationSet gathering

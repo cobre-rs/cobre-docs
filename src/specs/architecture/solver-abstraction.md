@@ -578,10 +578,10 @@ The StageLpCache (SS11.4) holds a complete pre-assembled LP per stage in CSC for
 3. **Warm-start** — Apply the cached basis from the previous iteration's solve at this stage.
 4. **Solve** — Solve the LP.
 
-**Between-iterations update** (off the critical path, single-threaded by the leader rank):
+**Between-iterations update** (off the critical path, leader-only SharedRegion write):
 
-1. Cut selection determines active/inactive cut sets per stage
-2. For each stage: update the StageLpCache CSC — insert new cut coefficients, adjust row bounds for deactivated cuts (set lower bound to $-\infty$ to make constraint non-binding)
+1. Cut selection determines active/inactive cut sets per stage — stages are distributed across ranks and threads for parallel evaluation ([Cut Selection Strategy Trait SS2.2a](./cut-selection-trait.md)), with DeactivationSets gathered via `allgatherv` ([Synchronization §1.4a](../hpc/synchronization.md))
+2. For each stage: leader rank updates the StageLpCache CSC — insert new cut coefficients, adjust row bounds for deactivated cuts (set lower bound to $-\infty$ to make constraint non-binding)
 3. Write updated StageLpCache to SharedRegion (leader rank, `fence()` + barrier ensures visibility)
 
 > The prior per-thread LP rebuild approach is documented in [Binary Formats SS3](../data-model/binary-formats.md) and [Solver Workspaces SS1.10](./solver-workspaces.md).
@@ -618,7 +618,7 @@ The StageLpCache is a complete pre-assembled LP per stage in CSC format. It comb
 
 **Ownership**: A single shared copy across all ranks on the same node via `SharedRegion<T>` with NUMA-interleaved allocation (`mbind(MPOL_INTERLEAVE)` — see [Shared Memory Aggregation §1](../hpc/shared-memory-aggregation.md)). All ranks read the same data during passes.
 
-**Update contract**: Updated between iterations by the leader rank (single-threaded). Per-iteration update: ~200 new cuts × 59 stages × 2,081 × 12 bytes ≈ 300 MB written → ~5 ms at DRAM bandwidth. New cuts are written into pre-allocated CSC slots; deactivated cuts have their row lower bound set to $-\infty$ (making the constraint non-binding without structural modification). Readers observe updates only after `fence()` + barrier.
+**Update contract**: SharedRegion writes are performed by the leader rank between iterations; cut selection computation is distributed across all ranks ([Cut Management Implementation SS7](./cut-management-impl.md)). Per-iteration update: ~200 new cuts × 59 stages × 2,081 × 12 bytes ≈ 300 MB written → ~5 ms at DRAM bandwidth. New cuts are written into pre-allocated CSC slots; deactivated cuts have their row lower bound set to $-\infty$ (making the constraint non-binding without structural modification). Readers observe updates only after `fence()` + barrier.
 
 **Read contract**: Read-only during forward and backward passes. `passModel(StageLpCache[t])` = sequential bulk read of ~378 MB at ~44 GB/s (NUMA-interleaved across 4 domains) → **~8.6 ms** per stage transition.
 

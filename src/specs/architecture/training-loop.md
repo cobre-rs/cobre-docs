@@ -37,6 +37,7 @@ Each iteration follows a fixed sequence:
 2. **Forward synchronization** — `allreduce` ([Communicator Trait SS2.2](../hpc/communicator-trait.md)) aggregates global statistics (lower bound, upper bound) across ranks
 3. **Backward pass** — Generate cuts from visited states (SS6)
 4. **Cut synchronization** — `allgatherv` ([Communicator Trait SS2.1](../hpc/communicator-trait.md)) distributes new cuts to all ranks
+   4a. **Cut selection** (conditional: `should_run(iteration)`) — Distribute stages across ranks, each rank runs `select` on assigned stages in parallel, `allgatherv` gathers DeactivationSets, leader applies deactivations to StageLpCache, `fence()` + barrier (see [Cut Selection Strategy Trait SS2.2a](./cut-selection-trait.md) and [Cut Management Implementation SS7.1a-SS7.1b](./cut-management-impl.md))
 5. **Convergence update** — Update bound estimates, evaluate stopping rules (see [Convergence Monitoring](./convergence-monitoring.md))
 6. **Checkpoint** — If the checkpoint interval has elapsed, persist current FCF and iteration state (see [Checkpointing](../hpc/checkpointing.md))
 7. **Logging** — Emit iteration summary (bounds, gap, timings)
@@ -51,6 +52,7 @@ Each step in the iteration lifecycle (SS2.1) emits a typed event to the shared e
 | 2    | Forward synchronization | `ForwardSyncComplete`  | iteration, global_lb, global_ub_mean, global_ub_std, sync_time_ms                                                             |
 | 3    | Backward pass           | `BackwardPassComplete` | iteration, cuts_generated, stages_processed, elapsed_ms                                                                       |
 | 4    | Cut synchronization     | `CutSyncComplete`      | iteration, cuts_distributed, cuts_active, cuts_removed, sync_time_ms                                                          |
+| 4a   | Cut selection           | `CutSelectionComplete` | iteration, cuts_deactivated, stages_processed, selection_time_ms, allgatherv_time_ms (only emitted when `should_run` is true) |
 | 5    | Convergence update      | `ConvergenceUpdate`    | iteration, lower_bound, upper_bound, upper_bound_std, gap, rules_evaluated[]                                                  |
 | 6    | Checkpoint              | `CheckpointComplete`   | iteration, checkpoint_path, elapsed_ms (only when checkpoint interval triggers)                                               |
 | 7    | Logging                 | `IterationSummary`     | iteration, lower_bound, upper_bound, gap, wall_time_ms, iteration_time_ms, forward_ms, backward_ms, lp_solves, memory_peak_mb |
@@ -838,6 +840,26 @@ Key mechanisms that minimize rebuild cost:
 
 See [Solver Abstraction SS11.2–SS11.4](./solver-abstraction.md) and [Solver Workspaces](./solver-workspaces.md).
 
+### 6.4a Cut Selection Step
+
+> **Decision [DEC-016](../overview/decision-log.md#dec-016) (active):** Cut selection uses deferred parallel execution — stages distributed across ranks and threads, with DeactivationSet allgatherv and leader-only SharedRegion write.
+
+After the backward pass completes and new cuts have been synchronized (step 4 in SS2.1), the training loop conditionally executes the cut selection phase (step 4a). This step only runs when `should_run(iteration)` returns `true` ([Cut Selection Strategy Trait SS2.1](./cut-selection-trait.md)) — i.e., at multiples of `check_frequency`. On non-selection iterations, the loop proceeds directly to convergence update.
+
+**Execution sequence:**
+
+1. **Check** — Evaluate `strategy.should_run(iteration)`. If `false`, skip to step 5 (convergence update).
+2. **Distribute** — Partition stages $\{2, \ldots, T\}$ across ranks using the contiguous block formula from [Cut Selection Strategy Trait SS2.2a](./cut-selection-trait.md).
+3. **Select** — Each rank runs `select` on its assigned stages in parallel (Rayon work-stealing). Each `select` call produces a `DeactivationSet` for one stage.
+4. **Gather** — `allgatherv` collects all per-stage `DeactivationSet` payloads so every rank has the complete deactivation picture. Wire format: [Synchronization §1.4a](../hpc/synchronization.md).
+5. **Apply** — The leader rank applies all deactivations to the SharedRegion StageLpCache by setting deactivated cut row bounds to $-\infty$ ([Cut Management Implementation SS7.1b](./cut-management-impl.md)).
+6. **Synchronize** — `region.fence()` ensures writes are visible; MPI barrier ensures all ranks see the updated StageLpCache before the next forward pass.
+7. **Emit event** — `CutSelectionComplete` event with total deactivations, stage count, and timing breakdown.
+
+**Interaction with StageLpCache update (SS6.4).** The StageLpCache update consists of two logically independent writes: new cut insertion and cut deactivation. New cut insertion runs on every iteration (leader writes coefficients and intercepts for cuts generated in the backward pass). Cut deactivation runs only on selection iterations and uses the `DeactivationSet` from the parallel selection phase. Both writes are performed by the leader rank before the `fence()` + barrier.
+
+**Single-rank variant.** When `comm.size() == 1`, the `allgatherv` for DeactivationSets degenerates to a local copy (all stages are assigned to the single rank). The leader is rank 0, which is the only rank. The sequence simplifies to: `select` all stages → apply deactivations → `fence()` (no MPI barrier needed).
+
 ## 7. Dual Extraction for Cut Coefficients
 
 ### 7.1 Cut Structure
@@ -889,7 +911,8 @@ The active count is used by cut selection strategies to prune dominated or inact
 
 - [SDDP Algorithm](../math/sddp-algorithm.md) — Mathematical definition of the SDDP algorithm that this training loop implements
 - [Cut Management (Math)](../math/cut-management.md) — Mathematical foundations for cut coefficients, selection theory, and dominance criteria
-- [Cut Management Implementation](./cut-management-impl.md) — FCF structure, cut selection strategies, serialization, and cross-rank cut synchronization
+- [Cut Management Implementation](./cut-management-impl.md) — FCF structure, cut selection strategies, serialization, cross-rank cut synchronization, parallel selection phase (SS7.1a), StageLpCache update phase (SS7.1b)
+- [Cut Selection Strategy Trait](./cut-selection-trait.md) — Cut selection calling convention (SS2.2), parallel work distribution (SS2.2a), conditional execution via `should_run` (SS2.1)
 - [Stopping Rules](../math/stopping-rules.md) — Convergence criteria and termination conditions
 - [Risk Measures](../math/risk-measures.md) — CVaR mathematical formulation and cut weight computation
 - [Work Distribution](../hpc/work-distribution.md) — Detailed communication+rayon parallelism patterns for forward and backward pass distribution
