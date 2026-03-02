@@ -166,7 +166,7 @@ The alternative — state-based distribution — would first deduplicate trial p
 - [SDDP Algorithm §3.4](../math/sddp-algorithm.md) — Thread-trajectory affinity, backward sync barriers, forward pass state saving
 - [Solver Workspaces §1](../architecture/solver-workspaces.md) — Thread-local solver infrastructure, per-stage basis cache, NUMA-local allocation
 - [Cut Management Implementation §4](../architecture/cut-management-impl.md) — MPI cut synchronization protocol and wire format
-- [Scenario Generation §2.3](../architecture/scenario-generation.md) — Fixed opening tree: the $N_{\text{openings}}$ noise vectors evaluated in the backward pass
+- [Scenario Generation §2.2b, §2.3, §2.3c](../architecture/scenario-generation.md) -- Communication-free noise generation work distribution (§2.2b), fixed opening tree (§2.3), parallel opening tree generation partitioning (§2.3c)
 - [Synchronization](./synchronization.md) — Sync points, per-stage barrier semantics
 - [Communication Patterns](./communication-patterns.md) — collective operations via Communicator trait
 - [Communicator Trait SS2](./communicator-trait.md) — Method contracts for allgatherv, allreduce

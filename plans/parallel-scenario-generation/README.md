@@ -23,9 +23,9 @@ Markdown spec files in an mdBook project. No code implementation.
 | ticket-002 | Document parallel opening tree generation             | epic-01 | completed | Detailed     | 1.00      | --      | --    |
 | ticket-003 | Document forward pass per-thread noise generation     | epic-01 | completed | Detailed     | 1.00      | --      | --    |
 | ticket-004 | Add DEC-017 decision log entry and inline markers     | epic-01 | completed | Detailed     | 0.96      | --      | --    |
-| ticket-005 | Add parallel generation tests                         | epic-02 | pending   | Detailed     | 1.00      | --      | --    |
-| ticket-006 | Update bidirectional cross-references                 | epic-02 | pending   | Detailed     | 0.96      | --      | --    |
-| ticket-007 | Batch update cross-reference index                    | epic-02 | pending   | Detailed     | 1.00      | --      | --    |
+| ticket-005 | Add parallel generation tests                         | epic-02 | completed | Detailed     | 1.00      | --      | --    |
+| ticket-006 | Update bidirectional cross-references                 | epic-02 | completed | Detailed     | 0.96      | --      | --    |
+| ticket-007 | Batch update cross-reference index                    | epic-02 | completed | Detailed     | 1.00      | --      | --    |
 
 ## Dependency Graph
 

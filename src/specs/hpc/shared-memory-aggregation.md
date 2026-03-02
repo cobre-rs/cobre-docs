@@ -195,8 +195,7 @@ The primary load balance indicator is the ratio of maximum to minimum `forward_t
 - [Synchronization §3](./synchronization.md) — Thread-local cut accumulation pattern
 - [Communicator Trait SS4](./communicator-trait.md) — SharedMemoryProvider trait, SharedRegion\<T\>, leader/follower pattern
 - [Local Backend SS3](./backend-local.md) — HeapFallback implementation for backends without shared memory
-- [Scenario Generation §2.2](../architecture/scenario-generation.md) — Deterministic seed derivation, reproducible sampling
-- [Scenario Generation §2.3](../architecture/scenario-generation.md) — Fixed opening tree generation and memory layout
+- [Scenario Generation §2.2, §2.2b, §2.3, §2.3c](../architecture/scenario-generation.md) -- Deterministic seed derivation (§2.2), communication-free noise work distribution (§2.2b), fixed opening tree generation and memory layout (§2.3), parallel opening tree generation partitioning (§2.3c)
 - [Cut Management Implementation §4](../architecture/cut-management-impl.md) — Wire format, deterministic slot assignment
 - [Cut Management Implementation §7](../architecture/cut-management-impl.md) — StageLpCache update flow, MPI→CSC data path, parallel selection phase (SS7.1a), leader-only update phase (SS7.1b)
 - [Cut Selection Strategy Trait SS2.2a](../architecture/cut-selection-trait.md) — Parallel work distribution for cut selection (distributed computation, leader-only SharedRegion write)

@@ -397,3 +397,4 @@ Validation is performed once during the variant selection pipeline ([Extension P
 - [Solver Abstraction SS10](./solver-abstraction.md) -- Compile-time solver selection pattern (contrasted with the enum dispatch used here)
 - [Deferred Features SS C.13](../deferred.md) -- Alternative forward pass model (deferred)
 - [Deferred Features SS C.14](../deferred.md) -- Monte Carlo backward sampling (deferred)
+- [Work Distribution §3.1](../hpc/work-distribution.md) -- Contiguous block assignment formula; forward scenario distribution that determines which rank generates noise for which scenarios

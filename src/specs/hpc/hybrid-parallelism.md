@@ -328,3 +328,4 @@ For complete SLURM job scripts and multi-node deployment patterns, see [SLURM De
 - [Design Principles](../overview/design-principles.md) -- Foundational design goals including distributed I/O
 - [Python Bindings](../interfaces/python-bindings.md) -- Single-process mode requirement for Python (GIL/MPI incompatibility)
 - [MCP Server](../interfaces/mcp-server.md) -- Single-process mode requirement for MCP server
+- [Scenario Generation §2.2b](../architecture/scenario-generation.md) -- Communication-free noise generation work distribution; each Rayon worker thread generates noise independently using deterministic seeds

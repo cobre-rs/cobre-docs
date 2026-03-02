@@ -720,3 +720,7 @@ The solver integration for complete tree mode (tree enumeration, node-to-subprob
 - [Deferred Features SSC.12](../deferred.md) — Complete tree solver integration (DECOMP-like)
 - [Deferred Features SSC.13](../deferred.md) — Alternative forward pass model
 - [Deferred Features SSC.14](../deferred.md) — Monte Carlo backward sampling
+- [Cut Selection Strategy Trait SS2.2a](./cut-selection-trait.md) -- Parallel work distribution pattern for cut selection; comparison reference for noise generation work distribution (SS2.2b)
+- [Work Distribution §3.1](../hpc/work-distribution.md) -- Contiguous block assignment formula used by noise generation (SS2.2b) and opening tree generation (SS2.3c)
+- [Shared Memory Aggregation §1.4](../hpc/shared-memory-aggregation.md) -- SharedRegion opening tree protocol; opening tree generation partitioning details provided by SS2.3c
+- [Hybrid Parallelism §5.1](../hpc/hybrid-parallelism.md) -- Core parallel scenario solving pattern; consumes communication-free noise generation (SS2.2b)
