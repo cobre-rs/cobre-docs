@@ -177,6 +177,8 @@ Rayon provides intra-rank data parallelism through its `ParallelIterator` trait.
 
 The fundamental parallel pattern in Cobre is distributing LP solves across Rayon worker threads. Each MPI rank receives a contiguous slice of scenario trajectories; within the rank, `par_iter()` distributes individual trajectory solves across the Rayon thread pool:
 
+> **Decision [DEC-017](../overview/decision-log.md#dec-017) (active):** Communication-free parallel noise generation -- every rank and thread independently derives identical noise via deterministic SipHash-1-3 seed derivation, eliminating MPI broadcast or gather for scenario noise.
+
 ```rust
 // Per-rank scenario slice -> parallel iteration -> per-worker LP solve
 scenario_slice

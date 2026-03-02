@@ -65,6 +65,8 @@ The opening tree (fixed noise vectors for the backward pass — see [Scenario Ge
 | Write phase     | Leader generates during initialization, `region.fence()` ensures visibility                            |
 | Memory layout   | Opening-major ordering for backward pass locality (see scenario-generation.md §2.3)                    |
 
+> **Decision [DEC-017](../overview/decision-log.md#dec-017) (active):** Communication-free parallel noise generation -- every rank and thread independently derives identical noise via deterministic SipHash-1-3 seed derivation, eliminating MPI broadcast or gather for scenario noise.
+
 **Generation protocol:**
 
 1. Create intra-node communicator via `comm.split_local()` ([Communicator Trait SS4.1](./communicator-trait.md))

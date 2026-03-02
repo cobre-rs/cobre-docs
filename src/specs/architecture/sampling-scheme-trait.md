@@ -132,6 +132,8 @@ where $\phi_m$, $\psi_{m,\ell}$, and $\sigma_m$ are the precomputed PAR model pa
 
 **Infallibility:** This method does not return `Result`. All inputs (stage IDs, external scenario data, historical data) are validated at configuration load time (SS6). The PAR model parameters are guaranteed to produce valid inversions after preprocessing validation ([Validation Architecture SS2.5](./validation-architecture.md)).
 
+> **Decision [DEC-017](../overview/decision-log.md#dec-017) (active):** Communication-free parallel noise generation -- every rank and thread independently derives identical noise via deterministic SipHash-1-3 seed derivation, eliminating MPI broadcast or gather for scenario noise.
+
 ### 2.2 requires_noise_inversion
 
 `requires_noise_inversion` indicates whether the variant requires noise inversion -- the transformation of raw inflow values to noise terms ($\eta$) via the PAR model before they can be used in the stage LP. InSample operates directly on pre-generated noise vectors from the opening tree, so no inversion is needed. External and Historical provide raw inflow values that must be inverted.

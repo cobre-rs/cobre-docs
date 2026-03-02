@@ -165,6 +165,38 @@ Total input: **16 bytes**.
 
 **Crate version requirement.** The `siphasher` crate version must be pinned to `1.x` (i.e., `siphasher = "1"` in `Cargo.toml`). The 1.x series provides the `SipHasher13` type and guarantees output stability within the major version. Any future major version upgrade requires verification that hash outputs remain identical for the same inputs, or a migration path for checkpoint compatibility.
 
+### 2.2b Work Distribution for Noise Generation
+
+> **Decision [DEC-017](../overview/decision-log.md#dec-017) (active):** Communication-free parallel noise generation -- every rank and thread independently derives identical noise via deterministic SipHash-1-3 seed derivation, eliminating MPI broadcast or gather for scenario noise.
+
+This subsection documents the parallel calling convention for forward pass noise generation, analogous to the cut selection work distribution in [Cut Selection Strategy Trait SS2.2a](./cut-selection-trait.md).
+
+**Why no communication is needed.** Deterministic seed derivation (SS2.2a) eliminates the need for MPI communication of noise data. Every rank independently derives identical noise for any `(iteration, scenario_index, stage_id)` tuple by hashing identical inputs with the same base seed and RNG algorithm. This is fundamentally different from cut selection, which requires `allgatherv` to gather `DeactivationSet` results because cut selection decisions are distributed across ranks — each rank selects for a subset of stages and must share the results with all other ranks. Noise generation has no such dependency: each rank generates only the noise it needs for its assigned scenarios, and no other rank needs that noise.
+
+**Scenario distribution formula.** Forward scenarios are distributed across ranks using contiguous block assignment per [Work Distribution §3.1](../hpc/work-distribution.md):
+
+| Parameter                          | Formula                                                                                                                              |
+| ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| Total forward scenarios            | $M$ (configured via `forward_passes` in `config.json`)                                                                               |
+| Scenarios per rank                 | $\lfloor M/R \rfloor$ or $\lceil M/R \rceil$ (contiguous block assignment per [Work Distribution §3.1](../hpc/work-distribution.md)) |
+| Rank $r$'s first scenario          | $s_{\text{first}}(r)$ per [Work Distribution §3.1](../hpc/work-distribution.md)                                                      |
+| Rank $r$'s last scenario           | $s_{\text{last}}(r)$ per [Work Distribution §3.1](../hpc/work-distribution.md)                                                       |
+| Inter-rank communication for noise | None -- deterministic seed derivation (SS2.2a)                                                                                       |
+
+**Within-rank threading model.** Within each rank, Rayon worker threads generate noise independently for their assigned forward trajectories. Each thread uses the deterministic seed `seed(iteration, scenario_index, stage_id)` to initialize its RNG before generating the noise vector for each (scenario, stage) pair. Because the seed depends on `(iteration, scenario_index, stage_id)` -- not on thread ID, rank, or rank count -- any thread on any rank generates identical noise for the same tuple. No thread synchronization is needed for noise generation.
+
+**Comparison with cut selection work distribution.**
+
+| Aspect                   | Cut Selection (SS2.2a in [cut-selection-trait.md](./cut-selection-trait.md)) | Noise Generation (this subsection)                      |
+| ------------------------ | ---------------------------------------------------------------------------- | ------------------------------------------------------- |
+| Work unit                | Stage                                                                        | (Scenario, Stage) pair                                  |
+| Distribution axis        | Stages across ranks                                                          | Scenarios across ranks (stages sequential per scenario) |
+| Inter-rank communication | `allgatherv` for DeactivationSets                                            | None (deterministic seeds)                              |
+| Within-rank threading    | Rayon work-stealing across assigned stages                                   | Rayon work-stealing across assigned scenarios           |
+| Data dependency          | Requires synchronized cut pool metadata                                      | Independent -- only needs base seed and PAR parameters  |
+
+**Backward pass note.** Backward pass noise generation also requires no inter-rank communication. The opening tree is generated once before training and shared via `SharedRegion<T>` within a node ([Shared Memory Aggregation §1.4](../hpc/shared-memory-aggregation.md)). During the backward pass, each thread reads the opening tree noise vectors directly from shared memory -- no noise generation occurs at runtime.
+
 ### 2.3 Opening Tree
 
 The backward pass in SDDP evaluates an aggregated cut by solving **all** $N_t$ branchings at each stage $t$. These branchings must be identical across all iterations — the backward pass always "sees the same tree." The opening tree is therefore **generated once before training begins** and remains fixed throughout.
@@ -345,6 +377,30 @@ The `sampling_method` field on each stage in `stages.json` (see [Input Scenarios
 The deferred methods (`lhs`, `qmc_sobol`, `qmc_halton`, `selective`) are listed in [Deferred Features](../deferred.md) and are not implemented in Phase 5.
 
 **Per-stage variation.** The `sampling_method` field can vary per stage (as permitted by [Input Scenarios SS1.8](../data-model/input-scenarios.md)), enabling mixed strategies in a single run. The minimal viable solver uses uniform SAA across all stages; per-stage method variation is a deferred capability.
+
+### 2.3c Parallel Opening Tree Generation
+
+This subsection documents how opening tree generation is parallelized across MPI ranks and threads. The `SharedRegion<T>` allocation and fence protocol is defined in [Shared Memory Aggregation §1.4](../hpc/shared-memory-aggregation.md); this subsection provides the partitioning details that protocol references but does not specify (step 3: "contiguous block assignment").
+
+**Multi-node model.** Because opening tree seeds depend only on `(base_seed, opening_index, stage)` (SS2.2a), every node can generate its opening tree independently without cross-node communication. On multi-node deployments, each node generates the complete tree using the same deterministic seeds, producing bit-identical results. The tree is then shared within the node via `SharedRegion<T>` ([Shared Memory Aggregation §1.4](../hpc/shared-memory-aggregation.md)), so only one copy resides in physical memory per node despite being readable by all ranks on that node.
+
+**Within-node partitioning formula.** The natural work unit for opening tree generation is a single `(opening_index, stage)` pair. The total generation work is $\sum_t N_t$ pairs (one per opening per stage). For uniform branching, this simplifies to $N_{\text{openings}} \times T$ pairs. The partitioning distributes openings across ranks (not stages), because the stage dimension is the inner loop for each opening's seed derivation:
+
+| Parameter                                                | Formula                                                                                                                                               |
+| -------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Total openings                                           | $N = \max_t(N_t)$ for variable branching; $N_{\text{openings}}$ for uniform                                                                           |
+| Openings per rank                                        | $\lfloor N/R_{\text{node}} \rfloor$ or $\lceil N/R_{\text{node}} \rceil$ (contiguous block per [Work Distribution §3.1](../hpc/work-distribution.md)) |
+| Rank $r$'s first opening                                 | Per [Work Distribution §3.1](../hpc/work-distribution.md)                                                                                             |
+| Rank $r$'s last opening                                  | Per [Work Distribution §3.1](../hpc/work-distribution.md)                                                                                             |
+| Each rank generates all stages for its assigned openings | Stages are the inner loop; openings are the outer loop                                                                                                |
+
+**Why openings, not stages, are the distribution axis.** Distributing by opening (rather than by stage) aligns with the stage-major memory layout (SS2.3). Each rank generates a contiguous block of openings across all stages, which maps to a contiguous memory region in the `SharedRegion<T>`. This enables each rank to write its generated data directly to the correct offset without interleaving with other ranks' writes. If stages were the distribution axis, each rank's writes would be scattered across the memory region (one block per stage), increasing the complexity of offset computation and potentially causing cache line conflicts during the parallel write phase.
+
+**Within-rank threading model.** Within each rank, the assigned openings are distributed across Rayon worker threads. Each thread generates all stages for its assigned openings using the deterministic seed `seed(base_seed, opening_index, stage)` (SS2.2a). No thread synchronization is needed during generation because each thread writes to a disjoint portion of the `SharedRegion<T>`.
+
+**Reconciliation with shared memory protocol.** This subsection provides the partitioning details referenced by [Shared Memory Aggregation §1.4](../hpc/shared-memory-aggregation.md) step 3 ("contiguous block assignment"). The 6-step protocol in §1.4 remains the authoritative reference for the `SharedRegion<T>` allocation and fence sequence; this subsection documents the generation work distribution within that protocol.
+
+**Variable branching note.** For variable branching ($N_t$ varies per stage), the partitioning uses $\max_t(N_t)$ as the total opening count. Ranks assigned openings that exceed $N_t$ for a particular stage simply skip that `(opening_index, stage)` pair. This produces at most a minor load imbalance (ranks with higher opening indices may skip more pairs) which is negligible for the one-time generation phase.
 
 ### 2.4 Time-Varying Correlation Profiles
 
@@ -530,6 +586,22 @@ Cobre distributes scenario work across two levels: **MPI ranks** (inter-node / i
 **MPI rank level — deterministic distribution.** Scenarios are assigned to MPI ranks as evenly as possible. If `S` total scenarios are distributed across `R` ranks, the first `S mod R` ranks receive `⌈S/R⌉` scenarios and the remaining ranks receive `⌊S/R⌋`. The distribution is deterministic and based solely on rank index and total scenario count. Each rank stores only its assigned scenarios in memory. MPI gather operations use the per-rank counts and displacements to collect results (e.g., for upper bound evaluation or output aggregation).
 
 **Thread level — dynamic work-stealing.** Within each rank, the assigned scenarios are processed by a thread pool using dynamic work-stealing scheduling. This is critical because **per-scenario processing costs are not uniform** — iteration counts for LP convergence vary depending on the noise realization, active constraints, and warm-start quality. Dynamic work-stealing at the thread level absorbs this variability without requiring inter-rank communication.
+
+**Per-thread noise generation calling convention.** When a Rayon worker thread processes a forward trajectory, it generates the noise vector at each stage using the following deterministic sequence:
+
+a. **Seed derivation** — Compute the deterministic seed via `seed(base_seed, iteration, scenario_index, stage_id)` using SipHash-1-3 (SS2.2a). The seed depends only on globally known constants — no thread-local or rank-local state is needed.
+
+b. **RNG initialization** — Initialize a `Pcg64` (or equivalent) pseudo-random number generator from the derived 64-bit seed.
+
+c. **Independent noise sampling** — Generate $N_{\text{entities}}$ independent standard normal samples $z_i \sim \mathcal{N}(0,1)$ from the RNG.
+
+d. **Correlation transform** — Apply the Cholesky factor $L$ for the active correlation profile at this stage (SS2.1): $\eta = L \cdot z$. The Cholesky factors are pre-computed during initialization and shared read-only across all threads.
+
+e. **LP noise term fixup** — The resulting correlated noise vector $\eta$ is used to fix the noise terms in the stage LP (via the PAR inflow equation in [PAR(p) Inflow Model SS1](../math/par-inflow-model.md)).
+
+Steps (a) through (e) are executed entirely within the thread. No inter-thread synchronization, no rank-to-rank communication, and no shared mutable state is involved. The only shared data accessed is the pre-computed Cholesky factors (read-only) and the PAR model parameters (read-only). This communication-free noise generation is a direct consequence of the deterministic seed derivation architecture (SS2.2, SS2.2a) and the work distribution model documented in SS2.2b.
+
+**InSample variant note.** For the `InSample` sampling scheme, the forward pass does not generate noise at all. Instead, it uses the RNG to sample a random index $j \in \{0, \ldots, N_t - 1\}$ into the pre-generated opening tree (SS2.3). The full 5-step sequence above applies only to `External` and `Historical` variants, which require noise inversion from raw inflow values (SS4.3). For `InSample`, step (c) is replaced by "sample a uniform integer in $[0, N_t)$" and steps (d)-(e) are replaced by "look up the opening tree vector at the sampled index."
 
 **Deployment strategy.** The shared-memory architecture favors **fewer MPI ranks with more threads per rank** — typically one rank per NUMA domain (or per node). This minimizes MPI communication overhead while maximizing the benefit of thread-level dynamic scheduling and shared L3 cache for scenario data (see SS5.1).
 

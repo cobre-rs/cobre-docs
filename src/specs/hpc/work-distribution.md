@@ -27,6 +27,8 @@ Within each rank, the rank's assigned scenarios are parallelized across OpenMP t
 - **Warm-start continuity** — the solver basis from stage $t$ warm-starts stage $t+1$ within the same trajectory
 - **Implementation simplicity** — no cross-thread data handoff during the forward pass
 
+> **Decision [DEC-017](../overview/decision-log.md#dec-017) (active):** Communication-free parallel noise generation -- every rank and thread independently derives identical noise via deterministic SipHash-1-3 seed derivation, eliminating MPI broadcast or gather for scenario noise.
+
 OpenMP distributes trajectories to threads using `schedule(dynamic,1)`. Dynamic scheduling within a rank absorbs the small per-trajectory solve time variance while maintaining thread-trajectory affinity (each trajectory is fully executed by the thread that picks it up).
 
 ### 1.3 Batch Processing
