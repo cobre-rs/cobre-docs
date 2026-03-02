@@ -588,7 +588,7 @@ The StageLpCache (SS11.4) holds a complete pre-assembled LP per stage in CSC for
 2. For each stage: update the StageLpCache CSC — insert new cut coefficients, adjust row bounds for deactivated cuts (set lower bound to $-\infty$ to make constraint non-binding)
 3. Write updated StageLpCache to SharedRegion (leader rank, `fence()` + barrier ensures visibility)
 
-**Superseded approach (Option A)**: The original Option A approach (template + `addRows` per stage transition) is documented in [Binary Formats SS3, SSA](../data-model/binary-formats.md) and [Solver Workspaces SS1.10](./solver-workspaces.md). Option A required each thread to assemble and add cuts via `addRows` at every stage transition, consuming ~375 MB per thread in CSR assembly buffers at 15K cuts. Strategy 2+3 eliminates this per-thread cost by pre-assembling cuts into a single shared StageLpCache.
+**Superseded approach (Option A)**: The original Option A approach (template + `addRows` per stage transition) is documented in [Binary Formats SS3](../data-model/binary-formats.md) and [Solver Workspaces SS1.10](./solver-workspaces.md). Option A required each thread to assemble and add cuts via `addRows` at every stage transition, consuming ~375 MB per thread in CSR assembly buffers at 15K cuts. Strategy 2+3 eliminates this per-thread cost by pre-assembling cuts into a single shared StageLpCache.
 
 ### 11.3 Solver-Specific Optimization Paths
 
@@ -671,7 +671,7 @@ This is significantly faster than a full stage transition and is the common case
 - [LP Formulation](../math/lp-formulation.md) — Constraint structure that the solver operates on
 - [Cut Management](../math/cut-management.md) — How cuts are generated; this spec handles how they are stored in the cut pool and loaded into the solver LP
 - [Training Loop](./training-loop.md) — Forward pass (parallel solve) and backward pass (cut addition) that drive solver invocations
-- [Binary Formats](../data-model/binary-formats.md) — FlatBuffers schema for cut persistence, cut pool memory layout (SS3.4), LP rebuild strategy analysis (SS3, SSA)
+- [Binary Formats](../data-model/binary-formats.md) — FlatBuffers schema for cut persistence, cut pool memory layout (SS3.4)
 - [Internal Structures](../data-model/internal-structures.md) — Logical in-memory data model from which stage templates are built
 - [Hybrid Parallelism](../hpc/hybrid-parallelism.md) — OpenMP threading model that requires thread-local solvers
 - [Memory Architecture](../hpc/memory-architecture.md) — NUMA-aware allocation for solver workspaces, StageLpCache memory budget

@@ -119,7 +119,7 @@ The concern is not theoretical. LP solver C++ APIs offer capabilities that their
 | Mutable internal access | Direct struct access, placement new, custom allocators                      | Through accessor functions                     |
 | Factorization control   | Fine-grained control over when to refactor                                  | Implicit only                                  |
 
-See [Binary Formats Appendix A](../data-model/binary-formats.md) for the complete C vs C++ API comparison across HiGHS and CLP.
+See [Solver HiGHS Implementation](../architecture/solver-highs-impl.md) and [Solver CLP Implementation](../architecture/solver-clp-impl.md) for the solver-specific C API usage.
 
 ### 5.3 What Rust Can and Cannot Do
 
@@ -141,19 +141,14 @@ Cobre uses approach (3) — C APIs only — for solver portability. This means C
 
 ### 5.4 Why This Does Not Block Performance
 
-The adopted LP construction strategy is **Option A: rebuild per stage** (see [Binary Formats §A.2](../data-model/binary-formats.md)). Each thread owns one solver instance, reconfigures it per (stage, block), and solves. The per-solve workflow is:
+The adopted LP construction strategy is **Strategy 2+3: StageLpCache** (see [Solver Abstraction SS11.4](../architecture/solver-abstraction.md)). Each thread owns one solver instance and loads a complete pre-assembled LP per stage via a single bulk API call. The per-solve workflow is:
 
-1. Load full constraint matrix via bulk API (`passModel` / `loadProblem`)
-2. Add active cuts via batch `addRows` in CSR format
-3. Patch scenario-dependent values (RHS, bounds) — O(m+n) element modifications
-4. Load basis from previous iteration for warm-start — O(m+n)
-5. Solve (simplex pivots dominate runtime)
+1. Load `StageLpCache[t]` via `passModel`/`loadProblem` — a single bulk copy of the complete LP including structural constraints and active Benders cuts in CSC format
+2. Patch ~2,240 scenario-dependent values (incoming storage RHS, AR lag fixing, current-stage noise fixing) via bound modification
+3. Load basis from previous iteration for warm-start
+4. Solve (simplex pivots dominate runtime)
 
-Steps 1-4 are cheap compared to step 5. The model clone pattern (available only via C++ APIs) would save steps 1-2 by copying a pre-built template, but:
-
-- LP solve time dominates construction time at production scale
-- Warm-starting from a stored basis converges in few pivots (the scenario perturbation is small)
-- Different stages have different operative entities and block structures, limiting template reuse across stages
+Steps 1-3 are cheap compared to step 4. The StageLpCache is shared across all ranks on the same node via `SharedRegion<T>`, which reduces per-node memory from ~91.8 GB (the previous per-thread rebuild approach, which required per-thread CSR assembly buffers) to ~22.3 GB node-wide. The C++-exclusive model clone pattern is not needed: the StageLpCache already provides a complete solver-ready LP via a single `passModel` bulk read at ~8.6 ms per stage transition at production scale.
 
 **What we store and restore is solver-agnostic.** The data persisted across iterations — basis status arrays, column values and bounds, row values and bounds, primal and dual solutions — are standard optimization framework concepts, not solver-internal structures. We deliberately avoid storing solver-internal factorization structures (LU decomposition, pivot sequences, working memory), which are solver-specific and non-portable. This keeps the warm-start mechanism clean across solver backends.
 
@@ -190,7 +185,7 @@ This approach gives Cobre the memory manipulation efficiency of C++ in the solve
 
 This decision should be revisited if:
 
-1. **Profiling shows that LP construction time (steps 1-4) becomes a significant fraction of total runtime.** This would indicate that the rebuild-per-stage approach is too expensive and model cloning (C++ API) would provide meaningful speedup.
+1. **Profiling shows that LP construction time (steps 1-3) becomes a significant fraction of total runtime.** This would indicate that the StageLpCache stage transition cost is too high and an alternative approach would provide meaningful speedup.
 2. **The `unsafe` boundary grows beyond ~15% of the codebase**, suggesting that the safety benefits of Rust are being eroded by the volume of unsafe code needed.
 3. **A solver backend requires C++-exclusive features for correctness** (not just performance), making the C API insufficient.
 

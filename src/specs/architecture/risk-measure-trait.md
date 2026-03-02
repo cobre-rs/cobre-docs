@@ -203,7 +203,7 @@ The risk measure uses **enum dispatch** -- a `match` on the `RiskMeasure` varian
 
 **Why not trait objects:** The variant set is closed (Expectation and CVaR only, with no additional variants planned -- see [Extension Points SS2.5](./extension-points.md)). Trait objects add indirection cost without the extensibility benefit. The enum approach is consistent with the dispatch analysis in [Extension Points SS7](./extension-points.md).
 
-**Performance characteristics:** The `match` statement in `aggregate_cut` executes once per visited state per backward stage. At production scale (192 forward passes, 120 stages), this is at most ~23,000 match dispatches per iteration -- negligible compared to the LP solve cost that dominates the backward pass.
+**Performance characteristics:** The `match` statement in `aggregate_cut` executes once per visited state per backward stage. At production scale (192 forward passes, 60 stages), this is at most ~11,520 match dispatches per iteration -- negligible compared to the LP solve cost that dominates the backward pass.
 
 ## 5. Validation Rules
 

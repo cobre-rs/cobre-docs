@@ -737,7 +737,7 @@ A sign error in $\pi_t^*$ produces cuts that point in the wrong direction, leadi
 - [Training Loop](./training-loop.md) -- Forward pass (SS4) and backward pass (SS6) that drive solver invocations; abstraction points (SS3) parameterizing the training loop
 - [Cut Management Implementation](./cut-management-impl.md) -- Cut pool activity bitmap (SS1.1), CSR assembly for `addRows` (SS1), cut coefficient computation using duals from `LpSolution`
 - [LP Formulation](../math/lp-formulation.md) -- Constraint structure that defines which duals are cut-relevant and feed into the cut coefficient formula
-- [Binary Formats](../data-model/binary-formats.md) -- Cut pool memory layout (SS3.4) that produces `RowBatch` inputs; LP rebuild strategy analysis (SS3, Appendix A)
+- [Binary Formats](../data-model/binary-formats.md) -- Cut pool memory layout (SS3.4) that produces `RowBatch` inputs
 - [Internal Structures](../data-model/internal-structures.md) -- Logical in-memory data model from which `StageTemplate` is built
 - [Hybrid Parallelism](../hpc/hybrid-parallelism.md) -- OpenMP threading model (SS3) requiring thread-local solvers with `Send` but not `Sync`
 - [Memory Architecture](../hpc/memory-architecture.md) -- NUMA-aware allocation (SS2) for solver workspaces

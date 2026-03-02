@@ -69,8 +69,8 @@ Checkpoint size is dominated by the cut pool. At production scale (per [Binary F
 
 | Component             | Size at capacity                                                                |
 | --------------------- | ------------------------------------------------------------------------------- |
-| Cut pool (all stages) | 120 stages × up to 15K cuts × ~17 KB per cut — up to ~28 GB at maximum capacity |
-| Solver basis          | 120 stages × ~87 KB per basis ≈ ~10 MB                                          |
+| Cut pool (all stages) | 60 stages × up to 15K cuts × ~17 KB per cut — up to ~14.3 GB at maximum capacity (cut coefficients absorbed into StageLpCache SharedRegion at ~22.3 GB node-wide) |
+| Solver basis          | 60 stages × ~87 KB per basis ≈ ~5 MB                                            |
 | Metadata + history    | < 1 MB                                                                          |
 
 Early iterations produce much smaller checkpoints (only populated slots are serialized). The cut pool pre-allocates slots but only populated ones are written.

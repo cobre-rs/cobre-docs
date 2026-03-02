@@ -382,7 +382,7 @@ All TCP read and write operations are subject to a configurable timeout. When a 
 
 **Default timeout:** 60 seconds. This is configurable via the `COBRE_TCP_TIMEOUT_SECS` environment variable (SS8). The default is chosen to accommodate:
 
-- Slow LP solves at production scale (~25 ms per solve, ~192 solves per stage, ~120 stages = ~576 seconds of computation per iteration) where ranks may take significantly different amounts of time to reach the next collective.
+- Slow LP solves at production scale (~25 ms per solve, ~192 solves per stage, ~60 stages = ~288 seconds of computation per iteration) where ranks may take significantly different amounts of time to reach the next collective.
 - Network transients that may delay message delivery by seconds.
 
 The 60-second default exceeds the expected per-stage wall-clock time (~5 seconds at production scale) by a factor of 12, providing a generous margin while still detecting genuine failures within a reasonable timeframe.

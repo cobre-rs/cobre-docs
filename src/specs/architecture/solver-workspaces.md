@@ -324,5 +324,5 @@ When scaling is active, the stage solve workflow (SS1.4) is augmented at specifi
 - [Training Loop](./training-loop.md) — Forward/backward pass orchestration driving the stage solve workflow (SS1.4)
 - [Hybrid Parallelism](../hpc/hybrid-parallelism.md) — OpenMP threading model requiring thread-local solver workspaces
 - [Memory Architecture](../hpc/memory-architecture.md) — NUMA topology and first-touch allocation policy for workspace buffers
-- [Binary Formats](../data-model/binary-formats.md) — Cut pool CSR layout (SS3.4), LP rebuild analysis (SSA)
+- [Binary Formats](../data-model/binary-formats.md) — Cut pool CSR layout (SS3.4)
 - [Configuration Reference](../configuration/configuration-reference.md) — Solver configuration parameters (tolerances, scaling method selection)

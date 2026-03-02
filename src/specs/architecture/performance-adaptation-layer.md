@@ -86,7 +86,7 @@ After extraction, the source `Vec<Hydro>` is still held by the `System` struct (
 
 **What it does.** Pre-resolves season-indexed or period-indexed parameters into stage-indexed arrays, eliminating season-lookup indirection at runtime. The domain model naturally uses seasons (12 months or 52 weeks) because physical parameters are seasonal. The solver needs stage-indexed values (60–120 stages) because it iterates stage-by-stage.
 
-**Why.** A season lookup (`season = stage_to_season_map[t]; value = seasonal_values[season]`) is a dependent load — the CPU cannot prefetch the value until the season index is resolved. With 160 hydros × 120 stages × millions of iterations, the cumulative cost of dependent loads is significant. Pre-resolving to `value = stage_values[t][h]` eliminates the indirection.
+**Why.** A season lookup (`season = stage_to_season_map[t]; value = seasonal_values[season]`) is a dependent load — the CPU cannot prefetch the value until the season index is resolved. At worst-case scale (160 hydros × 120 stages × millions of iterations), the cumulative cost of dependent loads is significant. Pre-resolving to `value = stage_values[t][h]` eliminates the indirection.
 
 **Where it appears.**
 
@@ -95,7 +95,7 @@ After extraction, the source `Vec<Hydro>` is still held by the `System` struct (
 - Pre-resolved penalties — stage-varying penalty costs resolved from the three-tier cascade (global → entity → stage override) into a per-(entity, stage) lookup ([Internal Structures 10](../data-model/internal-structures.md))
 - Pre-resolved bounds — stage-varying entity bounds resolved from base values with sparse stage overrides applied ([Internal Structures 11](../data-model/internal-structures.md))
 
-**Memory cost.** Temporal flattening trades memory for speed. A seasonal PAR model stores `12 × N` values; the stage-indexed version stores `T × N` values (typically 120 × 160 = 19,200 vs. 12 × 160 = 1,920 — a 10× expansion). At 8 bytes per `f64`, the absolute cost is negligible (< 1 MB for all temporally flattened arrays combined).
+**Memory cost.** Temporal flattening trades memory for speed. A seasonal PAR model stores `12 × N` values; the stage-indexed version stores `T × N` values (at worst-case scale: 120 × 160 = 19,200 vs. 12 × 160 = 1,920 — a 10× expansion; at the production baseline of 60 stages: 60 × 160 = 9,600 vs. 12 × 160 = 1,920 — a 5× expansion). At 8 bytes per `f64`, the absolute cost is negligible (< 1 MB for all temporally flattened arrays combined).
 
 ## 2. Performance-Adapted Type Inventory
 

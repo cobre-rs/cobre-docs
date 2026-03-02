@@ -64,10 +64,12 @@ set.
   $i+1$, reducing simplex iterations. Bases are serialized to FlatBuffers for
   checkpoint/resume.
 
-- **Dynamic constraint addition** -- New constraints are injected into the LP
-  bottom row region via batch `addRows`. Constraints are stored in physical
-  units; scaling is applied at solve time. In SDDP, this mechanism is used to
-  inject Benders cuts generated during the backward pass.
+- **Cut injection via StageLpCache** -- Benders cuts generated during the backward
+  pass are pre-assembled into a per-stage StageLpCache CSC representation by the
+  leader rank between iterations. At each stage transition, threads load the complete
+  LP (structural constraints + active cuts) via a single `passModel`/`loadProblem`
+  call. The `addRows` API is used only during StageLpCache assembly, not on the
+  hot-path stage transition. See [Solver Abstraction SS11.4](../specs/architecture/solver-abstraction.md).
 
 ## Status
 

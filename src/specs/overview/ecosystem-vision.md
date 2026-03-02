@@ -150,7 +150,7 @@ Deliverables at Phase 0 completion:
 
 - Validated SDDP training and simulation binary
 - Python bindings for study automation
-- Benchmark suite for production-scale cases (164 hydros, 120 stages)
+- Benchmark suite for production-scale cases (160 hydros, 60 stages)
 
 ### 5.2 Phase 1 — Hardening and Ecosystem Tooling
 

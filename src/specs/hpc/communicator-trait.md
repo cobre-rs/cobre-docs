@@ -645,7 +645,7 @@ The `SharedMemoryProvider` trait definition (§4.1), the `SharedRegion<T>` type 
 
 **Constraint preventing early implementation.** True shared memory requires MPI window management (`MPI_Win_create`, `MPI_Win_fence`, `MPI_Win_free`) with correct leader/follower lifecycle coordination across ranks on the same node. Implementing this before the training loop, cut pool, and scenario generation are stable would couple the shared memory lifecycle to components still under active development. The `HeapFallback` path eliminates this coupling while remaining functionally correct.
 
-**Trigger conditions for re-introducing shared memory.** The optimization will be activated when production-scale profiling (120 stages, 160 hydro plants, 15,000 cuts per stage) demonstrates any of the following:
+**Trigger conditions for re-introducing shared memory.** The optimization will be activated when production-scale profiling (60 stages, 160 hydro plants, 15,000 cuts per stage) demonstrates any of the following:
 
 | Trigger | Condition                                                              | Measurement                                                                                                      |
 | ------- | ---------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |

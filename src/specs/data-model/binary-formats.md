@@ -111,22 +111,24 @@ Four architectural options were evaluated:
 
 | Option | Strategy                                                 | Memory per rank (16 threads)      | Feasibility                                               |
 | ------ | -------------------------------------------------------- | --------------------------------- | --------------------------------------------------------- |
-| **A**  | One solver per thread, full rebuild per stage transition | ~4 GB solvers + 28 GB shared cuts | Feasible, highest rebuild cost                            |
-| **B**  | One solver per (thread, stage), persistent               | 16 x 120 x 255 MB ~ 490 GB        | **Infeasible**                                            |
-| **C**  | Master LP per stage + per-thread clone/patch             | ~31 GB masters + 4 GB workers     | Feasible, depends on clone efficiency                     |
-| **D**  | Per-thread solver, incremental modify across stages      | ~4 GB solvers + 28 GB shared cuts | Limited benefit due to inter-stage structural differences |
+| **A**  | One solver per thread, full rebuild per stage transition | ~4 GB solvers + 14.3 GB shared cuts | Feasible, highest rebuild cost                          |
+| **B**  | One solver per (thread, stage), persistent               | 16 x 60 x 255 MB ~ 245 GB         | **Infeasible**                                            |
+| **C**  | Master LP per stage + per-thread clone/patch             | ~15.3 GB masters + 4 GB workers   | Feasible, depends on clone efficiency                     |
+| **D**  | Per-thread solver, incremental modify across stages      | ~4 GB solvers + 14.3 GB shared cuts | Limited benefit due to inter-stage structural differences |
 
-> **Decision (2026-02-16)**: Option A (full rebuild per stage) is adopted. Solver API analysis (§A.1) confirmed that neither HiGHS nor CLP expose efficient LP cloning through their C APIs, making Option C solver-specific and complex. Option A is portable (works identically for both solvers), simpler (no solver-specific clone paths), and the LP solve time dominates construction time regardless. Each thread rebuilds its LP per stage via `loadProblem`/`passModel`, adds active cuts via batch `addRows` in CSR format, patches the ~2,240 scenario-dependent values, and solves with warm-start from a cached basis. See [Solver Abstraction](../architecture/solver-abstraction.md) for the solver interface design and §A.1 for the full solver API analysis.
+> **Decision (2026-02-16)**: Option A (full rebuild per stage) was originally adopted. Solver API analysis confirmed that neither HiGHS nor CLP expose efficient LP cloning through their C APIs, making Option C solver-specific and complex. Option A is portable (works identically for both solvers), simpler (no solver-specific clone paths), and the LP solve time dominates construction time regardless. The analysis above remains valid as historical context for why Options B/C/D were rejected.
+>
+> **Superseded (2026-02-28)**: Strategy 2+3 (StageLpCache) — see [Solver Abstraction SS11.4](../architecture/solver-abstraction.md). Cut coefficients are now pre-assembled into a per-stage CSC via SharedRegion; the cut pool retains metadata only. The `addRows` CSR path is used only during StageLpCache assembly between iterations by the leader rank, not on the hot-path stage transition.
 
 Policy data (cuts, states, vertices) has a unique persistence profile:
 
-| Characteristic                   | Description                                           |
-| -------------------------------- | ----------------------------------------------------- |
-| **In-memory during training**    | Entire cut pool lives in RAM, shared across threads   |
-| **Loaded into solver per solve** | Active cuts must be added to solver's internal matrix |
-| **Checkpointed periodically**    | Serialized to disk only at checkpoint intervals       |
-| **High state dimension**         | 2,080 coefficients per cut at production scale        |
-| **Large volume**                 | Up to 15,000 cuts/stage x 120 stages ~ 28 GB per rank |
+| Characteristic                   | Description                                                                                                                                                                                        |
+| -------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **In-memory during training**    | Entire cut pool lives in RAM, shared across threads                                                                                                                                                |
+| **Loaded into solver per solve** | Active cuts must be added to solver's internal matrix                                                                                                                                              |
+| **Checkpointed periodically**    | Serialized to disk only at checkpoint intervals                                                                                                                                                    |
+| **High state dimension**         | 2,080 coefficients per cut at production scale                                                                                                                                                     |
+| **Large volume**                 | Up to 15,000 cuts/stage x 60 stages ~ 14.3 GB per rank (coefficients absorbed into StageLpCache SharedRegion at ~22.3 GB node-wide; see [Memory Architecture §2.1](../hpc/memory-architecture.md)) |
 
 **Why not Parquet?** Using 2,080 individual columns (`coefficient_0` through `coefficient_2079`) is inefficient for Parquet, which is optimized for columnar analytics, not dense fixed-size arrays.
 
@@ -208,7 +210,7 @@ table StageVertices {
     stage_lipschitz: double;
 }
 
-// Cached solver basis for warm-start under Option A (full LP rebuild).
+// Cached solver basis for warm-start at each stage transition.
 // Status codes are solver-specific integers but always have the same
 // structure: one code per column, one code per row. On checkpoint, the
 // codes are stored as-is; on resume with a different solver, a
@@ -285,13 +287,13 @@ policy/
 
 ### 3.4 Cut Pool Memory Layout Requirements
 
-> **Critical requirement**: The in-memory cut pool layout must enable efficient assembly of CSR (Compressed Sparse Row) data for the solver's batch `addRows` API call. This is the hottest data path in the entire system — every LP solve for every forward pass at every stage requires loading all active cuts into the solver via this operation.
+> **Critical requirement**: The in-memory cut pool layout must enable efficient assembly of CSR (Compressed Sparse Row) data for the solver's batch `addRows` API call. This is the primary data path for StageLpCache assembly — between iterations, the leader rank rebuilds each stage's CSC by assembling active cuts via `addRows` in CSR format, then persisting the result as the updated StageLpCache entry.
 
-Under Option A (§3.0), each thread rebuilds its LP per stage transition. The cut-loading step works as follows:
+The cut pool layout enables efficient StageLpCache CSC assembly by the leader rank between iterations. The assembly step works as follows:
 
 1. Query the cut pool for the active cut indices at the current stage (from `active_cut_indices`)
 2. Assemble CSR arrays: `row_starts`, `column_indices`, `coefficient_values`, `row_lower_bounds`, `row_upper_bounds`
-3. Call the solver's batch row-addition API once (e.g., `Highs_addRows`, `Clp_addRows`)
+3. Call the solver's batch row-addition API once (e.g., `Highs_addRows`, `Clp_addRows`) to extend the stage template into a complete StageLpCache entry
 
 At production scale this means assembling up to 15,000 active cut rows with 2,080 non-zeros each (all state variables participate in every cut — the coefficient vectors are dense) into CSR format. The cut pool layout must minimize the cost of this assembly.
 
@@ -310,20 +312,20 @@ At production scale this means assembling up to 15,000 active cut rows with 2,08
 
 #### Basis Caching for Warm-Start
 
-Under Option A, each LP is rebuilt from scratch per stage transition. Without basis information, the solver starts from a logical (slack) basis and must perform a full solve — potentially thousands of simplex iterations. By caching the basis from the previous iteration's solve at each stage and applying it to the rebuilt LP, the solver warm-starts from a near-optimal basis and converges in far fewer iterations.
+At each stage transition, the StageLpCache provides the complete LP (structural constraints + active Benders cuts, pre-assembled in CSC format). Without basis information, the solver starts from a logical (slack) basis and must perform a full solve — potentially thousands of simplex iterations. By caching the basis from the previous iteration's solve at each stage and applying it to the LP loaded from StageLpCache, the solver warm-starts from a near-optimal basis and converges in far fewer iterations.
 
-**How basis reuse works with LP rebuild**:
+**How basis reuse works with StageLpCache**:
 
 1. Solve the LP at stage `t` during iteration `k`
 2. Extract the solver's basis (one status code per column + one per row) and store it indexed by stage
-3. On iteration `k+1`, rebuild the LP at stage `t` from scratch (structural constraints + active cuts)
-4. Apply the cached basis from iteration `k` to the rebuilt LP
+3. On iteration `k+1`, load `StageLpCache[t]` into the solver via `passModel`/`loadProblem` (the cache entry already contains the updated active cuts from iteration `k`'s backward pass)
+4. Apply the cached basis from iteration `k` to the loaded LP
 5. For cut rows that were added since the cached basis was saved (new cuts from iteration `k`'s backward pass), set their status to **basic** — meaning the slack variable for that constraint is in the basis. The solver will price these rows in and pivot as needed.
 6. Solve with warm-start from this patched basis
 
 **Basis structure**: Regardless of the solver (HiGHS, CLP, or others), a simplex basis is always represented as an array of small integer status codes — one code per column (variable) and one code per row (constraint). The codes encode whether each variable/constraint is basic, at its lower bound, at its upper bound, free, or fixed. The specific integer values differ between solvers (HiGHS uses `kHighsBasisStatus*` constants, CLP uses 0-5), but the structure is universal: two flat integer arrays.
 
-**Sizing**: At production scale, the LP has ~8,360 columns and ~80,628 rows. At one byte per status code, a basis snapshot is ~87 KB per stage — negligible compared to the 238 MB of cut coefficients. Across 120 stages, total basis storage is ~10 MB.
+**Sizing**: At production scale, the LP has ~8,360 columns and ~80,628 rows. At one byte per status code, a basis snapshot is ~87 KB per stage — negligible compared to the 238 MB of cut coefficients. Across 60 stages, total basis storage is ~5 MB.
 
 > **Requirement**: Basis data must be stored with the same efficiency and accessibility as cut data — one contiguous array of status codes per stage, directly loadable into the solver's `setBasis`/`copyinStatus` API without transformation. The basis is updated every iteration, so both read and write must be fast.
 
@@ -389,7 +391,7 @@ At production scale, the cut pool for a single stage can hold:
 - **Capacity**: `warm_start_cuts + (max_iterations x forward_passes)` cuts
 - **Per-cut memory**: ~17 KB at 2,080 state dimensions (2,080 x 8 bytes for coefficients + metadata)
 - **Per-stage total**: Up to 15,000 cuts (~238 MB of coefficients alone)
-- **All stages**: 120 stages x 238 MB ~ 28 GB per MPI rank (or shared via MPI shared memory windows across ranks on the same node)
+- **All stages**: 60 stages x 238 MB ~ 14.3 GB per MPI rank (coefficients absorbed into StageLpCache SharedRegion at ~22.3 GB node-wide; see [Memory Architecture §2.1](../hpc/memory-architecture.md))
 
 The preallocation strategy means all memory is allocated at initialization. The `populated_count` tracks how many slots are filled; an active bitmap tracks which populated cuts are active for LP construction.
 
@@ -415,94 +417,3 @@ For output schema definitions, see [Output Schemas](output-schemas.md). For prod
 - [Cut Management](../math/cut-management.md) — Cut selection strategies using cut pool
 - [Solver Abstraction](../architecture/solver-abstraction.md) — Solver interface design
 - [Input Loading Pipeline](../architecture/input-loading-pipeline.md) — MPI broadcast serialization format using `postcard` (SS6.1)
-
----
-
-## Appendix A: Solver API Analysis
-
-### A.1 Incremental LP Modification Capabilities
-
-This appendix documents the LP modification capabilities of HiGHS and CLP, the two target solvers. The findings directly inform the architectural choice between Option A (rebuild per stage) and Option C (master template + clone/patch) discussed in §3.0.
-
-**Sources**: [HiGHS C API](https://github.com/ERGO-Code/HiGHS) (`src/interfaces/highs_c_api.h`), [CLP C API](https://github.com/coin-or/Clp) (`src/Clp_C_Interface.h`, `src/ClpSimplex.hpp`).
-
-#### Batch Row Addition
-
-Both solvers support efficient batch row addition using CSR (Compressed Sparse Row) format:
-
-| Solver | C API Function                                                                 | Format | Notes                                                                                                             |
-| ------ | ------------------------------------------------------------------------------ | ------ | ----------------------------------------------------------------------------------------------------------------- |
-| HiGHS  | `Highs_addRows(highs, num_rows, lower, upper, num_nz, starts, index, value)`   | CSR    | Also supports single-row `Highs_addRow`. Documentation notes `Highs_passModel` is faster than iterative `addRow`. |
-| CLP    | `Clp_addRows(model, number, rowLower, rowUpper, rowStarts, columns, elements)` | CSR    | C++ API has 6 overloads including `CoinBuild` integration. No single-row add in C API.                            |
-
-**Implication for cut pool layout**: Cut coefficients should be stored so that conversion to CSR format for batch row addition is efficient — ideally contiguous dense coefficient arrays per cut that can be assembled into a CSR structure with minimal copying.
-
-#### LP Cloning / Copying
-
-| Solver | C API                                                                                   | C++ API                                                                                                                                                                                                  | Notes                                                                                             |
-| ------ | --------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
-| HiGHS  | No clone function. Workaround: `Highs_getModel` → `Highs_passModel` (extract + reload). | Not evaluated (C API is the target interface).                                                                                                                                                           | The extract/reload path copies all data — no shared-memory or copy-on-write semantics.            |
-| CLP    | No clone function. Workaround: `Clp_saveModel`/`Clp_restoreModel` (file-based).         | Copy constructor: `ClpSimplex(const ClpSimplex&)`. Subproblem constructor extracts row/column subsets. `borrowModel()` for zero-copy sharing. `makeBaseModel()`/`setToBaseModel()` for snapshot/restore. | C++ API has rich cloning. `Clp_getClpSimplex()` exposes underlying C++ pointer for direct access. |
-
-**Implication for Option C**: Neither solver exposes an efficient clone operation through its C API. CLP's C++ API has strong cloning support (copy constructor, `makeBaseModel`/`setToBaseModel` pattern), but using it requires either a C++ solver abstraction layer or calling through `Clp_getClpSimplex()`. HiGHS cloning via extract/reload is functionally a full rebuild.
-
-#### Incremental Coefficient and Bound Modification
-
-Both solvers support modifying an existing LP without rebuilding:
-
-| Operation              | HiGHS C API                                                           | CLP C API                                                                                  |
-| ---------------------- | --------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
-| Single coefficient     | `Highs_changeCoeff(highs, row, col, value)`                           | `Clp_modifyCoefficient(model, row, column, newElement, keepZero)`                          |
-| Batch coefficients     | Not available (single element only)                                   | Not in C API; C++ has `modifyCoefficientsAndPivot`                                         |
-| Single row bounds      | `Highs_changeRowBounds(highs, row, lower, upper)`                     | Not in C API; use mutable pointers from `Clp_rowLower()`/`Clp_rowUpper()`                  |
-| Batch row bounds       | `Highs_changeRowsBoundsBySet(highs, num, set, lower, upper)`          | `Clp_chgRowLower(model, array)` / `Clp_chgRowUpper(model, array)` (full-array replacement) |
-| Single col bounds      | `Highs_changeColBounds(highs, col, lower, upper)`                     | Via mutable pointers from `Clp_columnLower()`/`Clp_columnUpper()`                          |
-| Batch col bounds       | `Highs_changeColsBoundsBySet(highs, num, set, lower, upper)`          | `Clp_chgColumnLower`/`Clp_chgColumnUpper` (full-array replacement)                         |
-| Objective coefficients | `Highs_changeColCost` + batch variants (`BySet`, `ByRange`, `ByMask`) | `Clp_chgObjCoefficients(model, array)` (full-array replacement)                            |
-
-**CLP mutable pointer access**: CLP's C API returns mutable `double*` pointers for row/column bounds and objective. This allows direct in-place modification of individual elements without array replacement — a notable efficiency advantage for the per-scenario patching pattern where only ~2,240 values change.
-
-#### Row Deletion
-
-| Solver | C API                                                                        | Notes                                                                                       |
-| ------ | ---------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
-| HiGHS  | `Highs_deleteRowsByRange`, `Highs_deleteRowsBySet`, `Highs_deleteRowsByMask` | Three selection paradigms. Mask variant modifies mask array in-place to report new indices. |
-| CLP    | `Clp_deleteRows(model, number, which)`                                       | By index array only. C++ also has `deleteRowsAndColumns`.                                   |
-
-**Alternative to deletion**: Row deactivation by setting bounds to [-inf, +inf] is supported by both solvers and avoids index remapping.
-
-#### Warm-Starting / Basis Reuse
-
-Both solvers retain the current basis after LP modifications and warm-start automatically on re-solve:
-
-| Capability                | HiGHS                                                                              | CLP                                                                                                                  |
-| ------------------------- | ---------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
-| Implicit warm-start       | Yes — existing basis retained after modifications; `Highs_run` warm-starts from it | Yes — `Clp_dual`/`Clp_primal` warm-start from current basis (unlike `Clp_initialSolve` which does presolve)          |
-| Save/restore basis        | `Highs_getBasis`/`Highs_setBasis` (column + row status arrays)                     | `Clp_statusArray`/`Clp_copyinStatus` (single packed array); per-variable `Clp_getColumnStatus`/`Clp_setColumnStatus` |
-| Provide starting solution | `Highs_setSolution` (primal + dual values)                                         | Via mutable pointers to solution arrays                                                                              |
-| Hot-start (C++ only)      | Not evaluated                                                                      | `markHotStart`/`solveFromHotStart` — most efficient for tiny changes                                                 |
-| Factorization reuse       | Implicit                                                                           | C++ `dual(0, startFinishOptions)` with bit flags: bit 2 = reuse old factorization if same number of rows             |
-| Change tracking           | Not observed                                                                       | C++ `whatsChanged_` bitflags — solver skips unnecessary re-initialization based on what was actually modified        |
-
-**Implication**: Warm-starting is well-supported by both solvers. After adding cut rows or patching scenario-dependent bounds, the solver can re-solve from the previous basis efficiently. This favors Option A (rebuild per stage with warm-start from previous iteration's basis) as a viable approach — the cost of rebuilding is amortized by efficient warm-start on re-solve.
-
-#### A.2 Architectural Decision
-
-> **Decision (2026-02-16)**: Option A (rebuild per stage) is adopted.
-
-**Option A workflow** (adopted):
-
-1. Load full constraint matrix via `passModel`/`loadProblem` (fast bulk load)
-2. Add all active cuts via `addRows` in CSR format (single batch call)
-3. Patch ~2,240 scenario-dependent values via bound modification
-4. Solve with warm-start from previous iteration's basis (if saved)
-5. Repeat for next stage
-
-**Why not Option C** (master template + clone/patch):
-
-- Neither HiGHS nor CLP expose efficient LP cloning through their C APIs
-- CLP's C++ clone support (`ClpSimplex` copy constructor, `makeBaseModel`/`setToBaseModel`) would require solver-specific C++ code paths, breaking the portable C API solver abstraction
-- HiGHS cloning via extract/reload is functionally equivalent to a full rebuild anyway
-- LP solve time dominates construction time at production scale (~80,000 constraints, ~8,000 variables), so construction savings from cloning are marginal
-
-**Consequence for cut pool layout**: Since every thread rebuilds its LP per stage and loads cuts via a single batch `addRows` call in CSR format, the cut pool's in-memory layout is a performance-critical data structure. It must be optimized for efficient CSR assembly as specified in §3.4.

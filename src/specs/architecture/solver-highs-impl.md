@@ -254,7 +254,7 @@ HiGHS does not expose LP template cloning through its C API (no equivalent of CL
 - [LP Formulation](../math/lp-formulation.md) — Constraint structure that HiGHS operates on
 - [Cut Management](../math/cut-management.md) — How cuts are generated; this spec handles how they are loaded via `Highs_addRows`
 - [Training Loop](./training-loop.md) — Forward/backward pass orchestration driving solver invocations
-- [Binary Formats](../data-model/binary-formats.md) — Cut pool CSR layout (SS3.4), LP rebuild analysis (SSA)
+- [Binary Formats](../data-model/binary-formats.md) — Cut pool CSR layout (SS3.4)
 - [Hybrid Parallelism](../hpc/hybrid-parallelism.md) — OpenMP threading model requiring one HiGHS instance per thread
 - [Memory Architecture](../hpc/memory-architecture.md) — NUMA-aware allocation for solver workspaces
 - [Configuration Reference](../configuration/configuration-reference.md) — Solver configuration parameters
