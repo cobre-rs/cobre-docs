@@ -8,7 +8,7 @@ These three specs are prerequisites for reading any other specification section.
 
 The specs are short and self-contained; reading them in order takes under fifteen minutes:
 
-1. **[Design Principles](./overview/design-principles.md)** -- The 8 foundational principles guiding the Cobre solver design. These principles are cited throughout the architecture and HPC specs to justify specific design choices.
+1. **[Design Principles](./overview/design-principles.md)** -- The 9 foundational principles guiding the Cobre solver design. These principles are cited throughout the architecture and HPC specs to justify specific design choices.
 2. **[Notation Conventions](./overview/notation-conventions.md)** -- Index sets, symbols, and unit conventions used throughout all mathematical formulations. Required context before reading any spec in the [Mathematical Formulations](./math.md) section.
 3. **[Production Scale Reference](./overview/production-scale-reference.md)** -- Representative problem dimensions for a national-scale hydrothermal system (number of plants, stages, scenarios, state dimension). Referenced by every spec that performs sizing analysis or communication volume estimation.
 

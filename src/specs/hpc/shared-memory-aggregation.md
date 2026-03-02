@@ -17,17 +17,50 @@ The `SharedMemoryProvider` trait ([Communicator Trait SS4](./communicator-trait.
 
 The `SharedRegion<T>` type provides RAII semantics — `Drop` automatically frees the underlying shared memory resource (MPI window for ferrompi, OS shared segment for shm, `Vec<T>` for HeapFallback). See [Communicator Trait SS4.2](./communicator-trait.md).
 
-### 1.2 Shared Data: Opening Tree
+### 1.2 Shared Data: StageLpCache (Primary)
 
-The opening tree (fixed noise vectors for the backward pass — see [Scenario Generation §2.3](../architecture/scenario-generation.md)) is the primary candidate for `SharedRegion<T>`:
+The StageLpCache ([Solver Abstraction SS11.4](../architecture/solver-abstraction.md)) is the **primary candidate** for `SharedRegion<T>` — it is the dominant memory structure at ~22.3 GB and provides the largest sharing benefit:
 
-| Property        | Value                                                                                                 |
-| --------------- | ----------------------------------------------------------------------------------------------------- |
-| Size            | $N_{\text{openings}} \times T \times N_{\text{entities}} \times 8$ bytes (~30 MB at production scale) |
-| Access pattern  | Read-only during training (generated once before first iteration)                                     |
-| Sharing benefit | Avoid replicating ~30 MB per rank on same node (4 ranks = 90 MB saved)                                |
-| Write phase     | Leader generates during initialization, `region.fence()` ensures visibility                           |
-| Memory layout   | Opening-major ordering for backward pass locality (see scenario-generation.md §2.3)                   |
+| Property        | Value                                                                                               |
+| --------------- | --------------------------------------------------------------------------------------------------- |
+| Size            | ~22.3 GB (60 stages × ~378 MB per stage at 15K cut capacity)                                        |
+| Access pattern  | Read-only during forward/backward passes; updated between iterations by leader rank                 |
+| Sharing benefit | Eliminates ~67 GB replication (4 ranks × 22.3 GB → 1 copy)                                          |
+| Write phase     | Between iterations: leader rank writes new cuts and deactivation bounds, `region.fence()` + barrier |
+| Memory layout   | Per-stage CSC arrays (structural template + cut slots) — sequential access during `passModel`       |
+
+**NUMA-interleaved allocation** is mandatory for StageLpCache. At >5 GB, leader-only placement creates a memory controller bottleneck. `mbind(MPOL_INTERLEAVE)` distributes pages round-robin across all NUMA domains, providing ~44 GB/s effective read bandwidth (vs ~15–20 GB/s with leader-only). See [Memory Architecture §3.6](./memory-architecture.md).
+
+**Allocation protocol:**
+
+1. Create intra-node communicator via `comm.split_local()` ([Communicator Trait SS4.1](./communicator-trait.md))
+2. Leader calls `create_shared_region::<u8>(total_bytes)` with NUMA-interleaved allocation hint; followers allocate size 0
+3. Leader assembles initial StageLpCache from StageTemplate CSC + empty cut slots for each stage
+4. `region.fence()` ensures initial data is visible to all ranks
+5. During training passes: all ranks read `StageLpCache[t]` via `region.as_slice()` (zero-copy)
+6. Between iterations: leader writes new cut data and deactivation bounds, then `region.fence()` + barrier
+
+**Update path** (between iterations, single-threaded by leader):
+
+- Write new cut coefficients into pre-allocated CSC slots (~300 MB/iteration at ~5 ms)
+- Set deactivated cut row bounds to $-\infty$ (non-binding, no structural change)
+- Read path: `passModel(StageLpCache[t])` = sequential bulk read at ~44 GB/s → **~8.6 ms** per stage transition
+
+### 1.3 Shared Data: Cut Pool Metadata
+
+Cut pool metadata (intercepts, activity bitmap, iteration/forward_pass indices, binding counts) is included in the SharedRegion alongside StageLpCache. Total: ~12 MB across 60 stages at 15K capacity — negligible relative to StageLpCache.
+
+### 1.4 Shared Data: Opening Tree (Secondary)
+
+The opening tree (fixed noise vectors for the backward pass — see [Scenario Generation §2.3](../architecture/scenario-generation.md)) is a secondary candidate for `SharedRegion<T>`:
+
+| Property        | Value                                                                                                  |
+| --------------- | ------------------------------------------------------------------------------------------------------ |
+| Size            | $N_{\text{openings}} \times T \times N_{\text{entities}} \times 8$ bytes (~0.8 MB at production scale) |
+| Access pattern  | Read-only during training (generated once before first iteration)                                      |
+| Sharing benefit | Avoid replicating ~0.8 MB per rank on same node (4 ranks = ~2.4 MB saved)                              |
+| Write phase     | Leader generates during initialization, `region.fence()` ensures visibility                            |
+| Memory layout   | Opening-major ordering for backward pass locality (see scenario-generation.md §2.3)                    |
 
 **Generation protocol:**
 
@@ -38,7 +71,7 @@ The opening tree (fixed noise vectors for the backward pass — see [Scenario Ge
 5. `region.fence()` ensures all writes are visible to all ranks on the node
 6. All ranks read any opening via `region.as_slice()` (zero-copy)
 
-### 1.3 Shared Data: Input Case Data
+### 1.5 Shared Data: Input Case Data (Secondary)
 
 Static input data (hydro parameters, thermal parameters, system topology) loaded during initialization is read-only during training. Sharing via `SharedRegion<T>` avoids per-rank replication:
 
@@ -49,21 +82,7 @@ Static input data (hydro parameters, thermal parameters, system topology) loaded
 | Correlation factors    | ~2 MB            | Yes        | Cholesky factors, one per profile |
 | Block/exchange factors | ~1 MB            | Yes        | Loaded once, read-only            |
 
-Whether these smaller data structures justify `SharedRegion<T>` overhead (allocation, fence, pointer indirection) depends on the number of ranks per node. With 4+ ranks per node, the savings compound.
-
-### 1.4 Shared Data: Cut Pool (Optimization Candidate)
-
-The cut pool grows each iteration and is the largest runtime data structure. Sharing the cut pool via `SharedRegion<T>` would eliminate per-rank replication within a node:
-
-| Property            | Baseline (replicated)                   | Shared (optimization)                    |
-| ------------------- | --------------------------------------- | ---------------------------------------- |
-| Memory per node     | Cut pool size × ranks per node          | Cut pool size × 1                        |
-| Read access         | Local memory (fastest)                  | Shared window pointer (may cross NUMA)   |
-| Write access        | Each rank updates locally               | Leader writes, fence, followers read     |
-| Forward pass read   | Hot-path: evaluating cuts at each stage | Potentially slower if shared across NUMA |
-| Backward pass write | Each rank adds new cuts                 | Leader integrates after `allgatherv`     |
-
-> **Design point**: The baseline approach (each rank maintains its own cut pool, synchronized via `allgatherv`) is simple and correct. Shared memory cut pool is an optimization for memory-constrained nodes, with a latency trade-off. The quantification of this trade-off depends on the production-scale cut pool size — see [Memory Architecture](./memory-architecture.md). See also [Communication Patterns §5.2](./communication-patterns.md).
+Whether these smaller data structures justify `SharedRegion<T>` overhead (allocation, fence, pointer indirection) depends on the number of ranks per node. With 4+ ranks per node, the savings compound, but the absolute benefit (~60 MB) is negligible relative to StageLpCache (~67 GB saved).
 
 ## 2. Intra-Node Cut Aggregation
 
@@ -174,7 +193,10 @@ The primary load balance indicator is the ratio of maximum to minimum `forward_t
 - [Scenario Generation §2.2](../architecture/scenario-generation.md) — Deterministic seed derivation, reproducible sampling
 - [Scenario Generation §2.3](../architecture/scenario-generation.md) — Fixed opening tree generation and memory layout
 - [Cut Management Implementation §4](../architecture/cut-management-impl.md) — Wire format, deterministic slot assignment
+- [Cut Management Implementation §7](../architecture/cut-management-impl.md) — StageLpCache update flow, MPI→CSC data path
 - [Work Distribution §3.1](./work-distribution.md) — Contiguous block distribution arithmetic
-- [Solver Abstraction §5](../architecture/solver-abstraction.md) — Cut pool preallocation, slot assignment
-- [Memory Architecture](./memory-architecture.md) — Memory budget, NUMA-aware allocation, shared memory savings quantification
+- [Solver Abstraction SS5](../architecture/solver-abstraction.md) — Cut pool preallocation, slot assignment
+- [Solver Abstraction SS11.4](../architecture/solver-abstraction.md) — StageLpCache design, sizing, ownership, update/read contracts
+- [Memory Architecture §2](./memory-architecture.md) — Memory budget, two-tier model (thread-local + SharedRegion)
+- [Memory Architecture §3.6](./memory-architecture.md) — NUMA-interleaved allocation for SharedRegion
 - [Output Schemas §6.2-§6.3](../data-model/output-schemas.md) — Timing output Parquet schemas

@@ -239,9 +239,11 @@ Each `void*` HiGHS instance is **not thread-safe** — it must be exclusively ow
 
 Unlike CLP (which returns mutable pointers into solver internals), HiGHS copies solution values into caller-provided arrays via `Highs_getSolution`. This is inherently safer — no pointer invalidation risk — but requires pre-allocated buffers in the thread-local workspace. The buffers are sized once at initialization (to `num_col` and `num_row` of the largest stage LP) and reused for all solves.
 
-### 6.5 No Cloning Optimization Path
+### 6.5 StageLpCache Stage Transition
 
-HiGHS does not expose LP template cloning through its C API (no equivalent of CLP's `makeBaseModel`/`setToBaseModel`). The Option A baseline (full `Highs_passLp` rebuild per stage transition) is the only available strategy. Since stage templates store the matrix in CSC form — HiGHS's native internal format — the `Highs_passLp` call is a fast bulk memory operation with no format conversion overhead.
+Under the adopted Strategy 2+3, stage transitions use `Highs_passLp` to load the complete `StageLpCache[t]` — which includes structural constraints plus all active cuts in CSC format. The `Highs_addRows` call is no longer used on the hot-path stage transition (it is used during StageLpCache assembly between iterations). Since the StageLpCache CSC is in HiGHS's native internal format, `Highs_passLp` is a fast bulk memory operation with no format conversion overhead.
+
+HiGHS does not expose LP template cloning through its C API (no equivalent of CLP's `makeBaseModel`/`setToBaseModel`), but this is moot under StageLpCache — the cloning optimization is superseded.
 
 ## Cross-References
 

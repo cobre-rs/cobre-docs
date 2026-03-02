@@ -828,13 +828,15 @@ When `comm.size() == 1`, the `allgatherv` for cut synchronization becomes an ide
 
 ### 6.4 LP Rebuild Considerations
 
-Memory constraints prevent keeping all stage LPs with their full cut sets resident simultaneously. The solver must rebuild LPs when transitioning between stages, which lies on the critical performance path. Strategies to minimize rebuild cost include:
+Memory constraints prevent keeping all stage LPs with their full cut sets resident simultaneously. The StageLpCache architecture ([Solver Abstraction SS11.4](./solver-abstraction.md)) addresses this by pre-assembling complete LPs per stage in CSC format. Stage transitions use `passModel` to bulk-load the complete LP including active cuts (~8.6 ms at ~44 GB/s NUMA-interleaved bandwidth). The between-iterations StageLpCache update (~5 ms) absorbs new cuts and deactivates old ones off the critical path, performed by the leader rank on the SharedRegion.
 
-- **Cut preallocation** — Reserve space for expected cut count to avoid LP resizing
+Key mechanisms that minimize rebuild cost:
+
+- **StageLpCache** — Complete pre-assembled LP per stage via SharedRegion, eliminating per-thread CSR assembly buffers
 - **Basis persistence** — Reuse the forward pass basis as a warm-start for the backward LP
-- **Incremental constraint updates** — Add only new cuts (from the current iteration) rather than rebuilding the full LP
+- **Cut preallocation** — 15K cut slots pre-allocated in the CSC structure; new cuts fill existing slots without structural change
 
-See [Solver Abstraction](./solver-abstraction.md) and [Solver Workspaces](./solver-workspaces.md).
+See [Solver Abstraction SS11.2–SS11.4](./solver-abstraction.md) and [Solver Workspaces](./solver-workspaces.md).
 
 ## 7. Dual Extraction for Cut Coefficients
 

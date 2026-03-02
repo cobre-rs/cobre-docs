@@ -200,7 +200,7 @@ data[stage_offsets[stage] + opening_idx * dim .. + dim]
 
 where `dim` = $N_{\text{entities}}$ (number of random variables per stage) and `stage_offsets[t]` = $\sum_{s=0}^{t-1} N_s \times \text{dim}$ is the cumulative offset for stage $t$. For uniform branching, this reduces to `stage * n_openings * dim + opening_idx * dim`.
 
-Total size: $\sum_t N_t \times \text{dim} \times 8$ bytes. For typical production cases with uniform branching (120 stages $\times$ 200 openings $\times$ 160 hydros = ~30 MB), the entire tree fits in L3 cache. For the reference configuration in [Memory Architecture §2.1](../hpc/memory-architecture.md) (60 stages $\times$ 10 openings $\times$ 160 entities = ~0.8 MB), the tree fits in L2 cache.
+Total size: $\sum_t N_t \times \text{dim} \times 8$ bytes. For a hypothetical maximum configuration (120 stages × 200 openings × 160 hydros = ~30 MB), the entire tree fits in L3 cache. For the production reference configuration in [Memory Architecture §2.1](../hpc/memory-architecture.md) (60 stages × 10 openings × 160 entities × 8 bytes = ~0.8 MB), the tree fits in L2 cache.
 
 ### 2.3a OpeningTree Rust Type
 
@@ -438,7 +438,7 @@ The sampling scheme is configured in `stages.json` via the `scenario_source` obj
 
 | Sampling Scheme | `scenario_source` config                                        | Required inputs                                 |
 | --------------- | --------------------------------------------------------------- | ----------------------------------------------- |
-| InSample        | `{ "sampling_scheme": "in_sample", "seed": 42 }`                | Uncertainty models (SS1) or inflow history       |
+| InSample        | `{ "sampling_scheme": "in_sample", "seed": 42 }`                | Uncertainty models (SS1) or inflow history      |
 | External        | `{ "sampling_scheme": "external", "selection_mode": "random" }` | `external_scenarios.parquet`                    |
 | Historical      | `{ "sampling_scheme": "historical" }`                           | `inflow_history.parquet` + `season_definitions` |
 
@@ -519,7 +519,7 @@ Layout: [S0_T0_H0] [S0_T0_H1] ... [S0_TT_HN] [S1_T0_H0] ... [SS_TT_HN]
 - No false sharing between threads (each thread's scenarios are in separate memory regions)
 - Predictable prefetching within the stage sequence
 
-**Size estimate (production scale):** 200 scenarios × 120 stages × 160 hydros × 8 bytes = ~30 MB for inflows. Total per rank (including loads): ~50 MB, which fits in L3 cache per NUMA domain.
+**Size estimate (hypothetical maximum):** 200 scenarios × 120 stages × 160 hydros × 8 bytes = ~30 MB for inflows. At the production reference configuration (192 scenarios × 60 stages × 160 hydros × 8 bytes = ~14 MB), the cache fits comfortably in L3 per NUMA domain.
 
 **Backward pass consideration:** The backward pass iterates over stages in reverse, accessing all scenarios at a given stage. With scenario-major layout, this accesses non-contiguous memory (stride = `n_stages × n_entities`). This is acceptable because: (a) the noise cache is relatively small and fits in L3, (b) the alternative (stage-major layout) would penalize the more latency-sensitive forward pass, and (c) the backward pass LP reuses basis and warm-starts from the previous opening solution, changing only the noise terms — so memory access latency is unlikely to be the bottleneck, though this should be validated with profiling once the solver is operational.
 

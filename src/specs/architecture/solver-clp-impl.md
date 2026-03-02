@@ -28,7 +28,7 @@ CLP exposes two API layers relevant to Cobre:
 | **C API** (`Clp_C_Interface.h`) | Pure C functions operating on opaque `Clp_Simplex*` | Direct FFI (`extern "C"`)                               | Load, solve, add rows, mutable pointer access, basis, tolerances, scaling                   |
 | **C++ API** (`ClpSimplex.hpp`)  | Class methods on `ClpSimplex`                       | Via thin C wrapper functions compiled as C++ and linked | Template cloning (`makeBaseModel`/`setToBaseModel`), copy constructor, `setPersistenceFlag` |
 
-The C API is sufficient for the Option A baseline. The C++ API enables the anticipated cloning optimization (SS5). The bridge between them is `Clp_getClpSimplex(model)`, which returns the underlying `ClpSimplex*`.
+The C API is sufficient for the adopted Strategy 2+3 baseline (StageLpCache via `Clp_loadProblem`). The C++ API was anticipated for a cloning optimization (SS5) that is now superseded by StageLpCache. The bridge between them is `Clp_getClpSimplex(model)`, which returns the underlying `ClpSimplex*`.
 
 ## 2. Solver Interface Mapping
 
@@ -202,9 +202,9 @@ CLP supports four scaling modes via `Clp_scaling(model, mode)`:
 
 The scaling strategy interacts with the open point in [Solver Abstraction SS3](./solver-abstraction.md) (single-phase vs two-phase scaling). If Cobre manages its own scaling (applied at the template level), CLP internal scaling should remain off to avoid double-scaling. If Cobre delegates scaling to the solver, CLP's auto mode (3) is a reasonable default.
 
-## 5. C++ Wrapper Strategy (Anticipated Optimization)
+## 5. C++ Wrapper Strategy (Superseded by StageLpCache)
 
-The C API is sufficient for the Option A baseline (full rebuild per stage transition). The C++ API enables a potentially faster alternative: **LP template cloning**.
+The C API is sufficient for the adopted Strategy 2+3 baseline (StageLpCache loaded via `Clp_loadProblem`). The C++ cloning optimization described below is **superseded** by StageLpCache ([Solver Abstraction SS11.4](./solver-abstraction.md)), which eliminates the per-stage-transition rebuild entirely by pre-assembling complete LPs in CSC format. The C++ wrapper remains available for the `setPersistenceFlag` micro-optimization (SS5.2).
 
 ### 5.1 Cloning Mechanism
 
@@ -238,13 +238,13 @@ The wrapper is compiled as a C++ translation unit and linked into the Rust binar
 
 ### 5.3 Status and Trade-offs
 
-| Aspect       | Option A Baseline (C API only)           | Cloning (C++ wrapper)                                                                     |
-| ------------ | ---------------------------------------- | ----------------------------------------------------------------------------------------- |
-| Rebuild cost | `Clp_loadProblem` (parse CSR + allocate) | `setToBaseModel` (restore saved arrays)                                                   |
-| Complexity   | Minimal — pure C FFI                     | Additional build step, thin C++ wrapper                                                   |
-| Portability  | Works with any CLP build                 | Requires C++ linkage, tight version coupling                                              |
-| Memory       | Template stored outside solver           | Base model stored inside each solver instance                                             |
-| Status       | **Adopted baseline**                     | **Anticipated optimization** — implement and benchmark when performance data is available |
+| Aspect       | Strategy 2+3 Baseline (C API only)                 | Cloning (C++ wrapper)                                                                                  |
+| ------------ | -------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| Rebuild cost | `Clp_loadProblem` loads complete StageLpCache CSC  | `setToBaseModel` (restore saved arrays)                                                                |
+| Complexity   | Minimal — pure C FFI                               | Additional build step, thin C++ wrapper                                                                |
+| Portability  | Works with any CLP build                           | Requires C++ linkage, tight version coupling                                                           |
+| Memory       | StageLpCache in SharedRegion (shared across ranks) | Base model stored inside each solver instance                                                          |
+| Status       | **Adopted baseline** (via StageLpCache, SS11.4)    | **Superseded** — StageLpCache eliminates the per-stage rebuild that cloning was designed to accelerate |
 
 ## 6. Memory Footprint
 
@@ -258,15 +258,15 @@ The wrapper is compiled as a C++ translation unit and linked into the Rust binar
 | **Total per instance**       |                                             | **~15 MB** (without cloning), **~22 MB** (with cloning) |
 | **192 threads**              |                                             | **~2.9 GB** / **~4.2 GB**                               |
 
-This is within acceptable bounds for production HPC nodes (256+ GB RAM). The cloning overhead (~7 MB per instance) is modest relative to the cut pool memory (~28 GB per rank for 120 stages).
+This is within acceptable bounds for production HPC nodes (384 GB RAM). The cloning overhead (~7 MB per instance) is modest relative to the cut pool memory (~14.3 GB per rank for 60 stages).
 
 ## 7. CLP-Specific Considerations
 
-### 7.1 Column-Major Format
+### 7.1 Column-Major Format and StageLpCache
 
-`Clp_loadProblem` expects column-major (CSC) format, which matches the stage LP template format directly — templates store their structural matrix in CSC form (see [Solver Abstraction SS11](./solver-abstraction.md)). No format transposition is needed at stage transitions.
+`Clp_loadProblem` expects column-major (CSC) format, which matches the StageLpCache format directly — the StageLpCache stores the complete LP (structural template + active cuts) in CSC form (see [Solver Abstraction SS11.4](./solver-abstraction.md)). No format transposition is needed at stage transitions.
 
-`Clp_addRows` for dynamic constraint addition accepts row-major (CSR) format (row starts, column indices, elements), which matches the cut pool's CSR-friendly storage layout. No transposition needed for cut addition either.
+`Clp_addRows` for dynamic constraint addition accepts row-major (CSR) format (row starts, column indices, elements), which matches the cut pool's CSR-friendly storage layout. Under Strategy 2+3, `Clp_addRows` is used during StageLpCache assembly between iterations but is no longer invoked on the hot-path stage transition.
 
 ### 7.2 Dual Sign Convention
 

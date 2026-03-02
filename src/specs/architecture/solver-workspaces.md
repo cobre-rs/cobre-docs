@@ -26,8 +26,8 @@ Each thread-local workspace contains the following components:
 | Primal buffer         | Pre-allocated array for primal solution extraction. These are **single-solve scratch buffers** — the SDDP algorithm copies the values it needs (state variables, generation, etc.) after each solve. The buffer is overwritten on the next solve.                                                             | 8,360 × 8 = ~65 KB                                |
 | Dual buffer           | Pre-allocated array for dual solution extraction. Same single-solve semantics as primal buffer.                                                                                                                                                                                                               | 80,628 × 8 = ~630 KB                              |
 | Reduced cost buffer   | Pre-allocated array for reduced cost extraction. Same single-solve semantics as primal buffer.                                                                                                                                                                                                                | 8,360 × 8 = ~65 KB                                |
-| Per-stage basis cache | Array of `T` basis slots (one per stage). Each slot stores the basis from the last successful solve at that stage, used for warm-starting the same stage in the next iteration. See SS1.5.                                                                                                                     | T × (num_cols + num_rows) × 1–4 bytes (see below) |
-| Solve statistics      | Accumulated per-thread counters (see SS1.6).                                                                                                                                                                                                                                                                   | ~64 bytes                                         |
+| Per-stage basis cache | Array of `T` basis slots (one per stage). Each slot stores the basis from the last successful solve at that stage, used for warm-starting the same stage in the next iteration. See SS1.5.                                                                                                                    | T × (num_cols + num_rows) × 1–4 bytes (see below) |
+| Solve statistics      | Accumulated per-thread counters (see SS1.6).                                                                                                                                                                                                                                                                  | ~64 bytes                                         |
 | NUMA node ID          | Which NUMA node this workspace's memory is allocated on.                                                                                                                                                                                                                                                      | scalar                                            |
 
 **Cache line padding**: Workspaces should be padded to cache line boundaries (64 bytes) to prevent false sharing between adjacent workspaces in an array.
@@ -42,25 +42,25 @@ Each thread-local workspace contains the following components:
 | Internal metadata |      ~1 MB | Iteration buffers, scaling arrays, options          |
 | **Total**         | **~15 MB** | Consistent across HiGHS and CLP                     |
 
-**Per-stage basis sizing** (production: T = 120 stages, 88,988 status entries per basis):
+**Per-stage basis sizing** (production: T = 60 stages, 88,988 status entries per basis):
 
-| Solver | Status size | Per basis | 120 stages | Notes                           |
-| ------ | ----------: | --------: | ---------: | ------------------------------- |
-| CLP    |      1 byte |    ~87 KB |     ~10 MB | `unsigned char` per status code |
-| HiGHS  |     4 bytes |   ~348 KB |     ~41 MB | `HighsInt` per status code      |
+| Solver | Status size | Per basis | 60 stages | Notes                           |
+| ------ | ----------: | --------: | --------: | ------------------------------- |
+| CLP    |      1 byte |    ~87 KB |   ~5.1 MB | `unsigned char` per status code |
+| HiGHS  |     4 bytes |   ~348 KB |  ~20.4 MB | `HighsInt` per status code      |
 
 **Total memory footprint per workspace**:
 
-| Component               | Per Thread (CLP) | Per Thread (HiGHS) | 16 Threads (HiGHS) |
+| Component               | Per Thread (CLP) | Per Thread (HiGHS) | 48 Threads (HiGHS) |
 | ----------------------- | ---------------: | -----------------: | -----------------: |
-| Solver instance         |           ~15 MB |             ~15 MB |            ~240 MB |
-| Solution buffers        |          ~815 KB |            ~815 KB |             ~13 MB |
-| Per-stage basis cache   |           ~10 MB |             ~41 MB |            ~656 MB |
-| **Total per workspace** |       **~26 MB** |         **~57 MB** |        **~912 MB** |
+| Solver instance         |           ~15 MB |             ~15 MB |            ~720 MB |
+| Solution buffers        |          ~815 KB |            ~815 KB |             ~38 MB |
+| Per-stage basis cache   |          ~5.1 MB |           ~20.4 MB |            ~979 MB |
+| **Total per workspace** |       **~21 MB** |         **~36 MB** |      **~1,737 MB** |
 
-At 16 threads per rank (production configuration), the total workspace memory is under 1 GB per rank — well within acceptable bounds for production HPC nodes (256+ GB RAM). The per-stage basis cache is the dominant cost with HiGHS due to its 4-byte status codes.
+At 48 threads per rank (production configuration), the total workspace memory is under 2 GB per rank — well within acceptable bounds for production HPC nodes (384 GB RAM). The per-stage basis cache is the dominant cost with HiGHS due to its 4-byte status codes.
 
-> **Note**: All sizing estimates use production-scale dimensions from `lp_sizing.py` (160 hydros, 130 thermals, 120 stages, 15K cut capacity). See [Production Scale Reference SS3](../overview/production-scale-reference.md) for the full configuration.
+> **Note**: All sizing estimates use production-scale dimensions from `lp_sizing.py` (160 hydros, 130 thermals, 60 stages, 15K cut capacity). See [Production Scale Reference SS3](../overview/production-scale-reference.md) for the full configuration.
 
 **Basis lifecycle**: The per-stage basis cache is the in-memory warm-start mechanism. For checkpoint/restart with reproducibility, the basis is serialized to FlatBuffers (`StageBasis` table in [Binary Formats SS3.1](../data-model/binary-formats.md)) at checkpoint boundaries. On resume, the checkpoint basis is loaded into the per-stage cache, restoring warm-start capability. The in-memory cache and the on-disk checkpoint are two lifecycle stages of the same data — the cache is the hot-path runtime structure, the checkpoint is the durable persistence format.
 
@@ -89,7 +89,7 @@ The preceding subsections define workspace creation (SS1.3), reuse (SS1.4--1.5),
 | ------------------------ | --------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------- |
 | **Creation**             | Once, at Initialization phase start           | Within a parallel region, each thread creates its own workspace on its NUMA node via first-touch allocation (SS1.3). The solver instance is created (`Highs_create()` or `Clp_newModel()`), all buffers are zero-filled, and the per-stage basis cache is initialized with `T` empty slots. The workspace manager allocates the workspace array. After creation, the workspace array is structurally immutable -- the number of workspaces equals the number of threads and does not change. | SS1.2, SS1.3, SS1.7 |
 | **Per-iteration reuse**  | Many times, across all training iterations    | Each thread reuses its workspace for every LP solve. The per-stage basis cache (SS1.5) carries warm-start state across iterations -- the basis from solving stage `t` in iteration `i` is reused to warm-start stage `t` in iteration `i+1`. Solution buffers, RHS patch buffers, and reduced cost buffers are single-solve scratch buffers overwritten on each solve -- no per-iteration allocation occurs on the hot path.                                                                 | SS1.2, SS1.4, SS1.5 |
-| **Per-stage transition** | Many times, within each forward/backward pass | When transitioning between stages, the workspace executes the full 7-step solve sequence (SS1.4): load stage template, add dynamic constraints, set scenario bounds, set basis, solve, extract solution, update statistics. Within a stage (multiple backward pass scenarios or batched forward passes at the same stage), steps 1--2 are skipped since the structural LP and cuts are identical. This is the hot path.                                                                            | SS1.4, SS1.5        |
+| **Per-stage transition** | Many times, within each forward/backward pass | When transitioning between stages, the workspace executes the full 6-step solve sequence (SS1.4): load StageLpCache, set scenario bounds, set basis, solve, extract solution, update statistics. Within a stage (multiple backward pass scenarios or batched forward passes at the same stage), step 1 is skipped since the structural LP and cuts are identical. This is the hot path.                                                                                                      | SS1.4, SS1.5        |
 | **Destruction**          | Once, at Finalize phase end                   | Solver instances are freed via their C API destructor: `Highs_destroy()` for HiGHS, `Clp_deleteModel()` for CLP. All buffers (solution, RHS patch, reduced cost, per-stage basis cache) are deallocated. The workspace manager drops the workspace array. Destruction runs sequentially on the main thread after the last parallel region completes.                                                                                                                                         | SS1.2, SS1.7        |
 
 > **Threading model interaction**: The workspace design assumes a **fixed-size thread pool** that is created at program start and persists until program exit. Workspaces are indexed by `thread_id` from this fixed pool. If the underlying runtime's work-stealing scheduler (e.g., rayon in test harnesses) moves a task to a different thread, the task must still access the workspace indexed by the executing thread's `rayon::current_thread_index()`, not by any task-local state. This is the key correctness invariant -- each physical thread always uses its own workspace, regardless of which logical task it is executing. See [Hybrid Parallelism SS1](../hpc/hybrid-parallelism.md) for the threading model specification.
@@ -104,17 +104,16 @@ Each workspace provides a unified solve entry point that handles the full stage 
 
 **Solve sequence**:
 
-1. **Load stage template** (if stage changed) — Bulk-load the pre-assembled CSC stage template ([Solver Abstraction SS11](./solver-abstraction.md)) into the solver via `passModel`/`loadProblem`.
-2. **Add dynamic constraints** (if stage changed) — Batch-add active cuts from the cut pool via `addRows` in CSR format.
-3. **Set scenario bounds** — Write scenario-dependent values (incoming storage, AR lag fixing, noise fixing) into the RHS patch buffer, then apply via `set_row_bounds` ([Solver Interface Trait SS2.3](./solver-interface-trait.md)).
-4. **Set basis** (if warm-starting) — Look up the cached basis for the target stage from the per-stage basis cache. If a basis exists for this stage, apply it to the solver.
-5. **Solve** — Call the solver. Retry logic is encapsulated within the solver implementation ([Solver Abstraction SS7](./solver-abstraction.md)).
-6. **Extract solution** — Copy primal values, dual values, and reduced costs into pre-allocated buffers. Extract the basis and store it in the per-stage cache at the solved stage's slot, overwriting any previous basis for that stage.
-7. **Update statistics** — Increment solve count, iteration count, timing.
+1. **Load StageLpCache** (if stage changed) — Bulk-load `StageLpCache[t]` ([Solver Abstraction SS11.4](./solver-abstraction.md)) into the solver via `passModel`/`loadProblem`. The StageLpCache contains the complete LP for the stage (structural template + active cuts) in CSC format — no `addRows` call is needed.
+2. **Set scenario bounds** — Write scenario-dependent values (incoming storage, AR lag fixing, noise fixing) into the RHS patch buffer, then apply via `set_row_bounds` ([Solver Interface Trait SS2.3](./solver-interface-trait.md)).
+3. **Set basis** (if warm-starting) — Look up the cached basis for the target stage from the per-stage basis cache. If a basis exists for this stage, apply it to the solver.
+4. **Solve** — Call the solver. Retry logic is encapsulated within the solver implementation ([Solver Abstraction SS7](./solver-abstraction.md)).
+5. **Extract solution** — Copy primal values, dual values, and reduced costs into pre-allocated buffers. Extract the basis and store it in the per-stage cache at the solved stage's slot, overwriting any previous basis for that stage.
+6. **Update statistics** — Increment solve count, iteration count, timing.
 
-Steps 1–2 are skipped for **within-stage solves** (multiple backward pass scenarios at the same stage, or multiple forward passes at the same stage within a batch). Only steps 3–7 are needed, since the structural LP and cuts are identical.
+Step 1 is skipped for **within-stage solves** (multiple backward pass scenarios at the same stage, or multiple forward passes at the same stage within a batch). Only steps 2–6 are needed, since the structural LP and cuts are identical.
 
-When LP scaling is active, steps 1–3 and 6 are augmented with scaling transformations. See SS2.5 for the mapping.
+When LP scaling is active, steps 1–2 and 5 are augmented with scaling transformations. See SS2.5 for the mapping.
 
 ### 1.5 Warm-Start Eligibility
 
@@ -154,23 +153,23 @@ A workspace manager owns the array of all thread-local workspaces within an MPI 
 - Provides aggregated statistics across all workspaces (called after parallel regions for logging).
 - The workspace array is structurally immutable after initialization — the number of workspaces equals the number of OpenMP threads and does not change.
 
-> **Note on SolverPool alternative**: A pool-based pattern (borrow/return from a shared pool of N < threads solver instances) was considered and rejected. The persistent ownership pattern is preferred for SDDP because: (1) warm-starting requires per-stage basis affinity between iterations, which pools break; (2) the memory overhead of one workspace per thread (~57 MB × 16 threads ≈ 912 MB per rank) is acceptable on HPC nodes; (3) pool synchronization would add overhead on the hot path.
+> **Note on SolverPool alternative**: A pool-based pattern (borrow/return from a shared pool of N < threads solver instances) was considered and rejected. The persistent ownership pattern is preferred for SDDP because: (1) warm-starting requires per-stage basis affinity between iterations, which pools break; (2) the memory overhead of one workspace per thread (~36 MB × 48 threads ≈ 1,737 MB per rank) is acceptable on HPC nodes; (3) pool synchronization would add overhead on the hot path.
 
 ### 1.8 Thread Safety Invariants
 
 The workspace design relies on clear ownership boundaries between shared and thread-local data:
 
-| Data                     | Ownership    | Access During Forward Pass   | Access During Backward Pass      |
-| ------------------------ | ------------ | ---------------------------- | -------------------------------- |
-| Stage LP templates (CSC) | Shared       | Read-only (immutable)        | Read-only (immutable)            |
-| Cut pool coefficients    | Shared       | Read-only (immutable in fwd) | Write by single thread per stage |
-| Cut pool activity bitmap | Shared       | Read-only                    | Write by single thread per stage |
-| Solver instance          | Thread-local | Exclusive write              | Exclusive write                  |
-| RHS patch buffer         | Thread-local | Exclusive write              | Exclusive write                  |
-| Solution buffers         | Thread-local | Exclusive write              | Exclusive write                  |
-| Per-stage basis cache    | Thread-local | Exclusive read/write         | Exclusive read/write             |
+| Data                     | Ownership                       | Access During Forward Pass | Access During Backward Pass      |
+| ------------------------ | ------------------------------- | -------------------------- | -------------------------------- |
+| StageLpCache (CSC)       | SharedRegion (NUMA-interleaved) | Read-only                  | Read-only                        |
+| Cut pool metadata        | SharedRegion                    | Read-only                  | Write by single thread per stage |
+| Cut pool activity bitmap | SharedRegion                    | Read-only                  | Write by single thread per stage |
+| Solver instance          | Thread-local                    | Exclusive write            | Exclusive write                  |
+| RHS patch buffer         | Thread-local                    | Exclusive write            | Exclusive write                  |
+| Solution buffers         | Thread-local                    | Exclusive write            | Exclusive write                  |
+| Per-stage basis cache    | Thread-local                    | Exclusive read/write       | Exclusive read/write             |
 
-The key invariant: **no locking is required on the hot path**. Stage templates are immutable. The cut pool is only modified during the backward pass, which is sequential per stage with a synchronization barrier at each stage boundary ([Training Loop SS4](./training-loop.md)). Each solver instance is exclusively owned by one thread.
+The key invariant: **no locking is required on the hot path**. StageLpCache is read-only during passes and updated between iterations by the leader rank (with `fence()` + barrier). Cut pool metadata is only modified during the backward pass, which is sequential per stage with a synchronization barrier at each stage boundary ([Training Loop SS4](./training-loop.md)). Each solver instance is exclusively owned by one thread.
 
 ### 1.9 Open Point — Structural LP Homogeneity
 
@@ -182,25 +181,29 @@ The key invariant: **no locking is required on the hot path**. Stage templates a
 >
 > **Trade-off**: This approach could reduce modeling flexibility (adding/removing system elements requires restructuring all stages) and may increase LP size at stages where many elements are inactive. It should be evaluated only if profiling shows that stage-template switching is a significant cost. Deferred until performance data is available.
 
-### 1.10 Open Point — Cut Loading Cost and Two-Level Storage
+### 1.10 Resolved — Cut Loading Cost (Strategy 2+3)
 
-> **Open point — cut loading dominates stage transitions**: Under Option A (full LP rebuild per stage transition), the cut loading cost via `addRows` is significantly larger than the basis warm-start cost that SS1.2 already addresses with a two-level storage design (in-memory cache + FlatBuffers checkpoint). The cut data dwarfs the basis data:
+> **Resolved**: Strategy 2+3 (StageLpCache) resolves the cut loading bottleneck identified below. Cut coefficients are pre-assembled into the StageLpCache CSC between iterations by the leader rank. Stage transition reduces to a single `passModel` call that bulk-loads the complete LP (structural template + active cuts) — no per-thread `addRows` assembly. See [Solver Abstraction SS11.4](./solver-abstraction.md).
+>
+> The original analysis is retained below for historical context.
+>
+> **Original analysis — cut loading dominates stage transitions**: Under the previous Option A (full LP rebuild per stage transition), the cut loading cost via `addRows` was significantly larger than the basis warm-start cost that SS1.2 already addresses with a two-level storage design (in-memory cache + FlatBuffers checkpoint). The cut data dwarfs the basis data:
 >
 > | Data                     | Per-stage size (production)      | Frequency              |
 > | ------------------------ | -------------------------------- | ---------------------- |
 > | Basis (HiGHS)            | ~348 KB                          | Every solve            |
 > | Active cuts (worst case) | 15,000 × ~25 KB/row ≈ 238–366 MB | Every stage transition |
 >
-> At production scale, cut loading in the forward pass takes ~5 ms per stage transition (memory bandwidth + solver `addRows` overhead), while the LP solve itself targets ~2 ms with warm-start — a **2.5:1 ratio of loading to solving**. Over 120 stages per forward pass, this amounts to ~600 ms for cut loading vs ~240 ms for solving.
+> At production scale, cut loading in the forward pass takes ~5 ms per stage transition (memory bandwidth + solver `addRows` overhead), while the LP solve itself targets ~2 ms with warm-start — a **2.5:1 ratio of loading to solving**. Over 60 stages per forward pass, this amounts to ~300 ms for cut loading vs ~120 ms for solving.
 >
 > **Two-level storage consideration**: The basis lifecycle (SS1.2) uses two storage levels — a hot-path in-memory per-stage cache (mutable, NUMA-local, updated every solve) and a cold-path FlatBuffers checkpoint (immutable, on-disk, written at checkpoint boundaries). The cuts, being a much larger bottleneck, warrant the same coherent treatment. A hot-path in-memory cut representation optimized for `addRows` (pre-assembled CSR blocks per stage, shared read-only across threads) could reduce the per-stage-transition assembly cost. The cold-path FlatBuffers cut persistence already exists (see [Binary Formats SS3](../data-model/binary-formats.md)).
 >
-> However, a per-stage in-memory cut cache sized for all threads is constrained by RAM: 120 stages × 238 MB = ~28 GB per rank for the cut pool alone, which is the current shared cut pool design. The question is whether the cut pool's memory layout can be structured so that the data passed to `addRows` requires minimal or zero intermediate assembly — essentially making the `addRows` call use pre-built CSR arrays directly from the shared cut pool.
+> However, a per-stage in-memory cut cache sized for all threads is constrained by RAM: 60 stages × 238 MB = ~14.3 GB per rank for the cut pool alone, which is the current shared cut pool design. The question is whether the cut pool's memory layout can be structured so that the data passed to `addRows` requires minimal or zero intermediate assembly — essentially making the `addRows` call use pre-built CSR arrays directly from the shared cut pool.
 >
 > **Mitigation strategies** (all deferred until profiling):
 >
 > 1. **Pre-assembled CSR cut blocks** — Structure the cut pool so that active cuts for each stage are stored in a contiguous CSR-ready layout. The `addRows` call passes pointers directly into the shared cut pool without intermediate copies. The solver still copies internally, but one copy layer is eliminated.
-> 2. **CLP cloning** ([CLP Implementation](./solver-clp-impl.md)) — `makeBaseModel()`/`setToBaseModel()` could restore a pre-loaded LP (template + cuts) rather than rebuilding from scratch. But this requires per-stage per-thread base models (~250 MB × 120 stages per thread), which is infeasible at full scale.
+> 2. **CLP cloning** ([CLP Implementation](./solver-clp-impl.md)) — `makeBaseModel()`/`setToBaseModel()` could restore a pre-loaded LP (template + cuts) rather than rebuilding from scratch. But this requires per-stage per-thread base models (~250 MB × 60 stages per thread), which is infeasible at full scale.
 > 3. **Incremental cut updates** — If structural LP homogeneity (SS1.9) is adopted, a thread transitioning between stages could potentially keep the LP loaded and only patch the cut differences (remove old stage's cuts, add new stage's cuts) rather than full rebuild. This interacts with bound toggling (rejected in [Solver Abstraction SS5, Decision 4](./solver-abstraction.md)) and would need a different mechanism.
 > 4. **Reduced active cut count** — In early iterations, the active cut set is much smaller than the worst case. Cut selection strategies ([Cut Management SS4](../math/cut-management.md)) that aggressively prune inactive cuts reduce the per-stage `addRows` data volume.
 >
@@ -299,16 +302,15 @@ This transformation is applied during the `addRows` step (SS1.4 step 2) and reve
 
 When scaling is active, the stage solve workflow (SS1.4) is augmented at specific steps. The following table maps each scaling operation to the SS1.4 step it modifies:
 
-| SS1.4 Step                | Scaling Augmentation                                                                                                                       |
-| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------ |
-| 1. Load stage template   | After loading, apply pre-computed scaling factors (D_r, D_c) to transform the LP into scaled space.                                        |
-| 2. Add dynamic constraints | Transform cut coefficients from physical to scaled space (SS2.4) before passing to `addRows`.                                               |
-| 3. Set scenario bounds   | RHS values are patched in scaled space: multiply each bound by the corresponding row_scale[i].                                             |
-| 4–5. Set basis, Solve    | No change — the basis is scale-independent (status codes, not values), and the solver operates entirely in scaled space.                   |
-| 6. Extract solution      | After extracting raw solver output, unscale: primal ×= D_c, duals ×= D_r, reduced costs ×= D_c⁻¹. Cut coefficients use the unscaled duals. |
-| 7. Update statistics     | No change.                                                                                                                                 |
+| SS1.4 Step             | Scaling Augmentation                                                                                                                                                                            |
+| ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1. Load StageLpCache   | After loading, apply pre-computed scaling factors (D_r, D_c) to transform the LP into scaled space. Note: under StageLpCache, cuts are already in the CSC — scaling applies to the complete LP. |
+| 2. Set scenario bounds | RHS values are patched in scaled space: multiply each bound by the corresponding row_scale[i].                                                                                                  |
+| 3–4. Set basis, Solve  | No change — the basis is scale-independent (status codes, not values), and the solver operates entirely in scaled space.                                                                        |
+| 5. Extract solution    | After extracting raw solver output, unscale: primal ×= D_c, duals ×= D_r, reduced costs ×= D_c⁻¹. Cut coefficients use the unscaled duals.                                                      |
+| 6. Update statistics   | No change.                                                                                                                                                                                      |
 
-> **Note (`SolverAuto` baseline)**: Under the minimal viable solver's `SolverAuto` scaling strategy ([Solver Abstraction SS3](./solver-abstraction.md)), all Cobre-managed scaling augmentation steps in the table above are **skipped**. The only active rows are "4--5. Set basis, Solve" and "7. Update statistics," which require no scaling transforms. Steps 1 (load stage template), 2 (add active cuts), 3 (patch scenario values), and 6 (extract solution) proceed without any `col_scale`/`row_scale` multiplication or division -- the solver's internal scaling handles numerical conditioning transparently. This means the stage solve workflow in SS1.4 executes exactly as written, with no scaling-related augmentation, until Cobre-managed scaling is activated in a future optimization pass.
+> **Note (`SolverAuto` baseline)**: Under the minimal viable solver's `SolverAuto` scaling strategy ([Solver Abstraction SS3](./solver-abstraction.md)), all Cobre-managed scaling augmentation steps in the table above are **skipped**. The only active rows are "3--4. Set basis, Solve" and "6. Update statistics," which require no scaling transforms. Steps 1 (load StageLpCache), 2 (patch scenario values), and 5 (extract solution) proceed without any `col_scale`/`row_scale` multiplication or division -- the solver's internal scaling handles numerical conditioning transparently. This means the stage solve workflow in SS1.4 executes exactly as written, with no scaling-related augmentation, until Cobre-managed scaling is activated in a future optimization pass.
 
 **Interaction with solver-internal scaling**: If Cobre manages its own scaling (augmentations above), solver-internal scaling should be disabled to avoid double-scaling. If Cobre delegates scaling to the solver (`SolverAuto` method), all scaling augmentations are skipped -- the solver handles scaling internally. See the solver-specific scaling configuration in [HiGHS Implementation SS4.2](./solver-highs-impl.md) and [CLP Implementation SS4.2](./solver-clp-impl.md).
 

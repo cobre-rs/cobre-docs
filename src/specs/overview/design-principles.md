@@ -353,6 +353,40 @@ The test suite must include agent-readability tests that:
 - **Programmatic embedding**: Python bindings and MCP tools consume the same structured types, ensuring consistency across all access paths
 - **Interoperability**: Stable JSON schemas enable third-party tools (dashboards, reporting, monitoring) to integrate with Cobre without coupling to display format details
 
+## 7. Numeric Representation
+
+All numeric quantities in the Cobre data model use `f64` with unit suffixes in field names. Newtypes for physical dimensions are not used. This decision affects ~40 `f64` fields across entity types (`Hydro`, `ThermalUnit`, `Line`, `Bus`, `Contract`, `PumpingStation`) spanning 7 distinct physical dimensions: volume (hm³), flow (m³/s), power (MW), energy (MWh), marginal cost ($/MWh), height (m), and dimensionless fractions.
+
+### 7.1 Alternatives Considered
+
+**Newtypes throughout cobre-core (rejected).** Wrapper types for each physical dimension (`struct Hm3(pub f64)`) would live in `cobre-core`, `cobre-io`, and `cobre-stochastic`, stripped to raw `f64` at the performance-adapted view boundary in `cobre-sddp`. Rejected because: (1) the protected surface is narrow — newtypes catch dimension-mismatch bugs only in entity definitions and validation code, while the bug-prone code (LP construction, cut coefficient computation, solver interaction) operates on raw `f64` arrays regardless; (2) seven unit types require ~15–20 operator implementations for physically meaningful combinations, or `.0` extraction that defeats the purpose; (3) cut construction is inherently untyped — a Benders cut coefficient has units derived from dual variables of constraints with mixed physical meanings; (4) trajectory recording and Parquet output extract values from flat `Vec<f64>` solver buffers; (5) field name suffixes already convey units at every use site, making newtypes redundant labeling.
+
+**External dimensional analysis crate (rejected).** The `uom` crate encodes dimensions as generic type parameters, producing unreadable type signatures and error messages with significant compile-time overhead. For a system with 7 fixed unit types where conversion formulas are well-known (see [Notation Conventions](./notation-conventions.md) section 3.1), full dimensional analysis is disproportionate.
+
+### 7.2 Rationale
+
+**The data flow has a natural untyped boundary.** The [Internal Structures](../data-model/internal-structures.md) spec defines a clear lifecycle boundary: `cobre-io` (JSON loading) → `cobre-core` (system entities) → `cobre-sddp` (performance-adapted `f64` views). Performance-adapted view construction already flattens entity structs into `Vec<f64>` slices. Newtypes would protect only the code above this boundary — input loading, entity validation, stochastic model parameter handling — the least error-prone parts of the system. The code below the boundary (LP coefficient assembly, cut construction, basis management, checkpoint serialization) is where dimension errors would be most harmful and where newtypes offer no protection.
+
+**The bugs newtypes catch vs. the bugs they don't.** Newtypes would catch: passing volume (hm³) where flow (m³/s) is expected, forgetting time conversion factors, confusing MW and MWh. Newtypes would not catch: wrong index into a `Vec<f64>` array (the dominant bug class in SDDP implementations), wrong sign on a constraint coefficient, off-by-one in stage numbering, incorrect cut coefficients from wrong dual extraction, swapping two values of the same dimension. The uncaught bugs are harder to detect and have higher impact.
+
+**Validation strategy makes newtypes redundant for correctness.** The primary correctness strategy is comparison against SDDP.jl reference cases and reproduction of known optimal bounds. A dimension-mismatch bug in entity loading would produce marginal costs off by orders of magnitude — immediately detectable in the first reference case comparison. Property-based tests on entity validation and statistical tests on PAR model preservation provide additional coverage for the domain-model layer.
+
+### 7.3 Conventions
+
+1. **Field names carry the unit suffix.** Every `f64` field representing a dimensional quantity includes a unit suffix: `_hm3`, `_m3s`, `_mw`, `_mwh`, `_per_mwh`, `_m`, `_percent`, `_hours`. Dimensionless quantities use no suffix or `_fraction` when ambiguity is possible.
+
+2. **Unit suffixes match notation conventions.** The suffixes correspond to the units defined in [Notation Conventions](./notation-conventions.md) section 3. When a new physical dimension is introduced, a corresponding suffix must be established and documented.
+
+3. **JSON field names mirror Rust field names.** Serde serialization uses snake_case. JSON keys carry the same unit suffix as the Rust field: `"min_storage_hm3": 42.0`.
+
+4. **Conversion formulas are centralized.** The flow-to-volume conversion factor ζ (see [Notation Conventions](./notation-conventions.md) section 3.1) and other unit conversion formulas are implemented as named functions, not inline arithmetic.
+
+5. **Doc comments state units explicitly.** Every `f64` field has a `///` doc comment that includes the unit in brackets: `/// Minimum storage (dead volume) [hm³]`.
+
+### 7.4 Reversibility
+
+This decision is reversible. Introducing newtypes in `cobre-core` would be a mechanical refactor scoped to `cobre-core`, `cobre-io`, and `cobre-stochastic`, with no changes to `cobre-sddp` or any crate below the performance-adapted view boundary.
+
 ## Cross-References
 
 - [Notation Conventions](./notation-conventions.md) — Mathematical notation and symbol definitions used across all specs
@@ -366,3 +400,8 @@ The test suite must include agent-readability tests that:
 - [MCP Server](../interfaces/mcp-server.md) — MCP tool, resource, and prompt definitions for agent interaction
 - [Python Bindings](../interfaces/python-bindings.md) — PyO3 API surface, zero-copy data paths, GIL management
 - [Terminal UI](../interfaces/terminal-ui.md) — TUI event consumption, convergence plot, interactive features
+- [Internal Structures](../data-model/internal-structures.md) — Entity type definitions where the suffix convention applies (~40 f64 fields)
+- [Solver Workspaces](../architecture/solver-workspaces.md) — Thread-local f64 buffers in the solver hot path
+- [Binary Formats](../data-model/binary-formats.md) — FlatBuffers schema with [double] coefficient arrays
+- [Input Loading Pipeline](../architecture/input-loading-pipeline.md) — LoadError enum and serde requirements on core types
+- [Output Schemas](../data-model/output-schemas.md) — Parquet column naming conventions for simulation output

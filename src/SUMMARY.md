@@ -104,6 +104,7 @@
   - [Solver HiGHS Implementation](./specs/architecture/solver-highs-impl.md)
   - [Solver CLP Implementation](./specs/architecture/solver-clp-impl.md)
   - [Solver Workspaces](./specs/architecture/solver-workspaces.md)
+  - [Performance Adaptation Layer](./specs/architecture/performance-adaptation-layer.md)
   - [Cut Management Implementation](./specs/architecture/cut-management-impl.md)
   - [Convergence Monitoring](./specs/architecture/convergence-monitoring.md)
   - [Extension Points](./specs/architecture/extension-points.md)

@@ -217,10 +217,10 @@ N_STATE = N_HYDRO                                               # storage
 | Forward pass    | Time $\propto$ (stages $\times$ LP solve time) / (ranks $\times$ threads). Near-linear speedup.                                                                                           |
 | Backward pass   | Time $\propto$ (stages $- 1$) $\times$ openings $\times$ LP solve time. Sequential stage and opening dependency (warm-start). Each rank redundantly solves all openings for cut locality. |
 | Communication   | With 4 ranks on InfiniBand, pure data transfer and synchronization are negligible (<0.1% of iteration time). See §4.6 time budget.                                                        |
-| Memory per rank | $\approx$ solver workspaces (~57 MB $\times$ threads) + cut pool (~250 MB) + opening tree. See [Memory Architecture §2.1](../hpc/memory-architecture.md)                                  |
+| Memory per rank | $\approx$ solver workspaces (~36 MB $\times$ threads) + StageLpCache via SharedRegion (~22.3 GB node-wide). See [Memory Architecture §2.1](../hpc/memory-architecture.md)                 |
 | Cut pool growth | Logical growth only (pre-allocated slots). Memory stable after initialization.                                                                                                            |
 
-> **Thread utilization at 4 ranks**: The forward and backward passes have different utilization characteristics. **Forward pass**: With $M = 192$ trajectories distributed across $R = 4$ ranks, each rank receives $192 / 4 = 48$ trajectories. With $T_h = 48$ threads per rank, each thread handles exactly 1 trajectory — **100% thread utilization**. **Backward pass**: With $N_{open} = 10$ openings per stage solved sequentially by 1 thread per rank (for warm-start benefit), thread utilization is $1/48 = 2.1\%$. All 4 ranks are active (redundant computation ensures each rank has all cuts locally). Despite the low backward utilization, the per-iteration compute time is determined by the critical path: $T \times \tau_{LP}$ for the forward pass and $(T-1) \times N_{open} \times \tau_{LP}$ for the backward pass. See the [timing model analysis §8](../../../plans/spec-consistency-audit/epic-04-wall-clock-time-model/timing-model-analysis.md) for the complete utilization comparison.
+> **Thread utilization at 4 ranks**: The forward and backward passes have different utilization characteristics. **Forward pass**: With $M = 192$ trajectories distributed across $R = 4$ ranks, each rank receives $192 / 4 = 48$ trajectories. With $T_h = 48$ threads per rank, each thread handles exactly 1 trajectory — **100% thread utilization**. **Backward pass**: The $M = 192$ trial states (gathered from the forward pass) are distributed across 4 ranks (48 per rank) and then across 48 threads (1 trial state per thread). Each thread evaluates all $N_{open} = 10$ openings sequentially for its trial state, maintaining warm-start benefit. Per stage: $48 \times 10 = 480$ LP solves per rank, 10 sequential solves per thread — **100% thread utilization**, with sequential depth $N_{open} \times \tau_{LP}$. All 4 ranks are active (each rank independently generates cuts from its assigned trial states). The per-iteration compute time is determined by the sequential depth per stage: $(T-1) \times N_{open} \times \tau_{LP}$ for the backward pass. See the [timing model analysis §8](../../../plans/spec-consistency-audit/epic-04-wall-clock-time-model/timing-model-analysis.md) for the complete utilization comparison.
 
 ### 4.5 Convergence Reference
 
@@ -332,8 +332,9 @@ Every timing model estimate in §4.6 depends on the assumptions below. The table
 - [LP Formulation](../math/lp-formulation.md) — Complete LP subproblem that these dimensions describe
 - [SDDP Algorithm](../math/sddp-algorithm.md) — Forward/backward pass structure driving performance targets
 - [Solver Abstraction §5](../architecture/solver-abstraction.md) — Cut pool pre-allocation and capacity management
-- [Solver Workspaces §1.2](../architecture/solver-workspaces.md) — Per-thread workspace sizing (~57 MB)
-- [Memory Architecture §2](../hpc/memory-architecture.md) — Per-rank memory budget (~1.2 GB), derivable components
+- [Solver Workspaces §1.2](../architecture/solver-workspaces.md) — Per-thread workspace sizing (~36 MB HiGHS, ~21 MB CLP)
+- [Solver Abstraction SS11.4](../architecture/solver-abstraction.md) — StageLpCache design and sizing (~22.3 GB SharedRegion)
+- [Memory Architecture §2](../hpc/memory-architecture.md) — Node memory budget (~27.7 GB), two-tier model
 - [Hybrid Parallelism](../hpc/hybrid-parallelism.md) — MPI+OpenMP architecture for achieving these scaling targets
 - [Communication Patterns §3](../hpc/communication-patterns.md) — Communication volume analysis, pure transfer < 0.1%
 - [Work Distribution §2](../hpc/work-distribution.md) — Forward/backward pass distribution, thread-trajectory affinity

@@ -414,7 +414,7 @@ capacity = warm_start_cuts + max_iterations × forward_passes_per_iteration
 | **Total capacity per stage**    | **15,000**                        |
 | State dimension                 | 2,080                             |
 | Memory per stage                | 15,000 × 2,080 × 8 bytes ≈ 238 MB |
-| Total for 120 stages            | ~28 GB per rank                   |
+| Total for 60 stages             | ~14.3 GB per rank                 |
 
 **Deterministic slot assignment:** Cut slots are computed, not allocated at runtime. The slot for a new cut is:
 
@@ -427,6 +427,8 @@ This is a pure function with no side effects — the same inputs always produce 
 `forward_passes_per_iteration` is immutable after initialization — see [Cut Management Implementation SS1.3](./cut-management-impl.md) for the precondition rationale.
 
 An activity bitmap tracks which slots are currently active. The count of active slots is maintained alongside the bitmap to avoid scanning.
+
+> **Strategy 2+3 note**: Under the adopted StageLpCache architecture (SS11.4), cut coefficients are absorbed into the per-stage CSC representation. The cut pool retains only metadata (intercepts, activity bitmap, iteration/forward_pass metadata, binding counts). Coefficient arrays still exist logically for the MPI wire format and StageLpCache assembly, but are not accessed during forward/backward passes.
 
 ### 5.3 Mathematical Basis
 
@@ -453,7 +455,9 @@ Only active cuts (as determined by the cut pool activity bitmap) are added via a
 
 **Deferred optimization: bulk loading with bound deactivation.** An alternative approach loads all cuts (active + inactive) in a single bulk operation and "deactivates" inactive cuts by setting their lower bound to $-\infty$ (making the constraint non-binding). This simplifies the cut loading logic (one bulk call, no bitmap filtering) and may interact favorably with solver-internal optimizations, but increases the nominal LP size and depends on presolve being effective. This alternative is deferred to a later optimization pass, contingent on benchmarking with realistic cut pool sizes and resolution of the presolve/warm-start tension.
 
-The current baseline approach loads active cuts via a single batch `addRows` call in CSR format:
+**Strategy 2+3 supersession**: Under the adopted StageLpCache architecture (SS11.4), active cuts are pre-assembled into the per-stage CSC rather than added at each stage transition via `addRows`. The `addRows` CSR path remains the underlying solver API for StageLpCache assembly between iterations, but is no longer invoked on the hot-path stage transition. The cut pool activity bitmap still determines which cuts are included in the StageLpCache CSC.
+
+The original baseline approach (retained for reference and for use during StageLpCache assembly) loads active cuts via a single batch `addRows` call in CSR format:
 
 1. Query the cut pool activity bitmap for the current stage
 2. Assemble CSR arrays from the active cuts: `row_starts`, `column_indices`, `coefficient_values`, `row_lower_bounds` (intercepts $\alpha$), `row_upper_bounds` ($+\infty$)
@@ -569,39 +573,94 @@ At initialization, each stage's structural LP (matrix, bounds, objective — eve
 
 ### 11.2 LP Rebuild Strategy
 
-**Adopted decision: Option A — full rebuild per stage transition, using pre-assembled templates.**
+**Adopted decision: Strategy 2+3 (StageLpCache) — pre-assembled complete LPs per stage.**
 
-Memory constraints prevent keeping all stage LPs with their full cut sets resident simultaneously. At each stage transition, each thread:
+The StageLpCache (SS11.4) holds a complete pre-assembled LP per stage in CSC format (structural constraints + active Benders cuts + bounds + objective). This replaces the previous Option A approach (template + per-thread `addRows` at each stage transition). At each stage transition, each thread:
 
-1. **Load template** — Bulk-load the pre-assembled stage template into the solver via `passModel`/`loadProblem`. Since the template is already in CSC form (the native internal format for both HiGHS and CLP), this is a fast bulk memory operation — no per-constraint construction loops and no format transposition.
-2. **Add active cuts** — Batch-add all active cuts from the cut pool via a single `addRows` call in CSR format (see SS5.4).
-3. **Patch scenario values** — Update the ~2,240 scenario-dependent row bounds (incoming storage as RHS of water balance, AR lag fixing constraint RHS, current-stage noise fixing) via `patch_row_bounds` ([Solver Interface Trait SS2.3](./solver-interface-trait.md)).
-4. **Warm-start** — Apply the cached basis from the previous iteration's solve at this stage (static rows reused directly, new dynamic constraint rows set to Basic per SS2.3).
-5. **Solve** — Solve the LP.
+1. **Load StageLpCache** — Bulk-load `StageLpCache[t]` into the solver via `passModel`/`loadProblem`. The CSC contains the structural template plus all active cuts — no `addRows` call is needed. Since the LP is already in CSC form (the native internal format for both HiGHS and CLP), this is a fast sequential bulk read.
+2. **Patch scenario values** — Update the ~2,240 scenario-dependent row bounds (incoming storage as RHS of water balance, AR lag fixing constraint RHS, current-stage noise fixing) via `patch_row_bounds` ([Solver Interface Trait SS2.3](./solver-interface-trait.md)).
+3. **Warm-start** — Apply the cached basis from the previous iteration's solve at this stage.
+4. **Solve** — Solve the LP.
 
-See [Binary Formats SS3, SSA](../data-model/binary-formats.md) for the full analysis, memory estimates, and solver API survey that informed the Option A decision. For quantified analysis of the cut loading cost (which dominates stage transitions at production scale) and two-level storage considerations, see [Solver Workspaces SS1.10](./solver-workspaces.md).
+**Between-iterations update** (off the critical path, single-threaded by the leader rank):
+
+1. Cut selection determines active/inactive cut sets per stage
+2. For each stage: update the StageLpCache CSC — insert new cut coefficients, adjust row bounds for deactivated cuts (set lower bound to $-\infty$ to make constraint non-binding)
+3. Write updated StageLpCache to SharedRegion (leader rank, `fence()` + barrier ensures visibility)
+
+**Superseded approach (Option A)**: The original Option A approach (template + `addRows` per stage transition) is documented in [Binary Formats SS3, SSA](../data-model/binary-formats.md) and [Solver Workspaces SS1.10](./solver-workspaces.md). Option A required each thread to assemble and add cuts via `addRows` at every stage transition, consuming ~375 MB per thread in CSR assembly buffers at 15K cuts. Strategy 2+3 eliminates this per-thread cost by pre-assembling cuts into a single shared StageLpCache.
 
 ### 11.3 Solver-Specific Optimization Paths
 
-Option A is the **portable baseline** that works identically across all solver backends. The spec explicitly anticipates solver-specific optimizations that could reduce rebuild cost further:
+Strategy 2+3 (StageLpCache) is the **adopted baseline** that works identically across all solver backends. The following table tracks the status of solver-specific optimizations:
 
 | Optimization                 | Solver | Mechanism                                                                                                                                                                         | Status                                                       |
 | ---------------------------- | ------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------ |
 | Pre-assembled CSC templates  | All    | Stage template in solver-ready CSC → fast `passModel`/`loadProblem` with no format transposition                                                                                  | **Adopted** (SS11.1)                                         |
+| StageLpCache (Strategy 2+3)  | All    | Complete per-stage CSC (template + active cuts) via `SharedRegion<T>`, loaded via `passModel`                                                                                     | **Adopted** (SS11.4)                                         |
 | Direct memory patching       | CLP    | Mutable `double*` pointers (`Clp_rowLower()`/`Clp_rowUpper()`, `Clp_colLower()`/`Clp_colUpper()`) for zero-copy in-place bound patching via `patch_row_bounds`/`patch_col_bounds` | Anticipated — see [CLP Implementation](./solver-clp-impl.md) |
-| LP template cloning          | CLP    | C++ `makeBaseModel()`/`setToBaseModel()` or copy constructor via thin C wrapper                                                                                                   | Anticipated — could reduce rebuild to clone + cut addition   |
-| Pre-assembled CSR cut blocks | All    | Cut pool layout (binary-formats SS3.4) is CSR-friendly → `addRows` uses pre-built data (CSR is native for addRows)                                                                | Anticipated                                                  |
+| CLP `makeBaseModel` cloning  | CLP    | C++ `makeBaseModel()`/`setToBaseModel()` or copy constructor via thin C wrapper                                                                                                   | **Superseded** by StageLpCache                               |
+| Pre-assembled CSR cut blocks | All    | Cut pool layout (binary-formats SS3.4) is CSR-friendly → `addRows` uses pre-built data                                                                                            | **Superseded** by StageLpCache (cuts pre-assembled into CSC) |
 
 These optimizations do not change the interface contract (SS4) — they are internal to each solver implementation.
 
-### 11.4 Within-Stage Incremental Updates
+### 11.4 StageLpCache Design
 
-Within the same stage (e.g., multiple backward pass scenarios at stage $t$, or multiple forward passes at the same stage within a batch), only scenario-dependent values change — the structural LP and cuts are identical. In this case, the solver skips steps 1–2 and only performs:
+The StageLpCache is a complete pre-assembled LP per stage in CSC format. It combines structural constraints (from the StageTemplate) with active Benders cuts (15K pre-allocated slots) plus column/row bounds and objective, into a single solver-ready CSC matrix.
 
-- **Patch scenario values** via `patch_row_bounds` (step 3)
-- **Solve** with implicit warm-start from the previous solve's basis (step 5)
+**Structure**: The CSC is constructed once at initialization from the structural template plus empty cut slots. Cut slots are filled as cuts arrive between iterations. Each cut slot occupies dense entries in the $n_{state}$ state columns plus the $\theta$ column (2,081 entries per cut). Structural rows are interleaved in the same column arrays.
 
-This is significantly faster than a full rebuild and is the common case in the backward pass.
+**Sizing**: Cut CSC data dominates (92–99% per stage at capacity):
+
+| Component                           | Per Stage                                                       |
+| ----------------------------------- | --------------------------------------------------------------- |
+| Cut nnz (at 15K capacity)           | 15,000 × 2,081 = 31.2M entries                                  |
+| CSC cut data (row_indices + values) | 31.2M × 4 (row idx) + 31.2M × 8 (value) ≈ **375 MB**            |
+| Structural CSC (template portion)   | ~5 MB (from StageTemplate)                                      |
+| Bounds + objective                  | ~1.3 MB (col_lower, col_upper, row_lower, row_upper, objective) |
+| **Mid/late stage total**            | **~378 MB**                                                     |
+| **Early stage total** (larger LP)   | ~407 MB (more structural rows from FPHA constraints)            |
+| **60 stages (all at capacity)**     | **~22.3 GB**                                                    |
+
+**Ownership**: A single shared copy across all ranks on the same node via `SharedRegion<T>` with NUMA-interleaved allocation (`mbind(MPOL_INTERLEAVE)` — see [Shared Memory Aggregation §1](../hpc/shared-memory-aggregation.md)). All ranks read the same data during passes.
+
+**Update contract**: Updated between iterations by the leader rank (single-threaded). Per-iteration update: ~200 new cuts × 59 stages × 2,081 × 12 bytes ≈ 300 MB written → ~5 ms at DRAM bandwidth. New cuts are written into pre-allocated CSC slots; deactivated cuts have their row lower bound set to $-\infty$ (making the constraint non-binding without structural modification). Readers observe updates only after `fence()` + barrier.
+
+**Read contract**: Read-only during forward and backward passes. `passModel(StageLpCache[t])` = sequential bulk read of ~378 MB at ~44 GB/s (NUMA-interleaved across 4 domains) → **~8.6 ms** per stage transition.
+
+**What it replaces**: Under the previous Option A approach, each thread maintained:
+
+| Component (Option A)             | Per Thread | 48 Threads/Rank | Node (4 ranks) |
+| -------------------------------- | ---------: | --------------: | -------------: |
+| Stage templates                  |          — |         ~120 MB |        ~480 MB |
+| Cut pool coefficients            |          — |      ~14,300 MB |     ~57,200 MB |
+| CSR assembly buffer (per-thread) |    ~375 MB |      ~18,000 MB |     ~72,000 MB |
+| **Option A total**               |            |                 |   **~91.8 GB** |
+
+With Strategy 2+3 (StageLpCache via SharedRegion):
+
+| Component (Strategy 2+3)    |       Size | Sharing         |
+| --------------------------- | ---------: | --------------- |
+| StageLpCache                | ~22,300 MB | 1 copy per node |
+| Cut metadata                |     ~12 MB | 1 copy per node |
+| Opening tree                |    ~0.8 MB | 1 copy per node |
+| Input case data             |     ~20 MB | 1 copy per node |
+| Thread-local workspaces     |  ~1,737 MB | Per rank        |
+| Forward state + MPI buffers |     ~28 MB | Per rank        |
+| **Node total**              |            | **~27.7 GB**    |
+
+Net savings: **~64 GB** per node (91.8 → 27.7 GB).
+
+**Sensitivity**: At 3K active cuts: ~7.6 GB StageLpCache, ~2.9 ms stage transition. At 15K: ~22.3 GB, ~8.6 ms. Cut selection remains the highest-leverage optimization for controlling StageLpCache size and stage transition time.
+
+### 11.5 Within-Stage Incremental Updates
+
+Within the same stage (e.g., multiple backward pass scenarios at stage $t$, or multiple forward passes at the same stage within a batch), only scenario-dependent values change — the structural LP and cuts are identical. In this case, the solver skips step 1 and only performs:
+
+- **Patch scenario values** via `patch_row_bounds` (step 2)
+- **Solve** with implicit warm-start from the previous solve's basis (step 4)
+
+This is significantly faster than a full stage transition and is the common case in the backward pass.
 
 ## Cross-References
 
@@ -615,5 +674,6 @@ This is significantly faster than a full rebuild and is the common case in the b
 - [Binary Formats](../data-model/binary-formats.md) — FlatBuffers schema for cut persistence, cut pool memory layout (SS3.4), LP rebuild strategy analysis (SS3, SSA)
 - [Internal Structures](../data-model/internal-structures.md) — Logical in-memory data model from which stage templates are built
 - [Hybrid Parallelism](../hpc/hybrid-parallelism.md) — OpenMP threading model that requires thread-local solvers
-- [Memory Architecture](../hpc/memory-architecture.md) — NUMA-aware allocation for solver workspaces
+- [Memory Architecture](../hpc/memory-architecture.md) — NUMA-aware allocation for solver workspaces, StageLpCache memory budget
+- [Shared Memory Aggregation](../hpc/shared-memory-aggregation.md) — SharedRegion for NUMA-interleaved StageLpCache allocation
 - [Configuration Reference](../configuration/configuration-reference.md) — Solver configuration parameters

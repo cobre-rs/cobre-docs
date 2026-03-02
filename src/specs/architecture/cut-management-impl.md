@@ -42,9 +42,11 @@ The pool is fully pre-allocated at initialization:
 | Production example     | 5,000 + 50 × 192 = 14,600 (rounded up to 15,000 for headroom) |
 | Per-cut memory         | `state_dimension × 8` bytes (coefficients) + metadata         |
 | Per-stage total (prod) | 15,000 × 2,080 × 8 ≈ 238 MB coefficients + ~1 MB metadata     |
-| All stages (prod)      | 120 × 238 MB ≈ 28 GB per rank                                 |
+| All stages (prod)      | 60 × 238 MB ≈ 14.3 GB per rank                                |
 
 See [Binary Formats SS4.3](../data-model/binary-formats.md) for the full sizing breakdown.
+
+> **Strategy 2+3 note**: Under the adopted StageLpCache architecture ([Solver Abstraction SS11.4](./solver-abstraction.md)), the cut pool's coefficient storage is absorbed into the StageLpCache CSC. The cut pool retains metadata only: intercepts (`f64` per cut), activity bitmap, iteration/forward_pass indices, binding count history. Metadata total: ~12 MB across 60 stages at 15K capacity. Coefficient data continues to exist in the StageLpCache CSC and in the MPI wire format, but is not accessed from the cut pool during passes.
 
 > **Precondition:** `forward_passes` is immutable after initialization. The cut pool
 > capacity formula depends on this invariant — a runtime change to `forward_passes`
@@ -298,11 +300,38 @@ A cut is binding if its dual multiplier (shadow price) in the LP solution is pos
 
 These updates happen on the thread-local solver's cut rows. Since each thread processes its own trajectories and the backward pass has per-stage synchronization barriers, no locking is needed — each thread updates the activity data for the cuts it evaluated, and the results are reconciled during the cut synchronization step (SS4).
 
+## 7. StageLpCache Update Flow
+
+Between training iterations, the leader rank updates the StageLpCache to reflect newly generated cuts and any cuts deactivated by the selection strategy. This update runs off the critical path (single-threaded, between iterations).
+
+### 7.1 Update Sequence
+
+1. **Cut selection** — Run the configured strategy (SS2) on each stage's cut pool to determine the new active/inactive sets.
+2. **New cut insertion** — For each new cut generated in the preceding backward pass (typically ~200 cuts × 59 stages):
+   - Write the cut's coefficients into the pre-allocated CSC slot in `StageLpCache[t]`. The CSC slot positions are determined by the LP row layout: each cut occupies one row, with dense entries in the $n_{state}$ state columns plus the $\theta$ column (2,081 entries per cut).
+   - Write the cut's intercept as the row lower bound.
+3. **Cut deactivation** — For each cut deactivated by the selection strategy, set its row lower bound to $-\infty$ in the StageLpCache CSC. This makes the constraint non-binding without modifying the CSC structure (no row removal, no column recount).
+4. **Fence and barrier** — `region.fence()` ensures all writes are visible, followed by an MPI barrier to synchronize all ranks before the next iteration's forward pass begins.
+
+### 7.2 MPI→StageLpCache Data Path
+
+Cuts arrive from other ranks via `MPI_Allgatherv` (SS4.1) as `CutWireRecord` byte sequences. The deserialization path writes cut data into two destinations:
+
+1. **Cut pool metadata** — Intercept, activity flag, iteration/forward_pass metadata, slot index. This is the permanent metadata store.
+2. **StageLpCache CSC** — Coefficients are written directly into the pre-allocated CSC slot. This is the solver-facing representation consumed by `passModel`/`loadProblem`.
+
+The coefficient write to StageLpCache is the additional step introduced by Strategy 2+3 — under the previous Option A, coefficients were written only to the cut pool and assembled into CSR on each stage transition.
+
+### 7.3 Performance
+
+Per-iteration update cost: ~200 new cuts × 59 stages × 2,081 entries × 12 bytes (4 row_index + 8 value) ≈ 300 MB written. At ~60 GB/s DRAM write bandwidth, this takes ~5 ms. The cut selection scan adds negligible overhead. Total between-iterations update: **~5–10 ms**, which is < 0.1% of the per-iteration compute time (~16.5 s).
+
 ## Cross-References
 
 - [Cut Management (Math)](../math/cut-management.md) — Cut definition, dual extraction, aggregation, validity, selection theory, convergence guarantee
-- [Solver Abstraction](./solver-abstraction.md) — Cut pool design (SS5), LP layout convention (SS2), how active cuts enter the solver LP (SS5.4)
+- [Solver Abstraction](./solver-abstraction.md) — Cut pool design (SS5), LP layout convention (SS2), how active cuts enter the solver LP (SS5.4), StageLpCache design (SS11.4)
 - [Solver Workspaces](./solver-workspaces.md) — Stage solve workflow (SS1.4) where cuts are loaded and activity is tracked, cut loading cost analysis (SS1.10)
+- [Shared Memory Aggregation](../hpc/shared-memory-aggregation.md) — SharedRegion for StageLpCache allocation and NUMA-interleaved placement
 - [Binary Formats](../data-model/binary-formats.md) — FlatBuffers schema (SS3.1), policy directory structure (SS3.2), cut pool memory layout requirements (SS3.4), checkpoint reproducibility (SS4)
 - [Training Loop](./training-loop.md) — Forward/backward pass that drives cut generation (SS6), dual extraction for cut coefficients (SS7)
 - [Convergence Monitoring](./convergence-monitoring.md) — Uses FCF statistics (lower bound from stage 1 cuts)
