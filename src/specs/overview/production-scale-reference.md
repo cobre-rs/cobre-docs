@@ -22,7 +22,7 @@ Based on the target production scenario:
 | Iterations           | 50                         | Cut pool size                          |
 | Simulation Scenarios | 2000                       | Output size                            |
 
-> **Stage count convention**: 60 stages is the production baseline used for all capacity planning, memory budgets, and performance targets throughout this specification corpus. Some specs reference 120 stages as a theoretical maximum or worst-case bound (e.g., FLOP cost calculations, temporal flattening memory estimates, hypothetical sizing). Such references are explicitly labeled as "worst-case" or "hypothetical maximum" to distinguish from the production baseline.
+> **Decision [DEC-009](./decision-log.md#dec-009) (active):** 60 stages is the production-scale reference baseline for all capacity planning, memory budgets, and performance targets across the corpus. Some specs reference 120 stages as a theoretical maximum or worst-case bound (e.g., FLOP cost calculations, temporal flattening memory estimates, hypothetical sizing). Such references are explicitly labeled as "worst-case" or "hypothetical maximum" to distinguish from the production baseline.
 
 ## 2. State Dimension Estimates
 

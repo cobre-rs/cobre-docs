@@ -320,7 +320,7 @@ The solver abstraction separates concerns into four layers:
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
-> **Stakeholder decision:** The minimal viable solver delegates LP scaling to the solver backend (`SolverAuto` method from [Solver Workspaces SS2.3](./solver-workspaces.md)). Cobre does **not** apply its own scaling in the minimal viable solver.
+> **Decision [DEC-008](../overview/decision-log.md#dec-008) (active):** LP scaling is delegated to the solver backend (`SolverAuto`); Cobre does not apply its own scaling in the minimal viable solver.
 >
 > - **HiGHS**: internal scaling is enabled by default (built-in geometric mean strategy, `kSimplexScaleStrategy = 2`).
 > - **CLP**: internal scaling is enabled by default (CLP's automatic scaling).
@@ -438,7 +438,7 @@ For details on cut generation and selection, see [Cut Management](../math/cut-ma
 
 ### 5.4 How Active Cuts Enter the Solver LP
 
-**Stakeholder Decision: Selective addition is the adopted baseline for the minimal viable solver.**
+> **Decision [DEC-007](../overview/decision-log.md#dec-007) (active):** Selective cut addition is the baseline for cut loading: only active cuts are loaded into the solver LP; no inactive rows are parked in the LP.
 
 Only active cuts (as determined by the cut pool activity bitmap) are added via a single `addRows` call at each stage transition. Inactive cuts are excluded from the solver LP entirely -- they are never loaded, and no bound-toggling deactivation is performed.
 
@@ -460,6 +460,8 @@ Only active cuts (as determined by the cut pool activity bitmap) are added via a
 **Cut deactivation**: Under the rebuild strategy, cuts are not deactivated in the solver LP — they simply aren't included in the next rebuild's `addRows` call. Deactivation happens in the cut pool (the activity bitmap is updated), and the next LP rebuild naturally excludes deactivated cuts.
 
 ## 6. Error Categories
+
+> **Decision [DEC-015](../overview/decision-log.md#dec-015) (active):** `SolverError` hard-stop vs proceed-with-partial mapping: `Infeasible`, `Unbounded`, `InternalError` are hard-stops; `NumericalDifficulty`, `TimeLimitExceeded`, `IterationLimit` permit partial results.
 
 The solver interface returns a categorized error when a solve fails. The calling algorithm uses the error category to determine its response. Solver-internal errors (e.g., factorization failures) are resolved by the retry logic (SS7) before reaching this level.
 
@@ -542,6 +544,8 @@ A basis consists of one status value per column (variable) and one per row (cons
 
 ## 10. Compile-Time Solver Selection
 
+> **Decision [DEC-005](../overview/decision-log.md#dec-005) (active):** Compile-time solver selection via Cargo feature flags; exactly one solver active per binary; HiGHS and CLP are first-class reference implementations.
+
 The active solver implementation is selected at compile time via Cargo feature flags. Only one solver is active per build. This design:
 
 - **Eliminates virtual dispatch** — The concrete solver type is known at compile time, enabling inlining and monomorphization
@@ -618,7 +622,7 @@ The StageLpCache is a complete pre-assembled LP per stage in CSC format. It comb
 
 **Read contract**: Read-only during forward and backward passes. `passModel(StageLpCache[t])` = sequential bulk read of ~378 MB at ~44 GB/s (NUMA-interleaved across 4 domains) → **~8.6 ms** per stage transition.
 
-> The StageLpCache replaces the previous per-thread memory model (each thread maintaining independent CSR cut data), reducing node-wide memory from ~91.8 GB to ~22.3 GB. See the Decision Log for details.
+> **Decision [DEC-001](../overview/decision-log.md#dec-001) (active):** StageLpCache as LP construction baseline: one complete pre-assembled LP per stage in CSC format loaded via `passModel`/`loadProblem`, replacing the previous per-thread memory model and reducing node-wide memory from ~91.8 GB to ~22.3 GB.
 
 With the StageLpCache (via SharedRegion):
 

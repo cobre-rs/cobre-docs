@@ -123,6 +123,8 @@ See [Solver HiGHS Implementation](../architecture/solver-highs-impl.md) and [Sol
 
 ### 5.3 What Rust Can and Cannot Do
 
+> **Decision [DEC-013](./decision-log.md#dec-013) (active):** C API only for solver integration; Cobre does not use C++ solver APIs to maintain Rust FFI compatibility and cross-solver portability.
+
 **Rust `unsafe` provides the same raw memory primitives as C/C++.** There is no performance penalty from choosing Rust — `unsafe` blocks generate identical machine code:
 
 - `std::ptr::copy_nonoverlapping` = `memcpy`
@@ -153,6 +155,8 @@ Steps 1-3 are cheap compared to step 4. The StageLpCache is shared across all ra
 **What we store and restore is solver-agnostic.** The data persisted across iterations — basis status arrays, column values and bounds, row values and bounds, primal and dual solutions — are standard optimization framework concepts, not solver-internal structures. We deliberately avoid storing solver-internal factorization structures (LU decomposition, pivot sequences, working memory), which are solver-specific and non-portable. This keeps the warm-start mechanism clean across solver backends.
 
 ### 5.5 Enlarged Unsafe Boundary
+
+> **Decision [DEC-014](./decision-log.md#dec-014) (active):** Enlarged `unsafe` boundary: all performance-critical memory operations interacting with solver data are `unsafe`, not just FFI call sites.
 
 The `unsafe` boundary in Cobre is **not limited to FFI function calls**. Performance-critical memory operations that would benefit from bypassing Rust's borrow checker are explicitly permitted within `unsafe` blocks:
 

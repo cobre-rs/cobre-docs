@@ -114,6 +114,8 @@ Memory scales primarily with the number of hydro plants (state dimension), the n
 
 ### 3.1 Principles
 
+> **Decision [DEC-011](../overview/decision-log.md#dec-011) (active):** One MPI rank per NUMA domain is the recommended deployment model; confines each Rayon thread pool to a single NUMA domain.
+
 Modern HPC nodes have multiple NUMA domains. Memory access latency varies significantly between local and remote NUMA domains (typical: 1.5-3× slower for remote access). Cobre follows three NUMA principles:
 
 **Principle 1 — Thread-owns-workspace**: Each solver workspace is allocated by the thread that will use it, ensuring first-touch allocation on the thread's local NUMA node. The workspace is never accessed by other threads.
@@ -167,6 +169,8 @@ Representative NUMA latency characteristics:
 These values are representative of AMD EPYC and Intel Xeon platforms. Actual latencies vary by hardware. The key insight is that remote NUMA access can slow LP solves by 2-3× when solver working data (LU factorization, pricing vectors) is allocated on the wrong NUMA node — motivating Principle 1 (thread-owns-workspace).
 
 ### 3.6 NUMA-Interleaved Allocation for SharedRegion
+
+> **Decision [DEC-010](../overview/decision-log.md#dec-010) (active):** NUMA-interleaved allocation (`mbind(MPOL_INTERLEAVE)`) for the SharedRegion holding the StageLpCache; distributes pages round-robin across all NUMA domains.
 
 The StageLpCache (~22.3 GB) is shared across all ranks on the same node via `SharedRegion<T>`. If allocated entirely on the leader rank's NUMA domain, all other ranks incur cross-NUMA latency for every `passModel` read — creating a memory controller bottleneck.
 

@@ -19,6 +19,7 @@ The specs are short and self-contained; reading them in order takes under fiftee
 | [Design Principles](./overview/design-principles.md)                   | Foundational design goals and trade-off principles that govern all architectural decisions                              |
 | [Notation Conventions](./overview/notation-conventions.md)             | Index sets, mathematical symbols, physical units, and naming conventions for the specification suite                    |
 | [Production Scale Reference](./overview/production-scale-reference.md) | Concrete problem dimensions for a national-scale hydrothermal dispatch system, used for sizing and performance analysis |
+| [Decision Log](./overview/decision-log.md)                             | Central registry of cross-cutting architectural decisions affecting two or more spec files                              |
 
 ## Navigation
 

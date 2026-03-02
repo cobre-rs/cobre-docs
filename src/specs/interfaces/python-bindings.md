@@ -848,6 +848,8 @@ class ValidationRecord:
 
 ## 3. GIL Management Contract
 
+> **Decision [DEC-012](../overview/decision-log.md#dec-012) (active):** 6-point GIL management contract governs the Python/Rust boundary; MPI is prohibited from Python bindings for 3 independent reasons (`MPI_Init_thread` timing conflict, GIL vs `MPI_THREAD_MULTIPLE` deadlock risk, dual-FFI-layer fragility).
+
 The Global Interpreter Lock (GIL) is the central concurrency constraint at the Python/Rust boundary. The following 6-point contract governs all interactions between Python and Cobre's Rust computation.
 
 ### 3.1 The 6-Point GIL Contract

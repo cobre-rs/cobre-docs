@@ -12,12 +12,12 @@ Systematic audit and cleanup of the Cobre spec corpus to eliminate contradiction
 
 ## Epic Summary
 
-| Epic    | Name                        | Tickets | Status  | Detail Level |
-| ------- | --------------------------- | ------- | ------- | ------------ |
-| epic-01 | Stale Reference Cleanup     | 6       | pending | Detailed     |
-| epic-02 | Superseded Content Collapse | 5       | pending | Detailed     |
-| epic-03 | Decision Log and Prevention | 3       | pending | Outline      |
-| epic-04 | Cross-File Verification     | 3       | pending | Outline      |
+| Epic    | Name                        | Tickets | Status    | Detail Level |
+| ------- | --------------------------- | ------- | --------- | ------------ |
+| epic-01 | Stale Reference Cleanup     | 6       | completed | Detailed     |
+| epic-02 | Superseded Content Collapse | 5       | completed | Detailed     |
+| epic-03 | Decision Log and Prevention | 3       | completed | Refined      |
+| epic-04 | Cross-File Verification     | 3       | pending   | Outline      |
 
 ## Progress Tracking
 
@@ -34,9 +34,9 @@ Systematic audit and cleanup of the Cobre spec corpus to eliminate contradiction
 | ticket-009 | Collapse Superseded C++ Wrapper Section in solver-clp-impl.md     | epic-02 | completed | Detailed     | 1.00      | 1.00    | EXCELLENT |
 | ticket-010 | Collapse Superseded Inline Notes in solver-highs-impl.md          | epic-02 | completed | Detailed     | 0.96      | 1.00    | EXCELLENT |
 | ticket-011 | Collapse Option A Reference in cut-management-impl.md             | epic-02 | completed | Detailed     | 0.92      | 1.00    | EXCELLENT |
-| ticket-012 | Create Central Decision Log                                       | epic-03 | pending   | Outline      | --        | --      | --        |
-| ticket-013 | Add Inline Decision Markers to Primary Spec Sections              | epic-03 | pending   | Outline      | --        | --      | --        |
-| ticket-014 | Update CLAUDE.md with Decision Log Convention                     | epic-03 | pending   | Outline      | --        | --      | --        |
+| ticket-012 | Create Central Decision Log                                       | epic-03 | completed | Refined      | 1.00      | 1.00    | EXCELLENT |
+| ticket-013 | Add Inline Decision Markers to Primary Spec Sections              | epic-03 | completed | Refined      | 0.96      | 0.93    | EXCELLENT |
+| ticket-014 | Update CLAUDE.md with Decision Log Convention                     | epic-03 | completed | Refined      | 1.00      | 1.00    | EXCELLENT |
 | ticket-015 | Update Cross-Reference Index for Affected Entries                 | epic-04 | pending   | Outline      | --        | --      | --        |
 | ticket-016 | Run Full-Corpus Consistency Audit                                 | epic-04 | pending   | Outline      | --        | --      | --        |
 | ticket-017 | Final Verification and mdBook Build                               | epic-04 | pending   | Outline      | --        | --      | --        |

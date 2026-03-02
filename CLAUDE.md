@@ -195,6 +195,33 @@ Cross-cutting documents (no single owning crate) go into **all 11 per-crate read
 
 ---
 
+## Decision Log Convention
+
+The Decision Log at `src/specs/overview/decision-log.md` is the central registry of
+cross-cutting architectural decisions for the Cobre ecosystem. A decision belongs there
+when it affects 2+ spec files — meaning a change to the decision would require propagated
+updates across the corpus. Decisions that affect only a single file remain documented
+inline and are not cataloged in the log.
+
+Rules for maintaining the Decision Log:
+
+- **Identifier format**: each decision is assigned a sequential `DEC-NNN` identifier (e.g., `DEC-001`, `DEC-012`). Assign the next available number when adding a new entry.
+- **Registry table columns**: ID, Date, Status, Decision Summary, Primary Spec Section, Affected Files. All columns must be populated at time of insertion; the Affected Files column must be complete before the entry is written.
+- **When to add a new entry**: when an architectural decision is made that affects 2+ spec files. Add the registry row before (or at the same time as) propagating the decision to the affected files.
+- **When to update an existing entry**: when a decision is superseded, change its Status to `superseded` and append "(superseded by DEC-NNN)" to its Decision Summary. Create a new entry for the replacement. Never delete old entries.
+- **Inline marker format**: after adding a registry entry, place the following marker in the primary section of each affected spec file:
+
+  ```markdown
+  > **Decision [DEC-NNN](../overview/decision-log.md#dec-nnn) (active):** [One-sentence summary].
+  ```
+
+  The path `../overview/decision-log.md` is correct for files in `src/specs/architecture/`, `src/specs/hpc/`, `src/specs/data-model/`, and `src/specs/interfaces/`. Files already in `src/specs/overview/` use `./decision-log.md`.
+
+- **Propagation verification**: before closing any PR that touches a decision listed in the log, grep each file in that decision's Affected Files column for the `DEC-NNN` identifier and confirm the decision is stated consistently. The ID in the inline marker (e.g., `DEC-001`) enables automated checking with `grep "DEC-NNN" src/specs/`.
+- **Batch updates**: when modifying the Decision Log, update all affected spec files in the same commit or PR. Piecemeal updates leave the corpus in a temporarily inconsistent state.
+
+---
+
 ## GIL Contract and Free-Threaded Python
 
 - The GIL contract in `src/specs/interfaces/python-bindings.md` is a **6-point contract** (current authoritative count).
@@ -238,3 +265,4 @@ The dominant gap crate is `cobre-sddp` (~20 of 38 gaps). The minimal viable buil
 - Write gap summary statistics without verifying them against the detailed table.
 - Use `bincode` for serialization — use `postcard` for MPI broadcast and `FlatBuffers` for policy persistence.
 - Allocate on the hot path inside the SDDP training loop iteration.
+- Change a cross-cutting decision in a spec file without updating the Decision Log and all affected files listed there.

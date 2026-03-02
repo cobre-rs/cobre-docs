@@ -662,6 +662,8 @@ pub struct RowBatch {
 
 ## 5. Dispatch Mechanism
 
+> **Decision [DEC-006](../overview/decision-log.md#dec-006) (active):** `Box<dyn Trait>` rejected for all closed variant sets; enum dispatch used for algorithm variants (`RiskMeasure`, `HorizonMode`, `SamplingScheme`, `CutSelectionStrategy`, `StoppingRuleSet`); compile-time monomorphization reserved for FFI-wrapping traits.
+
 The `SolverInterface` trait uses **compile-time monomorphization** -- the training loop is generic over the solver type, and the concrete implementation is resolved at compile time. This is the same pattern used by the `Communicator` trait ([Communicator Trait §3](../hpc/communicator-trait.md)) and documented as the solver selection strategy in [Solver Abstraction SS10](./solver-abstraction.md).
 
 ```rust

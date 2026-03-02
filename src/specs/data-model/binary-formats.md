@@ -13,6 +13,8 @@ For the logical in-memory data model (what the solver holds at runtime), see [In
 
 ## 1. Format Decision Framework
 
+> **Decision [DEC-004](../overview/decision-log.md#dec-004) (active):** Parquet for all tabular input data (entity registries, stage-varying overrides, time series, scenario parameters).
+
 This framework is the authoritative reference for all format choices across the data model. Each data model spec references this when justifying per-file format choices.
 
 | Data Nature               | Format         | Key Examples                                        | Rationale                                                                |
@@ -42,6 +44,8 @@ This framework is the authoritative reference for all format choices across the 
 
 ## 2. Format Summary by Category
 
+> **Decision [DEC-002](../overview/decision-log.md#dec-002) (active):** `postcard` for MPI broadcast serialization of the `System` struct from rank 0 to all worker ranks; replaces earlier `rkyv` decision.
+
 | Data Category     | Read/Write | Format         | Rationale                                                                                                                                             |
 | ----------------- | ---------- | -------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Algorithm Config  | Read       | JSON           | Small, editable                                                                                                                                       |
@@ -60,7 +64,7 @@ This framework is the authoritative reference for all format choices across the 
 
 ## 3. FlatBuffers for Policy Data
 
-> **Decision Date**: 2026-01-19
+> **Decision [DEC-003](../overview/decision-log.md#dec-003) (active):** FlatBuffers for policy data persistence (cuts, states, vertices, checkpoint data); zero-copy deserialization, SIMD-friendly layout.
 
 ### 3.0 Runtime Access Pattern and Memory Model
 
@@ -116,9 +120,9 @@ Four architectural options were evaluated:
 | **C**  | Master LP per stage + per-thread clone/patch             | ~15.3 GB masters + 4 GB workers   | Feasible, depends on clone efficiency                     |
 | **D**  | Per-thread solver, incremental modify across stages      | ~4 GB solvers + 14.3 GB shared cuts | Limited benefit due to inter-stage structural differences |
 
-> **Decision (2026-02-16)**: Option A (full rebuild per stage) was originally adopted. Solver API analysis confirmed that neither HiGHS nor CLP expose efficient LP cloning through their C APIs, making Option C solver-specific and complex. Option A is portable (works identically for both solvers), simpler (no solver-specific clone paths), and the LP solve time dominates construction time regardless. The analysis above remains valid as historical context for why Options B/C/D were rejected.
+> **Note (LP construction strategy):** StageLpCache is the adopted baseline for parallel forward pass LP construction — see [DEC-001](../overview/decision-log.md#dec-001) and [Solver Abstraction SS11.4](../architecture/solver-abstraction.md). Cut coefficients are pre-assembled into a per-stage CSC via SharedRegion; the cut pool retains metadata only. The `addRows` CSR path is used only during StageLpCache assembly between iterations by the leader rank, not on the hot-path stage transition.
 >
-> **Superseded (2026-02-28)**: Strategy 2+3 (StageLpCache) — see [Solver Abstraction SS11.4](../architecture/solver-abstraction.md). Cut coefficients are now pre-assembled into a per-stage CSC via SharedRegion; the cut pool retains metadata only. The `addRows` CSR path is used only during StageLpCache assembly between iterations by the leader rank, not on the hot-path stage transition.
+> **Historical note (2026-02-16):** Full rebuild per stage was originally adopted. Solver API analysis confirmed that neither HiGHS nor CLP expose efficient LP cloning through their C APIs, making the clone-based approach solver-specific and complex. Full rebuild is portable (works identically for both solvers), simpler (no solver-specific clone paths), and the LP solve time dominates construction time regardless. This analysis remains valid historical context for why the clone-based and persistent-per-thread approaches were rejected. Superseded by the StageLpCache strategy (2026-02-28).
 
 Policy data (cuts, states, vertices) has a unique persistence profile:
 
