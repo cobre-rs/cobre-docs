@@ -184,7 +184,7 @@ The StageLpCache (~22.3 GB) is shared across all ranks on the same node via `Sha
 
 **Recommendation**: NUMA-interleaved SharedRegion is the default. It provides ~2.5× speedup over leader-only placement at no additional memory cost. Per-rank replication provides a further ~1.6× speedup but triples memory usage; this is a profile-guided optimization for memory-rich nodes.
 
-**L3 cache impact**: The `passModel` operation reads ~378 MB per stage — far exceeding the 32 MB L3 per CCD (or even the 96 MB total per NUMA domain). This is a DRAM-bandwidth-bound streaming read, not a cache-friendly working-set operation. In contrast, the LP solve working set (~15 MB for solver internals + LU factorization) fits within a single CCD's 32 MB L3. Strategy 2+3 improves cache behavior: the per-thread footprint (~36 MB) doesn't pollute L3/TLB, whereas Option A's CSR assembly buffer (~375 MB per thread) would.
+**L3 cache impact**: The `passModel` operation reads ~378 MB per stage — far exceeding the 32 MB L3 per CCD (or even the 96 MB total per NUMA domain). This is a DRAM-bandwidth-bound streaming read, not a cache-friendly working-set operation. In contrast, the LP solve working set (~15 MB for solver internals + LU factorization) fits within a single CCD's 32 MB L3. Strategy 2+3 improves cache behavior: the per-thread footprint (~36 MB) doesn't pollute L3/TLB, whereas the per-thread CSR assembly approach required ~375 MB per thread for on-the-fly LP construction.
 
 ## 4. Hot-Path Allocation Avoidance
 

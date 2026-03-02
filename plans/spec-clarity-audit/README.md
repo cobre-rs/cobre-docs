@@ -17,7 +17,7 @@ Systematic audit and cleanup of the Cobre spec corpus to eliminate contradiction
 | epic-01 | Stale Reference Cleanup     | 6       | completed | Detailed     |
 | epic-02 | Superseded Content Collapse | 5       | completed | Detailed     |
 | epic-03 | Decision Log and Prevention | 3       | completed | Refined      |
-| epic-04 | Cross-File Verification     | 3       | pending   | Outline      |
+| epic-04 | Cross-File Verification     | 3       | completed | Refined      |
 
 ## Progress Tracking
 
@@ -37,9 +37,9 @@ Systematic audit and cleanup of the Cobre spec corpus to eliminate contradiction
 | ticket-012 | Create Central Decision Log                                       | epic-03 | completed | Refined      | 1.00      | 1.00    | EXCELLENT |
 | ticket-013 | Add Inline Decision Markers to Primary Spec Sections              | epic-03 | completed | Refined      | 0.96      | 0.93    | EXCELLENT |
 | ticket-014 | Update CLAUDE.md with Decision Log Convention                     | epic-03 | completed | Refined      | 1.00      | 1.00    | EXCELLENT |
-| ticket-015 | Update Cross-Reference Index for Affected Entries                 | epic-04 | pending   | Outline      | --        | --      | --        |
-| ticket-016 | Run Full-Corpus Consistency Audit                                 | epic-04 | pending   | Outline      | --        | --      | --        |
-| ticket-017 | Final Verification and mdBook Build                               | epic-04 | pending   | Outline      | --        | --      | --        |
+| ticket-015 | Update Cross-Reference Index for Affected Entries                 | epic-04 | completed | Refined      | 1.00      | 1.00    | EXCELLENT |
+| ticket-016 | Run Full-Corpus Consistency Audit                                 | epic-04 | completed | Refined      | 0.96      | 1.00    | EXCELLENT |
+| ticket-017 | Final Verification and mdBook Build                               | epic-04 | completed | Refined      | 1.00      | 1.00    | EXCELLENT |
 
 ## Dependency Graph
 

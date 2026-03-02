@@ -149,7 +149,7 @@ This subsection documents the correspondence between CLI execution phases (SS5.2
 | **Startup**        | Scheduler detection (SLURM, PBS, local)                | [CLI and Lifecycle SS6.3](#63-scheduler-detection)                  | Reads environment variables; no MPI dependency                                |
 | **Startup**        | CLI argument parsing and subcommand routing            | [CLI and Lifecycle SS3](#3-command-line-interface)                  | Determines execution mode before Validation                                   |
 | **Validation**     | Rank-0 file loading and validation (`load_case`)       | [Input Loading Pipeline SS8.1](./input-loading-pipeline.md)         | Rank 0 only; produces the `System` struct                                     |
-| **Initialization** | rkyv broadcast of `System` to worker ranks             | [Input Loading Pipeline SS6](./input-loading-pipeline.md)           | Requires `System` from Validation; all ranks receive identical validated data |
+| **Initialization** | postcard broadcast of `System` to worker ranks             | [Input Loading Pipeline SS6](./input-loading-pipeline.md)           | Requires `System` from Validation; all ranks receive identical validated data |
 | **Initialization** | OpenMP configuration and NUMA allocation policy        | [Hybrid Parallelism SS6, Steps 4--6](../hpc/hybrid-parallelism.md)  | Must precede workspace allocation (first-touch policy)                        |
 | **Initialization** | Solver workspace allocation (thread-local, NUMA-aware) | [Solver Workspaces SS1.3](./solver-workspaces.md)                   | Each thread creates its own workspace on its NUMA node                        |
 | **Initialization** | Stage LP template construction                         | [Solver Abstraction SS11.1](./solver-abstraction.md)                | Built from resolved `System`; shared read-only across threads                 |
@@ -166,7 +166,7 @@ This subsection documents the correspondence between CLI execution phases (SS5.2
 **Key invariants enforced by phase ordering:**
 
 1. **MPI-first**: MPI initialization is the first operation in Startup, before any file I/O or thread creation. This is required by the MPI standard when using `MPI_THREAD_MULTIPLE` ([Hybrid Parallelism SS6, Step 1](../hpc/hybrid-parallelism.md)).
-2. **Rank-0 validation before broadcast**: The `load_case` function ([Input Loading Pipeline SS8.1](./input-loading-pipeline.md)) executes on rank 0 only during the Validation phase. The resulting `System` struct is broadcast via rkyv during Initialization. This ensures all ranks receive identical, validated data.
+2. **Rank-0 validation before broadcast**: The `load_case` function ([Input Loading Pipeline SS8.1](./input-loading-pipeline.md)) executes on rank 0 only during the Validation phase. The resulting `System` struct is broadcast via postcard during Initialization. This ensures all ranks receive identical, validated data.
 3. **Workspaces before training**: Solver workspace allocation ([Solver Workspaces SS1.3](./solver-workspaces.md)) and stage template construction ([Solver Abstraction SS11.1](./solver-abstraction.md)) complete during Initialization, before the Training phase begins. The Training Loop assumes these are ready at entry.
 4. **Scenarios before training**: PAR preprocessing and opening tree generation complete during Scenario Gen. The backward pass requires the fixed opening tree ([Scenario Generation SS2.3](./scenario-generation.md)) from iteration 1 onward.
 

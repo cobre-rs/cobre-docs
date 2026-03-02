@@ -1,6 +1,6 @@
 {
   "plan": "spec-clarity-audit",
-  "last_updated": "2026-03-02T12:34:14Z",
+  "last_updated": "2026-03-02T13:08:55Z",
   "progressive": true,
   "tickets": {
     "ticket-001-rewrite-design-principles-section-5-4.md": {
@@ -297,7 +297,7 @@
       "scores": {
         "quality": 0.93,
         "quality_breakdown": {
-          "conformance": 0.80,
+          "conformance": 0.8,
           "scope_adherence": 1.0,
           "lint_cleanliness": 1.0,
           "type_safety": 1.0,
@@ -340,16 +340,76 @@
       "agent": "open-source-documentation-writer"
     },
     "ticket-015-update-cross-reference-index.md": {
-      "status": "pending",
-      "detail_level": "outline"
+      "status": "completed",
+      "detail_level": "refined",
+      "scores": {
+        "quality": 1.0,
+        "quality_breakdown": {
+          "conformance": 1.0,
+          "scope_adherence": 1.0,
+          "lint_cleanliness": 1.0,
+          "type_safety": 1.0,
+          "test_delta": 1.0
+        },
+        "readiness": 1.0,
+        "readiness_breakdown": {
+          "structure": 1.0,
+          "testability": 1.0,
+          "boundary": 1.0,
+          "dependency_clarity": 1.0,
+          "atomicity": 1.0
+        }
+      },
+      "workflow_step": null,
+      "agent": "open-source-documentation-writer"
     },
     "ticket-016-full-corpus-consistency-audit.md": {
-      "status": "pending",
-      "detail_level": "outline"
+      "status": "completed",
+      "detail_level": "refined",
+      "scores": {
+        "quality": 1.0,
+        "quality_breakdown": {
+          "conformance": 1.0,
+          "scope_adherence": 1.0,
+          "lint_cleanliness": 1.0,
+          "type_safety": 1.0,
+          "test_delta": 1.0
+        },
+        "readiness": 0.96,
+        "readiness_breakdown": {
+          "structure": 1.0,
+          "testability": 1.0,
+          "boundary": 0.8,
+          "dependency_clarity": 1.0,
+          "atomicity": 1.0
+        }
+      },
+      "workflow_step": null,
+      "agent": "open-source-documentation-writer"
     },
     "ticket-017-final-verification-and-build.md": {
-      "status": "pending",
-      "detail_level": "outline"
+      "status": "completed",
+      "detail_level": "refined",
+      "scores": {
+        "quality": 1.0,
+        "quality_breakdown": {
+          "conformance": 1.0,
+          "scope_adherence": 1.0,
+          "lint_cleanliness": 1.0,
+          "type_safety": 1.0,
+          "test_delta": 1.0
+        },
+        "readiness": 1.0,
+        "readiness_breakdown": {
+          "structure": 1.0,
+          "testability": 1.0,
+          "boundary": 1.0,
+          "dependency_clarity": 1.0,
+          "atomicity": 1.0
+        }
+      },
+      "workflow_step": null,
+      "agent": "open-source-documentation-writer"
     }
   },
   "epics": {
@@ -366,7 +426,7 @@
       "learning_extracted": false
     },
     "epic-04-cross-file-verification": {
-      "phase": "outline",
+      "phase": "completed",
       "learning_extracted": false
     }
   }
