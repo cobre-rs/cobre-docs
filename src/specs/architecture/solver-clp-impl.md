@@ -28,7 +28,7 @@ CLP exposes two API layers relevant to Cobre:
 | **C API** (`Clp_C_Interface.h`) | Pure C functions operating on opaque `Clp_Simplex*` | Direct FFI (`extern "C"`)                               | Load, solve, add rows, mutable pointer access, basis, tolerances, scaling                   |
 | **C++ API** (`ClpSimplex.hpp`)  | Class methods on `ClpSimplex`                       | Via thin C wrapper functions compiled as C++ and linked | Template cloning (`makeBaseModel`/`setToBaseModel`), copy constructor, `setPersistenceFlag` |
 
-The C API is sufficient for the adopted Strategy 2+3 baseline (StageLpCache via `Clp_loadProblem`). The C++ API was anticipated for a cloning optimization (SS5) that is now superseded by StageLpCache. The bridge between them is `Clp_getClpSimplex(model)`, which returns the underlying `ClpSimplex*`.
+The C API is sufficient for the StageLpCache baseline (`Clp_loadProblem`). The C++ API was anticipated for a cloning optimization (SS5) that is deferred pending profiling (StageLpCache eliminates the rebuild that cloning was designed to accelerate). The bridge between them is `Clp_getClpSimplex(model)`, which returns the underlying `ClpSimplex*`.
 
 ## 2. Solver Interface Mapping
 
@@ -202,49 +202,9 @@ CLP supports four scaling modes via `Clp_scaling(model, mode)`:
 
 The scaling strategy interacts with the open point in [Solver Abstraction SS3](./solver-abstraction.md) (single-phase vs two-phase scaling). If Cobre manages its own scaling (applied at the template level), CLP internal scaling should remain off to avoid double-scaling. If Cobre delegates scaling to the solver, CLP's auto mode (3) is a reasonable default.
 
-## 5. C++ Wrapper Strategy (Superseded by StageLpCache)
+## 5. C++ Wrapper Strategy (Deferred)
 
-The C API is sufficient for the adopted Strategy 2+3 baseline (StageLpCache loaded via `Clp_loadProblem`). The C++ cloning optimization described below is **superseded** by StageLpCache ([Solver Abstraction SS11.4](./solver-abstraction.md)), which eliminates the per-stage-transition rebuild entirely by pre-assembling complete LPs in CSC format. The C++ wrapper remains available for the `setPersistenceFlag` micro-optimization (SS5.2).
-
-### 5.1 Cloning Mechanism
-
-`ClpSimplex` provides built-in support for saving and restoring a "base model":
-
-- `makeBaseModel()` — Saves a copy of the current model state (matrix, bounds, objective, but normally without cuts)
-- `setToBaseModel(nullptr)` — Resets the model to the saved base state
-- `ClpSimplex(const ClpSimplex&)` — Copy constructor for full model duplication
-
-**Potential SDDP usage**: After loading a stage template via `Clp_loadProblem`, call `makeBaseModel()` to snapshot it. At each stage transition, call `setToBaseModel(nullptr)` to restore the structural LP instantly (without re-parsing CSR arrays), then add cuts via `Clp_addRows` and update bound values via mutable pointers.
-
-### 5.2 Thin C Wrapper
-
-Since Rust FFI works with `extern "C"` functions, the C++ cloning methods must be exposed through a thin C wrapper:
-
-The wrapper provides a minimal set of C functions that:
-
-1. Accept the raw `ClpSimplex*` pointer (obtained via `Clp_getClpSimplex(model)`)
-2. Call the C++ method
-3. Return any result through C-compatible types
-
-**Required wrapper functions**:
-
-| Wrapper Function                     | C++ Method Called              | Purpose                                                                         |
-| ------------------------------------ | ------------------------------ | ------------------------------------------------------------------------------- |
-| `ClpEx_makeBaseModel(ptr)`           | `ptr->makeBaseModel()`         | Save structural LP as base                                                      |
-| `ClpEx_setToBaseModel(ptr)`          | `ptr->setToBaseModel(nullptr)` | Reset to saved base state                                                       |
-| `ClpEx_setPersistenceFlag(ptr, val)` | `ptr->setPersistenceFlag(val)` | Control memory reuse behavior (0=normal, 1=reuse if bigger, 2=reuse with extra) |
-
-The wrapper is compiled as a C++ translation unit and linked into the Rust binary. The Rust side declares the wrapper functions as `extern "C"` and calls them through the raw pointer obtained from `Clp_getClpSimplex`.
-
-### 5.3 Status and Trade-offs
-
-| Aspect       | Strategy 2+3 Baseline (C API only)                 | Cloning (C++ wrapper)                                                                                  |
-| ------------ | -------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
-| Rebuild cost | `Clp_loadProblem` loads complete StageLpCache CSC  | `setToBaseModel` (restore saved arrays)                                                                |
-| Complexity   | Minimal — pure C FFI                               | Additional build step, thin C++ wrapper                                                                |
-| Portability  | Works with any CLP build                           | Requires C++ linkage, tight version coupling                                                           |
-| Memory       | StageLpCache in SharedRegion (shared across ranks) | Base model stored inside each solver instance                                                          |
-| Status       | **Adopted baseline** (via StageLpCache, SS11.4)    | **Superseded** — StageLpCache eliminates the per-stage rebuild that cloning was designed to accelerate |
+CLP's C++ API offers `makeBaseModel()`/`setToBaseModel()` cloning and a `setPersistenceFlag` micro-optimization. Under StageLpCache ([Solver Abstraction SS11.4](./solver-abstraction.md)), the per-stage LP rebuild that cloning was designed to accelerate no longer exists — each stage transition is a single `Clp_loadProblem` call loading the pre-assembled StageLpCache CSC. The C++ wrapper is deferred until profiling identifies a concrete benefit from `setPersistenceFlag` (which keeps solver factorization data across `loadProblem` calls, potentially saving re-factorization cost).
 
 ## 6. Memory Footprint
 
@@ -266,7 +226,7 @@ This is within acceptable bounds for production HPC nodes (384 GB RAM). The clon
 
 `Clp_loadProblem` expects column-major (CSC) format, which matches the StageLpCache format directly — the StageLpCache stores the complete LP (structural template + active cuts) in CSC form (see [Solver Abstraction SS11.4](./solver-abstraction.md)). No format transposition is needed at stage transitions.
 
-`Clp_addRows` for dynamic constraint addition accepts row-major (CSR) format (row starts, column indices, elements), which matches the cut pool's CSR-friendly storage layout. Under Strategy 2+3, `Clp_addRows` is used during StageLpCache assembly between iterations but is no longer invoked on the hot-path stage transition.
+`Clp_addRows` for dynamic constraint addition accepts row-major (CSR) format (row starts, column indices, elements), which matches the cut pool's CSR-friendly storage layout. Under the StageLpCache strategy, `Clp_addRows` is used during StageLpCache assembly between iterations but is no longer invoked on the hot-path stage transition.
 
 ### 7.2 Dual Sign Convention
 
@@ -286,7 +246,7 @@ CLP's `setPersistenceFlag(int value)` controls memory reuse behavior:
 | 1     | Reuse arrays if bigger needed (avoid reallocation) |
 | 2     | As 1 but allocate a bit extra (amortized growth)   |
 
-For SDDP where the LP is rebuilt many times with similar (but not identical) sizes, `setPersistenceFlag(2)` reduces allocation overhead by keeping internal arrays sized for the largest LP seen so far. This is a CLP-specific micro-optimization accessible via the C++ wrapper (SS5.2).
+For SDDP where the LP is rebuilt many times with similar (but not identical) sizes, `setPersistenceFlag(2)` reduces allocation overhead by keeping internal arrays sized for the largest LP seen so far. This is a CLP-specific micro-optimization accessible via the C++ wrapper (SS5).
 
 ## Cross-References
 

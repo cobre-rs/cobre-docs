@@ -241,9 +241,7 @@ Unlike CLP (which returns mutable pointers into solver internals), HiGHS copies 
 
 ### 6.5 StageLpCache Stage Transition
 
-Under the adopted Strategy 2+3, stage transitions use `Highs_passLp` to load the complete `StageLpCache[t]` — which includes structural constraints plus all active cuts in CSC format. The `Highs_addRows` call is no longer used on the hot-path stage transition (it is used during StageLpCache assembly between iterations). Since the StageLpCache CSC is in HiGHS's native internal format, `Highs_passLp` is a fast bulk memory operation with no format conversion overhead.
-
-HiGHS does not expose LP template cloning through its C API (no equivalent of CLP's `makeBaseModel`/`setToBaseModel`), but this is moot under StageLpCache — the cloning optimization is superseded.
+Stage transitions load the complete `StageLpCache[t]` via `Highs_passLp` — which includes structural constraints plus all active cuts in CSC format. Since the StageLpCache CSC is in HiGHS's native internal format, `Highs_passLp` is a fast bulk memory operation with no format conversion overhead. `Highs_addRows` is used during StageLpCache assembly between iterations.
 
 ## Cross-References
 

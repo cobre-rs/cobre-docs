@@ -181,33 +181,11 @@ The key invariant: **no locking is required on the hot path**. StageLpCache is r
 >
 > **Trade-off**: This approach could reduce modeling flexibility (adding/removing system elements requires restructuring all stages) and may increase LP size at stages where many elements are inactive. It should be evaluated only if profiling shows that stage-template switching is a significant cost. Deferred until performance data is available.
 
-### 1.10 Resolved — Cut Loading Cost (Strategy 2+3)
+### 1.10 Resolved — Cut Loading Cost
 
-> **Resolved**: Strategy 2+3 (StageLpCache) resolves the cut loading bottleneck identified below. Cut coefficients are pre-assembled into the StageLpCache CSC between iterations by the leader rank. Stage transition reduces to a single `passModel` call that bulk-loads the complete LP (structural template + active cuts) — no per-thread `addRows` assembly. See [Solver Abstraction SS11.4](./solver-abstraction.md).
+> **Resolved**: The StageLpCache resolves the cut loading bottleneck identified below. Cut coefficients are pre-assembled into the StageLpCache CSC between iterations by the leader rank. Stage transition reduces to a single `passModel` call that bulk-loads the complete LP (structural template + active cuts) — no per-thread `addRows` assembly. See [Solver Abstraction SS11.4](./solver-abstraction.md).
 >
-> The original analysis is retained below for historical context.
->
-> **Original analysis — cut loading dominates stage transitions**: Under the previous Option A (full LP rebuild per stage transition), the cut loading cost via `addRows` was significantly larger than the basis warm-start cost that SS1.2 already addresses with a two-level storage design (in-memory cache + FlatBuffers checkpoint). The cut data dwarfs the basis data:
->
-> | Data                     | Per-stage size (production)      | Frequency              |
-> | ------------------------ | -------------------------------- | ---------------------- |
-> | Basis (HiGHS)            | ~348 KB                          | Every solve            |
-> | Active cuts (worst case) | 15,000 × ~25 KB/row ≈ 238–366 MB | Every stage transition |
->
-> At production scale, cut loading in the forward pass takes ~5 ms per stage transition (memory bandwidth + solver `addRows` overhead), while the LP solve itself targets ~2 ms with warm-start — a **2.5:1 ratio of loading to solving**. Over 60 stages per forward pass, this amounts to ~300 ms for cut loading vs ~120 ms for solving.
->
-> **Two-level storage consideration**: The basis lifecycle (SS1.2) uses two storage levels — a hot-path in-memory per-stage cache (mutable, NUMA-local, updated every solve) and a cold-path FlatBuffers checkpoint (immutable, on-disk, written at checkpoint boundaries). The cuts, being a much larger bottleneck, warrant the same coherent treatment. A hot-path in-memory cut representation optimized for `addRows` (pre-assembled CSR blocks per stage, shared read-only across threads) could reduce the per-stage-transition assembly cost. The cold-path FlatBuffers cut persistence already exists (see [Binary Formats SS3](../data-model/binary-formats.md)).
->
-> However, a per-stage in-memory cut cache sized for all threads is constrained by RAM: 60 stages × 238 MB = ~14.3 GB per rank for the cut pool alone, which is the current shared cut pool design. The question is whether the cut pool's memory layout can be structured so that the data passed to `addRows` requires minimal or zero intermediate assembly — essentially making the `addRows` call use pre-built CSR arrays directly from the shared cut pool.
->
-> **Mitigation strategies** (all deferred until profiling):
->
-> 1. **Pre-assembled CSR cut blocks** — Structure the cut pool so that active cuts for each stage are stored in a contiguous CSR-ready layout. The `addRows` call passes pointers directly into the shared cut pool without intermediate copies. The solver still copies internally, but one copy layer is eliminated.
-> 2. **CLP cloning** ([CLP Implementation](./solver-clp-impl.md)) — `makeBaseModel()`/`setToBaseModel()` could restore a pre-loaded LP (template + cuts) rather than rebuilding from scratch. But this requires per-stage per-thread base models (~250 MB × 60 stages per thread), which is infeasible at full scale.
-> 3. **Incremental cut updates** — If structural LP homogeneity (SS1.9) is adopted, a thread transitioning between stages could potentially keep the LP loaded and only patch the cut differences (remove old stage's cuts, add new stage's cuts) rather than full rebuild. This interacts with bound toggling (rejected in [Solver Abstraction SS5, Decision 4](./solver-abstraction.md)) and would need a different mechanism.
-> 4. **Reduced active cut count** — In early iterations, the active cut set is much smaller than the worst case. Cut selection strategies ([Cut Management SS4](../math/cut-management.md)) that aggressively prune inactive cuts reduce the per-stage `addRows` data volume.
->
-> This analysis does not change the Option A baseline decision, but it identifies cut loading as the dominant cost in stage transitions and motivates the solver-specific optimizations anticipated in [Solver Abstraction SS11.3](./solver-abstraction.md).
+> The original analysis (pre-StageLpCache) identified cut loading via per-thread `addRows` as the dominant stage transition cost: ~5 ms loading vs ~2 ms solving per stage at production scale. This motivated the StageLpCache design which eliminates per-thread cut assembly entirely.
 
 ## 2. LP Scaling Specification
 

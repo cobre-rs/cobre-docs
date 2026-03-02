@@ -46,7 +46,7 @@ The pool is fully pre-allocated at initialization:
 
 See [Binary Formats SS4.3](../data-model/binary-formats.md) for the full sizing breakdown.
 
-> **Strategy 2+3 note**: Under the adopted StageLpCache architecture ([Solver Abstraction SS11.4](./solver-abstraction.md)), the cut pool's coefficient storage is absorbed into the StageLpCache CSC. The cut pool retains metadata only: intercepts (`f64` per cut), activity bitmap, iteration/forward_pass indices, binding count history. Metadata total: ~12 MB across 60 stages at 15K capacity. Coefficient data continues to exist in the StageLpCache CSC and in the MPI wire format, but is not accessed from the cut pool during passes.
+> **StageLpCache note**: Under the adopted StageLpCache architecture ([Solver Abstraction SS11.4](./solver-abstraction.md)), the cut pool's coefficient storage is absorbed into the StageLpCache CSC. The cut pool retains metadata only: intercepts (`f64` per cut), activity bitmap, iteration/forward_pass indices, binding count history. Metadata total: ~12 MB across 60 stages at 15K capacity. Coefficient data continues to exist in the StageLpCache CSC and in the MPI wire format, but is not accessed from the cut pool during passes.
 
 > **Precondition:** `forward_passes` is immutable after initialization. The cut pool
 > capacity formula depends on this invariant — a runtime change to `forward_passes`
@@ -320,7 +320,7 @@ Cuts arrive from other ranks via `MPI_Allgatherv` (SS4.1) as `CutWireRecord` byt
 1. **Cut pool metadata** — Intercept, activity flag, iteration/forward_pass metadata, slot index. This is the permanent metadata store.
 2. **StageLpCache CSC** — Coefficients are written directly into the pre-allocated CSC slot. This is the solver-facing representation consumed by `passModel`/`loadProblem`.
 
-The coefficient write to StageLpCache is the additional step introduced by Strategy 2+3 — under the previous Option A, coefficients were written only to the cut pool and assembled into CSR on each stage transition.
+The coefficient write to StageLpCache ensures the per-stage CSC representation stays current as new cuts are generated. Coefficients are written to both the cut pool metadata (intercepts, activity bitmap) and the StageLpCache CSC column data.
 
 ### 7.3 Performance
 

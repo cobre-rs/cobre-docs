@@ -29,11 +29,11 @@ Systematic audit and cleanup of the Cobre spec corpus to eliminate contradiction
 | ticket-004 | Update "120 stages" Production References in Trait Specs          | epic-01 | completed | Detailed     | 1.00      | 1.00    | EXCELLENT |
 | ticket-005 | Update "120 stages" in HPC and Overview Specs                     | epic-01 | completed | Detailed     | 0.92      | 1.00    | EXCELLENT |
 | ticket-006 | Add Stage Count Clarification Note and Update Crate Docs          | epic-01 | completed | Detailed     | 0.94      | 1.00    | EXCELLENT |
-| ticket-007 | Collapse Superseded Content in solver-abstraction.md              | epic-02 | pending   | Detailed     | 0.97      | --      | --        |
-| ticket-008 | Collapse Resolved Blockquote in solver-workspaces.md SS1.10       | epic-02 | pending   | Detailed     | 1.00      | --      | --        |
-| ticket-009 | Collapse Superseded C++ Wrapper Section in solver-clp-impl.md     | epic-02 | pending   | Detailed     | 1.00      | --      | --        |
-| ticket-010 | Collapse Superseded Inline Notes in solver-highs-impl.md          | epic-02 | pending   | Detailed     | 0.96      | --      | --        |
-| ticket-011 | Collapse Option A Reference in cut-management-impl.md             | epic-02 | pending   | Detailed     | 0.92      | --      | --        |
+| ticket-007 | Collapse Superseded Content in solver-abstraction.md              | epic-02 | completed | Detailed     | 0.97      | 1.00    | EXCELLENT |
+| ticket-008 | Collapse Resolved Blockquote in solver-workspaces.md SS1.10       | epic-02 | completed | Detailed     | 1.00      | 1.00    | EXCELLENT |
+| ticket-009 | Collapse Superseded C++ Wrapper Section in solver-clp-impl.md     | epic-02 | completed | Detailed     | 1.00      | 1.00    | EXCELLENT |
+| ticket-010 | Collapse Superseded Inline Notes in solver-highs-impl.md          | epic-02 | completed | Detailed     | 0.96      | 1.00    | EXCELLENT |
+| ticket-011 | Collapse Option A Reference in cut-management-impl.md             | epic-02 | completed | Detailed     | 0.92      | 1.00    | EXCELLENT |
 | ticket-012 | Create Central Decision Log                                       | epic-03 | pending   | Outline      | --        | --      | --        |
 | ticket-013 | Add Inline Decision Markers to Primary Spec Sections              | epic-03 | pending   | Outline      | --        | --      | --        |
 | ticket-014 | Update CLAUDE.md with Decision Log Convention                     | epic-03 | pending   | Outline      | --        | --      | --        |
