@@ -81,18 +81,20 @@ The input case directory is organized into four top-level groups plus root-level
 
 | File                      | Required | Description                                                                                                                                                                                                                                                | Spec Reference                               |
 | ------------------------- | -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------- |
-| `config.json`             | Yes      | Central execution configuration: MPI/HPC parameters, modeling options, training settings, simulation settings, export controls. Controls all solver behavior.                                                                                              | §2 below                                     |
+| `config.json`             | Yes      | Central execution configuration: modeling options, training settings, simulation settings, export controls. Controls all solver behavior.                                                                                                                  | §2 below                                     |
 | `penalties.json`          | Yes      | Global default penalty values for the three-tier cascade: deficit segment costs, regularization costs, constraint violation penalties. Entity and stage overrides layer on top.                                                                            | [Penalty System](penalty-system.md)          |
 | `stages.json`             | Yes      | Season definitions with calendar mapping, policy graph (transitions, horizon type, annual discount rate), stage definitions with per-stage block structure, block mode, state variables, risk measure (CVaR), scenario sampling method, and num_scenarios. | [Input Scenarios §1](input-scenarios.md)     |
 | `initial_conditions.json` | Yes      | Initial system state: operating hydro storage levels (`storage` array) and filling hydro storage levels (`filling_storage` array, can be below dead volume). GNL pipeline state deferred — see [Input Constraints §1](input-constraints.md).               | [Input Constraints §1](input-constraints.md) |
 
 ## 2. Configuration (`config.json`)
 
+> **Decision [DEC-018](../overview/decision-log.md#dec-018) (active):** MPI/HPC parameters removed from config.json — all are auto-detected implementation details or contradicted by approved architecture.
+
 > **Note**: Solver selection (HiGHS, CPLEX, Gurobi) is determined at compile time via Cargo features due to licensing constraints. Solver parameters, retry strategies, warm-start, and basis reuse are hardcoded per solver implementation and not user-configurable.
 
 > **Format Rationale — config.json**
 >
-> JSON was chosen for the central configuration because it is human-readable, easily editable, and small in size. Configuration is a **nested object** with logical groupings (MPI, training, simulation) that map naturally to JSON's hierarchical structure. All sections have solid code defaults — the minimal valid config is very small.
+> JSON was chosen for the central configuration because it is human-readable, easily editable, and small in size. Configuration is a **nested object** with logical groupings (training, simulation, exports) that map naturally to JSON's hierarchical structure. All sections have solid code defaults — the minimal valid config is very small.
 
 **Minimal example** — only fields with no reasonable default:
 
@@ -109,7 +111,7 @@ The input case directory is organized into four top-level groups plus root-level
 }
 ```
 
-All omitted sections (`mpi`, `modeling`, `upper_bound_evaluation`, `policy`, `simulation`, `exports`) use code defaults. See [Configuration Reference](../configuration/configuration-reference.md) for all defaults.
+All omitted sections (`modeling`, `upper_bound_evaluation`, `policy`, `simulation`, `exports`) use code defaults. See [Configuration Reference](../configuration/configuration-reference.md) for all defaults.
 
 **Full example** — all sections with explicit overrides:
 
@@ -117,32 +119,6 @@ All omitted sections (`mpi`, `modeling`, `upper_bound_evaluation`, `policy`, `si
 {
   "$schema": "https://cobre.dev/schemas/v2/config.schema.json",
   "version": "2.0.0",
-
-  "mpi": {
-    "communication": {
-      "cut_aggregation": "hierarchical",
-      "aggregation_tree_fanout": 8,
-      "backward_pipeline": true,
-      "use_persistent_collectives": true,
-      "use_shared_memory_windows": true
-    },
-
-    "memory": {
-      "fcf_sharing": "intra_node_shared",
-      "numa_aware_allocation": true,
-      "first_touch_init": true
-    },
-
-    "io": {
-      "parallel_warm_start": true,
-      "checkpoint_writers": 4,
-      "checkpoint_compression": "zstd"
-    },
-
-    "solver": {
-      "threads_per_solve": 1
-    }
-  },
 
   "modeling": {
     "inflow_non_negativity": {
@@ -215,17 +191,7 @@ All omitted sections (`mpi`, `modeling`, `upper_bound_evaluation`, `policy`, `si
 
 The subsections below describe each configuration group. For the complete field-by-field reference with defaults and validation rules, see [Configuration Reference](../configuration/configuration-reference.md).
 
-### 2.1 MPI Configuration (HPC Parameters) — Optional
-
-> **Background**: Cobre uses hybrid MPI+OpenMP parallelism for distributed computing. The `mpi` section configures communication patterns, memory management, I/O strategies, and solver threading optimized for production-scale SDDP on HPC clusters.
->
-> **Resource allocations (MPI rank count, threads per rank, memory per node) are not part of `config.json`.** They are read from the job scheduler environment (SLURM/PBS/LSF) or `OMP_NUM_THREADS` at startup. See [CLI and Lifecycle](../architecture/cli-and-lifecycle.md) §6.1 for the resource allocation model.
->
-> **All `mpi` fields are optional.** When omitted, the system uses sensible defaults for communication, memory, and I/O. The entire `mpi` section can be omitted for default behavior.
-
-For thread binding, communication, memory, and I/O field details, see [Configuration Reference](../configuration/configuration-reference.md).
-
-### 2.2 Modeling Configuration
+### 2.1 Modeling Configuration
 
 | Field                   | Type   | Default                                           | Description                                                                                                         |
 | ----------------------- | ------ | ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
@@ -233,7 +199,7 @@ For thread binding, communication, memory, and I/O field details, see [Configura
 
 > **Note**: Block mode (`parallel` or `chronological`) is configured **per stage** in `stages.json`, not globally. See [Input Scenarios §1.5](input-scenarios.md). Horizon mode (`finite_horizon` or `cyclic`) is configured in the `policy_graph` section of `stages.json`. See [Input Scenarios §1.2](input-scenarios.md).
 
-### 2.3 Training Configuration
+### 2.2 Training Configuration
 
 Key training parameters include the random seed, number of forward passes, stopping rules, cut formulation, and forward/backward pass modes. The `stopping_mode` controls how multiple rules combine (`"any"` = OR, `"all"` = AND).
 
@@ -241,7 +207,7 @@ Key training parameters include the random seed, number of forward passes, stopp
 
 For the complete stopping rule types and their parameters, see [Configuration Reference](../configuration/configuration-reference.md).
 
-### 2.4 Policy Directory Configuration
+### 2.3 Policy Directory Configuration
 
 | Field                    | Type   | Default      | Description                                                  |
 | ------------------------ | ------ | ------------ | ------------------------------------------------------------ |
@@ -257,7 +223,7 @@ For the complete stopping rule types and their parameters, see [Configuration Re
 | `warm_start` | Load existing cuts/states to initialize, but reset iteration count and use fresh RNG seed.    |
 | `resume`     | Load full algorithm state including RNG, iteration count. Continue exactly where interrupted. |
 
-### 2.5 Simulation Configuration
+### 2.4 Simulation Configuration
 
 | Field                  | Type   | Default       | Description                                       |
 | ---------------------- | ------ | ------------- | ------------------------------------------------- |

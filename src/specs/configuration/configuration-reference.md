@@ -4,13 +4,15 @@
 
 This spec provides a comprehensive mapping between Cobre configuration options and their effects on LP subproblem construction and solver behavior. Configuration is split across two files: `config.json` (solver-side settings) and `stages.json` (temporal structure, per-stage variants, scenario configuration). This spec documents all options, their valid values, LP effects, and links to the defining math or data model spec.
 
+> **Decision [DEC-018](../overview/decision-log.md#dec-018) (active):** MPI/HPC parameters removed from config.json — all are auto-detected implementation details or contradicted by approved architecture.
+
 For the file layout and `config.json` schema overview, see [Input Directory Structure §2](../data-model/input-directory-structure.md). For the `stages.json` schema, see [Input Scenarios](../data-model/input-scenarios.md).
 
 ## 1. Configuration File Split
 
 | File          | Scope                                                                                                                | Where Defined                                                              |
 | ------------- | -------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
-| `config.json` | Solver behavior: modeling options, training parameters, simulation, HPC, I/O                                         | [Input Directory Structure §2](../data-model/input-directory-structure.md) |
+| `config.json` | Solver behavior: modeling options, training parameters, simulation, I/O                                              | [Input Directory Structure §2](../data-model/input-directory-structure.md) |
 | `stages.json` | Temporal structure: stages, blocks, block_mode, policy graph, risk measure, scenario source, per-stage num_scenarios | [Input Scenarios](../data-model/input-scenarios.md)                        |
 
 **Design rationale**: Settings that are inherently per-stage (block mode, risk measure, scenario source) live in `stages.json` alongside the stage definitions. Settings that are global solver parameters (training iteration count, cut selection, inflow non-negativity method, upper bound evaluation) live in `config.json`.
