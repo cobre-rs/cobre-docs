@@ -644,7 +644,7 @@ Net savings: **~64 GB** per node (91.8 → 27.7 GB).
 
 Within the same stage (e.g., multiple backward pass scenarios at stage $t$, or multiple forward passes at the same stage within a batch), only scenario-dependent values change — the structural LP and cuts are identical. In this case, the solver skips step 1 and only performs:
 
-- **Patch scenario values** via `patch_row_bounds` (step 2)
+- **Patch scenario values** via `set_row_bounds` (step 2), passing separate `indices`, `lower`, and `upper` slices
 - **Solve** with implicit warm-start from the previous solve's basis (step 4)
 
 This is significantly faster than a full stage transition and is the common case in the backward pass.

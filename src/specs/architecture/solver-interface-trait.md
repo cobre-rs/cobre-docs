@@ -45,30 +45,32 @@ pub trait SolverInterface: Send {
 
     /// Update row bounds (constraint RHS values).
     ///
-    /// Each patch is a (row_index, new_lower, new_upper) triple. The
-    /// patches update inflow RHS, state-fixing constraints, and
-    /// noise-fixing values without modifying the structural LP. For
-    /// equality constraints, set new_lower = new_upper = value.
+    /// Takes three parallel slices: `indices` (row indices to patch),
+    /// `lower` (new lower bounds), and `upper` (new upper bounds).
+    /// Updates inflow RHS, state-fixing constraints, and noise-fixing
+    /// values without modifying the structural LP. For equality
+    /// constraints, set lower[i] = upper[i] = value.
     /// This is the primary modification performed between successive
     /// solves at the same stage (within-stage incremental updates per
     /// [Solver Abstraction SS11.4](./solver-abstraction.md)).
     ///
     /// Maps to `Highs_changeRowsBoundsBySet` (HiGHS) or mutable pointer
     /// access via `Clp_rowLower()`/`Clp_rowUpper()` (CLP).
-    fn set_row_bounds(&mut self, patches: &[(usize, f64, f64)]);
+    fn set_row_bounds(&mut self, indices: &[usize], lower: &[f64], upper: &[f64]);
 
     /// Update column bounds (variable lower/upper bounds).
     ///
-    /// Each entry is a (col_index, new_lower, new_upper) triple. It
-    /// updates variable bounds without modifying the structural
-    /// LP. This method is not used in minimal viable SDDP but is
-    /// included for completeness — future extensions (e.g., thermal
-    /// unit commitment bounds, battery state-of-charge limits) may
-    /// require per-scenario column bound updates.
+    /// Takes three parallel slices: `indices` (column indices to patch),
+    /// `lower` (new lower bounds), and `upper` (new upper bounds).
+    /// Updates variable bounds without modifying the structural LP.
+    /// This method is not used in minimal viable SDDP but is included
+    /// for completeness — future extensions (e.g., thermal unit
+    /// commitment bounds, battery state-of-charge limits) may require
+    /// per-scenario column bound updates.
     ///
     /// Maps to `Highs_changeColsBoundsBySet` (HiGHS) or mutable pointer
     /// access via `Clp_colLower()`/`Clp_colUpper()` (CLP).
-    fn set_col_bounds(&mut self, patches: &[(usize, f64, f64)]);
+    fn set_col_bounds(&mut self, indices: &[usize], lower: &[f64], upper: &[f64]);
 
     /// Solve the loaded LP.
     ///
@@ -112,7 +114,7 @@ pub trait SolverInterface: Send {
     /// [Solver Abstraction SS9](./solver-abstraction.md).
     ///
     /// Maps to `Highs_getBasis` (HiGHS) or `Clp_statusArray` (CLP).
-    fn get_basis(&self) -> Basis;
+    fn get_basis(&mut self) -> Basis;
 
     /// Return accumulated solve metrics.
     ///
@@ -132,7 +134,7 @@ pub trait SolverInterface: Send {
 
 **Thread safety model:** The `Send` bound allows solver instances to be transferred between threads (e.g., during thread pool initialization), but the absence of `Sync` prevents concurrent access. This matches the reality of C-library solver handles, which maintain mutable internal state (factorization workspace, working arrays) that is not safe to share. The thread-local workspace pattern in [Solver Workspaces SS1.1](./solver-workspaces.md) ensures each OpenMP thread owns exactly one solver instance for the entire training run.
 
-**Mutability:** All methods that modify solver state (`load_model`, `add_rows`, `set_row_bounds`, `set_col_bounds`, `solve`, `solve_with_basis`, `reset`) take `&mut self`. Read-only accessors (`get_basis`, `statistics`, `name`) take `&self`.
+**Mutability:** All methods that modify solver state or write to internal buffers (`load_model`, `add_rows`, `set_row_bounds`, `set_col_bounds`, `solve`, `solve_with_basis`, `reset`, `get_basis`) take `&mut self`. `get_basis` requires `&mut self` because it writes to pre-allocated scratch buffers during extraction. Read-only accessors (`statistics`, `name`) take `&self`.
 
 ## 2. Method Contracts
 
@@ -150,11 +152,11 @@ pub trait SolverInterface: Send {
 
 **Postconditions:**
 
-| Condition                                      | Description                                                                                         |
-| ---------------------------------------------- | --------------------------------------------------------------------------------------------------- |
-| Solver holds the structural LP from `template` | Previous model (if any) is fully replaced                                                           |
+| Condition                                      | Description                                                                                                |
+| ---------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| Solver holds the structural LP from `template` | Previous model (if any) is fully replaced                                                                  |
 | No cuts are present                            | The loaded model contains only structural constraints; constraint rows are added separately via `add_rows` |
-| Solver basis is cleared                        | Any cached basis from a previous model is invalidated                                               |
+| Solver basis is cleared                        | Any cached basis from a previous model is invalidated                                                      |
 
 **Infallibility:** This method does not return `Result`. The stage template is validated during initialization ([Solver Abstraction SS11.1](./solver-abstraction.md)); passing an invalid template is a programming error (panic on violation).
 
@@ -172,26 +174,26 @@ pub trait SolverInterface: Send {
 
 **Postconditions:**
 
-| Condition                                                                          | Description                                                                                |
-| ---------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| Condition                                                                  | Description                                                                                |
+| -------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
 | Active cuts are appended as rows at `[n_static, n_static + cuts.num_rows)` | Cut row positions follow [Solver Abstraction SS2.2](./solver-abstraction.md) bottom region |
-| Structural rows `[0, n_static)` are unchanged                                  | Adding cuts does not modify the structural LP                                              |
-| Solver basis is not automatically set                                              | Caller must use `solve_with_basis` to apply a cached basis                                 |
+| Structural rows `[0, n_static)` are unchanged                              | Adding cuts does not modify the structural LP                                              |
+| Solver basis is not automatically set                                      | Caller must use `solve_with_basis` to apply a cached basis                                 |
 
 **Infallibility:** This method does not return `Result`. The cut batch is assembled from the pre-validated cut pool ([Solver Abstraction SS5](./solver-abstraction.md)); invalid CSR data is a programming error (panic on violation).
 
 ### 2.3 set_row_bounds
 
-`set_row_bounds` updates row bounds (constraint RHS values) without structural LP changes. This is step 3 of the LP rebuild sequence and the primary modification between successive solves at the same stage ([Solver Abstraction SS11.4](./solver-abstraction.md)). Each patch is a `(row_index, new_lower, new_upper)` triple. For equality constraints (water balance, lag fixing, noise fixing), set `new_lower = new_upper = value`.
+`set_row_bounds` updates row bounds (constraint RHS values) without structural LP changes. This is step 3 of the LP rebuild sequence and the primary modification between successive solves at the same stage ([Solver Abstraction SS11.4](./solver-abstraction.md)). Takes three parallel slices: `indices` (row indices to patch), `lower` (new lower bounds), and `upper` (new upper bounds). All three slices must have equal length. For equality constraints (water balance, lag fixing, noise fixing), set `lower[i] = upper[i] = value`.
 
 **Preconditions:**
 
-| Condition                                | Description                                           |
-| ---------------------------------------- | ----------------------------------------------------- |
-| `load_model` has been called             | A model must be loaded before patching                |
-| All row indices in `patches` are valid   | Each index references a valid row in the loaded model |
-| All bound values in `patches` are finite | No NaN or infinity                                    |
-| `new_lower <= new_upper` for each patch  | Lower bound does not exceed upper bound               |
+| Condition                                    | Description                                           |
+| -------------------------------------------- | ----------------------------------------------------- |
+| `load_model` has been called                 | A model must be loaded before patching                |
+| All indices in `indices` are valid           | Each index references a valid row in the loaded model |
+| All values in `lower` and `upper` are finite | No NaN or infinity                                    |
+| `lower[i] <= upper[i]` for each `i`          | Lower bound does not exceed upper bound               |
 
 **Postconditions:**
 
@@ -213,16 +215,16 @@ pub trait SolverInterface: Send {
 
 ### 2.3a set_col_bounds
 
-`set_col_bounds` updates column bounds (variable lower/upper bounds) without structural LP changes. Each entry is a `(col_index, new_lower, new_upper)` triple. This method is not used in minimal viable SDDP but is included for completeness -- future extensions (e.g., thermal unit commitment bounds, battery state-of-charge limits) may require per-scenario column bound updates.
+`set_col_bounds` updates column bounds (variable lower/upper bounds) without structural LP changes. Takes three parallel slices: `indices` (column indices to patch), `lower` (new lower bounds), and `upper` (new upper bounds). All three slices must have equal length. This method is not used in minimal viable SDDP but is included for completeness -- future extensions (e.g., thermal unit commitment bounds, battery state-of-charge limits) may require per-scenario column bound updates.
 
 **Preconditions:**
 
-| Condition                                 | Description                                              |
-| ----------------------------------------- | -------------------------------------------------------- |
-| `load_model` has been called              | A model must be loaded before patching                   |
-| All column indices in `patches` are valid | Each index references a valid column in the loaded model |
-| All bound values in `patches` are finite  | No NaN or infinity                                       |
-| `new_lower <= new_upper` for each patch   | Lower bound does not exceed upper bound                  |
+| Condition                                    | Description                                              |
+| -------------------------------------------- | -------------------------------------------------------- |
+| `load_model` has been called                 | A model must be loaded before patching                   |
+| All indices in `indices` are valid           | Each index references a valid column in the loaded model |
+| All values in `lower` and `upper` are finite | No NaN or infinity                                       |
+| `lower[i] <= upper[i]` for each `i`          | Lower bound does not exceed upper bound                  |
 
 **Postconditions:**
 

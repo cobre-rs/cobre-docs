@@ -105,7 +105,7 @@ Each workspace provides a unified solve entry point that handles the full stage 
 **Solve sequence**:
 
 1. **Load StageLpCache** (if stage changed) — Bulk-load `StageLpCache[t]` ([Solver Abstraction SS11.4](./solver-abstraction.md)) into the solver via `passModel`/`loadProblem`. The StageLpCache contains the complete LP for the stage (structural template + active cuts) in CSC format — no `addRows` call is needed.
-2. **Set scenario bounds** — Write scenario-dependent values (incoming storage, AR lag fixing, noise fixing) into the RHS patch buffer, then apply via `set_row_bounds` ([Solver Interface Trait SS2.3](./solver-interface-trait.md)).
+2. **Set scenario bounds** — Write scenario-dependent values (incoming storage, AR lag fixing, noise fixing) into the pre-allocated `indices`, `lower`, and `upper` arrays of the RHS patch buffer, then apply directly via `set_row_bounds(indices, lower, upper)` ([Solver Interface Trait SS2.3](./solver-interface-trait.md)). The separate arrays are passed without tuple conversion, matching the SoA layout that both the caller and the C API naturally use.
 3. **Set basis** (if warm-starting) — Look up the cached basis for the target stage from the per-stage basis cache. If a basis exists for this stage, apply it to the solver.
 4. **Solve** — Call the solver. Retry logic is encapsulated within the solver implementation ([Solver Abstraction SS7](./solver-abstraction.md)).
 5. **Extract solution** — Copy primal values, dual values, and reduced costs into pre-allocated buffers. Extract the basis and store it in the per-stage cache at the solved stage's slot, overwriting any previous basis for that stage.

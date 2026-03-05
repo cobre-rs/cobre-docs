@@ -359,7 +359,7 @@ For each forward trajectory:
 
 ### 4.2a Forward Pass Patch Sequence
 
-Step c above ("Build stage LP") decomposes into the LP rebuild sequence ([Solver Abstraction SS11.2](./solver-abstraction.md)): load template, add active cuts, patch scenario-dependent RHS values, and warm-start. This subsection specifies the **exact `set_row_bounds` calls** for the forward pass — the patches that transform a generic stage template into the LP for a specific (incoming state, scenario realization) pair.
+Step c above ("Build stage LP") decomposes into the LP rebuild sequence ([Solver Abstraction SS11.2](./solver-abstraction.md)): load template, add active cuts, patch scenario-dependent RHS values, and warm-start. This subsection specifies the **exact `set_row_bounds` calls** for the forward pass — the patches that transform a generic stage template into the LP for a specific (incoming state, scenario realization) pair. All patches are applied in a single call using three parallel arrays: an `indices` array of row indices, a `lower` array of new lower bounds, and an `upper` array of new upper bounds (SoA parameter style per [Solver Interface Trait SS2.3](./solver-interface-trait.md)).
 
 Three categories of patches are applied, all targeting constraint RHS values:
 
