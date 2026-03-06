@@ -423,8 +423,8 @@ The scenario pipeline is a cascade of components, each of which can independentl
 
 | Component                  | User-provided via                       | Derived from                             |
 | -------------------------- | --------------------------------------- | ---------------------------------------- |
-| Seasonal statistics (μ, σ) | `inflow_seasonal_stats.parquet` (§3.1)  | Inflow history aggregated by season      |
-| AR coefficients (ψ)        | `inflow_ar_coefficients.parquet` (§3.2) | Fitted from inflow history (Yule-Walker) |
+| Seasonal statistics (μ, s) | `inflow_seasonal_stats.parquet` (§3.1)  | Inflow history aggregated by season      |
+| AR coefficients (ψ\*)      | `inflow_ar_coefficients.parquet` (§3.2) | Fitted from inflow history (Yule-Walker) |
 | Correlation matrices       | `correlation.json` (§5)                 | Estimated from AR residuals of history   |
 
 **Presence or absence of input files controls the pipeline.** No explicit mode flags are needed:
@@ -522,20 +522,14 @@ When `scenario_source.sampling_scheme = "external"`, the user provides pre-compu
 
 When provided, this table supplies pre-computed seasonal mean and standard deviation directly. When absent, the system derives these from `inflow_history` via season aggregation (see §2.2).
 
-| Column     | Type | Description                                                                                                                                                                                                                                                                                     |
-| ---------- | ---- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `hydro_id` | i32  | Hydro plant ID (must exist in system entities)                                                                                                                                                                                                                                                  |
-| `stage_id` | i32  | Stage ID (must exist in `stages.json`)                                                                                                                                                                                                                                                          |
-| `mean_m3s` | f64  | Seasonal mean inflow (μ)                                                                                                                                                                                                                                                                        |
-| `std_m3s`  | f64  | Seasonal sample standard deviation ($s_m$). 0 = deterministic. Note: this is the sample std of historical observations, NOT the residual std ($\sigma_m$) — the residual std is computed at runtime from $s_m$ and the AR coefficients. See [PAR Inflow Model §3](../math/par-inflow-model.md). |
-| `ar_order` | i32  | AR order for this (hydro, stage). Used for cross-validation with `inflow_ar_coefficients.parquet` — must match the number of coefficient rows.                                                                                                                                                  |
+| Column     | Type | Description                                                                                                                                                                                                                                                                                                           |
+| ---------- | ---- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `hydro_id` | i32  | Hydro plant ID (must exist in system entities)                                                                                                                                                                                                                                                                        |
+| `stage_id` | i32  | Stage ID (must exist in `stages.json`)                                                                                                                                                                                                                                                                                |
+| `mean_m3s` | f64  | Seasonal mean inflow (μ)                                                                                                                                                                                                                                                                                              |
+| `std_m3s`  | f64  | Seasonal sample standard deviation ($s_m$). 0 = deterministic. Note: this is the sample std of historical observations, NOT the residual std ($\sigma_m$) — the residual std is derived at runtime as $\sigma_m = s_m \cdot \texttt{residual\_std\_ratio}_m$. See [PAR Inflow Model §3](../math/par-inflow-model.md). |
 
-The `ar_order` column serves two purposes:
-
-1. **Cross-validation**: When `inflow_ar_coefficients.parquet` is also provided, the system validates that each (hydro_id, stage_id) has exactly `ar_order` coefficient rows.
-2. **Self-documenting**: When AR coefficients are absent (AR order 0 for all), the column makes the intent explicit.
-
-An `ar_order` of 0 means independent noise — no AR structure for that (hydro, stage). No corresponding rows should exist in `inflow_ar_coefficients.parquet`.
+The AR order $p_m$ is **not stored in this file**. It is derived from the count of coefficient rows per (hydro_id, stage_id) group in `inflow_ar_coefficients.parquet`. Storing it here would create a redundant data source and a possible informational mismatch — the user would have to keep the same value consistent across two files.
 
 ### 3.2 Inflow AR Coefficients (`scenarios/inflow_ar_coefficients.parquet`) — Optional
 
@@ -545,28 +539,33 @@ An `ar_order` of 0 means independent noise — no AR structure for that (hydro, 
 
 When provided, this table supplies pre-computed AR coefficients. When absent, the system either fits AR coefficients from `inflow_history` (if present) or uses AR order 0 (independent noise).
 
-The AR model for a given stage uses lags from previous stages. Coefficients are in **original units** (not standardized) — the natural output of standard fitting tools such as Yule-Walker. Cobre handles any internal transformations needed for the SDDP algorithm (e.g., reverse-standardization for residual std computation). Innovation terms (ε) are standard normal, transformed into correlated samples via Cholesky decomposition of the correlation matrix (see §5).
+The AR model for a given stage uses lags from previous stages. Coefficients are stored in **standardized form** ($\psi^*_{m,\ell}$) — the direct output of the Yule-Walker fitting procedure. The system derives original-unit coefficients ($\psi_{m,\ell} = \psi^*_{m,\ell} \cdot s_m / s_{m-\ell}$) at runtime from these stored values and the seasonal std in `inflow_seasonal_stats.parquet`. Innovation terms (ε) are standard normal, transformed into correlated samples via Cholesky decomposition of the correlation matrix (see §5).
 
-| Column        | Type | Description                                                                    |
-| ------------- | ---- | ------------------------------------------------------------------------------ |
-| `hydro_id`    | i32  | Hydro plant ID (must exist in system entities)                                 |
-| `stage_id`    | i32  | Stage ID (must exist in `stages.json`)                                         |
-| `lag`         | i32  | Lag index (1-based: 1 = first lag, 2 = second, etc.)                           |
-| `coefficient` | f64  | AR coefficient $\psi_{m,\ell}$ for this lag (original units, not standardized) |
+The `residual_std_ratio` column stores the ratio $\sigma_m / s_m$ — the fraction of seasonal variability not explained by the AR lags. This is a pure model property (fixed per PAR fit), stored separately from the seasonal std $s_m$ (a conditioning property, swappable for climate scenario studies). The residual std is recovered at runtime as $\sigma_m = s_m \cdot \texttt{residual\_std\_ratio}_m$. See [PAR Inflow Model §3](../math/par-inflow-model.md) for the rationale.
+
+| Column               | Type | Description                                                                        |
+| -------------------- | ---- | ---------------------------------------------------------------------------------- |
+| `hydro_id`           | i32  | Hydro plant ID (must exist in system entities)                                     |
+| `stage_id`           | i32  | Stage ID (must exist in `stages.json`)                                             |
+| `lag`                | i32  | Lag index (1-based: 1 = first lag, 2 = second, etc.)                               |
+| `coefficient`        | f64  | AR coefficient $\psi^*_{m,\ell}$, **standardized by seasonal std** (dimensionless) |
+| `residual_std_ratio` | f64  | Residual std as fraction of seasonal std ($\sigma_m / s_m$), in $(0, 1]$           |
 
 **Example rows** (hydro 0, stage 5, AR order 3):
 
-| hydro_id | stage_id | lag | coefficient |
-| -------- | -------- | --- | ----------- |
-| 0        | 5        | 1   | 0.45        |
-| 0        | 5        | 2   | 0.22        |
-| 0        | 5        | 3   | 0.08        |
+| hydro_id | stage_id | lag | coefficient | residual_std_ratio |
+| -------- | -------- | --- | ----------- | ------------------ |
+| 0        | 5        | 1   | 0.45        | 0.872              |
+| 0        | 5        | 2   | 0.22        | 0.872              |
+| 0        | 5        | 3   | 0.08        | 0.872              |
+
+The `residual_std_ratio` value is the same for all lag rows of a given (hydro_id, stage_id) group — it is a per-season property of the model, not a per-lag property. Parquet dictionary encoding handles this efficiently.
 
 **Validation rules:**
 
-- Lags must be contiguous starting at 1: `[1, 2, ..., p]` for AR order `p`.
-- The number of rows per (hydro_id, stage_id) must match the `ar_order` in `inflow_seasonal_stats.parquet`.
-- AR coefficients present without seasonal stats = **error** (AR needs μ, σ for normalization).
+- Lags must be contiguous starting at 1: `[1, 2, ..., p]` for AR order `p`. The AR order $p$ for a given (hydro_id, stage_id) is derived from the count of rows in this group.
+- `residual_std_ratio` must be in $(0, 1]$ and must be identical across all lag rows of the same (hydro_id, stage_id) group.
+- AR coefficients present without seasonal stats = **error** (AR needs $s_m$ for runtime conversion to original-unit form).
 
 See [PAR Inflow Model](../math/par-inflow-model.md) for the mathematical formulation.
 
@@ -676,14 +675,14 @@ This reduces storage from potentially millions of rows to ~T rows plus a few mat
 
 ### 5.2 Correlation Profile Fields
 
-| Field                                           | Type   | Required | Description                                              |
-| ----------------------------------------------- | ------ | -------- | -------------------------------------------------------- |
-| `method`                                        | string | Yes      | Correlation method: `"cholesky"` (only supported method) |
-| `profiles`                                      | object | Yes      | Map of profile names to correlation group definitions    |
-| `profiles.<name>.correlation_groups`            | array  | Yes      | Array of correlation groups for this profile             |
-| `profiles.<name>.correlation_groups[].name`     | string | Yes      | Unique name for correlation group                        |
-| `profiles.<name>.correlation_groups[].entities` | array  | Yes      | Entities in this correlation group                       |
-| `profiles.<name>.correlation_groups[].matrix`   | array  | Yes      | Correlation matrix (must be positive semi-definite)      |
+| Field                                           | Type   | Required | Description                                                 |
+| ----------------------------------------------- | ------ | -------- | ----------------------------------------------------------- |
+| `method`                                        | string | Yes      | Correlation method: `"cholesky"` (only supported method)    |
+| `profiles`                                      | object | Yes      | Map of profile names to correlation group definitions       |
+| `profiles.<name>.correlation_groups`            | array  | Yes      | Array of correlation groups for this profile                |
+| `profiles.<name>.correlation_groups[].name`     | string | Yes      | Unique name for correlation group                           |
+| `profiles.<name>.correlation_groups[].entities` | array  | Yes      | Entities in this correlation group                          |
+| `profiles.<name>.correlation_groups[].matrix`   | array  | Yes      | Correlation matrix (must be positive definite; per DEC-020) |
 
 The profile named `"default"` is required and used for any stage not explicitly mapped in the schedule.
 

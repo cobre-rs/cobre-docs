@@ -1584,11 +1584,12 @@ The scenario pipeline state loaded in memory:
 
 Pre-resolved seasonal statistics and AR coefficients:
 
-- `mean_m3s` (mu) — seasonal mean inflow
-- `std_m3s` (sigma) — seasonal standard deviation
-- AR order `p` and coefficient list `[psi_1, ..., psi_p]` (variable length, can be 0)
+- `mean_m3s` (μ) — seasonal mean inflow
+- `std_m3s` (s_m) — seasonal sample standard deviation (NOT the residual std σ_m)
+- AR coefficients `[ψ*_1, ..., ψ*_p]` standardized by seasonal std (variable length, can be 0). AR order p is derived from the count of coefficient rows per (hydro, stage).
+- `residual_std_ratio` (σ_m / s_m) — fraction of seasonal variability not explained by AR lags, in (0, 1]
 
-Source: user-provided `inflow_seasonal_stats.parquet` (mu, sigma, ar_order) + optional `inflow_ar_coefficients.parquet` (lag coefficients), OR derived from `inflow_history` via season aggregation and Yule-Walker fitting. See [Input Scenarios §2-3](input-scenarios.md).
+Source: user-provided `inflow_seasonal_stats.parquet` (μ, s_m) + optional `inflow_ar_coefficients.parquet` (ψ\* per lag, residual_std_ratio), OR derived from `inflow_history` via season aggregation and Yule-Walker fitting. See [Input Scenarios §2-3](input-scenarios.md).
 
 ### Load Seasonal Statistics (Per Bus, Per Stage)
 
