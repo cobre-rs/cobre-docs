@@ -132,7 +132,7 @@ The standard SDDP formulation uses an acyclic directed graph:
 
 - **Nodes**: Stages $t \in \{1, \ldots, T\}$
 - **Arcs**: Transitions with probabilities (typically deterministic: $p = 1$)
-- **Terminal**: $V_{T}(x) = 0$ (no future cost)
+- **Terminal**: $V_{T+1}(x) = 0$ (no future cost beyond stage $T$)
 
 ### 4.2 Cyclic Graph (Infinite Horizon)
 

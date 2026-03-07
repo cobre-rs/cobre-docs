@@ -25,10 +25,10 @@ SDDP convergence is determined by the gap between lower and upper bounds on the 
 **Convergence Gap:**
 
 $$
-\text{gap} = \frac{UB - LB}{|UB|}
+\text{gap} = \frac{UB - LB}{\max(1, |UB|)}
 $$
 
-with a guard for near-zero $|UB|$: if $|UB| < 10^{-10}$, the gap is defined as zero. The gap is computed and logged each iteration for progress reporting, but is **not** itself a stopping criterion in standard SDDP — convergence is determined by the stopping rules below.
+The $\max(1, |UB|)$ denominator smoothly handles the near-zero case by clamping the denominator to at least 1, matching the formula in [SDDP Algorithm SS3.3](../math/sddp-algorithm.md). The gap is computed and logged each iteration for progress reporting, but is **not** itself a stopping criterion in standard SDDP — convergence is determined by the stopping rules below.
 
 > **Complete tree mode note**: In [complete tree mode](./scenario-generation.md) (deferred — see [C.12](../deferred.md)), all scenarios from the stochastic tree are enumerated exhaustively. The upper bound becomes **deterministic** (exact expected cost, not a statistical estimate), and the gap becomes an exact convergence measure. In this case, a gap-based stopping criterion becomes meaningful and should be added when complete tree mode is implemented. This differs from standard SDDP where the upper bound is a noisy Monte Carlo estimate.
 
@@ -48,7 +48,7 @@ Rules combine via `stopping_mode`: `"any"` (default, OR logic) or `"all"` (AND l
 
 ## 2. Convergence Monitor
 
-The convergence monitor is updated once per iteration (after forward synchronization) and evaluates all stopping rules.
+The convergence monitor is updated once per iteration (after the backward pass, cut synchronization, and lower bound evaluation) and evaluates all stopping rules. The UB statistics come from the post-forward `allreduce`; the LB comes from a separate post-backward computation (rank-0 solves all stage-0 openings and broadcasts — see [SS3.2](#32-lower-bound-properties)).
 
 ### 2.1 Tracked Quantities
 
@@ -157,7 +157,7 @@ Each iteration produces a record with the following fields, used for logging (SS
 
 ### 3.1 Cross-Rank Aggregation
 
-Forward pass scenarios are distributed across MPI ranks (see [Training Loop SS4.3](./training-loop.md)). After the forward pass, bound statistics must be aggregated globally. This is done via a single `MPI_Allreduce` operation that collects three sufficient statistics from each rank:
+Forward pass scenarios are distributed across MPI ranks (see [Training Loop SS4.3](./training-loop.md)). After the forward pass, **upper bound** statistics must be aggregated globally. This is done via a single `MPI_Allreduce` with `ReduceOp::Sum` that collects three sufficient statistics from each rank:
 
 | Statistic        | Per-rank value                                       | Reduction operation |
 | ---------------- | ---------------------------------------------------- | ------------------- |
@@ -202,7 +202,7 @@ $$
 N = \sum_r M_r, \qquad S = \sum_r \text{local\_sum}_r, \qquad Q = \sum_r \text{local\_sum\_sq}_r
 $$
 
-> **Independence from LB allreduce.** The UB statistics allreduce is a separate call from the lower bound allreduce (`ReduceOp::Min` on a single `f64`). The two-call baseline is specified in [Training Loop SS4.3b](./training-loop.md).
+> **Separation from LB evaluation.** The UB statistics `allreduce` runs post-forward. The lower bound is evaluated separately post-backward by rank 0 (see [SS3.2](#32-lower-bound-properties) and [Training Loop SS4.3b](./training-loop.md)).
 
 #### Global Variance Formula
 
@@ -260,13 +260,14 @@ The upper bound mean $\bar{c}$ is still valid as a point estimate but carries no
 
 ### 3.2 Lower Bound Properties
 
-The lower bound is the objective value of the stage-1 LP, which is deterministic (identical across all scenarios and ranks) because all scenarios share the same initial state $x_0$. Only one rank needs to solve and broadcast this value.
+The lower bound is evaluated **after the backward pass** by rank 0. Rank 0 iterates over all stage-0 openings in the fixed opening tree, solves the stage-0 LP for each opening with the latest FCF cuts (including new cuts from the current iteration's backward pass), and aggregates the per-opening objectives via the stage-0 risk measure. The scalar result is broadcast to all ranks via `comm.broadcast()`. See [Training Loop SS4.3b](./training-loop.md) for the full algorithm.
 
 Key properties:
 
 - **Monotonically non-decreasing** — Each iteration adds cuts that can only tighten the FCF under-approximation, so $LB_{k+1} \geq LB_k$
-- **Valid lower bound** — The stage-1 objective with the current FCF under-approximates the true expected cost, so $LB_k \leq z^*$ for all $k$
-- **Includes $\theta_2$** — The LB is not just the stage-1 immediate cost; it includes the future cost variable $\theta_2$ constrained by all accumulated cuts, which represents the best current approximation of the expected cost from stage 2 onward
+- **Valid lower bound** — The stage-0 objective with the current FCF under-approximates the true expected cost, so $LB_k \leq z^*$ for all $k$ (under Expectation; under CVaR this is a convergence indicator — see [Risk Measures SS10](../math/risk-measures.md))
+- **Risk-measure-aware** — The LB applies the stage-0 risk measure (Expectation or CVaR) with uniform opening probabilities, correctly handling non-Expectation risk measures
+- **Post-backward timing** — The LB uses the latest cuts, producing the tightest available bound at each iteration. The previous forward pass UB is stale after the backward pass adds new cuts; gap comparison requires a new forward pass
 
 ### 3.3 Infinite Horizon Considerations
 

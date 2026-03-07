@@ -15,7 +15,7 @@ Forward pass scenarios are distributed across MPI ranks using **static contiguou
 | Distribution method                          | Static contiguous blocks                                                                        |
 | Scenarios per rank                           | $\lfloor M/R \rfloor$ or $\lceil M/R \rceil$ (remainder distributed to first $M \bmod R$ ranks) |
 | Inter-rank communication during forward pass | None — each rank processes independently                                                        |
-| Post-forward aggregation                     | `allreduce` for lower bound and upper bound statistics                                          |
+| Post-forward aggregation                     | `allreduce` for upper bound statistics (LB evaluated post-backward by rank 0)                   |
 
 **Why static, not dynamic dispatch**: Forward pass scenarios have nearly identical per-stage LP solve cost (same LP structure, same cut count, same constraint dimensions). The variance in solve time comes from simplex iterations, which is small relative to the total. Static distribution avoids the complexity and latency of a dispatcher/worker protocol while achieving near-perfect load balance.
 
@@ -39,14 +39,15 @@ When a rank's assigned scenario count exceeds its thread count ($M_r > N_{\text{
 
 After all ranks complete their trajectories, a single `allreduce` ([Communicator Trait SS2.2](./communicator-trait.md)) aggregates:
 
-| Quantity                            | Reduction                                          | Purpose                                |
-| ----------------------------------- | -------------------------------------------------- | -------------------------------------- |
-| First-stage LP objective            | `ReduceOp::Min` or first-stage deterministic value | Lower bound (monotonically increasing) |
-| Total forward cost (sum)            | `ReduceOp::Sum`                                    | Upper bound mean computation           |
-| Total forward cost (sum of squares) | `ReduceOp::Sum`                                    | Upper bound variance computation       |
-| Trajectory count                    | `ReduceOp::Sum`                                    | Denominator for mean/variance          |
+| Quantity                            | Reduction       | Purpose                          |
+| ----------------------------------- | --------------- | -------------------------------- |
+| Total forward cost (sum)            | `ReduceOp::Sum` | Upper bound mean computation     |
+| Total forward cost (sum of squares) | `ReduceOp::Sum` | Upper bound variance computation |
+| Trajectory count                    | `ReduceOp::Sum` | Denominator for mean/variance    |
 
-This is a single collective call — no point-to-point messaging, no dispatcher coordination.
+This is a single `allreduce` collective call with `ReduceOp::Sum` — no point-to-point messaging, no dispatcher coordination.
+
+The lower bound is evaluated separately after the backward pass: rank 0 solves all stage-0 openings with the latest FCF cuts, applies the stage-0 risk measure, and broadcasts the scalar result to all ranks. See [Training Loop SS4.3b](../architecture/training-loop.md).
 
 ## 2. Backward Pass Distribution
 

@@ -10,7 +10,7 @@ The training phase implements the Stochastic Dual Dynamic Programming (SDDP) alg
 
 Each iteration consists of three phases:
 
-1. **Forward pass** — Sample $M$ scenarios via the configured **sampling scheme**, solve the LP at each stage with the current FCF, record visited states and stage-1 costs for the lower bound
+1. **Forward pass** — Sample $M$ scenarios via the configured **sampling scheme**, solve the LP at each stage with the current FCF, record visited states and stage costs for the upper bound
 2. **Backward pass** — For each stage $T$ down to 2, evaluate the cost-to-go from each visited state under **all** openings from the fixed opening tree, extract LP duals, and compute new cuts via the risk measure
 3. **Convergence check** — Update the upper bound estimate (mean forward cost), compute the gap $(UB - LB) / |UB|$, and test stopping rules (gap tolerance, stable LB, iteration/time limits)
 
@@ -34,10 +34,11 @@ The training orchestrator manages the iterative SDDP loop and coordinates the fo
 Each iteration follows a fixed sequence:
 
 1. **Forward pass** — Execute $M$ scenario trajectories (SS4)
-2. **Forward synchronization** — `allreduce` ([Communicator Trait SS2.2](../hpc/communicator-trait.md)) aggregates global statistics (lower bound, upper bound) across ranks
+2. **Forward synchronization** — `allreduce` ([Communicator Trait SS2.2](../hpc/communicator-trait.md)) aggregates upper bound statistics across ranks
 3. **Backward pass** — Generate cuts from visited states (SS6)
 4. **Cut synchronization** — `allgatherv` ([Communicator Trait SS2.1](../hpc/communicator-trait.md)) distributes new cuts to all ranks
    4a. **Cut selection** (conditional: `should_run(iteration)`) — Distribute stages across ranks, each rank runs `select` on assigned stages in parallel, `allgatherv` gathers DeactivationSets, leader applies deactivations to StageLpCache, `fence()` + barrier (see [Cut Selection Strategy Trait SS2.2a](./cut-selection-trait.md) and [Cut Management Implementation SS7.1a-SS7.1b](./cut-management-impl.md))
+   4b. **Lower bound evaluation** — Rank 0 iterates all stage-0 openings, solves the LP for each with the current FCF cuts, aggregates per-opening objectives via the stage-0 risk measure, and broadcasts the scalar LB to all ranks via `comm.broadcast()` (see [Convergence Monitoring SS3.2](./convergence-monitoring.md))
 5. **Convergence update** — Update bound estimates, evaluate stopping rules (see [Convergence Monitoring](./convergence-monitoring.md))
 6. **Checkpoint** — If the checkpoint interval has elapsed, persist current FCF and iteration state (see [Checkpointing](../hpc/checkpointing.md))
 7. **Logging** — Emit iteration summary (bounds, gap, timings)
@@ -48,11 +49,12 @@ Each step in the iteration lifecycle (SS2.1) emits a typed event to the shared e
 
 | Step | Lifecycle Phase         | Event Type             | Payload Summary                                                                                                               |
 | ---- | ----------------------- | ---------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
-| 1    | Forward pass            | `ForwardPassComplete`  | iteration, scenarios, lb_candidate, ub_mean, ub_std, elapsed_ms                                                               |
-| 2    | Forward synchronization | `ForwardSyncComplete`  | iteration, global_lb, global_ub_mean, global_ub_std, sync_time_ms                                                             |
+| 1    | Forward pass            | `ForwardPassComplete`  | iteration, scenarios, ub_mean, ub_std, elapsed_ms                                                                             |
+| 2    | Forward synchronization | `ForwardSyncComplete`  | iteration, global_ub_mean, global_ub_std, ci_95_half_width, sync_time_ms                                                      |
 | 3    | Backward pass           | `BackwardPassComplete` | iteration, cuts_generated, stages_processed, elapsed_ms                                                                       |
 | 4    | Cut synchronization     | `CutSyncComplete`      | iteration, cuts_distributed, cuts_active, cuts_removed, sync_time_ms                                                          |
 | 4a   | Cut selection           | `CutSelectionComplete` | iteration, cuts_deactivated, stages_processed, selection_time_ms, allgatherv_time_ms (only emitted when `should_run` is true) |
+| 4b   | LB evaluation           | `LbEvaluationComplete` | iteration, lower_bound, openings_solved, elapsed_ms                                                                           |
 | 5    | Convergence update      | `ConvergenceUpdate`    | iteration, lower_bound, upper_bound, upper_bound_std, gap, rules_evaluated[]                                                  |
 | 6    | Checkpoint              | `CheckpointComplete`   | iteration, checkpoint_path, elapsed_ms (only when checkpoint interval triggers)                                               |
 | 7    | Logging                 | `IterationSummary`     | iteration, lower_bound, upper_bound, gap, wall_time_ms, iteration_time_ms, forward_ms, backward_ms, lp_solves, memory_peak_mb |
@@ -119,8 +121,6 @@ pub enum TrainingEvent {
         iteration: u64,
         /// Number of forward scenarios evaluated on this rank.
         scenarios: u32,
-        /// First-stage objective (candidate lower bound) before global reduction.
-        lb_candidate: f64,
         /// Mean total forward cost across local scenarios.
         ub_mean: f64,
         /// Standard deviation of total forward cost across local scenarios.
@@ -132,12 +132,12 @@ pub enum TrainingEvent {
     /// Step 2: Forward synchronization (allreduce) completed.
     ForwardSyncComplete {
         iteration: u64,
-        /// Global lower bound after allreduce across all ranks.
-        global_lb: f64,
         /// Global upper bound mean after allreduce.
         global_ub_mean: f64,
         /// Global upper bound standard deviation after allreduce.
         global_ub_std: f64,
+        /// 95% confidence interval half-width.
+        ci_95_half_width: f64,
         /// Wall-clock time for the MPI synchronization, in milliseconds.
         sync_time_ms: u64,
     },
@@ -474,49 +474,43 @@ The training loop is generic over `C: Communicator` (see [Communicator Trait SS3
 
 When $M > N_{\text{threads}}$, threads process multiple trajectories in batches. Between batches, the thread saves and restores forward pass state (solver basis, visited states, scenario realization) at stage boundaries. This is analogous to context switching, but only occurs at well-defined stage boundaries.
 
-After all ranks complete their trajectories, `allreduce` aggregates:
+After all ranks complete their trajectories, a single `allreduce` with `ReduceOp::Sum` aggregates upper bound statistics:
 
-- **Lower bound** — First-stage LP objective value; see [SS4.3b](#43b-lower-bound-extraction) for the extraction and aggregation mechanism
-- **Upper bound statistics** — Mean and variance of total forward costs across all trajectories
+- **Upper bound statistics** — Sum, sum-of-squares, and trajectory count for computing the mean and variance of total forward costs across all trajectories
+
+The lower bound is evaluated separately after the backward pass — see [Convergence Monitoring SS3.2](./convergence-monitoring.md).
 
 ### 4.3a Single-Rank Forward Pass Variant
 
 When `comm.size() == 1` (single-process mode, used by `cobre-python` and `cobre-mcp`, or single-rank MPI execution), all scenarios are assigned to the single rank. The `allreduce` for bound aggregation becomes a local computation -- the rank's local statistics are the global statistics. For the `LocalBackend`, this is an identity copy operation (see [Local Backend SS2.2](../hpc/backend-local.md)). No inter-rank communication occurs. Rayon thread-level parallelism remains active: scenarios are distributed across threads within the single rank using the same thread-trajectory affinity pattern (SS4.3). See [Hybrid Parallelism §1](../hpc/hybrid-parallelism.md) for the single-process mode initialization sequence.
 
-### 4.3b Lower Bound Extraction
+### 4.3b Lower Bound Evaluation
 
-The lower bound (LB) is the objective value of the stage-1 LP, which includes both the immediate stage-1 cost and the future cost approximation $\theta_2$ constrained by all accumulated cuts:
+The lower bound (LB) is evaluated **after the backward pass** by rank 0 only. It is computed by iterating over all stage-0 openings (noise innovations) in the fixed opening tree, solving the stage-0 LP for each opening with the latest FCF cuts, and aggregating the per-opening objectives via the stage-0 risk measure.
 
 $$
-LB = \min_{x_1} \left\{ c_1^\top x_1 + \theta_2 \;\middle|\; \text{stage-1 constraints} \right\}
+LB = \rho_0\left(\left\{ \min_{x_0} \left\{ c_0^\top x_0 + \theta_1 \;\middle|\; \text{stage-0 constraints for opening } \omega \right\} \right\}_{\omega \in \Omega_0}\right)
 $$
 
-The LB is a **single `f64` value**, not a per-scenario statistic. Because all scenarios share the same initial state $x_0$ and the same cut set, the stage-1 LP is identical regardless of which scenario trajectory it belongs to. Every rank solves the stage-1 LP as the first step of its forward pass (for each of its assigned trajectories), and in exact arithmetic every such solve produces the same objective value.
+where $\rho_0$ is the stage-0 risk measure (Expectation or CVaR) applied with uniform opening probabilities $p(\omega) = 1/N_{\text{openings}}$.
 
-#### Source
+#### Algorithm
 
-The LB is extracted from the **first** stage-1 LP solve on any rank. No special-case computation is required -- the LB is a side effect of the normal forward pass. Each rank records the stage-1 objective from its first trajectory solve and uses that value as its local LB candidate.
+1. Rank 0 iterates over all $N_{\text{openings}}$ openings at stage 0
+2. For each opening: rebuild the stage-0 LP with all current FCF cuts, patch with initial state $x_0$ and opening noise, solve, record the objective value
+3. Apply the risk measure to aggregate the per-opening objectives into a scalar LB value
+4. Rank 0 broadcasts the LB to all other ranks via `comm.broadcast()`
 
-#### Aggregation
+#### Correctness
 
-The LB is aggregated across ranks via `allreduce` with `ReduceOp::Min`. Since all ranks compute the same value in exact arithmetic, `Min` is a no-op in the ideal case. The `Min` operation serves as a **defensive guard against numerical noise**: if floating-point non-determinism across different solver instances, NUMA nodes, or thread scheduling produces slightly different stage-1 objective values, `Min` selects the most conservative (lowest) bound, preserving the mathematical guarantee that $LB \leq z^*$.
-
-> **Rationale.** Using `Max` or `Sum/count` (averaging) could produce a value that marginally exceeds the true optimal $z^*$ due to upward numerical perturbation, which would violate the lower-bound invariant. `Min` is safe by construction.
-
-#### Two-Call Baseline
-
-The forward synchronization uses **two separate `allreduce` calls** as the baseline:
-
-1. **LB aggregation** — `allreduce` on a single `f64` with `ReduceOp::Min`
-2. **UB aggregation** — `allreduce` on a 3-element `[f64; 3]` array `[cost_sum, cost_sum_sq, scenario_count]` with `ReduceOp::Sum`
-
-The UB sufficient statistics are defined in [Convergence Monitoring SS3.1](./convergence-monitoring.md). From the global aggregates, the upper bound mean, variance, and 95% confidence interval are computed as specified there.
-
-> **Optimization note.** The two calls can be fused into a single `allreduce` on a 4-element `[f64; 4]` array `[lb_candidate, cost_sum, cost_sum_sq, scenario_count]` using a custom MPI reduction operation that applies `Min` to the first element and `Sum` to the remaining three. This eliminates one synchronization barrier but requires registering a user-defined `MPI_Op`. The two-call approach is the baseline for simplicity; the fused variant is a valid optimization.
+- The LB must be evaluated **after** the backward pass adds new cuts so the FCF has the latest approximation. Evaluating during the forward pass would use stale cuts, producing a weaker bound.
+- Only rank 0 needs to solve because the scenario tree openings are identical everywhere and all ranks share the same initial state $x_0$.
+- The risk measure must be applied (not just expectation) because stage 0 can have a risk measure different from Expectation (e.g., CVaR).
+- No cut is generated — this is purely an evaluation step, not a backward pass step.
 
 #### Single-Rank Mode
 
-In single-rank mode ([SS4.3a](#43a-single-rank-forward-pass-variant)), the LB extraction is trivial: the rank's stage-1 objective is the global LB with no communication. The `allreduce` for the LB degenerates to an identity operation (or is skipped entirely by the `LocalBackend`).
+In single-rank mode ([SS4.3a](#43a-single-rank-forward-pass-variant)), the broadcast is an identity operation. The single rank is always rank 0 and performs the full LB evaluation.
 
 ### 4.4 Warm-Starting
 
@@ -805,7 +799,7 @@ At each stage $t$, for each trial point $\hat{x}_{t-1}$ collected during the for
    c. Solve the LP and extract:
    - Objective value $Q_t(\hat{x}_{t-1}, \omega_j)$
    - Dual variables of state-linking constraints (water balance for storage, fixing constraints for AR lags)
-   - For hydros using FPHA, the FPHA hyperplane duals also contribute to storage cut coefficients (see [Cut Management SS2](../math/cut-management.md))
+   - The fixing constraint duals capture all downstream effects (water balance, FPHA hyperplanes, generic constraints) automatically via the LP envelope theorem — no manual dual combination is needed (see [SS7.2](#72-derivation-from-lp-duality) and [Cut Management SS2](../math/cut-management.md))
 
 3. **Aggregate into cut** — The risk measure aggregates the per-opening outcomes into a single cut:
    - Probabilities are uniform: $p(\omega_j) = 1/N_{\text{openings}}$

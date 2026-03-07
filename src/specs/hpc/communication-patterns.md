@@ -14,7 +14,8 @@ Cobre uses exactly three collective operations through the `Communicator` trait 
 | ------------ | ----------------------------------------------------- | ----------------------- | ----------------------------- | ------------------------ |
 | `allgatherv` | `comm.allgatherv(&send, &mut recv, &counts, &displs)` | Forward → backward      | Visited states (trial points) | Once per iteration       |
 | `allgatherv` | `comm.allgatherv(&send, &mut recv, &counts, &displs)` | Backward stage boundary | New cuts at stage $t$         | Once per stage ($T - 1$) |
-| `allreduce`  | `comm.allreduce(&send, &mut recv, ReduceOp::Sum)`     | Post-forward            | Convergence statistics        | Once per iteration       |
+| `allreduce`  | `comm.allreduce(&send, &mut recv, ReduceOp::Sum)`     | Post-forward            | UB statistics (3 scalars)     | Once per iteration       |
+| `broadcast`  | `comm.broadcast(&mut buf, 0)`                         | Post-backward           | Lower bound (1 scalar)        | Once per iteration       |
 
 Additionally, initialization uses standard (non-iterative) collectives:
 
@@ -66,18 +67,17 @@ At production scale with $M = 192$ forward passes and $R = 16$ ranks, each rank 
 
 ### 2.3 Convergence Statistics Payload (Post-Forward)
 
-The `allreduce` aggregates 4 scalars using `ReduceOp::Sum`:
+The post-forward `allreduce` aggregates 3 UB statistics using `ReduceOp::Sum`:
 
-| Quantity                            | Type  | Reduction       | Purpose                                |
-| ----------------------------------- | ----- | --------------- | -------------------------------------- |
-| First-stage LP objective            | `f64` | `ReduceOp::Min` | Lower bound (monotonically increasing) |
-| Total forward cost (sum)            | `f64` | `ReduceOp::Sum` | Upper bound mean computation           |
-| Total forward cost (sum of squares) | `f64` | `ReduceOp::Sum` | Upper bound variance computation       |
-| Trajectory count                    | `f64` | `ReduceOp::Sum` | Denominator for mean/variance          |
+| Quantity                            | Type  | Reduction       | Purpose                          |
+| ----------------------------------- | ----- | --------------- | -------------------------------- |
+| Total forward cost (sum)            | `f64` | `ReduceOp::Sum` | Upper bound mean computation     |
+| Total forward cost (sum of squares) | `f64` | `ReduceOp::Sum` | Upper bound variance computation |
+| Trajectory count                    | `f64` | `ReduceOp::Sum` | Denominator for mean/variance    |
 
-Total payload: 32 bytes. See [Work Distribution §1.4](./work-distribution.md) and [Convergence Monitoring §3](../architecture/convergence-monitoring.md).
+Total payload: 24 bytes. See [Work Distribution §1.4](./work-distribution.md) and [Convergence Monitoring §3](../architecture/convergence-monitoring.md).
 
-> **Note**: The lower bound uses `ReduceOp::Min` while the other quantities use `ReduceOp::Sum`. Because the `Communicator` trait's `allreduce` accepts a single `ReduceOp` per call, this requires two separate calls (one `ReduceOp::Min` for the lower bound, one `ReduceOp::Sum` for the other 3 scalars). See [Communicator Trait §1.3](./communicator-trait.md) for the `ReduceOp` enum definition.
+The lower bound is evaluated separately after the backward pass by rank 0 and broadcast to all ranks via `comm.broadcast()` (8 bytes). See [Training Loop SS4.3b](../architecture/training-loop.md) and [Convergence Monitoring SS3.2](../architecture/convergence-monitoring.md).
 
 ## 3. Communication Volume Analysis
 
@@ -89,7 +89,8 @@ Reference configuration: $R = 16$ ranks, $T = 120$ stages, $M = 192$ forward pas
 | ------------------------ | --------- | -------------------- | ---------------------------------- |
 | Trial point `allgatherv` | —         | ~206 MB (once)       | All stages' visited states at once |
 | Cut `allgatherv`         | ~3.2 MB   | ~381 MB (119 stages) | Per cut-management-impl.md §4.2    |
-| Convergence `allreduce`  | —         | 32 bytes (once)      | 4 scalars                          |
+| UB `allreduce`           | —         | 24 bytes (once)      | 3 scalars (UB statistics)          |
+| LB `broadcast`           | —         | 8 bytes (once)       | 1 scalar (lower bound, post-bwd)   |
 | **Total per iteration**  |           | **~587 MB**          |                                    |
 
 ### 3.2 Bandwidth Requirements
@@ -186,7 +187,7 @@ Determinism sources:
 
 ### 6.2 Floating-Point Reduction
 
-`allreduce` with `ReduceOp::Sum` may produce different results depending on reduction tree shape (non-associativity of floating-point addition). For convergence statistics (§2.3), this variance is acceptable -- the upper bound is already a statistical estimate. For the lower bound (`ReduceOp::Min`), the operation is exact.
+`allreduce` with `ReduceOp::Sum` may produce different results depending on reduction tree shape (non-associativity of floating-point addition). For convergence statistics (§2.3), this variance is acceptable -- the upper bound is already a statistical estimate. The lower bound uses `broadcast` (not `allreduce`), which is exact -- rank 0 computes the single authoritative value.
 
 Non-MPI backends (TCP, shm) produce deterministic reduction results because they use a fixed coordinator/rank-0 reduction order -- see [TCP Backend §3.2](./backend-tcp.md) and [Shm Backend §3.2](./backend-shm.md).
 

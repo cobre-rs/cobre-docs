@@ -577,26 +577,32 @@ The convergence monitor ([Convergence Monitoring](./convergence-monitoring.md)) 
 
 ### 5.1 Per-Iteration Protocol
 
-1. **Forward pass completes.** The training loop produces per-rank convergence statistics (cost sum, cost sum-of-squares, scenario count, lower bound candidate).
+1. **Forward pass completes.** The training loop produces per-rank upper bound statistics (cost sum, cost sum-of-squares, scenario count).
 
-2. **Forward synchronization.** `MPI_Allreduce` aggregates global upper bound statistics across ranks ([Convergence Monitoring SS3.1](./convergence-monitoring.md)).
+2. **Forward synchronization.** `allreduce` with `ReduceOp::Sum` aggregates global upper bound statistics across ranks ([Convergence Monitoring SS3.1](./convergence-monitoring.md)).
 
-3. **Monitor update.** The convergence monitor updates `MonitorState`:
+3. **Backward pass.** Generate cuts from visited states ([Training Loop SS6](./training-loop.md)).
+
+4. **Cut synchronization.** Distribute new cuts to all ranks via `allgatherv`.
+
+5. **Lower bound evaluation.** Rank 0 solves all stage-0 openings with the latest FCF cuts, applies the risk measure, and broadcasts the LB to all ranks ([Training Loop SS4.3b](./training-loop.md)).
+
+6. **Monitor update.** The convergence monitor updates `MonitorState`:
    - Increments `iteration`
    - Updates `wall_time_seconds`
    - Appends the new lower bound to `lower_bound_history`
    - Sets `lower_bound` to the current value
    - Checks `shutdown_requested` flag
 
-4. **Simulation pre-check (conditional).** If a `SimulationBased` rule exists in the set and `iteration % period == 0`:
+7. **Simulation pre-check (conditional).** If a `SimulationBased` rule exists in the set and `iteration % period == 0`:
    - The monitor performs the Phase 1 bound stability check internally
    - If Phase 1 passes, the monitor runs `replications` Monte Carlo simulations
    - The monitor stores per-stage mean costs in `state.current_simulation_costs`
    - The previous simulation's costs are retained in `state.last_simulation_costs`
 
-5. **Rule evaluation.** The monitor calls `self.rule_set.should_stop(&self.state)`.
+8. **Rule evaluation.** The monitor calls `self.rule_set.should_stop(&self.state)`.
 
-6. **Decision.** If `should_stop` returns `(true, reason)`, the monitor records the termination reason and signals the training loop to exit. If `(false, None)`, the training loop proceeds to the backward pass.
+9. **Decision.** If `should_stop` returns `(true, reason)`, the monitor records the termination reason and signals the training loop to exit. If `(false, None)`, the training loop proceeds to the next iteration.
 
 ### 5.2 Ownership Boundaries
 

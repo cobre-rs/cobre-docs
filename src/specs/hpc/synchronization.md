@@ -8,14 +8,15 @@ This spec defines the synchronization architecture for Cobre: the complete set o
 
 ### 1.1 Synchronization Summary
 
-The following table lists all communication synchronization points in a single SDDP iteration. On normal iterations there are three types of collective calls: one post-forward `allgatherv` for visited states, one `allgatherv` per backward stage ($T-1$ calls total), and one post-backward `allreduce` for convergence — totaling $T+1$ collective operations. On selection iterations (when `should_run(iteration)` returns `true`), an additional `allgatherv` gathers DeactivationSets from the parallel cut selection phase, bringing the total to $T+2$ collective operations. For method contracts and determinism guarantees, see [Communicator Trait SS2](./communicator-trait.md).
+The following table lists all communication synchronization points in a single SDDP iteration. On normal iterations there are four types of collective calls: one post-forward `allgatherv` for visited states, one `allgatherv` per backward stage ($T-1$ calls total), one post-forward `allreduce` for UB statistics, and one post-backward `broadcast` for the LB — totaling $T+2$ collective operations. On selection iterations (when `should_run(iteration)` returns `true`), an additional `allgatherv` gathers DeactivationSets from the parallel cut selection phase, bringing the total to $T+3$ collective operations. For method contracts and determinism guarantees, see [Communicator Trait SS2](./communicator-trait.md).
 
 | Phase                 | Operation    | Data Exchanged                                              | Direction       | Frequency                        |
 | --------------------- | ------------ | ----------------------------------------------------------- | --------------- | -------------------------------- |
 | Forward → Backward    | `allgatherv` | Visited states (trial points) from all forward trajectories | All ranks ↔ all | Every iteration                  |
+| Post-forward          | `allreduce`  | UB statistics (3 scalars — see §1.3)                        | All ranks ↔ all | Every iteration                  |
 | Backward stage $t$    | `allgatherv` | New cuts generated at stage $t$ by each rank                | All ranks ↔ all | Every iteration ($T-1$ per iter) |
 | Cut selection (§1.4a) | `allgatherv` | DeactivationSets from parallel selection across stages      | All ranks ↔ all | Selection iterations only        |
-| Post-backward         | `allreduce`  | Convergence statistics (4 scalars — see §1.3)               | All ranks ↔ all | Every iteration                  |
+| Post-backward         | `broadcast`  | Lower bound (1 scalar — rank 0 root)                        | Rank 0 → all    | Every iteration                  |
 
 ### 1.2 Forward Pass: No Per-Stage Synchronization
 
@@ -25,16 +26,15 @@ The forward pass has **no per-stage synchronization barrier**. Each thread solve
 
 After all forward trajectories complete within a rank, the rank contributes its visited states to an `allgatherv` call. After this call, every rank has the complete set of trial points from all forward trajectories across all ranks. This is the **only** synchronization point between the forward and backward passes.
 
-The post-forward `allreduce` aggregates convergence statistics:
+The post-forward `allreduce` aggregates upper bound statistics:
 
-| Quantity                            | Reduction       | Purpose                                |
-| ----------------------------------- | --------------- | -------------------------------------- |
-| First-stage LP objective            | `ReduceOp::Min` | Lower bound (monotonically increasing) |
-| Total forward cost (sum)            | `ReduceOp::Sum` | Upper bound mean computation           |
-| Total forward cost (sum of squares) | `ReduceOp::Sum` | Upper bound variance computation       |
-| Trajectory count                    | `ReduceOp::Sum` | Denominator for mean/variance          |
+| Quantity                            | Reduction       | Purpose                          |
+| ----------------------------------- | --------------- | -------------------------------- |
+| Total forward cost (sum)            | `ReduceOp::Sum` | Upper bound mean computation     |
+| Total forward cost (sum of squares) | `ReduceOp::Sum` | Upper bound variance computation |
+| Trajectory count                    | `ReduceOp::Sum` | Denominator for mean/variance    |
 
-See [Work Distribution §1.4](./work-distribution.md) and [Convergence Monitoring §3](../architecture/convergence-monitoring.md).
+The lower bound is evaluated separately after the backward pass: rank 0 solves all stage-0 openings with the latest FCF cuts, applies the risk measure, and broadcasts the scalar result to all ranks via `comm.broadcast()`. See [Training Loop SS4.3b](../architecture/training-loop.md) and [Convergence Monitoring SS3.2](../architecture/convergence-monitoring.md).
 
 ### 1.4 Backward Pass: Per-Stage Barrier
 
@@ -141,13 +141,13 @@ Adjacent thread buffers must not share cache lines. If two threads' buffers shar
 
 ## 4. Asymmetry Summary
 
-| Property                  | Forward Pass                                 | Backward Pass                                                |
-| ------------------------- | -------------------------------------------- | ------------------------------------------------------------ |
-| Per-stage synchronization | None                                         | `allgatherv` at every stage                                  |
-| Thread coordination       | None (independent trajectories)              | Implicit OpenMP barrier between evaluation and collection    |
-| Data flow direction       | Each thread accumulates independently        | Thread-local → rank-local merge → inter-rank `allgatherv`    |
-| Parallelism grain         | Trajectory (coarse)                          | Trial point (coarse), openings sequential within trial point |
-| Post-phase aggregation    | `allgatherv` (states) + `allreduce` (bounds) | Convergence check after all stages complete                  |
+| Property                  | Forward Pass                             | Backward Pass                                                |
+| ------------------------- | ---------------------------------------- | ------------------------------------------------------------ |
+| Per-stage synchronization | None                                     | `allgatherv` at every stage                                  |
+| Thread coordination       | None (independent trajectories)          | Implicit OpenMP barrier between evaluation and collection    |
+| Data flow direction       | Each thread accumulates independently    | Thread-local → rank-local merge → inter-rank `allgatherv`    |
+| Parallelism grain         | Trajectory (coarse)                      | Trial point (coarse), openings sequential within trial point |
+| Post-phase aggregation    | `allgatherv` (states) + `allreduce` (UB) | `broadcast` (LB from rank 0) + convergence check             |
 
 ## Cross-References
 
