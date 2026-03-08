@@ -17,7 +17,7 @@ where:
 - $a_{h,t}$: Incremental inflow at stage $t$ (m³/s)
 - $\mu_{m(t)}$: Seasonal mean for season $m(t)$
 - $\psi_{m(t),\ell}$: Autoregressive coefficient for lag $\ell$ in season $m(t)$
-- $\sigma_{m(t)}$: Residual standard deviation for season $m(t)$ (**computed**, not stored — see §3)
+- $\sigma_{m(t)}$: Residual standard deviation for season $m(t)$ (**computed** at runtime — see §3)
 - $\varepsilon_t \sim \mathcal{N}(0, 1)$: Innovation (standardized noise)
 - $m(t)$: Season index for stage $t$ (e.g., month 1–12)
 
@@ -35,38 +35,50 @@ For each hydro $h$ and each season $m \in \{1, \ldots, M\}$ (e.g., $M = 12$ for 
 
 ## 3. Stored vs. Computed Quantities
 
-The data model stores **seasonal sample statistics**, not the full set of derived parameters. The relationship between stored and computed quantities is:
+The data model stores **seasonal sample statistics** and **standardized AR coefficients** with an explicit residual fraction. The relationship between stored and computed quantities is:
 
 ### Stored in input files
 
 These are provided in `inflow_seasonal_stats.parquet` and `inflow_ar_coefficients.parquet` (see [Input Scenarios §3.1–3.2](../data-model/input-scenarios.md)):
 
-| Stored quantity      | Column        | Symbol              | Description                                                  |
-| -------------------- | ------------- | ------------------- | ------------------------------------------------------------ |
-| Seasonal sample mean | `mean_m3s`    | $\mu_m = \bar{a}_m$ | Mean of historical observations for season $m$               |
-| Seasonal sample std  | `std_m3s`     | $s_m$               | Standard deviation of historical observations for season $m$ |
-| AR order             | `ar_order`    | $p_m$               | Number of AR lags for this (hydro, season)                   |
-| AR coefficients      | `coefficient` | $\psi_{m,\ell}$     | Autoregressive coefficient for lag $\ell$ in season $m$      |
+| Stored quantity      | Column               | File                     | Symbol              | Description                                                                     |
+| -------------------- | -------------------- | ------------------------ | ------------------- | ------------------------------------------------------------------------------- |
+| Seasonal sample mean | `mean_m3s`           | `inflow_seasonal_stats`  | $\mu_m = \bar{a}_m$ | Mean of historical observations for season $m$                                  |
+| Seasonal sample std  | `std_m3s`            | `inflow_seasonal_stats`  | $s_m$               | Standard deviation of historical observations for season $m$                    |
+| AR coefficients      | `coefficient`        | `inflow_ar_coefficients` | $\psi^*_{m,\ell}$   | AR coefficient **standardized by seasonal std** — the direct Yule-Walker output |
+| Residual std ratio   | `residual_std_ratio` | `inflow_ar_coefficients` | $\sigma_m / s_m$    | Residual std as fraction of seasonal std, $\in (0, 1]$ — a pure model property  |
+
+The AR order $p_m$ is **not stored explicitly**. It is derived at runtime from the count of coefficient rows per (hydro_id, stage_id) group in `inflow_ar_coefficients.parquet`.
+
+The standardized coefficient $\psi^*_{m,\ell}$ is the direct output of the Yule-Walker fitting procedure (see §5.4). It is dimensionless — the coefficient of the standardized process $(a_{h,t} - \mu_m) / s_m$. The relationship to the original-unit coefficient $\psi_{m,\ell}$ used in the LP is:
+
+$$
+\psi_{m,\ell} = \psi^*_{m,\ell} \cdot \frac{s_m}{s_{m-\ell}}
+$$
 
 ### Computed at runtime
 
-The **residual standard deviation** $\sigma_m$ is not stored. It is derived from the stored quantities during model initialization. Since the stored coefficients $\psi_{m,\ell}$ are in original units, the runtime first reverse-transforms them to standardized form:
+From the stored quantities, the LP requires two additional quantities computed once at initialization:
+
+**Original-unit AR coefficients** (for LP constraint matrix entries):
 
 $$
-\psi_{m,\ell}^* = \psi_{m,\ell} \cdot \frac{s_{m-\ell}}{s_m}
+\psi_{m,\ell} = \psi^*_{m,\ell} \cdot \frac{s_m}{s_{m-\ell}}
 $$
 
-Then computes the residual standard deviation:
+**Residual standard deviation** (for noise scaling):
 
 $$
-\sigma_m = s_m \sqrt{1 - \sum_{\ell=1}^{p} \psi_{m,\ell}^* \cdot \hat{\rho}_m(\ell)}
+\sigma_m = s_m \cdot \texttt{residual\_std\_ratio}_m
 $$
 
-> **Why not store $\sigma_m$?** The seasonal sample statistics ($\mu_m$, $s_m$) and original-unit AR coefficients ($\psi_{m,\ell}$) are the natural outputs of standard fitting tools (e.g., Yule-Walker). The residual std $\sigma_m$ is a derived quantity — storing it would create redundancy and a risk of inconsistency. Computing it is inexpensive and guarantees consistency.
+No autocorrelation values are needed at runtime. All required quantities are derived solely from the stored seasonal stats and AR coefficient file.
+
+> **Why store `residual_std_ratio` rather than $\sigma_m$ directly?** The residual std decomposes as $\sigma_m = s_m \cdot \texttt{residual\_std\_ratio}_m$, where $s_m$ is a **conditioning** quantity (swappable for climate scenario studies) and the ratio is a **model dynamics** property (fixed per PAR fit). Storing $\sigma_m$ directly would bake in a specific $s_m$: when the user swaps seasonal stats for a different climate scenario, the stored $\sigma_m$ would be stale and noise scaling would be inconsistent with the new variability level. Storing the ratio preserves correct proportionality — if seasonal variability changes, noise scales proportionally. See also [PAR Coefficient Storage design document](../../design/PAR-COEFFICIENT-REDESIGN.md) §3.4.
 
 ### LP coefficients
 
-The stored AR coefficients are already in original units, so they enter the LP directly (see [LP Formulation §5](lp-formulation.md)). The LP equation is:
+The stored standardized coefficients $\psi^*_{m,\ell}$ are converted to original-unit $\psi_{m,\ell}$ at runtime (see §7.2), and these enter the LP directly (see [LP Formulation §5](lp-formulation.md)). The LP equation is:
 
 $$
 a_h = \underbrace{\left( \mu_m - \sum_{\ell=1}^{p} \psi_{m,\ell} \mu_{m-\ell} \right)}_{\text{deterministic base}}
@@ -188,23 +200,27 @@ $$
 \hat{\boldsymbol{\psi}}_m^* = \mathbf{R}_m^{-1} \boldsymbol{r}_m
 $$
 
-### 5.5 Step 4 — Convert to Original Units
+### 5.5 Step 4 — Store Standardized Coefficients and Residual Fraction
 
-The Yule-Walker solution $\psi_{m,\ell}^*$ is for standardized variables. Convert back to original units:
+The Yule-Walker solution $\psi_{m,\ell}^*$ is in standardized form — the direct output of step 3. It is stored as-is in `inflow_ar_coefficients.parquet`. No conversion to original units is performed.
+
+Compute and store the residual std ratio:
 
 $$
-\hat{\psi}_{m,\ell} = \psi_{m,\ell}^* \cdot \frac{\hat{s}_m}{\hat{s}_{m-\ell}}
+\widehat{\texttt{residual\_std\_ratio}}_m = \sqrt{1 - \boldsymbol{\psi}_m^{*\top} \boldsymbol{r}_m} = \sqrt{1 - \sum_{\ell=1}^{p} \psi_{m,\ell}^* \cdot \hat{\rho}_m(\ell)}
 $$
+
+Both $\psi^*_{m,\ell}$ (one row per lag) and $\widehat{\texttt{residual\_std\_ratio}}_m$ (repeated across all lag rows of the same (hydro, stage) group) are written to `inflow_ar_coefficients.parquet`.
 
 ### 5.6 Step 5 — Residual Standard Deviation
 
-The residual variance for season $m$ is:
+The residual standard deviation for season $m$ is recovered at runtime from the stored ratio (see §3):
 
 $$
-\hat{\sigma}_m^2 = \hat{s}_m^2 \left( 1 - \sum_{\ell=1}^{p} \psi_{m,\ell}^* \cdot \hat{\rho}_m(\ell) \right)
+\hat{\sigma}_m = \hat{s}_m \cdot \widehat{\texttt{residual\_std\_ratio}}_m
 $$
 
-The residual standard deviation:
+For reference, the full expression in terms of fitting quantities is:
 
 $$
 \hat{\sigma}_m = \hat{s}_m \sqrt{1 - \boldsymbol{r}_m^\top \mathbf{R}_m^{-1} \boldsymbol{r}_m}
@@ -218,7 +234,8 @@ After fitting or loading pre-computed parameters, the following invariants must 
 2. **Stationarity**: Roots of $1 - \sum_\ell \psi_{m,\ell} z^\ell = 0$ lie outside the unit circle. Ensures the AR process is stable and does not diverge.
 3. **Correlation matrix positive definite**: $\mathbf{R}_m$ is invertible. Required for Yule-Walker solution to exist. If violated, the historical record may be too short for the requested AR order.
 4. **No systematic bias**: Residuals $\varepsilon_t$ have mean near zero. Indicates the model captures the mean structure correctly.
-5. **AR order consistency**: The number of coefficient rows per (hydro_id, stage_id) in `inflow_ar_coefficients.parquet` matches the `ar_order` in `inflow_seasonal_stats.parquet`.
+5. **AR order derivation**: The number of coefficient rows per (hydro_id, stage_id) in `inflow_ar_coefficients.parquet` determines the AR order $p_m$. Lags must be contiguous: $\{1, 2, \ldots, p_m\}$.
+6. **Residual std ratio consistency**: The `residual_std_ratio` value must be identical across all lag rows sharing the same (hydro_id, stage_id) group, and must lie in $(0, 1]$.
 
 ## 7. PAR-to-LP Transformation
 
@@ -234,21 +251,27 @@ $$
 
 where:
 
-- $\phi_{m(t),\ell}$: AR coefficients in **standardized** form (correlations between normalized deviations)
-- $\sigma_{m(t)}$: residual standard deviation for season $m(t)$ (section 3)
+- $\phi_{m(t),\ell}$: AR coefficients in **fully standardized** form (correlations between normalized deviations)
+- $\sigma_{m(t)}$: residual standard deviation for season $m(t)$ (derived at runtime — see §3)
 - $\varepsilon_t \sim \mathcal{N}(0, 1)$: innovation noise
 
-The coefficients $\psi_{m,\ell}$ stored in the input files (section 2) are already in **original units**, not standardized. The relationship between the two forms is established in the next step.
+The input files store $\psi^*_{m,\ell}$ (standardized by seasonal std $s_m$, not residual std $\sigma_m$). The next step converts these to original-unit $\psi_{m,\ell}$ for use in the LP.
 
 ### 7.2 Coefficient Conversion
 
-The standardized coefficients $\phi_{m,\ell}$ and the original-unit coefficients $\psi_{m,\ell}$ are related by:
+The stored standardized coefficients $\psi^*_{m,\ell}$ are converted to original-unit coefficients $\psi_{m,\ell}$ at runtime using the seasonal standard deviations from `inflow_seasonal_stats.parquet`:
 
 $$
-\psi_{m(t),\ell} = \phi_{m(t),\ell} \cdot \frac{\sigma_{m(t)}}{\sigma_{m(t-\ell)}}
+\psi_{m,\ell} = \psi^*_{m,\ell} \cdot \frac{s_m}{s_{m-\ell}}
 $$
 
-This is the inverse of the reverse transformation in section 3: $\phi_{m,\ell} = \psi_{m,\ell} \cdot s_{m-\ell} / s_m$. Since the stored coefficients are already in original units, no conversion is needed at runtime — the LP uses $\psi_{m,\ell}$ directly.
+The residual standard deviation is also derived at this preprocessing step:
+
+$$
+\sigma_m = s_m \cdot \texttt{residual\_std\_ratio}_m
+$$
+
+These conversions are performed once at LP construction time. They require only the seasonal stats ($s_m$) and the stored model quantities ($\psi^*_{m,\ell}$, $\texttt{residual\_std\_ratio}_m$) — no autocorrelation values, no historical data.
 
 ### 7.3 LP-Ready Form
 
@@ -257,6 +280,8 @@ Multiplying both sides of the canonical form (7.1) by $\sigma_{m(t)}$ and rearra
 $$
 a_{h,t} = \sum_{\ell=1}^{p} \psi_{m(t),\ell} \cdot a_{h,t-\ell} + \left[ \mu_{m(t)} - \sum_{\ell=1}^{p} \psi_{m(t),\ell} \cdot \mu_{m(t-\ell)} \right] + \sigma_{m(t)} \cdot \varepsilon_t
 $$
+
+where $\psi_{m(t),\ell}$ and $\sigma_{m(t)}$ are derived from stored quantities as described in §7.2.
 
 This decomposes the inflow into three additive components:
 
@@ -306,15 +331,15 @@ No division, no mean subtraction, no repeated coefficient transformation — the
 
 ### 7.6 Summary of LP Components
 
-| Component          | Symbol             | Shape per stage      | LP Role                                   | Source                                |
-| ------------------ | ------------------ | -------------------- | ----------------------------------------- | ------------------------------------- |
-| Lag coefficients   | $\psi_{m(t),\ell}$ | One per (hydro, lag) | Constraint matrix (AR dynamics row)       | Stored in input files (section 2)     |
-| Deterministic base | $b_{h,m(t)}$       | One per hydro        | AR dynamics constraint RHS (fixed term)   | Precomputed from $\mu$ and $\psi$     |
-| Noise scale        | $\sigma_{m(t)}$    | One per hydro        | AR dynamics constraint RHS (noise factor) | Derived at initialization (section 3) |
+| Component          | Symbol             | Shape per stage      | LP Role                                   | Source                                                          |
+| ------------------ | ------------------ | -------------------- | ----------------------------------------- | --------------------------------------------------------------- |
+| Lag coefficients   | $\psi_{m(t),\ell}$ | One per (hydro, lag) | Constraint matrix (AR dynamics row)       | Derived from stored $\psi^*$ and $s_m$ at initialization (§7.2) |
+| Deterministic base | $b_{h,m(t)}$       | One per hydro        | AR dynamics constraint RHS (fixed term)   | Precomputed from $\mu$ and $\psi$                               |
+| Noise scale        | $\sigma_{m(t)}$    | One per hydro        | AR dynamics constraint RHS (noise factor) | Derived from stored ratio and $s_m$ at initialization (§7.2)    |
 
 ## Cross-References
 
-- [Input Scenarios §3.1–3.2](../data-model/input-scenarios.md) — Defines `inflow_seasonal_stats.parquet` (μ, s, ar_order) and `inflow_ar_coefficients.parquet` (ψ per lag)
+- [Input Scenarios §3.1–3.2](../data-model/input-scenarios.md) — Defines `inflow_seasonal_stats.parquet` (μ, s) and `inflow_ar_coefficients.parquet` (ψ\* per lag, residual_std_ratio)
 - [LP Formulation §5](lp-formulation.md) — AR inflow dynamics in the LP: state expansion, lag fixing constraints, dual variables
 - [Internal Structures §14](../data-model/internal-structures.md) — `PrecomputedParLp` struct caching the three LP components derived in section 7
 - [Inflow Non-Negativity](inflow-nonnegativity.md) — Methods for handling negative realizations produced by the PAR(p) model

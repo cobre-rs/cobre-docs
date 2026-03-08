@@ -20,21 +20,22 @@ For the full PAR(p) model definition, parameter set, and fitting theory, see [PA
 ├─────────────────────────────────────────────────────────────────────────────────┤
 │                                                                                 │
 │  Input: inflow_seasonal_stats.parquet (μ, s per hydro × stage)                  │
-│         inflow_ar_coefficients.parquet (ψ per hydro × stage × lag)              │
+│         inflow_ar_coefficients.parquet (ψ* per hydro × stage × lag, residual_std_ratio) │
 │         inflow_history.parquet (optional, for lag initialization)               │
 │                                                                                 │
 │  Step 1: Load PAR Parameters                                                    │
 │  For each (hydro h, stage t) with season m = season(t):                         │
-│    μ[h][t] = mean_m3s          (seasonal mean)                                  │
-│    s[h][t] = std_m3s           (seasonal sample std)                            │
-│    ψ[h][t][ℓ] = coefficient    (AR coefficients, original units)                │
-│    p[h][t] = ar_order          (AR order for this hydro/stage)                  │
+│    μ[h][t] = mean_m3s              (seasonal mean)                              │
+│    s[h][t] = std_m3s               (seasonal sample std)                        │
+│    ψ*[h][t][ℓ] = coefficient       (AR coefficients, standardized by s)         │
+│    r[h][t] = residual_std_ratio    (σ_m/s_m; same for all lags of a group)      │
+│    p[h][t] = max(lag) per group    (AR order derived from coefficient count)     │
 │                              │                                                  │
 │                              ▼                                                  │
-│  Step 2: Compute Residual Standard Deviation                                    │
-│  For each (hydro h, stage t):                                                   │
-│    Reverse-standardize AR coefficients to get ψ*                                │
-│    Compute σ[h][t] from s[h][t] and ψ* (see par-inflow-model.md SS3)            │
+│  Step 2: Convert to Original-Unit Coefficients and Derive σ                    │
+│  For each (hydro h, stage t) with season m = season(t):                         │
+│    ψ[h][t][ℓ] = ψ*[h][t][ℓ] · s[m] / s[m-ℓ]   (runtime conversion; DEC-020)  │
+│    σ[h][t] = s[h][t] · r[h][t]                  (σ = s_m · residual_std_ratio)  │
 │                              │                                                  │
 │                              ▼                                                  │
 │  Step 3: Precompute Stage-Specific Deterministic Components                     │
@@ -54,7 +55,7 @@ For the full PAR(p) model definition, parameter set, and fitting theory, see [PA
 └─────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-> **Key distinction:** The input file stores the seasonal sample standard deviation ($s_m$), NOT the residual standard deviation ($\sigma_m$). The residual std is computed during preprocessing from $s_m$ and the AR coefficients via reverse-standardization. See [PAR(p) Inflow Model SS3](../math/par-inflow-model.md) for the derivation.
+> **Key distinction [DEC-020](../overview/decision-log.md#dec-020):** The input file stores standardized AR coefficients ($\psi^*_{m,\ell}$, the direct Yule-Walker output) and `residual_std_ratio` ($\sigma_m / s_m$) — not original-unit coefficients and not $\sigma_m$ directly. At preprocessing time: $\psi_{m,\ell} = \psi^*_{m,\ell} \cdot s_m / s_{m-\ell}$ (runtime conversion using conditioning stats) and $\sigma_m = s_m \cdot \texttt{residual\_std\_ratio}_m$ (no autocorrelations required). This separates swappable seasonal conditioning ($s_m$) from fixed model dynamics ($\psi^*$, residual_std_ratio). See [PAR(p) Inflow Model SS3](../math/par-inflow-model.md) for the full derivation.
 
 ### 1.3 Memory Layout for Hot-Path Access
 
@@ -88,9 +89,9 @@ The fitting process:
 3. **Standardization** — Transform observations to zero-mean, unit-variance per season
 4. **Order selection** — For each season, fit AR models from order 1 to `max_order`, select the order minimizing BIC
 5. **Yule-Walker solution** — Solve the Yule-Walker equations using Levinson-Durbin recursion in O(p²) per season
-6. **Back-transform** — Convert standardized coefficients back to original units for storage
+6. **Store direct output** — Store the standardized coefficients $\psi^*_{m,\ell}$ (direct Yule-Walker output) and the computed `residual_std_ratio` in `inflow_ar_coefficients.parquet`; no conversion to original units is performed (DEC-020)
 
-The fitted model output includes: seasonal means, AR coefficients (original units), residual standard deviations, and selected AR orders — all per season.
+The fitted model output includes: seasonal means ($\mu_m$, $s_m$) stored in `inflow_seasonal_stats.parquet`, and standardized AR coefficients ($\psi^*_{m,\ell}$) plus `residual_std_ratio` stored in `inflow_ar_coefficients.parquet`. AR order is implicit from the count of coefficient rows per (hydro, stage) group — it is not stored as a separate field.
 
 **Fitted model validation** follows the same invariants defined in [PAR(p) Inflow Model SS6](../math/par-inflow-model.md):
 
@@ -100,7 +101,7 @@ The fitted model output includes: seasonal means, AR coefficients (original unit
 | PAR seasonal stability     | Warning  | Per-season AR polynomial roots outside unit circle         |
 | Correlation matrix PSD     | Error    | $R_m$ positive definite (invertible)                       |
 | No systematic bias         | Warning  | Residuals $\varepsilon_t$ mean near zero                   |
-| AR order consistency       | Error    | Coefficient row count matches `ar_order` in seasonal stats |
+| AR order consistency       | Error    | Lags are contiguous {1, 2, ..., p} per (hydro, stage) group  |
 
 ## 2. Noise Generation Infrastructure
 
