@@ -134,13 +134,13 @@ Both arrays are `HighsInt[]` (one integer per variable/constraint).
 
 **Status codes**:
 
-| Code | Constant                    | Meaning        | Maps To (Solver Abstraction SS9) |
-| ---- | --------------------------- | -------------- | -------------------------------- |
-| 0    | `kHighsBasisStatusLower`    | At lower bound | At lower                         |
-| 1    | `kHighsBasisStatusBasic`    | Basic          | Basic                            |
-| 2    | `kHighsBasisStatusUpper`    | At upper bound | At upper                         |
-| 3    | `kHighsBasisStatusZero`     | Free (zero)    | Free                             |
-| 4    | `kHighsBasisStatusNonbasic` | Nonbasic       | At lower (default nonbasic)      |
+| Code | Constant                    | Meaning        | Stored in `Basis` as |
+| ---- | --------------------------- | -------------- | -------------------- |
+| 0    | `kHighsBasisStatusLower`    | At lower bound | `0_i32`              |
+| 1    | `kHighsBasisStatusBasic`    | Basic          | `1_i32`              |
+| 2    | `kHighsBasisStatusUpper`    | At upper bound | `2_i32`              |
+| 3    | `kHighsBasisStatusZero`     | Free (zero)    | `3_i32`              |
+| 4    | `kHighsBasisStatusNonbasic` | Nonbasic       | `0_i32` (default)    |
 
 **Key difference from CLP**: HiGHS uses separate column and row status arrays (`HighsInt[]`), while CLP uses a combined `unsigned char[]` array (`status[0..numcols-1]` = columns, `status[numcols..numcols+numrows-1]` = rows). The HiGHS representation is more natural for the basis management described in [Solver Abstraction SS2.3](./solver-abstraction.md).
 

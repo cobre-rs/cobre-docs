@@ -380,58 +380,39 @@ The `SolverError` enum categorizes terminal LP solve failures. These are the err
 ```rust
 /// Terminal LP solve error returned after all retry attempts are exhausted.
 ///
-/// The SDDP algorithm uses the variant to determine its response:
-/// hard stop (Infeasible, Unbounded, InternalError) or proceed with
-/// degraded quality (NumericalDifficulty, TimeLimitExceeded, IterationLimit)
-/// when a partial solution is available.
+/// The calling algorithm uses the variant to determine its response:
+/// hard stop (`Infeasible`, `Unbounded`, `InternalError`) or terminate
+/// with a diagnostic error (`NumericalDifficulty`, `TimeLimitExceeded`,
+/// `IterationLimit`).
 #[derive(Debug)]
 pub enum SolverError {
     /// The LP has no feasible solution.
     ///
     /// Indicates a data error (inconsistent bounds or constraints) or
-    /// a modeling error. The SDDP algorithm performs a hard stop.
-    Infeasible {
-        /// Infeasibility ray (proof of infeasibility), if available.
-        ray: Option<Vec<f64>>,
-    },
+    /// a modeling error. The calling algorithm performs a hard stop.
+    Infeasible,
 
     /// The LP objective is unbounded below.
     ///
     /// Indicates a modeling error (missing bounds, incorrect objective
-    /// sign). The SDDP algorithm performs a hard stop.
-    Unbounded {
-        /// Unbounded direction, if available.
-        direction: Option<Vec<f64>>,
-    },
+    /// sign). The calling algorithm performs a hard stop.
+    Unbounded,
 
     /// Solver encountered numerical difficulties that persisted through
     /// all retry attempts.
-    ///
-    /// May have a partial (non-optimal) solution. The SDDP algorithm
-    /// logs a warning and may proceed if the partial solution is usable.
     NumericalDifficulty {
-        /// Best solution found before the difficulty, if any.
-        partial_solution: Option<LpSolution>,
         /// Description of the numerical issue.
         message: String,
     },
 
     /// Per-solve wall-clock time budget exhausted.
-    ///
-    /// May have a partial solution from the best iteration reached.
     TimeLimitExceeded {
-        /// Best solution found within the time budget, if any.
-        partial_solution: Option<LpSolution>,
         /// Elapsed wall-clock time in seconds.
         elapsed_seconds: f64,
     },
 
     /// Solver simplex iteration limit reached.
-    ///
-    /// May have a partial solution from the last completed iteration.
     IterationLimit {
-        /// Best solution found within the iteration budget, if any.
-        partial_solution: Option<LpSolution>,
         /// Number of iterations performed.
         iterations: u64,
     },
@@ -440,7 +421,7 @@ pub enum SolverError {
     ///
     /// Covers FFI panics, memory allocation failures within the solver,
     /// corrupted internal state, or any error not classifiable into the
-    /// above categories. The SDDP algorithm logs and performs a hard stop.
+    /// above categories. The calling algorithm logs and performs a hard stop.
     InternalError {
         /// Human-readable error description.
         message: String,
@@ -452,14 +433,14 @@ pub enum SolverError {
 
 **Error-to-response mapping:**
 
-| Variant               | Hard Stop | May Proceed with Partial Solution |
-| --------------------- | :-------: | :-------------------------------: |
-| `Infeasible`          |    Yes    |                No                 |
-| `Unbounded`           |    Yes    |                No                 |
-| `NumericalDifficulty` |    No     |                Yes                |
-| `TimeLimitExceeded`   |    No     |                Yes                |
-| `IterationLimit`      |    No     |                Yes                |
-| `InternalError`       |    Yes    |                No                 |
+| Variant               | Hard Stop | Diagnostic |
+| --------------------- | :-------: | :--------: |
+| `Infeasible`          |    Yes    |     No     |
+| `Unbounded`           |    Yes    |     No     |
+| `NumericalDifficulty` |    No     |    Yes     |
+| `TimeLimitExceeded`   |    No     |    Yes     |
+| `IterationLimit`      |    No     |    Yes     |
+| `InternalError`       |    Yes    |     No     |
 
 ## 4. Supporting Types
 
@@ -503,38 +484,23 @@ pub struct LpSolution {
 ### 4.2 Basis
 
 ```rust
-/// Simplex basis: one status per column and one per row.
+/// Raw simplex basis stored as solver-native i32 status codes.
+///
+/// Each element is a solver-specific status code (e.g., HiGHS uses
+/// 0=AtLower, 1=Basic, 2=AtUpper, 3=Free, 4=Fixed). The codes are
+/// opaque to the calling algorithm — they are extracted from one solve
+/// and passed back to the next via `solve_with_basis` for warm-starting.
 ///
 /// Stored in the original problem space (not presolved) to ensure
 /// portability across solver versions and presolve strategies
 /// ([Solver Abstraction SS9](./solver-abstraction.md)).
 pub struct Basis {
-    /// Basis status for each column (variable).
-    pub col_status: Vec<BasisStatus>,
+    /// Basis status codes for each column (variable), in solver-native encoding.
+    pub col_status: Vec<i32>,
 
-    /// Basis status for each row (constraint).
+    /// Basis status codes for each row (constraint), in solver-native encoding.
     /// Includes both static rows and dynamic constraint rows.
-    pub row_status: Vec<BasisStatus>,
-}
-
-/// Basis status for a single variable or constraint.
-///
-/// Maps to solver-specific status codes:
-/// HiGHS uses `HighsInt` (4 bytes), CLP uses `unsigned char` (1 byte).
-/// The implementation translates between this canonical representation
-/// and the solver-specific encoding.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum BasisStatus {
-    /// Variable is at its lower bound.
-    AtLower,
-    /// Variable is in the basis (between bounds).
-    Basic,
-    /// Variable is at its upper bound.
-    AtUpper,
-    /// Variable is free (superbasic).
-    Free,
-    /// Variable is fixed (lower == upper).
-    Fixed,
+    pub row_status: Vec<i32>,
 }
 ```
 
