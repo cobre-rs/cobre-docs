@@ -48,7 +48,7 @@ graph TD
 The minimal viable solver satisfies the following eight stakeholder requirements:
 
 1. **Full architecture, one variant per trait.** The solver instantiates the complete trait-parameterized architecture with exactly one variant for each abstraction point: Expectation (risk measure), Level-1 (cut selection), Finite (horizon mode), and InSample (sampling scheme). All five stopping rules are active as a composite set.
-2. **Real crates, real boundaries.** All 11 crate boundaries from the [Crate Overview](../../crates/overview.md) are respected. No functionality leaks across crate boundaries -- for example, `cobre-sddp` never touches files directly, and `cobre-solver` never generates scenarios.
+2. **Real crates, real boundaries.** All 11 crate boundaries from the [Crate Overview](https://cobre-rs.github.io/cobre/crates/overview.html) are respected. No functionality leaks across crate boundaries -- for example, `cobre-sddp` never touches files directly, and `cobre-solver` never generates scenarios.
 3. **MPI-first production binary.** The solver ships as a single binary invoked via `mpiexec -n N cobre CASE_DIR`. No Python bindings, TUI, MCP server, TCP backend, or shared-memory backend are required.
 4. **Minimal system elements.** Only four element types are fully modeled: Buses, Lines, Thermals, and Hydros. Remaining element types (Contracts, Pumping Stations, Non-Controllable sources) have code-path stubs that satisfy the type system but contribute no variables or constraints to the LP.
 5. **Constant hydro productivity only.** The hydro production function uses a constant productivity coefficient $\rho_i$ (MW per m3/s). FPHA hyperplanes and head-dependent models are deferred.
@@ -60,22 +60,22 @@ The minimal viable solver satisfies the following eight stakeholder requirements
 
 | Crate                                            | Role in Minimal Viable                                                                                                             |
 | ------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------- |
-| [`cobre-core`](../../crates/core.md)             | In-memory data model: entity registries (Bus, Line, Thermal, Hydro), internal structures, penalty resolution, topology validation  |
-| [`cobre-io`](../../crates/io.md)                 | Input loading (case directory, JSON registries, Parquet scenarios), output writing (Hive-partitioned Parquet, manifests, metadata) |
-| [`cobre-stochastic`](../../crates/stochastic.md) | PAR(p) preprocessing, correlated noise generation, opening tree construction, InSample forward sampling                            |
-| [`cobre-solver`](../../crates/solver.md)         | LP solver abstraction with HiGHS backend, solver workspaces, basis warm-starting, cut injection                                    |
-| [`cobre-sddp`](../../crates/sddp.md)             | SDDP training loop (forward/backward pass, cut generation, convergence monitoring), simulation pipeline, FCF management            |
-| [`cobre-comm`](../../crates/comm.md)             | Communicator trait with MPI backend (via ferrompi), collective operations for cut sync and bound aggregation                       |
-| [`cobre-cli`](../../crates/cli.md)               | Binary entrypoint, execution lifecycle (startup through finalize), exit codes, config resolution                                   |
-| [`ferrompi`](../../crates/ferrompi.md)           | Safe MPI bindings: collectives (allgatherv, allreduce, broadcast), SharedWindow, topology detection                                |
+| [`cobre-core`](https://cobre-rs.github.io/cobre/crates/core.html)             | In-memory data model: entity registries (Bus, Line, Thermal, Hydro), internal structures, penalty resolution, topology validation  |
+| [`cobre-io`](https://cobre-rs.github.io/cobre/crates/io.html)                 | Input loading (case directory, JSON registries, Parquet scenarios), output writing (Hive-partitioned Parquet, manifests, metadata) |
+| [`cobre-stochastic`](https://cobre-rs.github.io/cobre/crates/stochastic.html) | PAR(p) preprocessing, correlated noise generation, opening tree construction, InSample forward sampling                            |
+| [`cobre-solver`](https://cobre-rs.github.io/cobre/crates/solver.html)         | LP solver abstraction with HiGHS backend, solver workspaces, basis warm-starting, cut injection                                    |
+| [`cobre-sddp`](https://cobre-rs.github.io/cobre/crates/sddp.html)             | SDDP training loop (forward/backward pass, cut generation, convergence monitoring), simulation pipeline, FCF management            |
+| [`cobre-comm`](https://cobre-rs.github.io/cobre/crates/comm.html)             | Communicator trait with MPI backend (via ferrompi), collective operations for cut sync and bound aggregation                       |
+| [`cobre-cli`](https://cobre-rs.github.io/cobre/crates/cli.html)               | Binary entrypoint, execution lifecycle (startup through finalize), exit codes, config resolution                                   |
+| [`ferrompi`](https://cobre-rs.github.io/cobre/crates/ferrompi.html)           | Safe MPI bindings: collectives (allgatherv, allreduce, broadcast), SharedWindow, topology detection                                |
 
 **Deferred crates** (not required for minimal viable):
 
 | Crate                                    | Reason Deferred                                                                           |
 | ---------------------------------------- | ----------------------------------------------------------------------------------------- |
-| [`cobre-python`](../../crates/python.md) | PyO3 bindings are a secondary interface; MPI-first binary is the primary deliverable      |
-| [`cobre-tui`](../../crates/tui.md)       | Terminal UI is a monitoring convenience; convergence data is available via Parquet output |
-| [`cobre-mcp`](../../crates/mcp.md)       | MCP server is an agent-composability interface; not required for HPC batch execution      |
+| [`cobre-python`](https://cobre-rs.github.io/cobre/crates/python.html) | PyO3 bindings are a secondary interface; MPI-first binary is the primary deliverable      |
+| [`cobre-tui`](https://cobre-rs.github.io/cobre/crates/tui.html)       | Terminal UI is a monitoring convenience; convergence data is available via Parquet output |
+| [`cobre-mcp`](https://cobre-rs.github.io/cobre/crates/mcp.html)       | MCP server is an agent-composability interface; not required for HPC batch execution      |
 
 ## 5. Implementation Phases
 
@@ -215,7 +215,7 @@ The minimal viable solver fully models four element types and provides code-path
 
 | Target                                                                 | Relevance                                                               |
 | ---------------------------------------------------------------------- | ----------------------------------------------------------------------- |
-| [Crate Overview](../../crates/overview.md)                             | Canonical dependency graph and crate responsibilities                   |
+| [Crate Overview](https://cobre-rs.github.io/cobre/crates/overview.html)                             | Canonical dependency graph and crate responsibilities                   |
 | [Cross-Reference Index](../cross-reference-index.md)                   | Per-crate reading lists and spec-to-crate mappings (sections 1-2)       |
 | [Training Loop](../architecture/training-loop.md)                      | Iteration lifecycle, forward/backward pass architecture, event emission |
 | [Simulation Architecture](../architecture/simulation-architecture.md)  | Policy evaluation pipeline, scenario distribution, output streaming     |

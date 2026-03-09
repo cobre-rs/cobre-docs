@@ -33,7 +33,6 @@ at the repository root is outside `src/` and is never processed by mdBook.
 | `src/specs/overview/`                | Planning and overview specs: implementation ordering, gap inventory |
 | `src/specs/data-model/`              | Data format and schema specs                                        |
 | `src/specs/interfaces/`              | Python bindings and interface specs                                 |
-| `src/crates/`                        | Per-crate overview files tracking section counts and key contracts  |
 | `src/specs/cross-reference-index.md` | Canonical index of all specs (5 sections)                           |
 | `plans/spec-readiness/learnings/`    | Accumulated plan learnings (primary historical reference)           |
 
@@ -360,9 +359,8 @@ section 2 as `(secondary)`, including deferred crates.
 ## 8. GIL Contract and Free-Threaded Python
 
 The GIL contract in `src/specs/interfaces/python-bindings.md` is a 6-point contract (current
-authoritative count). When any numbered contract is extended, grep `src/crates/` for the
-previous count string and update it — crate overview files lag behind spec files and must be
-kept synchronized.
+authoritative count). When any numbered contract is extended, update the count reference
+in this spec — crate overview files now live in the software book at https://cobre-rs.github.io/cobre/.
 
 MPI prohibition has three independent reasons:
 

@@ -71,3 +71,9 @@ Cobre uses the **single-cut** formulation by default: at each iteration, the per
 - [Convergence](convergence.md) -- Bound computation and stopping criteria
 - [Cut Management](cut-management.md) -- Cut selection, deletion, and storage strategies
 - [Single-Cut vs Multi-Cut](single-multi-cut.md) -- Trade-offs between aggregation strategies
+
+---
+
+> **See also**: For implementation details and usage, see the
+> [SDDP crate documentation](https://cobre-rs.github.io/cobre/crates/sddp.html)
+> in the software book.

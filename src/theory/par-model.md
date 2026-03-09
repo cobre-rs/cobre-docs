@@ -61,3 +61,9 @@ This design avoids redundancy -- $\sigma_m$ is fully determined by the other par
 
 - [Stochastic Modeling](stochastic-modeling.md) -- overview of why inflow uncertainty matters and how PAR(p) fits into the SDDP workflow
 - [PAR Inflow Model Specification](../specs/math/par-inflow-model.md) -- complete mathematical specification with the Yule-Walker fitting procedure, model order selection criteria, unit conversion formulas, and all validation invariants
+
+---
+
+> **See also**: For implementation details and usage, see the
+> [Stochastic Modeling guide](https://cobre-rs.github.io/cobre/guide/stochastic-modeling.html)
+> in the software book.

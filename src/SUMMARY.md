@@ -6,52 +6,31 @@
 
 # User Guide
 
-- [Getting Started](./guide/getting-started.md)
-  - [Installation](./guide/installation.md)
-  - [Your First Study](./guide/first-study.md)
-- [System Modeling](./guide/system-modeling.md)
-  - [Hydro Plants](./guide/hydro-plants.md)
-  - [Thermal Units](./guide/thermal-units.md)
-  - [Network Topology](./guide/network-topology.md)
-- [Running Studies](./guide/running-studies.md)
-  - [Configuration](./guide/configuration.md)
-  - [CLI Reference](./guide/cli-reference.md)
-  - [Interpreting Results](./guide/interpreting-results.md)
+- [Go to the Software Book >>](https://cobre-rs.github.io/cobre/guide/getting-started.html)
 
 ---
 
 # Crate Documentation
 
-- [Overview](./crates/overview.md)
-- [cobre-core](./crates/core.md)
-- [cobre-io](./crates/io.md)
-- [cobre-stochastic](./crates/stochastic.md)
-- [cobre-solver](./crates/solver.md)
-- [cobre-sddp](./crates/sddp.md)
-- [cobre-cli](./crates/cli.md)
-- [cobre-comm](./crates/comm.md)
-- [cobre-mcp](./crates/mcp.md)
-- [cobre-python](./crates/python.md)
-- [cobre-tui](./crates/tui.md)
-- [ferrompi](./crates/ferrompi.md)
+- [Go to the Software Book >>](https://cobre-rs.github.io/cobre/crates/overview.html)
 
 ---
 
-# Algorithm Reference
+# Theory
 
-- [SDDP Theory](./algorithms/sddp-theory.md)
-  - [Benders Decomposition](./algorithms/benders.md)
-  - [Forward and Backward Passes](./algorithms/forward-backward.md)
-  - [Convergence](./algorithms/convergence.md)
-- [Stochastic Modeling](./algorithms/stochastic-modeling.md)
-  - [PAR(p) Autoregressive Models](./algorithms/par-model.md)
-  - [Spatial Correlation](./algorithms/spatial-correlation.md)
-  - [Scenario Generation](./algorithms/scenario-generation.md)
-- [Cut Management](./algorithms/cut-management.md)
-  - [Single-Cut vs Multi-Cut](./algorithms/single-multi-cut.md)
-  - [Cut Selection](./algorithms/cut-selection.md)
-- [Risk Measures](./algorithms/risk-measures.md)
-  - [CVaR](./algorithms/cvar.md)
+- [SDDP Theory](./theory/sddp-theory.md)
+  - [Benders Decomposition](./theory/benders.md)
+  - [Forward and Backward Passes](./theory/forward-backward.md)
+  - [Convergence](./theory/convergence.md)
+- [Stochastic Modeling](./theory/stochastic-modeling.md)
+  - [PAR(p) Autoregressive Models](./theory/par-model.md)
+  - [Spatial Correlation](./theory/spatial-correlation.md)
+  - [Scenario Generation](./theory/scenario-generation.md)
+- [Cut Management](./theory/cut-management.md)
+  - [Single-Cut vs Multi-Cut](./theory/single-multi-cut.md)
+  - [Cut Selection](./theory/cut-selection.md)
+- [Risk Measures](./theory/risk-measures.md)
+  - [CVaR](./theory/cvar.md)
 
 ---
 
@@ -148,11 +127,23 @@
 
 ---
 
+# Roadmap
+
+- [Overview](./roadmap/overview.md)
+  - [Equipment & Modeling](./roadmap/equipment-modeling.md)
+  - [Algorithm Variants](./roadmap/algorithm-variants.md)
+  - [Stochastic Enhancements](./roadmap/stochastic-enhancements.md)
+  - [Performance & Parallelism](./roadmap/performance-parallelism.md)
+  - [Tooling & Interfaces](./roadmap/tooling-interfaces.md)
+
+---
+
 # Reference
 
 - [Glossary](./reference/glossary.md)
 - [Bibliography](./reference/bibliography.md)
 - [FAQ](./reference/faq.md)
+- [Notation](./reference/notation.md)
 
 ---
 

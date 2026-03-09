@@ -56,3 +56,9 @@ For the full specification of the forward and backward pass mechanics, including
 - [Convergence](convergence.md) -- How the bounds produced by these passes are used to monitor convergence
 - [Scenario Generation](scenario-generation.md) -- How scenarios are sampled for forward and backward passes
 - [Solver Workspaces (spec)](../specs/architecture/solver-workspaces.md) -- Solver state management, basis persistence, and warm-starting across forward and backward passes
+
+---
+
+> **See also**: For implementation details and usage, see the
+> [SDDP crate documentation](https://cobre-rs.github.io/cobre/crates/sddp.html)
+> in the software book.

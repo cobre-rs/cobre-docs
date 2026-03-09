@@ -32,3 +32,9 @@ During the **forward pass**, inflow scenarios are sampled from the PAR(p) model 
 - [PAR(p) Autoregressive Models](par-model.md) -- accessible explanation of the PAR(p) model, its parameters, and how lags become state variables
 - [PAR Inflow Model Specification](../specs/math/par-inflow-model.md) -- full mathematical specification including fitting procedure, model order selection, and validation invariants
 - [Scenario Generation](scenario-generation.md) -- how inflow scenarios are produced for forward and backward passes
+
+---
+
+> **See also**: For implementation details and usage, see the
+> [Stochastic Modeling guide](https://cobre-rs.github.io/cobre/guide/stochastic-modeling.html)
+> in the software book.
