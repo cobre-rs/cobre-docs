@@ -6,6 +6,13 @@
 > [software book](https://cobre-rs.github.io/cobre/). These specs remain as
 > reference for the design rationale behind implementation decisions.
 
+> **Internal development artifacts**: This section is intended for Cobre
+> contributors and maintainers. The specs document design decisions, trait
+> contracts, and implementation constraints that were authored before the code
+> was written. If you are here to understand the mathematics or algorithms,
+> the [Theory section](../theory/sddp-theory.md) is the recommended starting
+> point.
+
 This section contains the foundational specifications that underpin all other sections of the Cobre documentation. It establishes the design philosophy that guides every architectural and algorithmic decision, the notation conventions that ensure consistency across all mathematical and data-model specs, and the production-scale reference dimensions that anchor performance analysis and memory budget calculations throughout the HPC specs.
 
 These three specs are prerequisites for reading any other specification section. They are referenced pervasively -- design principles inform trade-off discussions in the architecture specs, notation conventions define the symbols used in every equation, and production-scale dimensions appear whenever a spec quantifies communication volume, memory footprint, or computational cost.
