@@ -2,6 +2,8 @@
 
 This page covers planned improvements to the stochastic modeling and sampling layers of Cobre. These features extend the inflow model, allow finer temporal resolution, add flexibility to the noise generation pipeline, and introduce sampling variants for the backward pass and forward pass.
 
+> **Prerequisites last reviewed against v0.1.1 implementation state.** The PAR(p) estimation module (epic-11) is now operational. See individual sections below for updated prerequisite status.
+
 ---
 
 ## C.8 CEPEL PAR(p)-A Variant
@@ -19,7 +21,7 @@ The lognormal variant is mainly needed when inflow distributions are highly righ
 
 **Prerequisites**:
 
-- Standard PAR(p) fitting and validation operational
+- ~~Standard PAR(p) fitting and validation operational~~ (met in v0.1.1 — estimation module implemented in epic-11)
 - Lognormal transformation infrastructure (log-space fitting, back-transformation)
 - Validation suite comparing PAR(p) and PAR(p)-A on representative basins
 
@@ -70,7 +72,7 @@ Open design questions to resolve before implementation: the relationship to the 
 
 **Prerequisites**:
 
-- Opening tree architecture implemented and validated
+- ~~Opening tree architecture implemented and validated~~ (met before v0.1.1 — Phase 5 cobre-stochastic)
 - Forward/backward noise separation operational
 - Clear use case catalog that cannot be served by the existing external scenario mechanism
 
@@ -90,7 +92,7 @@ The resulting cut is an unbiased estimator of the full cut but with higher varia
 
 **Prerequisites**:
 
-- Core SDDP with complete backward sampling validated
+- ~~Core SDDP with complete backward sampling validated~~ (met before v0.1.1 — Phase 6 cobre-sddp)
 - Convergence monitoring supports non-monotonic lower bounds
 - Empirical study of the `n` vs. convergence rate trade-off
 

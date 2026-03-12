@@ -62,9 +62,23 @@ No additional LP variables or constraints are needed. However, truncation has tw
 
 For quick studies or debugging, truncation is acceptable. For production use, the bias can distort long-run cost estimates in drought scenarios.
 
+**Available since v0.1.1.** To enable truncation, set the following field in `config.json`:
+
+```json
+{
+  "modeling": {
+    "inflow_non_negativity": {
+      "method": "truncation"
+    }
+  }
+}
+```
+
+**Implementation.** Before LP patching in the forward pass, the algorithm evaluates $a_h$ using `evaluate_par_inflow`. If $a_h < 0$, the noise term is replaced with the threshold value returned by `solve_par_noise` — the minimum noise that keeps $a_h$ at exactly zero given the current lag state. This replacement occurs before the LP is built, so no additional LP variables or constraints are required.
+
 ## Deferred: Truncation with Penalty
 
-A more sophisticated hybrid approach (deferred to post-v0.1.0) combines truncation with explicit noise adjustment tracking. It introduces a dimensionless slack $\xi_h \geq 0$ that adjusts the noise term rather than the inflow directly:
+A more sophisticated hybrid approach (deferred to a future release) combines truncation with explicit noise adjustment tracking. It introduces a dimensionless slack $\xi_h \geq 0$ that adjusts the noise term rather than the inflow directly:
 
 $$
 a_h = \text{deterministic base} + \sum_{\ell=1}^{p} \psi_\ell \cdot \hat{a}_{h,\ell} + \sigma_m \cdot (\eta + \xi_h), \quad a_h \geq 0
@@ -72,14 +86,16 @@ $$
 
 The penalty is proportional to the actual inflow correction $\sigma_m \cdot \xi_h$, which is larger in high-variability seasons. This approach preserves AR model structure better than pure truncation and provides a more precise signal of how much the noise realization was adjusted. It is deferred because the interaction with the noise generation pipeline adds complexity that is not needed for the minimal viable solver.
 
+The PAR evaluation infrastructure needed for this method (`evaluate_par_inflow` and `solve_par_noise`) is now in place from v0.1.1, so the remaining work is confined to the LP patching and penalty accounting layers.
+
 ## Summary
 
-| Method                  | LP Size                     | Bias    | AR Preservation | Recommended    |
-| ----------------------- | --------------------------- | ------- | --------------- | -------------- |
-| No handling             | Base                        | None    | Full            | Debugging only |
-| Penalty                 | +1 var/constraint per hydro | Minimal | Full            | **Production** |
-| Truncation              | Base                        | Upward  | Partial         | Quick studies  |
-| Truncation with penalty | +vars                       | Minimal | Full            | Post-v0.1.0    |
+| Method                  | LP Size                     | Bias    | AR Preservation | Recommended         |
+| ----------------------- | --------------------------- | ------- | --------------- | ------------------- |
+| No handling             | Base                        | None    | Full            | Debugging only      |
+| Penalty                 | +1 var/constraint per hydro | Minimal | Full            | **Production**      |
+| Truncation              | Base                        | Upward  | Partial         | Available in v0.1.1 |
+| Truncation with penalty | +vars                       | Minimal | Full            | Deferred            |
 
 ## Further Reading
 
