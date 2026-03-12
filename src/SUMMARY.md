@@ -67,5 +67,4 @@
 
 - [Glossary](./reference/glossary.md)
 - [Bibliography](./reference/bibliography.md)
-- [FAQ](./reference/faq.md)
 - [Notation](./reference/notation.md)

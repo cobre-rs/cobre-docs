@@ -387,7 +387,9 @@ Subject to:
 
 ## C.8 CEPEL PAR(p)-A Variant
 
-**Status**: DEFERRED
+**Status**: DEFERRED (standard PAR(p) now available in v0.1.1)
+
+> **Note**: Standard PAR(p) fitting from historical inflow data is now implemented as of v0.1.1 (Levinson-Durbin recursion, AIC-based order selection, Cholesky spatial correlation). The CEPEL-specific PAR(p)-A extensions listed below remain deferred.
 
 **Description**: CEPEL's PAR(p)-A model (referenced in Rel-1941_2021) extends the standard PAR(p) with:
 
@@ -400,7 +402,7 @@ Subject to:
 
 **Prerequisites**:
 
-- Standard PAR(p) fitting and validation operational
+- Standard PAR(p) fitting and validation operational (met as of v0.1.1)
 - Lognormal transformation infrastructure (log-space fitting, back-transformation)
 - Validation suite comparing PAR(p) vs. PAR(p)-A on representative basins
 
