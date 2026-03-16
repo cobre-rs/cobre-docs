@@ -176,6 +176,8 @@ $$
 
 **Source of hyperplanes**: Planes are either pre-computed (read from `fpha_hyperplanes.parquet` — see [Input Hydro Extensions §3](../data-model/input-hydro-extensions.md)) or computed from topology data during preprocessing. The fitting process evaluates $\phi$ on a discretization grid over the operating region $[v_{min}, v_{max}] \times [0, q_{max}]$, then constructs the concave envelope of the resulting generation surface.
 
+> **Implementation note (v0.1.4):** The computed-source fitting grid is three-dimensional: volume, turbined flow, and spillage. The volume axis spans $[v_{min}, v_{max}]$ using `volume_discretization_points` uniformly spaced points (default 5). The turbined-flow axis spans $[q_{min}, q_{max}]$ using `turbine_discretization_points` points (default 5), where $q_{min} = \max(1.0, 0.01 \cdot q_{max})$ to avoid degenerate zero-flow tangent planes. The spillage axis uses `spillage_discretization_points` points (default 5) spanning $[0, 0.5 \cdot q_{max}]$, always including $s = 0$ as the first point. Validity range fields (`valid_v_min_hm3`, `valid_v_max_hm3`, `valid_q_max_m3s`) are stored as `null` in computed planes — they are not populated by the current fitting pipeline and reserved for future use.
+
 ### 2.6 Correction Factor $\kappa$
 
 The correction factor $\kappa$ scales the hyperplane intercepts to ensure the approximation is **conservative** — never overestimates generation:
@@ -204,6 +206,8 @@ $$
 
 Minimizes mean squared error between approximation and exact function. Less conservative but more accurate on average.
 
+> **Implementation note (v0.1.4):** Only the worst-case approach is implemented. The MSE minimization approach is specified here for completeness but is not available in the current release. Kappa is computed as the minimum ratio $\phi / \max_m(\text{plane}_m)$ over all 3D grid points where both $\phi > 0$ and $\max_m > 0$; points with zero production are skipped. Kappa must lie in $(0, 1]$; values outside this range produce a fitting error.
+
 #### Typical Values
 
 | Reservoir Type    | Typical $\kappa$ | Notes                        |
@@ -223,6 +227,8 @@ $$
 **Physical interpretation**: Each additional m³/s of spillage raises the tailrace by $\partial h_{tail}/\partial q_{out}$ meters, reducing net head and thus generation.
 
 **Sign convention**: $\gamma_s^m \leq 0$ because spillage reduces generation capacity.
+
+> **Implementation note (v0.1.4):** After tangent-plane sampling and redundancy elimination, a greedy removal heuristic selects at most `max_planes_per_hydro` planes (default 10). The heuristic evaluates, for each candidate plane, the increase in maximum approximation error that would result from its removal, then permanently removes the plane whose removal causes the smallest increase. Removal stops early if the concave-envelope property (minimum grid error $\geq -10^{-8}$) would be violated; in that case the result may contain more planes than the target cardinality. The validity range fields are set to `null` in all computed planes.
 
 ### 2.8 LP Integration
 

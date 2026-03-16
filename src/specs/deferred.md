@@ -513,7 +513,9 @@ C.9 is unblocked and can proceed to its own dedicated specification.
 
 ## C.11 User-Supplied Noise Openings
 
-**Status**: DEFERRED (requires design investigation)
+**Status**: Implemented (v0.1.3)
+
+**Implemented in**: [ADR-008](../../cobre/docs/adr/008-user-supplied-opening-tree.md) (cobre repository). The design questions identified when this feature was deferred are all resolved in ADR-008.
 
 **Description**: Allow users to directly input pre-sampled, pre-correlated noise values for the opening tree, bypassing the internal noise generation and correlation pipeline entirely.
 
@@ -524,36 +526,15 @@ C.9 is unblocked and can proceed to its own dedicated specification.
 - Using domain-specific spatial correlation structures not captured by the Cholesky approach
 - Research workflows where specific noise patterns are under study
 
-**Proposed Input File**: `scenarios/noise_openings.parquet`
+**Input File**: `scenarios/noise_openings.parquet` (optional)
 
-| Column      | Type    | Description                                          |
-| ----------- | ------- | ---------------------------------------------------- |
-| opening_id  | int32   | Opening index ($0, \ldots, N_{\text{openings}} - 1$) |
-| stage_id    | int32   | Stage identifier                                     |
-| entity_id   | int32   | Hydro (or bus, for load noise) identifier            |
-| noise_value | float64 | Already-correlated noise $\eta$                      |
-
-When this file is present, the scenario generator skips internal noise sampling and Cholesky correlation entirely, loading the user-supplied values directly into the opening tree (§2.3 of [Scenario Generation](./architecture/scenario-generation.md)).
-
-**Design Questions** (require investigation before implementation):
-
-1. **Relationship to external scenarios** — Can the existing external scenario mechanism (with noise inversion) cover all use cases, or does direct noise input serve fundamentally different needs?
-2. **Validation** — What checks should be applied? (e.g., noise dimensionality matches system, reasonable value ranges, correlation structure is PSD)
-3. **Interaction with load noise** — Should the file include load entity noise, or only inflow noise?
-4. **Forward/backward separation** — Should users supply separate noise sets for forward and backward passes?
-
-**Prerequisites**:
-
-- Opening tree architecture (§2.3) implemented and validated
-- Forward/backward noise separation (§3.1) operational
-- Clear use case catalog that cannot be served by external scenarios + noise inversion
-
-**Estimated Effort**: Small (1 week). Input loading and validation are straightforward; the opening tree already supports external population. Main effort is design decisions above.
+See ADR-008 for the authoritative Parquet schema (four columns: `stage_id`, `opening_index`, `entity_index`, `value`), validation rules, bypass logic, and interaction with forward-pass noise. The schema used by the export path (ADR-009) is identical to the import schema, enabling a round-trip invariant.
 
 **Cross-references**:
 
+- [ADR-008: User-Supplied Opening Tree](../../cobre/docs/adr/008-user-supplied-opening-tree.md) — Authoritative design record (cobre repository)
+- [ADR-009: Stochastic Artifact Export](../../cobre/docs/adr/009-stochastic-artifact-export.md) — Export counterpart and round-trip invariant (cobre repository)
 - [Scenario Generation §2.3](./architecture/scenario-generation.md) — Opening tree architecture
-- [Input Scenarios §2.5](./data-model/input-scenarios.md) — External scenarios (related mechanism)
 
 ## C.12 Complete Tree Solver Integration
 

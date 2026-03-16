@@ -253,6 +253,8 @@ The following table maps each public Rust module in `crates/cobre-io/src/` to th
 | `resolution` | `src/resolution/` | [Input Loading Pipeline](./architecture/input-loading-pipeline.md) §5 (three-tier sparse-to-dense expansion); [Penalty System](./data-model/penalty-system.md) §3 (penalty cascade); [Input Constraints](./data-model/input-constraints.md) §2 (bound cascade) |
 | `output` | `src/output/` | [Output Schemas](./data-model/output-schemas.md) §1–6 (stub — Phase 7 scope); [Output Infrastructure](./data-model/output-infrastructure.md) §1–6 (stub — Phase 7 scope); [Binary Formats](./data-model/binary-formats.md) §3 (FlatBuffers stub — Phase 7 scope) |
 | `parquet_helpers` | `src/parquet_helpers.rs` | (internal) [Binary Formats](./data-model/binary-formats.md) §2.2 (Parquet column extraction helpers, Parquet input format per DEC-004) |
+| `scenarios::noise_openings` | `src/scenarios/noise_openings.rs` | [ADR-008: User-Supplied Opening Tree](../../cobre/docs/adr/008-user-supplied-opening-tree.md) (`load_noise_openings` parser, 3-rule validation: dimension mismatch, stage count mismatch, missing opening indices) |
+| `output::stochastic` | `src/output/stochastic.rs` | [ADR-009: Stochastic Artifact Export](../../cobre/docs/adr/009-stochastic-artifact-export.md) (`write_noise_openings`, `write_inflow_seasonal_stats`, `write_inflow_ar_coefficients`, `write_load_seasonal_stats`, `write_fitting_report`, `write_correlation_json`) |
 
 ### cobre-stochastic
 
@@ -274,6 +276,12 @@ This crate owns the PAR model, scenario generation, noise correlation, and sampl
 14. [Ecosystem Guidelines](./overview/ecosystem-guidelines.md) (secondary)
 15. [Ecosystem Vision](./overview/ecosystem-vision.md) (secondary)
 16. [Decision Log](./overview/decision-log.md) (secondary)
+
+#### v0.1.3 API Additions (cobre-stochastic)
+
+| Function / Type | Rust Path | Spec / Design Reference |
+| --------------- | --------- | ----------------------- |
+| `OpeningTree::from_parts()` | `src/opening_tree.rs` | [ADR-008: User-Supplied Opening Tree](../../cobre/docs/adr/008-user-supplied-opening-tree.md) — constructs `OpeningTree` from a validated flat array and dimension metadata, used by `build_stochastic_context()` when `noise_openings.parquet` is present |
 
 ### cobre-solver
 

@@ -185,13 +185,17 @@ In this example, seasons 0 and 1 (e.g., January and February — wet season) use
 | -------------------------------------- | ------ | ------------------------------------------------------------------------------------- |
 | `source`                               | string | `"computed"` (fit from topology) or `"precomputed"` (from `fpha_hyperplanes.parquet`) |
 | `volume_discretization_points`         | i32    | Number of volume points in grid (default: 5)                                          |
-| `turbine_discretization_points`        | i32    | Number of turbine flow points (default: 10)                                           |
+| `turbine_discretization_points`        | i32    | Number of turbine flow points (default: 5)                                            |
+| `spillage_discretization_points`       | i32    | Number of spillage flow points in grid (default: 5)                                   |
+| `max_planes_per_hydro`                 | i32    | Maximum hyperplanes retained after heuristic selection (default: 10)                  |
 | `fitting_window.volume_min_hm3`        | f64?   | Explicit minimum volume for fitting (null = physical min)                             |
 | `fitting_window.volume_max_hm3`        | f64?   | Explicit maximum volume for fitting (null = physical max)                             |
 | `fitting_window.volume_min_percentile` | f64?   | Minimum as percentile of operating range                                              |
 | `fitting_window.volume_max_percentile` | f64?   | Maximum as percentile of operating range                                              |
 
 Use absolute bounds (`volume_min_hm3`, `volume_max_hm3`) OR percentiles, not both. Percentiles are relative to `[min_storage_hm3, max_storage_hm3]` from `hydros.json`.
+
+> **Implementation note (v0.1.4):** `spillage_discretization_points` and `max_planes_per_hydro` were added in v0.1.4 when the computed-source FPHA pipeline was implemented. The default for `turbine_discretization_points` is 5 (not 10 as originally specced); both defaults produce grids sufficient for typical reservoir configurations. All discretization counts must be >= 2; `max_planes_per_hydro` must be >= 1. The computed source path is fully implemented — no preprocessing step or external tool is required. Hyperplanes are fitted during the Initialization phase on rank 0 and written to `output/hydro_models/fpha_hyperplanes.parquet`.
 
 ### Required Data by Model
 
@@ -203,6 +207,8 @@ Use absolute bounds (`volume_min_hm3`, `volume_max_hm3`) OR percentiles, not bot
 | `fpha` (precomputed)    | `productivity_mw_per_m3s`¹ | ✗                | ✓                  |
 
 ¹ Used as fallback for stages without FPHA configuration.
+
+> **Implementation note (v0.1.4):** The `"computed"` source path is implemented. Fitting runs during Initialization on MPI rank 0 from `hydro_geometry.parquet` and the `tailrace`, `hydraulic_losses`, and `efficiency` fields in `hydros.json`. Fitted planes are exported to `output/hydro_models/fpha_hyperplanes.parquet` using the same 11-column schema as the input file, enabling round-trip use in subsequent runs as `"precomputed"` planes.
 
 > **Note**: For computed FPHA, the solver also uses the optional `tailrace`, `hydraulic_losses`, and `efficiency` fields from the hydro object in `hydros.json` (see [Input System Entities §3](input-system-entities.md)). If these fields are omitted, fallback assumptions apply (no tailrace adjustment, zero losses, efficiency derived from productivity).
 

@@ -35,8 +35,8 @@ case/
 │   ├── external_scenarios.parquet             # Pre-computed scenario values (optional)
 │   ├── load_seasonal_stats.parquet            # Load mean/std per bus/stage (optional)
 │   ├── load_factors.json                      # Block-level load scaling factors (optional)
-│   └── correlation.json                       # Spatial correlation profiles + schedule (optional)
-│   # DEFERRED: scenarios/noise_openings.parquet — User-supplied pre-correlated noise openings (C.11)
+│   ├── correlation.json                       # Spatial correlation profiles + schedule (optional)
+│   └── noise_openings.parquet                 # User-supplied pre-correlated noise openings (Optional, ADR-008)
 │
 ├── constraints/                               # Time-varying bounds and generic constraints
 │   ├── thermal_bounds.parquet                 # Stage-varying thermal limits (optional)
@@ -261,5 +261,7 @@ For the complete penalty specification — including `penalties.json` schema, en
 - [Input Constraints](input-constraints.md) — initial conditions, stage-varying bounds, exchange factors, generic constraints
 - [Internal Structures](internal-structures.md) — in-memory data model built from these input files
 - [Binary Formats](binary-formats.md) — policy directory FlatBuffers schemas (cuts, states, basis)
-- [Scenario Generation](../architecture/scenario-generation.md) — Scenario pipeline architecture; deferred `noise_openings.parquet` file (C.11)
+- [Scenario Generation](../architecture/scenario-generation.md) — Scenario pipeline architecture
+- [ADR-008: User-Supplied Opening Tree](../../cobre/docs/adr/008-user-supplied-opening-tree.md) — Schema and validation rules for `scenarios/noise_openings.parquet` (cobre repository)
+- [ADR-009: Stochastic Artifact Export](../../cobre/docs/adr/009-stochastic-artifact-export.md) — `output/stochastic/` directory layout and round-trip invariant (cobre repository)
 - [Production Scale Reference](../overview/production-scale-reference.md) — LP sizing and performance targets

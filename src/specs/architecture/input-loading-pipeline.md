@@ -292,6 +292,8 @@ After loading and broadcasting, each rank constructs its in-memory data model fr
 
 **FPHA preprocessing:** For hydros with FPHA production model and source `"computed"`, the FPHA hyperplanes are fitted during the Initialization phase (after validation, before training). Fitting uses the hydro geometry (volume-area-level curves from `hydro_geometry.parquet`), topology data (productivity, tailrace, hydraulic losses, turbine efficiency from `hydros.json`), and fitting configuration (discretization points from `hydro_production_models.json`). See [Hydro Production Models](../math/hydro-production-models.md) for the mathematical formulation and [Input Hydro Extensions](../data-model/input-hydro-extensions.md) for the required input data.
 
+> **Implementation note (v0.1.4):** The computed-source FPHA path is fully implemented in `cobre-sddp::hydro_models::prepare_hydro_models`. It runs on MPI rank 0 during Initialization, before the training loop or simulation pipeline begins. The fitting grid spans three dimensions: volume, turbined flow, and spillage (see `fpha_fitting.rs`). After fitting, computed hyperplanes are written to `output/hydro_models/fpha_hyperplanes.parquet` (see [Output Schemas §8.1](../data-model/output-schemas.md)) and held in memory for LP assembly. No rank broadcast of raw hyperplane rows is performed — ranks receive hydro model assignments through the `StudySetup` struct.
+
 The key invariant is: **after the Initialization phase completes, all ranks hold identical copies of the validated case data** (except for per-rank scenario assignments, which are determined during Scenario Generation). See [CLI and Lifecycle](./cli-and-lifecycle.md) SS5.2 for the phase sequence.
 
 ### 8.1 `load_case` Public API

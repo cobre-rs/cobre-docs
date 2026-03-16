@@ -37,6 +37,9 @@ output/
 │       └── generic/
 │           └── scenario_id=XXXX/data.parquet
 │
+├── hydro_models/                            # Computed FPHA hyperplanes (optional)
+│   └── fpha_hyperplanes.parquet             # Written when any hydro uses computed FPHA
+│
 └── training/                                # Training phase outputs
     ├── _manifest.json
     ├── _SUCCESS
@@ -53,7 +56,7 @@ output/
     └── metadata.json                        # Run configuration and system info
 ```
 
-> **Optional files**: Simulation entity directories are only written if the corresponding entities exist in the input model.
+> **Optional files**: Simulation entity directories are only written if the corresponding entities exist in the input model. The `hydro_models/` directory is only written when at least one hydro uses the computed-source FPHA model.
 
 ## 2. Design Principles
 
@@ -540,6 +543,34 @@ The Cobre output system produces two distinct categories of schemas with differe
 | Nullable columns   | `null`    | JSON null for missing values      |
 
 This conversion is performed on demand by the MCP server's resource handlers, not stored as separate JSON files.
+
+## 8. Preprocessing Output Schemas
+
+The following files are written during the Initialization phase (before training), not during simulation or training proper. They document the result of preprocessing steps so that users can inspect and, if needed, re-use computed artifacts.
+
+### 8.1 Computed FPHA Hyperplanes (`output/hydro_models/fpha_hyperplanes.parquet`)
+
+Written automatically when one or more hydros use the `source: "computed"` FPHA fitting path. The file uses the same 11-column schema as the input file `system/fpha_hyperplanes.parquet` and is round-trip compatible with the parser in `cobre-io`.
+
+> **Implementation note (v0.1.4):** This file is written by `prepare_hydro_models` in `cobre-sddp` on MPI rank 0 only, immediately after the fitting pipeline completes. It is not present when all FPHA hydros use `source: "precomputed"` or when no hydros use FPHA.
+
+| Column            | Type        | Nullable | Description                                                     |
+| ----------------- | ----------- | -------- | --------------------------------------------------------------- |
+| `hydro_id`        | i32         | No       | Hydro plant identifier                                          |
+| `stage_id`        | i32 \| null | Yes      | Stage this plane set applies to (`null` = all stages)           |
+| `plane_id`        | i32         | No       | Plane index within hydro (0-based)                              |
+| `gamma_0`         | f64         | No       | Intercept coefficient (MW)                                      |
+| `gamma_v`         | f64         | No       | Volume coefficient (MW/hm³)                                     |
+| `gamma_q`         | f64         | No       | Turbined flow coefficient (MW per m³/s)                         |
+| `gamma_s`         | f64         | No       | Spillage coefficient (MW per m³/s, ≤ 0)                         |
+| `kappa`           | f64         | No       | Correction factor κ (worst-case approach, in (0, 1])            |
+| `valid_v_min_hm3` | f64         | Yes      | Volume validity minimum — `null` for all computed planes        |
+| `valid_v_max_hm3` | f64         | Yes      | Volume validity maximum — `null` for all computed planes        |
+| `valid_q_max_m3s` | f64         | Yes      | Turbined flow validity maximum — `null` for all computed planes |
+
+The validity range columns (`valid_v_min_hm3`, `valid_v_max_hm3`, `valid_q_max_m3s`) are always `null` for computed planes. They are populated only when hyperplanes are provided externally via `system/fpha_hyperplanes.parquet` and the supplier chooses to include them. See [Input Hydro Extensions §3](input-hydro-extensions.md) for the complete schema description and validation rules.
+
+**Round-trip use**: The exported file can be copied to `system/fpha_hyperplanes.parquet` in a subsequent run and referenced with `source: "precomputed"` to skip re-fitting. This is useful for large systems where fitting cost is non-trivial.
 
 ## Cross-References
 
