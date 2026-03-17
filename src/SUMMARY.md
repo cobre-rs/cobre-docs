@@ -4,18 +4,6 @@
 
 ---
 
-# User Guide
-
-- [Go to the Software Book >>](https://cobre-rs.github.io/cobre/guide/getting-started.html)
-
----
-
-# Crate Documentation
-
-- [Go to the Software Book >>](https://cobre-rs.github.io/cobre/crates/overview.html)
-
----
-
 # Theory
 
 - [SDDP Theory](./theory/sddp-theory.md)
@@ -49,7 +37,7 @@
 
 ---
 
-# Specifications (Internal)
+# Specifications (Historical Design Artifacts)
 
 - [Overview](./specs/overview.md)
 - [Cross-Reference Index](./specs/cross-reference-index.md)
