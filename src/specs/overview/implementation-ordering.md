@@ -58,8 +58,8 @@ The minimal viable solver satisfies the following eight stakeholder requirements
 
 ## 4. Crates Required for Minimal Viable
 
-| Crate                                            | Role in Minimal Viable                                                                                                             |
-| ------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------- |
+| Crate                                                                         | Role in Minimal Viable                                                                                                             |
+| ----------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
 | [`cobre-core`](https://cobre-rs.github.io/cobre/crates/core.html)             | In-memory data model: entity registries (Bus, Line, Thermal, Hydro), internal structures, penalty resolution, topology validation  |
 | [`cobre-io`](https://cobre-rs.github.io/cobre/crates/io.html)                 | Input loading (case directory, JSON registries, Parquet scenarios), output writing (Hive-partitioned Parquet, manifests, metadata) |
 | [`cobre-stochastic`](https://cobre-rs.github.io/cobre/crates/stochastic.html) | PAR(p) preprocessing, correlated noise generation, opening tree construction, InSample forward sampling                            |
@@ -71,8 +71,8 @@ The minimal viable solver satisfies the following eight stakeholder requirements
 
 **Deferred crates** (not required for minimal viable):
 
-| Crate                                    | Reason Deferred                                                                           |
-| ---------------------------------------- | ----------------------------------------------------------------------------------------- |
+| Crate                                                                 | Reason Deferred                                                                           |
+| --------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
 | [`cobre-python`](https://cobre-rs.github.io/cobre/crates/python.html) | PyO3 bindings are a secondary interface; MPI-first binary is the primary deliverable      |
 | [`cobre-tui`](https://cobre-rs.github.io/cobre/crates/tui.html)       | Terminal UI is a monitoring convenience; convergence data is available via Parquet output |
 | [`cobre-mcp`](https://cobre-rs.github.io/cobre/crates/mcp.html)       | MCP server is an agent-composability interface; not required for HPC batch execution      |
@@ -197,39 +197,39 @@ Each trait abstraction point is instantiated with exactly one variant for the mi
 
 ## 7. System Element Scope
 
-The minimal viable solver fully models four element types and provides code-path stubs for three deferred types. Stubs satisfy the type system and appear in entity registries, but they contribute zero variables and zero constraints to the stage LP.
+The solver fully models five element types and provides code-path stubs for two deferred types. Stubs satisfy the type system and appear in entity registries, but they contribute zero variables and zero constraints to the stage LP.
 
-| Element          | Status       | Notes                                                                                                                                                |
-| ---------------- | ------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Bus              | Full         | Network topology nodes. Power balance constraint per bus per block.                                                                                  |
-| Line             | Full         | Transmission links between buses. Flow variable with MW capacity bounds.                                                                             |
-| Thermal          | Full         | Dispatchable generation. Generation variable with MW bounds and cost coefficient.                                                                    |
-| Hydro            | Full         | Reservoir storage, turbined outflow, spillage. Constant productivity $\rho_i$ only. Water balance constraint with cascade topology and travel times. |
-| Contract         | Stub (NO-OP) | Entity type exists in `cobre-core` registry. Code path in LP construction is reached but adds no variables or constraints.                           |
-| Pumping Station  | Stub (NO-OP) | Entity type exists in `cobre-core` registry. Code path in LP construction is reached but adds no variables or constraints.                           |
-| Non-Controllable | Stub (NO-OP) | Entity type exists in `cobre-core` registry. Code path in LP construction is reached but adds no variables or constraints.                           |
+| Element          | Status       | Notes                                                                                                                                                                                |
+| ---------------- | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Bus              | Full         | Network topology nodes. Power balance constraint per bus per block.                                                                                                                  |
+| Line             | Full         | Transmission links between buses. Flow variable with MW capacity bounds.                                                                                                             |
+| Thermal          | Full         | Dispatchable generation. Generation variable with MW bounds and cost coefficient.                                                                                                    |
+| Hydro            | Full         | Reservoir storage, turbined outflow, spillage. Constant productivity and FPHA (precomputed + computed from geometry). Evaporation linearization, water withdrawal, cascade coupling. |
+| Contract         | Stub (NO-OP) | Entity type exists in `cobre-core` registry. Code path in LP construction is reached but adds no variables or constraints.                                                           |
+| Pumping Station  | Stub (NO-OP) | Entity type exists in `cobre-core` registry. Code path in LP construction is reached but adds no variables or constraints.                                                           |
+| Non-Controllable | Full         | Generation variable bounded by stochastic availability factor (from `non_controllable_stats.parquet`), block factor scaling, curtailment penalty.                                    |
 
 **Why stubs, not omissions:** Requirement 2 (real crate boundaries) demands that `cobre-core` defines all entity types from the start, and `cobre-sddp` LP construction iterates over all element types. Stubs ensure the iteration code path exists and is tested even when no entities of a given type are present in the case data. This avoids "first-time integration" surprises when full formulations are added later.
 
 ## 8. Cross-References
 
-| Target                                                                 | Relevance                                                               |
-| ---------------------------------------------------------------------- | ----------------------------------------------------------------------- |
-| [Crate Overview](https://cobre-rs.github.io/cobre/crates/overview.html)                             | Canonical dependency graph and crate responsibilities                   |
-| [Cross-Reference Index](../cross-reference-index.md)                   | Per-crate reading lists and spec-to-crate mappings (sections 1-2)       |
-| [Training Loop](../architecture/training-loop.md)                      | Iteration lifecycle, forward/backward pass architecture, event emission |
-| [Simulation Architecture](../architecture/simulation-architecture.md)  | Policy evaluation pipeline, scenario distribution, output streaming     |
-| [CLI and Lifecycle](../architecture/cli-and-lifecycle.md)              | Execution phases, exit codes, config resolution, MPI initialization     |
-| [Risk Measure Trait](../architecture/risk-measure-trait.md)            | Expectation variant selected for minimal viable                         |
-| [Cut Selection Strategy Trait](../architecture/cut-selection-trait.md) | Level-1 variant selected for minimal viable                             |
-| [Horizon Mode Trait](../architecture/horizon-mode-trait.md)            | Finite variant selected for minimal viable                              |
-| [Sampling Scheme Trait](../architecture/sampling-scheme-trait.md)      | InSample variant selected for minimal viable                            |
-| [Stopping Rule Trait](../architecture/stopping-rule-trait.md)          | All 5 rules composed via StoppingRuleSet                                |
-| [Solver Interface Trait](../architecture/solver-interface-trait.md)    | HiGHS variant selected for minimal viable                               |
-| [Communicator Trait](../hpc/communicator-trait.md)                     | MPI backend via ferrompi selected for minimal viable                    |
-| [Backend Selection](../hpc/backend-selection.md)                       | Feature flag mechanism for compile-time backend selection               |
-| [Configuration Reference](../configuration/configuration-reference.md) | `config.json` and `stages.json` schema definitions                      |
-| [How to Use This Specification](./spec-usage-guide.md) | Abstraction boundary between specs and implementation; worked example |
+| Target                                                                  | Relevance                                                               |
+| ----------------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| [Crate Overview](https://cobre-rs.github.io/cobre/crates/overview.html) | Canonical dependency graph and crate responsibilities                   |
+| [Cross-Reference Index](../cross-reference-index.md)                    | Per-crate reading lists and spec-to-crate mappings (sections 1-2)       |
+| [Training Loop](../architecture/training-loop.md)                       | Iteration lifecycle, forward/backward pass architecture, event emission |
+| [Simulation Architecture](../architecture/simulation-architecture.md)   | Policy evaluation pipeline, scenario distribution, output streaming     |
+| [CLI and Lifecycle](../architecture/cli-and-lifecycle.md)               | Execution phases, exit codes, config resolution, MPI initialization     |
+| [Risk Measure Trait](../architecture/risk-measure-trait.md)             | Expectation variant selected for minimal viable                         |
+| [Cut Selection Strategy Trait](../architecture/cut-selection-trait.md)  | Level-1 variant selected for minimal viable                             |
+| [Horizon Mode Trait](../architecture/horizon-mode-trait.md)             | Finite variant selected for minimal viable                              |
+| [Sampling Scheme Trait](../architecture/sampling-scheme-trait.md)       | InSample variant selected for minimal viable                            |
+| [Stopping Rule Trait](../architecture/stopping-rule-trait.md)           | All 5 rules composed via StoppingRuleSet                                |
+| [Solver Interface Trait](../architecture/solver-interface-trait.md)     | HiGHS variant selected for minimal viable                               |
+| [Communicator Trait](../hpc/communicator-trait.md)                      | MPI backend via ferrompi selected for minimal viable                    |
+| [Backend Selection](../hpc/backend-selection.md)                        | Feature flag mechanism for compile-time backend selection               |
+| [Configuration Reference](../configuration/configuration-reference.md)  | `config.json` and `stages.json` schema definitions                      |
+| [How to Use This Specification](./spec-usage-guide.md)                  | Abstraction boundary between specs and implementation; worked example   |
 
 ## 9. Minimum Viable Reading List
 
