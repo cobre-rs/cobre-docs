@@ -17,7 +17,7 @@ default-theme = "coal"
 preferred-dark-theme = "coal"
 git-repository-url = "https://github.com/cobre-rs/cobre-docs"
 edit-url-template = "https://github.com/cobre-rs/cobre-docs/edit/main/{path}"
-site-url = "/cobre-docs/"
+site-url = "/"
 additional-css = ["theme/css/custom.css"]
 no-section-label = false
 
