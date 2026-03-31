@@ -121,23 +121,43 @@ impl CutSelectionStrategy {
 impl CutSelectionStrategy {
     /// Scan the cut pool for a single stage and identify cuts to deactivate.
     ///
-    /// Returns the indices of cuts that should be deactivated according to
-    /// the configured selection strategy. The caller is responsible for
-    /// applying the deactivation to the activity bitmap.
-    ///
-    /// The method does NOT modify the cut pool -- it is a pure query that
-    /// returns a deactivation set. This separation allows the training loop
-    /// to log deactivation counts before applying them.
+    /// Convenience wrapper that delegates to `select_for_stage` with
+    /// `stage_index = 0`. Prefer `select_for_stage` in production code
+    /// where the stage index must be propagated into the DeactivationSet.
     pub fn select(
         &self,
         pool: &CutPool,
         visited_states: &[f64],
         current_iteration: u64,
     ) -> DeactivationSet {
+        self.select_for_stage(pool, visited_states, current_iteration, 0)
+    }
+
+    /// Scan the cut pool for a specific stage and identify cuts to deactivate.
+    ///
+    /// Returns the indices of cuts that should be deactivated according to
+    /// the configured selection strategy, wrapped in a `DeactivationSet`
+    /// tagged with `stage_index`. The caller is responsible for applying
+    /// the deactivation to the activity bitmap.
+    ///
+    /// The method does NOT modify the cut pool -- it is a pure query that
+    /// returns a deactivation set. This separation allows the training loop
+    /// to log deactivation counts before applying them.
+    ///
+    /// `visited_states` is a flat `&[f64]` of visited forward-pass state
+    /// vectors (row-major, one state per `pool.state_dimension` elements).
+    /// Pass `&[]` when using Level1 or Lml1 (they read only metadata).
+    pub fn select_for_stage(
+        &self,
+        pool: &CutPool,
+        visited_states: &[f64],
+        current_iteration: u64,
+        stage_index: u32,
+    ) -> DeactivationSet {
         // Dispatch on variant:
         // - Level1: deactivate cuts with active_count <= threshold
         // - Lml1: deactivate cuts with current_iteration - last_active_iter > memory_window
-        // - Dominated: deactivate cuts dominated at all visited states
+        // - Dominated: call select_dominated (see SS6.4)
         todo!()
     }
 }
@@ -218,22 +238,28 @@ This mirrors the forward pass trajectory distribution formula from [Work Distrib
 
 ```rust
 impl CutSelectionStrategy {
-    /// Update tracking metadata for a cut that was binding at an LP solution.
+    /// Update tracking metadata for a cut after an LP solution.
     ///
-    /// Called after each LP solve in the backward pass for every cut whose
-    /// dual multiplier exceeds the solver tolerance. The update depends on
-    /// the active strategy variant.
+    /// Called during the backward pass for every cut whose dual multiplier
+    /// is inspected. When `is_binding` is `true` (dual exceeds the solver
+    /// tolerance), the metadata is updated according to the active strategy.
+    /// When `is_binding` is `false`, the metadata is not modified.
     pub fn update_activity(
         &self,
         metadata: &mut CutMetadata,
-        iteration: u64,
+        is_binding: bool,
+        current_iteration: u64,
     ) {
+        if !is_binding {
+            return;
+        }
+
         match self {
             Self::Level1 { .. } => {
                 metadata.active_count += 1;
             }
             Self::Lml1 { .. } => {
-                metadata.last_active_iter = iteration;
+                metadata.last_active_iter = current_iteration;
             }
             Self::Dominated { .. } => {
                 metadata.domination_count = 0;
@@ -245,18 +271,19 @@ impl CutSelectionStrategy {
 
 **Preconditions:**
 
-| Condition                                              | Description                                                                    |
-| ------------------------------------------------------ | ------------------------------------------------------------------------------ |
-| The cut at `metadata` was binding in the current solve | The dual multiplier of the cut constraint is positive (above solver tolerance) |
-| `iteration` is the current training iteration          | Timestamp correctness for Lml1                                                 |
+| Condition                                             | Description                                                                |
+| ----------------------------------------------------- | -------------------------------------------------------------------------- |
+| `is_binding` reflects the dual multiplier comparison  | `true` when the cut's dual exceeds the solver tolerance, `false` otherwise |
+| `current_iteration` is the current training iteration | Timestamp correctness for Lml1                                             |
 
 **Postconditions:**
 
-| Variant   | Update                                         | Description                                                                             |
-| --------- | ---------------------------------------------- | --------------------------------------------------------------------------------------- |
-| Level1    | `metadata.active_count` incremented by 1       | Monotonically increasing counter; once positive, the cut is never deactivated by Level1 |
-| Lml1      | `metadata.last_active_iter` set to `iteration` | Timestamp refreshed; the cut's retention window restarts                                |
-| Dominated | `metadata.domination_count` reset to 0         | The cut is not dominated at this state; reset counter                                   |
+| Condition                                                | Description                                                                             |
+| -------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| When `is_binding == false`, metadata is unchanged        | The method returns immediately without modifying any field                              |
+| Level1, `is_binding == true`: `active_count` incremented | Monotonically increasing counter; once positive, the cut is never deactivated by Level1 |
+| Lml1, `is_binding == true`: `last_active_iter` updated   | Timestamp refreshed to `current_iteration`; the cut's retention window restarts         |
+| Dominated, `is_binding == true`: `domination_count` = 0  | The cut is not dominated at this state; reset counter                                   |
 
 **Thread safety:** `update_activity` is called on per-thread solver workspaces during the backward pass. Each thread processes its own trajectories and updates the metadata for the cuts it evaluated. No locking is needed because the per-stage synchronization barrier ensures that all threads have finished their updates before `select` reads the metadata. See [Cut Management Implementation SS6.2](./cut-management-impl.md).
 
@@ -351,16 +378,19 @@ pub struct CutMetadata {
 ```rust
 /// Set of cut indices to deactivate at a single stage.
 ///
-/// Returned by `select` and consumed by the FCF manager to update the
-/// activity bitmap. The indices are slot positions in the pre-allocated
-/// cut pool.
+/// Returned by `select` / `select_for_stage` and consumed by the FCF
+/// manager to update the activity bitmap. The indices are slot positions
+/// in the pre-allocated cut pool.
 pub struct DeactivationSet {
+    /// Stage index (0-based) that this deactivation set belongs to.
+    pub stage_index: u32,
+
     /// Cut slot indices to deactivate.
     pub indices: Vec<u32>,
 }
 ```
 
-The `DeactivationSet` is a lightweight transfer type. The caller applies each index to the activity bitmap by clearing the corresponding bit and decrementing the active count.
+The `DeactivationSet` is a lightweight transfer type. The `stage_index` field identifies which stage the deactivation applies to, enabling the caller to route the result to the correct per-stage cut pool after the parallel selection phase gathers results from all ranks. The caller applies each index to the activity bitmap by clearing the corresponding bit and decrementing the active count.
 
 ## 4. Dispatch Mechanism
 
@@ -424,11 +454,88 @@ The cut pool tracks two counts per stage:
 
 The `select` method reads `populated_count` to know the range of slots to scan (slots `0..populated_count`), and reads the activity bitmap to identify which of those slots are currently active. The relationship `active_count <= populated_count <= capacity` always holds.
 
-### 6.4 Visited States
+### 6.4 Visited States and Dominated Cut Detection
 
-The Dominated variant requires access to the set of visited states (trial points from forward passes). These are stored in the policy's per-stage `StageStates` structure ([Cut Management Implementation SS2.3](./cut-management-impl.md)). The visited state set grows with each forward pass iteration. For the Dominated check, the implementation evaluates every active cut at every visited state, yielding the $\mathcal{O}(\lvert\text{active cuts}\rvert \times \lvert\text{visited states}\rvert)$ cost per stage.
+#### 6.4.1 VisitedStatesArchive
+
+The `VisitedStatesArchive` stores all forward-pass trial-point state vectors accumulated across training iterations, organized as one `StageStates` buffer per stage. Each `StageStates` stores its state vectors in a single flat `Vec<f64>` for cache-friendly iteration during the domination sweep.
+
+```rust
+/// Single-stage visited-states buffer.
+///
+/// Stores forward-pass trial points as a flat contiguous `Vec<f64>`.
+/// Entry `i * state_dimension .. (i + 1) * state_dimension` holds state `i`.
+pub struct StageStates {
+    data: Vec<f64>,
+    count: usize,
+    state_dimension: usize,
+}
+
+/// Multi-stage archive of visited forward-pass states.
+///
+/// One `StageStates` per stage.
+pub struct VisitedStatesArchive {
+    stages: Vec<StageStates>,
+}
+```
+
+**Key methods:**
+
+| Method                                                  | Description                                                               |
+| ------------------------------------------------------- | ------------------------------------------------------------------------- |
+| `new(num_stages, state_dim, max_iterations, total_fwd)` | Pre-allocates each stage buffer for `max_iterations * total_fwd` states   |
+| `archive_gathered_states(stage, gathered, total_fwd)`   | Appends one iteration's gathered states into the specified stage's buffer |
+| `states_for_stage(stage) -> &[f64]`                     | Returns the flat slice of all accumulated states for `select_for_stage`   |
+| `count(stage) -> usize`                                 | Returns the number of states accumulated at a given stage                 |
+
+**Allocation policy:** The archive is **always** allocated at training start, regardless of which cut selection strategy is active (or whether cut selection is enabled at all). This ensures forward-pass trial points are recorded for export and post-hoc analysis. The `Dominated` variant reads from this archive at pruning time; `Level1` and `Lml1` ignore it (they pass `&[]` as `visited_states`).
+
+**Archival timing:** States are archived in the backward pass, after the per-stage `allgatherv` exchange produces the gathered state buffer for each stage $t$. The call `archive.archive_gathered_states(t, gathered, total_fwd)` appends `total_fwd` state vectors (each of length `state_dimension`) from the exchange buffer into the stage's flat storage.
+
+**Lifecycle:** The archive is returned in `TrainingResult.visited_archive` at training completion. The caller decides whether to persist it to the policy checkpoint directory (as `states/stage_NNN.bin` FlatBuffers files) based on configuration. See [Binary Formats SS3.1](../data-model/binary-formats.md) for the persistence schema.
+
+#### 6.4.2 Dominated Cut Detection Algorithm
+
+The `select_dominated` function is the core algorithm for the `Dominated` variant. It is a **stateless** function that uses a local `is_candidate` boolean vector -- it does **not** read or write `CutMetadata.domination_count`. The `domination_count` field is updated only by `update_activity` (SS2.3) when a cut is found binding during the backward pass; it is not used by the selection algorithm itself.
+
+**Algorithm (`select_dominated`):**
+
+```
+Input:
+  pool: &CutPool          -- per-stage cut pool (coefficients, intercepts, metadata, active bitmap)
+  visited_states: &[f64]  -- flat slice of accumulated state vectors (row-major)
+  threshold: f64          -- near-binding tolerance epsilon
+  current_iteration: u64  -- current training iteration
+
+Output: Vec<u32>          -- slot indices of cuts to deactivate
+
+1. Early exit if visited_states is empty, state_dimension == 0, or active_count < 2
+2. Initialize is_candidate[k] = active[k] && iteration_generated[k] < current_iteration
+   (active cuts not from the current iteration are candidates for deactivation)
+3. For each visited state x_hat in visited_states (chunked by state_dimension):
+   a. Compute val_k = intercept_k + coefficients_k . x_hat for ALL active cuts
+   b. Find max_val = max over all active cuts of val_k
+   c. Compute cutoff = max_val - threshold
+   d. For each candidate k: if val_k >= cutoff, mark is_candidate[k] = false
+      (this cut is NOT dominated at this state -- it achieves near-max value)
+   e. If no candidates remain, break early
+4. Return all indices k where is_candidate[k] is still true
+   (these cuts are dominated at ALL visited states)
+```
+
+**Complexity:** $\mathcal{O}(\lvert\text{active cuts}\rvert \times \lvert\text{visited states}\rvert \times \text{state\_dimension})$ per stage per check. The inner loop computes a dot product of length `state_dimension` for each (cut, state) pair.
+
+**Early termination:** The algorithm breaks out of the state loop as soon as no candidates remain, which can significantly reduce cost when most cuts are not dominated (the common case).
+
+#### 6.4.3 Production-Scale Cost
 
 At production scale (15,000 cut capacity, 192 forward passes, 50 iterations between checks), the visited state set at the first check contains $192 \times 10 = 1{,}920$ states, and the active cut count is approximately $192 \times 10 = 1{,}920$. The domination check cost is $1{,}920 \times 1{,}920 \approx 3.7\text{M}$ cut evaluations per stage, each requiring a dot product of dimension `state_dimension` (2,080 at production scale). This is significant -- approximately $3.7\text{M} \times 2{,}080 \approx 7.7\text{G}$ floating-point operations per stage per check -- which is why `check_frequency` amortizes the cost across multiple iterations.
+
+#### 6.4.4 Stage 0 Exemption and Parallel Execution
+
+**Stage 0 exemption:** Stage 0 is exempt from cut selection. Its cuts are never the "successor" in the backward pass (there is no stage $-1$ to generate cuts for stage 0's FCF), so their binding activity metadata is never updated by `update_activity`. Deactivating them based on stale metadata would weaken the lower bound approximation. The training loop skips stage 0 and processes only stages $1 \ldots T-1$.
+
+**Parallel execution:** The training loop distributes the eligible stages ($1 \ldots T-1$) across threads within each rank using Rayon's `into_par_iter()`. Each thread calls `select_for_stage(pool, states, iteration, stage_index)` on its assigned stages independently. The selection calls are embarrassingly parallel -- each reads only the stage's own cut pool metadata and visited states (both read-only at this point), and produces an independent `DeactivationSet`. After the parallel phase, deactivations are applied sequentially because `deactivate` requires `&mut` access to the cut pool.
 
 ## 7. Convergence Guarantee
 

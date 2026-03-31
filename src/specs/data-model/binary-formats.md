@@ -113,11 +113,11 @@ The solver needs the full constraint matrix loaded, including all active cut row
 
 Four architectural options were evaluated:
 
-| Option | Strategy                                                 | Memory per rank (16 threads)      | Feasibility                                               |
-| ------ | -------------------------------------------------------- | --------------------------------- | --------------------------------------------------------- |
-| **A**  | One solver per thread, full rebuild per stage transition | ~4 GB solvers + 14.3 GB shared cuts | Feasible, highest rebuild cost                          |
-| **B**  | One solver per (thread, stage), persistent               | 16 x 60 x 255 MB ~ 245 GB         | **Infeasible**                                            |
-| **C**  | Master LP per stage + per-thread clone/patch             | ~15.3 GB masters + 4 GB workers   | Feasible, depends on clone efficiency                     |
+| Option | Strategy                                                 | Memory per rank (16 threads)        | Feasibility                                               |
+| ------ | -------------------------------------------------------- | ----------------------------------- | --------------------------------------------------------- |
+| **A**  | One solver per thread, full rebuild per stage transition | ~4 GB solvers + 14.3 GB shared cuts | Feasible, highest rebuild cost                            |
+| **B**  | One solver per (thread, stage), persistent               | 16 x 60 x 255 MB ~ 245 GB           | **Infeasible**                                            |
+| **C**  | Master LP per stage + per-thread clone/patch             | ~15.3 GB masters + 4 GB workers     | Feasible, depends on clone efficiency                     |
 | **D**  | Per-thread solver, incremental modify across stages      | ~4 GB solvers + 14.3 GB shared cuts | Limited benefit due to inter-stage structural differences |
 
 > **Note (LP construction strategy):** StageLpCache is the adopted baseline for parallel forward pass LP construction — see [DEC-001](../overview/decision-log.md#dec-001) and [Solver Abstraction SS11.4](../architecture/solver-abstraction.md). Cut coefficients are pre-assembled into a per-stage CSC via SharedRegion; the cut pool retains metadata only. The `addRows` CSR path is used only during StageLpCache assembly between iterations by the leader rank, not on the hot-path stage transition.
@@ -179,21 +179,18 @@ table StageCuts {
     populated_count: uint32;
 }
 
-// Visited state for cut selection
-table VisitedState {
-    state_id: uint64;
-    iteration: uint32;
-    forward_pass_idx: uint32;
-    scenario_idx: uint32;
-    components: [double];        // Length = state_dimension
-    dominating_cut_id: uint64;
-    dominating_objective: double;
-}
-
-table StageStates {
+// Visited states for cut selection and analysis export.
+//
+// The flat data layout mirrors the in-memory VisitedStatesArchive:
+// a single contiguous [double] buffer containing all state vectors
+// for one stage, with count and state_dimension to index into it.
+// This avoids per-state-record overhead and enables zero-copy access
+// to the coefficient data during policy loading.
+table StageStatesPayload {
     stage_id: uint32;
-    state_dimension: uint32;
-    states: [VisitedState];
+    state_dimension: uint32;     // Length of each state vector
+    count: uint32;               // Number of states stored
+    data: [double];              // Flat buffer: count * state_dimension elements
 }
 
 // Vertex for inner approximation (upper bound / SIDP)
@@ -250,6 +247,9 @@ table PolicyMetadata {
     num_stages: uint32;
     config_hash: string;
     system_hash: string;
+    total_visited_states: uint64 = 0; // Sum of state counts across all stages
+                                      // (default 0 for backward compat with
+                                      // checkpoints written before this field)
 }
 
 root_type StageCuts;
@@ -260,13 +260,16 @@ root_type StageCuts;
 ```
 policy/
 ├── metadata.json               # Human-readable (JSON for editability)
+│                               # Includes total_visited_states field (default 0
+│                               # for backward compat with older checkpoints)
 ├── state_dictionary.json       # State variable mapping
 ├── cuts/
 │   ├── stage_000.bin          # FlatBuffers StageCuts
 │   ├── stage_001.bin
 │   └── ...
 ├── states/
-│   ├── stage_000.bin          # FlatBuffers StageStates
+│   ├── stage_000.bin          # FlatBuffers StageStatesPayload (flat data layout)
+│   ├── stage_001.bin
 │   └── ...
 ├── vertices/                   # Only if inner approximation enabled
 │   ├── stage_000.bin          # FlatBuffers StageVertices

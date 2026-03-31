@@ -84,11 +84,26 @@ Test cases reference the method contracts from [Cut Selection Strategy Trait SS2
 
 ### SS1.5 update_activity Conformance
 
-| Test Name                                            | Input Scenario                                                             | Expected Observable Behavior                                                                                                   | Variant   |
-| ---------------------------------------------------- | -------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ | --------- |
-| `test_cutselection_level1_update_activity_increment` | CutMetadata with active_count=3. Call update_activity at iteration 15.     | metadata.active_count becomes 4. The counter is incremented by 1 regardless of iteration number.                               | Level1    |
-| `test_cutselection_lml1_update_activity_timestamp`   | CutMetadata with last_active_iter=8. Call update_activity at iteration 15. | metadata.last_active_iter becomes 15. The timestamp is set to the current iteration, replacing the old value.                  | LML1      |
-| `test_cutselection_dominated_update_activity_reset`  | CutMetadata with domination_count=7. Call update_activity at iteration 15. | metadata.domination_count becomes 0. The binding event resets the domination counter (the cut is not dominated at this state). | Dominated |
+The `update_activity` method accepts an `is_binding: bool` parameter. When `is_binding` is `false`, metadata must remain unchanged regardless of variant.
+
+| Test Name                                                 | Input Scenario                                                                               | Expected Observable Behavior                                                                                                   | Variant   |
+| --------------------------------------------------------- | -------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ | --------- |
+| `test_cutselection_level1_update_activity_increment`      | CutMetadata with active_count=3. Call update_activity(is_binding=true) at iteration 15.      | metadata.active_count becomes 4. The counter is incremented by 1 regardless of iteration number.                               | Level1    |
+| `test_cutselection_lml1_update_activity_timestamp`        | CutMetadata with last_active_iter=8. Call update_activity(is_binding=true) at iteration 15.  | metadata.last_active_iter becomes 15. The timestamp is set to the current iteration, replacing the old value.                  | LML1      |
+| `test_cutselection_dominated_update_activity_reset`       | CutMetadata with domination_count=7. Call update_activity(is_binding=true) at iteration 15.  | metadata.domination_count becomes 0. The binding event resets the domination counter (the cut is not dominated at this state). | Dominated |
+| `test_cutselection_level1_update_activity_not_binding`    | CutMetadata with active_count=3. Call update_activity(is_binding=false) at iteration 15.     | metadata.active_count remains 3. When is_binding is false, no field is modified.                                               | Level1    |
+| `test_cutselection_lml1_update_activity_not_binding`      | CutMetadata with last_active_iter=8. Call update_activity(is_binding=false) at iteration 15. | metadata.last_active_iter remains 8. The non-binding call is a no-op.                                                          | LML1      |
+| `test_cutselection_dominated_update_activity_not_binding` | CutMetadata with domination_count=7. Call update_activity(is_binding=false) at iteration 15. | metadata.domination_count remains 7. The non-binding call does not reset the counter.                                          | Dominated |
+
+### SS1.6 select_for_stage Conformance
+
+The `select_for_stage` method accepts a `stage_index: u32` parameter that is propagated into the returned `DeactivationSet.stage_index` field.
+
+| Test Name                                                       | Input Scenario                                                                                                                      | Expected Observable Behavior                                                                                                | Variant   |
+| --------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- | --------- |
+| `test_cutselection_level1_select_for_stage_propagates_index`    | Shared fixture, iteration=20, threshold=0. Call select_for_stage with stage_index=5.                                                | Returned DeactivationSet has stage_index=5 and indices={1, 4}. The stage_index is passed through without modification.      | Level1    |
+| `test_cutselection_dominated_select_for_stage_propagates_index` | Shared fixture, iteration=20, threshold=0. Call select_for_stage with stage_index=3 and the visited states from the shared fixture. | Returned DeactivationSet has stage_index=3 and indices={0, 3, 4}. The stage_index is independent of the deactivation logic. | Dominated |
+| `test_cutselection_select_delegates_to_select_for_stage`        | Shared fixture, iteration=20, threshold=0 (Level1). Call both select() and select_for_stage(stage_index=0). Compare results.        | Both calls return identical indices. The select() convenience method delegates to select_for_stage with stage_index=0.      | Level1    |
 
 ## SS2. Aggressiveness Ordering Tests
 

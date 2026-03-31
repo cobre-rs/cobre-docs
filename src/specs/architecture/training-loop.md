@@ -35,9 +35,9 @@ Each iteration follows a fixed sequence:
 
 1. **Forward pass** — Execute $M$ scenario trajectories (SS4)
 2. **Forward synchronization** — `allreduce` ([Communicator Trait SS2.2](../hpc/communicator-trait.md)) aggregates upper bound statistics across ranks
-3. **Backward pass** — Generate cuts from visited states (SS6)
+3. **Backward pass** — Generate cuts from visited states (SS6). After each per-stage state exchange, archive gathered states into the `VisitedStatesArchive` (see SS6.4a).
 4. **Cut synchronization** — `allgatherv` ([Communicator Trait SS2.1](../hpc/communicator-trait.md)) distributes new cuts to all ranks
-   4a. **Cut selection** (conditional: `should_run(iteration)`) — Distribute stages across ranks, each rank runs `select` on assigned stages in parallel, `allgatherv` gathers DeactivationSets, leader applies deactivations to StageLpCache, `fence()` + barrier (see [Cut Selection Strategy Trait SS2.2a](./cut-selection-trait.md) and [Cut Management Implementation SS7.1a-SS7.1b](./cut-management-impl.md))
+   4a. **Cut selection** (conditional: `should_run(iteration)`) — Stage 0 is exempt (see SS6.4a); stages $1 \ldots T-1$ distributed across threads via `into_par_iter()`, each thread calls `select_for_stage` on its assigned stages, deactivations applied sequentially (see [Cut Selection Strategy Trait SS2.2a](./cut-selection-trait.md) and [Cut Selection Strategy Trait SS6.4.4](./cut-selection-trait.md))
    4b. **Lower bound evaluation** — Rank 0 iterates all stage-0 openings, solves the LP for each with the current FCF cuts, aggregates per-opening objectives via the stage-0 risk measure, and broadcasts the scalar LB to all ranks via `comm.broadcast()` (see [Convergence Monitoring SS3.2](./convergence-monitoring.md))
 5. **Convergence update** — Update bound estimates, evaluate stopping rules (see [Convergence Monitoring](./convergence-monitoring.md))
 6. **Checkpoint** — If the checkpoint interval has elapsed, persist current FCF and iteration state (see [Checkpointing](../hpc/checkpointing.md))
@@ -838,21 +838,40 @@ See [Solver Abstraction SS11.2–SS11.4](./solver-abstraction.md) and [Solver Wo
 
 > **Decision [DEC-016](../overview/decision-log.md#dec-016) (active):** Cut selection uses deferred parallel execution — stages distributed across ranks and threads, with DeactivationSet allgatherv and leader-only SharedRegion write.
 
+#### VisitedStatesArchive Allocation
+
+The `VisitedStatesArchive` is **always** allocated at training start, regardless of which cut selection strategy is active or whether cut selection is enabled at all. Pre-allocation uses `max_iterations * total_forward_passes` as the capacity per stage, so no heap allocation occurs during the training loop. The archive records all forward-pass trial points for two purposes:
+
+1. **Dominated cut selection** — The `Dominated` variant reads `archive.states_for_stage(t)` during the selection phase.
+2. **Export and analysis** — The archive is returned in `TrainingResult.visited_archive` at training completion, and the caller may persist it to the policy checkpoint directory as `states/stage_NNN.bin` FlatBuffers files (see [Binary Formats SS3.1](../data-model/binary-formats.md)).
+
+#### State Archival in Backward Pass
+
+States are archived during the backward pass, after each per-stage `allgatherv` exchange produces the gathered state buffer. For each stage $t$ (iterated in reverse order), the call `archive.archive_gathered_states(t, gathered, total_fwd)` appends the gathered states into the stage's flat storage. This happens before cut generation at stage $t$, so the archive grows incrementally as the backward pass sweeps from stage $T-1$ down to stage $0$.
+
+#### Cut Selection Execution
+
 After the backward pass completes and new cuts have been synchronized (step 4 in SS2.1), the training loop conditionally executes the cut selection phase (step 4a). This step only runs when `should_run(iteration)` returns `true` ([Cut Selection Strategy Trait SS2.1](./cut-selection-trait.md)) — i.e., at multiples of `check_frequency`. On non-selection iterations, the loop proceeds directly to convergence update.
+
+**Stage 0 exemption.** Stage 0 is exempt from cut selection. Its cuts are never the "successor" in the backward pass, so their binding activity metadata is never updated by `update_activity`. Deactivating them based on stale metadata would weaken the lower bound approximation. The training loop emits a no-op `StageSelectionRecord` for stage 0 (cuts_deactivated=0) and only processes stages $1 \ldots T-1$.
 
 **Execution sequence:**
 
 1. **Check** — Evaluate `strategy.should_run(iteration)`. If `false`, skip to step 5 (convergence update).
-2. **Distribute** — Partition stages $\{2, \ldots, T\}$ across ranks using the contiguous block formula from [Cut Selection Strategy Trait SS2.2a](./cut-selection-trait.md).
-3. **Select** — Each rank runs `select` on its assigned stages in parallel (Rayon work-stealing). Each `select` call produces a `DeactivationSet` for one stage.
-4. **Gather** — `allgatherv` collects all per-stage `DeactivationSet` payloads so every rank has the complete deactivation picture. Wire format: [Synchronization §1.4a](../hpc/synchronization.md).
-5. **Apply** — The leader rank applies all deactivations to the SharedRegion StageLpCache by setting deactivated cut row bounds to $-\infty$ ([Cut Management Implementation SS7.1b](./cut-management-impl.md)).
-6. **Synchronize** — `region.fence()` ensures writes are visible; MPI barrier ensures all ranks see the updated StageLpCache before the next forward pass.
-7. **Emit event** — `CutSelectionComplete` event with total deactivations, stage count, and timing breakdown.
+2. **Exempt stage 0** — Record a no-op selection record for stage 0 (active count unchanged).
+3. **Parallel select** — Stages $1 \ldots T-1$ are distributed across threads via Rayon `into_par_iter()`. Each thread calls `strategy.select_for_stage(pool, states, iteration, stage_index)` on its assigned stages. The archive provides visited states: `archive.states_for_stage(stage)` for the `Dominated` variant, or `&[]` for `Level1`/`Lml1`.
+4. **Sequential apply** — The `DeactivationSet` results are collected and applied sequentially because `pool.deactivate(&indices)` requires `&mut` access to the cut pool.
+5. **Emit event** — `CutSelectionComplete` event with total deactivations, per-stage records, and timing breakdown.
+
+**Multi-rank variant.** In the multi-rank case (SS2.2a), stages are partitioned across ranks before the within-rank Rayon parallelism. After all ranks complete, `allgatherv` gathers per-stage `DeactivationSet` payloads. The leader rank applies deactivations to the SharedRegion StageLpCache, followed by `fence()` + barrier. Wire format: [Synchronization §1.4a](../hpc/synchronization.md).
+
+**Single-rank variant.** When `comm.size() == 1`, no `allgatherv` is needed. The sequence simplifies to: parallel `select_for_stage` all stages → sequential apply deactivations → `fence()`.
 
 **Interaction with StageLpCache update (SS6.4).** The StageLpCache update consists of two logically independent writes: new cut insertion and cut deactivation. New cut insertion runs on every iteration (leader writes coefficients and intercepts for cuts generated in the backward pass). Cut deactivation runs only on selection iterations and uses the `DeactivationSet` from the parallel selection phase. Both writes are performed by the leader rank before the `fence()` + barrier.
 
-**Single-rank variant.** When `comm.size() == 1`, the `allgatherv` for DeactivationSets degenerates to a local copy (all stages are assigned to the single rank). The leader is rank 0, which is the only rank. The sequence simplifies to: `select` all stages → apply deactivations → `fence()` (no MPI barrier needed).
+#### TrainingResult
+
+The `TrainingResult` struct includes a `visited_archive: Option<VisitedStatesArchive>` field that is always `Some` when training completes (or when training terminates early due to error -- the archive is moved out via `take()`). The caller uses this to persist visited states to the policy checkpoint when the `exports.states` configuration flag is set.
 
 ## 7. Dual Extraction for Cut Coefficients
 
