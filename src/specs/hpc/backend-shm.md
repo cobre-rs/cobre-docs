@@ -1,5 +1,7 @@
 # Shared Memory Backend
 
+> **Status: Not Implemented.** This specification describes planned behavior for a future backend. No implementation exists in the current codebase.
+
 ## Purpose
 
 The shared memory (shm) backend enables multi-process SDDP execution on a single node using POSIX shared memory primitives (`shm_open`/`mmap`), without requiring an MPI runtime. It wraps OS-level shared memory behind the `Communicator` and `SharedMemoryProvider` traits defined in [Communicator Trait §1](./communicator-trait.md) and [Communicator Trait §4](./communicator-trait.md), providing both collective communication (via shared buffers with atomic synchronization) and true shared memory regions (via POSIX shm) for the `SharedMemoryProvider` trait. Unlike the local and TCP backends, which use `HeapFallback` for `SharedMemoryProvider` ([Communicator Trait §4.4](./communicator-trait.md)), the shm backend provides genuine inter-process shared memory -- enabling the memory-saving benefits of `SharedWindow<T>` semantics (scenario storage, cut pool sharing, input case data) described in [Shared Memory Aggregation §1](./shared-memory-aggregation.md). The backend is gated behind the `shm` Cargo feature flag as specified in [Backend Registration and Selection §1.2](./backend-selection.md), and targets single-node deployments where multiple processes exploit NUMA locality but MPI installation is unavailable -- most notably Python multi-process execution on workstations and single-node containers.

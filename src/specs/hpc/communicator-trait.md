@@ -82,15 +82,19 @@ pub trait Communicator: Send + Sync {
 /// Marker trait for types that can be transmitted through collective operations.
 ///
 /// Requires `Send + Sync` (safe to share across threads and processes),
-/// `Copy` (bitwise copyable -- no heap indirection), and `'static`
-/// (no borrowed data).
-pub trait CommData: Send + Sync + Copy + 'static {}
+/// `Copy` (bitwise copyable -- no heap indirection), `Default`
+/// (zero-initializable -- required by `SharedMemoryProvider::create_shared_region`
+/// to produce zero-filled regions via `vec![T::default(); count]` without
+/// unsafe code), and `'static` (no borrowed data).
+pub trait CommData: Send + Sync + Copy + Default + 'static {}
 
 /// Blanket implementation: any type satisfying the bounds is CommData.
-impl<T: Send + Sync + Copy + 'static> CommData for T {}
+impl<T: Send + Sync + Copy + Default + 'static> CommData for T {}
 ```
 
-The blanket implementation ensures that all `Copy + Send + Sync + 'static` types automatically satisfy `CommData`, covering all payload types in [Communication Patterns §2](./communication-patterns.md) without explicit trait implementations.
+The `Default` bound was added because `SharedMemoryProvider::create_shared_region` produces zero-filled regions via `vec![T::default(); count]`. Without `Default`, the region allocation would require `unsafe` code (e.g., `MaybeUninit`) or an additional initialization step. All seven MPI-transmissible primitive types (`f32`, `f64`, `i32`, `i64`, `u8`, `u32`, `u64`) implement `Default` with a zero value, so this bound has no practical narrowing effect on the type set.
+
+The blanket implementation ensures that all `Copy + Send + Sync + Default + 'static` types automatically satisfy `CommData`, covering all payload types in [Communication Patterns §2](./communication-patterns.md) without explicit trait implementations.
 
 ### 1.3 Reduction Operations
 
@@ -112,7 +116,7 @@ pub enum ReduceOp {
 }
 ```
 
-The `Sum` and `Min` variants correspond directly to the two reduction operations required by [Communication Patterns §2.3](./communication-patterns.md): `MPI_SUM` for upper bound statistics and `MPI_MIN` for the lower bound. Because ferrompi may not support mixed reduction operations in a single `allreduce` call, the SDDP training loop issues two separate `allreduce` calls -- one with `ReduceOp::Min` for the lower bound scalar and one with `ReduceOp::Sum` for the remaining three scalars.
+The `Sum` and `Min` variants map to `MPI_SUM` and `MPI_MIN` respectively. During SDDP training, the convergence statistics (upper bound) use `allgatherv` of the full per-scenario cost vector followed by canonical-order local summation (see [Communication Patterns §2.3](./communication-patterns.md)), while the lower bound uses `broadcast` from rank 0. `allreduce` with `ReduceOp::Sum` and `ReduceOp::Min` is used in simulation mode for global min/max cost aggregation. `ReduceOp::Max` is reserved for future diagnostics (e.g., maximum per-rank solve time for load balance analysis).
 
 ### 1.4 Error Type
 
@@ -181,7 +185,7 @@ pub enum CommError {
 
 ### 2.2 allreduce
 
-`allreduce` aggregates convergence statistics after each forward pass. The payload is minimal (32 bytes -- four `f64` scalars) but the operation is on the critical path for convergence checking.
+`allreduce` performs element-wise reductions across all ranks. During SDDP training, the post-forward convergence statistics use `allgatherv` (not `allreduce`) for deterministic canonical-order summation. `allreduce` is used in simulation mode for global min/max cost aggregation and for any future scalar reduction needs. The payload is typically minimal (1--4 `f64` scalars).
 
 **Preconditions:**
 
@@ -199,10 +203,13 @@ pub enum CommError {
 
 **Reduction operations:**
 
-- `ReduceOp::Sum` -- Used for upper bound statistics (total cost sum, sum of squares, trajectory count). The result is the element-wise sum across all ranks.
-- `ReduceOp::Min` -- Used for lower bound aggregation (minimum first-stage LP objective). The result is the element-wise minimum across all ranks.
+- `ReduceOp::Sum` -- Element-wise summation across all ranks. Used in simulation mode for global cost aggregation.
+- `ReduceOp::Min` -- Element-wise minimum across all ranks. Used in simulation mode for global minimum cost.
+- `ReduceOp::Max` -- Element-wise maximum across all ranks. Used in simulation mode for global maximum cost.
 
-**Floating-point non-determinism:** `allreduce` with `ReduceOp::Sum` may produce results that vary across runs with different rank counts or MPI implementations, because floating-point addition is non-associative and the reduction tree shape is implementation-defined. This is acceptable per [Communication Patterns §6.2](./communication-patterns.md) -- the upper bound is already a statistical estimate and small floating-point variations do not affect convergence. `ReduceOp::Min` is exact (comparison-based, no arithmetic).
+> **Note on SDDP training.** During SDDP training, the upper bound (UB) statistics use `allgatherv` of the full per-scenario cost vector followed by canonical-order local summation (see [Communication Patterns §2.3](./communication-patterns.md)), not `allreduce`. The lower bound (LB) uses `broadcast` from rank 0. This design eliminates floating-point non-associativity as a source of non-determinism.
+
+**Floating-point non-determinism:** `allreduce` with `ReduceOp::Sum` may produce results that vary across runs with different rank counts or MPI implementations, because floating-point addition is non-associative and the reduction tree shape is implementation-defined. For simulation-mode aggregation, this variance is acceptable. `ReduceOp::Min` and `ReduceOp::Max` are exact (comparison-based, no arithmetic). See [Communication Patterns §6.2](./communication-patterns.md).
 
 **Error semantics:** Returns `CommError::InvalidBufferSize` if `send.len() != recv.len()`. Returns `CommError::CollectiveFailed` if the underlying MPI operation fails. On error, the contents of `recv` are unspecified.
 
@@ -210,7 +217,7 @@ pub enum CommError {
 
 ### 2.3 broadcast
 
-`broadcast` distributes data from a designated root rank to all other ranks. It is used only during initialization (configuration data, case data) and is not on the per-iteration hot path.
+`broadcast` distributes data from a designated root rank to all other ranks. It is used during initialization (configuration data, case data) and once per training iteration to distribute the lower bound from rank 0 to all ranks after the backward pass (see [Communication Patterns §2.3](./communication-patterns.md)).
 
 **Preconditions:**
 
@@ -370,15 +377,18 @@ pub trait SharedMemoryProvider: Send + Sync {
     /// work within a node). This corresponds to `comm.split_shared()`
     /// in the ferrompi API ([Hybrid Parallelism §6 Step 3]).
     ///
-    /// The returned communicator uses dynamic dispatch (`Box<dyn Communicator>`)
+    /// The returned communicator uses dynamic dispatch (`Box<dyn LocalCommunicator>`)
     /// because this is an initialization-only operation -- the local
-    /// communicator is used for setup coordination, not hot-path collectives.
+    /// communicator is used for setup coordination (rank/size queries and
+    /// barrier), not hot-path generic collectives. `LocalCommunicator` is
+    /// an object-safe sub-trait exposing only `rank()`, `size()`, and
+    /// `barrier()`.
     ///
     /// # Errors
     ///
     /// Returns `CommError::CollectiveFailed` if the underlying split operation
     /// fails (e.g., MPI communicator split failure).
-    fn split_local(&self) -> Result<Box<dyn Communicator>, CommError>;
+    fn split_local(&self) -> Result<Box<dyn LocalCommunicator>, CommError>;
 
     /// Return whether the calling rank is the leader for shared memory
     /// operations on its node.

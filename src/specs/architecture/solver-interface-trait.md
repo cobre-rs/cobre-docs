@@ -72,29 +72,37 @@ pub trait SolverInterface: Send {
     /// access via `Clp_colLower()`/`Clp_colUpper()` (CLP).
     fn set_col_bounds(&mut self, indices: &[usize], lower: &[f64], upper: &[f64]);
 
-    /// Solve the loaded LP.
+    /// Solve the loaded LP, returning a zero-copy view or terminal error.
     ///
-    /// Applies the solver's internal retry logic (see SS6) and returns
-    /// either a valid solution with normalized duals (see SS7) or a
-    /// terminal error. The caller never sees intermediate retry attempts.
+    /// Hot-path method encapsulating internal retry logic (see SS6).
+    /// Returns either a valid solution view with normalized duals
+    /// (see SS7) or a terminal error. The caller never sees intermediate
+    /// retry attempts. The returned `SolutionView` borrows solver-internal
+    /// buffers and is valid until the next `&mut self` call. Call
+    /// `SolutionView::to_owned()` when the solution must outlive the borrow.
     ///
     /// Maps to `Highs_run` (HiGHS) or `Clp_dual`/`Clp_initialDualSolve`
     /// (CLP).
-    fn solve(&mut self) -> Result<LpSolution, SolverError>;
+    fn solve(&mut self) -> Result<SolutionView<'_>, SolverError>;
 
-    /// Set a basis for warm-starting, then solve.
+    /// Inject a basis and solve, returning a zero-copy `SolutionView`.
     ///
     /// Loads the provided basis into the solver before invoking the
-    /// solve sequence. The basis structure splits at the cut boundary:
-    /// static rows are reused directly, new dynamic constraint rows are initialized
-    /// as Basic per [Solver Abstraction SS2.3](./solver-abstraction.md).
+    /// solve sequence. Status codes in `basis` are injected directly
+    /// without per-element enum translation. The basis structure splits
+    /// at the cut boundary: static rows are reused directly, new dynamic
+    /// constraint rows are initialized as Basic per
+    /// [Solver Abstraction SS2.3](./solver-abstraction.md).
+    /// On success the returned view borrows solver-internal buffers and
+    /// is valid until the next `&mut self` call. Call
+    /// `SolutionView::to_owned()` when the solution must outlive the borrow.
     ///
     /// Maps to `Highs_setBasis` + `Highs_run` (HiGHS) or
     /// `Clp_copyinStatus` + `Clp_dual` (CLP).
     fn solve_with_basis(
         &mut self,
         basis: &Basis,
-    ) -> Result<LpSolution, SolverError>;
+    ) -> Result<SolutionView<'_>, SolverError>;
 
     /// Clear all internal solver state.
     ///
@@ -106,15 +114,18 @@ pub trait SolverInterface: Send {
     /// (CLP).
     fn reset(&mut self);
 
-    /// Extract the current simplex basis.
+    /// Write solver-native i32 status codes into a caller-owned Basis buffer.
     ///
-    /// Returns the basis from the most recent successful solve.
-    /// The basis contains one status value per column and one per row,
-    /// stored in the original problem space (not presolved) per
+    /// The caller pre-allocates a `Basis` with `Basis::new` and reuses it
+    /// across iterations, eliminating per-element enum translation overhead.
+    /// The buffer is not resized by this method. The implementation writes
+    /// into the first `num_cols` entries of `out.col_status` and the first
+    /// `num_rows` entries of `out.row_status`. Panics if no model is loaded.
+    /// Stored in the original problem space (not presolved) per
     /// [Solver Abstraction SS9](./solver-abstraction.md).
     ///
     /// Maps to `Highs_getBasis` (HiGHS) or `Clp_statusArray` (CLP).
-    fn get_basis(&mut self) -> Basis;
+    fn get_basis(&mut self, out: &mut Basis);
 
     /// Return accumulated solve metrics.
     ///
@@ -134,7 +145,7 @@ pub trait SolverInterface: Send {
 
 **Thread safety model:** The `Send` bound allows solver instances to be transferred between threads (e.g., during thread pool initialization), but the absence of `Sync` prevents concurrent access. This matches the reality of C-library solver handles, which maintain mutable internal state (factorization workspace, working arrays) that is not safe to share. The thread-local workspace pattern in [Solver Workspaces SS1.1](./solver-workspaces.md) ensures each OpenMP thread owns exactly one solver instance for the entire training run.
 
-**Mutability:** All methods that modify solver state or write to internal buffers (`load_model`, `add_rows`, `set_row_bounds`, `set_col_bounds`, `solve`, `solve_with_basis`, `reset`, `get_basis`) take `&mut self`. `get_basis` requires `&mut self` because it writes to pre-allocated scratch buffers during extraction. Read-only accessors (`statistics`, `name`) take `&self`.
+**Mutability:** All methods that modify solver state or write to internal buffers (`load_model`, `add_rows`, `set_row_bounds`, `set_col_bounds`, `solve`, `solve_with_basis`, `reset`, `get_basis`) take `&mut self`. `get_basis` requires `&mut self` because it writes to internal scratch buffers during extraction; it also takes a `&mut Basis` output parameter so the caller can pre-allocate and reuse the buffer across iterations without per-solve allocation. Read-only accessors (`statistics`, `name`) take `&self`.
 
 ## 2. Method Contracts
 
@@ -257,14 +268,15 @@ pub trait SolverInterface: Send {
 
 **Postconditions (on `Ok`):**
 
-| Condition                                             | Description                                                                    |
-| ----------------------------------------------------- | ------------------------------------------------------------------------------ |
-| `LpSolution.objective` is the optimal objective value | Minimization sense                                                             |
-| `LpSolution.primal` contains optimal primal values    | Length equals `num_cols`                                                       |
-| `LpSolution.dual` contains normalized dual values     | Sign convention per [Solver Abstraction SS8](./solver-abstraction.md); see SS7 |
-| `LpSolution.dual.len() == num_rows`                   | One dual per constraint (structural + cuts)                                    |
-| Solver basis reflects the optimal solution            | Available via `get_basis()` after a successful solve                           |
-| `SolverStatistics` counters are incremented           | Solve count, iteration count, and timing updated                               |
+| Condition                                                  | Description                                                                    |
+| ---------------------------------------------------------- | ------------------------------------------------------------------------------ |
+| `SolutionView.objective` is the optimal objective value    | Minimization sense                                                             |
+| `SolutionView.primal` contains optimal primal values       | Length equals `num_cols`                                                       |
+| `SolutionView.dual` contains normalized dual values        | Sign convention per [Solver Abstraction SS8](./solver-abstraction.md); see SS7 |
+| `SolutionView.dual.len() == num_rows`                      | One dual per constraint (structural + cuts)                                    |
+| `SolutionView` borrows solver-internal buffers (zero-copy) | Valid until the next `&mut self` call; call `to_owned()` to persist            |
+| Solver basis reflects the optimal solution                 | Available via `get_basis()` after a successful solve                           |
+| `SolverStatistics` counters are incremented                | Solve count, iteration count, and timing updated                               |
 
 **Postconditions (on `Err`):**
 
@@ -274,7 +286,7 @@ pub trait SolverInterface: Send {
 | Solver state is unspecified                            | The caller should call `reset()` before reusing the solver |
 | `SolverStatistics.retry_count` reflects retry attempts | Retry attempts are tracked even on failure                 |
 
-**Fallibility:** This method returns `Result<LpSolution, SolverError>`. LP solves wrap FFI calls to C libraries that may encounter numerical difficulties, infeasibility, or other solver-internal failures that cannot be prevented by precondition checks.
+**Fallibility:** This method returns `Result<SolutionView<'_>, SolverError>`. LP solves wrap FFI calls to C libraries that may encounter numerical difficulties, infeasibility, or other solver-internal failures that cannot be prevented by precondition checks. `SolutionView` is a zero-copy borrow of solver-internal buffers; call `SolutionView::to_owned()` to convert to an owned `LpSolution` when the data must outlive the solver borrow.
 
 ### 2.5 solve_with_basis
 
@@ -290,10 +302,10 @@ pub trait SolverInterface: Send {
 
 **Postconditions (on `Ok`):**
 
-| Condition                                               | Description                                            |
-| ------------------------------------------------------- | ------------------------------------------------------ |
-| Same as `solve()` `Ok` postconditions                   | Valid solution with normalized duals                   |
-| Simplex iterations are typically reduced vs. cold start | Warm-start benefit is observable in `SolverStatistics` |
+| Condition                                               | Description                                                   |
+| ------------------------------------------------------- | ------------------------------------------------------------- |
+| Same as `solve()` `Ok` postconditions                   | Valid `SolutionView` with normalized duals (zero-copy borrow) |
+| Simplex iterations are typically reduced vs. cold start | Warm-start benefit is observable in `SolverStatistics`        |
 
 **Postconditions (on `Err`):**
 
@@ -302,7 +314,7 @@ pub trait SolverInterface: Send {
 | Same as `solve()` `Err` postconditions                  | Terminal error after retry exhaustion            |
 | Implementation may fall back to cold start during retry | Basis rejection is a valid retry escalation step |
 
-**Fallibility:** Same as `solve()` -- returns `Result<LpSolution, SolverError>`.
+**Fallibility:** Same as `solve()` -- returns `Result<SolutionView<'_>, SolverError>`.
 
 **Basis dimension mismatch handling:** If the provided basis dimensions do not match the current LP (e.g., because cuts were added since the basis was saved), the solver implementation must handle this gracefully. Per [Solver Abstraction SS2.3](./solver-abstraction.md), the static portion of the basis is position-stable; only the dynamic constraint portion needs extension (new dynamic constraint rows initialized as Basic) or truncation.
 
@@ -324,21 +336,22 @@ pub trait SolverInterface: Send {
 
 ### 2.7 get_basis
 
-`get_basis` extracts the current simplex basis from the solver. The basis is stored in the original problem space (not presolved) to ensure portability across solver versions and presolve strategies ([Solver Abstraction SS9](./solver-abstraction.md)).
+`get_basis` writes solver-native `i32` status codes into a caller-owned `Basis` buffer. The caller pre-allocates a `Basis` with `Basis::new` and reuses it across iterations, eliminating per-solve allocation and per-element enum translation overhead on the hot path. The basis is stored in the original problem space (not presolved) to ensure portability across solver versions and presolve strategies ([Solver Abstraction SS9](./solver-abstraction.md)).
 
 **Preconditions:**
 
-| Condition                                                | Description                                  |
-| -------------------------------------------------------- | -------------------------------------------- |
-| A successful `solve` or `solve_with_basis` has completed | A basis exists only after a successful solve |
+| Condition                                                | Description                                                               |
+| -------------------------------------------------------- | ------------------------------------------------------------------------- |
+| A successful `solve` or `solve_with_basis` has completed | A basis exists only after a successful solve                              |
+| `out` is a pre-allocated `Basis`                         | Created via `Basis::new(num_cols, num_rows)` and reused across iterations |
 
 **Postconditions:**
 
-| Condition                              | Description                                                                                             |
-| -------------------------------------- | ------------------------------------------------------------------------------------------------------- |
-| `Basis.col_status.len() == num_cols`   | One status per variable                                                                                 |
-| `Basis.row_status.len() == num_rows`   | One status per constraint (structural + cuts)                                                           |
-| Status values are in the canonical set | `AtLower`, `Basic`, `AtUpper`, `Free`, or `Fixed` per [Solver Abstraction SS9](./solver-abstraction.md) |
+| Condition                                                  | Description                                                                                             |
+| ---------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| `out.col_status[0..num_cols]` contains column status codes | Written in place; buffer is not resized                                                                 |
+| `out.row_status[0..num_rows]` contains row status codes    | Includes both structural and dynamic constraint rows                                                    |
+| Status values are in the canonical set                     | `AtLower`, `Basic`, `AtUpper`, `Free`, or `Fixed` per [Solver Abstraction SS9](./solver-abstraction.md) |
 
 **Infallibility:** This method does not return `Result`. After a successful solve, the basis always exists and can be extracted. Calling `get_basis` without a prior successful solve is a programming error (panic on violation).
 
@@ -381,9 +394,9 @@ The `SolverError` enum categorizes terminal LP solve failures. These are the err
 /// Terminal LP solve error returned after all retry attempts are exhausted.
 ///
 /// The calling algorithm uses the variant to determine its response:
-/// hard stop (`Infeasible`, `Unbounded`, `InternalError`) or terminate
-/// with a diagnostic error (`NumericalDifficulty`, `TimeLimitExceeded`,
-/// `IterationLimit`).
+/// hard stop (`Infeasible`, `Unbounded`, `NumericalDifficulty`,
+/// `InternalError`) or terminate with a diagnostic error
+/// (`TimeLimitExceeded`, `IterationLimit`).
 #[derive(Debug)]
 pub enum SolverError {
     /// The LP has no feasible solution.
@@ -400,8 +413,10 @@ pub enum SolverError {
 
     /// Solver encountered numerical difficulties that persisted through
     /// all retry attempts.
+    ///
+    /// The calling algorithm should log the error and perform a hard stop.
     NumericalDifficulty {
-        /// Description of the numerical issue.
+        /// Human-readable description of the numerical issue from the solver.
         message: String,
     },
 
@@ -437,35 +452,73 @@ pub enum SolverError {
 | --------------------- | :-------: | :--------: |
 | `Infeasible`          |    Yes    |     No     |
 | `Unbounded`           |    Yes    |     No     |
-| `NumericalDifficulty` |    No     |    Yes     |
+| `NumericalDifficulty` |    Yes    |     No     |
 | `TimeLimitExceeded`   |    No     |    Yes     |
 | `IterationLimit`      |    No     |    Yes     |
 | `InternalError`       |    Yes    |     No     |
 
 ## 4. Supporting Types
 
-### 4.1 LpSolution
+### 4.1 SolutionView and LpSolution
+
+`SolutionView<'a>` is the primary return type of `solve()` and `solve_with_basis()`. It borrows directly from solver-internal buffers (zero-copy), avoiding per-solve heap allocation on the hot path. The lifetime `'a` ties the view to the solver instance, enforced at compile time by the Rust borrow checker: the view is valid until the next `&mut self` call on the solver. Call `SolutionView::to_owned()` to convert to an owned `LpSolution` when the data must outlive the current borrow or survive a subsequent solver call.
 
 ```rust
-/// Complete solution from a successful LP solve.
+/// Zero-copy view of an LP solution, borrowing directly from
+/// solver-internal buffers.
+///
+/// Valid until the next mutating method call on the solver (any
+/// `&mut self` call). Use `to_owned()` to convert to an owned
+/// `LpSolution` when the solution data must outlive the current borrow.
 ///
 /// All values are in the original (unscaled) problem space. Dual values
 /// are normalized to the canonical sign convention per
 /// [Solver Abstraction SS8](./solver-abstraction.md) -- see SS7.
-pub struct LpSolution {
+#[derive(Debug, Clone, Copy)]
+pub struct SolutionView<'a> {
     /// Optimal objective value (minimization sense).
     pub objective: f64,
 
     /// Primal variable values, indexed by column.
     /// Length equals `num_cols`. State variables occupy the contiguous
     /// prefix `[0, n_state)` per [Solver Abstraction SS2.1](./solver-abstraction.md).
-    pub primal: Vec<f64>,
+    pub primal: &'a [f64],
 
     /// Dual multipliers (shadow prices), indexed by row.
     /// Length equals `num_rows` (structural + cuts). Cut-relevant
     /// constraint duals occupy the contiguous prefix `[0, n_dual_relevant)`
     /// per [Solver Abstraction SS2.2](./solver-abstraction.md).
     ///
+    /// Sign convention: normalized per SS7 before returning.
+    pub dual: &'a [f64],
+
+    /// Reduced costs, indexed by column.
+    /// Length equals `num_cols`.
+    pub reduced_costs: &'a [f64],
+
+    /// Number of simplex iterations performed for this solve.
+    pub iterations: u64,
+
+    /// Wall-clock solve time in seconds (excluding retry overhead).
+    pub solve_time_seconds: f64,
+}
+
+/// Complete owned solution from a successful LP solve.
+///
+/// Produced by `SolutionView::to_owned()`. All values are in the
+/// original (unscaled) problem space. Dual values are normalized to
+/// the canonical sign convention per
+/// [Solver Abstraction SS8](./solver-abstraction.md) -- see SS7.
+pub struct LpSolution {
+    /// Optimal objective value (minimization sense).
+    pub objective: f64,
+
+    /// Primal variable values, indexed by column.
+    /// Length equals `num_cols`.
+    pub primal: Vec<f64>,
+
+    /// Dual multipliers (shadow prices), indexed by row.
+    /// Length equals `num_rows` (structural + cuts).
     /// Sign convention: normalized per SS7 before returning.
     pub dual: Vec<f64>,
 
@@ -510,25 +563,72 @@ pub struct Basis {
 /// Accumulated solve metrics for a single solver instance.
 ///
 /// Counters grow monotonically from construction. Thread-local --
-/// aggregated across threads via reduction after training completes.
+/// each thread owns one solver instance and accumulates its own
+/// statistics. Aggregated across threads via reduction after training
+/// completes.
+///
+/// `reset()` does **not** zero statistics counters. They persist across
+/// model reloads for the lifetime of the solver instance.
 pub struct SolverStatistics {
     /// Total number of `solve` and `solve_with_basis` calls.
     pub solve_count: u64,
 
-    /// Number of solves that returned `Ok`.
+    /// Number of solves that returned `Ok` (optimal solution found).
     pub success_count: u64,
 
-    /// Number of solves that returned `Err`.
+    /// Number of solves that returned `Err` (terminal failure after retries).
     pub failure_count: u64,
 
-    /// Total simplex iterations across all solves.
+    /// Total simplex iterations summed across all solves.
     pub total_iterations: u64,
 
-    /// Total retry attempts across all solves.
+    /// Total retry attempts summed across all failed solves.
     pub retry_count: u64,
 
-    /// Cumulative wall-clock time spent in solver calls (seconds).
+    /// Cumulative wall-clock time spent in solver calls, in seconds.
     pub total_solve_time_seconds: f64,
+
+    /// Number of times `solve_with_basis` fell back to cold-start due to
+    /// basis rejection.
+    pub basis_rejections: u64,
+
+    /// Number of solves that returned optimal on the first attempt
+    /// (before any retry). Enables first-try rate computation:
+    /// `first_try_rate = first_try_successes / solve_count`.
+    /// The complement `success_count - first_try_successes` gives the
+    /// number of retried solves.
+    pub first_try_successes: u64,
+
+    /// Total number of `solve_with_basis` calls (basis offers).
+    /// Combined with `basis_rejections`, enables basis hit rate computation:
+    /// `basis_hit_rate = 1 - basis_rejections / basis_offered`.
+    pub basis_offered: u64,
+
+    /// Total number of `load_model` calls.
+    pub load_model_count: u64,
+
+    /// Total number of `add_rows` calls.
+    pub add_rows_count: u64,
+
+    /// Cumulative wall-clock time spent in `load_model` calls, in seconds.
+    pub total_load_model_time_seconds: f64,
+
+    /// Cumulative wall-clock time spent in `add_rows` calls, in seconds.
+    pub total_add_rows_time_seconds: f64,
+
+    /// Cumulative wall-clock time spent in `set_row_bounds` and
+    /// `set_col_bounds` calls, in seconds.
+    pub total_set_bounds_time_seconds: f64,
+
+    /// Cumulative wall-clock time spent in `set_basis` FFI calls, in seconds.
+    /// Accumulated by `solve_with_basis` around the basis installation step.
+    /// `solve()` (without basis) does not increment this counter.
+    pub total_basis_set_time_seconds: f64,
+
+    /// Per-level retry success histogram (12 levels, indexed 0..11).
+    /// `retry_level_histogram[k]` counts how many solves were recovered at
+    /// retry level `k`. The sum equals `success_count - first_try_successes`.
+    pub retry_level_histogram: [u64; 12],
 }
 ```
 
@@ -563,10 +663,11 @@ pub struct StageTemplate {
     /// Number of non-zero entries in the structural matrix.
     pub num_nz: usize,
 
-    /// CSC column start offsets. Length: `num_cols + 1`.
-    pub col_starts: Vec<usize>,
-    /// CSC row indices. Length: `num_nz`.
-    pub row_indices: Vec<usize>,
+    /// CSC column start offsets (`i32` for HiGHS FFI compatibility).
+    /// Length: `num_cols + 1`; `col_starts[num_cols] == num_nz`.
+    pub col_starts: Vec<i32>,
+    /// CSC row indices (`i32` for HiGHS FFI compatibility). Length: `num_nz`.
+    pub row_indices: Vec<i32>,
     /// CSC non-zero values. Length: `num_nz`.
     pub values: Vec<f64>,
 
@@ -589,13 +690,37 @@ pub struct StageTemplate {
     /// Equal to N * L per [Solver Abstraction SS2.1](./solver-abstraction.md)
     /// (storage + all lags except the oldest).
     pub n_transfer: usize,
-    /// Number of cut-relevant constraint rows (contiguous prefix of rows).
-    /// Equal to N + N*L + n_fpha + n_gvc per [Solver Abstraction SS2.2](./solver-abstraction.md).
+    /// Number of dual-relevant constraint rows (contiguous prefix of rows).
+    /// Currently equal to `n_state` (= `N + N*L` where `N` is the number
+    /// of hydros and `L` is the maximum PAR lag order). FPHA and generic
+    /// variable constraint rows are structural and not included in the
+    /// dual-relevant set. Cut coefficients are extracted from
+    /// `dual[0..n_dual_relevant]`.
     pub n_dual_relevant: usize,
     /// Number of operating hydros at this stage.
     pub n_hydro: usize,
     /// Maximum PAR order across all operating hydros at this stage.
+    /// Determines the uniform lag stride: all hydros store `max_par_order`
+    /// lag values regardless of their individual PAR order, enabling SIMD
+    /// vectorization with a single contiguous state stride.
     pub max_par_order: usize,
+
+    /// Per-column scaling factors for numerical conditioning.
+    /// When non-empty (length `num_cols`), the constraint matrix, objective
+    /// coefficients, and column bounds have been pre-scaled by these factors.
+    /// The calling algorithm is responsible for unscaling primal values after
+    /// each solve: `x_original[j] = col_scale[j] * x_scaled[j]`.
+    /// When empty, no column scaling has been applied and solver results are
+    /// used directly.
+    pub col_scale: Vec<f64>,
+    /// Per-row scaling factors for numerical conditioning.
+    /// When non-empty (length `num_rows`), the constraint matrix and row
+    /// bounds have been pre-scaled by these factors. The calling algorithm
+    /// is responsible for unscaling dual values after each solve:
+    /// `dual_original[i] = row_scale[i] * dual_scaled[i]`.
+    /// When empty, no row scaling has been applied and solver results are
+    /// used directly.
+    pub row_scale: Vec<f64>,
 }
 ```
 
@@ -614,10 +739,13 @@ pub struct RowBatch {
     /// Number of active cuts in this batch.
     pub num_rows: usize,
 
-    /// CSR row start offsets. Length: `num_rows + 1`.
-    pub row_starts: Vec<usize>,
-    /// CSR column indices. Length: total non-zeros across all cuts.
-    pub col_indices: Vec<usize>,
+    /// CSR row start offsets (`i32` for HiGHS FFI compatibility).
+    /// Length: `num_rows + 1`. `row_starts[num_rows]` equals the total
+    /// number of non-zeros.
+    pub row_starts: Vec<i32>,
+    /// CSR column indices (`i32` for HiGHS FFI compatibility).
+    /// Length: total non-zeros across all cuts.
+    pub col_indices: Vec<i32>,
     /// CSR non-zero values. Length: total non-zeros across all cuts.
     pub values: Vec<f64>,
 
@@ -683,7 +811,7 @@ For solver-specific retry escalation sequences, see [HiGHS Implementation](./sol
 
 ## 7. Dual Normalization Contract
 
-All dual multipliers in `LpSolution.dual` are **pre-normalized** to the canonical sign convention defined in [Solver Abstraction SS8](./solver-abstraction.md) before the solution is returned to the caller. Solver-specific sign differences are resolved within the `SolverInterface` implementation.
+All dual multipliers in `SolutionView.dual` (and consequently `LpSolution.dual` via `to_owned()`) are **pre-normalized** to the canonical sign convention defined in [Solver Abstraction SS8](./solver-abstraction.md) before the solution is returned to the caller. Solver-specific sign differences are resolved within the `SolverInterface` implementation.
 
 **Canonical convention:** A positive dual on a $\leq$ constraint means that increasing the RHS increases the objective ($\partial z^* / \partial b > 0$).
 
@@ -693,7 +821,7 @@ $$\beta_t^k = W_t^\top \pi_t^*$$
 
 A sign error in $\pi_t^*$ produces cuts that point in the wrong direction, leading to divergence of the outer approximation. By normalizing duals inside the solver implementation, the cut generation logic is solver-agnostic and provably correct regardless of which backend is active.
 
-**Implementation responsibility:** Each solver backend must know its native dual sign convention and apply the appropriate transformation. For example, if a solver reports duals with the opposite sign for $\geq$ constraints, the implementation negates those duals before populating `LpSolution.dual`. This transformation is applied once per solve, adding negligible overhead to the solution extraction step.
+**Implementation responsibility:** Each solver backend must know its native dual sign convention and apply the appropriate transformation. For example, if a solver reports duals with the opposite sign for $\geq$ constraints, the implementation negates those duals before populating `SolutionView.dual`. This transformation is applied once per solve, adding negligible overhead to the solution extraction step.
 
 ## Cross-References
 

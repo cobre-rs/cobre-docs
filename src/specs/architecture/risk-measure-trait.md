@@ -17,7 +17,7 @@ The risk measure is modeled as a flat enum with two variants, matching the two r
 /// from the `risk_measure` field in `stages.json` during configuration
 /// loading (see Extension Points SS6). The enum is matched at each backward
 /// pass stage to select the aggregation behavior.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub enum RiskMeasure {
     /// Risk-neutral expected value.
     ///
@@ -115,12 +115,12 @@ pub struct BackwardOutcome {
 
 **Postconditions:**
 
-| Condition                                                                                  | Description                                                                                                                                                                                      |
-| ------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Return `(intercept, coefficients)` where `coefficients.len() == state_dimension`           | Aggregated cut has correct dimension                                                                                                                                                             |
+| Condition                                                                                  | Description                                                                                                                                                                                       |
+| ------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Return `(intercept, coefficients)` where `coefficients.len() == state_dimension`           | Aggregated cut has correct dimension                                                                                                                                                              |
 | For `Expectation`: result equals probability-weighted sum                                  | $\bar{\alpha} = \sum_\omega p(\omega) \cdot \hat{\alpha}(\omega)$, $\bar{\pi}_h = \sum_\omega p(\omega) \cdot \pi_h(\omega)$ -- identical to [Cut Management SS3](../math/cut-management.md)      |
 | For `CVaR`: result equals risk-weighted sum using $\mu^*_\omega$                           | $\bar{\alpha} = \sum_\omega \mu^*_\omega \cdot \hat{\alpha}(\omega)$, $\bar{\pi}_h = \sum_\omega \mu^*_\omega \cdot \pi_h(\omega)$ -- as defined in [Risk Measures SS7](../math/risk-measures.md) |
-| Risk-adjusted weights $\mu^*_\omega$ satisfy $\sum_\omega \mu^*_\omega = 1$                | Weights form a valid probability distribution                                                                                                                                                    |
+| Risk-adjusted weights $\mu^*_\omega$ satisfy $\sum_\omega \mu^*_\omega = 1$                | Weights form a valid probability distribution                                                                                                                                                     |
 | Risk-adjusted weights satisfy $0 \leq \mu^*_\omega \leq \bar{\mu}_\omega$ for all $\omega$ | Each weight is bounded by the per-scenario upper bound from [Risk Measures SS7](../math/risk-measures.md)                                                                                         |
 
 **Behavioral contract for weight computation:** When the variant is `CVaR { alpha, lambda }`, the risk-adjusted weights $\mu^*_\omega$ must be the optimal solution to the dual LP from [Risk Measures SS4.2](../math/risk-measures.md). The per-scenario upper bound is $\bar{\mu}_\omega = (1 - \lambda) p_\omega + \lambda p_\omega / \alpha$, and the optimal weights place maximum mass on the highest-cost scenarios. The math spec establishes that a sorting-based greedy allocation produces the same result as the dual LP ([Risk Measures SS7, equivalence note](../math/risk-measures.md)). The implementation may use either approach.
@@ -142,12 +142,12 @@ pub struct BackwardOutcome {
 
 **Postconditions:**
 
-| Condition                                                                                     | Description                                                                   |
-| --------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
-| Return is finite                                                                              | Valid scalar result                                                           |
-| For `Expectation`: result equals $\sum_\omega p(\omega) \cdot Z_\omega$                       | Probability-weighted mean                                                     |
+| Condition                                                                                     | Description                                                                    |
+| --------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
+| Return is finite                                                                              | Valid scalar result                                                            |
+| For `Expectation`: result equals $\sum_\omega p(\omega) \cdot Z_\omega$                       | Probability-weighted mean                                                      |
 | For `CVaR`: result equals $(1 - \lambda) \mathbb{E}[Z] + \lambda \cdot \text{CVaR}_\alpha[Z]$ | Convex combination as defined in [Risk Measures SS3](../math/risk-measures.md) |
-| `Expectation` result $\leq$ `CVaR` result (when $\alpha < 1$)                                 | CVaR places more weight on worst outcomes                                     |
+| `Expectation` result $\leq$ `CVaR` result (when $\alpha < 1$)                                 | CVaR places more weight on worst outcomes                                      |
 
 **Bound validity warning:** When CVaR is active on any stage, the first-stage LP objective is a convergence indicator only -- it is NOT a valid lower bound on the true risk-averse optimal cost. See [Risk Measures SS10](../math/risk-measures.md) for the full explanation.
 
@@ -199,7 +199,7 @@ The backward pass indexes into this array at each stage to select the appropriat
 
 The risk measure uses **enum dispatch** -- a `match` on the `RiskMeasure` variant at each call site in the backward pass. This is the natural choice for a small, fixed set of variants where per-stage variation is required.
 
-**Why not compile-time monomorphization:** The risk measure can differ between stages (e.g., stage 0 uses `CVaR { alpha: 0.95, lambda: 0.5 }`, stage 1 uses `Expectation`). A generic type parameter `R: RiskMeasureTrait` would fix a single risk measure for the entire training loop, which cannot represent per-stage variation. Encoding the per-stage array as `Vec<Box<dyn RiskMeasureTrait>>` would introduce heap allocation and virtual dispatch on the hot path. Enum dispatch avoids both limitations: the `Vec<RiskMeasure>` is a flat, stack-allocated-per-element array, and the `match` is inlineable by the compiler.
+**Why not compile-time monomorphization:** The risk measure can differ between stages (e.g., stage 0 uses `CVaR { alpha: 0.95, lambda: 0.5 }`, stage 1 uses `Expectation`). A generic type parameter `R: RiskMeasureTrait` would fix a single risk measure for the entire training loop, which cannot represent per-stage variation. Encoding the per-stage array as `Vec<Box<dyn RiskMeasureTrait>>` would introduce heap allocation and virtual dispatch on the hot path. Enum dispatch avoids both limitations: the `Vec<RiskMeasure>` is a flat vector of enum-sized elements, and the `match` is inlineable by the compiler.
 
 **Why not trait objects:** The variant set is closed (Expectation and CVaR only, with no additional variants planned -- see [Extension Points SS2.5](./extension-points.md)). Trait objects add indirection cost without the extensibility benefit. The enum approach is consistent with the dispatch analysis in [Extension Points SS7](./extension-points.md).
 

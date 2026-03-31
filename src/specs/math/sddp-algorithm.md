@@ -88,13 +88,17 @@ The backward pass produces one new cut per stage per trial point per iteration.
 
 ### 3.3 Convergence Monitoring
 
-**Lower Bound**: The deterministic lower bound is the first-stage LP value:
+**Lower Bound**: The risk-adjusted lower bound is computed by solving the stage-0 LP for every opening in the stage-0 scenario set, collecting the per-opening objectives, and aggregating them through the stage-0 risk measure:
 
 $$
-\underline{z}^k = V_1^k(x) = \min_{x_1} \left\{ c_1^\top x_1 + \theta_1 : \text{constraints}, \; \theta_1 \geq \alpha_i + \pi_i^\top x_1 \; \forall i \right\}
+\underline{z}^k = \rho_0 \Big[ Q_0^k(x_0, \omega) \;\Big|\; \omega \in \Omega_0 \Big]
 $$
 
-This bound increases monotonically as cuts are added.
+where $Q_0^k(x_0, \omega)$ is the optimal objective of the stage-0 LP under opening $\omega$ with the current cut approximation at iteration $k$, $x_0$ is the known initial state, and $\rho_0$ is the stage-0 risk measure (expected value under risk-neutral, or CVaR under risk-averse). The per-opening probabilities are uniform: $p(\omega) = 1 / |\Omega_0|$.
+
+Under risk-neutral settings ($\rho_0 = \mathbb{E}$), this reduces to a simple average over all stage-0 opening objectives. This bound increases monotonically as cuts are added.
+
+> **Implementation note**: The lower bound is evaluated after each backward pass and cut synchronization. Rank 0 iterates over all stage-0 openings, rebuilding the LP for each (load model, add cuts, patch forward state + noise, solve). The per-opening objectives are collected, aggregated through the risk measure, then broadcast to all ranks. The LP objective is in scaled cost space (divided by `COST_SCALE_FACTOR`); the result is multiplied by `COST_SCALE_FACTOR` to recover original units.
 
 **Upper Bound**: Estimated via Monte Carlo simulation over the forward pass trajectories (see [Upper Bound Evaluation](upper-bound-evaluation.md)):
 
@@ -173,7 +177,7 @@ $$
 
 where $\hat{a}_{h,\ell}$ is the lag $\ell$ inflow value passed from the previous stage. The duals of these fixing constraints ($\pi^{lag}_{h,\ell}$) contribute to cut coefficients, capturing the marginal value of inflow history — see [Cut Management §2](cut-management.md).
 
-See [PAR Inflow Model](par-inflow-model.md) for the complete autoregressive formulation and [LP Formulation §5](lp-formulation.md) for how these constraints appear in the stage LP.
+See [PAR Inflow Model](par-inflow-model.md) for the complete autoregressive formulation and [LP Formulation §5](lp-formulation.md) for how these constraints appear in the stage LP. For the full LP column and row layout (including auxiliary z-inflow variables between lags and incoming storage), see [LP Formulation §4b](lp-formulation.md).
 
 ## 6. Single-Cut vs Multi-Cut Formulation
 

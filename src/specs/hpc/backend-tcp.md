@@ -1,5 +1,7 @@
 # TCP Backend
 
+> **Status: Not Implemented.** This specification describes planned behavior for a future backend. No implementation exists in the current codebase.
+
 ## Purpose
 
 The TCP backend enables multi-process SDDP execution using standard TCP sockets (`std::net`), eliminating the dependency on an MPI runtime. It uses a coordinator-based star topology where rank 0 runs a TCP server and ranks 1 through $R-1$ connect as clients. All collective operations flow through the coordinator, which is simpler than a peer-to-peer mesh and sufficient for SDDP's collective-only communication pattern ([Communication Patterns §1.2](./communication-patterns.md)). This backend targets two deployment scenarios: container-friendly environments where MPI installation is impractical, and Python multi-process orchestration where the GIL is incompatible with MPI launchers ([Python Bindings §7](../interfaces/python-bindings.md)). The backend is gated behind the `tcp` Cargo feature flag as specified in [Backend Registration and Selection §1.2](./backend-selection.md).

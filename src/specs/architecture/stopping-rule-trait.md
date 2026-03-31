@@ -30,7 +30,7 @@ pub enum StoppingRule {
     /// See [Stopping Rules SS2](../math/stopping-rules.md).
     IterationLimit {
         /// Maximum iteration count k_max. Training stops when k >= limit.
-        limit: u32,
+        limit: u64,
     },
 
     /// Terminate when cumulative wall-clock time exceeds a threshold.
@@ -48,11 +48,11 @@ pub enum StoppingRule {
     ///
     /// See [Stopping Rules SS4](../math/stopping-rules.md) for the formula.
     BoundStalling {
-        /// Number of past iterations over which to measure improvement (tau).
-        iterations: u32,
-
         /// Relative tolerance for the windowed improvement test.
         tolerance: f64,
+
+        /// Number of past iterations over which to measure improvement (tau).
+        iterations: u64,
     },
 
     /// Terminate when both the lower bound and simulated policy costs
@@ -62,21 +62,19 @@ pub enum StoppingRule {
     /// first a bound stability check, then a Monte Carlo simulation
     /// comparison. See [Stopping Rules SS5](../math/stopping-rules.md).
     SimulationBased {
-        /// Number of Monte Carlo forward simulations to run.
+        /// Evaluate this rule every `period` iterations (not every iteration).
+        period: u64,
+
+        /// Normalized Euclidean distance threshold for simulation cost
+        /// comparison between consecutive evaluations.
+        distance_tolerance: f64,
+
+        /// Number of Monte Carlo forward simulations to run when the bound
+        /// stability pre-filter passes (executed by the convergence monitor).
         replications: u32,
 
-        /// Evaluate this rule every `period` iterations (not every iteration).
-        period: u32,
-
-        /// Number of past iterations for the bound stability window.
-        bound_window: u32,
-
-        /// Threshold for normalized distance between consecutive
-        /// simulation results.
-        distance_tol: f64,
-
-        /// Relative tolerance for the bound stability pre-check.
-        bound_tol: f64,
+        /// Number of past iterations for the bound stability pre-check.
+        bound_stability_window: u64,
     },
 
     /// Terminate when an external signal (SIGTERM, SIGINT) is received.
@@ -110,10 +108,10 @@ pub struct StoppingRuleSet {
     /// The individual stopping rules, resolved from `config.json` during
     /// configuration loading. Must contain at least one `IterationLimit`.
     /// The `GracefulShutdown` rule is always appended implicitly.
-    rules: Vec<StoppingRule>,
+    pub rules: Vec<StoppingRule>,
 
     /// Combination mode: `Any` (OR logic) or `All` (AND logic).
-    mode: StoppingMode,
+    pub mode: StoppingMode,
 }
 
 /// Combination mode for the stopping rule set.
@@ -129,14 +127,18 @@ pub enum StoppingMode {
 impl StoppingRuleSet {
     /// Evaluate all stopping rules against the current monitor state.
     ///
-    /// Returns `(should_stop, reason)` where `should_stop` is the combined
-    /// decision and `reason` lists the rule(s) that triggered.
+    /// Returns `(should_stop, all_results)` where `should_stop` is the
+    /// combined termination decision and `all_results` lists the evaluation
+    /// result for every rule.
     ///
-    /// When `mode` is `Any`, the first triggered rule causes termination
-    /// and is reported as the reason. When `mode` is `All`, all rules
-    /// must be triggered simultaneously, and all triggering rules are
-    /// reported.
-    pub fn should_stop(&self, state: &MonitorState) -> (bool, StopReason) {
+    /// `GracefulShutdown` is always evaluated first. If the shutdown flag
+    /// is set, the method returns `(true, results)` immediately, regardless
+    /// of the configured `mode`.
+    ///
+    /// For the remaining rules:
+    /// - `Any`: stop if any rule triggered (OR logic).
+    /// - `All`: stop if all rules triggered (AND logic).
+    pub fn evaluate(&self, state: &MonitorState) -> (bool, Vec<StoppingRuleResult>) {
         todo!()
     }
 }
@@ -152,17 +154,20 @@ Each stopping rule variant implements an `evaluate` method that reads from the c
 impl StoppingRule {
     /// Evaluate this individual rule against the current monitor state.
     ///
-    /// Returns `true` if this rule's termination condition is satisfied.
+    /// Returns a `StoppingRuleResult` with the rule's identifier, whether
+    /// the rule's termination condition is satisfied, and a human-readable
+    /// description of the current state.
+    ///
     /// The method is pure -- it reads from `MonitorState` but does not
     /// modify it. Side effects (running Monte Carlo simulations for the
     /// SimulationBased rule) are performed by the convergence monitor
     /// before calling `evaluate`, and the results are stored in the
     /// monitor state.
-    pub fn evaluate(&self, state: &MonitorState) -> bool {
+    pub fn evaluate(&self, state: &MonitorState) -> StoppingRuleResult {
         match self {
             Self::IterationLimit { limit } => { /* SS2.1 */ }
             Self::TimeLimit { seconds } => { /* SS2.2 */ }
-            Self::BoundStalling { iterations, tolerance } => { /* SS2.3 */ }
+            Self::BoundStalling { tolerance, iterations } => { /* SS2.3 */ }
             Self::SimulationBased { period, .. } => { /* SS2.4 */ }
             Self::GracefulShutdown => { /* SS2.5 */ }
         }
@@ -275,7 +280,7 @@ $$
 \text{Bound stable} \iff \left| \underline{z}^k - \underline{z}^{k - w} \right| < \text{bound\_tol} \times \max(1, |\underline{z}^k|)
 $$
 
-where $w$ is the `bound_window` parameter. If the bound is not stable, the rule returns `false` without running simulations (saving computational cost).
+where $w$ is the `bound_stability_window` parameter. If the bound is not stable, the rule returns `false` without running simulations (saving computational cost).
 
 **Phase 2 -- Monte Carlo policy comparison:**
 
@@ -295,17 +300,16 @@ This is the algorithm defined in [Stopping Rules SS5](../math/stopping-rules.md)
 
 **Preconditions:**
 
-| Condition                                         | Description                                                                                             |
-| ------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
-| `state.iteration >= period`                       | At least one evaluation period has elapsed                                                              |
-| `state.iteration % period == 0`                   | Current iteration is a check point                                                                      |
-| `state.lower_bound_history.len() >= bound_window` | Enough bound history for stability check                                                                |
-| Previous simulation results available in `state`  | Required for distance computation (first evaluation has no previous results and always returns `false`) |
-| `replications >= 1`                               | Validated at config load time (SS4)                                                                     |
-| `period >= 1`                                     | Validated at config load time (SS4)                                                                     |
-| `bound_window >= 1`                               | Validated at config load time (SS4)                                                                     |
-| `distance_tol > 0.0`                              | Validated at config load time (SS4)                                                                     |
-| `bound_tol > 0.0`                                 | Validated at config load time (SS4)                                                                     |
+| Condition                                                   | Description                                                                                             |
+| ----------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| `state.iteration >= period`                                 | At least one evaluation period has elapsed                                                              |
+| `state.iteration % period == 0`                             | Current iteration is a check point                                                                      |
+| `state.lower_bound_history.len() >= bound_stability_window` | Enough bound history for stability check                                                                |
+| Previous simulation results available in `state`            | Required for distance computation (first evaluation has no previous results and always returns `false`) |
+| `replications >= 1`                                         | Validated at config load time (SS4)                                                                     |
+| `period >= 1`                                               | Validated at config load time (SS4)                                                                     |
+| `bound_stability_window >= 1`                               | Validated at config load time (SS4)                                                                     |
+| `distance_tolerance > 0.0`                                  | Validated at config load time (SS4)                                                                     |
 
 **Postconditions:**
 
@@ -316,11 +320,11 @@ This is the algorithm defined in [Stopping Rules SS5](../math/stopping-rules.md)
 | Returns `false` on the first evaluation (no previous simulation to compare against) | The distance metric requires two consecutive simulation snapshots       |
 | Returns `true` iff both bound stability and simulation distance checks pass         | Both phases must pass simultaneously                                    |
 
-**Monitor state consumed:** `state.iteration`, `state.lower_bound`, `state.lower_bound_history[k - bound_window]`, `state.last_simulation_costs` (per-stage mean costs from the previous simulation evaluation), and `state.current_simulation_costs` (per-stage mean costs from the current simulation evaluation, populated by the convergence monitor before `evaluate` is called).
+**Monitor state consumed:** `state.iteration`, `state.lower_bound`, `state.lower_bound_history[k - bound_stability_window]`, and `state.simulation_costs` (per-stage mean costs from the most recent simulation evaluation, populated by the convergence monitor before `evaluate` is called).
 
-**Computational cost:** Running `replications` Monte Carlo simulations is expensive (comparable to a forward pass). This is why the rule evaluates only every `period` iterations and gates the simulation behind the cheap bound stability pre-check (Phase 1). The convergence monitor is responsible for executing the simulations and populating `state.current_simulation_costs`; the `evaluate` method itself only performs the distance comparison.
+**Computational cost:** Running `replications` Monte Carlo simulations is expensive (comparable to a forward pass). This is why the rule evaluates only every `period` iterations and gates the simulation behind the cheap bound stability pre-check (Phase 1). The convergence monitor is responsible for executing the simulations and populating `state.simulation_costs`; the `evaluate` method itself only performs the distance comparison.
 
-**Side-effect separation:** The `evaluate` method is pure -- it reads simulation results from `MonitorState` but does not trigger the simulations itself. The convergence monitor detects that a SimulationBased rule exists in the set, checks whether the current iteration is a multiple of `period`, and if so, runs the Phase 1 check internally. Only if Phase 1 passes does the monitor execute the Monte Carlo simulations and store the results in `state.current_simulation_costs`. This separation ensures that `evaluate` remains a stateless, testable function.
+**Side-effect separation:** The `evaluate` method is pure -- it reads simulation results from `MonitorState` but does not trigger the simulations itself. The convergence monitor detects that a SimulationBased rule exists in the set, checks whether the current iteration is a multiple of `period`, and if so, runs the Phase 1 check internally. Only if Phase 1 passes does the monitor execute the Monte Carlo simulations and store the results in `state.simulation_costs`. This separation ensures that `evaluate` remains a stateless, testable function.
 
 ### 2.5 GracefulShutdown
 
@@ -351,39 +355,47 @@ The `signal_flag` is set by an OS signal handler (SIGTERM or SIGINT) and read vi
 
 ## 3. Composition Contract
 
-The `StoppingRuleSet::should_stop` method evaluates all individual rules and combines their results according to the `stopping_mode`.
+The `StoppingRuleSet::evaluate` method evaluates all individual rules and combines their results according to the `stopping_mode`.
 
 ### 3.1 Evaluation Semantics
 
 ```rust
 impl StoppingRuleSet {
-    pub fn should_stop(&self, state: &MonitorState) -> (bool, StopReason) {
+    pub fn evaluate(&self, state: &MonitorState) -> (bool, Vec<StoppingRuleResult>) {
         // Step 1: Evaluate GracefulShutdown unconditionally.
-        // If shutdown is requested, return immediately regardless of mode.
+        // If shutdown is requested, evaluate all rules and return
+        // (true, results) immediately regardless of mode.
         if state.shutdown_requested {
-            return (true, StopReason::Single(StopReasonKind::GracefulShutdown));
+            let results: Vec<StoppingRuleResult> =
+                self.rules.iter().map(|r| r.evaluate(state)).collect();
+            return (true, results);
         }
 
-        // Step 2: Evaluate all configured rules (excluding GracefulShutdown).
-        let results: Vec<(StopReasonKind, bool)> = self.rules
+        // Step 2: Evaluate all configured rules.
+        let results: Vec<StoppingRuleResult> =
+            self.rules.iter().map(|r| r.evaluate(state)).collect();
+
+        // Step 3: Apply combination logic (GracefulShutdown already handled).
+        let non_shutdown_triggered: Vec<bool> = self.rules
             .iter()
-            .filter(|r| !matches!(r, StoppingRule::GracefulShutdown))
-            .map(|r| (r.reason_kind(), r.evaluate(state)))
+            .zip(results.iter())
+            .filter(|(rule, _)| !matches!(rule, StoppingRule::GracefulShutdown))
+            .map(|(_, result)| result.triggered)
             .collect();
 
-        // Step 3: Apply combination logic.
-        match self.mode {
+        let should_stop = match self.mode {
             StoppingMode::Any => {
                 // OR logic: stop if any rule triggered.
-                // Report the first triggered rule as the reason.
-                // ...
+                non_shutdown_triggered.iter().any(|&t| t)
             }
             StoppingMode::All => {
                 // AND logic: stop only if all rules triggered.
-                // Report all rules as the reason.
-                // ...
+                !non_shutdown_triggered.is_empty()
+                    && non_shutdown_triggered.iter().all(|&t| t)
             }
-        }
+        };
+
+        (should_stop, results)
     }
 }
 ```
@@ -398,11 +410,11 @@ The first rule (in configuration order) whose `evaluate` returns `true` is repor
 
 **Postconditions:**
 
-| Condition                                                                   | Description                     |
-| --------------------------------------------------------------------------- | ------------------------------- |
-| Returns `(true, Single(reason))` if any configured rule evaluates to `true` | Single triggering rule reported |
-| Returns `(false, None)` if no configured rule evaluates to `true`           | Training continues              |
-| Evaluation order matches configuration order                                | First-triggered-wins semantics  |
+| Condition                                                                                  | Description                              |
+| ------------------------------------------------------------------------------------------ | ---------------------------------------- |
+| Returns `(true, results)` if any non-shutdown rule's `triggered` field is `true`           | At least one rule satisfied              |
+| Returns `(false, results)` if no non-shutdown rule's `triggered` field is `true`           | Training continues                       |
+| `results` contains one `StoppingRuleResult` per rule in the set, regardless of `triggered` | Full evaluation transparency for logging |
 
 ### 3.3 "All" Mode (AND Logic)
 
@@ -414,14 +426,15 @@ All configured rules must evaluate to `true` simultaneously for termination. The
 
 **Postconditions:**
 
-| Condition                                                                      | Description        |
-| ------------------------------------------------------------------------------ | ------------------ |
-| Returns `(true, Multiple(reasons))` if all configured rules evaluate to `true` | All rules reported |
-| Returns `(false, None)` if any configured rule evaluates to `false`            | Training continues |
+| Condition                                                                                  | Description                              |
+| ------------------------------------------------------------------------------------------ | ---------------------------------------- |
+| Returns `(true, results)` if all non-shutdown rules' `triggered` fields are `true`         | All rules satisfied simultaneously       |
+| Returns `(false, results)` if any non-shutdown rule's `triggered` field is `false`         | Training continues                       |
+| `results` contains one `StoppingRuleResult` per rule in the set, regardless of `triggered` | Full evaluation transparency for logging |
 
 ### 3.4 GracefulShutdown Override
 
-The `GracefulShutdown` rule is evaluated before the configured rules and bypasses the composition logic entirely. If `state.shutdown_requested` is `true`, `should_stop` returns `(true, Single(GracefulShutdown))` regardless of the `stopping_mode` and regardless of whether other rules have triggered. This ensures that external termination signals are always honored immediately.
+The `GracefulShutdown` rule is evaluated before the configured rules and bypasses the composition logic entirely. If `state.shutdown_requested` is `true`, `evaluate` returns `(true, results)` regardless of the `stopping_mode` and regardless of whether other rules have triggered. This ensures that external termination signals are always honored immediately.
 
 **Rationale:** A shutdown signal represents an external constraint (e.g., job scheduler timeout, operator intervention) that supersedes algorithmic convergence criteria. Requiring all rules to trigger before honoring a shutdown signal (in "all" mode) would be incorrect -- the system must exit promptly.
 
@@ -440,21 +453,20 @@ The `StoppingRuleConfig` enum represents the deserialized form of individual ent
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum StoppingRuleConfig {
     IterationLimit {
-        limit: u32,
+        limit: u64,
     },
     TimeLimit {
         seconds: f64,
     },
     BoundStalling {
-        iterations: u32,
         tolerance: f64,
+        iterations: u64,
     },
     Simulation {
+        period: u64,
+        distance_tolerance: f64,
         replications: u32,
-        period: u32,
-        bound_window: u32,
-        distance_tol: f64,
-        bound_tol: f64,
+        bound_stability_window: u64,
     },
 }
 ```
@@ -463,65 +475,48 @@ pub enum StoppingRuleConfig {
 
 **Validation rules:**
 
-| Rule | Condition                                   | Error                                                                                   |
-| ---- | ------------------------------------------- | --------------------------------------------------------------------------------------- |
-| V1   | `limit >= 1` for IterationLimit             | Zero iteration limit prevents any training                                              |
-| V2   | `seconds > 0.0` for TimeLimit               | Non-positive time limit                                                                 |
-| V3   | `iterations >= 1` for BoundStalling         | Zero window is undefined                                                                |
-| V4   | `tolerance > 0.0` for BoundStalling         | Non-positive tolerance                                                                  |
-| V5   | `replications >= 1` for Simulation          | Zero replications is undefined                                                          |
-| V6   | `period >= 1` for Simulation                | Zero period (every iteration) is computationally prohibitive; use BoundStalling instead |
-| V7   | `bound_window >= 1` for Simulation          | Zero bound window is undefined                                                          |
-| V8   | `distance_tol > 0.0` for Simulation         | Non-positive distance tolerance                                                         |
-| V9   | `bound_tol > 0.0` for Simulation            | Non-positive bound tolerance                                                            |
-| V10  | At least one IterationLimit rule in the set | Safety bound is mandatory                                                               |
+| Rule | Condition                                    | Error                                                                                   |
+| ---- | -------------------------------------------- | --------------------------------------------------------------------------------------- |
+| V1   | `limit >= 1` for IterationLimit              | Zero iteration limit prevents any training                                              |
+| V2   | `seconds > 0.0` for TimeLimit                | Non-positive time limit                                                                 |
+| V3   | `iterations >= 1` for BoundStalling          | Zero window is undefined                                                                |
+| V4   | `tolerance > 0.0` for BoundStalling          | Non-positive tolerance                                                                  |
+| V5   | `replications >= 1` for Simulation           | Zero replications is undefined                                                          |
+| V6   | `period >= 1` for Simulation                 | Zero period (every iteration) is computationally prohibitive; use BoundStalling instead |
+| V7   | `bound_stability_window >= 1` for Simulation | Zero bound stability window is undefined                                                |
+| V8   | `distance_tolerance > 0.0` for Simulation    | Non-positive distance tolerance                                                         |
+| V9   | At least one IterationLimit rule in the set  | Safety bound is mandatory                                                               |
 
-### 4.2 StopReason
+### 4.2 StoppingRuleResult
 
 ```rust
-/// The reason why training was stopped, returned by
-/// `StoppingRuleSet::should_stop`.
-#[derive(Debug, Clone)]
-pub enum StopReason {
-    /// No rule triggered -- training should continue.
-    None,
-
-    /// A single rule triggered (used in "any" mode and for GracefulShutdown).
-    Single(StopReasonKind),
-
-    /// All rules triggered simultaneously (used in "all" mode).
-    Multiple(Vec<StopReasonKind>),
-}
-
-/// Identifies which stopping rule triggered.
+/// Result of evaluating a single stopping rule, returned as part of
+/// the `Vec<StoppingRuleResult>` from `StoppingRuleSet::evaluate`.
 ///
-/// These values map to the `reason` field in the termination event
-/// emitted by the convergence monitor
-/// (see [Convergence Monitoring SS4.2](./convergence-monitoring.md)).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum StopReasonKind {
-    /// Iteration count reached the configured limit.
-    IterationLimit,
+/// Defined in `cobre-core` so that the result type is available to both
+/// the stopping rule module and the convergence monitor without a
+/// circular dependency.
+#[derive(Debug, Clone)]
+pub struct StoppingRuleResult {
+    /// Rule identifier matching the variant name (e.g., `"iteration_limit"`,
+    /// `"time_limit"`, `"bound_stalling"`, `"simulation_based"`,
+    /// `"graceful_shutdown"`).
+    pub rule_name: String,
 
-    /// Wall-clock time exceeded the configured threshold.
-    TimeLimit,
+    /// Whether this rule's condition is satisfied at the current iteration.
+    pub triggered: bool,
 
-    /// Lower bound improvement over the window fell below tolerance.
-    BoundStalling,
-
-    /// Both bound stability and simulation distance checks passed.
-    SimulationBased,
-
-    /// External shutdown signal (SIGTERM/SIGINT) received.
-    GracefulShutdown,
+    /// Human-readable description of the rule's current state
+    /// (e.g., `"iteration 100/100"`, `"elapsed 3600.0s / 3600.0s limit"`).
+    pub detail: String,
 }
 ```
 
-The `StopReasonKind` values correspond to the termination reason strings in [Convergence Monitoring SS4.2](./convergence-monitoring.md): `iteration_limit`, `time_limit`, `bound_stalling`, `simulation`, and `shutdown`.
+The `rule_name` values correspond to the termination reason strings in [Convergence Monitoring SS4.2](./convergence-monitoring.md): `"iteration_limit"`, `"time_limit"`, `"bound_stalling"`, `"simulation_based"`, and `"graceful_shutdown"`. Each `StoppingRule` variant produces a fixed `rule_name` string via named constants.
 
 ### 4.3 MonitorState
 
-The `MonitorState` struct holds the convergence monitor quantities consumed by the stopping rules. It is populated by the convergence monitor each iteration and passed to `StoppingRuleSet::should_stop` as a read-only reference.
+The `MonitorState` struct holds the convergence monitor quantities consumed by the stopping rules. It is populated by the convergence monitor each iteration and passed to `StoppingRuleSet::evaluate` as a read-only reference.
 
 ```rust
 /// Convergence monitor state consumed by stopping rule evaluation.
@@ -529,10 +524,10 @@ The `MonitorState` struct holds the convergence monitor quantities consumed by t
 /// This is a read-only view of the quantities tracked by the convergence
 /// monitor ([Convergence Monitoring SS2.1](./convergence-monitoring.md)).
 /// The monitor populates this state after each iteration's forward
-/// synchronization step, before calling `should_stop`.
+/// synchronization step, before calling `evaluate`.
 pub struct MonitorState {
     /// Current iteration index (1-based).
-    pub iteration: u32,
+    pub iteration: u64,
 
     /// Cumulative wall-clock time since training start, in seconds.
     pub wall_time_seconds: f64,
@@ -540,40 +535,36 @@ pub struct MonitorState {
     /// Current lower bound (stage-1 LP objective value).
     pub lower_bound: f64,
 
-    /// History of lower bounds from past iterations.
-    /// Indexed as `lower_bound_history[i]` = lower bound at iteration `i+1`.
+    /// History of lower bounds from past iterations (chronological order).
+    /// `lower_bound_history[i]` is the lower bound at iteration `i + 1`.
+    /// Populated by the convergence monitor; appended each iteration.
     pub lower_bound_history: Vec<f64>,
 
     /// Whether an external shutdown signal has been received.
-    /// Set atomically by the OS signal handler.
+    /// Set by an OS signal handler (SIGTERM / SIGINT) and read atomically.
     pub shutdown_requested: bool,
 
     /// Per-stage mean costs from the most recent simulation evaluation.
-    /// `None` if no simulation has been run yet.
-    pub last_simulation_costs: Option<Vec<f64>>,
-
-    /// Per-stage mean costs from the current simulation evaluation.
-    /// `None` if the current iteration is not a simulation check point,
-    /// or if Phase 1 (bound stability) failed.
-    pub current_simulation_costs: Option<Vec<f64>>,
+    /// `None` if no simulation has been run yet, or if the convergence
+    /// monitor has not yet run a `SimulationBased` check.
+    pub simulation_costs: Option<Vec<f64>>,
 }
 ```
 
 **Which rules consume which fields:**
 
-| MonitorState Field         | IterationLimit | TimeLimit | BoundStalling | SimulationBased | GracefulShutdown |
-| -------------------------- | :------------: | :-------: | :-----------: | :-------------: | :--------------: |
-| `iteration`                |      Yes       |           |      Yes      |       Yes       |                  |
-| `wall_time_seconds`        |                |    Yes    |               |                 |                  |
-| `lower_bound`              |                |           |      Yes      |       Yes       |                  |
-| `lower_bound_history`      |                |           |      Yes      |       Yes       |                  |
-| `shutdown_requested`       |                |           |               |                 |       Yes        |
-| `last_simulation_costs`    |                |           |               |       Yes       |                  |
-| `current_simulation_costs` |                |           |               |       Yes       |                  |
+| MonitorState Field    | IterationLimit | TimeLimit | BoundStalling | SimulationBased | GracefulShutdown |
+| --------------------- | :------------: | :-------: | :-----------: | :-------------: | :--------------: |
+| `iteration`           |      Yes       |           |      Yes      |       Yes       |                  |
+| `wall_time_seconds`   |                |    Yes    |               |                 |                  |
+| `lower_bound`         |                |           |      Yes      |       Yes       |                  |
+| `lower_bound_history` |                |           |      Yes      |       Yes       |                  |
+| `shutdown_requested`  |                |           |               |                 |       Yes        |
+| `simulation_costs`    |                |           |               |       Yes       |                  |
 
 ## 5. Interaction with Convergence Monitor
 
-The convergence monitor ([Convergence Monitoring](./convergence-monitoring.md)) owns the `StoppingRuleSet` and calls `should_stop` once per iteration. The interaction follows a fixed protocol:
+The convergence monitor ([Convergence Monitoring](./convergence-monitoring.md)) owns the `StoppingRuleSet` and calls `evaluate` once per iteration. The interaction follows a fixed protocol:
 
 ### 5.1 Per-Iteration Protocol
 
@@ -597,12 +588,11 @@ The convergence monitor ([Convergence Monitoring](./convergence-monitoring.md)) 
 7. **Simulation pre-check (conditional).** If a `SimulationBased` rule exists in the set and `iteration % period == 0`:
    - The monitor performs the Phase 1 bound stability check internally
    - If Phase 1 passes, the monitor runs `replications` Monte Carlo simulations
-   - The monitor stores per-stage mean costs in `state.current_simulation_costs`
-   - The previous simulation's costs are retained in `state.last_simulation_costs`
+   - The monitor stores per-stage mean costs in `state.simulation_costs`
 
-8. **Rule evaluation.** The monitor calls `self.rule_set.should_stop(&self.state)`.
+8. **Rule evaluation.** The monitor calls `self.rule_set.evaluate(&self.state)`, receiving `(should_stop, results)`.
 
-9. **Decision.** If `should_stop` returns `(true, reason)`, the monitor records the termination reason and signals the training loop to exit. If `(false, None)`, the training loop proceeds to the next iteration.
+9. **Decision.** If `evaluate` returns `(true, results)` with at least one triggered result, the monitor records the termination reason and signals the training loop to exit. If `(false, results)` with no triggered results, the training loop proceeds to the next iteration.
 
 ### 5.2 Ownership Boundaries
 

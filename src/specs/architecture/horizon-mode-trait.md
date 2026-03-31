@@ -23,15 +23,17 @@ pub enum HorizonMode {
     /// Finite (acyclic) horizon.
     ///
     /// Linear chain 1 → 2 → ··· → T with terminal condition V_{T+1} = 0.
-    /// No cycle, no mandatory discount (though discounting may still be
-    /// applied via `annual_discount_rate`). Each stage has a unique cut
-    /// pool indexed by stage ID.
+    /// The current implementation uses a linear-chain stage progression
+    /// where each stage transitions to stage+1 (implicit transitions).
+    /// Each stage has a unique cut pool indexed by stage ID.
     ///
     /// See [SDDP Algorithm SS4.1](../math/sddp-algorithm.md).
     Finite {
-        /// Precomputed transitions from `policy_graph.transitions`.
-        /// Each entry maps source_id → Vec<(target_id, probability, discount_factor)>.
-        transitions: TransitionMap,
+        /// Total number of stages T in the finite chain.
+        /// Must be at least 2 (a single-stage problem has no predecessor
+        /// to generate cuts for, making SDDP degenerate). Validated by
+        /// `HorizonMode::validate`.
+        num_stages: usize,
     },
 
     /// Cyclic (infinite periodic) horizon.
@@ -42,6 +44,11 @@ pub enum HorizonMode {
     /// d_cycle = ∏_{t ∈ cycle} d_{t→t+1} < 1.
     ///
     /// See [Infinite Horizon](../math/infinite-horizon.md).
+    ///
+    /// > **Status: Not Implemented** -- The Cyclic variant is deferred to
+    /// > a future release. The enum variant is defined here to reserve the
+    /// > design space and document the intended contract. The current
+    /// > implementation supports only `Finite` horizon.
     Cyclic {
         /// Precomputed transitions, same structure as Finite.
         transitions: TransitionMap,
@@ -69,7 +76,7 @@ pub enum HorizonMode {
 }
 ```
 
-The `TransitionMap` type is defined in SS3.
+The `TransitionMap` type is defined in SS3. Note that the current `Finite` implementation uses implicit linear-chain transitions (`stage -> stage+1`) rather than an explicit `TransitionMap`. The `TransitionMap` is used only by the aspirational `Cyclic` variant.
 
 ## 2. Method Contracts
 
@@ -111,9 +118,9 @@ pub struct Successor {
 
 **Preconditions:**
 
-| Condition                          | Description                                                                                                     |
-| ---------------------------------- | --------------------------------------------------------------------------------------------------------------- |
-| `stage_id` exists in the stage set | The stage ID was loaded from `stages.json` and passed validation                                                |
+| Condition                          | Description                                                                                                      |
+| ---------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| `stage_id` exists in the stage set | The stage ID was loaded from `stages.json` and passed validation                                                 |
 | Transitions have been precomputed  | `HorizonMode` was constructed via the variant selection pipeline ([Extension Points SS6](./extension-points.md)) |
 
 **Postconditions:**
@@ -316,6 +323,8 @@ pub struct TransitionConfig {
 ```
 
 ### 3.2 TransitionMap
+
+> **Status: Aspirational** -- The `TransitionMap` type is defined for the `Cyclic` variant, which is not yet implemented. The `Finite` variant uses implicit linear-chain transitions (`stage -> stage+1`) and does not require an explicit `TransitionMap`.
 
 The `TransitionMap` is the precomputed runtime representation of transitions, built from `PolicyGraphConfig` during validation. It enables O(1) lookup of successors by stage ID.
 

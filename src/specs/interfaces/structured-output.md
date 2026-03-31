@@ -10,17 +10,17 @@ Every CLI subcommand produces a response conforming to this envelope when invoke
 
 ### 1.1 Top-Level Fields
 
-| Field           | Type      | Required | Description                                                                                      |
-| --------------- | --------- | -------- | ------------------------------------------------------------------------------------------------ |
-| `$schema`       | `string`  | Yes      | Schema version URN. See SS6 for format and evolution rules                                       |
-| `command`       | `string`  | Yes      | Subcommand that produced this response (`run`, `validate`, `report`, `compare`, `version`)       |
-| `success`       | `boolean` | Yes      | `true` if the operation completed without errors; `false` otherwise                              |
-| `exit_code`     | `integer` | Yes      | Numeric exit code matching [CLI and Lifecycle](../architecture/cli-and-lifecycle.md) SS4         |
-| `cobre_version` | `string`  | Yes      | Cobre version string (SemVer, e.g. `"2.0.0"`)                                                    |
-| `errors`        | `array`   | Yes      | Array of structured error records (SS2). Empty array when `success` is `true`                    |
-| `warnings`      | `array`   | Yes      | Array of structured warning records (same schema as errors). May be non-empty even on success    |
-| `data`          | `object`  | Yes      | Subcommand-specific result payload (SS4). `null` when the subcommand produces no data on failure |
-| `summary`       | `object`  | Yes      | Subcommand-specific summary statistics. `null` when not applicable                               |
+| Field           | Type      | Required | Description                                                                                                  |
+| --------------- | --------- | -------- | ------------------------------------------------------------------------------------------------------------ |
+| `$schema`       | `string`  | Yes      | Schema version URN. See SS6 for format and evolution rules                                                   |
+| `command`       | `string`  | Yes      | Subcommand that produced this response (`init`, `run`, `validate`, `report`, `summary`, `schema`, `version`) |
+| `success`       | `boolean` | Yes      | `true` if the operation completed without errors; `false` otherwise                                          |
+| `exit_code`     | `integer` | Yes      | Numeric exit code matching [CLI and Lifecycle](../architecture/cli-and-lifecycle.md) SS4                     |
+| `cobre_version` | `string`  | Yes      | Cobre version string (SemVer, e.g. `"2.0.0"`)                                                                |
+| `errors`        | `array`   | Yes      | Array of structured error records (SS2). Empty array when `success` is `true`                                |
+| `warnings`      | `array`   | Yes      | Array of structured warning records (same schema as errors). May be non-empty even on success                |
+| `data`          | `object`  | Yes      | Subcommand-specific result payload (SS4). `null` when the subcommand produces no data on failure             |
+| `summary`       | `object`  | Yes      | Subcommand-specific summary statistics. `null` when not applicable                                           |
 
 ### 1.2 Invariants
 
@@ -170,9 +170,8 @@ These 6 kinds cover errors that occur during execution or post-hoc operations, o
 | `SolverFailure`    | Error    | `run`                  | LP solver returned an unexpected status (infeasible, unbounded, etc.) | `stage`, `iteration`, `opening`, `solver_status`, `active_penalty_slacks` |
 | `MpiError`         | Error    | `run`                  | MPI communication failure                                             | `operation`, `rank`, `error_code`, `detail`                               |
 | `CheckpointFailed` | Error    | `run`                  | Checkpoint write or read failed                                       | `checkpoint_path`, `operation` (`read` or `write`), `detail`              |
-| `OutputCorrupted`  | Error    | `report`, `compare`    | An output file exists but is unreadable or has invalid structure      | `file`, `detail`                                                          |
-| `OutputNotFound`   | Error    | `report`, `compare`    | A required output file or directory is missing                        | `path`, `expected_content`                                                |
-| `IncompatibleRuns` | Error    | `compare`              | The two runs being compared have incompatible configurations          | `field`, `run_a_value`, `run_b_value`, `detail`                           |
+| `OutputCorrupted`  | Error    | `report`, `summary`    | An output file exists but is unreadable or has invalid structure      | `file`, `detail`                                                          |
+| `OutputNotFound`   | Error    | `report`, `summary`    | A required output file or directory is missing                        | `path`, `expected_content`                                                |
 
 **Example -- runtime error**:
 
@@ -625,10 +624,12 @@ Prints version and build information.
 
 | Subcommand | `--output-format json`           | `--output-format json-lines`                        |
 | ---------- | -------------------------------- | --------------------------------------------------- |
+| `init`     | Single envelope                  | Single line (identical to json)                     |
 | `run`      | Single envelope after completion | Streaming: started + progress + terminated + result |
 | `validate` | Single envelope                  | Single line (identical to json)                     |
 | `report`   | Single envelope                  | Single line (identical to json)                     |
-| `compare`  | Single envelope                  | Single line (identical to json)                     |
+| `summary`  | Single envelope                  | Single line (identical to json)                     |
+| `schema`   | Single envelope                  | Single line (identical to json)                     |
 | `version`  | Single envelope                  | Single line (identical to json)                     |
 
 ## 5. Output Format Negotiation

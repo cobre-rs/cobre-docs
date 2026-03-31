@@ -38,16 +38,16 @@ These ensure the SDDP algorithm has relatively complete recourse — every subpr
 
 These provide slack for physical or operational constraints that may be impossible to satisfy under extreme conditions. Their cost must be high enough to affect the value function in earlier stages:
 
-| Penalty                  | Symbol       | Units       | Typical Values | Violated Constraint                   |
-| ------------------------ | ------------ | ----------- | -------------- | ------------------------------------- |
-| Storage below minimum    | $c^{sv-}_h$  | \$/hm³      | 10,000+        | $v_h \geq \underline{V}_h$            |
-| Filling target shortfall | $c^{fill}_h$ | \$/hm³      | 50,000+        | $v_h \geq \underline{V}_h$ (terminal) |
-| Turbined flow minimum    | $c^{tv-}_h$  | \$/(m³/s·h) | 500-1,000      | $q_{h,k} \geq \underline{Q}_h$        |
-| Outflow minimum          | $c^{ov-}_h$  | \$/(m³/s·h) | 500-1,000      | $o_{h,k} \geq \underline{O}_h$        |
-| Outflow maximum          | $c^{ov+}_h$  | \$/(m³/s·h) | 500-1,000      | $o_{h,k} \leq \bar{O}_h$              |
-| Generation minimum       | $c^{gv-}_h$  | \$/MWh      | 1,000-2,000    | $g_{h,k} \geq \underline{G}_h$        |
-| Evaporation violation    | $c^{ev}_h$   | \$/(m³/s·h) | 5,000+         | Evaporation within physical limits    |
-| Withdrawal violation     | $c^{wv}_h$   | \$/(m³/s·h) | 1,000-5,000    | Water withdrawal commitment           |
+| Penalty                  | Symbol       | Units       | Typical Values | Violated Constraint                                     |
+| ------------------------ | ------------ | ----------- | -------------- | ------------------------------------------------------- |
+| Storage below minimum    | $c^{sv-}_h$  | \$/hm³      | 10,000+        | $v_h \geq \underline{V}_h$                              |
+| Filling target shortfall | $c^{fill}_h$ | \$/hm³      | 50,000+        | $v_h \geq \underline{V}_h$ (terminal)                   |
+| Turbined flow minimum    | $c^{tv-}_h$  | \$/(m³/s·h) | 500-1,000      | $q_{h,k} \geq \underline{Q}_h$                          |
+| Outflow minimum          | $c^{ov-}_h$  | \$/(m³/s·h) | 500-1,000      | $o_{h,k} \geq \underline{O}_h$                          |
+| Outflow maximum          | $c^{ov+}_h$  | \$/(m³/s·h) | 500-1,000      | $o_{h,k} \leq \bar{O}_h$                                |
+| Generation minimum       | $c^{gv-}_h$  | \$/MWh      | 1,000-2,000    | $g_{h,k} \geq \underline{G}_h$                          |
+| Evaporation violation    | $c^{ev}_h$   | \$/(m³/s·h) | 5,000+         | Evaporation within physical limits                      |
+| Withdrawal violation     | $c^{wv}_h$   | \$/(m³/s·h) | 1,000-5,000    | Water withdrawal commitment (bidirectional: under/over) |
 
 ### 1.4 Category 3: Regularization Costs (Solution Guidance)
 
@@ -169,15 +169,15 @@ $$
 $$
   - \underbrace{q_{h,k} - s_{h,k} - u_{h,k}}_{\text{Outflows}}
   - \underbrace{e_{h,k}}_{\text{Evaporation}}
-  - \underbrace{r_{h,k}}_{\text{Withdrawal}}
   - \underbrace{\sum_{j: \text{src}=h} p_{j,k}}_{\text{Pumped outflow}}
-\Big) \Bigg]
+\Big) - \underbrace{r_h}_{\text{Withdrawal (fixed)}} \Bigg]
 $$
 
 where:
 
 - $v^{in}_h$ = incoming storage LP variable, fixed to the previous stage's value via the storage fixing constraint (§4a)
-- $a_h$ = incremental inflow (from AR model, see [PAR(p) inflow model](par-inflow-model.md))
+- $a_h$ = incremental inflow (from AR model, see [PAR(p) inflow model](par-inflow-model.md)); equivalently $z_h$ from the z-inflow constraint (§5b)
+- $r_h$ = water withdrawal rate (m³/s), a **fixed RHS parameter** from `water_withdrawal_m3s` (not a per-block LP decision variable). Withdrawal is subtracted from the available water at the stage level, outside the per-block summation
 - $w_k = \tau_k / \sum_j \tau_j$ = block weight
 - $\zeta = 0.0036 \times \sum_k \tau_k$ = time conversion factor
 
@@ -220,7 +220,46 @@ The variable $v^{in}_h$ then appears as an LP variable (not a constant) in all c
 > - The incoming storage variable $v^{in}_h$ has **no bounds** — its value is entirely determined by the fixing constraint. The outgoing storage $v_h$ retains its original bounds (§8).
 > - The RHS value $\hat{v}_h$ is patched per scenario during the forward pass ([Training Loop SS4.2a](../architecture/training-loop.md)) and backward pass, at row $h$ ([Solver Abstraction SS2.2](../architecture/solver-abstraction.md)).
 > - The dual extraction for cut coefficients reads $\pi^{fix}_h$ from the contiguous top region of the dual vector, where the row-column index symmetry enables a single slice read for all storage cut coefficients ([Training Loop SS7.2](../architecture/training-loop.md)).
-> - The column for $v^{in}_h$ is placed after the state prefix (after outgoing storage and lag variables) — see [Solver Abstraction SS2.1](../architecture/solver-abstraction.md). The incoming storage variables are **not** part of the state vector; they are auxiliary variables whose only purpose is to provide a clean dual for cut coefficient extraction.
+> - The column for $v^{in}_h$ is placed after the state prefix (after outgoing storage, lag variables, and realized-inflow variables) — see [Solver Abstraction SS2.1](../architecture/solver-abstraction.md) and §4b below. The incoming storage variables are **not** part of the state vector; they are auxiliary variables whose only purpose is to provide a clean dual for cut coefficient extraction.
+
+## 4b. LP Column and Row Layout
+
+The stage LP uses a fixed column and row layout that places state variables first (for contiguous dual extraction), followed by auxiliary and equipment columns. With $N = |\mathcal{H}|$ hydros and $L$ = maximum AR order:
+
+**Column layout**:
+
+| Region        | Index range            | Count | Description                                   |
+| ------------- | ---------------------- | ----- | --------------------------------------------- |
+| `storage`     | $[0, N)$               | $N$   | Outgoing storage volumes (state)              |
+| `inflow_lags` | $[N, N(1{+}L))$        | $NL$  | AR lag variables (state)                      |
+| `z_inflow`    | $[N(1{+}L), N(2{+}L))$ | $N$   | Realized inflow (auxiliary, not state)        |
+| `storage_in`  | $[N(2{+}L), N(3{+}L))$ | $N$   | Incoming storage volumes (auxiliary, for §4a) |
+| `theta`       | $N(3{+}L)$             | $1$   | Future cost variable                          |
+
+Equipment columns (turbine, spillage, diversion, thermal, line flows, deficit, excess, slacks) follow immediately after `theta`.
+
+The `z_inflow` region holds one free column per hydro representing the total realized inflow $z_h = a_h$ (m³/s) for each hydro at the current stage. These are auxiliary columns (zero objective cost, unbounded) whose primal values after solving give the realized inflow. They participate in the water balance (§4) and are defined by the z-inflow constraints (§5b).
+
+**Row layout** (dual-relevant prefix):
+
+| Region           | Index range            | Count | Description                                  |
+| ---------------- | ---------------------- | ----- | -------------------------------------------- |
+| `storage_fixing` | $[0, N)$               | $N$   | Storage fixing constraints (§4a)             |
+| `lag_fixing`     | $[N, N(1{+}L))$        | $NL$  | AR lag fixing constraints (§5a)              |
+| `z_inflow`       | $[N(1{+}L), N(2{+}L))$ | $N$   | Realized-inflow definition constraints (§5b) |
+
+Equipment rows (water balance, load balance, FPHA, evaporation, outflow bounds, etc.) follow after the z-inflow rows.
+
+**Worked example** ($N = 3$, $L = 2$):
+
+| Region        | Range  | Formula            |
+| ------------- | ------ | ------------------ |
+| `storage`     | 0..3   | $[0, 3)$           |
+| `inflow_lags` | 3..9   | $[3, 3 \times 3)$  |
+| `z_inflow`    | 9..12  | $[9, 3 \times 4)$  |
+| `storage_in`  | 12..15 | $[12, 3 \times 5)$ |
+| `theta`       | 15     | $3 \times 5$       |
+| `n_state`     | 9      | $3 \times 3$       |
 
 ## 5. AR Inflow Dynamics
 
@@ -261,6 +300,33 @@ where:
 > - The RHS value $\hat{a}_{h,\ell}$ is patched per scenario during the forward pass ([Training Loop SS4.2a](../architecture/training-loop.md)) and backward pass, following the same index formula as the column layout: row $N + \ell \cdot N + h$ for hydro $h$, lag $\ell$ ([Solver Abstraction SS2.2](../architecture/solver-abstraction.md)).
 > - The dual extraction for cut coefficients reads $\pi^{lag}_{h,\ell}$ from the contiguous top region of the dual vector, where the row-column index symmetry enables a single slice read ([Training Loop SS7.2](../architecture/training-loop.md)).
 
+## 5b. Realized-Inflow Definition Constraints (z-inflow)
+
+For each hydro $h \in \mathcal{H}$, the LP includes an auxiliary variable $z_h$ representing the total realized inflow (m³/s) at the current stage. These variables are defined by equality constraints that combine the deterministic base, lag contributions, and stochastic noise:
+
+$$
+z_h = b_{h,m(t)} + \sum_{\ell=1}^{P_h} \psi_{m(t),\ell} \cdot a_{h,\ell} + \sigma_{m(t)} \cdot \eta_t
+$$
+
+where:
+
+- $z_h$ = LP variable representing the realized inflow for hydro $h$ (free column, zero cost)
+- $b_{h,m(t)}$ = deterministic base (precomputed from seasonal means and AR coefficients — see [PAR(p) model §7.4](par-inflow-model.md))
+- $\psi_{m(t),\ell}$ = original-unit AR coefficients (constraint matrix entries, set once at LP construction)
+- $a_{h,\ell}$ = LP variables for lagged inflows (state variables, fixed by §5a)
+- $\sigma_{m(t)} \cdot \eta_t$ = noise innovation (patched into the constraint RHS per scenario)
+
+The z-inflow variable $z_h$ then enters the water balance constraint (§4) in place of the raw inflow term $a_h$, and its primal value after solving gives the realized inflow for reporting and simulation extraction.
+
+**Constraint count**: $N$ total constraints, where $N = |\mathcal{H}|$ is the number of operating hydros. See §4b for the row layout.
+
+> **Implementation notes**:
+>
+> - The z-inflow columns are placed at $[N(1{+}L), N(2{+}L))$ in the column layout — between the AR lag columns and the incoming storage columns (§4b).
+> - The z-inflow constraint rows are placed at $[N(1{+}L), N(2{+}L))$ in the row layout — after the lag fixing rows and before the water balance rows.
+> - The RHS is patched per scenario with $b_{h,m(t)} + \sigma_{m(t)} \cdot \eta_t$, where $\eta_t$ is the effective noise (possibly clamped for inflow non-negativity — see [Inflow Non-Negativity](inflow-nonnegativity.md)).
+> - These are not state variables and do not contribute to cut coefficients. Their purpose is twofold: (1) provide the realized inflow for the water balance, and (2) enable direct extraction of per-hydro inflow values from the primal solution.
+
 ## 6. Hydro Generation Constraints
 
 Cobre supports two production models during training, in increasing order of complexity. A third model (linearized head) is available during simulation only — see [hydro production models §3](hydro-production-models.md). The model can vary by stage or season per hydro — see [Input Hydro Extensions §2](../data-model/input-hydro-extensions.md).
@@ -299,10 +365,10 @@ $$
 
 > **Clarification**: Outflow $o$ represents water released to the downstream channel (affecting tailrace level). It does NOT include:
 >
-> - **Withdrawal** $r_{h,k}$: Consumptive use removed from the system (irrigation, water supply)
+> - **Withdrawal** $r_h$: Consumptive use removed from the system (irrigation, water supply). This is a fixed parameter (not a decision variable) — see §4
 > - **Diversion** $u_{h,k}$: Water bypassed to a separate channel (not affecting main tailrace)
 >
-> The water balance (§4) accounts for all flows: inflow $-$ $(q + s + u + r)$ $-$ evaporation = storage change.
+> The water balance (§4) accounts for all flows: inflow $-$ $(q + s + u)$ $-$ evaporation $-$ withdrawal = storage change. Withdrawal enters as a fixed RHS parameter; bidirectional violation slacks ($\sigma^{w-}_h$, $\sigma^{w+}_h$) allow the LP to relax the withdrawal commitment when necessary (see §9).
 
 **Outflow Bounds** (with slacks for soft enforcement):
 
@@ -359,9 +425,15 @@ The per-block constraint violation penalties in the objective (referenced from �
 $$
 \sum_{k \in \mathcal{K}} \tau_k \sum_{h \in \mathcal{H}} \Big[
   c^{tv-}_h \sigma^{q-}_{h,k} + c^{ov-}_h \sigma^{o-}_{h,k} + c^{ov+}_h \sigma^{o+}_{h,k} + c^{gv-}_h \sigma^{g-}_{h,k}
-  + c^{ev}_h (\sigma^{e+}_{h,k} + \sigma^{e-}_{h,k}) + c^{wv}_h \sigma^{r}_{h,k}
+  + c^{ev}_h (\sigma^{e+}_{h,k} + \sigma^{e-}_{h,k})
 \Big]
 $$
+
+$$
++ \sum_{h \in \mathcal{H}} T \cdot c^{wv}_h (\sigma^{w-}_h + \sigma^{w+}_h)
+$$
+
+where $T = \sum_k \tau_k$ is the total stage duration in hours. Withdrawal violation slacks ($\sigma^{w-}_h$, $\sigma^{w+}_h$) are stage-level (not per-block) and bidirectional: $\sigma^{w-}_h$ penalizes under-withdrawal and $\sigma^{w+}_h$ penalizes over-withdrawal relative to the fixed `water_withdrawal_m3s` target. Both slacks are active only when the withdrawal target is positive; otherwise they are pinned to zero.
 
 Storage violation penalties ($c^{sv-}_h \sigma^{v-}_h$ and $c^{fill}_h \sigma^{fill}_h$) appear outside the $\tau_k$ sum because they apply to end-of-stage storage — see §2.
 
@@ -407,6 +479,55 @@ where:
 Cuts are pre-allocated and toggled active/inactive via bound changes for warm-starting efficiency.
 
 For cut coefficient derivation, aggregation, and selection strategies, see [cut management](cut-management.md).
+
+## 12. LP Scaling
+
+The stage LP is numerically conditioned via a three-step scaling procedure applied once at template construction time. Scaling improves solver convergence by reducing the condition number of the constraint matrix without changing the optimization argmin.
+
+### 12.1 Cost Scaling (COST_SCALE_FACTOR)
+
+All objective coefficients (except the future cost variable $\theta$) are divided by a constant factor $K = 1000$:
+
+$$
+\tilde{c}_j = \frac{c_j}{K} \quad \text{for all } j \neq \theta
+$$
+
+The $\theta$ variable retains its coefficient of 1.0 because the Benders cuts enforce $\theta \geq \alpha_{scaled}$ where $\alpha_{scaled} = Q_{successor} / K$, so $\theta$ already operates in scaled cost space. The LP objective is $\sum_j \tilde{c}_j x_j + 1.0 \cdot \theta$, and the total scaled objective equals $(C_{stage} + C_{future}) / K$. All cost-domain outputs (objective values, duals, cost breakdowns) are multiplied by $K$ at the reporting boundary to recover original units.
+
+> **Impact on cut coefficients**: Cut intercepts and coefficients are stored in scaled cost space (divided by $K$). When evaluating or reporting cut values, the factor $K$ must be applied. Duals extracted from the LP are already in scaled cost space and must be multiplied by $K$ to obtain original-unit values.
+
+### 12.2 Column Scaling (Geometric Mean)
+
+After cost scaling, each column $j$ is assigned a scale factor:
+
+$$
+d_j^{col} = \frac{1}{\sqrt{\max_i |A_{ij}| \cdot \min_i |A_{ij}|}}
+$$
+
+where the max and min are taken over nonzero entries in column $j$. Columns with no nonzero entries receive $d_j^{col} = 1$. The transformation replaces:
+
+- Matrix entries: $\tilde{A}_{ij} = A_{ij} \cdot d_j^{col}$
+- Objective coefficients: $\tilde{c}_j = c_j \cdot d_j^{col}$
+- Column bounds: $\tilde{l}_j = l_j / d_j^{col}$, $\tilde{u}_j = u_j / d_j^{col}$
+
+### 12.3 Row Scaling (Geometric Mean)
+
+After column scaling, each row $i$ is assigned a scale factor using the same geometric-mean formula applied to the already column-scaled matrix:
+
+$$
+d_i^{row} = \frac{1}{\sqrt{\max_j |\tilde{A}_{ij}| \cdot \min_j |\tilde{A}_{ij}|}}
+$$
+
+The transformation replaces:
+
+- Matrix entries: $\hat{A}_{ij} = \tilde{A}_{ij} \cdot d_i^{row}$
+- Row bounds: $\hat{l}_i^{row} = l_i^{row} \cdot d_i^{row}$, $\hat{u}_i^{row} = u_i^{row} \cdot d_i^{row}$
+
+Column bounds and objective coefficients are not modified by row scaling.
+
+The combined scaling produces the standard $D_r \cdot A \cdot D_c$ form where $D_r$ and $D_c$ are diagonal scaling matrices.
+
+> **Dual unscaling**: LP duals are in the scaled problem's space. To recover original-unit duals: $\pi_i^{original} = \pi_i^{scaled} \cdot d_i^{row} \cdot K$. The per-column and per-row scale factors are stored in the `StageTemplate` for use during dual extraction and cut coefficient computation.
 
 ## Cross-References
 

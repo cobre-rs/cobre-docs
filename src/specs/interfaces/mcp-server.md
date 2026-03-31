@@ -1,5 +1,7 @@
 # MCP Server
 
+> **Status: Not Implemented.** This specification describes planned behavior. The current codebase contains only a `todo!()` stub.
+
 ## Purpose
 
 This spec defines the Cobre MCP (Model Context Protocol) server: the complete tool, resource, and prompt definitions that expose Cobre as a first-class tool for AI agents, the transport and security model for local and remote operation, the progress reporting mechanism for long-running SDDP training, and the capability negotiation handshake. The `cobre-mcp` crate implements this spec as a standalone server binary that invokes the Cobre Rust library API directly -- single-process, no MPI, OpenMP threads for computation. All tool responses reuse the response envelope and error schema defined in [Structured Output](structured-output.md).

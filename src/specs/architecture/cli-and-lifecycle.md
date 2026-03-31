@@ -39,67 +39,73 @@ mpiexec -n 1 cobre /path/to/case_directory --validate-only
 
 ### 2.1 Subcommand Invocation Patterns
 
-In addition to the traditional MPI invocation, Cobre supports subcommand-style invocations for operations that do not require MPI:
+Cobre supports subcommand-style invocations. The available subcommands are:
 
 ```bash
-# Subcommand invocations (single-process, no MPI required)
-cobre validate /path/to/case_directory
-cobre run /path/to/case_directory
-cobre report /path/to/output_directory
-cobre compare /path/to/output_a /path/to/output_b
-cobre serve                                        # MCP server mode
-cobre version
-
-# With structured output
-cobre validate /path/to/case --output-format json
-cobre run /path/to/case --output-format json-lines
-cobre report /path/to/output --output-format json
+cobre init [OPTIONS] [DIRECTORY]           # Scaffold a new case directory
+cobre run <CASE_DIR> [OPTIONS]             # Load, train, simulate, and write results
+cobre validate <CASE_DIR>                  # Validate a case directory
+cobre report <RESULTS_DIR>                 # Query results from a completed run
+cobre summary <OUTPUT_DIR>                 # Display the post-run summary
+cobre schema export [--output-dir <DIR>]   # Export JSON Schema files for all input types
+cobre version                              # Print version and build information
 ```
 
-**Hybrid detection**: When invoked as `mpiexec cobre /path/to/case`, the CLI detects that no recognized subcommand was given and treats the path argument as an implicit `run` subcommand (backward-compatible with the existing invocation pattern). See [Structured Output SS4](../interfaces/structured-output.md) for the output format negotiation and per-subcommand response shapes.
+For distributed execution, the `run` subcommand can be launched under MPI:
+
+```bash
+mpiexec -np 4 cobre run /path/to/case_directory
+```
 
 **MPI requirements by subcommand**:
 
 | Subcommand | MPI Required                                           | Rationale                                               |
 | ---------- | ------------------------------------------------------ | ------------------------------------------------------- |
+| `init`     | No                                                     | Template scaffolding; no computation                    |
 | `run`      | Yes (for distributed execution) or No (single-process) | Training/simulation can run with or without MPI         |
 | `validate` | No                                                     | Validation is rank-0-only; single-process is sufficient |
 | `report`   | No                                                     | Reads output files; no computation                      |
-| `compare`  | No                                                     | Reads output files; no computation                      |
-| `serve`    | No                                                     | MCP server is single-process                            |
+| `summary`  | No                                                     | Reads output files; no computation                      |
+| `schema`   | No                                                     | Schema export; no computation                           |
 | `version`  | No                                                     | Information only                                        |
 
 ## 3. Command-Line Interface
 
-| Argument          | Required | Description                                                  |
-| ----------------- | -------- | ------------------------------------------------------------ |
-| `CASE_DIR`        | Yes      | Path to case directory containing `config.json`              |
+| Argument          | Required | Description                                                   |
+| ----------------- | -------- | ------------------------------------------------------------- |
+| `CASE_DIR`        | Yes      | Path to case directory containing `config.json`               |
 | `--validate-only` | No       | Run Startup and Validation phases only, then exit (see SS5.3) |
-| `--version`       | No       | Print version and exit                                       |
-| `--help`          | No       | Print usage and exit                                         |
+| `--version`       | No       | Print version and exit                                        |
+| `--help`          | No       | Print usage and exit                                          |
 
 ### 3.1 Global CLI Flags
 
-The following flags apply to all subcommands:
+The following flag applies to all subcommands:
 
-| Flag              | Values                        | Default | Description                                                                                                                          |
-| ----------------- | ----------------------------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------ |
-| `--output-format` | `human`, `json`, `json-lines` | `human` | Output presentation format. Does not affect computation. See [Structured Output SS5](../interfaces/structured-output.md)             |
-| `--quiet`         | (flag)                        | off     | Suppress non-essential output (progress bars, decorative headers). In `json` mode, suppresses `warnings` array                       |
-| `--no-progress`   | (flag)                        | off     | Suppress progress streaming. In `json-lines` mode, suppresses `progress` events (only `started`, `terminated`, `result` are emitted) |
+| Flag             | Values                    | Default | Description                                                                                                                                                               |
+| ---------------- | ------------------------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--color <WHEN>` | `auto`, `always`, `never` | `auto`  | Control ANSI color output on stderr. `always` forces color on (useful under `mpiexec` which pipes stderr through a non-TTY). Also honoured via the `COBRE_COLOR` env var. |
+
+Color resolution order (highest to lowest priority):
+
+1. `--color <WHEN>` CLI flag
+2. `COBRE_COLOR` environment variable (`always` or `never`; invalid values ignored)
+3. `FORCE_COLOR=1` environment variable (forces color on; see <https://force-color.org>)
+4. Console auto-detection (whether stderr is a TTY)
 
 ### 3.2 Subcommand Arguments
 
 Each subcommand accepts specific positional and keyword arguments:
 
-| Subcommand | Positional          | Additional Flags                          | Description                        |
-| ---------- | ------------------- | ----------------------------------------- | ---------------------------------- |
-| `run`      | `CASE_DIR`          | `--tui`, `--validate-only`                | Execute training and/or simulation |
-| `validate` | `CASE_DIR`          | (none)                                    | Validate input files only          |
-| `report`   | `OUTPUT_DIR`        | `--section <name>`                        | Query output data                  |
-| `compare`  | `OUTPUT_A OUTPUT_B` | `--metric <name>`                         | Compare two runs                   |
-| `serve`    | (none)              | `--transport <stdio\|http>`, `--port <N>` | Start MCP server                   |
-| `version`  | (none)              | (none)                                    | Print version information          |
+| Subcommand | Positional    | Additional Flags                             | Description                        |
+| ---------- | ------------- | -------------------------------------------- | ---------------------------------- |
+| `init`     | `[DIRECTORY]` | `--template <NAME>`, `--list`, `--force`     | Scaffold a new case directory      |
+| `run`      | `CASE_DIR`    | `--output <DIR>`, `--threads <N>`, `--quiet` | Execute training and/or simulation |
+| `validate` | `CASE_DIR`    | (none)                                       | Validate input files only          |
+| `report`   | `RESULTS_DIR` | (none)                                       | Query output data as JSON          |
+| `summary`  | `OUTPUT_DIR`  | (none)                                       | Display post-run summary           |
+| `schema`   | (subcommands) | `export [--output-dir <DIR>]`                | Manage JSON Schema files           |
+| `version`  | (none)        | (none)                                       | Print version information          |
 
 **Design Decision**: All execution options (skip training, skip simulation, warm-start mode, etc.) are specified in `config.json`, not via CLI flags. This ensures:
 
@@ -109,16 +115,15 @@ Each subcommand accepts specific positional and keyword arguments:
 
 ## 4. Exit Codes
 
-| Code | Meaning                                   |
-| ---- | ----------------------------------------- |
-| 0    | Success                                   |
-| 1    | Invalid command-line arguments            |
-| 2    | Configuration validation error            |
-| 3    | Input data validation error               |
-| 4    | Runtime error (solver failure, MPI error) |
-| 5    | Checkpoint recovery failed                |
-| 130  | Interrupted (SIGINT)                      |
-| 137  | Killed (SIGKILL, typically OOM)           |
+| Code | Category   | Cause                                                                                                                                                      |
+| ---- | ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `0`  | Success    | The command completed without errors                                                                                                                       |
+| `1`  | Validation | Case directory failed the validation pipeline -- schema errors, cross-reference errors, semantic constraint violations, or policy compatibility mismatches |
+| `2`  | I/O        | File not found, permission denied, disk full, or write failure during loading or output                                                                    |
+| `3`  | Solver     | LP infeasible subproblem or numerical solver failure during training or simulation                                                                         |
+| `4`  | Internal   | Communication failure, unexpected channel closure, or other software/environment problem                                                                   |
+
+Codes 1--2 indicate user-correctable input problems; codes 3--4 indicate case/environment problems. Error messages are printed to stderr with `error:` prefix and hint lines.
 
 ## 5. Execution Phases Overview
 
@@ -149,7 +154,7 @@ This subsection documents the correspondence between CLI execution phases (SS5.2
 | **Startup**        | Scheduler detection (SLURM, PBS, local)                | [CLI and Lifecycle SS6.3](#63-scheduler-detection)                  | Reads environment variables; no MPI dependency                                |
 | **Startup**        | CLI argument parsing and subcommand routing            | [CLI and Lifecycle SS3](#3-command-line-interface)                  | Determines execution mode before Validation                                   |
 | **Validation**     | Rank-0 file loading and validation (`load_case`)       | [Input Loading Pipeline SS8.1](./input-loading-pipeline.md)         | Rank 0 only; produces the `System` struct                                     |
-| **Initialization** | postcard broadcast of `System` to worker ranks             | [Input Loading Pipeline SS6](./input-loading-pipeline.md)           | Requires `System` from Validation; all ranks receive identical validated data |
+| **Initialization** | postcard broadcast of `System` to worker ranks         | [Input Loading Pipeline SS6](./input-loading-pipeline.md)           | Requires `System` from Validation; all ranks receive identical validated data |
 | **Initialization** | OpenMP configuration and NUMA allocation policy        | [Hybrid Parallelism SS6, Steps 4--6](../hpc/hybrid-parallelism.md)  | Must precede workspace allocation (first-touch policy)                        |
 | **Initialization** | Solver workspace allocation (thread-local, NUMA-aware) | [Solver Workspaces SS1.3](./solver-workspaces.md)                   | Each thread creates its own workspace on its NUMA node                        |
 | **Initialization** | Stage LP template construction                         | [Solver Abstraction SS11.1](./solver-abstraction.md)                | Built from resolved `System`; shared read-only across threads                 |
@@ -199,14 +204,15 @@ Each subcommand participates in a subset of the execution phases:
 
 | Subcommand | Startup | Validation | Initialization | Scenario Gen | Training | Simulation | Finalize |
 | ---------- | :-----: | :--------: | :------------: | :----------: | :------: | :--------: | :------: |
+| `init`     |   --    |     --     |       --       |      --      |    --    |     --     |    --    |
 | `run`      |   Yes   |    Yes     |      Yes       |     Yes      |   Yes    |    Yes     |   Yes    |
 | `validate` |  Yes\*  |    Yes     |       --       |      --      |    --    |     --     |    --    |
 | `report`   |   --    |     --     |       --       |      --      |    --    |     --     |    --    |
-| `compare`  |   --    |     --     |       --       |      --      |    --    |     --     |    --    |
-| `serve`    |  Yes\*  |     --     |       --       |      --      |    --    |     --     |    --    |
+| `summary`  |   --    |     --     |       --       |      --      |    --    |     --     |    --    |
+| `schema`   |   --    |     --     |       --       |      --      |    --    |     --     |    --    |
 | `version`  |   --    |     --     |       --       |      --      |    --    |     --     |    --    |
 
-\* Startup for `validate` and `serve` skips MPI initialization (single-process mode). The `report`, `compare`, and `version` subcommands have no lifecycle phases -- they perform their operation and exit immediately.
+\* Startup for `validate` skips MPI initialization (single-process mode). The `init`, `report`, `summary`, `schema`, and `version` subcommands have no lifecycle phases -- they perform their operation and exit immediately.
 
 **Library mode** (used by `cobre-mcp` and `cobre-python`): When invoked as a library rather than via the CLI binary, the execution lifecycle skips MPI initialization, scheduler detection, and signal handler installation. The library caller provides the case path directly and receives structured results as Rust types. See [Hybrid Parallelism §1](../hpc/hybrid-parallelism.md) for single-process mode initialization and [Python Bindings](../interfaces/python-bindings.md) for the Python API surface.
 

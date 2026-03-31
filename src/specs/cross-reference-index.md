@@ -1,6 +1,6 @@
 # Cross-Reference Index
 
-This page provides a centralized navigation index for the 79 specification files in the Cobre documentation. It is designed to help implementers determine which specs to read for a given crate, in what order, and how specs relate to each other through cross-references.
+This page provides a centralized navigation index for the 88 specification files in the Cobre documentation. It is designed to help implementers determine which specs to read for a given crate, in what order, and how specs relate to each other through cross-references.
 
 The index has five components:
 
@@ -190,13 +190,13 @@ This crate owns entity types, internal structures, penalty system, and design pr
 
 The following table maps each Rust module added in Phase 2 to the spec section(s) it implements.
 
-| Module | Rust File | Primary Spec Section(s) |
-| ------ | --------- | ----------------------- |
-| `temporal` | `src/temporal.rs` | [Input Scenarios](./data-model/input-scenarios.md) §1.1–1.10 (stages, blocks, seasons, policy graph, state variables, risk measure, noise method) |
-| `scenario` | `src/scenario.rs` | [Input Scenarios](./data-model/input-scenarios.md) §2–5 (PAR model parameters, load statistics, correlation model, scenario source) |
-| `initial_conditions` | `src/initial_conditions.rs` | [Input Constraints](./data-model/input-constraints.md) §1 (initial storage and filling-storage arrays) |
-| `generic_constraint` | `src/generic_constraint.rs` | [Input Constraints](./data-model/input-constraints.md) §3 (generic linear constraint in-memory representation, expression grammar hook) |
-| `resolved` | `src/resolved.rs` | [Penalty System](./data-model/penalty-system.md) §3 (pre-resolved O(1) penalty containers); [Input Constraints](./data-model/input-constraints.md) §2 (pre-resolved O(1) bound containers) |
+| Module               | Rust File                   | Primary Spec Section(s)                                                                                                                                                                    |
+| -------------------- | --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `temporal`           | `src/temporal.rs`           | [Input Scenarios](./data-model/input-scenarios.md) §1.1–1.10 (stages, blocks, seasons, policy graph, state variables, risk measure, noise method)                                          |
+| `scenario`           | `src/scenario.rs`           | [Input Scenarios](./data-model/input-scenarios.md) §2–5 (PAR model parameters, load statistics, correlation model, scenario source)                                                        |
+| `initial_conditions` | `src/initial_conditions.rs` | [Input Constraints](./data-model/input-constraints.md) §1 (initial storage and filling-storage arrays)                                                                                     |
+| `generic_constraint` | `src/generic_constraint.rs` | [Input Constraints](./data-model/input-constraints.md) §3 (generic linear constraint in-memory representation, expression grammar hook)                                                    |
+| `resolved`           | `src/resolved.rs`           | [Penalty System](./data-model/penalty-system.md) §3 (pre-resolved O(1) penalty containers); [Input Constraints](./data-model/input-constraints.md) §2 (pre-resolved O(1) bound containers) |
 
 ### cobre-io
 
@@ -229,32 +229,32 @@ This crate owns input parsing, output writing, validation, binary formats, and t
 
 The following table maps each public Rust module in `crates/cobre-io/src/` to the spec section(s) it implements.
 
-| Module | Rust Path | Primary Spec Section(s) |
-| ------ | --------- | ----------------------- |
-| `lib` | `src/lib.rs` | [Input Loading Pipeline](./architecture/input-loading-pipeline.md) §8.1 (`load_case` public API, `LoadError` enum) |
-| `error` | `src/error.rs` | [Input Loading Pipeline](./architecture/input-loading-pipeline.md) §8.1 (`LoadError` six-variant enum) |
-| `pipeline` | `src/pipeline.rs` | [Input Loading Pipeline](./architecture/input-loading-pipeline.md) §2–7 (five-layer pipeline orchestration, resolution, scenario assembly, SystemBuilder construction) |
-| `config` | `src/config.rs` | [Input Directory Structure](./data-model/input-directory-structure.md) §2 (`config.json` schema); [Configuration Reference](./configuration/configuration-reference.md) §3–7 |
-| `stages` | `src/stages.rs` | [Input Scenarios](./data-model/input-scenarios.md) §1 (`stages.json` schema, policy graph, scenario source) |
-| `initial_conditions` | `src/initial_conditions.rs` | [Input Constraints](./data-model/input-constraints.md) §1 (`initial_conditions.json` parser) |
-| `penalties` | `src/penalties.rs` | [Penalty System](./data-model/penalty-system.md) §1 (`penalties.json` global defaults parser) |
-| `broadcast` | `src/broadcast.rs` | [Binary Formats](./data-model/binary-formats.md) §2 (`postcard` MPI broadcast, DEC-002); [Input Loading Pipeline](./architecture/input-loading-pipeline.md) §6.1–6.4 |
-| `report` | `src/report.rs` | [Validation Architecture](./architecture/validation-architecture.md) §5 (`ValidationReport` JSON serialization) |
-| `validation::mod` | `src/validation/mod.rs` | [Validation Architecture](./architecture/validation-architecture.md) §3–4 (`ValidationContext`, `ErrorKind` catalog, `Severity`) |
-| `validation::structural` | `src/validation/structural.rs` | [Validation Architecture](./architecture/validation-architecture.md) §2.1 (Layer 1: structural); [Input Directory Structure](./data-model/input-directory-structure.md) §1 (`FileManifest`, 33-file inventory) |
-| `validation::schema` | `src/validation/schema.rs` | [Validation Architecture](./architecture/validation-architecture.md) §2.2 (Layer 2: schema) |
-| `validation::referential` | `src/validation/referential.rs` | [Validation Architecture](./architecture/validation-architecture.md) §2.3 (Layer 3: referential integrity); [Input Loading Pipeline](./architecture/input-loading-pipeline.md) §2.6 (26-rule cross-reference checklist) |
-| `validation::dimensional` | `src/validation/dimensional.rs` | [Validation Architecture](./architecture/validation-architecture.md) §2.4 (Layer 4: dimensional consistency) |
-| `validation::semantic` | `src/validation/semantic.rs` | [Validation Architecture](./architecture/validation-architecture.md) §2.5 (Layer 5: semantic rules — GNL rejection, penalty ordering, PAR stationarity, acyclic cascade) |
-| `system` | `src/system/` | [Input System Entities](./data-model/input-system-entities.md) §1–7 (entity registry parsers for all 7 entity types); [Input Hydro Extensions](./data-model/input-hydro-extensions.md) §1–3 |
-| `extensions` | `src/extensions/` | [Input Hydro Extensions](./data-model/input-hydro-extensions.md) §1–3 (FPHA hyperplanes, hydro geometry, production models) |
-| `constraints` | `src/constraints/` | [Input Constraints](./data-model/input-constraints.md) §2–4 (bounds Parquet parsers, penalty override parsers, exchange factors, generic constraints, generic constraint bounds) |
-| `scenarios` | `src/scenarios/` | [Input Scenarios](./data-model/input-scenarios.md) §3–5 (PAR coefficients, seasonal stats, inflow history, load factors, correlation, external scenarios, assembly) |
-| `resolution` | `src/resolution/` | [Input Loading Pipeline](./architecture/input-loading-pipeline.md) §5 (three-tier sparse-to-dense expansion); [Penalty System](./data-model/penalty-system.md) §3 (penalty cascade); [Input Constraints](./data-model/input-constraints.md) §2 (bound cascade) |
-| `output` | `src/output/` | [Output Schemas](./data-model/output-schemas.md) §1–6 (stub — Phase 7 scope); [Output Infrastructure](./data-model/output-infrastructure.md) §1–6 (stub — Phase 7 scope); [Binary Formats](./data-model/binary-formats.md) §3 (FlatBuffers stub — Phase 7 scope) |
-| `parquet_helpers` | `src/parquet_helpers.rs` | (internal) [Binary Formats](./data-model/binary-formats.md) §2.2 (Parquet column extraction helpers, Parquet input format per DEC-004) |
-| `scenarios::noise_openings` | `src/scenarios/noise_openings.rs` | [ADR-008: User-Supplied Opening Tree](../../cobre/docs/adr/008-user-supplied-opening-tree.md) (`load_noise_openings` parser, 3-rule validation: dimension mismatch, stage count mismatch, missing opening indices) |
-| `output::stochastic` | `src/output/stochastic.rs` | [ADR-009: Stochastic Artifact Export](../../cobre/docs/adr/009-stochastic-artifact-export.md) (`write_noise_openings`, `write_inflow_seasonal_stats`, `write_inflow_ar_coefficients`, `write_load_seasonal_stats`, `write_fitting_report`, `write_correlation_json`) |
+| Module                      | Rust Path                         | Primary Spec Section(s)                                                                                                                                                                                                                                              |
+| --------------------------- | --------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `lib`                       | `src/lib.rs`                      | [Input Loading Pipeline](./architecture/input-loading-pipeline.md) §8.1 (`load_case` public API, `LoadError` enum)                                                                                                                                                   |
+| `error`                     | `src/error.rs`                    | [Input Loading Pipeline](./architecture/input-loading-pipeline.md) §8.1 (`LoadError` six-variant enum)                                                                                                                                                               |
+| `pipeline`                  | `src/pipeline.rs`                 | [Input Loading Pipeline](./architecture/input-loading-pipeline.md) §2–7 (five-layer pipeline orchestration, resolution, scenario assembly, SystemBuilder construction)                                                                                               |
+| `config`                    | `src/config.rs`                   | [Input Directory Structure](./data-model/input-directory-structure.md) §2 (`config.json` schema); [Configuration Reference](./configuration/configuration-reference.md) §3–7                                                                                         |
+| `stages`                    | `src/stages.rs`                   | [Input Scenarios](./data-model/input-scenarios.md) §1 (`stages.json` schema, policy graph, scenario source)                                                                                                                                                          |
+| `initial_conditions`        | `src/initial_conditions.rs`       | [Input Constraints](./data-model/input-constraints.md) §1 (`initial_conditions.json` parser)                                                                                                                                                                         |
+| `penalties`                 | `src/penalties.rs`                | [Penalty System](./data-model/penalty-system.md) §1 (`penalties.json` global defaults parser)                                                                                                                                                                        |
+| `broadcast`                 | `src/broadcast.rs`                | [Binary Formats](./data-model/binary-formats.md) §2 (`postcard` MPI broadcast, DEC-002); [Input Loading Pipeline](./architecture/input-loading-pipeline.md) §6.1–6.4                                                                                                 |
+| `report`                    | `src/report.rs`                   | [Validation Architecture](./architecture/validation-architecture.md) §5 (`ValidationReport` JSON serialization)                                                                                                                                                      |
+| `validation::mod`           | `src/validation/mod.rs`           | [Validation Architecture](./architecture/validation-architecture.md) §3–4 (`ValidationContext`, `ErrorKind` catalog, `Severity`)                                                                                                                                     |
+| `validation::structural`    | `src/validation/structural.rs`    | [Validation Architecture](./architecture/validation-architecture.md) §2.1 (Layer 1: structural); [Input Directory Structure](./data-model/input-directory-structure.md) §1 (`FileManifest`, 33-file inventory)                                                       |
+| `validation::schema`        | `src/validation/schema.rs`        | [Validation Architecture](./architecture/validation-architecture.md) §2.2 (Layer 2: schema)                                                                                                                                                                          |
+| `validation::referential`   | `src/validation/referential.rs`   | [Validation Architecture](./architecture/validation-architecture.md) §2.3 (Layer 3: referential integrity); [Input Loading Pipeline](./architecture/input-loading-pipeline.md) §2.6 (26-rule cross-reference checklist)                                              |
+| `validation::dimensional`   | `src/validation/dimensional.rs`   | [Validation Architecture](./architecture/validation-architecture.md) §2.4 (Layer 4: dimensional consistency)                                                                                                                                                         |
+| `validation::semantic`      | `src/validation/semantic.rs`      | [Validation Architecture](./architecture/validation-architecture.md) §2.5 (Layer 5: semantic rules — GNL rejection, penalty ordering, PAR stationarity, acyclic cascade)                                                                                             |
+| `system`                    | `src/system/`                     | [Input System Entities](./data-model/input-system-entities.md) §1–7 (entity registry parsers for all 7 entity types); [Input Hydro Extensions](./data-model/input-hydro-extensions.md) §1–3                                                                          |
+| `extensions`                | `src/extensions/`                 | [Input Hydro Extensions](./data-model/input-hydro-extensions.md) §1–3 (FPHA hyperplanes, hydro geometry, production models)                                                                                                                                          |
+| `constraints`               | `src/constraints/`                | [Input Constraints](./data-model/input-constraints.md) §2–4 (bounds Parquet parsers, penalty override parsers, exchange factors, generic constraints, generic constraint bounds)                                                                                     |
+| `scenarios`                 | `src/scenarios/`                  | [Input Scenarios](./data-model/input-scenarios.md) §3–5 (PAR coefficients, seasonal stats, inflow history, load factors, correlation, external scenarios, assembly)                                                                                                  |
+| `resolution`                | `src/resolution/`                 | [Input Loading Pipeline](./architecture/input-loading-pipeline.md) §5 (three-tier sparse-to-dense expansion); [Penalty System](./data-model/penalty-system.md) §3 (penalty cascade); [Input Constraints](./data-model/input-constraints.md) §2 (bound cascade)       |
+| `output`                    | `src/output/`                     | [Output Schemas](./data-model/output-schemas.md) §1–6 (stub — Phase 7 scope); [Output Infrastructure](./data-model/output-infrastructure.md) §1–6 (stub — Phase 7 scope); [Binary Formats](./data-model/binary-formats.md) §3 (FlatBuffers stub — Phase 7 scope)     |
+| `parquet_helpers`           | `src/parquet_helpers.rs`          | (internal) [Binary Formats](./data-model/binary-formats.md) §2.2 (Parquet column extraction helpers, Parquet input format per DEC-004)                                                                                                                               |
+| `scenarios::noise_openings` | `src/scenarios/noise_openings.rs` | [ADR-008: User-Supplied Opening Tree](../../cobre/docs/adr/008-user-supplied-opening-tree.md) (`load_noise_openings` parser, 3-rule validation: dimension mismatch, stage count mismatch, missing opening indices)                                                   |
+| `output::stochastic`        | `src/output/stochastic.rs`        | [ADR-009: Stochastic Artifact Export](../../cobre/docs/adr/009-stochastic-artifact-export.md) (`write_noise_openings`, `write_inflow_seasonal_stats`, `write_inflow_ar_coefficients`, `write_load_seasonal_stats`, `write_fitting_report`, `write_correlation_json`) |
 
 ### cobre-stochastic
 
@@ -279,8 +279,8 @@ This crate owns the PAR model, scenario generation, noise correlation, and sampl
 
 #### v0.1.3 API Additions (cobre-stochastic)
 
-| Function / Type | Rust Path | Spec / Design Reference |
-| --------------- | --------- | ----------------------- |
+| Function / Type             | Rust Path             | Spec / Design Reference                                                                                                                                                                                                                                    |
+| --------------------------- | --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `OpeningTree::from_parts()` | `src/opening_tree.rs` | [ADR-008: User-Supplied Opening Tree](../../cobre/docs/adr/008-user-supplied-opening-tree.md) — constructs `OpeningTree` from a validated flat array and dimension metadata, used by `build_stochastic_context()` when `noise_openings.parquet` is present |
 
 ### cobre-solver

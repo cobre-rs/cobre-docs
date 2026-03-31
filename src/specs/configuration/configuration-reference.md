@@ -70,6 +70,13 @@ Priority ordering: Filling target > Storage violation > Deficit > Constraint vio
 | ---------------- | ---- | ------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | training.enabled | bool | `true`  | When `false`, skip the Training phase and proceed directly to Simulation. See [CLI and Lifecycle SS5](../architecture/cli-and-lifecycle.md) for lifecycle phases. |
 
+### 3.1a Seed and Cut Formulation
+
+| Option                   | Type             | Default | Description                                                                                                                                                                               |
+| ------------------------ | ---------------- | ------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| training.seed            | int or `null`    | `42`    | Random seed for reproducible scenario generation. When `null`, uses the default seed (42). Negative values use their absolute value unsigned.                                             |
+| training.cut_formulation | string or `null` | `null`  | Cut formulation variant: `"single"` (one aggregated cut per stage per iteration) or `"multi"` (one cut per forward-pass scenario per stage). When `null`, the solver selects the default. |
+
 ### 3.2 Forward Pass Count
 
 | Option                  | Type | Default                    | Description                                       |
@@ -269,9 +276,29 @@ The hydro production model is configured **per-hydro** (not globally) in `hydros
 | `fpha`                  | Piecewise-linear head approximation | Training + Simulation | [Hydro Production Models §2](../math/hydro-production-models.md) |
 | `linearized_head`       | Bilinear $q \times v^{avg}$         | Simulation only       | [Hydro Production Models §3](../math/hydro-production-models.md) |
 
-## 7. Simulation I/O Options (`config.json` → `simulation`)
+## 7. Simulation Options (`config.json` → `simulation`)
 
-Options that control simulation output and streaming behavior. All fields are optional; defaults are suitable for production use.
+The simulation section controls the optional post-training simulation phase and its I/O behavior.
+
+### 7.1 Core Simulation Settings
+
+| Option                     | Type   | Default   | Description                                                                       |
+| -------------------------- | ------ | --------- | --------------------------------------------------------------------------------- |
+| `simulation.enabled`       | bool   | `false`   | Enable the simulation phase after training.                                       |
+| `simulation.num_scenarios` | int    | `2000`    | Number of independent Monte Carlo simulation scenarios to evaluate.               |
+| `simulation.policy_type`   | string | `"outer"` | Policy representation for simulation. `"outer"` uses the cut pool (Benders cuts). |
+| `simulation.output_path`   | string | `null`    | Optional custom directory for simulation output files.                            |
+| `simulation.output_mode`   | string | `null`    | Output mode: `"streaming"` or `"batched"`.                                        |
+
+When `simulation.enabled` is `false` or `num_scenarios` is `0`, the simulation phase is skipped entirely.
+
+### 7.2 Sampling Scheme
+
+| Option                            | Type   | Default       | Description                                                     |
+| --------------------------------- | ------ | ------------- | --------------------------------------------------------------- |
+| `simulation.sampling_scheme.type` | string | `"in_sample"` | Scheme type: `"in_sample"`, `"out_of_sample"`, or `"external"`. |
+
+### 7.3 I/O Options
 
 | Option                           | Type | Default | Description                                                                                                                                                                               | Reference                                                            |
 | -------------------------------- | ---- | ------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
@@ -280,7 +307,99 @@ Options that control simulation output and streaming behavior. All fields are op
 ```json
 {
   "simulation": {
+    "enabled": true,
+    "num_scenarios": 2000,
+    "policy_type": "outer",
+    "sampling_scheme": { "type": "in_sample" },
     "io_channel_capacity": 128
+  }
+}
+```
+
+## 7a. Policy Options (`config.json` → `policy`)
+
+Controls policy persistence: checkpoint saving and warm-start loading.
+
+| Option                          | Type                                     | Default      | Description                                                                                                                                 |
+| ------------------------------- | ---------------------------------------- | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| `policy.path`                   | string                                   | `"./policy"` | Directory where policy data (cuts, states, vertices, basis) is stored.                                                                      |
+| `policy.mode`                   | `"fresh"`, `"warm_start"`, or `"resume"` | `"fresh"`    | Initialization mode. `"fresh"` starts from scratch; `"warm_start"` loads cuts from a previous run; `"resume"` continues an interrupted run. |
+| `policy.validate_compatibility` | bool                                     | `true`       | When loading a policy, verify that entity counts, stage counts, and cut dimensions match the current system.                                |
+
+### 7a.1 Checkpointing
+
+Nested under `policy.checkpointing`:
+
+| Option                                     | Type | Default | Description                                     |
+| ------------------------------------------ | ---- | ------- | ----------------------------------------------- |
+| `policy.checkpointing.enabled`             | bool | `false` | Enable periodic checkpointing during training.  |
+| `policy.checkpointing.initial_iteration`   | int  | `null`  | First iteration to write a checkpoint.          |
+| `policy.checkpointing.interval_iterations` | int  | `null`  | Iterations between checkpoints.                 |
+| `policy.checkpointing.store_basis`         | bool | `false` | Include LP basis in checkpoints for warm-start. |
+| `policy.checkpointing.compress`            | bool | `false` | Compress checkpoint files.                      |
+
+```json
+{
+  "policy": {
+    "path": "./policy",
+    "mode": "warm_start",
+    "validate_compatibility": true,
+    "checkpointing": {
+      "enabled": true,
+      "initial_iteration": 10,
+      "interval_iterations": 20,
+      "store_basis": true
+    }
+  }
+}
+```
+
+## 7b. Export Options (`config.json` → `exports`)
+
+Controls which outputs are written to the results directory.
+
+| Option                    | Type                         | Default | Description                                                                 |
+| ------------------------- | ---------------------------- | ------- | --------------------------------------------------------------------------- |
+| `exports.training`        | bool                         | `true`  | Write training convergence data (Parquet).                                  |
+| `exports.cuts`            | bool                         | `true`  | Write the cut pool (FlatBuffers).                                           |
+| `exports.states`          | bool                         | `true`  | Write visited state vectors (Parquet).                                      |
+| `exports.vertices`        | bool                         | `true`  | Write inner approximation vertices when applicable (Parquet).               |
+| `exports.simulation`      | bool                         | `true`  | Write per-entity simulation results (Parquet).                              |
+| `exports.forward_detail`  | bool                         | `false` | Write per-scenario forward-pass detail (large; disabled by default).        |
+| `exports.backward_detail` | bool                         | `false` | Write per-scenario backward-pass detail (large; disabled by default).       |
+| `exports.stochastic`      | bool                         | `false` | Export stochastic preprocessing artifacts to `output/stochastic/`.          |
+| `exports.compression`     | `"zstd"`, `"lz4"`, or `null` | `null`  | Output Parquet compression algorithm. `null` uses the crate default (zstd). |
+
+```json
+{
+  "exports": {
+    "training": true,
+    "cuts": true,
+    "states": true,
+    "simulation": true,
+    "stochastic": false,
+    "compression": "zstd"
+  }
+}
+```
+
+## 7c. Estimation Options (`config.json` → `estimation`)
+
+Controls the PAR(p) model estimation pipeline. When the case provides `inflow_history.parquet`, Cobre can automatically estimate AR coefficients instead of requiring pre-computed `inflow_ar_coefficients.parquet`.
+
+| Option                                   | Type   | Default  | Description                                                                      |
+| ---------------------------------------- | ------ | -------- | -------------------------------------------------------------------------------- |
+| `estimation.max_order`                   | int    | `6`      | Maximum lag order considered during autoregressive model fitting.                |
+| `estimation.order_selection`             | string | `"pacf"` | Order selection criterion: `"pacf"` (PACF-based) or `"fixed"` (use `max_order`). |
+| `estimation.min_observations_per_season` | int    | `30`     | Minimum observations per (entity, season) group to proceed with estimation.      |
+| `estimation.max_coefficient_magnitude`   | float  | `null`   | Safety net: reduce to order 0 if any coefficient exceeds this magnitude.         |
+
+```json
+{
+  "estimation": {
+    "max_order": 6,
+    "order_selection": "pacf",
+    "min_observations_per_season": 30
   }
 }
 ```
@@ -299,7 +418,9 @@ Options that control simulation output and streaming behavior. All fields are op
   },
   "training": {
     "enabled": true,
+    "seed": 42,
     "forward_passes": 10,
+    "cut_formulation": "single",
     "cut_selection": {
       "enabled": true,
       "method": "level1",
@@ -316,6 +437,29 @@ Options that control simulation output and streaming behavior. All fields are op
     "enabled": true,
     "initial_iteration": 10,
     "interval_iterations": 5
+  },
+  "policy": {
+    "path": "./policy",
+    "mode": "fresh",
+    "validate_compatibility": true
+  },
+  "simulation": {
+    "enabled": true,
+    "num_scenarios": 2000,
+    "policy_type": "outer"
+  },
+  "exports": {
+    "training": true,
+    "cuts": true,
+    "states": true,
+    "simulation": true,
+    "stochastic": false,
+    "compression": "zstd"
+  },
+  "estimation": {
+    "max_order": 6,
+    "order_selection": "pacf",
+    "min_observations_per_season": 30
   }
 }
 ```

@@ -29,12 +29,13 @@ pub enum CutSelectionStrategy {
     ///
     /// See [Cut Management SS7.1](../math/cut-management.md).
     Level1 {
-        /// Activity threshold epsilon for near-binding tolerance.
-        /// A cut is considered binding if theta* - (alpha_k + pi_k^T x) < threshold.
-        threshold: f64,
+        /// Activity count threshold. A cut is deactivated when
+        /// `active_count <= threshold`. Typical value: 0 (deactivate only
+        /// cuts that have never been binding).
+        threshold: u64,
 
         /// Number of iterations between selection runs.
-        check_frequency: u32,
+        check_frequency: u64,
     },
 
     /// Limited Memory Level-1 (LML1): retain cuts active within a recent window.
@@ -45,17 +46,14 @@ pub enum CutSelectionStrategy {
     /// active early but are now permanently dominated will eventually be removed.
     ///
     /// See [Cut Management SS7.2](../math/cut-management.md).
-    LML1 {
-        /// Activity threshold epsilon for near-binding tolerance.
-        threshold: f64,
-
-        /// Number of iterations between selection runs.
-        check_frequency: u32,
-
+    Lml1 {
         /// Number of iterations to retain inactive cuts before deactivation.
         /// A cut whose `last_active_iter` is older than
         /// `current_iteration - memory_window` is deactivated.
-        memory_window: u32,
+        memory_window: u64,
+
+        /// Number of iterations between selection runs.
+        check_frequency: u64,
     },
 
     /// Dominated cut detection: remove cuts dominated at all visited states.
@@ -71,7 +69,7 @@ pub enum CutSelectionStrategy {
         threshold: f64,
 
         /// Number of iterations between selection runs.
-        check_frequency: u32,
+        check_frequency: u64,
     },
 }
 ```
@@ -89,10 +87,10 @@ impl CutSelectionStrategy {
     /// Returns `true` if the current iteration is a multiple of the
     /// variant's `check_frequency`, indicating that the cut pool should
     /// be scanned for deactivation candidates.
-    pub fn should_run(&self, iteration: u32) -> bool {
+    pub fn should_run(&self, iteration: u64) -> bool {
         let freq = match self {
             Self::Level1 { check_frequency, .. } => *check_frequency,
-            Self::LML1 { check_frequency, .. } => *check_frequency,
+            Self::Lml1 { check_frequency, .. } => *check_frequency,
             Self::Dominated { check_frequency, .. } => *check_frequency,
         };
         iteration > 0 && iteration % freq == 0
@@ -132,12 +130,13 @@ impl CutSelectionStrategy {
     /// to log deactivation counts before applying them.
     pub fn select(
         &self,
-        cut_pool: &StageCutPool,
-        iteration: u32,
+        pool: &CutPool,
+        visited_states: &[f64],
+        current_iteration: u64,
     ) -> DeactivationSet {
         // Dispatch on variant:
-        // - Level1: deactivate cuts with active_count == 0
-        // - LML1: deactivate cuts with last_active_iter < iteration - memory_window
+        // - Level1: deactivate cuts with active_count <= threshold
+        // - Lml1: deactivate cuts with current_iteration - last_active_iter > memory_window
         // - Dominated: deactivate cuts dominated at all visited states
         todo!()
     }
@@ -164,18 +163,18 @@ impl CutSelectionStrategy {
 
 **Level1:**
 
-| Postcondition                              | Description                                                            |
-| ------------------------------------------ | ---------------------------------------------------------------------- |
-| Deactivates cuts where `active_count == 0` | A cut that has never been binding at any visited state is deactivated  |
-| Retains all cuts with `active_count > 0`   | Any cut that was ever binding is preserved, regardless of how long ago |
+| Postcondition                                      | Description                                                                                          |
+| -------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| Deactivates cuts where `active_count <= threshold` | A cut whose cumulative binding count is at or below the threshold is deactivated                     |
+| Retains all cuts with `active_count > threshold`   | Cuts with sufficient binding activity are preserved, regardless of how long ago they were last bound |
 
-**LML1:**
+**Lml1:**
 
-| Postcondition                                                         | Description                                                     |
-| --------------------------------------------------------------------- | --------------------------------------------------------------- |
-| Deactivates cuts where `last_active_iter < iteration - memory_window` | Cuts not active within the recent memory window are deactivated |
-| Retains cuts where `last_active_iter >= iteration - memory_window`    | Recently active cuts are preserved                              |
-| When `memory_window` is very large, behavior approaches Level1        | A sufficiently large window retains all ever-active cuts        |
+| Postcondition                                                                 | Description                                                     |
+| ----------------------------------------------------------------------------- | --------------------------------------------------------------- |
+| Deactivates cuts where `current_iteration - last_active_iter > memory_window` | Cuts not active within the recent memory window are deactivated |
+| Retains cuts where `current_iteration - last_active_iter <= memory_window`    | Recently active cuts are preserved                              |
+| When `memory_window` is very large, behavior approaches Level1                | A sufficiently large window retains all ever-active cuts        |
 
 **Dominated:**
 
@@ -227,13 +226,13 @@ impl CutSelectionStrategy {
     pub fn update_activity(
         &self,
         metadata: &mut CutMetadata,
-        iteration: u32,
+        iteration: u64,
     ) {
         match self {
             Self::Level1 { .. } => {
                 metadata.active_count += 1;
             }
-            Self::LML1 { .. } => {
+            Self::Lml1 { .. } => {
                 metadata.last_active_iter = iteration;
             }
             Self::Dominated { .. } => {
@@ -249,14 +248,14 @@ impl CutSelectionStrategy {
 | Condition                                              | Description                                                                    |
 | ------------------------------------------------------ | ------------------------------------------------------------------------------ |
 | The cut at `metadata` was binding in the current solve | The dual multiplier of the cut constraint is positive (above solver tolerance) |
-| `iteration` is the current training iteration          | Timestamp correctness for LML1                                                 |
+| `iteration` is the current training iteration          | Timestamp correctness for Lml1                                                 |
 
 **Postconditions:**
 
 | Variant   | Update                                         | Description                                                                             |
 | --------- | ---------------------------------------------- | --------------------------------------------------------------------------------------- |
 | Level1    | `metadata.active_count` incremented by 1       | Monotonically increasing counter; once positive, the cut is never deactivated by Level1 |
-| LML1      | `metadata.last_active_iter` set to `iteration` | Timestamp refreshed; the cut's retention window restarts                                |
+| Lml1      | `metadata.last_active_iter` set to `iteration` | Timestamp refreshed; the cut's retention window restarts                                |
 | Dominated | `metadata.domination_count` reset to 0         | The cut is not dominated at this state; reset counter                                   |
 
 **Thread safety:** `update_activity` is called on per-thread solver workspaces during the backward pass. Each thread processes its own trajectories and updates the metadata for the cuts it evaluated. No locking is needed because the per-stage synchronization barrier ensures that all threads have finished their updates before `select` reads the metadata. See [Cut Management Implementation SS6.2](./cut-management-impl.md).
@@ -284,16 +283,17 @@ pub struct CutSelectionConfig {
     /// Selection method: `"level1"`, `"lml1"`, or `"domination"`.
     pub method: String,
 
-    /// Activity threshold epsilon for near-binding tolerance.
-    /// Recommended: 0.0 (only strictly binding cuts are considered active).
+    /// Activity threshold. For Level1, this is the `u64` activity count
+    /// threshold (recommended: 0). For Dominated, this is the `f64`
+    /// near-binding tolerance epsilon.
     pub threshold: f64,
 
     /// Number of iterations between selection runs.
-    pub check_frequency: u32,
+    pub check_frequency: u64,
 
-    /// Number of iterations to retain inactive cuts (LML1 only).
+    /// Number of iterations to retain inactive cuts (Lml1 only).
     /// Ignored for Level1 and Dominated.
-    pub memory_window: Option<u32>,
+    pub memory_window: Option<u64>,
 }
 ```
 
@@ -310,9 +310,9 @@ Each cut slot in the pre-allocated cut pool carries metadata used by the selecti
 /// cut pool (see Cut Management Implementation SS1.1). All fields are
 /// initialized to their zero/default values when the cut is first written.
 pub struct CutMetadata {
-    /// Iteration at which this cut was generated.
+    /// Iteration at which this cut was generated (1-based).
     /// Used to prevent deactivation of cuts generated in the current iteration.
-    pub iteration_generated: u32,
+    pub iteration_generated: u64,
 
     /// Forward pass index that generated this cut.
     /// Combined with `iteration_generated`, uniquely identifies the cut's
@@ -320,19 +320,19 @@ pub struct CutMetadata {
     pub forward_pass_index: u32,
 
     /// Cumulative number of times this cut was binding at an LP solution.
-    /// Used by Level1: deactivate if `active_count == 0`.
+    /// Used by Level1: deactivate if `active_count <= threshold`.
     /// Initialized to 0; incremented by `update_activity` for Level1 variant.
-    pub active_count: u32,
+    pub active_count: u64,
 
     /// Most recent iteration at which this cut was binding.
-    /// Used by LML1: deactivate if `last_active_iter < iteration - memory_window`.
-    /// Initialized to `iteration_generated`; updated by `update_activity` for LML1.
-    pub last_active_iter: u32,
+    /// Used by Lml1: deactivate if `current_iteration - last_active_iter > memory_window`.
+    /// Initialized to `iteration_generated`; updated by `update_activity` for Lml1.
+    pub last_active_iter: u64,
 
     /// Number of visited states at which this cut is dominated by other cuts.
     /// Used by Dominated: deactivate if dominated at ALL visited states.
     /// Reset to 0 by `update_activity` when the cut is binding at a state.
-    pub domination_count: u32,
+    pub domination_count: u64,
 }
 ```
 
@@ -343,7 +343,7 @@ pub struct CutMetadata {
 | `iteration_generated` | Current iteration     | Identifies when the cut was created                         |
 | `forward_pass_index`  | Forward pass index    | Identifies which forward pass trajectory generated the cut  |
 | `active_count`        | 0                     | The cut has not yet been evaluated in a subsequent LP solve |
-| `last_active_iter`    | `iteration_generated` | Prevents immediate deactivation by LML1 on the first check  |
+| `last_active_iter`    | `iteration_generated` | Prevents immediate deactivation by Lml1 on the first check  |
 | `domination_count`    | 0                     | Not yet evaluated for domination                            |
 
 ### 3.3 DeactivationSet
@@ -368,7 +368,7 @@ The cut selection strategy uses **enum dispatch** -- a `match` on the `CutSelect
 
 **Why enum dispatch is the natural choice:** The cut selection strategy is a global setting (one strategy for the entire run, applied identically to all stages), so compile-time monomorphization would also work. However, enum dispatch is preferred for consistency with the other algorithm abstraction points and because the variant set is small and closed (three strategies, with no additional variants planned). The `match` cost is negligible: `select` executes at most once per stage per `check_frequency` iterations, which at production scale (60 stages, `check_frequency=10`) amounts to at most 6 dispatches per iteration -- amortized over the dominant LP solve cost.
 
-**Why not trait objects:** The variant set is closed (Level1, LML1, and Dominated only). `Box<dyn CutSelectionStrategy>` would add heap allocation and virtual dispatch overhead without the extensibility benefit. The enum approach keeps the strategy value on the stack and allows the compiler to inline the variant-specific logic.
+**Why not trait objects:** The variant set is closed (Level1, Lml1, and Dominated only). `Box<dyn CutSelectionStrategy>` would add heap allocation and virtual dispatch overhead without the extensibility benefit. The enum approach keeps the strategy value on the stack and allows the compiler to inline the variant-specific logic.
 
 **Why not compile-time monomorphization:** While the strategy is global (unlike the per-stage risk measure), monomorphization would require propagating a generic type parameter `S: CutSelectionStrategyTrait` through the training loop and FCF manager signatures. The marginal performance benefit is zero (the `match` executes on a cold path), while the compile-time complexity would increase. Enum dispatch avoids this cost-free complexity.
 
@@ -381,7 +381,7 @@ The following validation rules apply to `CutSelectionConfig` during configuratio
 | C1   | `method` must be one of `"level1"`, `"lml1"`, `"domination"`         | Unrecognized cut selection method                                                                          |
 | C2   | `threshold` must be $\geq 0$                                         | Negative threshold is meaningless                                                                          |
 | C3   | `check_frequency` must be $> 0$                                      | Zero frequency would mean selection runs every iteration (use 1 for that) and zero causes division-by-zero |
-| C4   | When `method` is `"lml1"`, `memory_window` must be present and $> 0$ | LML1 requires a finite positive memory window                                                              |
+| C4   | When `method` is `"lml1"`, `memory_window` must be present and $> 0$ | Lml1 requires a finite positive memory window                                                              |
 | C5   | When `method` is not `"lml1"`, `memory_window` is ignored if present | No error, silently ignored (logged as warning)                                                             |
 
 Validation is performed once during the variant selection pipeline ([Extension Points SS6](./extension-points.md), step 5). After validation, the `CutSelectionStrategy` enum value is guaranteed to satisfy these constraints for the entire training run. This is why `should_run`, `select`, and `update_activity` are infallible -- they operate on validated inputs.
@@ -441,10 +441,10 @@ This theorem is stated and cited in [Cut Management SS8](../math/cut-management.
 | Variant   | Convergence guarantee                                                                                                                                                                                                                    |
 | --------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Level1    | Preserved. Only cuts that have _never_ been binding are removed; all ever-useful cuts remain.                                                                                                                                            |
-| LML1      | Preserved. The memory window ensures that periodically revisited cuts are retained. The theorem's proof covers the LML1 case explicitly.                                                                                                 |
+| Lml1      | Preserved. The memory window ensures that periodically revisited cuts are retained. The theorem's proof covers the Lml1 case explicitly.                                                                                                 |
 | Dominated | Not formally covered by the Bandarra-Guigues theorem. Dominated cut detection is a heuristic that may remove cuts which would be active at unvisited states. In practice, the visited state set grows dense and the heuristic converges. |
 
-**Implication for production use:** Level1 and LML1 are the recommended strategies when convergence guarantees are required. The Dominated strategy offers more aggressive pruning at the cost of a weaker theoretical guarantee, making it suitable for cases where empirical convergence monitoring (via [Convergence Monitoring](./convergence-monitoring.md)) provides sufficient confidence.
+**Implication for production use:** Level1 and Lml1 are the recommended strategies when convergence guarantees are required. The Dominated strategy offers more aggressive pruning at the cost of a weaker theoretical guarantee, making it suitable for cases where empirical convergence monitoring (via [Convergence Monitoring](./convergence-monitoring.md)) provides sufficient confidence.
 
 ## Cross-References
 

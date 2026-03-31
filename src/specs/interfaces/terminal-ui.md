@@ -1,5 +1,7 @@
 # Terminal UI
 
+> **Status: Not Implemented.** This specification describes planned behavior. The current codebase contains an empty library crate.
+
 ## Purpose
 
 This spec defines the Cobre terminal UI (`cobre-tui`): a ratatui-based interactive terminal interface for real-time monitoring of SDDP training runs. The TUI consumes the same event stream as the [Structured Output](./structured-output.md) JSON-lines writer, rendering convergence plots, iteration timing breakdowns, cut statistics, resource usage, and MPI communication metrics. It supports interactive features -- pause/resume, cut inspection, scenario comparison, stopping rule adjustment, and snapshot export -- all operating at iteration boundaries to preserve training loop atomicity. The TUI operates in two modes: co-hosted within the `cobre` binary via an in-process broadcast channel, or standalone reading JSON-lines from stdin for monitoring remote or already-running jobs.

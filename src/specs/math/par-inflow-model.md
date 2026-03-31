@@ -92,21 +92,47 @@ where $a_{h,\ell}$ are state variables (lagged inflows) and $\eta_t$ is the samp
 
 The PAR order $p$ can vary by season. Available selection criteria:
 
-1. **AIC (Akaike Information Criterion)**:
+### 4.1 PACF (Periodic Partial Autocorrelation Function) -- Default
+
+The default method computes the **periodic PACF** via progressive periodic Yule-Walker matrix solves at orders $k = 1, 2, \ldots, p_{max}$, then selects the order using a significance threshold.
+
+**Algorithm**:
+
+1. For each order $k$ from 1 to $p_{max}$, build and solve the periodic Yule-Walker system (§5.4) at order $k$. The last coefficient $\hat{\psi}^*_{m,k}$ from the order-$k$ solution is the periodic PACF value at lag $k$.
+2. Select the order as the **maximum lag with significant PACF**:
 
    $$
-   \text{AIC}_m(p) = N_m \ln(\hat{\sigma}_m^2) + 2p
+   p_m = \max \left\{ k : |\text{PACF}_m(k)| > \frac{z_\alpha}{\sqrt{N_m}} \right\}
    $$
 
-2. **BIC (Bayesian Information Criterion)**:
+   where $z_\alpha = 1.96$ (95% confidence) and $N_m$ is the number of observations for season $m$. If no lag is significant, $p_m = 0$ (white noise).
 
-   $$
-   \text{BIC}_m(p) = N_m \ln(\hat{\sigma}_m^2) + p \ln(N_m)
-   $$
+3. Estimate AR coefficients at the selected order using the periodic Yule-Walker system (§5.4).
 
-3. **Coefficient significance**: Include lag $\ell$ only if $|\hat{\psi}_{m,\ell}| > 2 / \sqrt{N_m}$
+**Post-selection validation**: After PACF selection, two rejection gates are applied iteratively:
 
-where $N_m$ is the number of historical observations for season $m$.
+- **Negative $\phi_1$ rejection**: If $\hat{\psi}^*_{m,1} < 0$ (first AR coefficient is negative), the order is reduced. Negative $\phi_1$ contradicts the hydrological persistence property (inflows are positively autocorrelated at lag 1).
+- **Contribution-based validation**: The recursively-composed contributions for each lag are computed. If any contribution is negative (indicating potential model instability), the order is reduced to the maximum lag with non-negative contributions. This implements NEWAVE's `reducao_ordem` algorithm.
+
+The reduction process is iterative: after each reduction, the PACF selection and coefficient estimation are re-run at the new ceiling, and the validation checks are repeated until all seasons pass or reach order 0.
+
+### 4.2 AIC (Akaike Information Criterion)
+
+$$
+\text{AIC}_m(p) = N_m \ln(\hat{\sigma}_m^2) + 2p
+$$
+
+### 4.3 BIC (Bayesian Information Criterion)
+
+$$
+\text{BIC}_m(p) = N_m \ln(\hat{\sigma}_m^2) + p \ln(N_m)
+$$
+
+### 4.4 Coefficient Significance
+
+Include lag $\ell$ only if $|\hat{\psi}_{m,\ell}| > 2 / \sqrt{N_m}$.
+
+In all methods, $N_m$ is the number of historical observations for season $m$.
 
 ## 5. Fitting Procedure
 
@@ -160,15 +186,33 @@ where $\hat{s}_{m-\ell}$ is the standard deviation of season $m - \ell$ (cyclica
 
 ### 5.4 Step 3 — Yule-Walker Equations
 
-For each season $m$, the PAR(p) coefficients $\psi_{m,1}^*, \ldots, \psi_{m,p}^*$ in standardized form are found by solving the **Yule-Walker system**:
+For each season $m$, the PAR(p) coefficients $\psi_{m,1}^*, \ldots, \psi_{m,p}^*$ in standardized form are found by solving the **periodic Yule-Walker system**. Unlike the classical (stationary) Yule-Walker equations where all rows use the same reference season, the periodic variant shifts the reference season per row. This correctly accounts for the non-Toeplitz covariance structure of periodic autoregressive processes.
+
+**Matrix construction**: For row $i$ and column $j$ (0-indexed, $0 \leq i,j < p$), the reference season is shifted by row index:
+
+$$
+[\mathbf{R}_m]_{i,j} = \hat{\rho}_{(m-i) \bmod M}(|j - i|)
+$$
+
+where $M$ is the number of seasons in the periodic cycle (e.g., 12 for monthly). The diagonal entries are always 1 (since $\hat{\rho}_{m'}(0) = 1$ for any season $m'$). The matrix is symmetric but **not Toeplitz** when $M > 1$, because each row references a different season for its autocorrelation values.
+
+**RHS construction**: Each RHS element also uses a shifted reference season:
+
+$$
+[\boldsymbol{r}_m]_i = \hat{\rho}_{(m-i) \bmod M}(p - i)
+$$
+
+This comes from column $p$ of the extended $(p{+}1) \times (p{+}1)$ version of the periodic autocorrelation matrix.
+
+The full system is:
 
 $$
 \begin{pmatrix}
-1 & \hat{\rho}_{m-1}(1) & \hat{\rho}_{m-2}(2) & \cdots & \hat{\rho}_{m-p+1}(p-1) \\
-\hat{\rho}_{m}(1) & 1 & \hat{\rho}_{m-1}(1) & \cdots & \hat{\rho}_{m-p+2}(p-2) \\
-\hat{\rho}_{m}(2) & \hat{\rho}_{m-1}(1) & 1 & \cdots & \hat{\rho}_{m-p+3}(p-3) \\
+1 & \hat{\rho}_{m}(1) & \hat{\rho}_{m}(2) & \cdots & \hat{\rho}_{m}(p{-}1) \\
+\hat{\rho}_{(m-1)}(1) & 1 & \hat{\rho}_{(m-1)}(1) & \cdots & \hat{\rho}_{(m-1)}(p{-}2) \\
+\hat{\rho}_{(m-2)}(2) & \hat{\rho}_{(m-2)}(1) & 1 & \cdots & \hat{\rho}_{(m-2)}(p{-}3) \\
 \vdots & \vdots & \vdots & \ddots & \vdots \\
-\hat{\rho}_{m}(p-1) & \hat{\rho}_{m-1}(p-2) & \hat{\rho}_{m-2}(p-3) & \cdots & 1
+\hat{\rho}_{(m-p+1)}(p{-}1) & \hat{\rho}_{(m-p+1)}(p{-}2) & \hat{\rho}_{(m-p+1)}(p{-}3) & \cdots & 1
 \end{pmatrix}
 \begin{pmatrix}
 \psi_{m,1}^* \\
@@ -179,26 +223,32 @@ $$
 \end{pmatrix}
 =
 \begin{pmatrix}
-\hat{\rho}_{m}(1) \\
-\hat{\rho}_{m}(2) \\
-\hat{\rho}_{m}(3) \\
+\hat{\rho}_{m}(p) \\
+\hat{\rho}_{(m-1)}(p{-}1) \\
+\hat{\rho}_{(m-2)}(p{-}2) \\
 \vdots \\
-\hat{\rho}_{m}(p)
+\hat{\rho}_{(m-p+1)}(1)
 \end{pmatrix}
 $$
+
+where all season indices are taken modulo $M$.
 
 In matrix notation: $\mathbf{R}_m \boldsymbol{\psi}_m^* = \boldsymbol{r}_m$
 
 where:
 
-- $\mathbf{R}_m$ is the $p \times p$ correlation matrix (Toeplitz-like but with cross-seasonal correlations)
-- $\boldsymbol{r}_m = (\hat{\rho}_m(1), \ldots, \hat{\rho}_m(p))^\top$ is the vector of target autocorrelations
+- $\mathbf{R}_m$ is the $p \times p$ periodic correlation matrix (symmetric but not Toeplitz for $M > 1$)
+- $\boldsymbol{r}_m$ is the vector of target autocorrelations with per-row reference season shifting
+
+> **Note**: For a single-season model ($M = 1$), all rows use the same reference season and the matrix reduces to the classical Toeplitz Yule-Walker matrix. The periodic formulation is the general case that correctly handles multi-season (e.g., monthly) data.
 
 **Solution**:
 
 $$
 \hat{\boldsymbol{\psi}}_m^* = \mathbf{R}_m^{-1} \boldsymbol{r}_m
 $$
+
+The system is solved via Gaussian elimination with partial pivoting (for small systems with $p \leq 10$, this is numerically adequate).
 
 ### 5.5 Step 4 — Store Standardized Coefficients and Residual Fraction
 

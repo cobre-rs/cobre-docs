@@ -8,13 +8,13 @@ This spec defines the communication patterns used by Cobre during SDDP training 
 
 ### 1.1 Operations Summary
 
-Cobre uses exactly three collective operations through the `Communicator` trait during SDDP training. All operations are invoked through `comm: &C` where `C: Communicator` (see [Communicator Trait §3](./communicator-trait.md) for generic parameterization). The communicator is `Send + Sync` to support hybrid communication+OpenMP execution.
+Cobre uses two distinct collective operations through the `Communicator` trait during SDDP training: `allgatherv` (three call sites) and `broadcast` (one call site). All operations are invoked through `comm: &C` where `C: Communicator` (see [Communicator Trait §3](./communicator-trait.md) for generic parameterization). The communicator is `Send + Sync` to support hybrid communication+Rayon execution.
 
 | Operation    | Communicator Trait Method                             | When                    | Data                          | Frequency                |
 | ------------ | ----------------------------------------------------- | ----------------------- | ----------------------------- | ------------------------ |
 | `allgatherv` | `comm.allgatherv(&send, &mut recv, &counts, &displs)` | Forward → backward      | Visited states (trial points) | Once per iteration       |
 | `allgatherv` | `comm.allgatherv(&send, &mut recv, &counts, &displs)` | Backward stage boundary | New cuts at stage $t$         | Once per stage ($T - 1$) |
-| `allreduce`  | `comm.allreduce(&send, &mut recv, ReduceOp::Sum)`     | Post-forward            | UB statistics (3 scalars)     | Once per iteration       |
+| `allgatherv` | `comm.allgatherv(&send, &mut recv, &counts, &displs)` | Post-forward            | Per-scenario cost vectors     | Once per iteration       |
 | `broadcast`  | `comm.broadcast(&mut buf, 0)`                         | Post-backward           | Lower bound (1 scalar)        | Once per iteration       |
 
 Additionally, initialization uses standard (non-iterative) collectives:
@@ -67,17 +67,27 @@ At production scale with $M = 192$ forward passes and $R = 16$ ranks, each rank 
 
 ### 2.3 Convergence Statistics Payload (Post-Forward)
 
-The post-forward `allreduce` aggregates 3 UB statistics using `ReduceOp::Sum`:
+The post-forward synchronization uses `allgatherv` to collect the full per-scenario cost vector from all ranks. Each rank contributes its local `scenario_costs: Vec<f64>` (one `f64` per forward-pass scenario solved by that rank). After `allgatherv`, every rank holds the complete global cost vector in canonical rank order.
 
-| Quantity                            | Type  | Reduction       | Purpose                          |
-| ----------------------------------- | ----- | --------------- | -------------------------------- |
-| Total forward cost (sum)            | `f64` | `ReduceOp::Sum` | Upper bound mean computation     |
-| Total forward cost (sum of squares) | `f64` | `ReduceOp::Sum` | Upper bound variance computation |
-| Trajectory count                    | `f64` | `ReduceOp::Sum` | Denominator for mean/variance    |
+| Component          | Type    | Size per rank                     | Purpose                                           |
+| ------------------ | ------- | --------------------------------- | ------------------------------------------------- |
+| Per-scenario costs | `[f64]` | $N_{\text{local}} \times 8$ bytes | Individual scenario costs for canonical summation |
 
-Total payload: 24 bytes. See [Work Distribution §1.4](./work-distribution.md) and [Convergence Monitoring §3](../architecture/convergence-monitoring.md).
+Total payload: $N_{\text{scenarios}} \times 8$ bytes (e.g., $192 \times 8 = 1{,}536$ bytes at production scale with $M = 192$ forward passes).
 
-The lower bound is evaluated separately after the backward pass by rank 0 and broadcast to all ranks via `comm.broadcast()` (8 bytes). See [Training Loop SS4.3b](../architecture/training-loop.md) and [Convergence Monitoring SS3.2](../architecture/convergence-monitoring.md).
+**Why `allgatherv` instead of `allreduce` of 3 scalar statistics:** Floating-point addition is non-associative. An `allreduce(Sum)` of partial sums would produce results that vary with the number of ranks and the MPI implementation's reduction tree shape, making the upper bound non-deterministic across rank counts. By gathering the full cost vector and performing canonical-order sequential summation on every rank (iterating `global_costs[0], global_costs[1], ..., global_costs[N-1]` in rank order), all ranks produce bit-identical mean, standard deviation, and 95% confidence interval statistics regardless of rank count. This eliminates floating-point non-associativity as a source of non-determinism in convergence checking.
+
+The statistics are computed locally from the gathered vector:
+
+| Statistic               | Formula                                                  |
+| ----------------------- | -------------------------------------------------------- |
+| Mean (UB)               | $\bar{c} = \frac{1}{N} \sum_{i=0}^{N-1} c_i$             |
+| Standard deviation      | $\sigma = \sqrt{\frac{\sum c_i^2 - N \bar{c}^2}{N - 1}}$ |
+| 95% confidence interval | $1.96 \cdot \sigma / \sqrt{N}$                           |
+
+See [Work Distribution §1.4](./work-distribution.md) and [Convergence Monitoring §3](../architecture/convergence-monitoring.md).
+
+The lower bound is evaluated separately after the backward pass. Rank 0 solves the stage-0 LP for all openings and computes the risk-adjusted lower bound; the scalar result is then broadcast to all ranks via `comm.broadcast(&mut [lb], 0)` (8 bytes). See [Training Loop SS4.3b](../architecture/training-loop.md) and [Convergence Monitoring SS3.2](../architecture/convergence-monitoring.md).
 
 ## 3. Communication Volume Analysis
 
@@ -85,13 +95,13 @@ The lower bound is evaluated separately after the backward pass by rank 0 and br
 
 Reference configuration: $R = 16$ ranks, $T = 120$ stages, $M = 192$ forward passes, $D_{\text{state}} = 2{,}080$.
 
-| Operation                | Per-stage | Per-iteration        | Notes                              |
-| ------------------------ | --------- | -------------------- | ---------------------------------- |
-| Trial point `allgatherv` | —         | ~206 MB (once)       | All stages' visited states at once |
-| Cut `allgatherv`         | ~3.2 MB   | ~381 MB (119 stages) | Per cut-management-impl.md §4.2    |
-| UB `allreduce`           | —         | 24 bytes (once)      | 3 scalars (UB statistics)          |
-| LB `broadcast`           | —         | 8 bytes (once)       | 1 scalar (lower bound, post-bwd)   |
-| **Total per iteration**  |           | **~587 MB**          |                                    |
+| Operation                | Per-stage | Per-iteration        | Notes                                                  |
+| ------------------------ | --------- | -------------------- | ------------------------------------------------------ |
+| Trial point `allgatherv` | --        | ~206 MB (once)       | All stages' visited states at once                     |
+| Cut `allgatherv`         | ~3.2 MB   | ~381 MB (119 stages) | Per cut-management-impl.md §4.2                        |
+| UB `allgatherv`          | --        | ~1.5 KB (once)       | $M \times 8$ bytes (192 scenario costs, canonical sum) |
+| LB `broadcast`           | --        | 8 bytes (once)       | 1 scalar (lower bound, rank 0 to all)                  |
+| **Total per iteration**  |           | **~587 MB**          |                                                        |
 
 ### 3.2 Bandwidth Requirements
 
@@ -133,11 +143,11 @@ MPI 4.0 persistent collectives (`MPI_Allgatherv_init`, `MPI_Allreduce_init`) all
 
 The three collective operations in §1.1 are candidates for persistent collectives:
 
-| Operation                | Persistent candidate? | Notes                                                                       |
-| ------------------------ | --------------------- | --------------------------------------------------------------------------- |
-| Cut `allgatherv`         | Yes                   | Same pattern every stage, buffer sizes vary per iteration (cut count grows) |
-| Convergence `allreduce`  | Yes                   | Fixed 32-byte payload, identical every iteration                            |
-| Trial point `allgatherv` | Conditional           | Only if $M$ is fixed across iterations; if adaptive, buffer sizes change    |
+| Operation                   | Persistent candidate? | Notes                                                                       |
+| --------------------------- | --------------------- | --------------------------------------------------------------------------- |
+| Cut `allgatherv`            | Yes                   | Same pattern every stage, buffer sizes vary per iteration (cut count grows) |
+| UB cost vector `allgatherv` | Yes                   | Fixed $M \times 8$-byte payload, identical every iteration                  |
+| Trial point `allgatherv`    | Conditional           | Only if $M$ is fixed across iterations; if adaptive, buffer sizes change    |
 
 > **Implementation note**: Persistent collectives require fixed buffer addresses at initialization. If the cut count per rank varies across iterations (which it may, due to cut selection), the send buffer must be pre-allocated at the maximum expected size. This is consistent with the cut pool preallocation strategy in [Solver Abstraction §5](../architecture/solver-abstraction.md).
 
@@ -185,11 +195,13 @@ Determinism sources:
 - **Contiguous block distribution** -- Forward pass scenarios assigned by rank index, reproducible
 - **`allgatherv` ordering** -- Receives data in rank order (rank 0, rank 1, ..., rank $R-1$)
 
-### 6.2 Floating-Point Reduction
+### 6.2 Floating-Point Determinism
 
-`allreduce` with `ReduceOp::Sum` may produce different results depending on reduction tree shape (non-associativity of floating-point addition). For convergence statistics (§2.3), this variance is acceptable -- the upper bound is already a statistical estimate. The lower bound uses `broadcast` (not `allreduce`), which is exact -- rank 0 computes the single authoritative value.
+The post-forward UB synchronization uses `allgatherv` (not `allreduce`) to collect the full per-scenario cost vector, followed by canonical-order sequential summation on every rank. This design eliminates floating-point non-associativity: all ranks iterate the same global cost vector in the same order, producing bit-identical statistics regardless of rank count or MPI implementation. See §2.3 for details.
 
-Non-MPI backends (TCP, shm) produce deterministic reduction results because they use a fixed coordinator/rank-0 reduction order -- see [TCP Backend §3.2](./backend-tcp.md) and [Shm Backend §3.2](./backend-shm.md).
+The lower bound uses `broadcast` from rank 0, which is exact -- rank 0 computes the single authoritative value and distributes it to all ranks.
+
+`allreduce` with `ReduceOp::Sum` is used only for simulation-mode global min/max aggregation, where small floating-point variations are acceptable. Non-MPI backends (TCP, shm) produce deterministic reduction results because they use a fixed coordinator/rank-0 reduction order -- see [TCP Backend §3.2](./backend-tcp.md) and [Shm Backend §3.2](./backend-shm.md).
 
 ## Cross-References
 
@@ -202,7 +214,7 @@ Non-MPI backends (TCP, shm) produce deterministic reduction results because they
 - [Local Backend](./backend-local.md) -- LocalBackend: identity/no-op operations, HeapRegion\<T\>
 - [Synchronization §1.1](./synchronization.md) -- Three collective operations per iteration, their timing and semantics
 - [Synchronization §1.4](./synchronization.md) -- Per-stage barrier via `allgatherv` implicit synchronization
-- [Work Distribution §1.4](./work-distribution.md) -- Post-forward `allreduce` with 4 convergence quantities
+- [Work Distribution §1.4](./work-distribution.md) -- Post-forward `allgatherv` with per-scenario cost vector for canonical-order UB computation
 - [Work Distribution §2.2](./work-distribution.md) -- Per-stage backward pass execution, `allgatherv` for cuts
 - [Work Distribution §3](./work-distribution.md) -- Contiguous block assignment arithmetic, `allgatherv` parameters
 - [Cut Management Implementation §4](../architecture/cut-management-impl.md) -- Wire format, deterministic slot assignment, synchronization protocol

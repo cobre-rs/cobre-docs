@@ -35,6 +35,8 @@ case/
 │   ├── external_scenarios.parquet             # Pre-computed scenario values (optional)
 │   ├── load_seasonal_stats.parquet            # Load mean/std per bus/stage (optional)
 │   ├── load_factors.json                      # Block-level load scaling factors (optional)
+│   ├── non_controllable_stats.parquet         # NCS stochastic availability factors (optional)
+│   ├── non_controllable_factors.json          # NCS block-level scaling factors (optional)
 │   ├── correlation.json                       # Spatial correlation profiles + schedule (optional)
 │   └── noise_openings.parquet                 # User-supplied pre-correlated noise openings (Optional, ADR-008)
 │
@@ -44,6 +46,7 @@ case/
 │   ├── line_bounds.parquet                    # Stage-varying line limits (optional)
 │   ├── pumping_bounds.parquet                 # Stage-varying pumping limits (optional)
 │   ├── contract_bounds.parquet                # Stage-varying contract limits (optional)
+│   ├── ncs_bounds.parquet                     # Stage-varying NCS available generation bounds (optional)
 │   ├── exchange_factors.json                  # Block-level exchange capacity factors (optional)
 │   ├── generic_constraints.json               # Custom linear constraints (optional)
 │   ├── generic_constraint_bounds.parquet      # RHS bounds for generic constraints (optional)
@@ -90,7 +93,7 @@ The input case directory is organized into four top-level groups plus root-level
 
 > **Decision [DEC-018](../overview/decision-log.md#dec-018) (active):** MPI/HPC parameters removed from config.json — all are auto-detected implementation details or contradicted by approved architecture.
 
-> **Note**: Solver selection (HiGHS, CPLEX, Gurobi) is determined at compile time via Cargo features due to licensing constraints. Solver parameters, retry strategies, warm-start, and basis reuse are hardcoded per solver implementation and not user-configurable.
+> **Note**: Solver selection (HiGHS, CPLEX, Gurobi) is determined at compile time via Cargo features due to licensing constraints. LP solver retry parameters are configurable via the `training.solver` section -- see section 2.5 below.
 
 > **Format Rationale — config.json**
 >
@@ -128,6 +131,7 @@ All omitted sections (`modeling`, `upper_bound_evaluation`, `policy`, `simulatio
   },
 
   "training": {
+    "enabled": true,
     "seed": 42,
     "forward_passes": 192,
     "stopping_rules": [
@@ -143,6 +147,10 @@ All omitted sections (`modeling`, `upper_bound_evaluation`, `policy`, `simulatio
       "enabled": true,
       "method": "domination",
       "threshold": 0
+    },
+    "solver": {
+      "retry_max_attempts": 5,
+      "retry_time_budget_seconds": 30.0
     }
   },
 
@@ -171,9 +179,16 @@ All omitted sections (`modeling`, `upper_bound_evaluation`, `policy`, `simulatio
     "policy_type": "outer",
     "output_path": "./simulation",
     "output_mode": "streaming",
+    "io_channel_capacity": 64,
     "sampling_scheme": {
       "type": "in_sample"
     }
+  },
+
+  "estimation": {
+    "max_order": 6,
+    "order_selection": "pacf",
+    "min_observations_per_season": 30
   },
 
   "exports": {
@@ -225,12 +240,35 @@ For the complete stopping rule types and their parameters, see [Configuration Re
 
 ### 2.4 Simulation Configuration
 
-| Field                  | Type   | Default       | Description                                       |
-| ---------------------- | ------ | ------------- | ------------------------------------------------- |
-| `enabled`              | bool   | false         | Enable post-training simulation                   |
-| `num_scenarios`        | i32    | 2000          | Number of simulation scenarios                    |
-| `policy_type`          | string | `"outer"`     | `"outer"` (cuts) or `"inner"` (vertices)          |
-| `sampling_scheme.type` | string | `"in_sample"` | `"in_sample"`, `"out_of_sample"`, or `"external"` |
+| Field                  | Type   | Default       | Description                                                                   |
+| ---------------------- | ------ | ------------- | ----------------------------------------------------------------------------- |
+| `enabled`              | bool   | false         | Enable post-training simulation                                               |
+| `num_scenarios`        | i32    | 2000          | Number of simulation scenarios                                                |
+| `policy_type`          | string | `"outer"`     | `"outer"` (cuts) or `"inner"` (vertices)                                      |
+| `sampling_scheme.type` | string | `"in_sample"` | `"in_sample"`, `"out_of_sample"`, or `"external"`                             |
+| `io_channel_capacity`  | u32    | 64            | Bounded channel capacity between simulation threads and the I/O writer thread |
+
+### 2.5 Training Solver Configuration (`training.solver`)
+
+LP solver retry parameters for the training phase. These control how aggressively the solver retries failed LP solves before propagating a hard error.
+
+| Field                       | Type | Default | Description                                                      |
+| --------------------------- | ---- | ------- | ---------------------------------------------------------------- |
+| `retry_max_attempts`        | u32  | 5       | Maximum solver retry attempts before propagating a hard error    |
+| `retry_time_budget_seconds` | f64  | 30.0    | Total time budget in seconds across all retry attempts per solve |
+
+> **Note**: The `training.enabled` field (boolean, default `true`) controls whether the training phase runs. When `false`, training is skipped and the solver proceeds directly to simulation using a previously-computed policy.
+
+### 2.6 Estimation Configuration (`estimation`)
+
+Controls automatic parameter estimation when historical inflow data is provided without explicit model statistics or AR coefficients. All fields are optional and fall back to defaults.
+
+| Field                         | Type          | Default  | Description                                                                                           |
+| ----------------------------- | ------------- | -------- | ----------------------------------------------------------------------------------------------------- |
+| `max_order`                   | u32           | 6        | Maximum lag order considered during autoregressive model fitting                                      |
+| `order_selection`             | string        | `"pacf"` | Order selection criterion: `"fixed"` (use `max_order`) or `"pacf"` (periodic partial autocorrelation) |
+| `min_observations_per_season` | u32           | 30       | Minimum observations required per (entity, season) group to proceed with estimation                   |
+| `max_coefficient_magnitude`   | f64 or `null` | `null`   | Maximum allowed absolute AR coefficient; pairs exceeding this are reduced to order 0                  |
 
 ## 3. Penalties and Costs (Summary)
 

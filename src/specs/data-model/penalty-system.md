@@ -141,13 +141,32 @@ This file defines default penalty values for all entities. It is **required** an
     "outflow_violation_above_cost": 500.0,
     "generation_violation_below_cost": 1000.0,
     "evaporation_violation_cost": 5000.0,
-    "water_withdrawal_violation_cost": 1000.0
+    "water_withdrawal_violation_cost": 1000.0,
+    "water_withdrawal_violation_pos_cost": null,
+    "water_withdrawal_violation_neg_cost": null,
+    "evaporation_violation_pos_cost": null,
+    "evaporation_violation_neg_cost": null,
+    "inflow_nonnegativity_cost": null
   },
   "non_controllable_source": {
     "curtailment_cost": 0.005
   }
 }
 ```
+
+### Directional Penalty Overrides
+
+Five additional hydro penalty fields support directional and inflow-specific penalties. All are optional and default to the symmetric value when `null`:
+
+| Field                                 | Type          | Default                           | Description                                                                       |
+| ------------------------------------- | ------------- | --------------------------------- | --------------------------------------------------------------------------------- |
+| `water_withdrawal_violation_pos_cost` | f64 or `null` | `water_withdrawal_violation_cost` | Penalty per m3/s of over-withdrawal (withdrew more than target)                   |
+| `water_withdrawal_violation_neg_cost` | f64 or `null` | `water_withdrawal_violation_cost` | Penalty per m3/s of under-withdrawal (withdrew less than target)                  |
+| `evaporation_violation_pos_cost`      | f64 or `null` | `evaporation_violation_cost`      | Penalty per mm of over-evaporation                                                |
+| `evaporation_violation_neg_cost`      | f64 or `null` | `evaporation_violation_cost`      | Penalty per mm of under-evaporation                                               |
+| `inflow_nonnegativity_cost`           | f64 or `null` | 1000.0                            | Penalty per m3/s of inflow non-negativity slack activation (method = `"penalty"`) |
+
+When `null`, the directional withdrawal and evaporation costs fall back to the symmetric `water_withdrawal_violation_cost` and `evaporation_violation_cost` respectively. The `inflow_nonnegativity_cost` defaults to 1000.0 when absent. See [Inflow Non-Negativity](../math/inflow-nonnegativity.md) for details on the penalty method.
 
 ### Piecewise Deficit
 
@@ -168,17 +187,18 @@ This section enumerates all constraints in the LP that use slack variables, orga
 
 ### Hydro — Flow and Generation Constraints
 
-| Constraint Type    | Slack Variable               | Direction   | Penalty                           | Category             |
-| ------------------ | ---------------------------- | ----------- | --------------------------------- | -------------------- |
-| Minimum storage    | `storage_violation_below`    | Lower bound | `storage_violation_below_cost`    | Constraint violation |
-| Filling target     | `filling_target_violation`   | Lower bound | `filling_target_violation_cost`   | Constraint violation |
-| Minimum turbined   | `turbined_violation_below`   | Lower bound | `turbined_violation_below_cost`   | Constraint violation |
-| Minimum outflow    | `outflow_violation_below`    | Lower bound | `outflow_violation_below_cost`    | Constraint violation |
-| Maximum outflow    | `outflow_violation_above`    | Upper bound | `outflow_violation_above_cost`    | Constraint violation |
-| Minimum generation | `generation_violation_below` | Lower bound | `generation_violation_below_cost` | Constraint violation |
-| Evaporation        | `evaporation_violation_pos`  | Upper slack | `evaporation_violation_cost`      | Constraint violation |
-| Evaporation        | `evaporation_violation_neg`  | Lower slack | `evaporation_violation_cost`      | Constraint violation |
-| Water withdrawal   | `water_withdrawal_violation` | Lower bound | `water_withdrawal_violation_cost` | Constraint violation |
+| Constraint Type    | Slack Variable                   | Direction   | Penalty                               | Category             |
+| ------------------ | -------------------------------- | ----------- | ------------------------------------- | -------------------- |
+| Minimum storage    | `storage_violation_below`        | Lower bound | `storage_violation_below_cost`        | Constraint violation |
+| Filling target     | `filling_target_violation`       | Lower bound | `filling_target_violation_cost`       | Constraint violation |
+| Minimum turbined   | `turbined_violation_below`       | Lower bound | `turbined_violation_below_cost`       | Constraint violation |
+| Minimum outflow    | `outflow_violation_below`        | Lower bound | `outflow_violation_below_cost`        | Constraint violation |
+| Maximum outflow    | `outflow_violation_above`        | Upper bound | `outflow_violation_above_cost`        | Constraint violation |
+| Minimum generation | `generation_violation_below`     | Lower bound | `generation_violation_below_cost`     | Constraint violation |
+| Evaporation        | `evaporation_violation_pos`      | Upper slack | `evaporation_violation_pos_cost`      | Constraint violation |
+| Evaporation        | `evaporation_violation_neg`      | Lower slack | `evaporation_violation_neg_cost`      | Constraint violation |
+| Water withdrawal   | `water_withdrawal_violation_pos` | Upper slack | `water_withdrawal_violation_pos_cost` | Constraint violation |
+| Water withdrawal   | `water_withdrawal_violation_neg` | Lower slack | `water_withdrawal_violation_neg_cost` | Constraint violation |
 
 ### Hydro — Storage Bounds
 
@@ -272,7 +292,7 @@ where:
   evap_slack_negative >= 0  (actual evap < computed evap, including negative target)
 ```
 
-Both slack variables receive the same penalty: `evaporation_violation_cost`.
+Each slack variable receives its own penalty: `evaporation_violation_pos_cost` for over-evaporation and `evaporation_violation_neg_cost` for under-evaporation. When the directional costs are not specified in `penalties.json` (i.e., `null`), both default to the symmetric `evaporation_violation_cost` value.
 
 ## 7. Hydro Variables and Bounds Summary
 
@@ -284,7 +304,7 @@ Both slack variables receive the same penalty: `evaporation_violation_cost`.
 | `outflow`       | `min_outflow_m3s`      | `max_outflow_m3s`   | With penalty | With penalty    |
 | `generation`    | `min_generation_mw`    | `max_generation_mw` | With penalty | Hard            |
 | `evaporation`   | -Inf (can be negative) | +Inf                | With penalty | With penalty    |
-| `withdrawal`    | `water_withdrawal`     | `water_withdrawal`  | With penalty | —               |
+| `withdrawal`    | `water_withdrawal`     | `water_withdrawal`  | With penalty | With penalty    |
 
 > **Generation bounds**: The user explicitly sets `min_generation_mw` and `max_generation_mw`. These are not derived from turbined flow bounds, because the production function is not always constant productivity. When a complete hydro model is available, the installed capacity provides a natural hard upper bound. The lower bound always requires a slack to maintain feasibility.
 
@@ -335,9 +355,10 @@ minimize:
   + Sigma_hydro (outflow_violation_below x outflow_violation_below_cost)
   + Sigma_hydro (outflow_violation_above x outflow_violation_above_cost)
   + Sigma_hydro (generation_violation_below x generation_violation_below_cost)
-  + Sigma_hydro (evaporation_violation_pos x evaporation_violation_cost)
-  + Sigma_hydro (evaporation_violation_neg x evaporation_violation_cost)
-  + Sigma_hydro (water_withdrawal_violation x water_withdrawal_violation_cost)
+  + Sigma_hydro (evaporation_violation_pos x evaporation_violation_pos_cost)
+  + Sigma_hydro (evaporation_violation_neg x evaporation_violation_neg_cost)
+  + Sigma_hydro (water_withdrawal_violation_pos x water_withdrawal_violation_pos_cost)
+  + Sigma_hydro (water_withdrawal_violation_neg x water_withdrawal_violation_neg_cost)
 
   // Regularization costs (solution guidance)
   + Sigma_hydro (spillage x spillage_cost)

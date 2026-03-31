@@ -11,28 +11,29 @@ This spec defines the `SamplingScheme` abstraction -- the enum-based dispatch th
 The sampling scheme is modeled as a flat enum with three variants, matching the three forward sampling modes supported by Cobre ([Extension Points SS5.1](./extension-points.md)):
 
 ```rust
-/// Sampling scheme controlling how the forward pass selects scenario
-/// realizations at each stage.
+/// Forward-pass noise source for multi-stage optimization solvers.
 ///
+/// Determines where the forward-pass scenario realizations come from.
 /// A single `SamplingScheme` value is resolved from the `scenario_source`
 /// field in `stages.json` during configuration loading (see
 /// Extension Points SS6). The enum is global to the training run --
 /// all stages share the same sampling scheme.
-#[derive(Debug, Clone)]
+///
+/// Scenario configuration data (seed, external data paths, selection mode,
+/// etc.) lives in separate config types (`ScenarioSource`,
+/// `ExternalSelectionMode`), not in the enum itself. The enum carries only
+/// the variant tag, keeping it lightweight and `Copy`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SamplingScheme {
     /// In-sample Monte Carlo forward sampling.
     ///
     /// At each stage t, sample a random index j in {0, ..., N_openings - 1}
     /// and use the corresponding noise vector from the fixed opening tree.
     /// The forward and backward passes draw from the same noise distribution.
+    /// This is the default for the minimal viable solver.
     ///
     /// See [Scenario Generation SS3.2](./scenario-generation.md).
-    InSample {
-        /// Base seed for reproducible noise generation.
-        /// Deterministic seed derivation per (iteration, scenario, stage)
-        /// ensures cross-rank and restart reproducibility.
-        seed: u64,
-    },
+    InSample,
 
     /// External scenario forward sampling.
     ///
@@ -45,15 +46,7 @@ pub enum SamplingScheme {
     /// The backward pass uses the fixed opening tree generated from a
     /// PAR model fitted to the external data (see SS5 and
     /// [Scenario Generation SS4.2](./scenario-generation.md)).
-    External {
-        /// Pre-loaded external scenario data, indexed by
-        /// (stage_id, scenario_id, hydro_id).
-        scenarios: ExternalScenarioData,
-
-        /// How scenarios are selected from the external set during
-        /// the forward pass.
-        selection_mode: SelectionMode,
-    },
+    External,
 
     /// Historical inflow replay.
     ///
@@ -64,16 +57,11 @@ pub enum SamplingScheme {
     ///
     /// The backward pass uses the fixed opening tree generated from a
     /// PAR model fitted to the historical data.
-    Historical {
-        /// Pre-loaded historical inflow data, mapped from
-        /// `inflow_history.parquet` to the stage structure via
-        /// `season_definitions`.
-        history: HistoricalInflowData,
-    },
+    Historical,
 }
 ```
 
-The `ExternalScenarioData` and `HistoricalInflowData` types are opaque handles to the pre-loaded and pre-validated scenario data. Their internal structure is an implementation concern -- the spec constrains only the behavioral contracts in SS2.
+The `SamplingScheme` enum uses **unit variants** -- it carries no data. Scenario configuration data (seed, external scenario handles, selection mode, historical inflow handles) lives in the `ScenarioSource` config struct, which groups the sampling scheme with its associated parameters. This separation keeps the enum lightweight and `Copy`, while the config struct holds the data needed for initialization.
 
 ## 2. Method Contracts
 
@@ -150,9 +138,9 @@ impl SamplingScheme {
     ///    (see [Scenario Generation SS4.3](./scenario-generation.md))
     pub fn requires_noise_inversion(&self) -> bool {
         match self {
-            SamplingScheme::InSample { .. } => false,
-            SamplingScheme::External { .. } => true,
-            SamplingScheme::Historical { .. } => true,
+            SamplingScheme::InSample => false,
+            SamplingScheme::External => true,
+            SamplingScheme::Historical => true,
         }
     }
 }
@@ -203,9 +191,9 @@ impl SamplingScheme {
     /// which determines the PAR model used for tree generation.
     pub fn backward_tree_source(&self) -> BackwardTreeSource {
         match self {
-            SamplingScheme::InSample { .. } => BackwardTreeSource::UserProvidedPAR,
-            SamplingScheme::External { .. } => BackwardTreeSource::FittedToExternalData,
-            SamplingScheme::Historical { .. } => BackwardTreeSource::FittedToHistoricalData,
+            SamplingScheme::InSample => BackwardTreeSource::UserProvidedPAR,
+            SamplingScheme::External => BackwardTreeSource::FittedToExternalData,
+            SamplingScheme::Historical => BackwardTreeSource::FittedToHistoricalData,
         }
     }
 }
@@ -230,37 +218,38 @@ impl SamplingScheme {
 `SamplingSchemeConfig` represents the deserialized form of the `scenario_source` field in `stages.json` ([Input Scenarios SS2.1](../data-model/input-scenarios.md)). It maps directly to the JSON schema:
 
 ```rust
-/// Configuration representation of the sampling scheme, matching the
-/// `scenario_source` field in `stages.json`.
+/// Top-level scenario source configuration, parsed from `stages.json`.
 ///
-/// Deserialized from one of the three JSON forms documented in
-/// [Input Scenarios SS2.1](../data-model/input-scenarios.md).
-#[derive(Debug, Clone, Deserialize)]
-#[serde(tag = "sampling_scheme", rename_all = "snake_case")]
-pub enum SamplingSchemeConfig {
-    /// InSample: `{ "sampling_scheme": "in_sample", "seed": 42 }`
-    InSample {
-        /// Base seed for reproducible noise generation.
-        seed: u64,
-    },
+/// Groups the sampling scheme, random seed, and external selection mode
+/// that govern how forward-pass scenarios are produced. The
+/// `SamplingScheme` enum carries only the variant tag; this config struct
+/// holds the associated parameters.
+///
+/// See [Input Scenarios SS1.4, SS1.8](../data-model/input-scenarios.md).
+pub struct ScenarioSource {
+    /// Noise source used during the forward pass.
+    pub sampling_scheme: SamplingScheme,
 
-    /// External: `{ "sampling_scheme": "external", "selection_mode": "random" }`
-    External {
-        /// How scenarios are selected: "random" (default) or "sequential".
-        #[serde(default = "default_selection_mode")]
-        selection_mode: SelectionMode,
-    },
+    /// Random seed for reproducible opening tree generation.
+    /// `None` means non-deterministic (OS entropy).
+    pub seed: Option<i64>,
 
-    /// Historical: `{ "sampling_scheme": "historical" }`
-    Historical,
+    /// Selection mode when `sampling_scheme` is `External`.
+    /// `None` for `InSample` and `Historical` schemes.
+    pub selection_mode: Option<ExternalSelectionMode>,
 }
 
-fn default_selection_mode() -> SelectionMode {
-    SelectionMode::Random
+/// Scenario selection mode when `SamplingScheme::External` is active.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ExternalSelectionMode {
+    /// Scenarios are drawn uniformly at random from the external library.
+    Random,
+    /// Scenarios are replayed in file order, cycling when the end is reached.
+    Sequential,
 }
 ```
 
-**Conversion:** `SamplingSchemeConfig` is validated and converted to `SamplingScheme` during configuration loading (step 4 of the variant selection pipeline in [Extension Points SS6](./extension-points.md)). The validation rules are specified in SS6.
+**Conversion:** `ScenarioSource` is validated and populated during configuration loading (step 4 of the variant selection pipeline in [Extension Points SS6](./extension-points.md)). The `SamplingScheme` unit variant is extracted from the config, while data-carrying fields (seed, selection mode, external data handles) are stored separately. The validation rules are specified in SS6.
 
 ### 3.2 SelectionMode
 

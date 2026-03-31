@@ -203,6 +203,8 @@ The penalty is proportional to $\sigma_m \cdot \xi_h$, which is the actual inflo
 - More complex formulation
 - Requires careful interaction with noise generation
 
+> **Implementation variant**: The implementation combines Truncation clamping with Penalty slack columns, matching SPTcpp's `truncamento_penalizacao` mode. Specifically: the PAR(p) noise is clamped outside the LP (identical to the `truncation` method, so the inflow patched into the LP is never negative), and penalty slack columns $\sigma^{inf}_h$ are added to the LP (identical to the `penalty` method, allowing the solver to relax the non-negativity if cost-effective). This differs from the $\xi_h$ dimensionless formulation described above, which adjusts the noise term inside the LP. The $\xi_h$ formulation above is the **reference design**; the implementation uses the simpler clamping+slack approach because it reuses the existing `Truncation` and `Penalty` machinery without requiring a separate noise-adjustment constraint. The two approaches are economically equivalent when the penalty cost is set to the same value.
+
 ## 7. Comparison Summary
 
 | Method                    | LP Size    | Bias    | AR Preservation | Feasibility | Recommendation |

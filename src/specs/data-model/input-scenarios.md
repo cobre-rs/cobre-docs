@@ -611,7 +611,83 @@ Load uncertainty generates a base load realization in **MW** per stage. Block fa
 }
 ```
 
-## 5. Correlation (`scenarios/correlation.json`)
+## 5. Non-Controllable Source Scenarios
+
+Non-controllable sources (wind, solar) support two optional scenario input files for stochastic availability modeling and block-level scaling.
+
+### 5.1 NCS Stochastic Availability (`scenarios/non_controllable_stats.parquet`) -- Optional
+
+Defines per-NCS-per-stage mean and standard deviation of the stochastic availability factor. When present, the scenario pipeline generates stochastic NCS availability using these parameters. When absent, NCS generation is deterministic (uses the available generation from `constraints/ncs_bounds.parquet` directly).
+
+| Column     | Type | Nullable | Description                                                         |
+| ---------- | ---- | -------- | ------------------------------------------------------------------- |
+| `ncs_id`   | i32  | No       | Non-controllable source entity ID                                   |
+| `stage_id` | i32  | No       | Stage ID                                                            |
+| `mean`     | f64  | No       | Mean availability factor, in [0, 1]                                 |
+| `std`      | f64  | No       | Standard deviation of availability factor (>= 0; 0 = deterministic) |
+
+**Validation rules:**
+
+- All four columns must be present with the correct types
+- `mean` must be finite and in [0, 1] (NaN, +/-inf, and out-of-range are rejected)
+- `std` must be non-negative and finite
+- Rows are sorted by `(ncs_id, stage_id)` ascending after loading
+
+**Deferred validations** (not performed at parse time):
+
+- `ncs_id` existence in the NCS registry (Layer 3 referential validation)
+- `stage_id` existence in the stages registry (Layer 3 referential validation)
+
+### 5.2 NCS Block Scaling Factors (`scenarios/non_controllable_factors.json`) -- Optional
+
+Defines per-NCS-per-stage block-level generation scaling factors. When present, NCS generation at each block is multiplied by the corresponding factor. When absent, all block factors default to 1.0.
+
+```json
+{
+  "$schema": "https://cobre.dev/schemas/v2/non_controllable_factors.schema.json",
+  "non_controllable_factors": [
+    {
+      "ncs_id": 0,
+      "stage_id": 0,
+      "block_factors": [
+        { "block_id": 0, "factor": 0.6 },
+        { "block_id": 1, "factor": 0.8 }
+      ]
+    }
+  ]
+}
+```
+
+| Field                                                 | Type | Description                                           |
+| ----------------------------------------------------- | ---- | ----------------------------------------------------- |
+| `non_controllable_factors[].ncs_id`                   | i32  | Non-controllable source entity ID                     |
+| `non_controllable_factors[].stage_id`                 | i32  | Stage ID                                              |
+| `non_controllable_factors[].block_factors[].block_id` | i32  | Block ID                                              |
+| `non_controllable_factors[].block_factors[].factor`   | f64  | Scaling factor (must be strictly positive and finite) |
+
+**Validation rules:**
+
+- No two entries may share the same `(ncs_id, stage_id)` pair
+- Every `factor` value must be strictly positive (> 0.0) and finite
+- Entries are sorted by `(ncs_id, stage_id)` ascending; block factors within each entry are sorted by `block_id` ascending
+
+### 5.3 NCS Available Generation Bounds (`constraints/ncs_bounds.parquet`) -- Optional
+
+Defines per-NCS-per-stage available generation bounds. When present, these specify the maximum generation (MW) for each non-controllable source at each stage.
+
+| Column                    | Type | Nullable | Description                       |
+| ------------------------- | ---- | -------- | --------------------------------- |
+| `ncs_id`                  | i32  | No       | Non-controllable source entity ID |
+| `stage_id`                | i32  | No       | Stage ID                          |
+| `available_generation_mw` | f64  | No       | Available generation (MW), >= 0.0 |
+
+**Validation rules:**
+
+- All three columns must be present with the correct types
+- `available_generation_mw` must be finite and >= 0.0
+- Rows are sorted by `(ncs_id, stage_id)` ascending after loading
+
+## 6. Correlation (`scenarios/correlation.json`)
 
 > **Format Rationale — correlation.json**
 >
@@ -729,23 +805,23 @@ Stages not listed in the schedule use the `"default"` profile. Only stages that 
 | Seasonal correlation | `correlation.json` with multiple profiles + embedded `"schedule"` array | Different profiles by season/stage |
 | Derived from history | `inflow_history` (no `correlation.json`)                                | System estimates from AR residuals |
 
-## 6. Seasonal Override Pattern (Cross-Cutting)
+## 7. Seasonal Override Pattern (Cross-Cutting)
 
 Several data model elements exhibit the same pattern: a value or configuration that varies by season or stage. This appears in production model selection, load factors, exchange factors, and correlation profiles.
 
 Two approaches have been identified for this pattern:
 
-### 6.1 Profile + Schedule
+### 7.1 Profile + Schedule
 
-Define named profiles (complete configurations) and a separate schedule table that maps stages to profile names. For correlation, the schedule is embedded in the same JSON file (see §5.3).
+Define named profiles (complete configurations) and a separate schedule table that maps stages to profile names. For correlation, the schedule is embedded in the same JSON file (see §6.3).
 
 **Strengths:** Clean separation of definitions and temporal assignment. Profiles are reusable. Schedule table is tiny. Good for complex objects (correlation matrices, production models).
 
 **Weaknesses:** Requires two files per concept. Indirection may be confusing for simple cases.
 
-**Used in:** Correlation (§5), production model selection (see [Input Hydro Extensions](input-hydro-extensions.md)).
+**Used in:** Correlation (§6), production model selection (see [Input Hydro Extensions](input-hydro-extensions.md)).
 
-### 6.2 Stage/Season Tagged Union
+### 7.2 Stage/Season Tagged Union
 
 Include the varying parameter directly in each stage definition or in a per-stage table. The value is a tagged union selecting between variants.
 

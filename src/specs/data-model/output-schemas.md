@@ -47,6 +47,10 @@ output/
     ├── timing/
     │   ├── iterations.parquet               # Per-iteration timing breakdown
     │   └── mpi_ranks.parquet                # Per-rank timing statistics
+    ├── solver/
+    │   └── iterations.parquet               # Per-iteration solver statistics
+    ├── cut_selection/
+    │   └── iterations.parquet               # Per-iteration cut selection stats
     ├── dictionaries/
     │   ├── codes.json                       # Categorical code mappings
     │   ├── bounds.parquet                   # Entity bounds by stage/block
@@ -99,19 +103,19 @@ Two mechanisms:
 
 ```json
 {
-  "version": "2.0.0",
+  "version": "1.0",
   "generated_at": "2026-01-18T12:00:00Z",
   "operative_state": {
-    "0": "non_existing",
-    "1": "filling_dead_volume",
+    "0": "deactivated",
+    "1": "maintenance",
     "2": "operating",
-    "3": "decommissioned"
+    "3": "saturated"
   },
   "storage_binding": {
     "0": "none",
-    "1": "min",
-    "2": "max",
-    "3": "target"
+    "1": "below_minimum",
+    "2": "above_maximum",
+    "3": "both"
   },
   "contract_type": {
     "0": "import",
@@ -225,7 +229,13 @@ Stage and block-level cost breakdown for economic analysis. Cost columns are org
 | **Category 2 — Violations**     |      |          |                                                                                                                                 |
 | `storage_violation_cost`        | f64  | No       | Storage below minimum violation cost                                                                                            |
 | `filling_target_cost`           | f64  | No       | Filling target shortfall cost                                                                                                   |
-| `hydro_violation_cost`          | f64  | No       | Sum of turbined, outflow, generation, evaporation, and withdrawal violation costs                                               |
+| `hydro_violation_cost`          | f64  | No       | Sum of all hydro violation costs (aggregate of the 6 granular columns below)                                                    |
+| `outflow_violation_below_cost`  | f64  | No       | Outflow below minimum violation cost (all hydros)                                                                               |
+| `outflow_violation_above_cost`  | f64  | No       | Outflow above maximum violation cost (all hydros)                                                                               |
+| `turbined_violation_cost`       | f64  | No       | Turbined flow below minimum violation cost (all hydros)                                                                         |
+| `generation_violation_cost`     | f64  | No       | Generation below minimum violation cost (all hydros)                                                                            |
+| `evaporation_violation_cost`    | f64  | No       | Evaporation constraint violation cost (all hydros)                                                                              |
+| `withdrawal_violation_cost`     | f64  | No       | Water withdrawal violation cost (all hydros)                                                                                    |
 | `inflow_penalty_cost`           | f64  | No       | Inflow non-negativity penalty cost (see [Inflow Non-Negativity](../math/inflow-nonnegativity.md))                               |
 | `generic_violation_cost`        | f64  | No       | Generic constraint violation penalties                                                                                          |
 | **Category 3 — Regularization** |      |          |                                                                                                                                 |
@@ -247,6 +257,10 @@ immediate_cost = thermal_cost + contract_cost
                + inflow_penalty_cost + generic_violation_cost
                + spillage_cost + fpha_turbined_cost + curtailment_cost
                + exchange_cost + pumping_cost
+
+hydro_violation_cost = outflow_violation_below_cost + outflow_violation_above_cost
+                     + turbined_violation_cost + generation_violation_cost
+                     + evaporation_violation_cost + withdrawal_violation_cost
 ```
 
 > **Note on `pumping_cost`**: Pumping stations have no explicit cost parameter in the LP. The `pumping_cost` column reports the imputed cost: marginal price at the connected bus × energy consumed. This is derived from dual variables after the solve, not from a direct LP cost term.
@@ -255,37 +269,40 @@ immediate_cost = thermal_cost + contract_cost
 
 ### 5.2 Hydros (`simulation/hydros/`)
 
-| Column                           | Type | Nullable | Description                                                                |
-| -------------------------------- | ---- | -------- | -------------------------------------------------------------------------- |
-| `stage_id`                       | i32  | No       | Stage index (0-based)                                                      |
-| `block_id`                       | i32  | Yes      | Block index (null for stage-level)                                         |
-| `hydro_id`                       | i32  | No       | Hydro plant identifier                                                     |
-| `turbined_m3s`                   | f64  | No       | Turbined outflow (m³/s)                                                    |
-| `spillage_m3s`                   | f64  | No       | Spillage (m³/s)                                                            |
-| `outflow_m3s`                    | f64  | No       | Total outflow: turbined + spillage (m³/s)                                  |
-| `evaporation_m3s`                | f64  | Yes      | Evaporation loss (m³/s), null if not modeled                               |
-| `diverted_inflow_m3s`            | f64  | Yes      | Inflow diverted from upstream                                              |
-| `diverted_outflow_m3s`           | f64  | Yes      | Outflow diverted to downstream                                             |
-| `incremental_inflow_m3s`         | f64  | No       | Realized incremental inflow (m³/s)                                         |
-| `inflow_m3s`                     | f64  | No       | Total inflow including upstream                                            |
-| `storage_initial_hm3`            | f64  | No       | Storage at start (hm³)                                                     |
-| `storage_final_hm3`              | f64  | No       | Storage at end (hm³)                                                       |
-| `generation_mw`                  | f64  | No       | Power generation (MW)                                                      |
-| `generation_mwh`                 | f64  | No       | Energy generation (MWh)                                                    |
-| `productivity_mw_per_m3s`        | f64  | Yes      | Effective productivity                                                     |
-| `spillage_cost`                  | f64  | No       | Spillage regularization cost (this plant)                                  |
-| `water_value_per_hm3`            | f64  | No       | Marginal value of stored water (\$/hm³)                                    |
-| `storage_binding_code`           | i8   | No       | Storage bound binding status                                               |
-| `operative_state_code`           | i8   | No       | Operative state                                                            |
-| **Violation slacks**             |      |          |                                                                            |
-| `turbined_slack_m3s`             | f64  | No       | Min turbined violation (0 if none)                                         |
-| `outflow_slack_below_m3s`        | f64  | No       | Min outflow violation (0 if none)                                          |
-| `outflow_slack_above_m3s`        | f64  | No       | Max outflow violation (0 if none)                                          |
-| `generation_slack_mw`            | f64  | No       | Min generation violation (0 if none)                                       |
-| `storage_violation_below_hm3`    | f64  | No       | Storage below minimum violation (0 if none, stage-level only)              |
-| `filling_target_violation_hm3`   | f64  | No       | Filling target shortfall (0 if none, filling hydros at terminal stage)     |
-| `evaporation_violation_m3s`      | f64  | No       | Evaporation constraint violation — net of bidirectional slacks (0 if none) |
-| `inflow_nonnegativity_slack_m3s` | f64  | No       | Inflow non-negativity slack (0 if none, stage-level)                       |
+| Column                               | Type | Nullable | Description                                                            |
+| ------------------------------------ | ---- | -------- | ---------------------------------------------------------------------- |
+| `stage_id`                           | i32  | No       | Stage index (0-based)                                                  |
+| `block_id`                           | i32  | Yes      | Block index (null for stage-level)                                     |
+| `hydro_id`                           | i32  | No       | Hydro plant identifier                                                 |
+| `turbined_m3s`                       | f64  | No       | Turbined outflow (m³/s)                                                |
+| `spillage_m3s`                       | f64  | No       | Spillage (m³/s)                                                        |
+| `outflow_m3s`                        | f64  | No       | Total outflow: turbined + spillage (m³/s)                              |
+| `evaporation_m3s`                    | f64  | Yes      | Evaporation loss (m³/s), null if not modeled                           |
+| `diverted_inflow_m3s`                | f64  | Yes      | Inflow diverted from upstream                                          |
+| `diverted_outflow_m3s`               | f64  | Yes      | Outflow diverted to downstream                                         |
+| `incremental_inflow_m3s`             | f64  | No       | Realized incremental inflow (m³/s)                                     |
+| `inflow_m3s`                         | f64  | No       | Total inflow including upstream                                        |
+| `storage_initial_hm3`                | f64  | No       | Storage at start (hm³)                                                 |
+| `storage_final_hm3`                  | f64  | No       | Storage at end (hm³)                                                   |
+| `generation_mw`                      | f64  | No       | Power generation (MW)                                                  |
+| `generation_mwh`                     | f64  | No       | Energy generation (MWh)                                                |
+| `productivity_mw_per_m3s`            | f64  | Yes      | Effective productivity                                                 |
+| `spillage_cost`                      | f64  | No       | Spillage regularization cost (this plant)                              |
+| `water_value_per_hm3`                | f64  | No       | Marginal value of stored water (\$/hm³)                                |
+| `storage_binding_code`               | i8   | No       | Storage bound binding status                                           |
+| `operative_state_code`               | i8   | No       | Operative state                                                        |
+| **Violation slacks**                 |      |          |                                                                        |
+| `turbined_slack_m3s`                 | f64  | No       | Min turbined violation (0 if none)                                     |
+| `outflow_slack_below_m3s`            | f64  | No       | Min outflow violation (0 if none)                                      |
+| `outflow_slack_above_m3s`            | f64  | No       | Max outflow violation (0 if none)                                      |
+| `generation_slack_mw`                | f64  | No       | Min generation violation (0 if none)                                   |
+| `storage_violation_below_hm3`        | f64  | No       | Storage below minimum violation (0 if none, stage-level only)          |
+| `filling_target_violation_hm3`       | f64  | No       | Filling target shortfall (0 if none, filling hydros at terminal stage) |
+| `evaporation_violation_pos_m3s`      | f64  | No       | Evaporation over-estimate violation slack (0 if none)                  |
+| `evaporation_violation_neg_m3s`      | f64  | No       | Evaporation under-estimate violation slack (0 if none)                 |
+| `inflow_nonnegativity_slack_m3s`     | f64  | No       | Inflow non-negativity slack (0 if none, stage-level)                   |
+| `water_withdrawal_violation_pos_m3s` | f64  | No       | Water withdrawal over-withdrawal violation slack (0 if none)           |
+| `water_withdrawal_violation_neg_m3s` | f64  | No       | Water withdrawal under-withdrawal violation slack (0 if none)          |
 
 **Rows per scenario**: `num_stages × num_blocks × num_hydros`
 
@@ -456,8 +473,8 @@ Non-controllable sources are fully defined in [Input System Entities §7](input-
 | ------------------ | ---- | -------- | ---------------------------------------------- |
 | `iteration`        | i32  | No       | Iteration number (1-based)                     |
 | `lower_bound`      | f64  | No       | Lower bound (expected cost-to-go from stage 0) |
-| `upper_bound_mean` | f64  | Yes      | Upper bound mean (null if UB disabled)         |
-| `upper_bound_std`  | f64  | Yes      | Upper bound standard deviation                 |
+| `upper_bound_mean` | f64  | No       | Upper bound mean                               |
+| `upper_bound_std`  | f64  | No       | Upper bound standard deviation                 |
 | `gap_percent`      | f64  | Yes      | Optimality gap (null when not computable)      |
 | `cuts_added`       | i32  | No       | Cuts added this iteration                      |
 | `cuts_removed`     | i32  | No       | Cuts removed by cut selection                  |
@@ -465,7 +482,6 @@ Non-controllable sources are fully defined in [Input System Entities §7](input-
 | `time_forward_ms`  | i64  | No       | Forward pass wall time (ms)                    |
 | `time_backward_ms` | i64  | No       | Backward pass wall time (ms)                   |
 | `time_total_ms`    | i64  | No       | Total iteration wall time (ms)                 |
-| `memory_peak_mb`   | i64  | No       | Peak memory usage (MB)                         |
 | `forward_passes`   | i32  | No       | Forward scenarios this iteration               |
 | `lp_solves`        | i64  | No       | Total LP solves this iteration                 |
 
@@ -484,18 +500,21 @@ Which mechanism is active depends on configuration. Both may run simultaneously 
 
 ### 6.2 Iteration Timing (`training/timing/iterations.parquet`)
 
-| Column              | Type | Nullable | Description                      |
-| ------------------- | ---- | -------- | -------------------------------- |
-| `iteration`         | i32  | No       | Iteration number (1-based)       |
-| `forward_solve_ms`  | i64  | No       | LP solve time in forward pass    |
-| `forward_sample_ms` | i64  | No       | Scenario sampling time           |
-| `backward_solve_ms` | i64  | No       | LP solve time in backward pass   |
-| `backward_cut_ms`   | i64  | No       | Cut computation and storage time |
-| `cut_selection_ms`  | i64  | No       | Cut selection/pruning time       |
-| `mpi_allreduce_ms`  | i64  | No       | MPI AllReduce communication time |
-| `mpi_broadcast_ms`  | i64  | No       | MPI Broadcast communication time |
-| `io_write_ms`       | i64  | No       | Output writing time              |
-| `overhead_ms`       | i64  | No       | Unaccounted overhead             |
+| Column               | Type | Nullable | Description                             |
+| -------------------- | ---- | -------- | --------------------------------------- |
+| `iteration`          | i32  | No       | Iteration number (1-based)              |
+| `forward_solve_ms`   | i64  | No       | LP solve time in forward pass           |
+| `forward_sample_ms`  | i64  | No       | Scenario sampling time                  |
+| `backward_solve_ms`  | i64  | No       | LP solve time in backward pass          |
+| `backward_cut_ms`    | i64  | No       | Cut computation and storage time        |
+| `cut_selection_ms`   | i64  | No       | Cut selection/pruning time              |
+| `mpi_allreduce_ms`   | i64  | No       | MPI AllReduce communication time        |
+| `mpi_broadcast_ms`   | i64  | No       | MPI Broadcast communication time        |
+| `io_write_ms`        | i64  | No       | Output writing time                     |
+| `state_exchange_ms`  | i64  | No       | State exchange time between passes      |
+| `cut_batch_build_ms` | i64  | No       | Cut batch construction time             |
+| `rayon_overhead_ms`  | i64  | No       | Rayon thread pool coordination overhead |
+| `overhead_ms`        | i64  | No       | Unaccounted overhead                    |
 
 **Rows**: `num_iterations`
 
@@ -515,6 +534,60 @@ Which mechanism is active depends on configuration. Both may run simultaneously 
 **Rows**: `num_iterations × num_mpi_ranks`
 
 Use `idle_time_ms` to identify load imbalance. Sum of `scenarios_processed` per iteration equals `forward_passes`. Communication patterns reveal MPI bottlenecks.
+
+### 6.4 Solver Statistics (`training/solver/iterations.parquet`)
+
+Per-iteration, per-phase, per-stage solver statistics for diagnosing LP conditioning and retry behavior. One row per `(iteration, phase, stage)` triple.
+
+| Column               | Type   | Nullable | Description                                    |
+| -------------------- | ------ | -------- | ---------------------------------------------- |
+| `iteration`          | u32    | No       | Iteration number                               |
+| `phase`              | string | No       | SDDP phase: `"forward"` or `"backward"`        |
+| `stage`              | i32    | No       | Stage index                                    |
+| `lp_solves`          | u32    | No       | Total LP solves at this stage                  |
+| `lp_successes`       | u32    | No       | LP solves that succeeded on first attempt      |
+| `lp_retries`         | u32    | No       | LP solves that succeeded after retry           |
+| `lp_failures`        | u32    | No       | LP solves that failed after all retry attempts |
+| `retry_attempts`     | u32    | No       | Total retry attempts across all LP solves      |
+| `basis_offered`      | u32    | No       | LP solves where a warm-start basis was offered |
+| `basis_rejections`   | u32    | No       | LP solves where the offered basis was rejected |
+| `simplex_iterations` | u64    | No       | Total simplex iterations across all LP solves  |
+| `solve_time_ms`      | f64    | No       | Cumulative LP solve wall time (ms)             |
+| `load_model_time_ms` | f64    | No       | Cumulative model loading time (ms)             |
+| `add_rows_time_ms`   | f64    | No       | Cumulative row addition time (ms)              |
+| `set_bounds_time_ms` | f64    | No       | Cumulative bound setting time (ms)             |
+| `basis_set_time_ms`  | f64    | No       | Cumulative basis setting time (ms)             |
+| `retry_l0`           | u64    | No       | Count of retries at level 0                    |
+| `retry_l1`           | u64    | No       | Count of retries at level 1                    |
+| `retry_l2`           | u64    | No       | Count of retries at level 2                    |
+| `retry_l3`           | u64    | No       | Count of retries at level 3                    |
+| `retry_l4`           | u64    | No       | Count of retries at level 4                    |
+| `retry_l5`           | u64    | No       | Count of retries at level 5                    |
+| `retry_l6`           | u64    | No       | Count of retries at level 6                    |
+| `retry_l7`           | u64    | No       | Count of retries at level 7                    |
+| `retry_l8`           | u64    | No       | Count of retries at level 8                    |
+| `retry_l9`           | u64    | No       | Count of retries at level 9                    |
+| `retry_l10`          | u64    | No       | Count of retries at level 10                   |
+| `retry_l11`          | u64    | No       | Count of retries at level 11                   |
+
+**Rows**: `num_iterations × 2 (phases) × num_stages`
+
+The `retry_lN` columns record how many times each retry escalation level was reached. The retry ladder applies increasingly aggressive solver reconfiguration at each level (e.g., scaling, presolve toggling, algorithm switching). See [Solver Interface](../architecture/solver-interface-trait.md) for retry strategy details.
+
+### 6.5 Cut Selection Statistics (`training/cut_selection/iterations.parquet`)
+
+Per-iteration, per-stage cut selection statistics. One row per `(iteration, stage)` pair.
+
+| Column               | Type | Nullable | Description                                    |
+| -------------------- | ---- | -------- | ---------------------------------------------- |
+| `iteration`          | i32  | No       | Iteration number                               |
+| `stage`              | i32  | No       | Stage index                                    |
+| `cuts_populated`     | i32  | No       | Total cuts in the pool before selection        |
+| `cuts_active_before` | i32  | No       | Active cuts before this iteration's selection  |
+| `cuts_deactivated`   | i32  | No       | Cuts deactivated by this iteration's selection |
+| `cuts_active_after`  | i32  | No       | Active cuts after this iteration's selection   |
+
+**Rows**: `num_iterations × num_stages` (only iterations where cut selection runs)
 
 ## 7. Structured Output vs Parquet Schemas
 

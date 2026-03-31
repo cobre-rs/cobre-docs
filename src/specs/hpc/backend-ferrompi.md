@@ -130,7 +130,7 @@ impl FerrompiBackend {
     /// # Errors
     ///
     /// Returns `BackendError::InitializationFailed` if `MPI_Init_thread` fails
-    /// or returns a threading level below `MPI_THREAD_MULTIPLE`, or if the
+    /// or returns a threading level below `MPI_THREAD_FUNNELED`, or if the
     /// shared-memory communicator split fails.
     ///
     /// # Panics
@@ -139,12 +139,14 @@ impl FerrompiBackend {
     /// initializations).
     pub fn new() -> Result<Self, BackendError> {
         // Step 1 — MPI initialization (Hybrid Parallelism §6 Step 1)
-        // MPI_THREAD_MULTIPLE required for hybrid MPI+OpenMP execution.
+        // MPI_THREAD_FUNNELED: only the main thread makes MPI calls.
+        // The Cobre training loop serializes all MPI collective calls on
+        // the main thread; Rayon worker threads never call MPI directly.
         // ferrompi::Mpi::init_thread returns the Mpi guard whose Drop
         // calls MPI_Finalize. The guard is stored in the backend struct
         // (see note below on lifetime management).
         let mpi = ferrompi::Mpi::init_thread(
-            ferrompi::ThreadLevel::Multiple,
+            ferrompi::ThreadLevel::Funneled,
         ).map_err(|e| BackendError::InitializationFailed {
             backend: "mpi".to_string(),
             source: Box::new(e),
@@ -201,7 +203,9 @@ This ordering is consistent with the lifetime contract in [Communicator Trait §
 
 ### 3.1 SharedMemoryProvider Trait Implementation
 
-The `FerrompiBackend` implements `SharedMemoryProvider` by delegating to ferrompi's `SharedWindow<T>` for true intra-node shared memory. The `Region` associated type wraps `ferrompi::SharedWindow<T>` in a `FerrompiRegion<T>` newtype that implements the `SharedRegion<T>` trait.
+> **Status: Not Yet Implemented -- using HeapRegion fallback.** Per spec SS4.7 (Communicator Trait §4.7), true MPI shared windows (`MPI_Win_allocate_shared`) are deferred to post-profiling. The current implementation uses `HeapRegion<T>` (heap fallback) as the `Region` associated type for all backends, including `FerrompiBackend`. Each rank holds its own `Vec<T>` copy with no memory shared across ranks. The `FerrompiRegion<T>` / `SharedWindow<T>` design below is the aspirational target architecture that will be activated when production-scale profiling demonstrates memory pressure (see trigger conditions in Communicator Trait §4.7).
+
+The target architecture has `FerrompiBackend` implementing `SharedMemoryProvider` by delegating to ferrompi's `SharedWindow<T>` for true intra-node shared memory. The `Region` associated type would wrap `ferrompi::SharedWindow<T>` in a `FerrompiRegion<T>` newtype that implements the `SharedRegion<T>` trait.
 
 ```rust
 #[cfg(feature = "mpi")]
@@ -237,17 +241,15 @@ impl SharedMemoryProvider for FerrompiBackend {
         })
     }
 
-    fn split_local(&self) -> Result<Box<dyn Communicator>, CommError> {
-        let shared_comm = self.shared.as_ref().ok_or(
-            CommError::InvalidCommunicator,
-        )?;
-
-        // Returns the intra-node communicator as a standalone backend.
-        // No nested shared communicator needed on the sub-communicator.
-        Ok(Box::new(FerrompiBackend {
-            world: shared_comm.clone(),
-            shared: None,
-        }))
+    fn split_local(&self) -> Result<Box<dyn LocalCommunicator>, CommError> {
+        // Issues MPI_Comm_split_type(MPI_COMM_TYPE_SHARED) to obtain an
+        // intra-node communicator, then wraps it in FerrompiLocalComm.
+        // FerrompiLocalComm implements LocalCommunicator (rank, size, barrier)
+        // but not the full generic Communicator trait.
+        self.world
+            .split_shared()
+            .map(|c| Box::new(FerrompiLocalComm(c)) as Box<dyn LocalCommunicator>)
+            .map_err(|e| map_ferrompi_error(&e, "split_local"))
     }
 
     fn is_leader(&self) -> bool {
@@ -261,9 +263,9 @@ impl SharedMemoryProvider for FerrompiBackend {
 
 **Leader determination:** The leader is the rank with local rank 0 within the intra-node communicator, consistent with the convention in [Hybrid Parallelism §6 Step 3](./hybrid-parallelism.md) and the leader/follower pattern in [Communicator Trait §4.3](./communicator-trait.md).
 
-### 3.2 SharedRegion Wrapper
+### 3.2 SharedRegion Wrapper (Aspirational -- Not Yet Implemented)
 
-The `FerrompiRegion<T>` newtype wraps `ferrompi::SharedWindow<T>` and implements the `SharedRegion<T>` trait. The wrapper encapsulates the `unsafe` boundary for raw pointer dereference into MPI shared windows, presenting a safe Rust interface to the training loop.
+The `FerrompiRegion<T>` newtype would wrap `ferrompi::SharedWindow<T>` and implement the `SharedRegion<T>` trait. The wrapper would encapsulate the `unsafe` boundary for raw pointer dereference into MPI shared windows, presenting a safe Rust interface to the training loop. In the current codebase, `FerrompiBackend::Region<T>` is `HeapRegion<T>` and `create_shared_region` allocates via `vec![T::default(); count]`.
 
 ```rust
 /// Shared memory region backed by an MPI window (`ferrompi::SharedWindow<T>`).
@@ -344,9 +346,9 @@ MPI 4.0 persistent collectives ([Communication Patterns §4](./communication-pat
 
 | Trait Method | Persistent Candidate | Implementation Strategy                                                                                                               |
 | ------------ | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
-| `allreduce`  | Yes                  | Pre-initialize with fixed 32-byte buffer at construction; reuse every iteration                                                       |
 | `allgatherv` | Conditional          | Pre-initialize if buffer sizes are known at construction (fixed $M$); fall back to standard collective if counts change between calls |
-| `broadcast`  | No                   | Called only during initialization with varying buffer sizes; standard collective is sufficient                                        |
+| `allreduce`  | Yes                  | Pre-initialize with fixed buffer at construction for simulation-mode min/max; reuse every iteration                                   |
+| `broadcast`  | No                   | Called only during initialization and LB distribution with varying buffer sizes; standard collective is sufficient                    |
 | `barrier`    | No                   | Called only at checkpoints; standard collective is sufficient                                                                         |
 
 **Internal state for persistent collectives:**
@@ -442,7 +444,7 @@ fn map_ferrompi_error(e: ferrompi::Error, operation: &'static str) -> CommError 
 
 ### 5.3 MPI_Init_thread Failure
 
-If `ferrompi::Mpi::init_thread(ThreadLevel::Multiple)` fails -- either because `MPI_Init_thread` returns an error or because the provided threading level is below `MPI_THREAD_MULTIPLE` -- the error is reported as `BackendError::InitializationFailed` (defined in [Backend Registration and Selection §6.2](./backend-selection.md)), not as a `CommError`. This is because initialization failure is a factory-level concern that occurs before any `Communicator` trait method can be called.
+If `ferrompi::Mpi::init_thread(ThreadLevel::Funneled)` fails -- either because `MPI_Init_thread` returns an error or because the provided threading level is below `MPI_THREAD_FUNNELED` -- the error is reported as `BackendError::InitializationFailed` (defined in [Backend Registration and Selection §6.2](./backend-selection.md)), not as a `CommError`. This is because initialization failure is a factory-level concern that occurs before any `Communicator` trait method can be called.
 
 ## 6. Feature Gating
 
@@ -478,7 +480,7 @@ default = []
 mpi = ["dep:ferrompi"]
 
 [dependencies]
-ferrompi = { version = "0.1", optional = true }
+ferrompi = { version = "0.2.2", optional = true }
 ```
 
 When `mpi` is not enabled:
@@ -507,7 +509,7 @@ The ferrompi backend is included in the following build profiles from [Backend R
 
 ## 7. ferrompi API Reference
 
-This section documents the public API surface of the **ferrompi** crate (version 0.1, [github.com/rjmalves/ferrompi](https://github.com/rjmalves/ferrompi)) -- a safe Rust wrapper around the MPI C library. ferrompi encapsulates all `unsafe` FFI calls internally; no public method requires the Rust `unsafe` keyword at the call site. The API documented here is the contract that `FerrompiBackend` (SS1--SS6) implements against.
+This section documents the public API surface of the **ferrompi** crate (version 0.2.2, [github.com/rjmalves/ferrompi](https://github.com/rjmalves/ferrompi)) -- a safe Rust wrapper around the MPI C library. ferrompi encapsulates all `unsafe` FFI calls internally; no public method requires the Rust `unsafe` keyword at the call site. The API documented here is the contract that `FerrompiBackend` (SS1--SS6) implements against.
 
 > **Note.** ferrompi is a thin wrapper around the MPI C functions (`MPI_Init_thread`, `MPI_Comm_rank`, `MPI_Allgatherv`, `MPI_Win_allocate_shared`, etc.). It adds Rust type safety, RAII resource management, and `Result`-based error handling, but does not alter MPI semantics. All MPI behavioral guarantees (ordering, collective synchronization, shared memory coherence) are inherited from the underlying MPI implementation.
 
@@ -572,7 +574,7 @@ impl Mpi {
 
 **Unsafe:** No. The internal FFI call to `MPI_Init_thread` is encapsulated.
 
-Cobre always requests `ThreadLevel::Multiple` (see SS2.1).
+Cobre requests `ThreadLevel::Funneled` (see SS2.1) because only the main thread makes MPI calls; Rayon worker threads perform LP solves but never invoke MPI collectives directly.
 
 #### 7.1.3 `Mpi::world`
 
@@ -611,14 +613,15 @@ impl Mpi {
 
 ### 7.2 Communicator
 
-The `Communicator` type is a safe handle to an MPI communicator. It implements `Send + Sync`, enabling shared use across threads in `MPI_THREAD_MULTIPLE` mode.
+The `Communicator` type is a safe handle to an MPI communicator. It implements `Send + Sync`, enabling shared use across threads. Under `MPI_THREAD_FUNNELED`, only the main thread makes MPI calls; `Send + Sync` on the handle is still sound because it allows safe passing between threads without implying concurrent MPI invocation.
 
 ```rust
 pub struct Communicator { /* opaque: wraps MPI_Comm handle */ }
 
 // Thread safety: Communicator is Send + Sync.
-// This is sound because MPI_THREAD_MULTIPLE guarantees thread-safe
-// access to MPI communicator handles from any thread.
+// Under MPI_THREAD_FUNNELED, only the main thread issues MPI calls.
+// Send + Sync on the handle is sound because the handle is an integer
+// into a C-side table; ferrompi::Communicator carries no thread-local state.
 ```
 
 The following subsections document in detail the methods used by the Cobre backend (SS1--SS3). Section 7.2.8 provides a summary table of the remaining methods.
@@ -1072,7 +1075,7 @@ pub enum ThreadLevel {
 
 The variants are ordered by increasing capability: `Single < Funneled < Serialized < Multiple`. The `Ord` implementation reflects this ordering, so `Mpi::init_thread` can compare the requested level against the provided level using standard comparison operators.
 
-Cobre always requests `ThreadLevel::Multiple` (see SS2.1).
+Cobre requests `ThreadLevel::Funneled` (see SS2.1) because only the main thread makes MPI calls; Rayon worker threads perform LP solves but never invoke MPI collectives directly.
 
 #### 7.4.2 `ReduceOp`
 
@@ -1242,7 +1245,7 @@ pub enum MpiErrorClass {
 No public ferrompi method or function uses the Rust `unsafe` keyword. All `unsafe` code is internal to the ferrompi crate, concentrated in:
 
 1. **FFI calls** -- Every MPI C function call (`MPI_Init_thread`, `MPI_Comm_rank`, `MPI_Allgatherv`, `MPI_Win_allocate_shared`, `MPI_Win_free`, etc.) is wrapped in an `unsafe` block within the ferrompi implementation.
-2. **`Send + Sync` impls** -- `Communicator` implements `Send + Sync` via `unsafe impl`, justified by the `MPI_THREAD_MULTIPLE` guarantee.
+2. **`Send + Sync` impls** -- `Communicator` implements `Send + Sync` via `unsafe impl`, justified by the fact that the handle wraps an integer into a C-side table with no thread-local state. Under `MPI_THREAD_FUNNELED`, only the main thread issues MPI calls; `Send + Sync` permits safe sharing of the handle without implying concurrent MPI invocation.
 3. **Raw pointer dereference** -- `SharedWindow::local_slice`, `SharedWindow::local_slice_mut`, and `SharedWindow::remote_slice` dereference the raw pointer obtained from `MPI_Win_allocate_shared`. The pointer is guaranteed valid by MPI for the lifetime of the window.
 
 The public API exposes safe Rust types and borrows. Callers are not required to write `unsafe` code to use ferrompi. The `SharedWindow::remote_slice` method has a **logical safety contract** (SS7.3.3) but not a Rust `unsafe` contract -- violating the contract produces unspecified values, not undefined behavior.

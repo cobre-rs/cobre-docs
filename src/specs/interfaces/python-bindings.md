@@ -10,14 +10,14 @@ This spec defines the `cobre-python` crate: a PyO3-based `cdylib` that exposes C
 
 `cobre-python` is a `cdylib` crate that compiles to a shared library (`.so` / `.dylib` / `.pyd`) loadable by the Python interpreter. It is a leaf crate in the Cobre dependency graph: no internal crate depends on it.
 
-| Attribute             | Value                                                                                                                                                       |
-| --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Crate type**        | `cdylib` (PyO3 shared library)                                                                                                                              |
-| **Module name**       | `import cobre`                                                                                                                                              |
-| **Execution mode**    | Single-process (default) or multi-process via TCP/shm backends. No MPI. OpenMP threads per worker for computation. GIL released during all Rust computation |
-| **What it owns**      | PyO3 class/function definitions, Python-to-Rust type conversions, zero-copy NumPy/Arrow bridge, async wrappers                                              |
-| **What it delegates** | All computation to `cobre-sddp`; all I/O to `cobre-io`; all data model types from `cobre-core`                                                              |
-| **MPI relationship**  | MUST NOT depend on `ferrompi`. MUST NOT initialize MPI. Multi-process execution uses TCP or shm backends instead                                            |
+| Attribute             | Value                                                                                                                                                |
+| --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Crate type**        | `cdylib` (PyO3 shared library)                                                                                                                       |
+| **Module name**       | `import cobre`                                                                                                                                       |
+| **Execution mode**    | Single-process only. No MPI. Rayon thread pool for parallel LP solves within the process. GIL released during all Rust computation via `py.detach()` |
+| **What it owns**      | PyO3 class/function definitions, Python-to-Rust type conversions, Arrow IPC bridge for zero-copy result loading                                      |
+| **What it delegates** | All computation to `cobre-sddp`; all I/O to `cobre-io`; all data model types from `cobre-core`                                                       |
+| **MPI relationship**  | MUST NOT depend on `ferrompi`. MUST NOT initialize MPI. For distributed execution, launch `mpiexec cobre` as a subprocess                            |
 
 **Dependency graph**:
 
@@ -66,367 +66,463 @@ When `num_workers > 1` is requested (or when a non-local backend is explicitly s
 
 This maps to the single-process mode described in [Hybrid Parallelism](../hpc/hybrid-parallelism.md) SS1.0a, extended to multiple cooperating processes that communicate via a non-MPI backend. The parent process is the orchestrator: it spawns workers, waits for completion, and collects results. It does not participate in the SDDP computation.
 
-### 1.3 OpenMP Thread Control
+### 1.3 Thread Control
 
-Users control the thread count via environment variable or Python API:
+Users control the thread count via the `threads` parameter to `cobre.run.run()`:
 
 ```python
-import os
-os.environ["OMP_NUM_THREADS"] = "16"  # Before first cobre call
+import cobre.run
 
-import cobre
-cobre.set_threads(16)   # Alternative: runtime setter (calls omp_set_num_threads)
-print(cobre.get_threads())  # Query active thread count
+# Use 4 worker threads for parallel LP solves
+result = cobre.run.run("path/to/case", threads=4)
 ```
 
-The `set_threads()` call must occur before the first `train()` or `simulate()` invocation. Calling it after computation has begun is a no-op with a warning logged.
+When `threads` is not specified, the solver runs with 1 thread. The thread pool is initialized via `rayon::ThreadPoolBuilder` at the beginning of each `run()` call. There is no separate `set_threads()` / `get_threads()` API; thread count is a per-invocation parameter.
 
 ## 2. Python API Surface
 
-All public APIs are exposed under the top-level `cobre` module. No submodules are required for the initial release; the flat namespace keeps imports simple.
+> **Python version support**: Requires Python 3.12, 3.13, or 3.14.
 
-### 2.1 Top-Level Functions
-
-#### `cobre.train()`
-
-Trains an SDDP policy for a loaded case.
+The `cobre` module uses a submodule architecture with four submodules: `cobre.io`, `cobre.run`, `cobre.model`, and `cobre.results`. Each submodule groups related functionality.
 
 ```python
-def train(
-    case: Case,
-    config_overrides: dict | None = None,
-    progress_callback: Callable[[ProgressEvent], None] | None = None,
-    backend: str = "auto",
-    num_workers: int = 1,
-) -> TrainingResult:
-    """Train an SDDP policy.
+import cobre
+print(cobre.__version__)   # e.g. "0.3.1"
 
-    Loads the case data, builds the LP subproblems, and runs the SDDP
-    training loop until a stopping rule fires. The GIL is released during
-    all Rust computation (see SS3).
+# Submodule imports
+import cobre.io
+import cobre.run
+import cobre.model
+import cobre.results
+```
 
-    When num_workers > 1, the library spawns num_workers child processes
-    via multiprocessing.Process (with start_method="spawn") and
-    coordinates them using the selected communication backend. Each
-    worker process runs the full SDDP training loop independently,
-    communicating via the backend's transport (TCP sockets or POSIX
-    shared memory). The parent process does not participate in
-    computation -- it is a pure orchestrator. See SS2.1a for the
-    complete worker lifecycle and SS7.4 for the multi-process
-    architecture.
+### 2.1 `cobre.io` -- Case Loading and Validation
 
-    When num_workers == 1 (the default), no child processes are spawned
-    and the local backend is used regardless of the backend parameter.
+The `cobre.io` submodule provides entry points for loading and validating case directories.
+
+#### `cobre.io.load_case()`
+
+Loads a case directory and returns a validated `System` object.
+
+```python
+def load_case(path: str | os.PathLike) -> cobre.model.System:
+    """Load a Cobre case directory and return a validated System.
+
+    Executes the five-layer validation pipeline (structural, schema,
+    referential integrity, dimensional consistency, and semantic).
+    Returns a fully-validated System on success.
 
     Args:
-        case: A loaded case object returned by CaseLoader.load().
-        config_overrides: Optional dictionary of configuration overrides.
-            Keys match the config.json schema fields. Example:
-            {"stopping_rules": {"bound_stalling": {"tolerance": 0.001}}}.
-        progress_callback: Optional callable invoked once per iteration
-            with a ProgressEvent. The GIL is briefly reacquired for each
-            callback invocation (see SS3 point 4). In multi-process mode,
-            progress events from all workers are multiplexed into this
-            single callback with worker_id disambiguation (see SS2.9).
-        backend: Communication backend for multi-process execution.
-            Accepted values: "auto", "shm", "tcp", "local". See SS7.5
-            for the full backend selection table and auto-detection
-            logic. When num_workers == 1, this parameter is ignored.
-        num_workers: Number of worker processes for parallel SDDP
-            execution. Must be >= 1. When 1 (default), runs in
-            single-process mode. When > 1, spawns num_workers child
-            processes (start_method="spawn"); the parent is the
-            orchestrator and does not participate in SDDP computation.
+        path: Path to the case directory, as a str or pathlib.Path.
+            Relative paths are resolved from the process working directory.
 
     Returns:
-        TrainingResult containing the trained policy and convergence history.
-        In multi-process mode, the result is collected from rank 0
-        (see SS2.1b).
+        A validated cobre.model.System instance.
 
     Raises:
-        cobre.ValidationError: If config_overrides contain invalid values.
-        cobre.SolverError: If an LP solve fails during training.
-        cobre.WorkerError: If a worker process fails during multi-process
-            training. Contains the rank, exit code, and inner error of the
-            first failed worker (see SS6.1a).
-        cobre.CobreError: If backend is not a recognized value, if
-            num_workers < 1, or if start_method is set to "fork" when
-            num_workers > 1. Also raised for unexpected internal errors.
+        OSError: A required file is missing or cannot be read.
+        ValueError: The case data fails schema, referential integrity,
+            dimensional consistency, or semantic validation.
     """
     ...
 ```
 
-#### `cobre.simulate()`
-
-Evaluates a trained policy on a scenario set.
+Example:
 
 ```python
-def simulate(
-    case: Case,
-    policy: Policy,
-    config_overrides: dict | None = None,
-    progress_callback: Callable[[ProgressEvent], None] | None = None,
-    backend: str = "auto",
-    num_workers: int = 1,
-) -> SimulationResult:
-    """Simulate a trained SDDP policy.
+import cobre.io
+system = cobre.io.load_case("examples/1dtoy")
+print(system.n_buses)
+```
 
-    Replays the policy on a configurable number of scenario trajectories
-    and produces per-scenario, per-stage results.
+#### `cobre.io.validate()`
 
-    When num_workers > 1, the library spawns num_workers child processes
-    to evaluate scenarios in parallel. Each worker evaluates a contiguous
-    block of scenarios using the same policy. The parent process
-    orchestrates spawning and result collection. See SS2.1a for the
-    worker lifecycle.
+Validates a case directory without raising on errors.
+
+```python
+def validate(path: str | os.PathLike) -> dict:
+    """Validate a Cobre case directory and return a structured report dict.
+
+    Unlike load_case(), this function never raises -- all errors are
+    returned as data in the result dict. This is intentional: Jupyter
+    workflows need to see all validation problems at once rather than
+    stopping at the first failure.
 
     Args:
-        case: A loaded case object returned by CaseLoader.load().
-        policy: A trained policy from TrainingResult.policy or Policy.load().
-        config_overrides: Optional dictionary of simulation configuration
-            overrides. Example: {"simulation": {"scenarios": 5000}}.
-        progress_callback: Optional callable invoked periodically with
-            simulation progress. In multi-process mode, progress events
-            from all workers are multiplexed into this single callback
-            with worker_id disambiguation (see SS2.9).
-        backend: Communication backend for multi-process execution.
-            Accepted values: "auto", "shm", "tcp", "local". See SS7.5
-            for the full backend selection table and auto-detection
-            logic. When num_workers == 1, this parameter is ignored.
-        num_workers: Number of worker processes for parallel simulation.
-            Must be >= 1. When 1 (default), runs in single-process mode.
-            When > 1, spawns num_workers child processes
-            (start_method="spawn").
+        path: Path to the case directory, as a str or pathlib.Path.
 
     Returns:
-        SimulationResult containing simulation outputs and summary statistics.
+        A dict with the following keys:
 
-    Raises:
-        cobre.ValidationError: If config_overrides contain invalid values.
-        cobre.SolverError: If an LP solve fails during simulation.
-        cobre.WorkerError: If a worker process fails during multi-process
-            simulation (see SS6.1a).
-        cobre.CobreError: If backend is not a recognized value, if
-            num_workers < 1, or if start_method is set to "fork" when
-            num_workers > 1. Also raised for unexpected internal errors.
+        - "valid" (bool) -- True when the case loaded without errors.
+        - "errors" (list[dict]) -- list of error dicts, each with
+          "kind" and "message" string fields. Empty when valid is True.
+        - "warnings" (list[dict]) -- list of warning dicts in the same
+          format. Warnings do not affect the valid flag.
     """
     ...
 ```
 
-#### SS2.1a Worker Lifecycle
+Error kind mapping from Rust `LoadError` variants to Python exceptions:
 
-When `num_workers > 1` is passed to `cobre.train()` or `cobre.simulate()`, the library executes the following lifecycle within the calling process (the parent/orchestrator):
+| Rust variant                     | `validate()` error kind | `load_case()` exception |
+| -------------------------------- | ----------------------- | ----------------------- |
+| `LoadError::IoError`             | `"IoError"`             | `OSError`               |
+| `LoadError::ParseError`          | `"ParseError"`          | `ValueError`            |
+| `LoadError::SchemaError`         | `"SchemaError"`         | `ValueError`            |
+| `LoadError::CrossReferenceError` | `"CrossReferenceError"` | `ValueError`            |
+| `LoadError::ConstraintError`     | `"ConstraintError"`     | `ValueError`            |
+| `LoadError::PolicyIncompatible`  | `"PolicyIncompatible"`  | `ValueError`            |
 
-1. **Validate parameters.** The library checks that `num_workers >= 1`, that `backend` is one of `"auto"`, `"shm"`, `"tcp"`, or `"local"`, and that `multiprocessing.get_start_method()` is not `"fork"`. If `start_method` has not been set, the library calls `multiprocessing.set_start_method("spawn")`. If it is already set to `"fork"`, the library raises `cobre.CobreError` with `kind="IncompatibleSettings"` and a message explaining that `"fork"` is prohibited (see SS7.1 for the rationale).
+### 2.2 `cobre.run` -- Solver Execution
 
-2. **Resolve backend.** If `backend="auto"`, the library applies the auto-detection logic from SS7.5: if `COBRE_TCP_COORDINATOR` is set in the environment, select `"tcp"`; otherwise select `"shm"`.
+The `cobre.run` submodule provides the high-level run entry point.
 
-3. **Generate backend-specific configuration.** The library generates the transport parameters that workers will use to find each other:
-   - For `"shm"`: generates a unique POSIX shared memory segment name (e.g., `/cobre_comm_<random_hex>`).
-   - For `"tcp"`: starts a TCP coordinator listener on an ephemeral port and records the coordinator address and port separately (`COBRE_TCP_COORDINATOR=127.0.0.1`, `COBRE_TCP_PORT=<port>`; see [TCP Backend](../hpc/backend-tcp.md) §8.1).
+#### `cobre.run.run()`
 
-4. **Spawn worker processes.** The library spawns `num_workers` child processes via `multiprocessing.Process(target=_worker_entry, args=(rank, ...))`. Each child process receives its rank (0 through `num_workers - 1`), the backend-specific configuration from step 3, the case data, and a reference to a `multiprocessing.Queue` for result collection.
-
-5. **Each worker initializes.** Inside the child process, the worker:
-   - Imports the `cobre` module (fresh Python interpreter due to `"spawn"`).
-   - Creates a backend-specific `Communicator` for its assigned rank (e.g., `ShmBackend` with the shared segment name, or `TcpBackend` connecting to the coordinator address).
-   - Runs the SDDP training loop (or simulation loop) with the `Communicator` handling all inter-worker collective operations.
-   - On completion, rank 0 places the `TrainingResult` (or `SimulationResult`) onto the `multiprocessing.Queue`.
-
-6. **Parent waits for completion.** The parent process calls `Process.join()` on each worker process. If any worker process exits with a non-zero exit code or raises an exception, the parent terminates remaining workers via `Process.terminate()` and raises `cobre.WorkerError` (see SS6.1a).
-
-7. **Parent collects result.** The parent reads the result from the `multiprocessing.Queue` (placed there by rank 0 in step 5) and returns it to the caller.
-
-The per-rank worker invocation pattern for the `"shm"` backend -- including `multiprocessing.Process` spawn, rank assignment, and shared memory segment naming -- is demonstrated in [Shared Memory Backend](../hpc/backend-shm.md) SS7.3. `cobre.train()` performs steps 1-7 internally, automating the boilerplate shown in that example.
-
-#### SS2.1b Multi-Process Result Collection
-
-When `num_workers > 1`, the result returned by `cobre.train()` or `cobre.simulate()` is collected from rank 0 only. The rationale and semantics are:
-
-1. **Rank 0's result is authoritative.** All ranks converge to the same SDDP policy (identical cut pools after `allgatherv` synchronization at each iteration). The `TrainingResult` from any rank would contain the same policy and the same final bounds. Rank 0 is chosen by convention, consistent with the coordinator role in both the TCP backend ([TCP Backend](../hpc/backend-tcp.md) SS1.1) and the shm backend.
-
-2. **`convergence_history` comes from rank 0.** The Arrow table in `TrainingResult.convergence_history` is produced by rank 0's convergence monitoring loop. All ranks compute identical lower bounds (from the same first-stage LP) and contribute to the same upper bound statistics (aggregated via `allreduce`), so rank 0's history is representative of the global convergence trajectory.
-
-3. **`workers` metadata is available.** When `num_workers > 1`, the `TrainingResult.workers` property returns a list of `WorkerInfo` dataclass instances (one per worker) containing per-worker metadata. See SS2.7 for the property definition.
-
-#### `cobre.validate()`
-
-Validates a case directory without executing the solver.
+Runs the full solve lifecycle (load, train, optionally simulate, write results).
 
 ```python
-def validate(path: str | os.PathLike) -> ValidationResult:
-    """Validate a case directory.
+def run(
+    case_dir: str | os.PathLike,
+    output_dir: str | os.PathLike | None = None,
+    threads: int | None = None,
+    skip_simulation: bool | None = None,
+) -> dict:
+    """Load a case, train an SDDP policy, optionally simulate, and write results.
 
-    Runs the 5-layer validation pipeline (structural, schema, referential,
-    dimensional, semantic) and returns all errors and warnings.
+    The GIL is released for the entire Rust computation. This function
+    replicates the lifecycle of `cobre run` but without MPI, progress
+    bars, or a terminal banner.
 
     Args:
-        path: Path to the case directory.
+        case_dir: Path to the case directory containing input data files
+            and config.json.
+        output_dir: Output directory for results. Defaults to
+            case_dir/output if not specified.
+        threads: Number of worker threads for parallel scenario processing.
+            Each thread solves its own LP instances. Defaults to 1.
+        skip_simulation: When True, skip the simulation phase even if
+            enabled in config.json. Defaults to False.
 
     Returns:
-        ValidationResult with errors and warnings lists.
+        A dict with the following keys:
+
+        - "converged" (bool) -- whether training converged.
+        - "iterations" (int) -- number of training iterations completed.
+        - "lower_bound" (float) -- final lower bound value.
+        - "upper_bound" (float | None) -- final upper bound value.
+        - "gap_percent" (float | None) -- relative gap as percentage.
+        - "total_time_ms" (int) -- total computation time in milliseconds.
+        - "output_dir" (str) -- absolute path to the output directory.
+        - "simulation" (dict | None) -- simulation summary dict with
+          "n_scenarios" and "completed" keys, or None if skipped.
+        - "stochastic" (dict | None) -- stochastic preprocessing summary.
+        - "hydro_models" (dict | None) -- hydro model summary.
 
     Raises:
-        cobre.IOError: If the path does not exist or is not readable.
+        OSError: If case_dir does not exist or output write fails.
+        RuntimeError: If training or simulation encounters a solver
+            error, config parse error, or other computation failure.
     """
     ...
 ```
 
-#### `cobre.set_threads()` / `cobre.get_threads()`
+Example:
 
 ```python
-def set_threads(n: int) -> None:
-    """Set the number of OpenMP threads for computation.
+import cobre.run
 
-    Must be called before the first train() or simulate() call.
-    Calls omp_set_num_threads(n) on the Rust side.
+result = cobre.run.run("path/to/case")
+print(f"Converged: {result['converged']}")
+print(f"Iterations: {result['iterations']}")
+print(f"Lower bound: {result['lower_bound']:.2f}")
+print(f"Gap: {result['gap_percent']:.2f}%")
+print(f"Output dir: {result['output_dir']}")
+
+# With optional parameters
+result = cobre.run.run(
+    "path/to/case",
+    output_dir="path/to/output",   # default: case_dir/output
+    threads=4,                      # default: 1
+    skip_simulation=True,           # default: False
+)
+```
+
+### 2.3 `cobre.results` -- Result Loading and Inspection
+
+The `cobre.results` submodule provides functions for reading output artifacts written by `cobre.run.run()`. JSON manifest and metadata files are read in Rust and returned as Python dicts. Parquet files can be loaded as Python dicts or as zero-copy Arrow tables.
+
+#### `cobre.results.load_results()`
+
+```python
+def load_results(output_dir: str | os.PathLike) -> dict:
+    """Load and inspect the output artifacts produced by a completed solver run.
+
+    Returns a nested dict with training and simulation sections.
+
+    Returns:
+        {
+            "training": {
+                "manifest": { ... },
+                "metadata": { ... },
+                "convergence_path": "/abs/.../convergence.parquet",
+                "timing_path": "/abs/.../timing/iterations.parquet",
+                "complete": True,
+            },
+            "simulation": {
+                "manifest": { ... } | None,
+                "complete": False,
+            },
+        }
+
+    Raises:
+        FileNotFoundError: If output_dir does not exist or training
+            did not complete (no _SUCCESS marker).
+        ValueError: If JSON manifest files are malformed.
+        OSError: For other I/O errors.
+    """
+    ...
+```
+
+#### `cobre.results.load_convergence()`
+
+```python
+def load_convergence(output_dir: str | os.PathLike) -> list[dict]:
+    """Read training/convergence.parquet and return rows as a list of dicts.
+
+    Each dict contains: iteration, lower_bound, upper_bound_mean,
+    upper_bound_std, gap_percent, cuts_added, cuts_removed, cuts_active,
+    time_forward_ms, time_backward_ms, time_total_ms, forward_passes,
+    lp_solves.
+
+    Raises:
+        FileNotFoundError: If convergence.parquet does not exist.
+        OSError: For Parquet decoding failures.
+    """
+    ...
+```
+
+#### `cobre.results.load_convergence_arrow()`
+
+```python
+def load_convergence_arrow(output_dir: str | os.PathLike) -> "pyarrow.Table":
+    """Read training/convergence.parquet and return as a pyarrow.Table.
+
+    Returns the data in Arrow IPC format for zero-copy consumption by
+    polars.from_arrow() or any Arrow-compatible library. Requires
+    pyarrow to be installed.
+
+    Raises:
+        FileNotFoundError: If convergence.parquet does not exist.
+        OSError: For Parquet decoding or IPC serialisation failures.
+        ImportError: If pyarrow is not installed.
+    """
+    ...
+```
+
+#### `cobre.results.load_simulation()`
+
+```python
+def load_simulation(
+    output_dir: str | os.PathLike,
+    entity_type: str | None = None,
+) -> list[dict] | dict[str, list[dict]]:
+    """Load simulation results from Hive-partitioned Parquet files.
+
+    Reads simulation/{entity_type}/scenario_id=NNNN/data.parquet files
+    and returns the rows with a scenario_id integer column added.
 
     Args:
-        n: Number of threads. Must be >= 1.
+        output_dir: Root output directory.
+        entity_type: Optional entity type name ("costs", "buses",
+            "hydros", "thermals", "exchanges", "pumping_stations",
+            "contracts", "non_controllables", "inflow_lags",
+            "violations/generic"). When provided, returns a flat
+            list of dicts for that type. When None, returns a dict
+            of lists keyed by entity type.
+
+    Raises:
+        FileNotFoundError: If output_dir or entity directory is absent.
+        OSError: For corrupt Parquet files.
     """
     ...
+```
 
-def get_threads() -> int:
-    """Return the current OpenMP thread count."""
+#### `cobre.results.load_simulation_arrow()`
+
+```python
+def load_simulation_arrow(
+    output_dir: str | os.PathLike,
+    entity_type: str | None = None,
+) -> "pyarrow.Table | dict[str, pyarrow.Table]":
+    """Load simulation results as pyarrow.Table(s).
+
+    Same data as load_simulation() but returned as Arrow tables for
+    zero-copy consumption. Requires pyarrow.
+
+    Args:
+        output_dir: Root output directory.
+        entity_type: Optional entity type. When provided, returns a
+            single pyarrow.Table. When None, returns a dict of Tables.
+
+    Raises:
+        FileNotFoundError: If output_dir or entity directory is absent.
+        OSError: For corrupt Parquet files or IPC errors.
+        ImportError: If pyarrow is not installed.
+    """
     ...
 ```
 
-### 2.2 CaseLoader
+#### `cobre.results.load_policy()`
 
 ```python
-class CaseLoader:
-    """Loads and validates a Cobre case directory.
+def load_policy(output_dir: str | os.PathLike) -> dict:
+    """Load a policy checkpoint from training/policy/.
 
-    The loader reads the directory structure, parses JSON and Parquet input
-    files, resolves cascaded defaults, validates cross-references, and
-    produces a Case object ready for training or simulation.
+    Reads the FlatBuffers policy checkpoint and returns a nested dict
+    with metadata, per-stage cut pools, and per-stage solver bases.
+
+    Returns:
+        {
+            "metadata": { "version": ..., "completed_iterations": ..., ... },
+            "stage_cuts": [ { "stage_id": ..., "cuts": [...], ... }, ... ],
+            "stage_bases": [ { "stage_id": ..., "column_status": [...], ... }, ... ],
+        }
+
+    Raises:
+        FileNotFoundError: If output_dir or training/policy/ is absent.
+        OSError: For corrupt FlatBuffers files.
     """
-
-    @staticmethod
-    def load(path: str | os.PathLike) -> Case:
-        """Load a case directory.
-
-        Runs the full input loading pipeline including validation.
-
-        Args:
-            path: Path to the case directory containing config.json.
-
-        Returns:
-            A validated Case object.
-
-        Raises:
-            cobre.ValidationError: If validation fails (errors found).
-            cobre.IOError: If required files are missing or unreadable.
-        """
-        ...
+    ...
 ```
 
-### 2.3 Case
+### 2.4 `cobre.model` -- Data Model Types
+
+The `cobre.model` submodule exposes read-only wrapper classes for Cobre's core entity types. All wrappers are immutable: Python code reads entity data but cannot mutate it. Construction happens through `cobre.io.load_case()`, not through Python constructors.
+
+Entity IDs are `int` (i32), not strings.
+
+#### `cobre.model.System`
 
 ```python
-class Case:
-    """An immutable, validated Cobre case.
+class System:
+    """Top-level system representation wrapping a loaded Cobre case.
 
-    Provides read-only access to the resolved internal structures:
-    system entities, configuration, scenario parameters, and topology.
+    Produced by cobre.io.load_case(). Immutable after construction.
+    Provides read-only access to entity collections and counts.
     """
 
-    @property
-    def config(self) -> dict:
-        """Case configuration as a dictionary (matching config.json schema)."""
-        ...
+    # Entity collection properties (canonical ID order)
+    buses: list[Bus]
+    lines: list[Line]
+    thermals: list[Thermal]
+    hydros: list[Hydro]
+    contracts: list[EnergyContract]
+    pumping_stations: list[PumpingStation]
+    non_controllable_sources: list[NonControllableSource]
 
-    @property
-    def stages(self) -> int:
-        """Number of stages in the study."""
-        ...
-
-    @property
-    def hydros(self) -> list[HydroPlant]:
-        """List of hydro plant entities."""
-        ...
-
-    @property
-    def thermals(self) -> list[ThermalUnit]:
-        """List of thermal unit entities."""
-        ...
-
-    @property
-    def buses(self) -> list[Bus]:
-        """List of bus entities."""
-        ...
-
-    @property
-    def lines(self) -> list[Line]:
-        """List of transmission line entities."""
-        ...
-
-    @property
-    def topology(self) -> dict:
-        """System topology as adjacency data.
-
-        Returns a dict with keys 'buses', 'lines', 'cascade' describing
-        the network connectivity and hydro cascade structure.
-        """
-        ...
-
-    @property
-    def par_model(self) -> PARModel:
-        """The periodic autoregressive model for this case."""
-        ...
+    # Count properties
+    n_buses: int
+    n_lines: int
+    n_hydros: int
+    n_thermals: int
+    n_stages: int
 ```
 
-### 2.4 Entity Classes
-
-All entity classes are read-only `#[pyclass]` wrappers. Fields are exposed as Python attributes via `#[pyo3(get)]`.
+#### `cobre.model.Bus`
 
 ```python
-class HydroPlant:
-    """Read-only hydro plant entity."""
-    id: str
-    name: str
-    bus_id: str
-    storage_min: float          # hm3
-    storage_max: float          # hm3
-    initial_storage: float      # hm3
-    turbine_min: float          # m3/s
-    turbine_max: float          # m3/s
-    spillage_cost: float
-    downstream_hydro_id: str | None
-    water_travel_time: int      # stages
-    fpha_coefficients: numpy.ndarray  # FPHA hyperplane coefficients (not 'gamma')
-    productivity: float         # MW/(m3/s), constant model
-    # ... additional fields per input-system-entities.md
-
-class ThermalUnit:
-    """Read-only thermal unit entity."""
-    id: str
-    name: str
-    bus_id: str
-    generation_min: float       # MW
-    generation_max: float       # MW
-    cost: float                 # $/MWh (or per-stage array)
-    # ... additional fields per input-system-entities.md
-
 class Bus:
-    """Read-only bus entity."""
-    id: str
+    """Electrical network node where energy balance is maintained."""
+    id: int                                      # i32
     name: str
-    subsystem: str
-    # ... additional fields per input-system-entities.md
-
-class Line:
-    """Read-only transmission line entity."""
-    id: str
-    name: str
-    from_bus_id: str
-    to_bus_id: str
-    capacity_forward: float     # MW
-    capacity_backward: float    # MW
-    # ... additional fields per input-system-entities.md
+    deficit_segments: list[dict]                  # [{"depth_mw": float|None, "cost_per_mwh": float}]
+    excess_cost: float                            # $/MWh
 ```
 
-> **Note on naming**: The `fpha_coefficients` attribute uses a descriptive name to avoid ambiguity with the pumping power rate, which also uses the symbol $\gamma$ in the mathematical formulation. Python-facing names always prefer clarity over brevity.
+#### `cobre.model.Line`
+
+```python
+class Line:
+    """Transmission interconnection between two buses."""
+    id: int                                      # i32
+    name: str
+    source_bus_id: int                           # i32
+    target_bus_id: int                           # i32
+    direct_capacity_mw: float                    # MW (source -> target)
+    reverse_capacity_mw: float                   # MW (target -> source)
+    losses_percent: float                        # e.g. 2.5 means 2.5%
+    exchange_cost: float                         # $/MWh regularization
+```
+
+#### `cobre.model.Thermal`
+
+```python
+class Thermal:
+    """Thermal power plant with piecewise-linear generation cost curve."""
+    id: int                                      # i32
+    name: str
+    bus_id: int                                  # i32
+    min_generation_mw: float                     # MW (minimum stable load)
+    max_generation_mw: float                     # MW (installed capacity)
+    cost_segments: list[dict]                    # [{"capacity_mw": float, "cost_per_mwh": float}]
+```
+
+#### `cobre.model.Hydro`
+
+```python
+class Hydro:
+    """Hydroelectric power plant with reservoir storage and cascade topology."""
+    id: int                                      # i32
+    name: str
+    bus_id: int                                  # i32
+    downstream_id: int | None                    # i32 or None
+    min_storage_hm3: float                       # hm3 (dead volume)
+    max_storage_hm3: float                       # hm3 (flood control level)
+    min_turbined_m3s: float                      # m3/s
+    max_turbined_m3s: float                      # m3/s (installed turbine capacity)
+    productivity_mw_per_m3s: float | None        # MW/(m3/s), None for FPHA model
+```
+
+#### `cobre.model.EnergyContract`
+
+```python
+class EnergyContract:
+    """Bilateral energy contract with an external system (stub entity).
+
+    In the minimal viable solver this entity is data-complete but
+    contributes no LP variables or constraints.
+    """
+    id: int                                      # i32
+    name: str
+```
+
+#### `cobre.model.PumpingStation`
+
+```python
+class PumpingStation:
+    """Pumping station that transfers water between hydro reservoirs (stub entity).
+
+    In the minimal viable solver this entity is data-complete but
+    contributes no LP variables or constraints.
+    """
+    id: int                                      # i32
+    name: str
+```
+
+#### `cobre.model.NonControllableSource`
+
+```python
+class NonControllableSource:
+    """Intermittent generation source that cannot be dispatched (stub entity).
+
+    In the minimal viable solver this entity is data-complete but
+    contributes no LP variables or constraints.
+    """
+    id: int                                      # i32
+    name: str
+```
 
 ### 2.5 PARModel
 
@@ -836,15 +932,14 @@ class ValidationRecord:
 
 ### 2.11 API Surface Summary
 
-| Source Crate     | Python Classes / Functions                                                                             | Exposed? |
-| ---------------- | ------------------------------------------------------------------------------------------------------ | -------- |
-| cobre-core       | `HydroPlant`, `ThermalUnit`, `Bus`, `Line`, `Case` (read-only entities and topology)                   | Yes      |
-| cobre-io         | `CaseLoader.load()`, `validate()`, `ValidationResult`, `ValidationRecord`                              | Yes      |
-| cobre-stochastic | `PARModel`, `OpeningTree`, `sample_noise()`, `load_external_scenarios()`                               | Yes      |
-| cobre-sddp       | `train()`, `simulate()`, `Policy`, `TrainingResult`, `SimulationResult`, `ProgressEvent`, `WorkerInfo` | Yes      |
-| cobre-python     | `WorkerError` (exception class, see SS6.1a)                                                            | Yes      |
-| cobre-solver     | (none)                                                                                                 | **No**   |
-| ferrompi         | (none)                                                                                                 | **No**   |
+| Source Crate     | Python Classes / Functions                                                                                                                        | Exposed? |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- | -------- |
+| cobre-core       | `System`, `Hydro`, `Thermal`, `Bus`, `Line`, `EnergyContract`, `PumpingStation`, `NonControllableSource` (read-only entities)                     | Yes      |
+| cobre-io         | `cobre.io.load_case()`, `cobre.io.validate()`                                                                                                     | Yes      |
+| cobre-sddp       | `cobre.run.run()` (full lifecycle entry point)                                                                                                    | Yes      |
+| cobre-io/results | `cobre.results.load_results()`, `load_convergence()`, `load_convergence_arrow()`, `load_simulation()`, `load_simulation_arrow()`, `load_policy()` | Yes      |
+| cobre-solver     | (none)                                                                                                                                            | **No**   |
+| ferrompi         | (none)                                                                                                                                            | **No**   |
 
 ## 3. GIL Management Contract
 
@@ -1645,7 +1740,7 @@ Minimum Python version: 3.9 (matching PyO3's minimum supported version). Wheels 
 - [Memory Architecture](../hpc/memory-architecture.md) -- Data ownership categories (SS1.1) adapted for single-process mode (SS8.3); NUMA allocation principles (SS3) that apply to OpenMP workspaces
 - [Design Principles](../overview/design-principles.md) -- Format selection criteria (SS1), agent-readability rules (SS6.2)
 - [Validation Architecture](../architecture/validation-architecture.md) -- 5-layer validation pipeline (SS2) invoked by `validate()` and `CaseLoader.load()`
-- [Input System Entities](../data-model/input-system-entities.md) -- Entity field definitions for `HydroPlant`, `ThermalUnit`, `Bus`, `Line` Python classes
+- [Input System Entities](../data-model/input-system-entities.md) -- Entity field definitions for `Hydro`, `Thermal`, `Bus`, `Line` Python classes
 - [Binary Formats](../data-model/binary-formats.md) -- FlatBuffers schemas for policy data accessed by the `Policy` class
 - [Output Schemas](../data-model/output-schemas.md) -- Parquet output column definitions for simulation results read by Python directly
 - [TCP Backend](../hpc/backend-tcp.md) -- TCP-based multi-process communication backend (SS8.1 for environment variables, SS8.2 for invocation examples) used by Python multi-process mode (SS7.3, SS7.5)

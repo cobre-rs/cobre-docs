@@ -12,36 +12,43 @@ The following diagram shows the dependency relationships among all 11 crates (10
 graph TD
     cli[cobre-cli] --> sddp[cobre-sddp]
     cli --> io[cobre-io]
-    cli --> tui[cobre-tui]
     cli --> core[cobre-core]
+    cli --> solver[cobre-solver]
+    cli --> comm[cobre-comm]
+    cli --> stochastic[cobre-stochastic]
 
     sddp --> core
-    sddp --> stochastic[cobre-stochastic]
-    sddp --> solver[cobre-solver]
-    sddp --> comm[cobre-comm]
+    sddp --> stochastic
+    sddp --> solver
+    sddp --> comm
+    sddp --> io
 
     io --> core
-    tui --> core
+    io --> stochastic
+
+    stochastic --> core
 
     comm -->|mpi| ferrompi[ferrompi]
 
-    mcp[cobre-mcp] --> sddp
-    mcp --> io
-    mcp --> comm
-    mcp --> core
-
     python[cobre-python] --> sddp
     python --> io
-    python --> comm
     python --> core
+    python --> stochastic
+    python --> solver
+    python --> comm
+
+    tui[cobre-tui]
+    mcp[cobre-mcp]
 ```
 
 **Notes on the graph:**
 
-- `ferrompi` is a **separate repository**, not a workspace crate. It is consumed as a `git` or `path` dependency by `cobre-comm` when the `mpi` feature is enabled.
-- `cobre-comm` depends on `cobre-core` only for error type integration (`CommError` kinds).
-- `cobre-mcp` and `cobre-python` use `cobre-comm` with TCP/shm/local backends -- they never enable the `mpi` feature.
-- `cobre-tui` depends on `cobre-core` for event type definitions only.
+- `ferrompi` is a **separate repository**, not a workspace crate. It is consumed as a `path` or registry dependency by `cobre-comm` when the `mpi` feature is enabled.
+- `cobre-comm` is a standalone crate with no workspace dependencies. Its only optional dependency is `ferrompi` (via the `mpi` feature).
+- `cobre-mcp` and `cobre-tui` are **empty stubs** with no dependencies. They are workspace members reserved for future development.
+- `cobre-python` is excluded from the workspace (built separately via maturin) but depends on the same set of crates as `cobre-cli`.
+- `cobre-sddp` depends on `cobre-io` for output writing and stochastic artifact export.
+- `cobre-io` depends on `cobre-stochastic` for PAR model types used in scenario loading.
 
 ## 3. Minimal Viable SDDP Solver Definition
 
@@ -50,7 +57,7 @@ The minimal viable solver satisfies the following eight stakeholder requirements
 1. **Full architecture, one variant per trait.** The solver instantiates the complete trait-parameterized architecture with exactly one variant for each abstraction point: Expectation (risk measure), Level-1 (cut selection), Finite (horizon mode), and InSample (sampling scheme). All five stopping rules are active as a composite set.
 2. **Real crates, real boundaries.** All 11 crate boundaries from the [Crate Overview](https://cobre-rs.github.io/cobre/crates/overview.html) are respected. No functionality leaks across crate boundaries -- for example, `cobre-sddp` never touches files directly, and `cobre-solver` never generates scenarios.
 3. **MPI-first production binary.** The solver ships as a single binary invoked via `mpiexec -n N cobre CASE_DIR`. No Python bindings, TUI, MCP server, TCP backend, or shared-memory backend are required.
-4. **Minimal system elements.** Only four element types are fully modeled: Buses, Lines, Thermals, and Hydros. Remaining element types (Contracts, Pumping Stations, Non-Controllable sources) have code-path stubs that satisfy the type system but contribute no variables or constraints to the LP.
+4. **Minimal system elements.** Five element types are fully modeled: Buses, Lines, Thermals, Hydros, and Non-Controllable Sources (promoted from stub in v0.1.7). Remaining element types (Contracts, Pumping Stations) have code-path stubs that satisfy the type system but contribute no variables or constraints to the LP.
 5. **Constant hydro productivity only.** The hydro production function uses a constant productivity coefficient $\rho_i$ (MW per m3/s). FPHA hyperplanes and head-dependent models are deferred.
 6. **Single scenario input path.** Scenarios are loaded from Parquet files in the case directory following the PAR(p) model specification. PAR parameter fitting from historical data, external scenario injection, and historical replay are deferred.
 7. **Training + simulation + parallel + reproducibility.** Both the training loop and the simulation pipeline are implemented, distributed across MPI ranks, and produce deterministic results given the same inputs and random seed, independently on the number of ranks and threads per rank.
@@ -103,16 +110,16 @@ Each phase produces a testable intermediate. Phases are ordered so that every de
 
 | Attribute                 | Value                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
 | ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Crates**                | `ferrompi` (separate repository), `cobre-solver` (depends on `cobre-core`)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| **Crates**                | `ferrompi` (separate repository), `cobre-solver` (standalone; no workspace dependencies)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
 | **What becomes testable** | `ferrompi`: MPI init/finalize, allreduce, allgatherv, broadcast, barrier, SharedWindow creation, topology detection. `cobre-solver`: load a stage LP into HiGHS, solve, extract primals/duals/reduced costs, warm-start from basis, add cut rows via batch `addRows`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
-| **Blocked by**            | Phase 1 (`cobre-core` for LP layout types). `ferrompi` has no in-workspace dependencies and can be developed in parallel with Phases 1-2                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| **Blocked by**            | Nothing -- `cobre-solver` has no workspace dependencies (LP layout types are defined in `cobre-solver` itself). `ferrompi` has no in-workspace dependencies. Both can be developed in parallel with Phases 1-2                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
 | **Spec reading list**     | `ferrompi`: [Hybrid Parallelism](../hpc/hybrid-parallelism.md), [Communication Patterns](../hpc/communication-patterns.md), [Shared Memory Aggregation](../hpc/shared-memory-aggregation.md), [Synchronization](../hpc/synchronization.md). `cobre-solver`: [Solver Abstraction](../architecture/solver-abstraction.md), [Solver Interface Trait](../architecture/solver-interface-trait.md), [Solver Interface Testing](../architecture/solver-interface-testing.md), [Solver HiGHS Implementation](../architecture/solver-highs-impl.md), [Solver Workspaces](../architecture/solver-workspaces.md), [LP Formulation](../math/lp-formulation.md), [Memory Architecture](../hpc/memory-architecture.md), [Solver CLP Implementation](../architecture/solver-clp-impl.md) |
 
 ### Phase 4: cobre-comm -- Communication Backend Abstraction
 
 | Attribute                 | Value                                                                                                                                                                                                                                                                                                                   |
 | ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Crates**                | `cobre-comm` (depends on `cobre-core`, optionally on `ferrompi` via `mpi` feature)                                                                                                                                                                                                                                      |
+| **Crates**                | `cobre-comm` (optionally depends on `ferrompi` via `mpi` feature; no workspace dependencies)                                                                                                                                                                                                                            |
 | **What becomes testable** | `Communicator` trait with MPI backend: multi-rank allreduce (Sum, Min, Max), allgatherv with variable-length buffers, broadcast from root, barrier synchronization. `LocalCommunicator` for single-process testing. Backend selection factory (`create_communicator()`). Integration test: 4-rank allgatherv round-trip |
 | **Blocked by**            | Phase 3 (`ferrompi` provides the MPI primitives that `MpiCommunicator` wraps)                                                                                                                                                                                                                                           |
 | **Spec reading list**     | [Communicator Trait](../hpc/communicator-trait.md), [Backend Selection](../hpc/backend-selection.md), [Backend: Ferrompi](../hpc/backend-ferrompi.md), [Backend: Local](../hpc/backend-local.md), [Backend Testing](../hpc/backend-testing.md)                                                                          |
@@ -148,7 +155,7 @@ Each phase produces a testable intermediate. Phases are ordered so that every de
 
 | Attribute                 | Value                                                                                                                                                                                                                                                                                                                                                                                                    |
 | ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Crates**                | `cobre-cli` (depends on `cobre-sddp`, `cobre-io`, `cobre-core`)                                                                                                                                                                                                                                                                                                                                          |
+| **Crates**                | `cobre-cli` (depends on `cobre-sddp`, `cobre-io`, `cobre-core`, `cobre-solver`, `cobre-comm`, `cobre-stochastic`)                                                                                                                                                                                                                                                                                        |
 | **What becomes testable** | Full execution lifecycle: MPI initialization, command-line parsing, config resolution from `config.json`, rank-0 validation pipeline, data broadcast to worker ranks, training phase, simulation phase, finalization. Exit code scheme (0-5 + signal codes). `--validate-only` mode. Integration test: `mpiexec -n N cobre CASE_DIR` produces expected output directory structure with correct exit code |
 | **Blocked by**            | Phases 6-7 (training and simulation must be functional)                                                                                                                                                                                                                                                                                                                                                  |
 | **Spec reading list**     | [CLI and Lifecycle](../architecture/cli-and-lifecycle.md), [Configuration Reference](../configuration/configuration-reference.md), [Validation Architecture](../architecture/validation-architecture.md), [SLURM Deployment](../hpc/slurm-deployment.md), [Structured Output](../interfaces/structured-output.md), [Ecosystem Guidelines](../overview/ecosystem-guidelines.md)                           |
@@ -158,18 +165,18 @@ Each phase produces a testable intermediate. Phases are ordered so that every de
 ```
 Phase 1 (core) ──────┬──> Phase 2 (io) ────────────────────────────────────────┐
                       │                                                        │
-                      ├──> Phase 3 (ferrompi + solver) ──> Phase 4 (comm) ───┐ │
-                      │                                                      │ │
-                      └──> Phase 5 (stochastic) ──────────────────────────┐  │ │
-                                                                          │  │ │
-                                                                          v  v v
-                                                                     Phase 6 (sddp training)
-                                                                          │
-                                                                          v
-                                                                     Phase 7 (simulation + output)
-                                                                          │
-                                                                          v
-                                                                     Phase 8 (cli)
+                      └──> Phase 5 (stochastic) ──────────────────────────┐    │
+                                                                          │    │
+Phase 3 (ferrompi + solver) ──> Phase 4 (comm) ───────────────────────┐  │    │
+                                                                      │  │    │
+                                                                      v  v    v
+                                                                 Phase 6 (sddp training)
+                                                                      │
+                                                                      v
+                                                                 Phase 7 (simulation + output)
+                                                                      │
+                                                                      v
+                                                                 Phase 8 (cli)
 ```
 
 ## 6. Trait Variant Selection
@@ -186,10 +193,13 @@ Each trait abstraction point is instantiated with exactly one variant for the mi
 | `SolverInterface`      | HiGHS             | Open-source, high-performance LP solver with C API; dual simplex supports warm-starting                      | [Solver Interface Trait](../architecture/solver-interface-trait.md)    |
 | `Communicator`         | MPI (ferrompi)    | Production backend for distributed HPC execution via `mpiexec`                                               | [Communicator Trait](../hpc/communicator-trait.md)                     |
 
-**Deferred variants** (not in minimal viable):
+**Implemented beyond minimal viable** (delivered post-v0.1.0):
 
-- `RiskMeasure::CVaR` -- risk-averse aggregation (implements the EAVaR convex combination)
-- `CutSelectionStrategy::LML1` -- Limited Memory Level 1
+- `RiskMeasure::CVaR` -- risk-averse aggregation via EAVaR convex combination (delivered in v0.1.1)
+- `CutSelectionStrategy::LML1` -- Limited Memory Level 1 (delivered in v0.2.0)
+
+**Deferred variants** (not yet implemented):
+
 - `HorizonMode::Cyclic` -- infinite horizon with discount factor
 - `SamplingScheme::External` and `SamplingScheme::Historical` -- alternative scenario sources
 - `SolverInterface::CLP` -- alternative open-source LP backend

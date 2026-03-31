@@ -32,8 +32,12 @@ impl Communicator for LocalBackend {
         counts: &[usize],
         displs: &[usize],
     ) -> Result<(), CommError> {
+        // Validate: single rank requires exactly one count/displ entry.
+        if counts.len() != 1 { return Err(CommError::InvalidBufferSize { .. }); }
+        if displs.len() != 1 { return Err(CommError::InvalidBufferSize { .. }); }
+        if send.len() != counts[0] { return Err(CommError::InvalidBufferSize { .. }); }
+        if recv.len() < displs[0] + counts[0] { return Err(CommError::InvalidBufferSize { .. }); }
         // Identity copy: with one rank, displs=[0] and counts=[send.len()].
-        // NOT a no-op -- recv must be populated to satisfy the postcondition.
         recv[displs[0]..displs[0] + counts[0]].copy_from_slice(send);
         Ok(())
     }
@@ -44,6 +48,9 @@ impl Communicator for LocalBackend {
         recv: &mut [T],
         _op: ReduceOp,
     ) -> Result<(), CommError> {
+        // Validate: buffer lengths must match and be non-empty.
+        if send.len() != recv.len() { return Err(CommError::InvalidBufferSize { .. }); }
+        if send.is_empty() { return Err(CommError::InvalidBufferSize { .. }); }
         // Identity copy: Sum(x) = Min(x) = Max(x) = x for a single operand.
         recv.copy_from_slice(send);
         Ok(())
@@ -52,8 +59,10 @@ impl Communicator for LocalBackend {
     fn broadcast<T: CommData>(
         &self,
         _buf: &mut [T],
-        _root: usize,
+        root: usize,
     ) -> Result<(), CommError> {
+        // Validate: only root 0 is valid for a single-rank communicator.
+        if root >= 1 { return Err(CommError::InvalidRoot { root, size: 1 }); }
         // No-op: the single rank is both sender and receiver.
         Ok(())
     }
@@ -73,7 +82,14 @@ impl Communicator for LocalBackend {
 }
 ```
 
-**Infallibility:** All methods return `Ok(())` unconditionally. The local backend cannot produce `CommError::CollectiveFailed` (no MPI calls), `CommError::InvalidCommunicator` (no communicator state to invalidate), or `CommError::InvalidRoot` (the only valid root is 0, which matches `rank()`). Buffer size preconditions from [Communicator Trait §2.1](./communicator-trait.md) -- §2.5 are enforced by the caller (the training loop), not by the backend.
+**Precondition validation:** Unlike the ferrompi backend, the local backend validates buffer size preconditions and root rank arguments directly, returning appropriate errors:
+
+- `allgatherv` returns `CommError::InvalidBufferSize` if `counts.len() != 1`, `displs.len() != 1`, `send.len() != counts[0]`, or `recv.len() < displs[0] + counts[0]`.
+- `allreduce` returns `CommError::InvalidBufferSize` if `send.len() != recv.len()` or `send.is_empty()`.
+- `broadcast` returns `CommError::InvalidRoot` if `root >= 1` (the only valid root for a single-rank communicator is 0).
+- `barrier` returns `Ok(())` unconditionally (no-op).
+
+The local backend cannot produce `CommError::CollectiveFailed` (no MPI calls) or `CommError::InvalidCommunicator` (no communicator state to invalidate).
 
 **Inlining and codegen:** Because `LocalBackend` is a ZST with trivial method bodies, the compiler inlines all trait methods at call sites when the concrete type is known. In a single-feature build (no `mpi`, `tcp`, or `shm` features), the generic parameter `C: Communicator` resolves to `LocalBackend`, and:
 
@@ -137,7 +153,7 @@ impl SharedMemoryProvider for LocalBackend {
         })
     }
 
-    fn split_local(&self) -> Result<Box<dyn Communicator>, CommError> {
+    fn split_local(&self) -> Result<Box<dyn LocalCommunicator>, CommError> {
         // A single process is its own node; the intra-node communicator
         // is identical to the world communicator.
         Ok(Box::new(LocalBackend))
