@@ -35,7 +35,7 @@ jobs:
         run: mdbook build
 
       - name: Add CNAME for custom domain
-        run: echo "methodology.cobre-rs.dev" > <build-output-dir>/CNAME
+        run: echo "methodology.cobre-rs.dev" > ./book/CNAME
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
