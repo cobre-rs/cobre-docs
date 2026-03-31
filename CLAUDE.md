@@ -22,12 +22,6 @@ diverge from the code, the spec must be updated — not the other way around.
 hpc, interfaces, configuration, overview. All 40 specification gaps resolved.
 Implementation completed all 8 build phases.
 
-**Key planning docs (historical reference):**
-
-- `src/specs/overview/implementation-ordering.md` — 8-phase build sequence
-- `src/specs/overview/spec-gap-inventory.md` — 40 gaps, all resolved
-- `src/specs/overview/decision-log.md` — 21 cross-cutting decisions (DEC-001 to DEC-021)
-
 ---
 
 ## Hard Rules
@@ -50,13 +44,6 @@ When writing or editing **trait specs** (`*-trait.md` in `src/specs/architecture
 → Minimum 10-14 cross-reference entries. Infallibility claims must cite upstream sections.
 → Reference: `src/specs/architecture/solver-interface-trait.md` (most complete example)
 
-When writing or editing **testing specs** (`*-testing.md`):
-→ Shared fixture at top of SS1, test naming: `test_{trait}_{variant}_{method}_{scenario}`
-→ Error path tests in dedicated SS3. No convention blockquote.
-
-When writing or editing **overview/planning specs** (`src/specs/overview/`):
-→ Plain numbered sections only. Gap tables use 7 columns.
-
 When updating **output schemas** (`src/specs/data-model/output-schemas.md`):
 → Verify column count against `cobre-io/src/output/schemas.rs`
 → Verify codes against `cobre-io/src/output/dictionary.rs`
@@ -75,8 +62,6 @@ When updating **LP formulation** (`src/specs/math/lp-formulation.md`):
 | Software book             | `https://github.com/cobre-rs/cobre/book/`                       | User-facing docs                         |
 | Dev strategy              | `https://github.com/cobre-rs/cobre/docs/design/dev-strategy.md` | Documentation & public presence strategy |
 | CHANGELOG                 | `https://github.com/cobre-rs/cobre/CHANGELOG.md`                | Per-release feature list                 |
-| Cross-ref index           | `src/specs/cross-reference-index.md`      | Spec dependency graph (88 files)         |
-| Decision log              | `src/specs/overview/decision-log.md`      | Cross-cutting architectural decisions    |
 
 ---
 
