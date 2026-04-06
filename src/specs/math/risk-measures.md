@@ -17,6 +17,7 @@ For notation conventions (index sets, parameters, decision variables, dual varia
 ## 1 Motivation
 
 Risk-neutral SDDP minimizes expected cost, which can lead to policies that perform poorly in adverse scenarios. **Risk-averse SDDP** incorporates a coherent risk measure (typically CVaR) to protect against tail risks while maintaining the convexity properties required for valid cut generation.
+![Risk measures — cost distribution with E[C] and CVaR_α marked, tail region shaded, convex combination ρ = λ·CVaR + (1−λ)·E[C]](../../images/risk-measure-cvar.svg)
 
 ## 2 Conditional Value-at-Risk (CVaR)
 

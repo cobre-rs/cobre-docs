@@ -15,6 +15,8 @@ Cobre employs a hybrid parallelization strategy optimized for modern HPC archite
 | **Topology detection**       | `SharedMemoryProvider::split_local()` ([Communicator Trait §4.1](./communicator-trait.md)) + SLURM integration | Node and NUMA discovery          | Identify co-located ranks, NUMA domain mapping                                         |
 | **Intra-rank threading**     | Rayon                                                                                                          | Threads within a single MPI rank | Parallel LP solves across scenario trajectories                                        |
 
+![Hybrid parallelism architecture — MPI ranks map to NUMA domains, Rayon thread pools within each rank, SharedRegion for intra-node data sharing, ThreadLevel::Funneled constraint](../../images/hybrid-parallelism.svg)
+
 ### 1.0a Single-Process Mode
 
 For interface layers that do not use MPI (`cobre-mcp`, `cobre-python`, `cobre-tui`), Cobre operates in **single-process mode**: Rayon threads provide intra-process parallelism without any inter-process communication. In this mode, the `local` communication backend is selected (see [Local Backend](./backend-local.md)). No inter-process communication occurs. Specifically:

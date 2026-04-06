@@ -12,11 +12,7 @@ Validation runs on **rank 0 only** during the Validation phase. It collects all 
 
 The pipeline comprises five sequential layers. Each layer depends on the previous one — e.g., referential integrity checks require that schema validation has already confirmed field presence, and semantic checks require that all cross-references have been resolved.
 
-```
-Layer 1          Layer 2         Layer 3            Layer 4           Layer 5
-Structural    →  Schema       →  Referential     →  Dimensional    →  Semantic
-(files, format)  (fields, types)  (foreign keys)    (coverage)        (business rules)
-```
+![Validation layers — five sequential gates (Structural, Schema, Referential, Dimensional, Semantic) with fail-fast: if any layer fails, subsequent layers do not run](../../images/validation-layers.svg)
 
 **Canonicalization** (sorting all entity collections by ID) occurs during loading, before any validation layer executes. This ensures bit-for-bit reproducibility regardless of declaration order in input files (see [Design Principles](../overview/design-principles.md) SS3).
 

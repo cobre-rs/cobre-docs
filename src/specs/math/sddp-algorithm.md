@@ -33,7 +33,7 @@ with terminal condition $V_{T+1}(x) = 0$.
 
 **Key insight**: The value function $V_t(x)$ is convex and piecewise linear (for LP subproblems), enabling outer approximation via Benders cuts.
 
-<!-- TODO: diagram - Value Function Approximation via Benders Cuts -->
+![Value function approximation via Benders cuts — each iteration adds a cut at a new trial point, tightening the outer approximation toward the true cost-to-go function](../../images/value-function-approximation.svg)
 
 ## 3. The SDDP Algorithm
 
@@ -43,7 +43,7 @@ SDDP iteratively builds piecewise-linear approximations $\hat{V}_t^k$ at iterati
 2. **Backward pass**: Compute cuts to improve the approximation
 3. **Convergence check**: Evaluate stopping criteria
 
-<!-- TODO: diagram - SDDP Iteration: Forward Pass, Backward Pass, and Convergence -->
+![SDDP iteration cycle — forward pass samples trial points, backward pass generates Benders cuts, convergence check evaluates the gap](../../images/sddp-iteration-cycle.svg)
 
 ### 3.1 Forward Pass
 
@@ -84,7 +84,7 @@ The backward pass produces one new cut per stage per trial point per iteration.
 
 > **Discount factor**: When discount rates are active, the discount factor is applied to the $\theta$ variable in the stage $t-1$ objective (i.e., $d_{t-1 \to t} \cdot \theta$), not to the cut coefficients. The cuts themselves remain unmodified. See [Discount Rate](discount-rate.md).
 
-<!-- TODO: diagram - Scenario Tree Branching -->
+![Scenario tree — forward pass samples M sparse paths while backward pass evaluates all N openings at each trial point](../../images/scenario-tree-forward-backward.svg)
 
 ### 3.3 Convergence Monitoring
 

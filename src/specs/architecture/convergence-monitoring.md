@@ -155,6 +155,8 @@ Each iteration produces a record with the following fields, used for logging (SS
 
 ## 3. Bound Computation
 
+![Convergence bound evolution — lower bound increases monotonically as cuts are added, upper bound decreases with confidence band, gap narrows until stopping rule triggers](../../images/convergence-bounds.svg)
+
 ### 3.1 Cross-Rank Aggregation
 
 Forward pass scenarios are distributed across MPI ranks (see [Training Loop SS4.3](./training-loop.md)). After the forward pass, **upper bound** statistics must be aggregated globally. This is done via a single `MPI_Allreduce` with `ReduceOp::Sum` that collects three sufficient statistics from each rank:

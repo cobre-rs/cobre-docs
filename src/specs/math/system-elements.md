@@ -38,7 +38,7 @@ The objective row does carry large coefficients — up to $\tau_k \times c^{def}
 
 A hydrothermal power system in Cobre consists of interconnected physical elements that work together to meet electricity demand at minimum cost under inflow uncertainty:
 
-<!-- TODO: diagram - System Element Overview -->
+![System element overview — buses, hydro with reservoir, thermal, NCS, transmission lines, demand, and deficit slack with key variables labeled](../../images/system-element-overview.svg)
 
 The optimizer determines generation and flow decisions at each stage to minimize total expected cost (thermal generation + deficit penalties + regularization costs) while respecting physical constraints and preparing for uncertain future inflows.
 

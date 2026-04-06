@@ -1,0 +1,355 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<svg
+   width="100%"
+   viewBox="0 0 680 400"
+   version="1.1"
+   id="svg36"
+   sodipodi:docname="memory-architecture.svg"
+   inkscape:version="1.4.3 (0d15f75042, 2025-12-25)"
+   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:svg="http://www.w3.org/2000/svg">
+  <defs
+     id="defs36" />
+  <sodipodi:namedview
+     id="namedview36"
+     pagecolor="#ffffff"
+     bordercolor="#000000"
+     borderopacity="0.25"
+     inkscape:showpageshadow="2"
+     inkscape:pageopacity="0.0"
+     inkscape:pagecheckerboard="0"
+     inkscape:deskcolor="#d1d1d1"
+     inkscape:zoom="2.9"
+     inkscape:cx="340"
+     inkscape:cy="200"
+     inkscape:window-width="3440"
+     inkscape:window-height="1371"
+     inkscape:window-x="0"
+     inkscape:window-y="0"
+     inkscape:window-maximized="1"
+     inkscape:current-layer="svg36" />
+  <style
+     id="style1">
+  text { font-family: system-ui, sans-serif; }
+  .title { font-size: 14px; font-weight: 600; fill: #1a1a1a; }
+  .section { font-size: 11px; font-weight: 600; }
+  .label { font-size: 10px; fill: #333; }
+  .small { font-size: 9px; fill: #666; }
+  .size { font-size: 8.5px; fill: #888; font-family: monospace; }
+  .note { font-size: 9.5px; fill: #666; font-style: italic; }
+</style>
+  <text
+     class="title"
+     x="340"
+     y="22"
+     text-anchor="middle"
+     id="text1">Per-rank memory architecture</text>
+  <!-- Address space bar (vertical stack) -->
+  <rect
+     x="39.987938"
+     y="41.987938"
+     width="280.02414"
+     height="307.95517"
+     rx="10.000861"
+     fill="#f8f8f8"
+     stroke="#dddddd"
+     stroke-width="0.5"
+     id="rect1" />
+  <text
+     class="section"
+     x="180"
+     y="60"
+     text-anchor="middle"
+     fill="#1a1a1a"
+     id="text2">Rank address space</text>
+  <!-- Shared read-only -->
+  <rect
+     x="54.988461"
+     y="69.988457"
+     width="250.02309"
+     height="85.885155"
+     rx="6.0005541"
+     fill="#ebf5fb"
+     stroke="#4a90b8"
+     stroke-width="1"
+     id="rect2" />
+  <text
+     class="section"
+     x="180"
+     y="88"
+     text-anchor="middle"
+     fill="#2C6D8C"
+     id="text3">Shared read-only</text>
+  <text
+     class="label"
+     x="70"
+     y="106"
+     fill="#4A90B8"
+     id="text4">System (entities, topology, config)</text>
+  <text
+     class="label"
+     x="70"
+     y="120"
+     fill="#4A90B8"
+     id="text5">PAR parameters (PrecomputedPar)</text>
+  <text
+     class="label"
+     x="70"
+     y="134"
+     fill="#4A90B8"
+     id="text6">Spectral factors, opening tree</text>
+  <text
+     class="label"
+     x="70"
+     y="148"
+     fill="#4A90B8"
+     id="text7">Stage templates (base LP)</text>
+  <text
+     class="size"
+     x="299.48276"
+     y="81.448273"
+     text-anchor="end"
+     id="text8">~50–200 MB</text>
+  <!-- Thread-local mutable -->
+  <rect
+     x="55.020924"
+     y="161.81403"
+     width="249.95816"
+     height="78.165047"
+     rx="5.9989958"
+     fill="#e1f5ee"
+     stroke="#0f6e56"
+     stroke-width="1"
+     id="rect8" />
+  <text
+     class="section"
+     x="180"
+     y="186"
+     text-anchor="middle"
+     fill="#085041"
+     id="text9">Thread-local mutable (×N threads)</text>
+  <text
+     class="label"
+     x="70"
+     y="202"
+     fill="#0F6E56"
+     id="text10">Solver workspace (HiGHS instance)</text>
+  <text
+     class="label"
+     x="70"
+     y="216"
+     fill="#0F6E56"
+     id="text11">Scratch buffers, patch arrays</text>
+  <text
+     class="label"
+     x="70"
+     y="230"
+     fill="#0F6E56"
+     id="text12">Cut pool slice (deterministic slots)</text>
+  <text
+     class="size"
+     x="300.86206"
+     y="172.55173"
+     text-anchor="end"
+     id="text13">~10–50 MB/thread</text>
+  <!-- Rank-local growing -->
+  <rect
+     x="55"
+     y="248"
+     width="250"
+     height="50"
+     rx="6"
+     fill="#EEEDFE"
+     stroke="#534AB7"
+     stroke-width="1"
+     id="rect13" />
+  <text
+     class="section"
+     x="180"
+     y="266"
+     text-anchor="middle"
+     fill="#3C3489"
+     id="text14">Rank-local (growing)</text>
+  <text
+     class="label"
+     x="70"
+     y="282"
+     fill="#534AB7"
+     id="text15">Convergence history, iteration records</text>
+  <text
+     class="label"
+     x="70"
+     y="296"
+     fill="#534AB7"
+     id="text16">Cut pool (grows with iterations)</text>
+  <text
+     class="size"
+     x="297.75861"
+     y="258.06897"
+     text-anchor="end"
+     id="text17">~1–50 MB</text>
+  <!-- Temporary -->
+  <rect
+     x="55"
+     y="306"
+     width="250"
+     height="40"
+     rx="6"
+     fill="#FFF8E1"
+     stroke="#F5A623"
+     stroke-width="0.5"
+     id="rect17" />
+  <text
+     class="section"
+     x="180"
+     y="322"
+     text-anchor="middle"
+     fill="#8B6914"
+     id="text18">Temporary</text>
+  <text
+     class="label"
+     x="70"
+     y="336"
+     fill="#8B6914"
+     id="text19">Noise gen buffers, allgatherv recv</text>
+  <text
+     class="size"
+     x="299.48276"
+     y="315.44827"
+     text-anchor="end"
+     id="text20">~1–5 MB</text>
+  <!-- Right side: annotations -->
+  <rect
+     x="369.99615"
+     y="69.996155"
+     width="280.00769"
+     height="87.249077"
+     rx="6.000165"
+     fill="#ffffff"
+     stroke="#4a90b8"
+     stroke-width="0.5"
+     id="rect20" />
+  <text
+     class="label"
+     x="380"
+     y="88"
+     fill="#2C6D8C"
+     font-weight="500"
+     id="text21">SharedRegion (intra-node)</text>
+  <text
+     class="small"
+     x="380"
+     y="106"
+     id="text22">When 2+ ranks share a node, read-only data</text>
+  <text
+     class="small"
+     x="380"
+     y="120"
+     id="text23">is mapped once via SharedRegion (mmap).</text>
+  <text
+     class="small"
+     x="380"
+     y="134"
+     id="text24">Reduces memory by ~50% per additional rank.</text>
+  <text
+     class="small"
+     x="380"
+     y="148"
+     id="text25">Managed by SharedMemoryProvider trait.</text>
+  <rect
+     x="370.00705"
+     y="163.86913"
+     width="279.9859"
+     height="76.123825"
+     rx="5.9996977"
+     fill="#ffffff"
+     stroke="#0f6e56"
+     stroke-width="0.5"
+     id="rect25" />
+  <text
+     class="label"
+     x="380"
+     y="186"
+     fill="#085041"
+     font-weight="500"
+     id="text26">Thread isolation</text>
+  <text
+     class="small"
+     x="380"
+     y="202"
+     id="text27">Each Rayon thread owns its solver instance.</text>
+  <text
+     class="small"
+     x="380"
+     y="216"
+     id="text28">No locks on hot path — workspace is &amp;mut.</text>
+  <text
+     class="small"
+     x="380"
+     y="230"
+     id="text29">NUMA-local allocation via thread affinity.</text>
+  <rect
+     x="370.01007"
+     y="248.01009"
+     width="279.97983"
+     height="54.117767"
+     rx="5.999568"
+     fill="#ffffff"
+     stroke="#534ab7"
+     stroke-width="0.5"
+     id="rect29" />
+  <text
+     class="label"
+     x="380"
+     y="266"
+     fill="#3C3489"
+     font-weight="500"
+     id="text30">Cut pool scaling</text>
+  <text
+     class="small"
+     x="380"
+     y="282"
+     id="text31">Pre-allocated: K_max × (1 + n_state) × 8 bytes.</text>
+  <text
+     class="small"
+     x="380"
+     y="296"
+     id="text32">165 hydros × 1000 cuts ≈ 1.3 GB.</text>
+  <rect
+     x="370"
+     y="306"
+     width="280"
+     height="40"
+     rx="6"
+     fill="#fff"
+     stroke="#F5A623"
+     stroke-width="0.5"
+     id="rect32" />
+  <text
+     class="label"
+     x="380"
+     y="322"
+     fill="#8B6914"
+     font-weight="500"
+     id="text33">Allocation discipline</text>
+  <text
+     class="small"
+     x="380"
+     y="336"
+     id="text34">Zero allocation on hot paths. All buffers pre-sized.</text>
+  <!-- Bottom note -->
+  <text
+     class="note"
+     x="345.17242"
+     y="372.34482"
+     text-anchor="middle"
+     id="text35">Brazilian PMO case (165 hydros, 120 stages, 50 openings): ~800 MB per rank without SharedRegion,</text>
+  <text
+     class="note"
+     x="345.17242"
+     y="386.34482"
+     text-anchor="middle"
+     id="text36">~450 MB per rank with SharedRegion on 2-rank-per-node configuration.</text>
+</svg>

@@ -6,6 +6,8 @@ This spec defines how Cobre distributes computational work across MPI ranks and 
 
 ## 1. Forward Pass Distribution
 
+![Forward pass work distribution — static contiguous block assignment across MPI ranks, thread-trajectory affinity within each rank, allreduce for UB statistics](../../images/forward-pass-distribution.svg)
+
 ### 1.1 Static Contiguous Block Assignment
 
 Forward pass scenarios are distributed across MPI ranks using **static contiguous block assignment**. Given $M$ total forward trajectories and $R$ MPI ranks, each rank receives a contiguous block of $\lfloor M/R \rfloor$ or $\lceil M/R \rceil$ scenario indices:
@@ -50,6 +52,8 @@ This is a single `allreduce` collective call with `ReduceOp::Sum` — no point-t
 The lower bound is evaluated separately after the backward pass: rank 0 solves all stage-0 openings with the latest FCF cuts, applies the stage-0 risk measure, and broadcasts the scalar result to all ranks. See [Training Loop SS4.3b](../architecture/training-loop.md).
 
 ## 2. Backward Pass Distribution
+
+![Backward pass stage loop — reverse traversal from stage T to 1, trial points distributed across ranks, per-stage allgatherv synchronization, cuts propagate backward](../../images/backward-pass-stage-loop.svg)
 
 ### 2.1 Trial Point Collection
 

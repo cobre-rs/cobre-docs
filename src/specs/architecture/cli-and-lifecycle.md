@@ -129,7 +129,7 @@ Codes 1--2 indicate user-correctable input problems; codes 3--4 indicate case/en
 
 ### 5.1 Phase Diagram
 
-> **Placeholder** — The execution phases diagram (`../../diagrams/exports/svg/hpc/execution-phases.svg`) will be revised after the text review is complete.
+![Execution phases — common startup through scenario generation, then branching into Full Run, Training Only, Simulation Only, or Validation Only modes](../../images/execution-phases.svg)
 
 ### 5.2 Phase Responsibilities
 

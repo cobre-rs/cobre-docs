@@ -19,6 +19,8 @@ All runtime data falls into one of four ownership categories, each with distinct
 
 **Single-process mode note**: In single-process mode (used by `cobre-python` and `cobre-mcp`), the "Shared read-only" category uses regular per-process heap allocation instead of `SharedWindow<T>`. MPI windows are not available without MPI initialization. The ownership semantics are otherwise identical -- data is still read-only during training, allocated once at initialization, and shared across all OpenMP threads within the process. See [Hybrid Parallelism §1.0a](./hybrid-parallelism.md) for single-process mode details.
 
+![Per-rank memory architecture — shared read-only (System, PAR, opening tree), thread-local mutable (solver workspaces), rank-local growing (cut pool), temporary (scratch buffers)](../../images/memory-architecture.svg)
+
 ### 1.2 Concurrency Model
 
 Cobre uses OpenMP for intra-rank threading (see [Hybrid Parallelism §5](./hybrid-parallelism.md)). The data sharing model follows OpenMP semantics:

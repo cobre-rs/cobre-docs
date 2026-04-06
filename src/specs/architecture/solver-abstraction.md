@@ -382,7 +382,7 @@ See [HiGHS Implementation](./solver-highs-impl.md) and [CLP Implementation](./so
 
 ## 5. Cut Pool Design
 
-> **Placeholder** — The cut storage layout diagram (`../../diagrams/exports/svg/data/cut-storage-layout.svg`) will be revised after the text review is complete.
+![Cut pool lifecycle and memory layout — cuts transition between Generated, Active, and Deactivated states; pre-allocated flat array with deterministic slot assignment and activity bitmap](../../images/cut-pool-lifecycle.svg)
 
 ### 5.1 Scope Clarification: Cut Pool vs Solver LP
 

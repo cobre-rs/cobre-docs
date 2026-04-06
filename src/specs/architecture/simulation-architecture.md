@@ -14,33 +14,7 @@ The simulation phase evaluates the trained SDDP policy on a large number of scen
 2. **Operational behavior** — Storage trajectories, generation mix, deficit frequency
 3. **Robustness** — Performance across diverse hydrological conditions
 
-```
-┌───────────────────────────────────────────────────────────────────┐
-│                    Simulation Architecture                        │
-├───────────────────────────────────────────────────────────────────┤
-│  Input: Trained FCF (cuts), Simulation scenarios                  │
-│                                                                   │
-│  SCENARIO SELECTION                                               │
-│  Sampling scheme: InSample | External | Historical                │
-│  (see scenario-generation.md SS3)                                  │
-│                                                                   │
-│  PARALLEL EXECUTION                                               │
-│  Scenarios statically distributed across MPI ranks                │
-│  Each rank solves LP sequence for assigned scenarios              │
-│  Within each rank: thread-level dynamic work-stealing             │
-│                                                                   │
-│  PER-SCENARIO (for stage t = 1..T):                               │
-│    1. Realize uncertainties via sampling scheme                   │
-│    2. Build stage LP with FCF cuts and block structure            │
-│    3. Solve LP, extract solution                                  │
-│    4. Apply non-convex refinements (if configured)                │
-│    5. Stream results to output                                    │
-│    6. Propagate state to next stage                               │
-│                                                                   │
-│  OUTPUT AGGREGATION                                               │
-│  Streaming write per rank | Statistics across scenarios           │
-└───────────────────────────────────────────────────────────────────┘
-```
+![Simulation architecture — input through scenario selection, parallel execution across MPI ranks with per-scenario LP pipeline, output aggregation](../../images/simulation-architecture.svg)
 
 ### 1.1 Simulation Configuration
 

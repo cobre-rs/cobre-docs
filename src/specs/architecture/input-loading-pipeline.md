@@ -18,7 +18,7 @@ Input loading follows a **rank-0 centric** pattern: rank 0 loads and validates a
 
 The one exception is **policy loading for warm-start** (SS7), where all ranks load in parallel to avoid bottlenecking on large policy files.
 
-> **Placeholder** — The input loading pipeline diagram (`../../diagrams/exports/svg/data/input-loading-pipeline.svg`) will be revised after the text review is complete.
+![Input loading pipeline — rank 0 loads and validates all files in dependency order, then broadcasts the validated System to all ranks](../../images/input-loading-pipeline.svg)
 
 ## 2. File Loading Sequence
 
