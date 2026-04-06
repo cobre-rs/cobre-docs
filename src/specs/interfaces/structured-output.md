@@ -174,6 +174,7 @@ These 6 kinds cover errors that occur during execution or post-hoc operations, o
 | `CheckpointFailed` | Error    | `run`                  | Checkpoint write or read failed                                       | `checkpoint_path`, `operation` (`read` or `write`), `detail`              |
 | `OutputCorrupted`  | Error    | `report`, `summary`    | An output file exists but is unreadable or has invalid structure      | `file`, `detail`                                                          |
 | `OutputNotFound`   | Error    | `report`, `summary`    | A required output file or directory is missing                        | `path`, `expected_content`                                                |
+| `IncompatibleRuns` | Error    | `summary`              | Two runs cannot be compared due to mismatched configuration           | `field`, `run_a_value`, `run_b_value`, `detail`                           |
 
 **Example -- runtime error**:
 

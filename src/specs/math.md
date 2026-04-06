@@ -4,7 +4,7 @@ This section contains the formal mathematical specifications that define Cobre's
 
 Every constraint, variable bound, and algorithmic step that Cobre implements traces back to one of these pages. The specs are written to be precise enough to serve as a direct implementation reference: a developer should be able to read a spec and translate it into solver API calls without ambiguity. Where design choices exist (e.g., single-cut vs. multi-cut, constant vs. piecewise-linear productivity), each spec enumerates the supported variants and their configuration knobs.
 
-The formulations assume familiarity with linear programming duality, the Bellman equation for multistage stochastic programs, and the basic SDDP decomposition scheme. Readers new to these topics should start with the [Algorithm Reference](../algorithms/sddp-theory.md) section, which provides tutorial-style explanations, before diving into the specs here.
+The formulations assume familiarity with linear programming duality, the Bellman equation for multistage stochastic programs, and the basic SDDP decomposition scheme. Readers new to these topics should start with the [Algorithm Reference](../theory/sddp-theory.md) section, which provides tutorial-style explanations, before diving into the specs here.
 
 ## Reading Order
 
@@ -32,20 +32,20 @@ The remaining specs can be read in any order after the first eight:
 
 | Spec                                                         | Description                                                                     | Algorithm Reference                                                                                |
 | ------------------------------------------------------------ | ------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
-| [SDDP Algorithm](./math/sddp-algorithm.md)                   | Policy graph, state variables, Bellman recursion, single-cut vs. multi-cut      | [SDDP Theory](../algorithms/sddp-theory.md), [Benders Decomposition](../algorithms/benders.md)     |
-| [LP Formulation](./math/lp-formulation.md)                   | Stage subproblem objective, constraints, and dual variables                     | [Forward and Backward Passes](../algorithms/forward-backward.md)                                   |
+| [SDDP Algorithm](./math/sddp-algorithm.md)                   | Policy graph, state variables, Bellman recursion, single-cut vs. multi-cut      | [SDDP Theory](../theory/sddp-theory.md), [Benders Decomposition](../theory/benders.md)     |
+| [LP Formulation](./math/lp-formulation.md)                   | Stage subproblem objective, constraints, and dual variables                     | [Forward and Backward Passes](../theory/forward-backward.md)                                   |
 | [System Elements](./math/system-elements.md)                 | Physical elements, their decision variables, and interconnections               | --                                                                                                 |
 | [Block Formulations](./math/block-formulations.md)           | Parallel and chronological blocks, policy compatibility validation              | --                                                                                                 |
 | [Hydro Production Models](./math/hydro-production-models.md) | Constant productivity, FPHA hyperplanes, linearized head                        | --                                                                                                 |
-| [Cut Management](./math/cut-management.md)                   | Cut generation, aggregation, Level 1 / LML1 selection, dominance detection      | [Cut Management](../algorithms/cut-management.md), [Cut Selection](../algorithms/cut-selection.md) |
+| [Cut Management](./math/cut-management.md)                   | Cut generation, aggregation, Level 1 / LML1 selection, dominance detection      | [Cut Management](../theory/cut-management.md), [Cut Selection](../theory/cut-selection.md) |
 | [Discount Rate](./math/discount-rate.md)                     | Discounted Bellman equation, stage-dependent discount factors                   | --                                                                                                 |
-| [Infinite Horizon](./math/infinite-horizon.md)               | Periodic policy graph, cycle detection, cross-cycle cut sharing                 | [Convergence](../algorithms/convergence.md)                                                        |
-| [Risk Measures](./math/risk-measures.md)                     | CVaR, convex combination with expectation, risk-averse cuts, per-stage profiles | [Risk Measures](../algorithms/risk-measures.md), [CVaR](../algorithms/cvar.md)                     |
-| [Inflow Non-Negativity](./math/inflow-nonnegativity.md)      | Truncation, penalty, and hybrid strategies for negative synthetic inflows       | [Scenario Generation](../algorithms/scenario-generation.md)                                        |
-| [PAR Inflow Model](./math/par-inflow-model.md)               | PAR(p) model definition, stored vs. computed quantities, fitting, validation    | [PAR(p) Models](../algorithms/par-model.md)                                                        |
+| [Infinite Horizon](./math/infinite-horizon.md)               | Periodic policy graph, cycle detection, cross-cycle cut sharing                 | [Convergence](../theory/convergence.md)                                                        |
+| [Risk Measures](./math/risk-measures.md)                     | CVaR, convex combination with expectation, risk-averse cuts, per-stage profiles | [Risk Measures](../theory/risk-measures.md), [CVaR](../theory/cvar.md)                     |
+| [Inflow Non-Negativity](./math/inflow-nonnegativity.md)      | Truncation, penalty, and hybrid strategies for negative synthetic inflows       | [Scenario Generation](../theory/scenario-generation.md)                                        |
+| [PAR Inflow Model](./math/par-inflow-model.md)               | PAR(p) model definition, stored vs. computed quantities, fitting, validation    | [PAR(p) Models](../theory/par-model.md)                                                        |
 | [Equipment Formulations](./math/equipment-formulations.md)   | Thermal, transmission, contracts, pumping, NCS, simulation-only enhancements    | --                                                                                                 |
-| [Stopping Rules](./math/stopping-rules.md)                   | Iteration limit, time limit, bound stalling, simulation-based gap test          | [Convergence](../algorithms/convergence.md)                                                        |
-| [Upper Bound Evaluation](./math/upper-bound-evaluation.md)   | Inner approximation, Lipschitz interpolation, statistical gap computation       | [Convergence](../algorithms/convergence.md)                                                        |
+| [Stopping Rules](./math/stopping-rules.md)                   | Iteration limit, time limit, bound stalling, simulation-based gap test          | [Convergence](../theory/convergence.md)                                                        |
+| [Upper Bound Evaluation](./math/upper-bound-evaluation.md)   | Inner approximation, Lipschitz interpolation, statistical gap computation       | [Convergence](../theory/convergence.md)                                                        |
 
 ## Conventions
 

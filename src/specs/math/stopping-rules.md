@@ -129,6 +129,8 @@ $$
 > **Risk-averse note**: For risk-averse problems, the bound stability check monitors convergence of the risk-adjusted outer approximation. The simulation comparison remains valid since it measures policy stability directly, independent of bound interpretation. See [Risk Measures](risk-measures.md).
 
 > **Partial Implementation**: The current implementation is a stub that compares simulation costs against a **zero baseline** rather than consecutive simulation snapshots. Specifically, when `simulation_costs` are available, the distance is computed as $d = \sqrt{\sum_t (c_t / \max(1, |c_t|))^2}$ against zero, which is conservative: it never triggers on the first evaluation and only triggers when per-stage costs are themselves near zero. The planned full version (targeted for a future epic) will store the previous simulation's cost vector and compute the distance between consecutive snapshots as described above ($c_t^{new}$ vs $c_t^{old}$). The convergence monitor is responsible for managing the two-snapshot comparison externally.
+>
+> Additionally, the **bound stability pre-check** (Phase 1) is not yet implemented: the `bound_tol` and `bound_window` parameters are parsed from configuration but currently discarded -- the rule skips directly to the simulation distance comparison. Until Phase 1 is implemented, the rule may evaluate simulations even when the bound is still actively improving, which is conservative (wastes simulation time) but not incorrect.
 
 ## 6 Combining Rules
 

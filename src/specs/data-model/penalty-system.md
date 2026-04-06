@@ -45,9 +45,11 @@ These penalties ensure that the SDDP algorithm has relatively complete recourse 
 | Penalty            | Units  | Applied To                | Purpose                         | Typical Range       |
 | ------------------ | ------ | ------------------------- | ------------------------------- | ------------------- |
 | `deficit_segments` | \$/MWh | Unmet load per bus        | Piecewise cost of load shedding | 1,000–10,000 \$/MWh |
-| `excess_cost`      | \$/MWh | Excess generation per bus | Absorb uncontrollable surplus   | 0.001–0.1 \$/MWh    |
+| `excess_cost`      | \$/MWh | Excess generation per bus | Absorb uncontrollable surplus   | 0.001–100 \$/MWh    |
 
 Deficit and excess are conceptually slack variables on the load balance constraint, but they have special names because of their importance in the hydrothermal dispatch application. Deficit represents the value of lost load; excess is a regularization-level cost to eliminate spurious slack generation.
+
+> **Note on `excess_cost` range**: The wide typical range (0.001--100 \$/MWh) reflects two distinct use cases. At the low end (0.001--0.1), the cost acts as a pure regularization term that breaks solver degeneracy without distorting the policy. At the high end (1--100), the cost serves a policy-shaping role, actively discouraging excess generation to keep dispatch solutions physically realistic. The global default example (`"excess_cost": 100.0`) uses the upper end of this range.
 
 ### Category 2: Constraint Violation Penalties (Policy Shaping)
 
