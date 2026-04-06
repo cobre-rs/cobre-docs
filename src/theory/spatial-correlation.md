@@ -31,6 +31,30 @@ Without spatial correlation, the scenario generator would produce unrealistic co
 
 The spatial correlation structure is encoded in the noise vectors stored in the opening tree. Each noise vector contains entries for all hydro plants, and the cross-plant correlations are baked into the vector generation process. The PAR(p) model then transforms these correlated noise vectors into inflow realizations that respect both the temporal dynamics (autoregressive lags) and the spatial structure (correlated residuals).
 
+## Spectral decomposition factorization
+
+Given a correlation matrix $\mathbf{R}$, Cobre factors it via eigendecomposition (cyclic Jacobi rotation):
+
+$$
+\mathbf{R} = \mathbf{V} \, \boldsymbol{\Lambda} \, \mathbf{V}^\top
+$$
+
+where **V** is the orthogonal matrix of eigenvectors and **Λ** = diag(λ₁, …, λₙ) contains the eigenvalues. Because empirical correlation matrices estimated from finite samples can have small negative eigenvalues, Cobre clips them to zero:
+
+$$
+\lambda_i^{+} = \max(0,\, \lambda_i)
+$$
+
+The transformation matrix used to generate correlated samples is then:
+
+$$
+\mathbf{D} = \mathbf{V} \operatorname{diag}\!\left(\sqrt{\lambda_1^{+}},\, \ldots,\, \sqrt{\lambda_n^{+}}\right)
+$$
+
+Given a vector **z** ~ N(**0**, **I**) of independent standard normal samples, the correlated noise vector is **ε** = **D** **z**, so that Cov(**ε**) = **D** **D**ᵀ ≈ **R** (exact when no eigenvalues were clipped).
+
+This spectral approach is the default method (`"spectral"` in `correlation.json`). The legacy `"cholesky"` method is accepted for backward compatibility but requires strictly positive-definite matrices. Per-season correlation profiles are supported -- the schedule in `correlation.json` maps each stage to a named profile, so different seasons can use different correlation structures. See [Input Scenarios SS5](../specs/data-model/input-scenarios.md) for the full schema.
+
 ## Related topics
 
 - [PAR Inflow Model (spec)](../specs/math/par-inflow-model.md) -- Full specification of the autoregressive model, fitting procedure, and validation

@@ -20,14 +20,14 @@ The loop terminates when converged or a limit is reached, outputting the FCF cut
 
 The training orchestrator manages the iterative SDDP loop and coordinates the following components:
 
-| Component               | Responsibility                                                                                            | Configuration Source                               |
-| ----------------------- | --------------------------------------------------------------------------------------------------------- | -------------------------------------------------- |
-| **Risk Measure**        | Determines how backward outcomes are aggregated into cut coefficients (expectation vs CVaR)               | `risk_measure` per stage in `stages.json`          |
-| **Cut Formulation**     | Determines cut structure (single-cut; multi-cut is deferred)                                              | Fixed: single-cut                                  |
-| **Horizon Mode**        | Determines stage transitions, terminal conditions, and discount factors                                   | `policy_graph` in `stages.json`                    |
-| **Sampling Scheme**     | Determines how the forward pass selects scenario realizations at each stage                               | `scenario_source.sampling_scheme` in `stages.json` |
-| **FCF**                 | Stores accumulated Benders cuts per stage; queried during LP construction and updated after backward pass | Built incrementally across iterations              |
-| **Convergence Monitor** | Tracks lower/upper bounds, gap history, and evaluates stopping rules                                      | `stopping_rules` in `config.json`                  |
+| Component               | Responsibility                                                                                            | Configuration Source                        |
+| ----------------------- | --------------------------------------------------------------------------------------------------------- | ------------------------------------------- |
+| **Risk Measure**        | Determines how backward outcomes are aggregated into cut coefficients (expectation vs CVaR)               | `risk_measure` per stage in `stages.json`   |
+| **Cut Formulation**     | Determines cut structure (single-cut; multi-cut is deferred)                                              | Fixed: single-cut                           |
+| **Horizon Mode**        | Determines stage transitions, terminal conditions, and discount factors                                   | `policy_graph` in `stages.json`             |
+| **Sampling Scheme**     | Determines how the forward pass selects scenario realizations at each stage                               | `training.scenario_source` in `config.json` |
+| **FCF**                 | Stores accumulated Benders cuts per stage; queried during LP construction and updated after backward pass | Built incrementally across iterations       |
+| **Convergence Monitor** | Tracks lower/upper bounds, gap history, and evaluates stopping rules                                      | `stopping_rules` in `config.json`           |
 
 ### 2.1 Iteration Lifecycle
 
@@ -93,7 +93,7 @@ The `ConvergenceUpdate` variant carries a vector of stopping rule evaluation res
 #[derive(Clone, Debug)]
 pub struct StoppingRuleResult {
     /// Rule identifier matching the variant name in the stopping rules config
-    /// (e.g., "gap_tolerance", "bound_stalling", "iteration_limit", "time_limit", "simulation").
+    /// (e.g., "graceful_shutdown", "bound_stalling", "iteration_limit", "time_limit", "simulation_based").
     pub rule_name: String,
     /// Whether this rule's condition is satisfied at the current iteration.
     pub triggered: bool,
@@ -615,7 +615,7 @@ The state transfer patches are a subset of the full forward pass patch sequence 
 
 Step 3 above collects visited states from all MPI ranks via `allgatherv` ([Communicator Trait SS2.1](../hpc/communicator-trait.md)). This subsection specifies the **exact wire format** for state vector exchange -- the byte-level layout, indexing scheme, and collective operation parameters that all ranks must agree on.
 
-**Serialization: raw `[f64]` reinterpretation.** State vectors are transmitted as raw `f64` arrays reinterpreted as bytes -- **not** serialized via `rkyv` or any structured format. This is consistent with the hot-path convention for cut wire format ([Cut Management Implementation SS4.2](./cut-management-impl.md)): data that flows through per-iteration collective operations uses raw reinterpretation for zero-copy semantics and minimal latency. The `rkyv` serialization path ([Input Loading Pipeline SS6](./input-loading-pipeline.md)) is reserved for initialization-time broadcast of heterogeneous structures, not for hot-path homogeneous `f64` arrays.
+**Serialization: raw `[f64]` reinterpretation.** State vectors are transmitted as raw `f64` arrays reinterpreted as bytes -- **not** serialized via `postcard` or any structured format. This is consistent with the hot-path convention for cut wire format ([Cut Management Implementation SS4.2](./cut-management-impl.md)): data that flows through per-iteration collective operations uses raw reinterpretation for zero-copy semantics and minimal latency. The `postcard` serialization path ([Input Loading Pipeline SS6](./input-loading-pipeline.md)) is reserved for initialization-time broadcast of heterogeneous structures, not for hot-path homogeneous `f64` arrays.
 
 **Granularity: one `allgatherv` per stage $t$.** The state vector exchange issues one `allgatherv` call per stage, not a single call for all stages combined. Each call at stage $t$ gathers the $M$ visited states for that stage from all ranks:
 

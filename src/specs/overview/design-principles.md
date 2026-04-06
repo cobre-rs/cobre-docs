@@ -91,7 +91,7 @@ The mathematical specifications are organized across the [Mathematical Formulati
 | config.json → inflow_non_negativity                                     | [Inflow Non-Negativity](../math/inflow-nonnegativity.md)      | Inflow treatment method         |
 | stages.json → policy_graph.annual_discount_rate                         | [Discount Rate](../math/discount-rate.md)                     | Discount rate, per-stage factor |
 | policy/cuts/                                                            | [Cut Management](../math/cut-management.md)                   | Cut coefficients and selection  |
-| config.json → risk_measure                                              | [Risk Measures](../math/risk-measures.md)                     | CVaR, per-stage risk profiles   |
+| stages.json → stages[].risk_measure                                     | [Risk Measures](../math/risk-measures.md)                     | CVaR, per-stage risk profiles   |
 | Full LP structure                                                       | [LP Formulation](../math/lp-formulation.md)                   | Objective, constraints, duals   |
 | Algorithm flow                                                          | [SDDP Algorithm](../math/sddp-algorithm.md)                   | Forward/backward passes, cuts   |
 

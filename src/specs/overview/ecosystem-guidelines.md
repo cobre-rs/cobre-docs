@@ -210,7 +210,7 @@ and a hard-stop vs. proceed-with-partial mapping table.
 | `Infeasible`          | Hard-stop            |
 | `Unbounded`           | Hard-stop            |
 | `InternalError`       | Hard-stop            |
-| `NumericalDifficulty` | Proceed with partial |
+| `NumericalDifficulty` | Hard-stop            |
 | `TimeLimitExceeded`   | Proceed with partial |
 | `IterationLimit`      | Proceed with partial |
 

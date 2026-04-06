@@ -1,6 +1,6 @@
 # Roadmap
 
-> **The minimal viable solver (v0.1.x) is complete.** All 8 implementation phases are done: the full SDDP training loop, simulation pipeline, policy checkpointing, FPHA computed from geometry, Python bindings (3.12/3.13/3.14), and the `cobre-cli` binary with `init`, `run`, `validate`, `report`, `summary`, and `version` subcommands are all shipped. The workspace ships 2,624 tests. The features listed below represent post-MVP development — they are not prerequisites for a working solver.
+> **The minimal viable solver is complete (v0.4.1, April 2026).** All 8 implementation phases are done: the full SDDP training loop, simulation pipeline, policy checkpointing, FPHA computed from geometry, Python bindings (3.12/3.13/3.14), and the `cobre-cli` binary with `init`, `run`, `validate`, `report`, `summary`, and `version` subcommands are all shipped. The workspace ships ~3,400 tests. The features listed below represent post-MVP development — they are not prerequisites for a working solver.
 
 This section describes planned features for Cobre that are not yet implemented. The features listed here represent the team's current thinking about where the solver is headed — they are directional plans, not committed timelines or version targets.
 

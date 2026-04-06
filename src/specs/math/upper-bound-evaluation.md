@@ -1,5 +1,7 @@
 # Upper Bound Evaluation
 
+> **Status: Not Implemented.** This spec describes a planned design that has not yet been implemented.
+
 ## Purpose
 
 This spec defines the upper bound evaluation mechanism in Cobre via inner approximation (SIDP): the vertex-based value function approximation, Lipschitz interpolation, the linearized upper bound LP, gap computation, and configuration. It complements the outer approximation (cuts) described in [SDDP Algorithm](sddp-algorithm.md) by providing a convergence certificate through deterministic upper bounds.

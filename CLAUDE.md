@@ -16,7 +16,7 @@ diverge from the code, the spec must be updated — not the other way around.
 
 ---
 
-## Current State (synced to v0.3.2, March 2026)
+## Current State (synced to v0.4.1, April 2026)
 
 88 specification files across 7 domains: architecture, math, data-model,
 hpc, interfaces, configuration, overview.

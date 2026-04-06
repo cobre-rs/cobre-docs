@@ -119,11 +119,11 @@ Every performance-adapted type in the Cobre ecosystem is listed below, grouped b
 
 ### 2.2 Types Built During Scenario Gen Phase
 
-| Type                                                                  | Owner              | Source Data                                                              | Strategies                                                          | Authoritative Spec                                    |
-| --------------------------------------------------------------------- | ------------------ | ------------------------------------------------------------------------ | ------------------------------------------------------------------- | ----------------------------------------------------- |
-| PAR preprocessing arrays (`base`, `coefficients`, `scales`, `orders`) | `cobre-stochastic` | `ParModel` parameters, season definitions, stage definitions             | AoS→SoA, Temporal flattening (season → stage), Algebraic absorption | [Scenario Generation SS1.3](./scenario-generation.md) |
-| Cholesky-decomposed correlation matrices                              | `cobre-stochastic` | Correlation matrices from `correlation.json` or estimated from residuals | Algebraic absorption ($\Sigma = LL^T$ computed once)                | [Scenario Generation SS2.1](./scenario-generation.md) |
-| Opening tree tensor (`[stages × openings × dim]`)                     | `cobre-stochastic` | Derived RNG seeds, Cholesky factors, PAR preprocessing arrays            | Layout reshaping (stage-outer for backward pass access)             | [Scenario Generation SS2.3](./scenario-generation.md) |
+| Type                                                                  | Owner              | Source Data                                                              | Strategies                                                                       | Authoritative Spec                                    |
+| --------------------------------------------------------------------- | ------------------ | ------------------------------------------------------------------------ | -------------------------------------------------------------------------------- | ----------------------------------------------------- |
+| PAR preprocessing arrays (`base`, `coefficients`, `scales`, `orders`) | `cobre-stochastic` | `ParModel` parameters, season definitions, stage definitions             | AoS→SoA, Temporal flattening (season → stage), Algebraic absorption              | [Scenario Generation SS1.3](./scenario-generation.md) |
+| Spectrally-decomposed correlation matrices                            | `cobre-stochastic` | Correlation matrices from `correlation.json` or estimated from residuals | Algebraic absorption ($\Sigma = V\operatorname{diag}(\lambda)V^T$ computed once) | [Scenario Generation SS2.1](./scenario-generation.md) |
+| Opening tree tensor (`[stages × openings × dim]`)                     | `cobre-stochastic` | Derived RNG seeds, spectral factors, PAR preprocessing arrays            | Layout reshaping (stage-outer for backward pass access)                          | [Scenario Generation SS2.3](./scenario-generation.md) |
 
 ### 2.3 Types That Are Not Transformations
 
@@ -188,11 +188,11 @@ PrecomputedParLp + System
   ├──→ PAR preprocessing arrays [Scenario Generation §1.3]
   │      (seasonal PAR params → stage-indexed SoA arrays)
   │
-  ├──→ Cholesky decomposition [Scenario Generation §2.1]
-  │      (correlation matrices → lower-triangular factors)
+  ├──→ Spectral decomposition [Scenario Generation §2.1]
+  │      (correlation matrices → symmetric spectral factors)
   │
   └──→ Opening tree [Scenario Generation §2.3]
-         (RNG seeds + Cholesky factors + PAR arrays → dense tensor)
+         (RNG seeds + spectral factors + PAR arrays → dense tensor)
 ```
 
 ### 3.2 Parallelism During Build
@@ -200,7 +200,7 @@ PrecomputedParLp + System
 Most build steps are sequential (single-threaded on each rank), with two exceptions:
 
 1. **Solver workspace allocation** must happen inside a parallel region so that first-touch NUMA policy places each workspace's buffers on the owning thread's NUMA node ([Solver Workspaces SS1.3](./solver-workspaces.md)).
-2. **Opening tree generation** is embarrassingly parallel across stages — each stage's openings are independent once the Cholesky factors exist.
+2. **Opening tree generation** is embarrassingly parallel across stages — each stage's openings are independent once the spectral factors exist.
 
 All other construction is sequential because the cost is negligible relative to training (one-time $O(T \times N)$ arithmetic vs. millions of LP solves).
 

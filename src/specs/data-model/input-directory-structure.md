@@ -32,7 +32,9 @@ case/
 │   ├── inflow_history.parquet                 # Historical inflow observations (optional)
 │   ├── inflow_seasonal_stats.parquet          # Seasonal mean/std per hydro/stage (optional)
 │   ├── inflow_ar_coefficients.parquet         # PAR(p) AR coefficients per hydro/stage/lag (optional)
-│   ├── external_scenarios.parquet             # Pre-computed scenario values (optional)
+│   ├── external_inflow_scenarios.parquet      # Pre-computed inflow scenario values (optional)
+│   ├── external_load_scenarios.parquet        # Pre-computed load scenario values (optional)
+│   ├── external_ncs_scenarios.parquet         # Pre-computed NCS scenario values (optional)
 │   ├── load_seasonal_stats.parquet            # Load mean/std per bus/stage (optional)
 │   ├── load_factors.json                      # Block-level load scaling factors (optional)
 │   ├── non_controllable_stats.parquet         # NCS stochastic availability factors (optional)
@@ -82,12 +84,12 @@ The input case directory is organized into four top-level groups plus root-level
 
 ### Root-Level Files
 
-| File                      | Required | Description                                                                                                                                                                                                                                                | Spec Reference                               |
-| ------------------------- | -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------- |
-| `config.json`             | Yes      | Central execution configuration: modeling options, training settings, simulation settings, export controls. Controls all solver behavior.                                                                                                                  | §2 below                                     |
-| `penalties.json`          | Yes      | Global default penalty values for the three-tier cascade: deficit segment costs, regularization costs, constraint violation penalties. Entity and stage overrides layer on top.                                                                            | [Penalty System](penalty-system.md)          |
-| `stages.json`             | Yes      | Season definitions with calendar mapping, policy graph (transitions, horizon type, annual discount rate), stage definitions with per-stage block structure, block mode, state variables, risk measure (CVaR), scenario sampling method, and num_scenarios. | [Input Scenarios §1](input-scenarios.md)     |
-| `initial_conditions.json` | Yes      | Initial system state: operating hydro storage levels (`storage` array) and filling hydro storage levels (`filling_storage` array, can be below dead volume). GNL pipeline state deferred — see [Input Constraints §1](input-constraints.md).               | [Input Constraints §1](input-constraints.md) |
+| File                      | Required | Description                                                                                                                                                                                                                                       | Spec Reference                               |
+| ------------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------- |
+| `config.json`             | Yes      | Central execution configuration: modeling options, training settings, scenario source, simulation settings, export controls. Controls all solver behavior.                                                                                        | §2 below                                     |
+| `penalties.json`          | Yes      | Global default penalty values for the three-tier cascade: deficit segment costs, regularization costs, constraint violation penalties. Entity and stage overrides layer on top.                                                                   | [Penalty System](penalty-system.md)          |
+| `stages.json`             | Yes      | Season definitions with calendar mapping, policy graph (transitions, horizon type, annual discount rate), stage definitions with per-stage block structure, block mode, state variables, risk measure (CVaR), sampling method, and num_scenarios. | [Input Scenarios §1](input-scenarios.md)     |
+| `initial_conditions.json` | Yes      | Initial system state: operating hydro storage levels (`storage` array) and filling hydro storage levels (`filling_storage` array, can be below dead volume). GNL pipeline state deferred — see [Input Constraints §1](input-constraints.md).      | [Input Constraints §1](input-constraints.md) |
 
 ## 2. Configuration (`config.json`)
 
@@ -107,7 +109,7 @@ The input case directory is organized into four top-level groups plus root-level
   "version": "2.0.0",
 
   "training": {
-    "seed": 42,
+    "tree_seed": 42,
     "forward_passes": 192,
     "stopping_rules": [{ "type": "iteration_limit", "limit": 50 }]
   }
@@ -132,7 +134,7 @@ All omitted sections (`modeling`, `upper_bound_evaluation`, `policy`, `simulatio
 
   "training": {
     "enabled": true,
-    "seed": 42,
+    "tree_seed": 42,
     "forward_passes": 192,
     "stopping_rules": [
       { "type": "iteration_limit", "limit": 50 },
@@ -151,6 +153,12 @@ All omitted sections (`modeling`, `upper_bound_evaluation`, `policy`, `simulatio
     "solver": {
       "retry_max_attempts": 5,
       "retry_time_budget_seconds": 30.0
+    },
+    "scenario_source": {
+      "seed": 42,
+      "inflow": { "scheme": "in_sample" },
+      "load": { "scheme": "in_sample" },
+      "ncs": { "scheme": "in_sample" }
     }
   },
 
@@ -179,10 +187,7 @@ All omitted sections (`modeling`, `upper_bound_evaluation`, `policy`, `simulatio
     "policy_type": "outer",
     "output_path": "./simulation",
     "output_mode": "streaming",
-    "io_channel_capacity": 64,
-    "sampling_scheme": {
-      "type": "in_sample"
-    }
+    "io_channel_capacity": 64
   },
 
   "estimation": {
@@ -194,7 +199,7 @@ All omitted sections (`modeling`, `upper_bound_evaluation`, `policy`, `simulatio
   "exports": {
     "training": true,
     "cuts": true,
-    "states": true,
+    "states": false,
     "vertices": true,
     "simulation": true,
     "forward_detail": false,
@@ -240,13 +245,13 @@ For the complete stopping rule types and their parameters, see [Configuration Re
 
 ### 2.4 Simulation Configuration
 
-| Field                  | Type   | Default       | Description                                                                   |
-| ---------------------- | ------ | ------------- | ----------------------------------------------------------------------------- |
-| `enabled`              | bool   | false         | Enable post-training simulation                                               |
-| `num_scenarios`        | i32    | 2000          | Number of simulation scenarios                                                |
-| `policy_type`          | string | `"outer"`     | `"outer"` (cuts) or `"inner"` (vertices)                                      |
-| `sampling_scheme.type` | string | `"in_sample"` | `"in_sample"`, `"out_of_sample"`, or `"external"`                             |
-| `io_channel_capacity`  | u32    | 64            | Bounded channel capacity between simulation threads and the I/O writer thread |
+| Field                 | Type   | Default   | Description                                                                                                                   |
+| --------------------- | ------ | --------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| `enabled`             | bool   | false     | Enable post-training simulation                                                                                               |
+| `num_scenarios`       | i32    | 2000      | Number of simulation scenarios                                                                                                |
+| `policy_type`         | string | `"outer"` | `"outer"` (cuts) or `"inner"` (vertices)                                                                                      |
+| `scenario_source`     | object | (inherit) | Per-class scenario source (same format as `training.scenario_source`). When absent, falls back to `training.scenario_source`. |
+| `io_channel_capacity` | u32    | 64        | Bounded channel capacity between simulation threads and the I/O writer thread                                                 |
 
 ### 2.5 Training Solver Configuration (`training.solver`)
 

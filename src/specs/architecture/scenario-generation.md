@@ -95,13 +95,13 @@ The fitted model output includes: seasonal means ($\mu_m$, $s_m$) stored in `inf
 
 **Fitted model validation** follows the same invariants defined in [PAR(p) Inflow Model SS6](../math/par-inflow-model.md):
 
-| Check                      | Severity | Description                                                |
-| -------------------------- | -------- | ---------------------------------------------------------- |
-| Positive residual variance | Error    | $\sigma_m^2 > 0$ for all seasons                           |
-| PAR seasonal stability     | Warning  | Per-season AR polynomial roots outside unit circle         |
-| Correlation matrix PSD     | Error    | $R_m$ positive definite (invertible)                       |
-| No systematic bias         | Warning  | Residuals $\varepsilon_t$ mean near zero                   |
-| AR order consistency       | Error    | Lags are contiguous {1, 2, ..., p} per (hydro, stage) group  |
+| Check                       | Severity | Description                                                         |
+| --------------------------- | -------- | ------------------------------------------------------------------- |
+| Positive residual variance  | Error    | $\sigma_m^2 > 0$ for all seasons                                    |
+| PAR seasonal stability      | Warning  | Per-season AR polynomial roots outside unit circle                  |
+| Correlation matrix symmetry | Warning  | $R_m$ symmetric (spectral decomposition clips negative eigenvalues) |
+| No systematic bias          | Warning  | Residuals $\varepsilon_t$ mean near zero                            |
+| AR order consistency        | Error    | Lags are contiguous {1, 2, ..., p} per (hydro, stage) group         |
 
 ## 2. Noise Generation Infrastructure
 
@@ -112,7 +112,7 @@ Hydros within the same correlation group share spatially **correlated** noise. T
 The generation process:
 
 1. **Independent sampling** — Generate independent standard normal $z_i \sim N(0,1)$ samples, one per entity in the correlation group
-2. **Cholesky transform** — Pre-decompose the correlation matrix $\Sigma = L L^T$ during preprocessing. At runtime, multiply: $\eta = L \cdot z$, producing correlated samples
+2. **Spectral transform** — Pre-decompose the correlation matrix via eigendecomposition $\Sigma = V \operatorname{diag}(\lambda) V^T$ during preprocessing. The spectral factor $D = V \operatorname{diag}(\sqrt{\max(0,\lambda)}) V^T$ transforms independent noise into correlated noise: $\eta = D \cdot z$. Negative eigenvalues are clipped to zero, yielding the nearest positive-semidefinite approximation. The `method` field in `correlation.json` defaults to `"spectral"`; `"cholesky"` is accepted for backward compatibility
 3. **Entity assignment** — Each entity in the group receives its own correlated noise value $\eta_i$ from the transformed vector
 
 Entities in different correlation groups are independent of each other. Entities not assigned to any group receive independent $N(0,1)$ noise.
@@ -363,7 +363,7 @@ The `OpeningTreeView` provides the same access API as `OpeningTree` (`opening()`
 
 The `sampling_method` field on each stage in `stages.json` (see [Input Scenarios SS1.8](../data-model/input-scenarios.md)) controls the algorithm used to generate the $N_t$ noise vectors for that stage's opening tree entries (SS2.3). This is **orthogonal** to the `SamplingScheme` abstraction (SS3): `sampling_method` governs _how_ the opening tree is populated with noise vectors; `SamplingScheme` governs _which_ noise source the forward pass uses.
 
-**SAA — the Phase 5 implementation.** For the minimal viable solver, the only implemented `sampling_method` is `"saa"` (Sample Average Approximation): uniform Monte Carlo random sampling from the RNG seeded by the deterministic seed function (SS2.2a). Each noise vector component $z_i$ is drawn as an independent standard normal $\mathcal{N}(0,1)$, then transformed by the Cholesky correlation factor (SS2.1) to produce the correlated noise vector $\eta$. SAA is the default when `sampling_method` is `"saa"` or omitted from the stage definition.
+**SAA — the Phase 5 implementation.** For the minimal viable solver, the only implemented `sampling_method` is `"saa"` (Sample Average Approximation): uniform Monte Carlo random sampling from the RNG seeded by the deterministic seed function (SS2.2a). Each noise vector component $z_i$ is drawn as an independent standard normal $\mathcal{N}(0,1)$, then transformed by the spectral correlation factor (SS2.1) to produce the correlated noise vector $\eta$. SAA is the default when `sampling_method` is `"saa"` or omitted from the stage definition.
 
 **Summary of sampling methods:**
 
@@ -410,7 +410,7 @@ The correlation structure can vary across stages via the **profile + schedule** 
 - **Profiles** — Named correlation configurations (e.g., `"default"`, `"wet_season"`, `"dry_season"`), each defining correlation groups and matrices
 - **Schedule** — An optional array embedded in `correlation.json` that maps specific `stage_id` values to profile names. Stages not listed use the `"default"` profile.
 
-During preprocessing, the Cholesky decomposition is computed **once per profile** (not per stage). At runtime, the scenario generator looks up the active profile for the current stage via the schedule and uses its pre-computed Cholesky factor.
+During preprocessing, the spectral decomposition is computed **once per profile** (not per stage). At runtime, the scenario generator looks up the active profile for the current stage via the schedule and uses its pre-computed spectral factor.
 
 ## 3. Sampling Scheme Abstraction
 
@@ -430,7 +430,7 @@ These three concerns are **orthogonal** — each can be configured independently
 
 ### 3.2 Forward Sampling Schemes
 
-The sampling scheme determines how the forward pass selects a scenario realization at each stage. Cobre supports three sampling schemes:
+The sampling scheme determines how the forward pass selects a scenario realization at each stage. Cobre supports four sampling schemes, configured independently per stochastic class (inflow, load, NCS) via per-class sub-objects in `training.scenario_source` (see [Input Scenarios SS2.1](../data-model/input-scenarios.md)):
 
 #### InSample (Default)
 
@@ -442,30 +442,32 @@ At each stage $t$, sample a random index $j \in \{0, \ldots, N_{\text{openings}}
 
 This is SDDP.jl's `InSampleMonteCarlo`: the forward pass samples from the same noise terms defined in the model.
 
+#### OutOfSample
+
+The forward pass draws from independently generated Monte Carlo noise that is distinct from the opening tree noise. At each stage $t$, a fresh noise vector is generated from the same PAR model used for the opening tree, but with independent random draws. The backward pass uses the same fixed opening tree as InSample.
+
+- **Noise source**: Independently generated Monte Carlo noise (not from the opening tree)
+- **Realization computation**: LP solve with noise epsilon fixed via `patch_row_bounds`, same as InSample
+- **Backward pass interaction**: The backward pass uses the fixed opening tree generated from the same PAR model
+- **Use case**: Out-of-sample forward evaluation to reduce in-sample bias
+
+This corresponds to SDDP.jl's `OutOfSampleMonteCarlo`: the forward pass uses noise terms different from those defined in the model, but drawn from the same distribution.
+
 #### External
 
-The forward pass draws from user-provided scenario data (`external_scenarios.parquet`). At each stage $t$, select a scenario from the external set — either by random sampling or by sequential iteration through the external scenarios.
+The forward pass draws from user-provided per-class scenario data (e.g., `external_inflow_scenarios.parquet`). At each stage $t$, a scenario is selected from the external set.
 
 - **Noise source**: External scenario values (not the opening tree)
-- **Realization computation**: The external scenario provides inflow values, but these are **not used directly as LP inputs**. The SDDP LP formulation includes the AR dynamics equation as a constraint, with inflow lags and the current-stage noise term as variables fixed via fixing constraints. Therefore, external inflow values must always be **inverted to noise terms** (ε) before they can be used in the LP. This noise inversion is described in SS4.3.
+- **Realization computation**: The external scenario provides values (e.g., inflow), but these are **not used directly as LP inputs**. The SDDP LP formulation includes the AR dynamics equation as a constraint, with inflow lags and the current-stage noise term as variables fixed via fixing constraints. Therefore, external values must always be **inverted to noise terms** (epsilon) before they can be used in the LP. This noise inversion is described in SS4.3.
 - **Backward pass interaction**: The backward pass still uses the fixed opening tree. When external scenarios are the forward source, the opening tree noise is generated from a **PAR model fitted to the external data**, ensuring the backward branchings reflect the statistical properties of the external scenarios (see SS4.2)
-- **Use case**: Training with historical data, imported Monte Carlo scenarios, or stress-test scenarios
-
-This corresponds to SDDP.jl's `OutOfSampleMonteCarlo`: the forward pass uses noise terms different from those defined in the model.
-
-The selection mode within the external set is configured via `selection_mode`:
-
-| Mode         | Behavior                                                                     |
-| ------------ | ---------------------------------------------------------------------------- |
-| `random`     | Sample uniformly from the external scenario set (with replacement). Default. |
-| `sequential` | Iterate through external scenarios in order, cycling when exhausted.         |
+- **Use case**: Training with imported Monte Carlo scenarios or stress-test scenarios
 
 #### Historical
 
-Replay actual historical inflow sequences mapped to stages via `season_definitions`. The forward pass deterministically follows historical data in order, cycling through available years when the number of forward passes exceeds the historical record.
+Replay actual historical sequences mapped to stages via `season_definitions`. The forward pass deterministically follows historical data in order, cycling through available years when the number of forward passes exceeds the historical record.
 
-- **Noise source**: Historical inflow values (mapped from `inflow_history.parquet` to stage structure)
-- **Realization computation**: Like external scenarios, historical inflow values must be **inverted to noise terms** (ε) before use in the LP. The same noise inversion procedure applies (see SS4.3).
+- **Noise source**: Historical values (mapped from `inflow_history.parquet` or equivalent to stage structure)
+- **Realization computation**: Like external scenarios, historical values must be **inverted to noise terms** (epsilon) before use in the LP. The same noise inversion procedure applies (see SS4.3).
 - **Backward pass interaction**: Same as External — the backward pass uses a PAR model fitted to the historical data
 - **Use case**: Policy validation against observed conditions, historical replay analysis
 
@@ -489,15 +491,16 @@ A **MonteCarlo(n)** backward sampling scheme — sampling $n$ openings with repl
 
 ### 3.5 Configuration
 
-The sampling scheme is configured in `stages.json` via the `scenario_source` object. See [Input Scenarios SS2.1](../data-model/input-scenarios.md) for the full schema.
+The sampling scheme is configured in `config.json` via `training.scenario_source` (for training) and `simulation.scenario_source` (for simulation). Each stochastic class (inflow, load, NCS) has its own scheme. When `simulation.scenario_source` is absent, it falls back to `training.scenario_source`. See [Input Scenarios SS2.1](../data-model/input-scenarios.md) for the full schema.
 
-**Summary of scheme-to-config mapping:**
+**Summary of scheme-to-config mapping (per class):**
 
-| Sampling Scheme | `scenario_source` config                                        | Required inputs                                 |
-| --------------- | --------------------------------------------------------------- | ----------------------------------------------- |
-| InSample        | `{ "sampling_scheme": "in_sample", "seed": 42 }`                | Uncertainty models (SS1) or inflow history      |
-| External        | `{ "sampling_scheme": "external", "selection_mode": "random" }` | `external_scenarios.parquet`                    |
-| Historical      | `{ "sampling_scheme": "historical" }`                           | `inflow_history.parquet` + `season_definitions` |
+| Sampling Scheme | Per-class config example        | Required inputs                                                              |
+| --------------- | ------------------------------- | ---------------------------------------------------------------------------- |
+| InSample        | `{ "scheme": "in_sample" }`     | Uncertainty models (SS1) or inflow history                                   |
+| OutOfSample     | `{ "scheme": "out_of_sample" }` | Same as InSample (independent noise from same model)                         |
+| External        | `{ "scheme": "external" }`      | Per-class external scenario file (e.g., `external_inflow_scenarios.parquet`) |
+| Historical      | `{ "scheme": "historical" }`    | `inflow_history.parquet` + `season_definitions`                              |
 
 ## 4. External Scenario Integration
 
@@ -511,7 +514,7 @@ Cobre supports external (deterministic) scenarios as an alternative forward pass
 | Monte Carlo import | Pre-generated scenarios from external tool |
 | Stress testing     | Specific drought/flood scenarios           |
 
-**Input file**: `scenarios/external_scenarios.parquet` with columns `(stage_id, scenario_id, hydro_id, value_m3s)`. See [Input Scenarios SS2.5](../data-model/input-scenarios.md).
+**Input files** (per-class): `scenarios/external_inflow_scenarios.parquet`, `scenarios/external_load_scenarios.parquet`, `scenarios/external_ncs_scenarios.parquet`. Each class has its own file with class-specific entity ID and value columns. See [Input Scenarios SS2.5](../data-model/input-scenarios.md).
 
 ### 4.2 Backward Pass with External Forward Scenarios
 
@@ -553,7 +556,7 @@ After inversion, a JSON validation report is emitted with noise statistics (mean
 
 ### 4.4 External Scenarios in Simulation
 
-When the `External` sampling scheme is active during simulation, the forward pass returns inflow values directly from the pre-loaded data — no stochastic computation occurs. The forward pass iterates through the external scenarios deterministically using `sequential` selection mode.
+When a stochastic class uses the `External` sampling scheme during simulation, the forward pass returns values directly from the pre-loaded per-class data — no stochastic computation occurs. The forward pass iterates through the external scenarios deterministically.
 
 ## 5. Scenario Memory Layout
 
@@ -596,11 +599,11 @@ b. **RNG initialization** — Initialize a `Pcg64` (or equivalent) pseudo-random
 
 c. **Independent noise sampling** — Generate $N_{\text{entities}}$ independent standard normal samples $z_i \sim \mathcal{N}(0,1)$ from the RNG.
 
-d. **Correlation transform** — Apply the Cholesky factor $L$ for the active correlation profile at this stage (SS2.1): $\eta = L \cdot z$. The Cholesky factors are pre-computed during initialization and shared read-only across all threads.
+d. **Correlation transform** — Apply the spectral factor $D$ for the active correlation profile at this stage (SS2.1): $\eta = D \cdot z$. The spectral factors are pre-computed during initialization and shared read-only across all threads.
 
 e. **LP noise term fixup** — The resulting correlated noise vector $\eta$ is used to fix the noise terms in the stage LP (via the PAR inflow equation in [PAR(p) Inflow Model SS1](../math/par-inflow-model.md)).
 
-Steps (a) through (e) are executed entirely within the thread. No inter-thread synchronization, no rank-to-rank communication, and no shared mutable state is involved. The only shared data accessed is the pre-computed Cholesky factors (read-only) and the PAR model parameters (read-only). This communication-free noise generation is a direct consequence of the deterministic seed derivation architecture (SS2.2, SS2.2a) and the work distribution model documented in SS2.2b.
+Steps (a) through (e) are executed entirely within the thread. No inter-thread synchronization, no rank-to-rank communication, and no shared mutable state is involved. The only shared data accessed is the pre-computed spectral factors (read-only) and the PAR model parameters (read-only). This communication-free noise generation is a direct consequence of the deterministic seed derivation architecture (SS2.2, SS2.2a) and the work distribution model documented in SS2.2b.
 
 **InSample variant note.** For the `InSample` sampling scheme, the forward pass does not generate noise at all. Instead, it uses the RNG to sample a random index $j \in \{0, \ldots, N_t - 1\}$ into the pre-generated opening tree (SS2.3). The full 5-step sequence above applies only to `External` and `Historical` variants, which require noise inversion from raw inflow values (SS4.3). For `InSample`, step (c) is replaced by "sample a uniform integer in $[0, N_t)$" and steps (d)-(e) are replaced by "look up the opening tree vector at the sampled index."
 
@@ -636,7 +639,7 @@ where $f_{b,t,k}$ is the block factor from `load_factors.json`. If `load_factors
 
 ### 6.3 Load Correlation
 
-If load entities are included in correlation groups defined in `correlation.json`, their noise terms are correlated with inflow noise via the same Cholesky transform described in SS2.1. Otherwise, load noise is independent of inflow noise.
+If load entities are included in correlation groups defined in `correlation.json`, their noise terms are correlated with inflow noise via the same spectral transform described in SS2.1. Otherwise, load noise is independent of inflow noise.
 
 ## 7. Complete Tree Mode
 

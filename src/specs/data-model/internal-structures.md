@@ -27,7 +27,7 @@ The system entities (§1–§9), pre-resolved penalties (§10), pre-resolved bou
 
 **2. Scenario Generation Pipeline (runtime — performance-critical)**
 
-The scenario pipeline (§13) is exercised repeatedly during both training and simulation. Each forward pass requires sampling from standard normal distributions, applying Cholesky-decomposed correlation matrices, and transforming the results into correlated scenario realizations. This is parallelized across MPI ranks with seed preprocessing to ensure reproducibility. **Performance is critical** in this phase — the noise generation step (sampling, correlation transforms, and method-specific operations) must be efficient at scale.
+The scenario pipeline (§13) is exercised repeatedly during both training and simulation. Each forward pass requires sampling from standard normal distributions, applying spectrally-decomposed correlation matrices, and transforming the results into correlated scenario realizations. This is parallelized across MPI ranks with seed preprocessing to ensure reproducibility. **Performance is critical** in this phase — the noise generation step (sampling, correlation transforms, and method-specific operations) must be efficient at scale.
 
 > **Opening tree lifecycle**: The noise openings used in the backward pass are generated **once before training begins** (fixed opening tree), not per-iteration. The forward pass may use the same opening tree or an alternative noise source (e.g., external scenarios). See [Scenario Generation §2.3 and §3](../architecture/scenario-generation.md).
 
@@ -122,7 +122,7 @@ pub struct System {
 | Network topology    | `network`                                                                                                                             | Resolved transmission network graph for buses and lines. Contains bus-line incidence relationships for power balance and flow constraints. See 1.5b.                                                     |
 | Temporal structure  | `stages`, `policy_graph`                                                                                                              | Stage definitions (section 12) and policy graph transitions for finite or cyclic horizon.                                                                                                                |
 | Pre-resolved data   | `penalties`, `bounds`                                                                                                                 | Fully resolved penalty and bound values per (entity, stage). See sections 10 and 11.                                                                                                                     |
-| Scenario pipeline   | `par_models`, `correlation`                                                                                                           | PAR model parameters per (hydro, stage) and Cholesky-decomposed correlation matrices. See section 14.                                                                                                    |
+| Scenario pipeline   | `par_models`, `correlation`                                                                                                           | PAR model parameters per (hydro, stage) and spectrally-decomposed correlation matrices. See section 14.                                                                                                  |
 | Initial conditions  | `initial_conditions`                                                                                                                  | Initial storage volumes, filling storage, and GNL pipeline state. See section 16.                                                                                                                        |
 | Generic constraints | `generic_constraints`                                                                                                                 | User-defined linear constraints with parsed expressions and resolved entity references. See section 15.                                                                                                  |
 
@@ -1599,7 +1599,7 @@ Source: user-provided `inflow_seasonal_stats.parquet` (μ, s_m) + optional `infl
 
 - Named profiles, each containing correlation groups with entity lists and correlation matrices
 - Stage-to-profile mapping (schedule) — pre-resolved so the solver can look up the active profile per stage
-- Cholesky-decomposed matrices ready for scenario generation
+- Spectral factors ready for scenario generation
 
 Source: user-provided `correlation.json` OR estimated from AR residuals of inflow history. See [Input Scenarios §5](input-scenarios.md).
 

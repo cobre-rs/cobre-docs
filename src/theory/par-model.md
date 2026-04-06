@@ -57,7 +57,8 @@ When fitting PAR(p) parameters from historical inflow data, the AR coefficients 
 > **Implementation status**: As of v0.1.1, this full fitting procedure is implemented in
 > `cobre-stochastic`'s estimation module. Steps 1–5 are carried out by the seasonal
 > statistics, autocorrelation, and AR coefficient estimators; Step 6 selects the model
-> order via AIC before the final coefficients are computed.
+> order via partial autocorrelation function (PACF) significance testing before the final
+> coefficients are computed.
 
 ### Step 1 — Seasonal Statistics
 
@@ -115,13 +116,14 @@ $$
 
 The matrix $\mathbf{R}_m$ is not a standard Toeplitz matrix (because consecutive rows use different seasons' correlations), but it has a similar structure. The correlation matrix must be positive definite for the solution to exist; if not, the historical record may be too short for the requested order.
 
-> **Levinson-Durbin recursion**: In the implementation, the Yule-Walker system is solved
-> using the **Levinson-Durbin recursion** rather than direct matrix inversion. This
-> algorithm exploits the near-Toeplitz structure of $\mathbf{R}_m$ to solve the system in
-> $O(p^2)$ time and $O(p)$ space, compared to $O(p^3)$ for a general LU factorization.
-> For the per-season orders typical in hydro studies ($p \leq 12$), the difference is
-> small in absolute terms, but the recursion also produces intermediate partial
-> autocorrelation coefficients that are useful for diagnosing model fit.
+> **LU factorization**: In the implementation, the periodic Yule-Walker system is solved
+> via **LU factorization with partial pivoting** rather than direct matrix inversion or
+> the classical Levinson-Durbin recursion. The Levinson-Durbin recursion assumes a
+> stationary Toeplitz covariance structure, which does not hold for the periodic
+> correlation matrix $\mathbf{R}_m$ (whose consecutive rows use different seasons'
+> correlations). LU factorization with partial pivoting handles the general (non-Toeplitz)
+> case correctly in $O(p^3)$ time. For the per-season orders typical in hydro studies
+> ($p \leq 12$), this cost is negligible.
 
 ### Step 4 — Residual Standard Deviation
 
@@ -143,39 +145,36 @@ $$
 
 These are computed once at initialization and used directly as LP constraint matrix entries.
 
-### Step 6 — Model Order Selection (AIC)
+### Step 6 — Model Order Selection (PACF)
 
 Before Steps 3–5 are applied at the final model order, the implementation selects the
-order $p_m$ for each season $m$ using the **Akaike Information Criterion (AIC)**. For a
-candidate order $p$, the AIC is:
+order $p_m$ for each season $m$ using **partial autocorrelation function (PACF)
+significance testing**. The procedure fits Yule-Walker systems at increasing orders
+$p = 1, 2, \ldots, p_{\max}$ and examines the last coefficient $\psi^*_{m,p}$ at each
+order — the partial autocorrelation at lag $p$. Under the null hypothesis that the true
+order is less than $p$, the partial autocorrelation is approximately normally distributed
+with standard error $1/\sqrt{N}$, where $N$ is the number of historical observations for
+the season.
+
+The selected order is the largest $p$ whose partial autocorrelation is significant:
 
 $$
-AIC_p = N \ln\!\left(\hat{\sigma}_p^2\right) + 2p
+p_m^* = \max\!\left\{p \in \{1, \ldots, p_{\max}\} : \left|\psi^*_{m,p}\right| > z_{\alpha/2} / \sqrt{N}\right\}
 $$
 
-where $N$ is the number of historical observations for the season and $\hat{\sigma}_p^2$
-is the residual variance obtained by solving the Yule-Walker system at order $p$. The
-first term penalizes poor fit (large residual variance); the second term penalizes model
-complexity (many lags). The selected order minimizes the criterion over the candidate
-range:
+where $z_{\alpha/2}$ is the critical value for the chosen significance level (typically
+$z_{0.025} = 1.96$ for a 95% confidence band). If no lag is significant, the selected
+order is $p_m^* = 0$ (white-noise model, no autoregressive structure).
 
-$$
-p_m^* = \arg\min_{p \in \{0, 1, \ldots, p_{\max}\}} AIC_p
-$$
-
-where $p_{\max}$ is the user-specified maximum order. Order $p = 0$ corresponds to a
-white-noise model (no autoregressive structure); its residual variance equals the sample
-variance $\hat{s}_m^2$.
-
-> **Implementation**: This criterion is implemented in `select_ar_order_aic` in the
-> `cobre-stochastic` estimation module. The function evaluates $AIC_p$ for each
-> candidate order and returns the minimizer. BIC and coefficient significance tests are
-> recognized alternatives but are not implemented in v0.1.1.
+> **Implementation**: This procedure is implemented in `select_order_pacf` in the
+> `cobre-stochastic` estimation module. The function evaluates PACF significance for each
+> candidate order and returns the selected order. AIC and BIC are recognized alternatives
+> but are not implemented.
 
 ## Key Properties
 
 - **Periodicity**: All parameters vary by season, matching the strong seasonality of hydrological data.
-- **Parsimony**: The model order $p$ is selected per season using the AIC criterion (implemented in v0.1.1 via `select_ar_order_aic`). BIC and coefficient significance tests are recognized alternatives but are deferred.
+- **Parsimony**: The model order $p$ is selected per season using PACF significance testing (implemented via `select_order_pacf`). AIC and BIC are recognized alternatives but are not implemented.
 - **Stationarity**: Fitted models are validated to ensure the AR process does not diverge — the characteristic polynomial roots must lie outside the unit circle.
 - **Positive residual variance**: After fitting, $\sigma_m^2 > 0$ must hold for all seasons. A zero or negative residual variance indicates overfitting.
 

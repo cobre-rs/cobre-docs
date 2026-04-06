@@ -14,8 +14,8 @@ The training loop has a fixed structure (forward pass, backward pass, MPI synchr
 | ------------------- | ---------------------------------------------------------- | ------------- | ----------------------------------- |
 | **Risk Measure**    | How backward outcomes are aggregated into cut coefficients | `stages.json` | Expectation, CVaR (SS2)              |
 | **Cut Formulation** | Structure of cuts added to the FCF                         | Fixed         | Single-cut (SS3)                     |
-| **Horizon Mode**    | Stage transitions, terminal conditions, discount factors   | `stages.json` | Finite, Cyclic (SS4)                 |
-| **Sampling Scheme** | How the forward pass selects scenario realizations         | `stages.json` | InSample, External, Historical (SS5) |
+| **Horizon Mode**    | Stage transitions, terminal conditions, discount factors   | `stages.json` | Finite (SS4); Cyclic — deferred      |
+| **Sampling Scheme** | How the forward pass selects scenario realizations         | `stages.json` | InSample, External, Historical, OutOfSample — planned (SS5) |
 
 **Fixed components** (not configurable — same behavior regardless of variant selection):
 
@@ -92,10 +92,10 @@ The horizon mode determines stage traversal, terminal conditions, and discount f
 
 ### 4.1 Variant Table
 
-| Variant    | Config Trigger                                     | Behavior                                                                                                                                    | Math Reference                                   |
-| ---------- | -------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------ |
-| **Finite** | `policy_graph.type = "finite_horizon"` (or absent) | Linear chain $1 \to 2 \to \cdots \to T$. Terminal value $V_{T+1} = 0$. No cycle, no mandatory discount.                                     | [SDDP Algorithm SS4.1](../math/sddp-algorithm.md) |
-| **Cyclic** | `policy_graph.type = "cyclic"`                     | At least one transition creates a cycle (source_id > target_id or equal). Cut pools organized by season. Discount required for convergence. | [Infinite Horizon](../math/infinite-horizon.md)  |
+| Variant    | Status   | Config Trigger                                     | Behavior                                                                                                                                    | Math Reference                                   |
+| ---------- | -------- | -------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------ |
+| **Finite** | Current  | `policy_graph.type = "finite_horizon"` (or absent) | Linear chain $1 \to 2 \to \cdots \to T$. Terminal value $V_{T+1} = 0$. No cycle, no mandatory discount.                                     | [SDDP Algorithm SS4.1](../math/sddp-algorithm.md) |
+| **Cyclic** | Deferred | `policy_graph.type = "cyclic"`                     | At least one transition creates a cycle (source_id > target_id or equal). Cut pools organized by season. Discount required for convergence. | [Infinite Horizon](../math/infinite-horizon.md)  |
 
 ### 4.2 Configuration Mapping
 

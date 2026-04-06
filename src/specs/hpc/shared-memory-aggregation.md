@@ -84,7 +84,7 @@ Static input data (hydro parameters, thermal parameters, system topology) loaded
 | ---------------------- | ---------------- | ---------- | --------------------------------- |
 | System entity data     | ~10 MB           | Yes        | Read-only after initialization    |
 | PAR model parameters   | ~5 MB            | Yes        | Preprocessed contiguous arrays    |
-| Correlation factors    | ~2 MB            | Yes        | Cholesky factors, one per profile |
+| Correlation factors    | ~2 MB            | Yes        | Spectral factors, one per profile |
 | Block/exchange factors | ~1 MB            | Yes        | Loaded once, read-only            |
 
 Whether these smaller data structures justify `SharedRegion<T>` overhead (allocation, fence, pointer indirection) depends on the number of ranks per node. With 4+ ranks per node, the savings compound, but the absolute benefit (~60 MB) is negligible relative to StageLpCache (~67 GB saved).

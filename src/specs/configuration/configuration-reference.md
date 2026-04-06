@@ -10,12 +10,12 @@ For the file layout and `config.json` schema overview, see [Input Directory Stru
 
 ## 1. Configuration File Split
 
-| File          | Scope                                                                                                                | Where Defined                                                              |
-| ------------- | -------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
-| `config.json` | Solver behavior: modeling options, training parameters, simulation, I/O                                              | [Input Directory Structure §2](../data-model/input-directory-structure.md) |
-| `stages.json` | Temporal structure: stages, blocks, block_mode, policy graph, risk measure, scenario source, per-stage num_scenarios | [Input Scenarios](../data-model/input-scenarios.md)                        |
+| File          | Scope                                                                                               | Where Defined                                                              |
+| ------------- | --------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
+| `config.json` | Solver behavior: modeling options, training parameters, simulation, scenario source, I/O            | [Input Directory Structure §2](../data-model/input-directory-structure.md) |
+| `stages.json` | Temporal structure: stages, blocks, block_mode, policy graph, risk measure, per-stage num_scenarios | [Input Scenarios](../data-model/input-scenarios.md)                        |
 
-**Design rationale**: Settings that are inherently per-stage (block mode, risk measure, scenario source) live in `stages.json` alongside the stage definitions. Settings that are global solver parameters (training iteration count, cut selection, inflow non-negativity method, upper bound evaluation) live in `config.json`.
+**Design rationale**: Settings that are inherently per-stage (block mode, risk measure) live in `stages.json` alongside the stage definitions. Settings that are global solver parameters (training iteration count, cut selection, inflow non-negativity method, upper bound evaluation, scenario source) live in `config.json`.
 
 ### 1.1 CLI Presentation Settings
 
@@ -74,7 +74,7 @@ Priority ordering: Filling target > Storage violation > Deficit > Constraint vio
 
 | Option                   | Type             | Default | Description                                                                                                                                                                               |
 | ------------------------ | ---------------- | ------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| training.seed            | int or `null`    | `42`    | Random seed for reproducible scenario generation. When `null`, uses the default seed (42). Negative values use their absolute value unsigned.                                             |
+| training.tree_seed       | int or `null`    | `42`    | Random seed for reproducible opening tree generation. When `null`, uses the default seed (42). Negative values use their absolute value unsigned.                                         |
 | training.cut_formulation | string or `null` | `null`  | Cut formulation variant: `"single"` (one aggregated cut per stage per iteration) or `"multi"` (one cut per forward-pass scenario per stage). When `null`, the solver selects the default. |
 
 ### 3.2 Forward Pass Count
@@ -239,22 +239,27 @@ Default: `"expectation"`. Can vary by stage (e.g., higher risk aversion for near
 
 ### 6.3 Scenario Source and Sampling Scheme
 
-The `scenario_source` field configures how inflow scenarios are selected during the SDDP forward pass. See [Scenario Generation §3](../architecture/scenario-generation.md) for the full abstraction and [Extension Points §5](../architecture/extension-points.md) for variant selection.
+The `scenario_source` object configures how scenarios are selected during the SDDP forward pass. It lives in `config.json` under `training.scenario_source` (for training) and `simulation.scenario_source` (for simulation). When `simulation.scenario_source` is absent, it falls back to `training.scenario_source`. See [Scenario Generation §3](../architecture/scenario-generation.md) for the full abstraction and [Extension Points §5](../architecture/extension-points.md) for variant selection.
 
-| Option                          | Value          | Effect                                                                 | Reference                                                        |
-| ------------------------------- | -------------- | ---------------------------------------------------------------------- | ---------------------------------------------------------------- |
-| scenario_source.sampling_scheme | `"in_sample"`  | Forward pass samples from the fixed opening tree (PAR-generated noise) | [Scenario Generation §3](../architecture/scenario-generation.md) |
-| scenario_source.sampling_scheme | `"external"`   | Forward pass draws from user-provided scenario data                    | [Scenario Generation §4](../architecture/scenario-generation.md) |
-| scenario_source.sampling_scheme | `"historical"` | Forward pass replays historical inflow sequences                       | [Scenario Generation §3](../architecture/scenario-generation.md) |
-| scenario_source.seed            | i64            | Base seed for reproducible noise generation (required for `in_sample`) | [Input Scenarios §2.1](../data-model/input-scenarios.md)         |
-| scenario_source.selection_mode  | `"random"`     | Sample from external scenarios with replacement                        | [Input Scenarios §2.1](../data-model/input-scenarios.md)         |
-| scenario_source.selection_mode  | `"sequential"` | Cycle through external scenarios in order                              | [Input Scenarios §2.1](../data-model/input-scenarios.md)         |
+Each stochastic class (inflow, load, NCS) has its own sampling scheme, configured via per-class sub-objects. The `ScenarioSource` struct groups the three per-class schemes with a shared seed and optional historical year selection:
 
-| Sampling Scheme | Forward Noise Source                | Backward Noise Source                         |
-| --------------- | ----------------------------------- | --------------------------------------------- |
-| `in_sample`     | Opening tree (PAR-generated)        | Same opening tree                             |
-| `external`      | User-provided scenario values       | Opening tree from PAR fitted to external data |
-| `historical`    | Historical inflows mapped to stages | Opening tree from PAR fitted to history       |
+| Option                           | Value             | Effect                                                                 | Reference                                                        |
+| -------------------------------- | ----------------- | ---------------------------------------------------------------------- | ---------------------------------------------------------------- |
+| scenario_source.inflow.scheme    | `"in_sample"`     | Inflow forward pass samples from the fixed opening tree                | [Scenario Generation §3](../architecture/scenario-generation.md) |
+| scenario_source.inflow.scheme    | `"out_of_sample"` | Inflow forward pass draws from independently generated noise           | [Scenario Generation §3](../architecture/scenario-generation.md) |
+| scenario_source.inflow.scheme    | `"external"`      | Inflow forward pass draws from user-provided per-class scenario data   | [Scenario Generation §4](../architecture/scenario-generation.md) |
+| scenario_source.inflow.scheme    | `"historical"`    | Inflow forward pass replays historical inflow sequences                | [Scenario Generation §3](../architecture/scenario-generation.md) |
+| scenario_source.load.scheme      | (same 4 variants) | Load class sampling scheme                                             | [Scenario Generation §3](../architecture/scenario-generation.md) |
+| scenario_source.ncs.scheme       | (same 4 variants) | NCS class sampling scheme                                              | [Scenario Generation §3](../architecture/scenario-generation.md) |
+| scenario_source.seed             | i64               | Base seed for reproducible noise generation (required for `in_sample`) | [Input Scenarios §2.1](../data-model/input-scenarios.md)         |
+| scenario_source.historical_years | array of i32      | Specific historical years for `historical` scheme (optional)           | [Input Scenarios §2.1](../data-model/input-scenarios.md)         |
+
+| Sampling Scheme | Forward Noise Source                      | Backward Noise Source                         |
+| --------------- | ----------------------------------------- | --------------------------------------------- |
+| `in_sample`     | Opening tree (PAR-generated)              | Same opening tree                             |
+| `out_of_sample` | Independently generated Monte Carlo noise | Opening tree from same PAR model              |
+| `external`      | User-provided per-class scenario values   | Opening tree from PAR fitted to external data |
+| `historical`    | Historical records mapped to stages       | Opening tree from PAR fitted to history       |
 
 ### 6.4 Opening Tree Size
 
@@ -292,11 +297,9 @@ The simulation section controls the optional post-training simulation phase and 
 
 When `simulation.enabled` is `false` or `num_scenarios` is `0`, the simulation phase is skipped entirely.
 
-### 7.2 Sampling Scheme
+### 7.2 Scenario Source (Simulation)
 
-| Option                            | Type   | Default       | Description                                                     |
-| --------------------------------- | ------ | ------------- | --------------------------------------------------------------- |
-| `simulation.sampling_scheme.type` | string | `"in_sample"` | Scheme type: `"in_sample"`, `"out_of_sample"`, or `"external"`. |
+The simulation phase uses `simulation.scenario_source` when present, otherwise falls back to `training.scenario_source`. The format is identical to the training scenario source (see §6.3) -- a per-class object with `inflow`, `load`, and `ncs` sub-objects, plus optional `seed` and `historical_years`.
 
 ### 7.3 I/O Options
 
@@ -310,7 +313,6 @@ When `simulation.enabled` is `false` or `num_scenarios` is `0`, the simulation p
     "enabled": true,
     "num_scenarios": 2000,
     "policy_type": "outer",
-    "sampling_scheme": { "type": "in_sample" },
     "io_channel_capacity": 128
   }
 }
@@ -362,7 +364,7 @@ Controls which outputs are written to the results directory.
 | ------------------------- | ---------------------------- | ------- | --------------------------------------------------------------------------- |
 | `exports.training`        | bool                         | `true`  | Write training convergence data (Parquet).                                  |
 | `exports.cuts`            | bool                         | `true`  | Write the cut pool (FlatBuffers).                                           |
-| `exports.states`          | bool                         | `true`  | Write visited state vectors (Parquet).                                      |
+| `exports.states`          | bool                         | `false` | Write visited state vectors (Parquet).                                      |
 | `exports.vertices`        | bool                         | `true`  | Write inner approximation vertices when applicable (Parquet).               |
 | `exports.simulation`      | bool                         | `true`  | Write per-entity simulation results (Parquet).                              |
 | `exports.forward_detail`  | bool                         | `false` | Write per-scenario forward-pass detail (large; disabled by default).        |
@@ -387,12 +389,12 @@ Controls which outputs are written to the results directory.
 
 Controls the PAR(p) model estimation pipeline. When the case provides `inflow_history.parquet`, Cobre can automatically estimate AR coefficients instead of requiring pre-computed `inflow_ar_coefficients.parquet`.
 
-| Option                                   | Type   | Default  | Description                                                                      |
-| ---------------------------------------- | ------ | -------- | -------------------------------------------------------------------------------- |
-| `estimation.max_order`                   | int    | `6`      | Maximum lag order considered during autoregressive model fitting.                |
-| `estimation.order_selection`             | string | `"pacf"` | Order selection criterion: `"pacf"` (PACF-based) or `"fixed"` (use `max_order`). |
-| `estimation.min_observations_per_season` | int    | `30`     | Minimum observations per (entity, season) group to proceed with estimation.      |
-| `estimation.max_coefficient_magnitude`   | float  | `null`   | Safety net: reduce to order 0 if any coefficient exceeds this magnitude.         |
+| Option                                   | Type   | Default  | Description                                                                                                    |
+| ---------------------------------------- | ------ | -------- | -------------------------------------------------------------------------------------------------------------- |
+| `estimation.max_order`                   | int    | `6`      | Maximum lag order considered during autoregressive model fitting.                                              |
+| `estimation.order_selection`             | string | `"pacf"` | Order selection criterion: `"pacf"` (PACF-based). `"fixed"` is deprecated and remaps to `"pacf"` at load time. |
+| `estimation.min_observations_per_season` | int    | `30`     | Minimum observations per (entity, season) group to proceed with estimation.                                    |
+| `estimation.max_coefficient_magnitude`   | float  | `null`   | Safety net: reduce to order 0 if any coefficient exceeds this magnitude.                                       |
 
 ```json
 {
@@ -418,7 +420,7 @@ Controls the PAR(p) model estimation pipeline. When the case provides `inflow_hi
   },
   "training": {
     "enabled": true,
-    "seed": 42,
+    "tree_seed": 42,
     "forward_passes": 10,
     "cut_formulation": "single",
     "cut_selection": {
@@ -431,7 +433,13 @@ Controls the PAR(p) model estimation pipeline. When the case provides `inflow_hi
       { "type": "iteration_limit", "limit": 100 },
       { "type": "bound_stalling", "iterations": 10, "tolerance": 0.0001 }
     ],
-    "stopping_mode": "any"
+    "stopping_mode": "any",
+    "scenario_source": {
+      "seed": 42,
+      "inflow": { "scheme": "in_sample" },
+      "load": { "scheme": "in_sample" },
+      "ncs": { "scheme": "in_sample" }
+    }
   },
   "upper_bound_evaluation": {
     "enabled": true,
@@ -451,7 +459,7 @@ Controls the PAR(p) model estimation pipeline. When the case provides `inflow_hi
   "exports": {
     "training": true,
     "cuts": true,
-    "states": true,
+    "states": false,
     "simulation": true,
     "stochastic": false,
     "compression": "zstd"
@@ -476,7 +484,6 @@ Controls the PAR(p) model estimation pipeline. When the case provides `inflow_hi
       { "source_id": 1, "target_id": 2, "probability": 1.0 }
     ]
   },
-  "scenario_source": { "sampling_scheme": "in_sample", "seed": 42 },
   "stages": [
     {
       "id": 0,
@@ -508,27 +515,27 @@ Controls the PAR(p) model estimation pipeline. When the case provides `inflow_hi
 }
 ```
 
-> **Note**: `block_mode`, `risk_measure`, `num_scenarios`, and `state_variables` vary by stage. `scenario_source` is top-level in `stages.json` (global for the run). `policy_graph` defines the horizon mode and discount rate. See [Input Scenarios](../data-model/input-scenarios.md) for the full schema.
+> **Note**: `block_mode`, `risk_measure`, `num_scenarios`, and `state_variables` vary by stage. `scenario_source` is in `config.json` under `training.scenario_source` (global for the run). `policy_graph` defines the horizon mode and discount rate. See [Input Scenarios](../data-model/input-scenarios.md) for the full schema.
 
 ## 8. Formulation-to-Configuration Mapping
 
 This table maps each mathematical formulation to its configuration source and data files.
 
-| Formulation Topic        | Config Location                                                               | Data Files                                                           | Spec Reference                                                   |
-| ------------------------ | ----------------------------------------------------------------------------- | -------------------------------------------------------------------- | ---------------------------------------------------------------- |
-| **Block Formulation**    | stages.json → stages[].block_mode                                             | `Stage.blocks[]`, per-block water balance                            | [Block Formulations](../math/block-formulations.md)              |
-| **Production Functions** | hydros.json + hydro_production_models.json                                    | `fpha_hyperplanes.parquet`, `hydro_geometry.parquet`                 | [Hydro Production Models](../math/hydro-production-models.md)    |
-| **PAR(p) Model**         | scenarios/`inflow_seasonal_stats.parquet`, `inflow_ar_coefficients.parquet`   | Seasonal means/std, AR coefficients per (hydro, stage, lag)          | [PAR Inflow Model](../math/par-inflow-model.md)                  |
-| **Non-Negativity**       | config.json → modeling.inflow_non_negativity                                  | LP slack variables, penalty coefficients                             | [Inflow Non-Negativity](../math/inflow-nonnegativity.md)         |
-| **Cut Generation**       | N/A (runtime)                                                                 | Cut intercept/coefficients, dual extraction                          | [Cut Management](../math/cut-management.md)                      |
-| **Cut Selection**        | config.json → training.cut_selection                                          | Cut activity tracking                                                | [Cut Management](../math/cut-management.md)                      |
-| **Stopping Rules**       | config.json → training.stopping_rules[]                                       | Convergence metrics                                                  | [Stopping Rules](../math/stopping-rules.md)                      |
-| **Discount Rate**        | stages.json → policy_graph.annual_discount_rate                               | Per-transition discount factor, cut scaling                          | [Discount Rate](../math/discount-rate.md)                        |
-| **Horizon Mode**         | stages.json → policy_graph.type                                               | Policy graph cycle detection, cut sharing                            | [SDDP Algorithm §4](../math/sddp-algorithm.md)                   |
-| **Inner Approximation**  | config.json → upper_bound_evaluation                                          | Vertex storage, Lipschitz constants                                  | [Upper Bound Evaluation](../math/upper-bound-evaluation.md)      |
-| **Risk-Averse CVaR**     | stages.json → stages[].risk_measure                                           | Risk-adjusted probability computation                                | [Risk Measures](../math/risk-measures.md)                        |
-| **Scenario Source**      | stages.json → scenario_source.sampling_scheme                                 | Opening tree, `external_scenarios.parquet`, `inflow_history.parquet` | [Scenario Generation §3](../architecture/scenario-generation.md) |
-| **Penalty System**       | penalties.json + entity registries + constraints/penalty*overrides*\*.parquet | Three-tier cascade: global → entity → stage overrides                | [Penalty System](../data-model/penalty-system.md)                |
+| Formulation Topic        | Config Location                                                               | Data Files                                                                | Spec Reference                                                   |
+| ------------------------ | ----------------------------------------------------------------------------- | ------------------------------------------------------------------------- | ---------------------------------------------------------------- |
+| **Block Formulation**    | stages.json → stages[].block_mode                                             | `Stage.blocks[]`, per-block water balance                                 | [Block Formulations](../math/block-formulations.md)              |
+| **Production Functions** | hydros.json + hydro_production_models.json                                    | `fpha_hyperplanes.parquet`, `hydro_geometry.parquet`                      | [Hydro Production Models](../math/hydro-production-models.md)    |
+| **PAR(p) Model**         | scenarios/`inflow_seasonal_stats.parquet`, `inflow_ar_coefficients.parquet`   | Seasonal means/std, AR coefficients per (hydro, stage, lag)               | [PAR Inflow Model](../math/par-inflow-model.md)                  |
+| **Non-Negativity**       | config.json → modeling.inflow_non_negativity                                  | LP slack variables, penalty coefficients                                  | [Inflow Non-Negativity](../math/inflow-nonnegativity.md)         |
+| **Cut Generation**       | N/A (runtime)                                                                 | Cut intercept/coefficients, dual extraction                               | [Cut Management](../math/cut-management.md)                      |
+| **Cut Selection**        | config.json → training.cut_selection                                          | Cut activity tracking                                                     | [Cut Management](../math/cut-management.md)                      |
+| **Stopping Rules**       | config.json → training.stopping_rules[]                                       | Convergence metrics                                                       | [Stopping Rules](../math/stopping-rules.md)                      |
+| **Discount Rate**        | stages.json → policy_graph.annual_discount_rate                               | Per-transition discount factor, cut scaling                               | [Discount Rate](../math/discount-rate.md)                        |
+| **Horizon Mode**         | stages.json → policy_graph.type                                               | Policy graph cycle detection, cut sharing                                 | [SDDP Algorithm §4](../math/sddp-algorithm.md)                   |
+| **Inner Approximation**  | config.json → upper_bound_evaluation                                          | Vertex storage, Lipschitz constants                                       | [Upper Bound Evaluation](../math/upper-bound-evaluation.md)      |
+| **Risk-Averse CVaR**     | stages.json → stages[].risk_measure                                           | Risk-adjusted probability computation                                     | [Risk Measures](../math/risk-measures.md)                        |
+| **Scenario Source**      | config.json → training.scenario_source                                        | Opening tree, per-class external scenario files, `inflow_history.parquet` | [Scenario Generation §3](../architecture/scenario-generation.md) |
+| **Penalty System**       | penalties.json + entity registries + constraints/penalty*overrides*\*.parquet | Three-tier cascade: global → entity → stage overrides                     | [Penalty System](../data-model/penalty-system.md)                |
 
 ## 9. Variable Correspondence
 

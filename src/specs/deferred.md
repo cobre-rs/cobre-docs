@@ -389,7 +389,7 @@ Subject to:
 
 **Status**: DEFERRED (standard PAR(p) now available in v0.1.1)
 
-> **Note**: Standard PAR(p) fitting from historical inflow data is now implemented as of v0.1.1 (Levinson-Durbin recursion, AIC-based order selection, Cholesky spatial correlation). The CEPEL-specific PAR(p)-A extensions listed below remain deferred.
+> **Note**: Standard PAR(p) fitting from historical inflow data is now implemented as of v0.1.1 (Levinson-Durbin recursion, AIC-based order selection, spectral spatial correlation). The CEPEL-specific PAR(p)-A extensions listed below remain deferred.
 
 **Description**: CEPEL's PAR(p)-A model (referenced in Rel-1941_2021) extends the standard PAR(p) with:
 
@@ -519,11 +519,11 @@ C.9 is unblocked and can proceed to its own dedicated specification.
 
 **Description**: Allow users to directly input pre-sampled, pre-correlated noise values for the opening tree, bypassing the internal noise generation and correlation pipeline entirely.
 
-**Motivation**: The standard pipeline generates noise internally (sample independent $N(0,1)$, apply Cholesky correlation). Some use cases require full user control over the noise:
+**Motivation**: The standard pipeline generates noise internally (sample independent $N(0,1)$, apply spectral correlation). Some use cases require full user control over the noise:
 
 - Importing noise realizations from external stochastic models that use non-Gaussian distributions
 - Reproducing exact noise sequences from legacy tools for validation
-- Using domain-specific spatial correlation structures not captured by the Cholesky approach
+- Using domain-specific spatial correlation structures not captured by the spectral decomposition approach
 - Research workflows where specific noise patterns are under study
 
 **Input File**: `scenarios/noise_openings.parquet` (optional)

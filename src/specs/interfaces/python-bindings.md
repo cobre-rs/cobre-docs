@@ -87,7 +87,7 @@ The `cobre` module uses a submodule architecture with four submodules: `cobre.io
 
 ```python
 import cobre
-print(cobre.__version__)   # e.g. "0.3.1"
+print(cobre.__version__)   # e.g. "0.4.1"
 
 # Submodule imports
 import cobre.io
@@ -597,8 +597,8 @@ def sample_noise(
 ) -> numpy.ndarray:
     """Sample correlated noise vectors.
 
-    Generates n_samples correlated noise vectors using the Cholesky
-    decomposition of the correlation matrix.
+    Generates n_samples correlated noise vectors using spectral
+    decomposition (eigendecomposition) of the correlation matrix.
 
     Args:
         n_samples: Number of samples to generate.

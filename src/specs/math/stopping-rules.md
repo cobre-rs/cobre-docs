@@ -173,13 +173,13 @@ This runs until simulation-based convergence OR 500 iterations, whichever comes 
 
 When any stopping rule triggers, the output includes:
 
-| Field             | Description                                                                  |
-| ----------------- | ---------------------------------------------------------------------------- |
-| `stopping_rule`   | Which rule triggered                                                         |
-| `final_iteration` | Iteration count at termination                                               |
-| `lower_bound`     | Final deterministic lower bound                                              |
-| `upper_bound`     | Final simulated upper bound (if available)                                   |
-| `gap_percent`     | Optimality gap: $(\bar{z} - \underline{z}) / \lvert\bar{z}\rvert \times 100$ |
+| Field             | Description                                                                |
+| ----------------- | -------------------------------------------------------------------------- |
+| `stopping_rule`   | Which rule triggered                                                       |
+| `final_iteration` | Iteration count at termination                                             |
+| `lower_bound`     | Final deterministic lower bound                                            |
+| `upper_bound`     | Final simulated upper bound (if available)                                 |
+| `gap`             | Optimality gap: $(\bar{z} - \underline{z}) / \max(1, \lvert\bar{z}\rvert)$ |
 
 ## Cross-References
 

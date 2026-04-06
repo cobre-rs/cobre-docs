@@ -1,5 +1,7 @@
 # Infinite Periodic Horizon
 
+> **Status: Not Implemented.** This spec describes a planned design that has not yet been implemented.
+
 ## Purpose
 
 This spec defines the infinite periodic horizon formulation for Cobre SDDP: the periodic structure, convergence requirements, cut sharing within cycles, modified forward and backward pass behavior, and convergence criteria. This formulation eliminates "end-of-world" effects where finite-horizon SDDP empties reservoirs near the terminal stage.

@@ -2,27 +2,27 @@
 
 ## Purpose
 
-This spec defines the `SamplingScheme` abstraction -- the enum-based dispatch through which iterative optimization algorithms select scenario realizations at each stage. In the Cobre ecosystem, the primary consumer is the SDDP forward pass, which uses the sampling scheme to determine the noise source for each stage solve. The sampling scheme is one of three orthogonal concerns governing how scenarios are handled during training ([Scenario Generation SS3.1](./scenario-generation.md)): it controls the forward pass noise source while leaving the backward pass noise source untouched. The three supported variants -- InSample, External, and Historical -- correspond to the three forward sampling modes described in [Scenario Generation SS3.2](./scenario-generation.md) and the variant table in [Extension Points SS5.1](./extension-points.md). The sampling scheme is a global property of the training run (one scheme per execution), configured via the `scenario_source` field in `stages.json` ([Input Scenarios SS2.1](../data-model/input-scenarios.md)).
+This spec defines the `SamplingScheme` abstraction -- the enum-based dispatch through which iterative optimization algorithms select scenario realizations at each stage. In the Cobre ecosystem, the primary consumer is the SDDP forward pass, which uses the sampling scheme to determine the noise source for each stage solve. The sampling scheme is one of three orthogonal concerns governing how scenarios are handled during training ([Scenario Generation SS3.1](./scenario-generation.md)): it controls the forward pass noise source while leaving the backward pass noise source untouched. The four supported variants -- InSample, OutOfSample, External, and Historical -- correspond to the four forward sampling modes described in [Scenario Generation SS3.2](./scenario-generation.md) and the variant table in [Extension Points SS5.1](./extension-points.md). The sampling scheme is configured per stochastic class (inflow, load, NCS) via the `training.scenario_source` object in `config.json` ([Input Scenarios SS2.1](../data-model/input-scenarios.md)). A composite `ForwardSampler` holds one `ClassSampler` per stochastic class, each driven by its own `SamplingScheme` variant.
 
 > **Convention: Rust traits as specification guidelines.** The Rust trait definitions, method signatures, and struct declarations throughout this specification corpus serve as _guidelines for implementation_, not as absolute source-of-truth contracts that must be reproduced verbatim. Their purpose is twofold: (1) to express behavioral contracts, preconditions, postconditions, and type-level invariants more precisely than prose alone, and (2) to anchor conformance test suites that verify backend interchangeability (see [Backend Testing §1](../hpc/backend-testing.md)). Implementation may diverge in naming, parameter ordering, error representation, or internal organization when practical considerations demand it -- provided the behavioral contracts and conformance tests continue to pass. When a trait signature and a prose description conflict, the prose description (which captures the domain intent) takes precedence; the conflict should be resolved by updating the trait signature. This convention applies to all trait-bearing specification documents in `src/specs/`.
 
 ## 1. Trait Definition
 
-The sampling scheme is modeled as a flat enum with three variants, matching the three forward sampling modes supported by Cobre ([Extension Points SS5.1](./extension-points.md)):
+The sampling scheme is modeled as a flat enum with four variants, matching the four forward sampling modes supported by Cobre ([Extension Points SS5.1](./extension-points.md)):
 
 ```rust
 /// Forward-pass noise source for multi-stage optimization solvers.
 ///
 /// Determines where the forward-pass scenario realizations come from.
-/// A single `SamplingScheme` value is resolved from the `scenario_source`
-/// field in `stages.json` during configuration loading (see
-/// Extension Points SS6). The enum is global to the training run --
-/// all stages share the same sampling scheme.
+/// Each stochastic class (inflow, load, NCS) has its own
+/// `SamplingScheme` value, resolved from the per-class sub-objects
+/// in `training.scenario_source` within `config.json` during
+/// configuration loading (see Extension Points SS6).
 ///
-/// Scenario configuration data (seed, external data paths, selection mode,
-/// etc.) lives in separate config types (`ScenarioSource`,
-/// `ExternalSelectionMode`), not in the enum itself. The enum carries only
-/// the variant tag, keeping it lightweight and `Copy`.
+/// Scenario configuration data (seed, external data paths, historical
+/// years, etc.) lives in the `ScenarioSource` config struct, not in
+/// the enum itself. The enum carries only the variant tag, keeping it
+/// lightweight and `Copy`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SamplingScheme {
     /// In-sample Monte Carlo forward sampling.
@@ -35,23 +35,34 @@ pub enum SamplingScheme {
     /// See [Scenario Generation SS3.2](./scenario-generation.md).
     InSample,
 
+    /// Out-of-sample Monte Carlo forward sampling.
+    ///
+    /// The forward pass draws from independently generated Monte Carlo
+    /// noise that is distinct from the opening tree noise, but drawn
+    /// from the same PAR model distribution. The backward pass uses
+    /// the same fixed opening tree as InSample.
+    ///
+    /// See [Scenario Generation SS3.2](./scenario-generation.md).
+    OutOfSample,
+
     /// External scenario forward sampling.
     ///
-    /// The forward pass draws from user-provided scenario data
-    /// (`external_scenarios.parquet`). External inflow values are
-    /// inverted to noise terms (epsilon) before use in the LP, because the
-    /// SDDP formulation includes AR dynamics as constraints with fixed
-    /// noise terms. See [Scenario Generation SS4.3](./scenario-generation.md).
+    /// The forward pass draws from user-provided per-class scenario
+    /// data (e.g., `external_inflow_scenarios.parquet`). External
+    /// values are inverted to noise terms (epsilon) before use in the
+    /// LP, because the SDDP formulation includes AR dynamics as
+    /// constraints with fixed noise terms. See
+    /// [Scenario Generation SS4.3](./scenario-generation.md).
     ///
     /// The backward pass uses the fixed opening tree generated from a
     /// PAR model fitted to the external data (see SS5 and
     /// [Scenario Generation SS4.2](./scenario-generation.md)).
     External,
 
-    /// Historical inflow replay.
+    /// Historical replay.
     ///
-    /// The forward pass replays actual historical inflow sequences mapped
-    /// to stages via `season_definitions`. Historical inflow values are
+    /// The forward pass replays actual historical sequences mapped
+    /// to stages via `season_definitions`. Historical values are
     /// inverted to noise terms (epsilon) before use in the LP, following
     /// the same noise inversion procedure as External.
     ///
@@ -61,7 +72,7 @@ pub enum SamplingScheme {
 }
 ```
 
-The `SamplingScheme` enum uses **unit variants** -- it carries no data. Scenario configuration data (seed, external scenario handles, selection mode, historical inflow handles) lives in the `ScenarioSource` config struct, which groups the sampling scheme with its associated parameters. This separation keeps the enum lightweight and `Copy`, while the config struct holds the data needed for initialization.
+The `SamplingScheme` enum uses **unit variants** -- it carries no data. Scenario configuration data (seed, external scenario handles, historical years, historical data handles) lives in the `ScenarioSource` config struct, which groups the per-class schemes with their associated parameters. This separation keeps the enum lightweight and `Copy`, while the config struct holds the data needed for initialization.
 
 ## 2. Method Contracts
 
@@ -101,14 +112,15 @@ impl SamplingScheme {
 
 **Postconditions:**
 
-| Condition                                                                                    | Description                                                                                                                                           |
-| -------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `NoiseVector` has length equal to the number of stochastic entities                          | One noise value per entity in the correlation structure                                                                                               |
-| For `InSample`: the returned noise is the opening tree vector at the sampled index           | The sampled index $j \in \{0, \ldots, N_{\text{openings}} - 1\}$ is drawn uniformly by `rng`                                                          |
-| For `External`: the returned noise is the inverted noise from the selected external scenario | Raw inflow values from `external_scenarios.parquet` are transformed to noise terms $\eta_t$ via [Scenario Generation SS4.3](./scenario-generation.md) |
-| For `Historical`: the returned noise is the inverted noise from the historical inflow record | Historical inflows from `inflow_history.parquet` are transformed to noise terms $\eta_t$ via the same inversion procedure                             |
-| Deterministic output                                                                         | Given the same `rng` state, `stage_id`, and `scenario_index`, the method returns identical results across MPI ranks, restarts, and thread orderings   |
-| Correlation is applied                                                                       | The returned noise vector reflects the spatial correlation structure from `correlation.json` ([Scenario Generation SS2.1](./scenario-generation.md))  |
+| Condition                                                                                    | Description                                                                                                                                          |
+| -------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `NoiseVector` has length equal to the number of stochastic entities                          | One noise value per entity in the correlation structure                                                                                              |
+| For `InSample`: the returned noise is the opening tree vector at the sampled index           | The sampled index $j \in \{0, \ldots, N_{\text{openings}} - 1\}$ is drawn uniformly by `rng`                                                         |
+| For `OutOfSample`: the returned noise is independently generated from the same PAR model     | Fresh Monte Carlo draw from the PAR model distribution, independent of the opening tree                                                              |
+| For `External`: the returned noise is the inverted noise from the selected external scenario | Raw values from per-class external scenario files are transformed to noise terms $\eta_t$ via [Scenario Generation SS4.3](./scenario-generation.md)  |
+| For `Historical`: the returned noise is the inverted noise from the historical record        | Historical values from `inflow_history.parquet` (or equivalent) are transformed to noise terms $\eta_t$ via the same inversion procedure             |
+| Deterministic output                                                                         | Given the same `rng` state, `stage_id`, and `scenario_index`, the method returns identical results across MPI ranks, restarts, and thread orderings  |
+| Correlation is applied                                                                       | The returned noise vector reflects the spatial correlation structure from `correlation.json` ([Scenario Generation SS2.1](./scenario-generation.md)) |
 
 **Noise inversion detail:** For `External` and `Historical`, the raw inflow value $a_t^{\text{target}}$ at stage $t$ for hydro $h$ is inverted to a noise term via:
 
@@ -139,6 +151,7 @@ impl SamplingScheme {
     pub fn requires_noise_inversion(&self) -> bool {
         match self {
             SamplingScheme::InSample => false,
+            SamplingScheme::OutOfSample => false,
             SamplingScheme::External => true,
             SamplingScheme::Historical => true,
         }
@@ -150,11 +163,12 @@ impl SamplingScheme {
 
 **Postconditions:**
 
-| Condition                   | Description                                                           |
-| --------------------------- | --------------------------------------------------------------------- |
-| `InSample` returns `false`  | Opening tree noise is already in noise-term form; no inversion needed |
-| `External` returns `true`   | External scenario inflow values must be inverted to noise terms       |
-| `Historical` returns `true` | Historical inflow values must be inverted to noise terms              |
+| Condition                     | Description                                                                      |
+| ----------------------------- | -------------------------------------------------------------------------------- |
+| `InSample` returns `false`    | Opening tree noise is already in noise-term form; no inversion needed            |
+| `OutOfSample` returns `false` | Independently generated noise is already in noise-term form; no inversion needed |
+| `External` returns `true`     | External scenario values must be inverted to noise terms                         |
+| `Historical` returns `true`   | Historical values must be inverted to noise terms                                |
 
 **Implications for the preprocessing pipeline:** When `requires_noise_inversion()` returns `true`, the initialization sequence must include two additional steps before training begins:
 
@@ -175,7 +189,7 @@ pub enum BackwardTreeSource {
     UserProvidedPAR,
 
     /// Opening tree noise is generated from a PAR model fitted to
-    /// external scenario data (external_scenarios.parquet).
+    /// external scenario data (per-class external scenario files).
     FittedToExternalData,
 
     /// Opening tree noise is generated from a PAR model fitted to
@@ -192,6 +206,7 @@ impl SamplingScheme {
     pub fn backward_tree_source(&self) -> BackwardTreeSource {
         match self {
             SamplingScheme::InSample => BackwardTreeSource::UserProvidedPAR,
+            SamplingScheme::OutOfSample => BackwardTreeSource::UserProvidedPAR,
             SamplingScheme::External => BackwardTreeSource::FittedToExternalData,
             SamplingScheme::Historical => BackwardTreeSource::FittedToHistoricalData,
         }
@@ -206,6 +221,7 @@ impl SamplingScheme {
 | Condition                                     | Description                                                                                |
 | --------------------------------------------- | ------------------------------------------------------------------------------------------ |
 | `InSample` returns `UserProvidedPAR`          | The user supplies PAR parameters; opening tree is generated from those parameters          |
+| `OutOfSample` returns `UserProvidedPAR`       | Same PAR model as InSample; independent forward noise, same backward tree                  |
 | `External` returns `FittedToExternalData`     | PAR model is fitted to external scenarios; opening tree is generated from the fitted model |
 | `Historical` returns `FittedToHistoricalData` | PAR model is fitted to historical inflows; opening tree is generated from the fitted model |
 
@@ -213,67 +229,66 @@ impl SamplingScheme {
 
 ## 3. Supporting Types
 
-### 3.1 SamplingSchemeConfig
+### 3.1 ScenarioSource
 
-`SamplingSchemeConfig` represents the deserialized form of the `scenario_source` field in `stages.json` ([Input Scenarios SS2.1](../data-model/input-scenarios.md)). It maps directly to the JSON schema:
+`ScenarioSource` represents the deserialized form of the `training.scenario_source` (or `simulation.scenario_source`) object in `config.json` ([Input Scenarios SS2.1](../data-model/input-scenarios.md)). It groups the per-class sampling schemes with shared configuration:
 
 ```rust
-/// Top-level scenario source configuration, parsed from `stages.json`.
+/// Top-level scenario source configuration, parsed from `config.json`.
 ///
-/// Groups the sampling scheme, random seed, and external selection mode
-/// that govern how forward-pass scenarios are produced. The
-/// `SamplingScheme` enum carries only the variant tag; this config struct
-/// holds the associated parameters.
+/// Groups the per-class sampling schemes, random seed, and optional
+/// historical year selection that govern how forward-pass scenarios
+/// are produced. Each stochastic class (inflow, load, NCS) has its
+/// own `SamplingScheme` variant, enabling independent class-level
+/// scheme selection (e.g., external inflows with in-sample load).
 ///
-/// See [Input Scenarios SS1.4, SS1.8](../data-model/input-scenarios.md).
+/// See [Input Scenarios SS2.1](../data-model/input-scenarios.md).
 pub struct ScenarioSource {
-    /// Noise source used during the forward pass.
-    pub sampling_scheme: SamplingScheme,
+    /// Noise source for inflow forward pass.
+    pub inflow_scheme: SamplingScheme,
 
-    /// Random seed for reproducible opening tree generation.
+    /// Noise source for load forward pass.
+    pub load_scheme: SamplingScheme,
+
+    /// Noise source for NCS forward pass.
+    pub ncs_scheme: SamplingScheme,
+
+    /// Random seed for reproducible noise generation.
     /// `None` means non-deterministic (OS entropy).
     pub seed: Option<i64>,
 
-    /// Selection mode when `sampling_scheme` is `External`.
-    /// `None` for `InSample` and `Historical` schemes.
-    pub selection_mode: Option<ExternalSelectionMode>,
-}
-
-/// Scenario selection mode when `SamplingScheme::External` is active.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ExternalSelectionMode {
-    /// Scenarios are drawn uniformly at random from the external library.
-    Random,
-    /// Scenarios are replayed in file order, cycling when the end is reached.
-    Sequential,
+    /// Specific historical years for `Historical` scheme.
+    /// `None` means use all available years.
+    pub historical_years: Option<HistoricalYears>,
 }
 ```
 
-**Conversion:** `ScenarioSource` is validated and populated during configuration loading (step 4 of the variant selection pipeline in [Extension Points SS6](./extension-points.md)). The `SamplingScheme` unit variant is extracted from the config, while data-carrying fields (seed, selection mode, external data handles) are stored separately. The validation rules are specified in SS6.
+**Conversion:** `ScenarioSource` is validated and populated during configuration loading (step 4 of the variant selection pipeline in [Extension Points SS6](./extension-points.md)). The per-class `SamplingScheme` unit variants are extracted from the config, while shared fields (seed, historical years, external data handles) are stored alongside. The validation rules are specified in SS6.
 
-### 3.2 SelectionMode
+### 3.2 ForwardSampler Architecture
 
-`SelectionMode` applies only to the `External` variant and determines how scenarios are selected from the external set during the forward pass:
+The composite `ForwardSampler` holds one `ClassSampler` per stochastic class. Each `ClassSampler` is driven by the `SamplingScheme` variant configured for its class. This design enables mixed-scheme runs (e.g., external inflows with in-sample load) without per-stage branching logic in the forward pass hot path.
 
 ```rust
-/// Selection mode for external scenario sampling.
-///
-/// Controls how the forward pass picks scenarios from the
-/// external_scenarios.parquet dataset.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum SelectionMode {
-    /// Sample uniformly from the external scenario set with replacement.
-    /// Each forward pass trajectory independently draws a random scenario.
-    /// This is the default.
-    Random,
+/// Composite forward sampler holding one class sampler per
+/// stochastic class. Constructed from `ScenarioSource` during
+/// training initialization.
+pub struct ForwardSampler {
+    pub inflow: ClassSampler,
+    pub load: ClassSampler,
+    pub ncs: ClassSampler,
+}
 
-    /// Iterate through external scenarios in order, cycling when
-    /// exhausted. Scenario `i` is assigned to forward pass trajectory
-    /// `i mod N_external`. Deterministic -- no randomness involved.
-    Sequential,
+/// Per-class sampler that dispatches to the appropriate noise
+/// source based on the configured `SamplingScheme` variant.
+pub struct ClassSampler {
+    pub scheme: SamplingScheme,
+    // ... class-specific data handles (opening tree view,
+    //     external scenario data, historical data, RNG state)
 }
 ```
+
+The `ForwardSampler` is constructed once from `ScenarioSource` during training initialization and passed to the forward pass by shared reference. Each `ClassSampler` independently resolves noise for its class at each stage.
 
 ### 3.3 NoiseVector
 
@@ -294,13 +309,13 @@ pub struct NoiseVector {
 
 ## 4. Dispatch Mechanism
 
-The sampling scheme uses **enum dispatch** -- a `match` on the `SamplingScheme` variant at each call site in the forward pass. The sampling scheme is global (one per run), determined at configuration load time from `stages.json`.
+The sampling scheme uses **enum dispatch** -- a `match` on the `SamplingScheme` variant within each `ClassSampler` at each call site in the forward pass. The scheme is configured per stochastic class (inflow, load, NCS) and is uniform across all stages within each class, determined at configuration load time from `config.json`.
 
-**Why global, not per-stage:** The sampling scheme determines the source of forward pass noise -- whether it comes from the opening tree, external data, or historical records. This is inherently a run-level property: a single training run cannot simultaneously draw from in-sample noise at one stage and external scenarios at another (the noise sources would be inconsistent, and the noise inversion prerequisites differ between schemes). The scheme must be uniform across all stages in a given run.
+**Why per-class, not per-stage:** The sampling scheme determines the source of forward pass noise for each stochastic class. Within a class, the scheme must be uniform across stages -- a single class cannot simultaneously draw from in-sample noise at one stage and external scenarios at another (the noise sources would be inconsistent, and the noise inversion prerequisites differ between schemes). However, different classes may use different schemes in the same run (e.g., external inflows with in-sample load).
 
-**Why enum dispatch, not compile-time monomorphization:** Although the sampling scheme is global (making monomorphization technically feasible), enum dispatch is preferred for consistency with the other abstraction points ([Extension Points SS7](./extension-points.md)). The match overhead is negligible: `sample_forward` is called once per stage per forward trajectory. At production scale (192 forward passes, 60 stages), this is ~11,520 match dispatches per iteration -- dominated by the LP solve cost.
+**Why enum dispatch, not compile-time monomorphization:** Although the sampling scheme is fixed per class for the entire run (making monomorphization technically feasible), enum dispatch is preferred for consistency with the other abstraction points ([Extension Points SS7](./extension-points.md)). The match overhead is negligible: `sample_forward` is called once per stage per class per forward trajectory. At production scale (192 forward passes, 60 stages, 3 classes), this is ~34,560 match dispatches per iteration -- dominated by the LP solve cost.
 
-**Why not trait objects:** The variant set is closed (InSample, External, and Historical only). Trait objects add indirection cost without extensibility benefit. The enum approach avoids heap allocation and is consistent with the `RiskMeasure` and `HorizonMode` dispatch patterns ([Risk Measure Trait SS4](./risk-measure-trait.md), [Horizon Mode Trait SS4](./horizon-mode-trait.md)).
+**Why not trait objects:** The variant set is closed (InSample, OutOfSample, External, and Historical only). Trait objects add indirection cost without extensibility benefit. The enum approach avoids heap allocation and is consistent with the `RiskMeasure` and `HorizonMode` dispatch patterns ([Risk Measure Trait SS4](./risk-measure-trait.md), [Horizon Mode Trait SS4](./horizon-mode-trait.md)).
 
 ## 5. Forward-Backward Separation Invariant
 
@@ -310,19 +325,22 @@ This section documents the most critical behavioral contract governing the sampl
 
 This invariant is established in [Scenario Generation SS3.1](./scenario-generation.md) and [Extension Points SS5.4](./extension-points.md). It is the foundation of SDDP correctness when the forward and backward noise sources differ:
 
-The forward pass may sample from any of the three noise sources (opening tree, external data, historical records). The backward pass, which generates cuts by evaluating all $N_{\text{openings}}$ branchings at each stage, always uses the fixed opening tree generated once before training begins ([Scenario Generation SS2.3](./scenario-generation.md)). The opening tree is invariant across iterations -- every backward pass "sees the same tree."
+The forward pass may sample from any of the four noise sources (opening tree, independent Monte Carlo, external data, historical records). The backward pass, which generates cuts by evaluating all $N_{\text{openings}}$ branchings at each stage, always uses the fixed opening tree generated once before training begins ([Scenario Generation SS2.3](./scenario-generation.md)). The opening tree is invariant across iterations -- every backward pass "sees the same tree."
 
 **Why this invariant is necessary:** Cut generation in SDDP requires proper probabilistic branchings -- each opening has a known probability weight, and the cut aggregation formula depends on these weights summing to 1. Using external scenarios directly in the backward pass would violate this requirement because external scenarios are deterministic data, not probabilistic branchings. The fixed opening tree, generated from a PAR model (either user-provided or fitted to the external/historical data), provides the probabilistic structure that SDDP demands.
 
 **Consequences by variant:**
 
-| Variant    | Forward Noise Source         | Backward Noise Source        | Opening Tree PAR Model                                                                |
-| ---------- | ---------------------------- | ---------------------------- | ------------------------------------------------------------------------------------- |
-| InSample   | Opening tree (random index)  | Same opening tree            | User-provided PAR parameters                                                          |
-| External   | `external_scenarios.parquet` | Opening tree from fitted PAR | PAR fitted to external data ([Scenario Generation SS4.2](./scenario-generation.md))   |
-| Historical | `inflow_history.parquet`     | Opening tree from fitted PAR | PAR fitted to historical data ([Scenario Generation SS4.2](./scenario-generation.md)) |
+| Variant     | Forward Noise Source              | Backward Noise Source        | Opening Tree PAR Model                                                                |
+| ----------- | --------------------------------- | ---------------------------- | ------------------------------------------------------------------------------------- |
+| InSample    | Opening tree (random index)       | Same opening tree            | User-provided PAR parameters                                                          |
+| OutOfSample | Independent Monte Carlo noise     | Same opening tree            | User-provided PAR parameters (same model, different draws)                            |
+| External    | Per-class external scenario files | Opening tree from fitted PAR | PAR fitted to external data ([Scenario Generation SS4.2](./scenario-generation.md))   |
+| Historical  | Historical records                | Opening tree from fitted PAR | PAR fitted to historical data ([Scenario Generation SS4.2](./scenario-generation.md)) |
 
 For InSample, the forward and backward noise sources coincide -- both draw from the same opening tree. This is the standard SDDP configuration where the trial points visited in the forward pass are consistent with the backward pass branchings.
+
+For OutOfSample, the forward pass generates independent noise from the same PAR model distribution but does not draw from the opening tree. The backward pass still uses the fixed opening tree. This reduces in-sample bias while maintaining the same distributional assumptions.
 
 For External and Historical, the forward and backward noise sources differ. The forward pass explores states driven by external/historical data, while the backward pass evaluates cuts at those states under PAR-generated branchings. The PAR model is fitted to the external/historical data to ensure that the backward branchings reflect the statistical properties of the forward scenarios. Without this fitting step, the cuts generated in the backward pass would be based on a noise distribution unrelated to the forward scenarios, potentially degrading convergence.
 
@@ -330,35 +348,30 @@ For External and Historical, the forward and backward noise sources differ. The 
 
 ## 6. Validation Rules
 
-The following validation rules apply to `SamplingSchemeConfig` during configuration loading. These reproduce rules S1-S4 from [Extension Points SS5.3](./extension-points.md):
+The following validation rules apply to `ScenarioSource` during configuration loading. These reproduce rules S1-S3 from [Extension Points SS5.3](./extension-points.md), applied per stochastic class:
 
-| Rule | Condition                                                             | Error                                  |
-| ---- | --------------------------------------------------------------------- | -------------------------------------- |
-| S1   | `in_sample` requires `seed`                                           | Reproducibility requires explicit seed |
-| S2   | `external` requires `external_scenarios.parquet` in input directory   | Missing external scenario file         |
-| S3   | `historical` requires `inflow_history.parquet` in input directory     | Missing historical inflow file         |
-| S4   | `external` with `selection_mode` must be `"random"` or `"sequential"` | Invalid selection mode                 |
+| Rule | Condition                                                                                 | Error                                    |
+| ---- | ----------------------------------------------------------------------------------------- | ---------------------------------------- |
+| S1   | `in_sample` requires `seed` in the parent `scenario_source`                               | Reproducibility requires explicit seed   |
+| S2   | `external` requires the corresponding per-class external scenario file in input directory | Missing per-class external scenario file |
+| S3   | `historical` requires `inflow_history.parquet` in input directory                         | Missing historical data file             |
 
 ```rust
-/// Structured validation error for sampling scheme rules S1-S4.
+/// Structured validation error for sampling scheme rules S1-S3.
 #[derive(Debug)]
 pub enum SamplingSchemeValidationError {
     /// S1: InSample requires a seed for reproducibility.
     MissingSeed,
 
-    /// S2: External requires external_scenarios.parquet.
+    /// S2: External requires the per-class external scenario file.
     MissingExternalScenarioFile {
+        class: String,
         expected_path: String,
     },
 
     /// S3: Historical requires inflow_history.parquet.
     MissingHistoricalInflowFile {
         expected_path: String,
-    },
-
-    /// S4: Invalid selection mode for External variant.
-    InvalidSelectionMode {
-        value: String,
     },
 }
 ```
@@ -374,11 +387,11 @@ Validation is performed once during the variant selection pipeline ([Extension P
 ## Cross-References
 
 - [Scenario Generation](./scenario-generation.md) -- Three orthogonal concerns (SS3.1), forward sampling schemes (SS3.2), backward sampling (SS3.4), opening tree (SS2.3), noise inversion (SS4.3), PAR fitting from external data (SS4.2), reproducible sampling (SS2.2)
-- [Extension Points](./extension-points.md) -- Sampling scheme variant table (SS5.1), configuration mapping (SS5.2), validation rules S1-S4 (SS5.3), forward-backward separation invariant (SS5.4), dispatch mechanism analysis (SS7), variant selection pipeline (SS6)
+- [Extension Points](./extension-points.md) -- Sampling scheme variant table (SS5.1), configuration mapping (SS5.2), validation rules S1-S3 (SS5.3), forward-backward separation invariant (SS5.4), dispatch mechanism analysis (SS7), variant selection pipeline (SS6)
 - [Training Loop](./training-loop.md) -- Forward pass (SS4) where `sample_forward` is invoked; sampling scheme behavioral contract (SS3.4)
 - [PAR(p) Inflow Model](../math/par-inflow-model.md) -- PAR model definition (SS1), parameter set (SS2), residual std derivation (SS3), fitting procedure (SS5), validation invariants (SS6)
-- [Input Scenarios SS2.1](../data-model/input-scenarios.md) -- `scenario_source` JSON schema: `sampling_scheme`, `seed`, `selection_mode`
-- [Input Scenarios SS2.5](../data-model/input-scenarios.md) -- `external_scenarios.parquet` schema: `stage_id`, `scenario_id`, `hydro_id`, `value_m3s`
+- [Input Scenarios SS2.1](../data-model/input-scenarios.md) -- `scenario_source` JSON schema: per-class `scheme`, `seed`, `historical_years`
+- [Input Scenarios SS2.5](../data-model/input-scenarios.md) -- Per-class external scenario file schemas: `external_inflow_scenarios.parquet`, `external_load_scenarios.parquet`, `external_ncs_scenarios.parquet`
 - [Validation Architecture](./validation-architecture.md) -- PAR validation rules (SS2.5), warm-start AR compatibility (SS2.5b)
 - [Risk Measure Trait](./risk-measure-trait.md) -- Sibling trait specification following the same enum dispatch pattern
 - [Horizon Mode Trait](./horizon-mode-trait.md) -- Sibling trait specification following the same enum dispatch pattern

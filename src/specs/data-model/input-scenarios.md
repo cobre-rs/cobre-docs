@@ -276,10 +276,6 @@ Sampling method can vary by stage, allowing adaptive strategies.
       { "source_id": 1, "target_id": 2, "probability": 1.0 }
     ]
   },
-  "scenario_source": {
-    "sampling_scheme": "in_sample",
-    "seed": 42
-  },
   "pre_study_stages": [
     { "id": -6, "start_date": "2023-07-01", "end_date": "2023-08-01" },
     { "id": -5, "start_date": "2023-08-01", "end_date": "2023-09-01" },
@@ -356,66 +352,53 @@ Sampling method can vary by stage, allowing adaptive strategies.
 
 ### 2.1 Scenario Source and Sampling Scheme
 
-The top-level `scenario_source` field in `stages.json` configures how inflow scenarios are selected during the SDDP forward pass. The primary key is `sampling_scheme`, which names the forward sampling abstraction — one of three orthogonal SDDP concerns formalized in [Scenario Generation §3](../architecture/scenario-generation.md).
+The `scenario_source` object in `config.json` (under `training.scenario_source` for training, `simulation.scenario_source` for simulation) configures how scenarios are selected during the SDDP forward pass. Each stochastic class (inflow, load, NCS) has its own sampling scheme, configured via per-class sub-objects. When `simulation.scenario_source` is absent, it falls back to `training.scenario_source`. The sampling scheme abstraction is one of three orthogonal SDDP concerns formalized in [Scenario Generation §3](../architecture/scenario-generation.md).
 
-#### InSample (Default)
-
-```json
-{ "scenario_source": { "sampling_scheme": "in_sample", "seed": 42 } }
-```
-
-At each stage, the forward pass samples a random index from the fixed opening tree and evaluates the PAR model with that noise vector. This is the standard SDDP forward sampling — forward and backward passes draw from the same noise distribution.
-
-| Field             | Type   | Required | Default | Description                                 |
-| ----------------- | ------ | -------- | ------- | ------------------------------------------- |
-| `sampling_scheme` | string | Yes      | —       | `"in_sample"`                               |
-| `seed`            | i64    | Yes      | —       | Base seed for reproducible noise generation |
-
-**Required inputs:** Uncertainty models (§3) — user-provided or derived from inflow history.
-
-#### External
+#### Per-Class Format
 
 ```json
 {
-  "scenario_source": {
-    "sampling_scheme": "external",
-    "selection_mode": "random"
+  "training": {
+    "scenario_source": {
+      "seed": 42,
+      "inflow": { "scheme": "in_sample" },
+      "load": { "scheme": "out_of_sample" },
+      "ncs": { "scheme": "in_sample" },
+      "historical_years": [1940, 1953, 1971]
+    }
   }
 }
 ```
 
-The forward pass draws from user-provided scenario data (`external_scenarios.parquet`, see §2.5). The backward pass uses a PAR model **fitted to the external data** for opening tree generation, ensuring valid cut construction. See [Scenario Generation §4.2](../architecture/scenario-generation.md).
+| Field              | Type         | Required | Default | Description                                                                            |
+| ------------------ | ------------ | -------- | ------- | -------------------------------------------------------------------------------------- |
+| `seed`             | i64          | No       | —       | Base seed for reproducible noise generation (required when any class uses `in_sample`) |
+| `inflow.scheme`    | string       | Yes      | —       | `"in_sample"`, `"out_of_sample"`, `"external"`, or `"historical"`                      |
+| `load.scheme`      | string       | Yes      | —       | `"in_sample"`, `"out_of_sample"`, `"external"`, or `"historical"`                      |
+| `ncs.scheme`       | string       | Yes      | —       | `"in_sample"`, `"out_of_sample"`, `"external"`, or `"historical"`                      |
+| `historical_years` | array of i32 | No       | null    | Specific historical years for `historical` scheme                                      |
 
-| Field             | Type   | Required | Default    | Description                                                             |
-| ----------------- | ------ | -------- | ---------- | ----------------------------------------------------------------------- |
-| `sampling_scheme` | string | Yes      | —          | `"external"`                                                            |
-| `selection_mode`  | string | No       | `"random"` | `"random"` (sample with replacement) or `"sequential"` (cycle in order) |
+**Required inputs:** Uncertainty models (§3) — user-provided or derived from inflow history. For `external`, per-class external scenario files (§2.5). For `historical`, `inflow_history.parquet` (§2.4) + `season_definitions` (§1.1).
 
-**Required inputs:** `external_scenarios.parquet` (§2.5).
+#### Sampling Scheme Variants
 
-#### Historical
-
-```json
-{ "scenario_source": { "sampling_scheme": "historical" } }
-```
-
-Replay actual historical inflow sequences mapped to stages via `season_definitions`. The forward pass deterministically follows historical data in order, cycling through available years. The backward pass uses a PAR model fitted to the historical data.
-
-| Field             | Type   | Required | Default | Description    |
-| ----------------- | ------ | -------- | ------- | -------------- |
-| `sampling_scheme` | string | Yes      | —       | `"historical"` |
-
-**Required inputs:** `inflow_history.parquet` (§2.4) + `season_definitions` (§1.1).
+| Variant         | Description                                                                                                                                |
+| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| `in_sample`     | Forward pass samples from the fixed opening tree (PAR-generated noise). Standard SDDP forward sampling.                                    |
+| `out_of_sample` | Forward pass draws from independently generated Monte Carlo noise, different from the opening tree. Backward pass uses the same PAR model. |
+| `external`      | Forward pass draws from user-provided per-class scenario data. Backward pass uses a PAR model fitted to the external data.                 |
+| `historical`    | Forward pass replays historical sequences mapped to stages. Backward pass uses a PAR model fitted to the historical data.                  |
 
 #### Summary
 
-| Sampling Scheme | Forward Noise Source                | Backward Noise Source                         | Use Case                                      |
-| --------------- | ----------------------------------- | --------------------------------------------- | --------------------------------------------- |
-| `in_sample`     | Opening tree (PAR-generated)        | Same opening tree                             | Standard SDDP training                        |
-| `external`      | User-provided scenario values       | Opening tree from PAR fitted to external data | Training/simulation with imported scenarios   |
-| `historical`    | Historical inflows mapped to stages | Opening tree from PAR fitted to history       | Policy validation against observed conditions |
+| Sampling Scheme | Forward Noise Source                      | Backward Noise Source                         | Use Case                                      |
+| --------------- | ----------------------------------------- | --------------------------------------------- | --------------------------------------------- |
+| `in_sample`     | Opening tree (PAR-generated)              | Same opening tree                             | Standard SDDP training                        |
+| `out_of_sample` | Independently generated Monte Carlo noise | Opening tree from same PAR model              | Out-of-sample forward evaluation              |
+| `external`      | User-provided per-class scenario values   | Opening tree from PAR fitted to external data | Training/simulation with imported scenarios   |
+| `historical`    | Historical records mapped to stages       | Opening tree from PAR fitted to history       | Policy validation against observed conditions |
 
-> **Noise inversion**: For `external` and `historical` schemes, the system internally performs reverse noise calculation — back-computing the noise vector ε that would produce the given inflow values through the AR model. This is necessary because SDDP cuts are constructed in terms of state variables and the AR noise structure. This is an internal solver computation, not a data input concern. See [Scenario Generation §4.3](../architecture/scenario-generation.md).
+> **Noise inversion**: For `external` and `historical` schemes, the system internally performs reverse noise calculation — back-computing the noise vector epsilon that would produce the given values through the AR model. This is necessary because SDDP cuts are constructed in terms of state variables and the AR noise structure. This is an internal solver computation, not a data input concern. See [Scenario Generation §4.3](../architecture/scenario-generation.md).
 
 ### 2.2 Pipeline Flexibility
 
@@ -491,17 +474,25 @@ Declaring the resolution explicitly (rather than inferring it from date interval
 1. **Deriving seasonal statistics** — Compute μ, σ per hydro per season.
 2. **Fitting AR models** — Estimate ψ coefficients via Yule-Walker equations. See [PAR Inflow Model](../math/par-inflow-model.md).
 3. **Estimating correlations** — Compute cross-correlation from AR model residuals.
-4. **Historical scenario replay** — When `scenario_source.sampling_scheme = "historical"`, forward passes use actual historical sequences mapped to stages via `season_definitions`.
+4. **Historical scenario replay** — When the inflow class uses `"historical"` scheme, forward passes use actual historical sequences mapped to stages via `season_definitions`.
 
-### 2.5 External Scenarios (`scenarios/external_scenarios.parquet`)
+### 2.5 External Scenarios (Per-Class Files)
 
-When `scenario_source.sampling_scheme = "external"`, the user provides pre-computed scenario values indexed directly by `stage_id`. This eliminates any need for season-calendar mapping — the user is responsible for ensuring the values match the stage structure.
+When a stochastic class uses the `"external"` scheme, the user provides pre-computed scenario values indexed directly by `stage_id` in a per-class Parquet file. This eliminates any need for season-calendar mapping — the user is responsible for ensuring the values match the stage structure. Each class has its own file:
 
-> **Usage scope**: External scenarios can be used in both simulation AND training. In simulation, the forward pass replays external values directly. In training, the forward pass samples from external data (per `selection_mode`), while the backward pass generates branchings from a PAR model fitted to the external data. See [Scenario Generation §3.2 and §4.2](../architecture/scenario-generation.md) for full details.
+| File                                          | Class  | Entity ID Column | Description                   |
+| --------------------------------------------- | ------ | ---------------- | ----------------------------- |
+| `scenarios/external_inflow_scenarios.parquet` | Inflow | `hydro_id`       | Pre-computed inflow scenarios |
+| `scenarios/external_load_scenarios.parquet`   | Load   | `bus_id`         | Pre-computed load scenarios   |
+| `scenarios/external_ncs_scenarios.parquet`    | NCS    | `ncs_id`         | Pre-computed NCS scenarios    |
 
-> **Format Rationale — external_scenarios.parquet**
+> **Usage scope**: External scenarios can be used in both simulation AND training. In simulation, the forward pass replays external values directly. In training, the forward pass samples from external data, while the backward pass generates branchings from a PAR model fitted to the external data. See [Scenario Generation §3.2 and §4.2](../architecture/scenario-generation.md) for full details.
+
+> **Format Rationale — external\_\*\_scenarios.parquet**
 >
-> **Stage-indexed scenario table** — Pre-computed values per stage, scenario, and entity. Parquet for large scenario trees with efficient columnar access.
+> **Stage-indexed scenario table** — Pre-computed values per stage, scenario, and entity. Parquet for large scenario trees with efficient columnar access. Per-class files enable independent class-level scheme selection (e.g., external inflows with in-sample load).
+
+**Inflow external scenario schema** (`external_inflow_scenarios.parquet`):
 
 | Column        | Type | Description                                |
 | ------------- | ---- | ------------------------------------------ |
@@ -510,7 +501,25 @@ When `scenario_source.sampling_scheme = "external"`, the user provides pre-compu
 | `hydro_id`    | i32  | Hydro plant ID                             |
 | `value_m3s`   | f64  | Inflow value for this stage/scenario/hydro |
 
-**Validation:** The number of distinct `scenario_id` values per stage must equal the stage's `num_scenarios`.
+**Load external scenario schema** (`external_load_scenarios.parquet`):
+
+| Column        | Type | Description                            |
+| ------------- | ---- | -------------------------------------- |
+| `stage_id`    | i32  | Stage ID (must exist in `stages.json`) |
+| `scenario_id` | i32  | Scenario index (0-based)               |
+| `bus_id`      | i32  | Bus ID                                 |
+| `value_mw`    | f64  | Load value for this stage/scenario/bus |
+
+**NCS external scenario schema** (`external_ncs_scenarios.parquet`):
+
+| Column        | Type | Description                                  |
+| ------------- | ---- | -------------------------------------------- |
+| `stage_id`    | i32  | Stage ID (must exist in `stages.json`)       |
+| `scenario_id` | i32  | Scenario index (0-based)                     |
+| `ncs_id`      | i32  | Non-controllable source ID                   |
+| `value_mw`    | f64  | Generation value for this stage/scenario/NCS |
+
+**Validation:** For each per-class file, the number of distinct `scenario_id` values per stage must equal the stage's `num_scenarios`.
 
 ## 3. Uncertainty Models
 
@@ -539,7 +548,7 @@ The AR order $p_m$ is **not stored in this file**. It is derived from the count 
 
 When provided, this table supplies pre-computed AR coefficients. When absent, the system either fits AR coefficients from `inflow_history` (if present) or uses AR order 0 (independent noise).
 
-The AR model for a given stage uses lags from previous stages. Coefficients are stored in **standardized form** ($\psi^*_{m,\ell}$) — the direct output of the Yule-Walker fitting procedure. The system derives original-unit coefficients ($\psi_{m,\ell} = \psi^*_{m,\ell} \cdot s_m / s_{m-\ell}$) at runtime from these stored values and the seasonal std in `inflow_seasonal_stats.parquet`. Innovation terms (ε) are standard normal, transformed into correlated samples via Cholesky decomposition of the correlation matrix (see §5).
+The AR model for a given stage uses lags from previous stages. Coefficients are stored in **standardized form** ($\psi^*_{m,\ell}$) — the direct output of the Yule-Walker fitting procedure. The system derives original-unit coefficients ($\psi_{m,\ell} = \psi^*_{m,\ell} \cdot s_m / s_{m-\ell}$) at runtime from these stored values and the seasonal std in `inflow_seasonal_stats.parquet`. Innovation terms (ε) are standard normal, transformed into correlated samples via spectral decomposition of the correlation matrix (see SS5).
 
 The `residual_std_ratio` column stores the ratio $\sigma_m / s_m$ — the fraction of seasonal variability not explained by the AR lags. This is a pure model property (fixed per PAR fit), stored separately from the seasonal std $s_m$ (a conditioning property, swappable for climate scenario studies). The residual std is recovered at runtime as $\sigma_m = s_m \cdot \texttt{residual\_std\_ratio}_m$. See [PAR Inflow Model §3](../math/par-inflow-model.md) for the rationale.
 
@@ -693,7 +702,7 @@ Defines per-NCS-per-stage available generation bounds. When present, these speci
 >
 > **Correlation / matrix data** — Symmetric correlation matrices between entities. JSON because data is small and structure is not tabular. Profile-based design avoids element-wise storage.
 
-Defines spatial correlation between stochastic processes (inflows, loads, non-controllable generation). The system uses Cholesky decomposition to transform independent standard normal samples into correlated samples.
+Defines spatial correlation between stochastic processes (inflows, loads, non-controllable generation). The system uses spectral decomposition (eigendecomposition with negative-eigenvalue clipping) to transform independent standard normal samples into correlated samples.
 
 When provided, correlation matrices are used directly. When absent and `inflow_history` is available, the system estimates correlations from AR model residuals (see §2.2).
 
@@ -709,7 +718,7 @@ This reduces storage from potentially millions of rows to ~T rows plus a few mat
 ```json
 {
   "$schema": "https://cobre.dev/schemas/v2/correlation.schema.json",
-  "method": "cholesky",
+  "method": "spectral",
   "profiles": {
     "default": {
       "correlation_groups": [
@@ -751,14 +760,14 @@ This reduces storage from potentially millions of rows to ~T rows plus a few mat
 
 ### 5.2 Correlation Profile Fields
 
-| Field                                           | Type   | Required | Description                                                 |
-| ----------------------------------------------- | ------ | -------- | ----------------------------------------------------------- |
-| `method`                                        | string | Yes      | Correlation method: `"cholesky"` (only supported method)    |
-| `profiles`                                      | object | Yes      | Map of profile names to correlation group definitions       |
-| `profiles.<name>.correlation_groups`            | array  | Yes      | Array of correlation groups for this profile                |
-| `profiles.<name>.correlation_groups[].name`     | string | Yes      | Unique name for correlation group                           |
-| `profiles.<name>.correlation_groups[].entities` | array  | Yes      | Entities in this correlation group                          |
-| `profiles.<name>.correlation_groups[].matrix`   | array  | Yes      | Correlation matrix (must be positive definite; per DEC-020) |
+| Field                                           | Type   | Required | Description                                                                                                                                                                                  |
+| ----------------------------------------------- | ------ | -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `method`                                        | string | Yes      | Correlation method: `"spectral"` (default) or `"cholesky"` (backward compatibility). Spectral decomposition handles non-positive-definite matrices by clipping negative eigenvalues to zero. |
+| `profiles`                                      | object | Yes      | Map of profile names to correlation group definitions                                                                                                                                        |
+| `profiles.<name>.correlation_groups`            | array  | Yes      | Array of correlation groups for this profile                                                                                                                                                 |
+| `profiles.<name>.correlation_groups[].name`     | string | Yes      | Unique name for correlation group                                                                                                                                                            |
+| `profiles.<name>.correlation_groups[].entities` | array  | Yes      | Entities in this correlation group                                                                                                                                                           |
+| `profiles.<name>.correlation_groups[].matrix`   | array  | Yes      | Correlation matrix (must be positive semi-definite; per DEC-020). With `"spectral"` method, matrices with small negative eigenvalues are accepted and clipped.                               |
 
 The profile named `"default"` is required and used for any stage not explicitly mapped in the schedule.
 
@@ -769,7 +778,7 @@ The correlation schedule is **embedded in `correlation.json`** as a `"schedule"`
 ```json
 {
   "$schema": "https://cobre.dev/schemas/v2/correlation.schema.json",
-  "method": "cholesky",
+  "method": "spectral",
   "profiles": {
     "default": { "...": "..." },
     "wet_season": { "...": "..." },

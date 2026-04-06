@@ -1,5 +1,7 @@
 # Structured Output Protocol
 
+> **Status: Not Implemented.** This spec describes a planned design that has not yet been implemented.
+
 ## Purpose
 
 This spec defines the Cobre structured output protocol: the JSON response envelope schema, the structured error schema with the complete error kind registry, the JSON-lines streaming protocol for long-running operations, per-subcommand output specifications, output format negotiation via CLI flags, and the schema versioning strategy. Together, these define the machine-parseable interface that agents, CI/CD pipelines, and programmatic tools use to interact with the Cobre CLI. The protocol implements the four agent-readability design rules from [Design Principles](../overview/design-principles.md) SS6.2 and the four design decisions resolved in the structured CLI impact assessment (findings-019 SS2.1--SS2.4): human-first default, JSON-lines streaming via structured stdout with envelope, hybrid subcommand detection, and the generalized validation report as error schema standard.

@@ -31,7 +31,7 @@ Cobre is not a port of any of these tools. It shares architectural ideas while m
 
 ### 1.3 Current Status
 
-Cobre is **experimental**. The specification corpus is complete for the first solver vertical (SDDP-based hydrothermal dispatch). The Rust implementation reached v0.3.2 (March 2026). Active development continues with features beyond the minimal viable solver. No production deployment should depend on Cobre until the experimental status is lifted.
+Cobre is **experimental**. The specification corpus is complete for the first solver vertical (SDDP-based hydrothermal dispatch). The Rust implementation reached v0.4.1 (April 2026). Active development continues with per-class scenario sampling, spectral correlation decomposition, and noise method dispatch added in v0.4.0. No production deployment should depend on Cobre until the experimental status is lifted.
 
 ---
 

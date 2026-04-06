@@ -59,14 +59,14 @@ Key open design questions that require research before implementation:
 
 ## C.11 User-Supplied Noise Openings
 
-The standard noise generation pipeline samples independent Gaussian noise vectors and applies Cholesky correlation. This pipeline covers most use cases, but some workflows require direct control over the noise values:
+The standard noise generation pipeline samples independent Gaussian noise vectors and applies spectral correlation. This pipeline covers most use cases, but some workflows require direct control over the noise values:
 
 - Importing noise realizations from external stochastic models that use non-Gaussian distributions
 - Reproducing exact noise sequences from legacy tools for validation
-- Using domain-specific spatial correlation structures not captured by the Cholesky approach
+- Using domain-specific spatial correlation structures not captured by the spectral decomposition approach
 - Research workflows where specific noise patterns are under study
 
-The planned mechanism is a `scenarios/noise_openings.parquet` file. When this file is present, the scenario generator skips internal noise sampling and Cholesky correlation entirely, loading the user-supplied values directly into the opening tree.
+The planned mechanism is a `scenarios/noise_openings.parquet` file. When this file is present, the scenario generator skips internal noise sampling and spectral correlation entirely, loading the user-supplied values directly into the opening tree.
 
 Open design questions to resolve before implementation: the relationship to the existing external scenario mechanism (with noise inversion), what validation checks should be applied to user-supplied noise, whether load entity noise should be included alongside inflow noise, and whether separate noise sets are needed for forward and backward passes.
 

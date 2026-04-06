@@ -56,10 +56,10 @@ The monitor maintains the following per-iteration history:
 
 | Quantity                  | Type       | Description                                                                |
 | ------------------------- | ---------- | -------------------------------------------------------------------------- |
-| Lower bound               | `f64`      | Stage-1 LP objective value                                                 |
+| Lower bound               | `f64`      | Risk-adjusted aggregation of stage-0 LP objectives across all openings     |
 | Upper bound               | `f64`      | Mean total forward cost across all scenarios                               |
 | Upper bound std           | `f64`      | Standard deviation of total forward costs                                  |
-| Gap                       | `f64`      | Relative gap $(UB - LB) / \lvert UB \rvert$                                |
+| Gap                       | `f64`      | Relative gap $(UB - LB) / \max(1, \lvert UB \rvert)$                       |
 | Iteration wall-clock time | `Duration` | Elapsed time for the full iteration (forward + backward + synchronization) |
 
 ### 2.2 Bound Stalling Detection
