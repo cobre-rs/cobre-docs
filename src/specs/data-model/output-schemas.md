@@ -37,6 +37,14 @@ output/
 │       └── generic/
 │           └── scenario_id=XXXX/data.parquet
 │
+├── stochastic/                              # Stochastic model fitting artifacts
+│   ├── noise_openings.parquet               # Noise term realizations per opening
+│   ├── inflow_seasonal_stats.parquet        # Monthly inflow statistics
+│   ├── inflow_ar_coefficients.parquet       # Autoregressive model coefficients
+│   ├── correlation.json                     # Cross-correlation structure
+│   ├── load_seasonal_stats.parquet          # Monthly load statistics
+│   └── fitting_report.json                  # Stochastic model fitting diagnostics
+│
 ├── hydro_models/                            # Computed FPHA hyperplanes (optional)
 │   └── fpha_hyperplanes.parquet             # Written when any hydro uses computed FPHA
 │
@@ -44,11 +52,14 @@ output/
     ├── _manifest.json
     ├── _SUCCESS
     ├── convergence.parquet                  # Iteration-level convergence
+    ├── scaling_report.json                  # LP scaling diagnostics
+    ├── model_provenance.json                # Model provenance metadata
     ├── timing/
     │   ├── iterations.parquet               # Per-iteration timing breakdown
     │   └── mpi_ranks.parquet                # Per-rank timing statistics
     ├── solver/
-    │   └── iterations.parquet               # Per-iteration solver statistics
+    │   ├── iterations.parquet               # Per-iteration solver statistics
+    │   └── retry_histogram.parquet          # Per-iteration retry level histogram
     ├── cut_selection/
     │   └── iterations.parquet               # Per-iteration cut selection stats
     ├── dictionaries/
@@ -539,55 +550,62 @@ Use `idle_time_ms` to identify load imbalance. Sum of `scenarios_processed` per 
 
 Per-iteration, per-phase, per-stage solver statistics for diagnosing LP conditioning and retry behavior. One row per `(iteration, phase, stage)` triple.
 
-| Column               | Type   | Nullable | Description                                    |
-| -------------------- | ------ | -------- | ---------------------------------------------- |
-| `iteration`          | u32    | No       | Iteration number                               |
-| `phase`              | string | No       | SDDP phase: `"forward"` or `"backward"`        |
-| `stage`              | i32    | No       | Stage index                                    |
-| `lp_solves`          | u32    | No       | Total LP solves at this stage                  |
-| `lp_successes`       | u32    | No       | LP solves that succeeded on first attempt      |
-| `lp_retries`         | u32    | No       | LP solves that succeeded after retry           |
-| `lp_failures`        | u32    | No       | LP solves that failed after all retry attempts |
-| `retry_attempts`     | u32    | No       | Total retry attempts across all LP solves      |
-| `basis_offered`      | u32    | No       | LP solves where a warm-start basis was offered |
-| `basis_rejections`   | u32    | No       | LP solves where the offered basis was rejected |
-| `simplex_iterations` | u64    | No       | Total simplex iterations across all LP solves  |
-| `solve_time_ms`      | f64    | No       | Cumulative LP solve wall time (ms)             |
-| `load_model_time_ms` | f64    | No       | Cumulative model loading time (ms)             |
-| `add_rows_time_ms`   | f64    | No       | Cumulative row addition time (ms)              |
-| `set_bounds_time_ms` | f64    | No       | Cumulative bound setting time (ms)             |
-| `basis_set_time_ms`  | f64    | No       | Cumulative basis setting time (ms)             |
-| `retry_l0`           | u64    | No       | Count of retries at level 0                    |
-| `retry_l1`           | u64    | No       | Count of retries at level 1                    |
-| `retry_l2`           | u64    | No       | Count of retries at level 2                    |
-| `retry_l3`           | u64    | No       | Count of retries at level 3                    |
-| `retry_l4`           | u64    | No       | Count of retries at level 4                    |
-| `retry_l5`           | u64    | No       | Count of retries at level 5                    |
-| `retry_l6`           | u64    | No       | Count of retries at level 6                    |
-| `retry_l7`           | u64    | No       | Count of retries at level 7                    |
-| `retry_l8`           | u64    | No       | Count of retries at level 8                    |
-| `retry_l9`           | u64    | No       | Count of retries at level 9                    |
-| `retry_l10`          | u64    | No       | Count of retries at level 10                   |
-| `retry_l11`          | u64    | No       | Count of retries at level 11                   |
+| Column               | Type   | Nullable | Description                                                               |
+| -------------------- | ------ | -------- | ------------------------------------------------------------------------- |
+| `iteration`          | u32    | No       | Iteration number                                                          |
+| `phase`              | string | No       | SDDP phase: `"forward"`, `"backward"`, `"lower_bound"`, or `"simulation"` |
+| `stage`              | i32    | No       | Stage index                                                               |
+| `lp_solves`          | u32    | No       | Total LP solves at this stage                                             |
+| `lp_successes`       | u32    | No       | LP solves that succeeded on first attempt                                 |
+| `lp_retries`         | u32    | No       | LP solves that succeeded after retry                                      |
+| `lp_failures`        | u32    | No       | LP solves that failed after all retry attempts                            |
+| `retry_attempts`     | u32    | No       | Total retry attempts across all LP solves                                 |
+| `basis_offered`      | u32    | No       | LP solves where a warm-start basis was offered                            |
+| `basis_rejections`   | u32    | No       | LP solves where the offered basis was rejected                            |
+| `simplex_iterations` | u64    | No       | Total simplex iterations across all LP solves                             |
+| `solve_time_ms`      | f64    | No       | Cumulative LP solve wall time (ms)                                        |
+| `load_model_time_ms` | f64    | No       | Cumulative model loading time (ms)                                        |
+| `add_rows_time_ms`   | f64    | No       | Cumulative row addition time (ms)                                         |
+| `set_bounds_time_ms` | f64    | No       | Cumulative bound setting time (ms)                                        |
+| `basis_set_time_ms`  | f64    | No       | Cumulative basis setting time (ms)                                        |
 
-**Rows**: `num_iterations × 2 (phases) × num_stages`
+**Rows**: `num_iterations × num_phases × num_stages`
 
-The `retry_lN` columns record how many times each retry escalation level was reached. The retry ladder applies increasingly aggressive solver reconfiguration at each level (e.g., scaling, presolve toggling, algorithm switching). See [Solver Interface](../architecture/solver-interface-trait.md) for retry strategy details.
+**Phase values**: The `phase` column identifies the SDDP algorithmic phase that produced the LP solves. `"forward"` and `"backward"` are the standard SDDP passes. `"lower_bound"` appears when a dedicated lower-bound evaluation solve is performed (separate from the forward pass). `"simulation"` appears when simulation-based upper bound evaluation is enabled (see [Upper Bound Evaluation](../math/upper-bound-evaluation.md)).
+
+Retry-level histograms are stored separately in `retry_histogram.parquet` (SS6.6). See [Solver Interface](../architecture/solver-interface-trait.md) for retry strategy details.
 
 ### 6.5 Cut Selection Statistics (`training/cut_selection/iterations.parquet`)
 
 Per-iteration, per-stage cut selection statistics. One row per `(iteration, stage)` pair.
 
-| Column               | Type | Nullable | Description                                    |
-| -------------------- | ---- | -------- | ---------------------------------------------- |
-| `iteration`          | i32  | No       | Iteration number                               |
-| `stage`              | i32  | No       | Stage index                                    |
-| `cuts_populated`     | i32  | No       | Total cuts in the pool before selection        |
-| `cuts_active_before` | i32  | No       | Active cuts before this iteration's selection  |
-| `cuts_deactivated`   | i32  | No       | Cuts deactivated by this iteration's selection |
-| `cuts_active_after`  | i32  | No       | Active cuts after this iteration's selection   |
+| Column               | Type | Nullable | Description                                          |
+| -------------------- | ---- | -------- | ---------------------------------------------------- |
+| `iteration`          | i32  | No       | Iteration number                                     |
+| `stage`              | i32  | No       | Stage index                                          |
+| `cuts_populated`     | i32  | No       | Total cuts in the pool before selection              |
+| `cuts_active_before` | i32  | No       | Active cuts before this iteration's selection        |
+| `cuts_deactivated`   | i32  | No       | Cuts deactivated by this iteration's selection       |
+| `cuts_active_after`  | i32  | No       | Active cuts after this iteration's selection         |
+| `selection_time_ms`  | f64  | No       | Wall-clock time for cut selection at this stage (ms) |
 
 **Rows**: `num_iterations × num_stages` (only iterations where cut selection runs)
+
+### 6.6 Retry Histogram (`training/solver/retry_histogram.parquet`)
+
+Per-iteration, per-phase, per-stage histogram of retry escalation levels. One row per `(iteration, phase, stage, retry_level)` tuple where the count is non-zero.
+
+| Column        | Type   | Nullable | Description                                                               |
+| ------------- | ------ | -------- | ------------------------------------------------------------------------- |
+| `iteration`   | i32    | No       | Iteration number                                                          |
+| `phase`       | string | No       | SDDP phase: `"forward"`, `"backward"`, `"lower_bound"`, or `"simulation"` |
+| `stage`       | i32    | No       | Stage index                                                               |
+| `retry_level` | i32    | No       | Retry escalation level (0-based)                                          |
+| `count`       | i64    | No       | Number of LP solves that reached this retry level                         |
+
+**Rows**: sparse — only `(iteration, phase, stage, retry_level)` tuples with `count > 0` are stored.
+
+The retry ladder applies increasingly aggressive solver reconfiguration at each level (e.g., scaling, presolve toggling, algorithm switching). See [Solver Interface](../architecture/solver-interface-trait.md) for the full retry strategy. This file complements the aggregate retry statistics in `iterations.parquet` (SS6.4) by providing per-level granularity.
 
 ## 7. Structured Output vs Parquet Schemas
 

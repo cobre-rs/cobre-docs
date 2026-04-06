@@ -90,16 +90,16 @@ These tests verify that each backend correctly reports errors via the `CommError
 
 #### 1.8.1 CommError::InvalidBufferSize
 
-| Test Name                                  | Ranks | Input Scenario                                                                                                                                           | Expected Observable Behavior                                                                                                                                                                                                |
-| ------------------------------------------ | ----- | -------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `test_{backend}_allreduce_buffer_mismatch` | 2     | `send.len() = 4`, `recv.len() = 3` (mismatch violating [Communicator Trait §2.2](./communicator-trait.md) precondition).                                 | Returns `Err(CommError::InvalidBufferSize { operation: "allreduce", expected: 4, actual: 3 })` on backends that perform precondition checks (ferrompi, tcp, shm). Local backend: returns `Ok(())` (infallible, see §1.9.1). |
-| `test_{backend}_allgatherv_recv_too_small` | 2     | `recv.len()` is smaller than `displs[R-1] + counts[R-1]` (receive buffer too small per [Communicator Trait §2.1](./communicator-trait.md) precondition). | Returns `Err(CommError::InvalidBufferSize { ... })` on backends that validate. Local backend: undefined (caller is responsible for precondition per [Local Backend §1.2](./backend-local.md)).                              |
+| Test Name                                  | Ranks | Input Scenario                                                                                                                                           | Expected Observable Behavior                                                                                                                                                                              |
+| ------------------------------------------ | ----- | -------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `test_{backend}_allreduce_buffer_mismatch` | 2     | `send.len() = 4`, `recv.len() = 3` (mismatch violating [Communicator Trait §2.2](./communicator-trait.md) precondition).                                 | Returns `Err(CommError::InvalidBufferSize { operation: "allreduce", expected: 4, actual: 3 })` on all backends (local, ferrompi, tcp, shm). All backends validate buffer size preconditions (see §1.9.1). |
+| `test_{backend}_allgatherv_recv_too_small` | 2     | `recv.len()` is smaller than `displs[R-1] + counts[R-1]` (receive buffer too small per [Communicator Trait §2.1](./communicator-trait.md) precondition). | Returns `Err(CommError::InvalidBufferSize { ... })` on all backends that validate buffer sizes (local, ferrompi, tcp, shm).                                                                               |
 
 #### 1.8.2 CommError::InvalidRoot
 
-| Test Name                               | Ranks | Input Scenario                                | Expected Observable Behavior                                                                                                                                         |
-| --------------------------------------- | ----- | --------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `test_{backend}_broadcast_invalid_root` | 2     | `broadcast(buf, root=5)` where `size() == 2`. | Returns `Err(CommError::InvalidRoot { root: 5, size: 2 })` on backends that validate (ferrompi, tcp, shm). Local backend: returns `Ok(())` (infallible, see §1.9.1). |
+| Test Name                               | Ranks | Input Scenario                                | Expected Observable Behavior                                                                                                                            |
+| --------------------------------------- | ----- | --------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `test_{backend}_broadcast_invalid_root` | 2     | `broadcast(buf, root=5)` where `size() == 2`. | Returns `Err(CommError::InvalidRoot { root: 5, size: 2 })` on all backends (local, ferrompi, tcp, shm). All backends validate root values (see §1.9.1). |
 
 #### 1.8.3 CommError::CollectiveFailed
 
@@ -124,9 +124,9 @@ These tests verify that each backend correctly reports errors via the `CommError
 
 #### 1.9.1 Local Backend
 
-All `Communicator` methods on the local backend return `Ok(())` unconditionally. The local backend is infallible per [Local Backend §1.2](./backend-local.md): it cannot produce `CommError::CollectiveFailed` (no MPI calls), `CommError::InvalidCommunicator` (no communicator state to invalidate), or `CommError::InvalidRoot` (the only valid root is 0, which matches `rank()`). Buffer size preconditions are enforced by the caller, not by the backend.
+The local backend validates preconditions and returns errors on violations: it returns `Err(CommError::InvalidBufferSize)` when buffer sizes do not match the operation's requirements, and `Err(CommError::InvalidRoot)` when a root value other than 0 is passed. It cannot produce `CommError::CollectiveFailed` (no MPI calls) or `CommError::InvalidCommunicator` (no communicator state to invalidate).
 
-**Testing implication:** Error-case tests (§1.8) that expect `Err(...)` results are not applicable to the local backend. When parameterized across all backends, local backend error tests must assert `Ok(())` instead.
+**Testing implication:** Error-case tests (§1.8) for `InvalidBufferSize` and `InvalidRoot` apply to the local backend and must assert `Err(...)`. Only `CollectiveFailed` and `InvalidCommunicator` error tests are not applicable to the local backend.
 
 #### 1.9.2 Ferrompi Backend
 
@@ -222,7 +222,7 @@ The primary performance claim of the backend abstraction is zero-cost abstractio
 
 **Test methodology:**
 
-1. **Direct ferrompi calls.** Execute the SDDP training loop calling ferrompi API functions directly (no `Communicator` trait indirection). Record wall-clock time per iteration at production scale ($R = 16$ ranks, $T = 120$ stages, $M = 192$ forward passes, ~587 MB/iteration per [Communication Patterns §3.1](./communication-patterns.md)).
+1. **Direct ferrompi calls.** Execute the SDDP training loop calling ferrompi API functions directly (no `Communicator` trait indirection). Record wall-clock time per iteration at worst-case scale ($R = 16$ ranks, $T = 120$ stages — hypothetical maximum; DEC-009 baseline is $T = 60$, $M = 192$ forward passes, ~587 MB/iteration per [Communication Patterns §3.1](./communication-patterns.md)).
 2. **Trait wrapper calls.** Execute the same training loop using `train::<FerrompiBackend>(comm, ...)` with the `Communicator` trait. Record wall-clock time per iteration at the same scale.
 3. **Compare.** The trait wrapper must introduce < 1% overhead relative to direct calls.
 
@@ -458,7 +458,7 @@ The test matrix in §4.3 and the Python multi-process tests in §4.4 provide the
 - [Ferrompi Backend §1.2](./backend-ferrompi.md) -- Precondition checks delegated to ferrompi layer (§1.9.2)
 - [Ferrompi Backend §4.1](./backend-ferrompi.md) -- Zero-cost abstraction via monomorphization (§3.1)
 - [Ferrompi Backend §5](./backend-ferrompi.md) -- Error mapping from MPI error codes to `CommError` variants (§1.8)
-- [Local Backend §1.2](./backend-local.md) -- Infallibility guarantee: all methods return `Ok(())` unconditionally (§1.9.1)
+- [Local Backend §1.2](./backend-local.md) -- Precondition validation: returns `InvalidBufferSize` / `InvalidRoot` on violations (§1.9.1)
 - [Local Backend §2](./backend-local.md) -- Identity semantics verified by conformance tests at size=1
 - [Local Backend §5](./backend-local.md) -- Reproducibility: trivially satisfied for single-rank execution (§4.2)
 - [TCP Backend §3](./backend-tcp.md) -- Coordinator-mediated collective protocols (TCP conformance tests)

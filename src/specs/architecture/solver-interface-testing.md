@@ -6,6 +6,8 @@ This spec defines the conformance test suite for the `SolverInterface` trait and
 
 Test cases reference the method contracts from [Solver Interface Trait SS2](./solver-interface-trait.md), the LP layout convention from [Solver Abstraction SS2](./solver-abstraction.md), the dual normalization convention from [Solver Abstraction SS8](./solver-abstraction.md), and the basis storage convention from [Solver Abstraction SS9](./solver-abstraction.md).
 
+> **Note:** CLP test variants are forward-looking — the CLP solver backend is not yet implemented. Only HiGHS test variants are currently runnable. CLP variants document the intended conformance surface for when additional backends are added.
+
 ## SS1. Conformance Test Suite
 
 **Test naming convention:** `test_solver_{variant}_{method}_{scenario}` where `{variant}` is `highs` or `clp`, `{method}` is the `SolverInterface` method under test, and `{scenario}` describes the test case.
@@ -44,7 +46,7 @@ $$x_0 \in [0, 10], \quad x_1 \in [0, +\infty), \quad x_2 \in [0, 8]$$
 | 0     | State-fixing  | Equality | 6.0         | 6.0         |
 | 1     | Power balance | Equality | 14.0        | 14.0        |
 
-Layout parameters: `n_state = 1` (column 0), `n_cut_relevant = 1` (row 0), `n_structural = 2`.
+Layout parameters: `n_state = 1` (column 0), `n_dual_relevant = 1` (row 0), `num_rows = 2`.
 
 **Constraint matrix in CSC format:**
 
@@ -284,21 +286,21 @@ subject to no constraints, with column bounds $x_0 \in [5, 3]$ (lower bound > up
 
 **StageTemplate data:**
 
-| Field            | Value  |
-| ---------------- | ------ |
-| `num_cols`       | 1      |
-| `num_rows`       | 0      |
-| `num_nz`         | 0      |
-| `col_starts`     | [0, 0] |
-| `row_indices`    | []     |
-| `values`         | []     |
-| `col_lower`      | [5.0]  |
-| `col_upper`      | [3.0]  |
-| `objective`      | [1.0]  |
-| `row_lower`      | []     |
-| `row_upper`      | []     |
-| `n_state`        | 1      |
-| `n_cut_relevant` | 0      |
+| Field             | Value  |
+| ----------------- | ------ |
+| `num_cols`        | 1      |
+| `num_rows`        | 0      |
+| `num_nz`          | 0      |
+| `col_starts`      | [0, 0] |
+| `row_indices`     | []     |
+| `values`          | []     |
+| `col_lower`       | [5.0]  |
+| `col_upper`       | [3.0]  |
+| `objective`       | [1.0]  |
+| `row_lower`       | []     |
+| `row_upper`       | []     |
+| `n_state`         | 1      |
+| `n_dual_relevant` | 0      |
 
 | Test Name                            | Input Scenario                     | Expected Observable Behavior                                                                                                                    | Variant |
 | ------------------------------------ | ---------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- | ------- |
@@ -315,21 +317,21 @@ subject to no constraints, with column bounds $x_0 \in (-\infty, +\infty)$.
 
 **StageTemplate data:**
 
-| Field            | Value       |
-| ---------------- | ----------- |
-| `num_cols`       | 1           |
-| `num_rows`       | 0           |
-| `num_nz`         | 0           |
-| `col_starts`     | [0, 0]      |
-| `row_indices`    | []          |
-| `values`         | []          |
-| `col_lower`      | [$-\infty$] |
-| `col_upper`      | [$+\infty$] |
-| `objective`      | [-1.0]      |
-| `row_lower`      | []          |
-| `row_upper`      | []          |
-| `n_state`        | 1           |
-| `n_cut_relevant` | 0           |
+| Field             | Value       |
+| ----------------- | ----------- |
+| `num_cols`        | 1           |
+| `num_rows`        | 0           |
+| `num_nz`          | 0           |
+| `col_starts`      | [0, 0]      |
+| `row_indices`     | []          |
+| `values`          | []          |
+| `col_lower`       | [$-\infty$] |
+| `col_upper`       | [$+\infty$] |
+| `objective`       | [-1.0]      |
+| `row_lower`       | []          |
+| `row_upper`       | []          |
+| `n_state`         | 1           |
+| `n_dual_relevant` | 0           |
 
 | Test Name                           | Input Scenario                    | Expected Observable Behavior                                                                                     | Variant |
 | ----------------------------------- | --------------------------------- | ---------------------------------------------------------------------------------------------------------------- | ------- |
@@ -351,12 +353,12 @@ These tests verify the full operational lifecycle of a solver instance: load, ad
 
 These tests specifically target the dual normalization contract from [Solver Abstraction SS8](./solver-abstraction.md) and [Solver Interface Trait SS7](./solver-interface-trait.md). The canonical sign convention states that a positive dual on a $\leq$ constraint means increasing the RHS increases the objective ($\partial z^* / \partial b > 0$). Both backends must produce identical normalized dual values regardless of their native sign convention.
 
-**Verification approach:** The shared fixture has two equality constraints with hand-computed dual values derived from sensitivity analysis. The cut coefficient formula $\beta_t^k = W_t^\top \pi_t^*$ requires correct dual signs for the cut-relevant rows `[0, n_cut_relevant)`.
+**Verification approach:** The shared fixture has two equality constraints with hand-computed dual values derived from sensitivity analysis. The cut coefficient formula $\beta_t^k = W_t^\top \pi_t^*$ requires correct dual signs for the cut-relevant rows `[0, n_dual_relevant)`.
 
 | Test Name                                                | Input Scenario                                                                                                        | Expected Observable Behavior                                                                                                                                                                           |
 | -------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `test_solver_highs_dual_normalization_cut_relevant_row`  | Load shared fixture. Solve. Extract dual for Row 0 (cut-relevant, state-fixing).                                      | $\pi_0 = -100.0$ within 1e-6. The state-fixing row dual propagates as the cut coefficient for the state variable: $\beta = W_t^\top \pi^* = (-100.0)$. A sign error here would produce divergent cuts. |
-| `test_solver_clp_dual_normalization_cut_relevant_row`    | Same as above.                                                                                                        | $\pi_0 = -100.0$ within 1e-6. Same normalized value as HiGHS regardless of CLP's native dual convention.                                                                                               |
+| `test_solver_highs_dual_normalization_dual_relevant_row` | Load shared fixture. Solve. Extract dual for Row 0 (dual-relevant, state-fixing).                                     | $\pi_0 = -100.0$ within 1e-6. The state-fixing row dual propagates as the cut coefficient for the state variable: $\beta = W_t^\top \pi^* = (-100.0)$. A sign error here would produce divergent cuts. |
+| `test_solver_clp_dual_normalization_dual_relevant_row`   | Same as above.                                                                                                        | $\pi_0 = -100.0$ within 1e-6. Same normalized value as HiGHS regardless of CLP's native dual convention.                                                                                               |
 | `test_solver_highs_dual_normalization_sensitivity_check` | Load shared fixture. Solve to get $z^* = 100.0$ with RHS_0 = 6. Patch Row 0 RHS to 6.01. Solve again to get $z^{**}$. | Finite-difference check: $(z^{**} - z^*) / 0.01 \approx \pi_0 = -100.0$ within 1e-2 tolerance. The dual accurately predicts the objective sensitivity to RHS perturbation.                             |
 | `test_solver_clp_dual_normalization_sensitivity_check`   | Same as above.                                                                                                        | Same finite-difference result within 1e-2. Both backends' duals predict the correct sensitivity.                                                                                                       |
 | `test_solver_highs_dual_normalization_with_binding_cut`  | Load shared fixture. Add both cuts. Solve. Extract dual for Cut 2 (Row 3, binding).                                   | $\pi_3 = 1.0$ within 1e-6. The binding cut dual is positive, confirming that tightening the cut RHS (increasing $\alpha$) increases the objective.                                                     |

@@ -42,7 +42,7 @@ After the forward pass, each rank contributes its visited states to `allgatherv`
 | AR inflow lags  | `[f64]` | $\sum_h P_h \times 8$ bytes       |
 | Stage index     | `u32`   | 4 bytes                           |
 
-At production scale ($N_{\text{hydro}} = 160$, average $P_h = 6$ lags, $M = 192$ trajectories, $T = 120$ stages):
+At worst-case scale ($N_{\text{hydro}} = 160$, average $P_h = 6$ lags, $M = 192$ trajectories, $T = 120$ stages; note: the production baseline per DEC-009 is $T = 60$ stages — these figures represent the hypothetical maximum):
 
 - State dimension: $160 + 160 \times 6 = 1{,}120$ doubles = 8,960 bytes per trial point
 - Trial points per stage: 192
@@ -93,7 +93,7 @@ The lower bound is evaluated separately after the backward pass. Rank 0 solves t
 
 ### 3.1 Per-Iteration Budget
 
-Reference configuration: $R = 16$ ranks, $T = 120$ stages, $M = 192$ forward passes, $D_{\text{state}} = 2{,}080$.
+Worst-case reference configuration: $R = 16$ ranks, $T = 120$ stages (hypothetical maximum; DEC-009 baseline is $T = 60$), $M = 192$ forward passes, $D_{\text{state}} = 2{,}080$.
 
 | Operation                | Per-stage | Per-iteration        | Notes                                                  |
 | ------------------------ | --------- | -------------------- | ------------------------------------------------------ |

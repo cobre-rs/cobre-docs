@@ -157,7 +157,7 @@ pub enum CommError {
 
 ### 2.1 allgatherv
 
-`allgatherv` is the most performance-critical method in the trait. It is called twice per iteration during SDDP training: once to distribute visited trial points after the forward pass (~206 MB) and once per backward stage to synchronize new cuts (~3.2 MB per stage, ~381 MB across 119 stages). The combined per-iteration payload is approximately 587 MB at production scale ([Communication Patterns §3.1](./communication-patterns.md)).
+`allgatherv` is the most performance-critical method in the trait. It is called twice per iteration during SDDP training: once to distribute visited trial points after the forward pass (~206 MB) and once per backward stage to synchronize new cuts (~3.2 MB per stage, ~381 MB across 119 stages). The combined per-iteration payload is approximately 587 MB at worst-case scale ($T = 120$ stages; the DEC-009 production baseline of $T = 60$ stages halves these figures). See [Communication Patterns §3.1](./communication-patterns.md).
 
 **Preconditions:**
 

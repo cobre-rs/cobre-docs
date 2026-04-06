@@ -246,21 +246,24 @@ Stage-varying overrides allow penalty values to change at specific stages for sp
 
 ### Hydro Penalty Overrides (`constraints/penalty_overrides_hydro.parquet`) — Optional
 
-| Column                            | Type | Nullable | Description                             |
-| --------------------------------- | ---- | -------- | --------------------------------------- |
-| `hydro_id`                        | u32  | No       | Hydro identifier                        |
-| `stage_id`                        | u32  | No       | Stage identifier                        |
-| `spillage_cost`                   | f64  | Yes      | \$/(m3/s·h) for spilled water           |
-| `fpha_turbined_cost`              | f64  | Yes      | \$/(m3/s·h) for FPHA turbined flow      |
-| `diversion_cost`                  | f64  | Yes      | \$/(m3/s·h) for diverted water          |
-| `storage_violation_below_cost`    | f64  | Yes      | \$/hm3 for storage below min            |
-| `filling_target_violation_cost`   | f64  | Yes      | \$/hm3 for filling target shortfall     |
-| `turbined_violation_below_cost`   | f64  | Yes      | \$/(m3/s·h) for turbined flow below min |
-| `outflow_violation_below_cost`    | f64  | Yes      | \$/(m3/s·h) for outflow below min       |
-| `outflow_violation_above_cost`    | f64  | Yes      | \$/(m3/s·h) for outflow above max       |
-| `generation_violation_below_cost` | f64  | Yes      | \$/MWh for generation below min         |
-| `evaporation_violation_cost`      | f64  | Yes      | \$/(m3/s·h) for evaporation violation   |
-| `water_withdrawal_violation_cost` | f64  | Yes      | \$/(m3/s·h) for unmet water withdrawal  |
+| Column                                | Type | Nullable | Description                                     |
+| ------------------------------------- | ---- | -------- | ----------------------------------------------- |
+| `hydro_id`                            | u32  | No       | Hydro identifier                                |
+| `stage_id`                            | u32  | No       | Stage identifier                                |
+| `spillage_cost`                       | f64  | Yes      | \$/(m3/s·h) for spilled water                   |
+| `fpha_turbined_cost`                  | f64  | Yes      | \$/(m3/s·h) for FPHA turbined flow              |
+| `diversion_cost`                      | f64  | Yes      | \$/(m3/s·h) for diverted water                  |
+| `storage_violation_below_cost`        | f64  | Yes      | \$/hm3 for storage below min                    |
+| `filling_target_violation_cost`       | f64  | Yes      | \$/hm3 for filling target shortfall             |
+| `turbined_violation_below_cost`       | f64  | Yes      | \$/(m3/s·h) for turbined flow below min         |
+| `outflow_violation_below_cost`        | f64  | Yes      | \$/(m3/s·h) for outflow below min               |
+| `outflow_violation_above_cost`        | f64  | Yes      | \$/(m3/s·h) for outflow above max               |
+| `generation_violation_below_cost`     | f64  | Yes      | \$/MWh for generation below min                 |
+| `evaporation_violation_pos_cost`      | f64  | Yes      | \$/(m3/s·h) for positive evaporation violation  |
+| `evaporation_violation_neg_cost`      | f64  | Yes      | \$/(m3/s·h) for negative evaporation violation  |
+| `water_withdrawal_violation_pos_cost` | f64  | Yes      | \$/(m3/s·h) for positive withdrawal violation   |
+| `water_withdrawal_violation_neg_cost` | f64  | Yes      | \$/(m3/s·h) for negative withdrawal violation   |
+| `inflow_nonnegativity_cost`           | f64  | Yes      | \$/(m3/s·h) for inflow non-negativity violation |
 
 ### Non-Controllable Source Penalty Overrides (`constraints/penalty_overrides_ncs.parquet`) — Optional
 

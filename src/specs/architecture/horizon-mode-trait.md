@@ -215,46 +215,25 @@ impl HorizonMode {
 
 ### 2.4 validate
 
-`validate` verifies that the stage configuration is valid for the selected horizon mode. It enforces rules H1-H4 from [Extension Points SS4.3](./extension-points.md) and returns structured errors for each violated rule. This method is called once during the variant selection pipeline ([Extension Points SS6](./extension-points.md), step 5) -- never during training.
+`validate` verifies that the horizon mode configuration is consistent. It is called once during initialization -- never during training. The current implementation enforces rule H1 (non-empty stage set) for the `Finite` variant. Rules H2-H4 are deferred until the `Cyclic` variant is implemented.
 
 ```rust
 impl HorizonMode {
-    /// Validate the horizon mode configuration against the stage set.
+    /// Post-construction validation of horizon mode invariants.
     ///
     /// Called once during initialization. Returns Ok(()) if all rules
-    /// pass, or a structured error describing every violated rule.
-    pub fn validate(
-        stages: &[StageConfig],
-        policy_graph: &PolicyGraphConfig,
-    ) -> Result<HorizonMode, Vec<ValidationError>> {
+    /// pass, or Err(SddpError::Validation(msg)) on failure.
+    pub fn validate(&self) -> Result<(), SddpError> {
         todo!()
     }
 }
-
-/// Structured validation error for horizon mode rules H1-H4.
-#[derive(Debug)]
-pub enum ValidationError {
-    /// H1: At least one stage must exist.
-    EmptyStageSet,
-
-    /// H2: Cumulative cycle discount must be strictly less than 1.
-    CycleDiscountNotConvergent {
-        cycle_discount: f64,
-    },
-
-    /// H3: Cycle start stage must exist in the stage set.
-    CycleStartOutOfBounds {
-        cycle_start: usize,
-        max_stage_id: usize,
-    },
-
-    /// H4: A transition targets a stage that does not exist.
-    DanglingTransition {
-        source_id: usize,
-        target_id: usize,
-    },
-}
 ```
+
+> **Design intent:** When the `Cyclic` variant is implemented, `validate` should be extended with structured error accumulation (collecting all violated rules rather than failing on the first). The planned `ValidationError` enum for rules H2-H4 is documented below for reference but does not yet exist in the codebase:
+>
+> - **H2** `CycleDiscountNotConvergent` — cumulative cycle discount must be strictly less than 1
+> - **H3** `CycleStartOutOfBounds` — cycle start stage must exist in the stage set
+> - **H4** `DanglingTransition` — a transition targets a stage that does not exist
 
 **Preconditions:**
 

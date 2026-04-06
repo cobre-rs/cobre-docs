@@ -92,11 +92,11 @@ The `auto` mode selects a backend by testing compiled-in backends in priority or
    |            |                 yes --> MPI launch detected?
   use it    ERROR                         yes --> use mpi
    |        (SS6)                         no  --> fall through
-   |                          2. tcp feature compiled?
+   |                          2. tcp feature compiled? [NOT YET IMPLEMENTED]
    |                              yes --> COBRE_TCP_COORDINATOR set?
    |                                      yes --> use tcp
    |                                      no  --> fall through
-   |                          3. shm feature compiled?
+   |                          3. shm feature compiled? [NOT YET IMPLEMENTED]
    |                              yes --> COBRE_SHM_NAME set?
    |                                      yes --> use shm
    |                                      no  --> fall through
@@ -105,6 +105,8 @@ The `auto` mode selects a backend by testing compiled-in backends in priority or
    v                              |
   [initialize selected backend]<--+
 ```
+
+> **Note:** Steps 2 (TCP) and 3 (SHM) describe planned backends that are not yet implemented. The current `BackendKind` enum has only `Auto`, `Mpi`, and `Local` variants. See [Backend TCP](./backend-tcp.md) and [Backend SHM](./backend-shm.md) for the individual backend specifications and their implementation status.
 
 **MPI launch detection**: The auto-detection algorithm probes for environment variables that MPI launchers inject into the process environment. The presence of any of the following variables indicates that the process was launched under an MPI runtime:
 
@@ -137,14 +139,14 @@ Each backend accepts additional configuration via environment variables. These f
 
 **TCP backend** (`tcp` feature):
 
-| Variable                       | Required | Default   | Description                                                                                                                                                        |
-| ------------------------------ | -------- | --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `COBRE_TCP_COORDINATOR`        | Yes      | _(none)_  | Hostname or IP address of the coordinator (rank 0). All ranks connect to this address during initialization. See [TCP Backend §8.1](./backend-tcp.md) for details. |
-| `COBRE_TCP_PORT`               | No       | `29500`   | TCP port on which the coordinator listens. All ranks must use the same port value.                                                                                 |
-| `COBRE_TCP_RANK`               | Yes      | _(none)_  | Rank index of this process (`0..COBRE_TCP_SIZE`).                                                                                                                  |
-| `COBRE_TCP_SIZE`               | Yes      | _(none)_  | Total number of ranks in the communicator.                                                                                                                         |
-| `COBRE_TCP_BIND_ADDR`          | No       | `0.0.0.0` | Local address to bind for incoming peer connections.                                                                                                               |
-| `COBRE_TCP_CONNECT_TIMEOUT_MS` | No       | `30000`   | Timeout in milliseconds for connecting to coordinator and peers.                                                                                                   |
+| Variable                 | Required | Default   | Description                                                                                                                                                        |
+| ------------------------ | -------- | --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `COBRE_TCP_COORDINATOR`  | Yes      | _(none)_  | Hostname or IP address of the coordinator (rank 0). All ranks connect to this address during initialization. See [TCP Backend §8.1](./backend-tcp.md) for details. |
+| `COBRE_TCP_PORT`         | No       | `29500`   | TCP port on which the coordinator listens. All ranks must use the same port value.                                                                                 |
+| `COBRE_TCP_RANK`         | Yes      | _(none)_  | Rank index of this process (`0..COBRE_TCP_SIZE`).                                                                                                                  |
+| `COBRE_TCP_SIZE`         | Yes      | _(none)_  | Total number of ranks in the communicator.                                                                                                                         |
+| `COBRE_TCP_BIND_ADDR`    | No       | `0.0.0.0` | Local address to bind for incoming peer connections.                                                                                                               |
+| `COBRE_TCP_TIMEOUT_SECS` | No       | `60`      | Timeout in seconds for collective operations and connection attempts. See [Backend TCP SS5.1](./backend-tcp.md).                                                   |
 
 **Shared memory backend** (`shm` feature):
 

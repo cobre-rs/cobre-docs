@@ -176,12 +176,12 @@ $$
 
 The cut selection strategy is configured with the following parameters:
 
-| Parameter         | Description                                                 | Applies to |
-| ----------------- | ----------------------------------------------------------- | ---------- |
-| `method`          | Selection strategy: `"level1"`, `"lml1"`, or `"domination"` | All        |
-| `threshold`       | Activity threshold $\epsilon$ (recommended: 0)              | All        |
-| `check_frequency` | Iterations between selection runs                           | All        |
-| `memory_window`   | Iterations to retain inactive cuts                          | LML1 only  |
+| Parameter         | Description                                                                                     | Applies to        |
+| ----------------- | ----------------------------------------------------------------------------------------------- | ----------------- |
+| `method`          | Selection strategy: `"level1"`, `"lml1"`, or `"domination"`                                     | All               |
+| `threshold`       | Level1: activity count (u64). Dominated: epsilon tolerance (f64). LML1: maps to `memory_window` | Level1, Dominated |
+| `check_frequency` | Iterations between selection runs                                                               | All               |
+| `memory_window`   | Iterations to retain inactive cuts (LML1 only; the JSON `threshold` field is mapped to this)    | LML1 only         |
 
 See [Configuration Reference](../configuration/configuration-reference.md) for the JSON schema.
 

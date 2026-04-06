@@ -419,7 +419,7 @@ The `mpi_error_code` field is set to `0` for all TCP errors because there is no 
 
 ### 6.1 Communication Volume
 
-The per-iteration communication volume at production scale ($R = 16$ ranks, $T = 120$ stages, $M = 192$ forward passes, $D_{\text{state}} = 2{,}080$) is approximately 587 MB ([Communication Patterns §3.1](./communication-patterns.md)):
+The per-iteration communication volume at worst-case scale ($R = 16$ ranks, $T = 120$ stages — hypothetical maximum per DEC-009; production baseline is $T = 60$, $M = 192$ forward passes, $D_{\text{state}} = 2{,}080$) is approximately 587 MB ([Communication Patterns §3.1](./communication-patterns.md)):
 
 | Operation                | Per-Iteration Volume | Frequency              |
 | ------------------------ | -------------------: | ---------------------- |
@@ -446,7 +446,7 @@ For trial point `allgatherv` ($D_{\text{total}} \approx 206$ MB, $R = 16$):
 - Send: $15 \times 206 \approx 3{,}090$ MB
 - Total coordinator I/O: $\approx 3{,}283$ MB
 
-For cut `allgatherv` (119 stages, $D_{\text{total}} \approx 3.2$ MB per stage):
+For cut `allgatherv` (119 stages at worst-case $T = 120$; $D_{\text{total}} \approx 3.2$ MB per stage):
 
 - Per stage: receive $\approx 3.0$ MB + send $\approx 48$ MB = 51 MB
 - All stages: $119 \times 51 \approx 6{,}069$ MB

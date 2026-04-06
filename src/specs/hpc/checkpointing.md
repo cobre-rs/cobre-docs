@@ -17,11 +17,11 @@ This spec defines how Cobre persists training state for fault tolerance (checkpo
 
 ### 1.2 Checkpoint Triggers
 
-| Trigger     | Condition                                                                                   |
-| ----------- | ------------------------------------------------------------------------------------------- |
-| Periodic    | Every $N$ iterations (configurable, default 10)                                             |
-| Signal      | SIGTERM/SIGINT sets shutdown flag; checkpoint written from last completed iteration's state |
-| Convergence | Final checkpoint on training completion                                                     |
+| Trigger     | Condition                                                                                                       |
+| ----------- | --------------------------------------------------------------------------------------------------------------- |
+| Periodic    | Every $N$ iterations (configurable via `checkpoint_interval`; disabled by default — must be explicitly enabled) |
+| Signal      | SIGTERM/SIGINT sets shutdown flag; checkpoint written from last completed iteration's state                     |
+| Convergence | Final checkpoint on training completion                                                                         |
 
 Signal handling follows the protocol in [CLI and Lifecycle §7](../architecture/cli-and-lifecycle.md): the handler sets a global flag, checkpoints the **last fully completed iteration** (not the in-progress one), and exits. The training loop checks the flag at iteration boundaries.
 
@@ -67,11 +67,11 @@ Only rank 0 performs I/O. All other ranks wait at the barrier. At production sca
 
 Checkpoint size is dominated by the cut pool. At production scale (per [Binary Formats §4.3](../data-model/binary-formats.md)):
 
-| Component             | Size at capacity                                                                |
-| --------------------- | ------------------------------------------------------------------------------- |
+| Component             | Size at capacity                                                                                                                                                  |
+| --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Cut pool (all stages) | 60 stages × up to 15K cuts × ~17 KB per cut — up to ~14.3 GB at maximum capacity (cut coefficients absorbed into StageLpCache SharedRegion at ~22.3 GB node-wide) |
-| Solver basis          | 60 stages × ~87 KB per basis ≈ ~5 MB                                            |
-| Metadata + history    | < 1 MB                                                                          |
+| Solver basis          | 60 stages × ~87 KB per basis ≈ ~5 MB                                                                                                                              |
+| Metadata + history    | < 1 MB                                                                                                                                                            |
 
 Early iterations produce much smaller checkpoints (only populated slots are serialized). The cut pool pre-allocates slots but only populated ones are written.
 

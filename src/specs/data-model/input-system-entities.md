@@ -69,6 +69,8 @@ Global deficit defaults are defined in `penalties.json`; entity-level overrides 
 | `name`             | string | Yes      | Human-readable bus name                                                                                                             |
 | `deficit_segments` | array  | No       | Piecewise deficit cost segments (uses global default from `penalties.json` if omitted). See [Penalty System](penalty-system.md) §3. |
 
+> **Runtime-resolved field**: The resolved Bus entity also carries `excess_cost: f64`, sourced from the global penalty defaults in `penalties.json` (or overridden per-bus per-stage via `penalty_overrides_bus.parquet`). This is not a user-provided JSON field but a runtime-resolved value populated during input loading.
+
 ### Deficit Segment Fields
 
 | Field      | Type        | Required | Description                                                       |
@@ -448,9 +450,10 @@ Defines turbine-generator efficiency for production function computation.
 
 Defines monthly evaporation rates for the reservoir. The solver interpolates these 12 values based on the stage's date/season mapping to determine the evaporation rate for each stage. Combined with surface area from `hydro_geometry` (see [Input Hydro Extensions §1](input-hydro-extensions.md)), this determines evaporated volume.
 
-| Field             | Type      | Required | Description                                              |
-| ----------------- | --------- | -------- | -------------------------------------------------------- |
-| `coefficients_mm` | [f64; 12] | Yes      | Monthly evaporation depth (mm), January through December |
+| Field                   | Type              | Required | Description                                                                                                                                                                                                                           |
+| ----------------------- | ----------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `coefficients_mm`       | [f64; 12]         | Yes      | Monthly evaporation depth (mm), January through December                                                                                                                                                                              |
+| `reference_volumes_hm3` | [f64; 12] or null | No       | Optional per-month reference volumes (hm3) for evaporation linearization. When null, the midpoint between min and max storage is used. Each value must be finite and lie within the plant's [min_storage_hm3, max_storage_hm3] range. |
 
 **Fallback**: If `evaporation` is omitted, no evaporation is modeled for this hydro.
 

@@ -190,7 +190,7 @@ This subsection specifies the **exact byte-level layout** for cut data exchanged
 
 **Endianness: native, with same-architecture assumption.** All ranks in an MPI job run the same compiled binary on nodes with the same CPU architecture. This is standard MPI practice — heterogeneous-endianness MPI jobs are not supported. No byte-swapping is performed. This assumption is shared with the state vector wire format ([Training Loop SS5.4a](./training-loop.md)).
 
-**No version byte.** The wire format does not include a version tag, magic number, or schema identifier. All ranks run the same binary and therefore agree on the struct layout at compile time. Adding a version byte would waste one byte per cut record (multiplied by thousands of cuts per iteration across 119 stages) for a scenario that cannot occur within a single MPI job.
+**No version byte.** The wire format does not include a version tag, magic number, or schema identifier. All ranks run the same binary and therefore agree on the struct layout at compile time. Adding a version byte would waste one byte per cut record (multiplied by thousands of cuts per iteration across up to 119 stages at worst-case $T = 120$) for a scenario that cannot occur within a single MPI job.
 
 **Struct layout.** Each cut is represented as a `CutWireRecord` with the following `#[repr(C)]` field ordering:
 

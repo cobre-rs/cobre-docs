@@ -777,7 +777,7 @@ The concept and tree structure are documented in [Scenario Generation §7](./arc
 
 **Description**: A scheduler that adjusts the number of forward passes per iteration (`forward_passes`) during training based on convergence metrics or wall-clock budget.
 
-**Why Deferred**: The cut pool capacity is pre-allocated using the formula `warm_start_cuts + max_iterations × forward_passes` (see [Cut Management Implementation SS1.3](../architecture/cut-management-impl.md)). A dynamic scheduler would require either a worst-case static allocation (wasteful for most runs) or dynamic reallocation (invalidates the deterministic slot assignment in SS1.2). Both alternatives need profiling data to choose correctly.
+**Why Deferred**: The cut pool capacity is pre-allocated using the formula `warm_start_cuts + max_iterations × forward_passes` (see [Cut Management Implementation SS1.3](./architecture/cut-management-impl.md)). A dynamic scheduler would require either a worst-case static allocation (wasteful for most runs) or dynamic reallocation (invalidates the deterministic slot assignment in SS1.2). Both alternatives need profiling data to choose correctly.
 
 ---
 
