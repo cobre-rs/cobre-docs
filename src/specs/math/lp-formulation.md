@@ -223,6 +223,7 @@ The variable $v^{in}_h$ then appears as an LP variable (not a constant) in all c
 > - The column for $v^{in}_h$ is placed after the state prefix (after outgoing storage, lag variables, and realized-inflow variables) — see [Solver Abstraction SS2.1](../architecture/solver-abstraction.md) and §4b below. The incoming storage variables are **not** part of the state vector; they are auxiliary variables whose only purpose is to provide a clean dual for cut coefficient extraction.
 
 ## 4b. LP Column and Row Layout
+
 ![LP column layout — state variables (storage, AR lags) first for contiguous dual extraction, dispatch variables per block, theta (future cost) last for Benders cuts](../../images/lp-column-layout.svg)
 
 The stage LP uses a fixed column and row layout that places state variables first (for contiguous dual extraction), followed by auxiliary and equipment columns. With $N = |\mathcal{H}|$ hydros and $L$ = maximum AR order:
@@ -426,7 +427,7 @@ The per-block constraint violation penalties in the objective (referenced from �
 $$
 \sum_{k \in \mathcal{K}} \tau_k \sum_{h \in \mathcal{H}} \Big[
   c^{tv-}_h \sigma^{q-}_{h,k} + c^{ov-}_h \sigma^{o-}_{h,k} + c^{ov+}_h \sigma^{o+}_{h,k} + c^{gv-}_h \sigma^{g-}_{h,k}
-  + c^{ev}_h (\sigma^{e+}_{h,k} + \sigma^{e-}_{h,k})
+  + c^{ev+}_h \sigma^{e+}_{h,k} + c^{ev-}_h \sigma^{e-}_{h,k}
 \Big]
 $$
 

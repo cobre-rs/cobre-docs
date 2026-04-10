@@ -453,20 +453,21 @@ The `StoppingRuleConfig` enum represents the deserialized form of individual ent
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum StoppingRuleConfig {
     IterationLimit {
-        limit: u64,
+        limit: u32,
     },
     TimeLimit {
         seconds: f64,
     },
     BoundStalling {
         tolerance: f64,
-        iterations: u64,
+        iterations: u32,
     },
     Simulation {
-        period: u64,
-        distance_tolerance: f64,
+        period: u32,
+        distance_tol: f64,
+        bound_tol: f64,
         replications: u32,
-        bound_stability_window: u64,
+        bound_window: u32,
     },
 }
 ```
@@ -475,17 +476,18 @@ pub enum StoppingRuleConfig {
 
 **Validation rules:**
 
-| Rule | Condition                                    | Error                                                                                   |
-| ---- | -------------------------------------------- | --------------------------------------------------------------------------------------- |
-| V1   | `limit >= 1` for IterationLimit              | Zero iteration limit prevents any training                                              |
-| V2   | `seconds > 0.0` for TimeLimit                | Non-positive time limit                                                                 |
-| V3   | `iterations >= 1` for BoundStalling          | Zero window is undefined                                                                |
-| V4   | `tolerance > 0.0` for BoundStalling          | Non-positive tolerance                                                                  |
-| V5   | `replications >= 1` for Simulation           | Zero replications is undefined                                                          |
-| V6   | `period >= 1` for Simulation                 | Zero period (every iteration) is computationally prohibitive; use BoundStalling instead |
-| V7   | `bound_stability_window >= 1` for Simulation | Zero bound stability window is undefined                                                |
-| V8   | `distance_tolerance > 0.0` for Simulation    | Non-positive distance tolerance                                                         |
-| V9   | At least one IterationLimit rule in the set  | Safety bound is mandatory                                                               |
+| Rule | Condition                                   | Error                                                                                   |
+| ---- | ------------------------------------------- | --------------------------------------------------------------------------------------- |
+| V1   | `limit >= 1` for IterationLimit             | Zero iteration limit prevents any training                                              |
+| V2   | `seconds > 0.0` for TimeLimit               | Non-positive time limit                                                                 |
+| V3   | `iterations >= 1` for BoundStalling         | Zero window is undefined                                                                |
+| V4   | `tolerance > 0.0` for BoundStalling         | Non-positive tolerance                                                                  |
+| V5   | `replications >= 1` for Simulation          | Zero replications is undefined                                                          |
+| V6   | `period >= 1` for Simulation                | Zero period (every iteration) is computationally prohibitive; use BoundStalling instead |
+| V7   | `bound_window >= 1` for Simulation          | Zero bound stability window is undefined                                                |
+| V8   | `distance_tol > 0.0` for Simulation         | Non-positive distance tolerance                                                         |
+| V9   | `bound_tol > 0.0` for Simulation            | Non-positive bound tolerance                                                            |
+| V9   | At least one IterationLimit rule in the set | Safety bound is mandatory                                                               |
 
 ### 4.2 StoppingRuleResult
 
@@ -572,27 +574,29 @@ The convergence monitor ([Convergence Monitoring](./convergence-monitoring.md)) 
 
 2. **Forward synchronization.** `allreduce` with `ReduceOp::Sum` aggregates global upper bound statistics across ranks ([Convergence Monitoring SS3.1](./convergence-monitoring.md)).
 
-3. **Backward pass.** Generate cuts from visited states ([Training Loop SS6](./training-loop.md)).
+3. **State exchange.** Each rank broadcasts its visited states to all other ranks so that every rank has the full set of trial points for cut generation ([Training Loop SS5](./training-loop.md)).
 
-4. **Cut synchronization.** Distribute new cuts to all ranks via `allgatherv`.
+4. **Backward pass.** Generate cuts from visited states ([Training Loop SS6](./training-loop.md)).
 
-5. **Lower bound evaluation.** Rank 0 solves all stage-0 openings with the latest FCF cuts, applies the risk measure, and broadcasts the LB to all ranks ([Training Loop SS4.3b](./training-loop.md)).
+5. **Cut synchronization.** Distribute new cuts to all ranks via `allgatherv`.
 
-6. **Monitor update.** The convergence monitor updates `MonitorState`:
+6. **Lower bound evaluation.** Rank 0 solves all stage-0 openings with the latest FCF cuts, applies the risk measure, and broadcasts the LB to all ranks ([Training Loop SS4.3b](./training-loop.md)).
+
+7. **Monitor update.** The convergence monitor updates `MonitorState`:
    - Increments `iteration`
    - Updates `wall_time_seconds`
    - Appends the new lower bound to `lower_bound_history`
    - Sets `lower_bound` to the current value
    - Checks `shutdown_requested` flag
 
-7. **Simulation pre-check (conditional).** If a `SimulationBased` rule exists in the set and `iteration % period == 0`:
+8. **Simulation pre-check (conditional).** If a `SimulationBased` rule exists in the set and `iteration % period == 0`:
    - The monitor performs the Phase 1 bound stability check internally
    - If Phase 1 passes, the monitor runs `replications` Monte Carlo simulations
    - The monitor stores per-stage mean costs in `state.simulation_costs`
 
-8. **Rule evaluation.** The monitor calls `self.rule_set.evaluate(&self.state)`, receiving `(should_stop, results)`.
+9. **Rule evaluation.** The monitor calls `self.rule_set.evaluate(&self.state)`, receiving `(should_stop, results)`.
 
-9. **Decision.** If `evaluate` returns `(true, results)` with at least one triggered result, the monitor records the termination reason and signals the training loop to exit. If `(false, results)` with no triggered results, the training loop proceeds to the next iteration.
+10. **Decision.** If `evaluate` returns `(true, results)` with at least one triggered result, the monitor records the termination reason and signals the training loop to exit. If `(false, results)` with no triggered results, the training loop proceeds to the next iteration.
 
 ### 5.2 Ownership Boundaries
 

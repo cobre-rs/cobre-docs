@@ -1,5 +1,7 @@
 # CLP Implementation
 
+> **Status: Not Implemented.** This spec documents the planned CLP integration. No CLP code currently exists in the Cobre codebase. HiGHS is the sole solver backend.
+
 ## Purpose
 
 This spec provides implementation guidance specific to CLP (Coin-OR Linear Programming) integration as the second open-source LP solver reference implementation for Cobre. It complements the [Solver Abstraction Layer](./solver-abstraction.md) with CLP-specific patterns for the C API baseline, mutable pointer optimization for bound updates, the C++ wrapper strategy for LP template cloning, retry strategy, basis management, memory footprint, and optimization-tuned configuration. For thread-local workspace management, see [Solver Workspaces](./solver-workspaces.md).
@@ -234,7 +236,7 @@ CLP's dual sign convention must be verified against the canonical sign conventio
 
 ### 7.3 Thread Safety
 
-Each `Clp_Simplex*` instance is **not thread-safe** — it must be exclusively owned by one thread. This aligns with the solver abstraction's thread-safety requirement ([Solver Abstraction SS4.2](./solver-abstraction.md)). Each OpenMP thread creates its own `Clp_Simplex*` via `Clp_newModel()` at initialization and destroys it at shutdown via `Clp_deleteModel`.
+Each `Clp_Simplex*` instance is **not thread-safe** — it must be exclusively owned by one thread. This aligns with the solver abstraction's thread-safety requirement ([Solver Abstraction SS4.2](./solver-abstraction.md)). Each Rayon thread creates its own `Clp_Simplex*` via `Clp_newModel()` at initialization and destroys it at shutdown via `Clp_deleteModel`.
 
 ### 7.4 Persistence Flag
 
@@ -258,6 +260,6 @@ For SDDP where the LP is rebuilt many times with similar (but not identical) siz
 - [Cut Management](../math/cut-management.md) — How cuts are generated; this spec handles how they are loaded via `Clp_addRows`
 - [Training Loop](./training-loop.md) — Forward/backward pass orchestration driving solver invocations
 - [Binary Formats](../data-model/binary-formats.md) — Cut pool CSR layout (SS3.4)
-- [Hybrid Parallelism](../hpc/hybrid-parallelism.md) — OpenMP threading model requiring one CLP instance per thread
+- [Hybrid Parallelism](../hpc/hybrid-parallelism.md) — Rayon threading model requiring one CLP instance per thread
 - [Memory Architecture](../hpc/memory-architecture.md) — NUMA-aware allocation for solver workspaces
 - [Configuration Reference](../configuration/configuration-reference.md) — Solver configuration parameters

@@ -80,15 +80,15 @@ This is the runtime form of the PAR(p) equation from [PAR(p) Inflow Model SS1](.
 
 ### 1.4 PAR Model Fitting from Historical Data
 
-When AR coefficients are not provided in `inflow_ar_coefficients.parquet`, Cobre fits PAR models from historical inflow data using the Yule-Walker method with BIC-based order selection. For the mathematical derivation of the fitting procedure, see [PAR(p) Inflow Model — Fitting Procedure](../math/par-inflow-model.md).
+When AR coefficients are not provided in `inflow_ar_coefficients.parquet`, Cobre fits PAR models from historical inflow data using the Yule-Walker method with PACF-based order selection. For the mathematical derivation of the fitting procedure, see [PAR(p) Inflow Model — Fitting Procedure](../math/par-inflow-model.md).
 
 The fitting process:
 
 1. **Season extraction** — Group historical observations by season (as defined in `season_definitions`)
 2. **Seasonal statistics** — Compute mean ($\mu_m$) and sample standard deviation ($s_m$) per season
 3. **Standardization** — Transform observations to zero-mean, unit-variance per season
-4. **Order selection** — For each season, fit AR models from order 1 to `max_order`, select the order minimizing BIC
-5. **Yule-Walker solution** — Solve the Yule-Walker equations using Levinson-Durbin recursion in O(p²) per season
+4. **Order selection** — For each season, compute the Periodic Autocorrelation Function (PACF) up to `max_order` and select the order where the PACF coefficient becomes insignificant
+5. **Yule-Walker solution** — Solve the Yule-Walker equations via LU factorization of the Toeplitz autocorrelation matrix
 6. **Store direct output** — Store the standardized coefficients $\psi^*_{m,\ell}$ (direct Yule-Walker output) and the computed `residual_std_ratio` in `inflow_ar_coefficients.parquet`; no conversion to original units is performed (DEC-020)
 
 The fitted model output includes: seasonal means ($\mu_m$, $s_m$) stored in `inflow_seasonal_stats.parquet`, and standardized AR coefficients ($\psi^*_{m,\ell}$) plus `residual_std_ratio` stored in `inflow_ar_coefficients.parquet`. AR order is implicit from the count of coefficient rows per (hydro, stage) group — it is not stored as a separate field.
@@ -370,12 +370,12 @@ The `sampling_method` field on each stage in `stages.json` (see [Input Scenarios
 | Method       | Description                                                               | Phase 5 Status |
 | ------------ | ------------------------------------------------------------------------- | -------------- |
 | `saa`        | Sample Average Approximation — uniform Monte Carlo from seeded RNG        | Implemented    |
-| `lhs`        | Latin Hypercube Sampling — stratified, uniform marginal coverage          | Deferred       |
-| `qmc_sobol`  | Quasi-Monte Carlo (Sobol sequences) — low-discrepancy deterministic-like  | Deferred       |
-| `qmc_halton` | Quasi-Monte Carlo (Halton sequences) — alternative low-discrepancy method | Deferred       |
+| `lhs`        | Latin Hypercube Sampling — stratified, uniform marginal coverage          | Implemented    |
+| `qmc_sobol`  | Quasi-Monte Carlo (Sobol sequences) — low-discrepancy deterministic-like  | Implemented    |
+| `qmc_halton` | Quasi-Monte Carlo (Halton sequences) — alternative low-discrepancy method | Implemented    |
 | `selective`  | Selective/Representative Sampling — clustering on historical data         | Deferred       |
 
-The deferred methods (`lhs`, `qmc_sobol`, `qmc_halton`, `selective`) are listed in [Deferred Features](../deferred.md) and are not implemented in Phase 5.
+The `selective` method is listed in [Deferred Features](../deferred.md) and is not yet implemented.
 
 **Per-stage variation.** The `sampling_method` field can vary per stage (as permitted by [Input Scenarios SS1.8](../data-model/input-scenarios.md)), enabling mixed strategies in a single run. The minimal viable solver uses uniform SAA across all stages; per-stage method variation is a deferred capability.
 

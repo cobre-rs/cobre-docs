@@ -659,11 +659,11 @@ Energy contracts represent agreements to buy (import) or sell (export) electrici
 
 ### Contract Operative States
 
-| State            | Condition                                    | LP Variables         |
-| ---------------- | -------------------------------------------- | -------------------- |
-| `non_existing`   | Before `entry_stage_id`                      | None                 |
-| `operating`      | Between `entry_stage_id` and `exit_stage_id` | import_mw, export_mw |
-| `decommissioned` | After `exit_stage_id`                        | None                 |
+| State            | Condition                                    | LP Variables                                             |
+| ---------------- | -------------------------------------------- | -------------------------------------------------------- |
+| `non_existing`   | Before `entry_stage_id`                      | None                                                     |
+| `operating`      | Between `entry_stage_id` and `exit_stage_id` | One of `import_mw` or `export_mw` based on contract type |
+| `decommissioned` | After `exit_stage_id`                        | None                                                     |
 
 ```json
 {

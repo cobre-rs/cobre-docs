@@ -113,11 +113,11 @@ This reduces the `allgatherv` participant count from $R$ total ranks to $R / R_{
 
 Given the same inputs and random seed, Cobre must produce **bit-for-bit identical** results regardless of:
 
-| Must Be Independent Of            | Mechanism                                                                     |
-| --------------------------------- | ----------------------------------------------------------------------------- |
-| Number of MPI ranks               | Deterministic seeding, contiguous block distribution, deterministic cut slots |
-| Number of OpenMP threads per rank | Thread-local accumulation, OpenMP barrier, single-threaded merge              |
-| Execution timing/ordering         | Identity-based seeding, deterministic `allgatherv` rank ordering              |
+| Must Be Independent Of           | Mechanism                                                                     |
+| -------------------------------- | ----------------------------------------------------------------------------- |
+| Number of MPI ranks              | Deterministic seeding, contiguous block distribution, deterministic cut slots |
+| Number of Rayon threads per rank | Thread-local accumulation, Rayon join, single-threaded merge                  |
+| Execution timing/ordering        | Identity-based seeding, deterministic `allgatherv` rank ordering              |
 
 ### 3.2 Component-Level Reproducibility
 
@@ -138,7 +138,7 @@ Each component of the SDDP pipeline has specific reproducibility mechanisms:
 
 **Reductions**: `allreduce` with `ReduceOp::Sum` may produce different results depending on the reduction tree shape (non-associativity of floating-point addition). For convergence statistics this is acceptable — the upper bound is a statistical estimate. See [Communication Patterns §6.2](./communication-patterns.md).
 
-**OpenMP reductions**: Thread-local accumulation followed by single-threaded merge (see [Synchronization §3](./synchronization.md)) produces deterministic results because the merge order is fixed (thread 0, thread 1, ..., thread $N-1$). This avoids the non-determinism of `#pragma omp reduction(+:sum)` where summation order depends on thread scheduling.
+**Intra-rank reductions**: Thread-local accumulation followed by single-threaded merge (see [Synchronization §3](./synchronization.md)) produces deterministic results because the merge order is fixed (thread 0, thread 1, ..., thread $N-1$). Rayon's `par_iter` with `collect()` or indexed `par_chunks()` preserves deterministic aggregation order, avoiding the non-determinism that would arise from unordered parallel reductions.
 
 **Cut coefficient aggregation**: For single-cut formulation, per-opening results are aggregated within each thread (sequential — deterministic), then merged across threads (fixed order — deterministic), then exchanged via `allgatherv` (rank order — deterministic). The final averaging is performed locally by each rank on the full set of results (identical data — deterministic). No floating-point non-determinism is introduced at any step.
 

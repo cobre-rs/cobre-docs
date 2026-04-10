@@ -20,14 +20,13 @@ The simulation phase evaluates the trained SDDP policy on a large number of scen
 
 Simulation behavior is configured via the `simulation` section of `config.json`. Key parameters include:
 
-| Parameter       | Config Path                        | Description                                                           | Reference                                                              |
-| --------------- | ---------------------------------- | --------------------------------------------------------------------- | ---------------------------------------------------------------------- |
-| `enabled`       | `simulation.enabled`               | Whether the simulation phase executes after training                  | [CLI and Lifecycle SS5.3](./cli-and-lifecycle.md)                      |
-| `n_scenarios`   | `simulation.n_scenarios`           | Number of scenarios to evaluate                                       | [Configuration Reference](../configuration/configuration-reference.md) |
-| Sampling scheme | `scenario_source` in `stages.json` | How scenarios are selected (InSample, External, Historical)           | [Scenario Generation SS3](./scenario-generation.md)                    |
-| Output detail   | `simulation.output_detail`         | Level of output granularity (summary, stage-level, full per-scenario) | [Output Schemas](../data-model/output-schemas.md)                      |
+| Parameter       | Config Path                        | Description                                                 | Reference                                                              |
+| --------------- | ---------------------------------- | ----------------------------------------------------------- | ---------------------------------------------------------------------- |
+| `enabled`       | `simulation.enabled`               | Whether the simulation phase executes after training        | [CLI and Lifecycle SS5.3](./cli-and-lifecycle.md)                      |
+| `num_scenarios` | `simulation.num_scenarios`         | Number of scenarios to evaluate                             | [Configuration Reference](../configuration/configuration-reference.md) |
+| Sampling scheme | `scenario_source` in `config.json` | How scenarios are selected (InSample, External, Historical) | [Scenario Generation SS3](./scenario-generation.md)                    |
 
-The sampling scheme is defined in `stages.json` (not `config.json`) because it is a property of the stochastic model, not the solver. See [Configuration Reference SS18.11](../configuration/configuration-reference.md).
+The sampling scheme is defined in `config.json`. See [Configuration Reference SS18.11](../configuration/configuration-reference.md).
 
 For the full `config.json` schema, see [Configuration Reference](../configuration/configuration-reference.md).
 
@@ -170,6 +169,12 @@ pub struct SimulationCostResult {
     pub storage_violation_cost: f64,
     pub filling_target_cost: f64,
     pub hydro_violation_cost: f64,
+    pub turbined_min_violation_cost: f64,
+    pub turbined_max_violation_cost: f64,
+    pub storage_min_violation_cost: f64,
+    pub storage_max_violation_cost: f64,
+    pub ramp_up_violation_cost: f64,
+    pub ramp_down_violation_cost: f64,
     pub inflow_penalty_cost: f64,
     pub generic_violation_cost: f64,
     // Category 3 — Regularization

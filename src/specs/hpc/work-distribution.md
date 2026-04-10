@@ -2,7 +2,7 @@
 
 ## Purpose
 
-This spec defines how Cobre distributes computational work across MPI ranks and OpenMP threads during the SDDP training loop: forward pass scenario distribution with thread-trajectory affinity, backward pass trial point distribution with per-stage synchronization, and the load balancing strategy. This spec details the distribution mechanics that [Training Loop](../architecture/training-loop.md) describes at the algorithmic level.
+This spec defines how Cobre distributes computational work across MPI ranks and Rayon threads during the SDDP training loop: forward pass scenario distribution with thread-trajectory affinity, backward pass trial point distribution with per-stage synchronization, and the load balancing strategy. This spec details the distribution mechanics that [Training Loop](../architecture/training-loop.md) describes at the algorithmic level.
 
 ## 1. Forward Pass Distribution
 
@@ -23,7 +23,7 @@ Forward pass scenarios are distributed across MPI ranks using **static contiguou
 
 ### 1.2 Thread-Trajectory Affinity Within Rank
 
-Within each rank, the rank's assigned scenarios are parallelized across OpenMP threads using **thread-trajectory affinity**: each thread owns one or more complete forward trajectories and solves all stages sequentially ($t = 1$ to $T$) for each assigned trajectory. This preserves:
+Within each rank, the rank's assigned scenarios are parallelized across Rayon threads using **thread-trajectory affinity**: each thread owns one or more complete forward trajectories and solves all stages sequentially ($t = 1$ to $T$) for each assigned trajectory. This preserves:
 
 - **Cache locality** — solver basis, scenario data, and LP coefficients remain warm in the thread's cache lines across stages
 - **Warm-start continuity** — the solver basis from stage $t$ warm-starts stage $t+1$ within the same trajectory
@@ -31,7 +31,7 @@ Within each rank, the rank's assigned scenarios are parallelized across OpenMP t
 
 > **Decision [DEC-017](../overview/decision-log.md#dec-017) (active):** Communication-free parallel noise generation -- every rank and thread independently derives identical noise via deterministic SipHash-1-3 seed derivation, eliminating MPI broadcast or gather for scenario noise.
 
-OpenMP distributes trajectories to threads using `schedule(dynamic,1)`. Dynamic scheduling within a rank absorbs the small per-trajectory solve time variance while maintaining thread-trajectory affinity (each trajectory is fully executed by the thread that picks it up).
+Rayon distributes trajectories to threads using `par_iter_mut` with static partitioning. The work-stealing scheduler absorbs the small per-trajectory solve time variance while maintaining thread-trajectory affinity (each trajectory is fully executed by the thread that picks it up).
 
 ### 1.3 Batch Processing
 
@@ -67,7 +67,7 @@ The backward pass walks stages in reverse order ($t = T$ down to 2). At each sta
 
 **Step 1 — Distribute trial points**: The trial points for stage $t$ (visited states from all forward trajectories) are divided across ranks using static contiguous blocks.
 
-**Step 2 — Evaluate openings**: Each rank processes its assigned trial points. For each trial point, the rank evaluates **all** $N_{\text{openings}}$ noise vectors from the fixed opening tree. Within a rank, trial points are distributed across OpenMP threads, and each thread evaluates its assigned trial points' openings **sequentially** — not in parallel. This sequential evaluation preserves solver warm-start across openings (the LP structure is identical, only the RHS changes between openings).
+**Step 2 — Evaluate openings**: Each rank processes its assigned trial points. For each trial point, the rank evaluates **all** $N_{\text{openings}}$ noise vectors from the fixed opening tree. Within a rank, trial points are distributed across Rayon threads via `par_iter_mut`, and each thread evaluates its assigned trial points' openings **sequentially** — not in parallel. This sequential evaluation preserves solver warm-start across openings (the LP structure is identical, only the RHS changes between openings).
 
 **Step 3 — Aggregate into cuts**: Each thread aggregates its per-opening results into cuts using the configured risk measure (expectation or CVaR).
 
@@ -90,7 +90,7 @@ The openings for a given trial point are evaluated sequentially by the owning th
 
 With production-scale parameters ($M = 192$ forward passes, $R = 4$ ranks, $N_{\text{threads}} = 48$ per rank), each rank handles $192 / 4 = 48$ trial points per stage with 48 threads — exactly 1.0 trial points per thread, achieving 100% thread utilization in the forward pass.
 
-> **Forward vs. backward utilization**: The forward pass achieves 100% thread utilization because $M / R = N_{\text{threads}} = 48$. The backward pass has lower utilization: each rank processes $(T - 1) \times N_{\text{open}} = 59 \times 10 = 590$ openings sequentially on a single thread (to preserve solver warm-start), using only 1 of 48 threads (2.1% utilization). This is an inherent trade-off — warm-start LP solves are faster per opening than cold-start parallel solves would be. See [Production Scale Reference §4.4](../overview/production-scale-reference.md) for the complete utilization analysis.
+> **Forward vs. backward utilization**: The forward pass achieves 100% thread utilization because $M / R = N_{\text{threads}} = 48$. The backward pass also achieves high thread utilization: trial points are distributed across threads via `par_iter_mut`, and each thread evaluates all openings sequentially for its assigned trial points (to preserve solver warm-start). With 48 trial points and 48 threads, this is 1.0 trial points per thread — ~100% thread utilization. Openings are sequential _within_ each trial point, but trial points are parallel _across_ threads. See [Production Scale Reference §4.4](../overview/production-scale-reference.md) for the complete utilization analysis.
 
 ## 3. Distribution Arithmetic
 
@@ -136,17 +136,17 @@ SDDP forward pass scenarios have nearly identical computational cost because:
 2. **Solver warm-start** — all threads warm-start from the same per-stage basis cache, leading to similar iteration counts.
 3. **No branching variance** — unlike branch-and-bound, simplex iteration count variance is bounded.
 
-The backward pass has slightly more variance (trial points at different positions in state space may require different simplex iteration counts), but this is absorbed by dynamic OpenMP scheduling within each rank.
+The backward pass has slightly more variance (trial points at different positions in state space may require different simplex iteration counts), but this is absorbed by Rayon's work-stealing scheduler within each rank.
 
-### 4.3 Dynamic Scheduling Within Rank
+### 4.3 Work-Stealing Within Rank
 
-OpenMP uses `schedule(dynamic,1)` for distributing trial points across threads within a rank. This means:
+Rayon uses `par_iter_mut` for distributing trial points across threads within a rank. Rayon's work-stealing scheduler statically partitions work across threads, and idle threads steal from busy threads' queues. This means:
 
-- Threads pick up the next available trial point when they finish the current one
-- No pre-assignment — if one trial point takes longer (more simplex iterations), other threads continue with remaining trial points
-- Chunk size of 1 provides finest-grained load balancing within the rank
+- Trial points are initially partitioned across threads, with idle threads stealing remaining work
+- If one trial point takes longer (more simplex iterations), Rayon's work-stealing rebalances automatically
+- No explicit chunk size configuration — Rayon's adaptive splitting provides fine-grained load balancing within the rank
 
-This two-level approach (static across ranks, dynamic within rank) provides optimal load balance without the complexity and latency overhead of cross-rank dynamic dispatch.
+This two-level approach (static across ranks, work-stealing within rank) provides optimal load balance without the complexity and latency overhead of cross-rank dynamic dispatch.
 
 ## 5. Design Rationale: Scenario-Based Distribution
 
@@ -165,7 +165,7 @@ The alternative — state-based distribution — would first deduplicate trial p
 
 ## Cross-References
 
-- [Hybrid Parallelism](./hybrid-parallelism.md) — ferrompi + OpenMP architecture, static distribution across ranks, thread-trajectory affinity
+- [Hybrid Parallelism](./hybrid-parallelism.md) — ferrompi + Rayon architecture, static distribution across ranks, thread-trajectory affinity
 - [Training Loop §4.3](../architecture/training-loop.md) — Forward pass parallel distribution: contiguous blocks to ranks, thread-trajectory affinity
 - [Training Loop §6.2-§6.3](../architecture/training-loop.md) — Backward pass: per-stage execution, trial point distribution, allgatherv
 - [SDDP Algorithm §3.4](../math/sddp-algorithm.md) — Thread-trajectory affinity, backward sync barriers, forward pass state saving

@@ -4,7 +4,7 @@
 
 ## Purpose
 
-This spec defines the Cobre MCP (Model Context Protocol) server: the complete tool, resource, and prompt definitions that expose Cobre as a first-class tool for AI agents, the transport and security model for local and remote operation, the progress reporting mechanism for long-running SDDP training, and the capability negotiation handshake. The `cobre-mcp` crate implements this spec as a standalone server binary that invokes the Cobre Rust library API directly -- single-process, no MPI, OpenMP threads for computation. All tool responses reuse the response envelope and error schema defined in [Structured Output](structured-output.md).
+This spec defines the Cobre MCP (Model Context Protocol) server: the complete tool, resource, and prompt definitions that expose Cobre as a first-class tool for AI agents, the transport and security model for local and remote operation, the progress reporting mechanism for long-running SDDP training, and the capability negotiation handshake. The `cobre-mcp` crate implements this spec as a standalone server binary that invokes the Cobre Rust library API directly -- single-process, no MPI, Rayon threads for computation. All tool responses reuse the response envelope and error schema defined in [Structured Output](structured-output.md).
 
 ## 1. Crate Architecture
 
@@ -14,7 +14,7 @@ This spec defines the Cobre MCP (Model Context Protocol) server: the complete to
 | --------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
 | **Crate type**        | Binary crate (`[[bin]]`)                                                                                                     |
 | **Binary name**       | `cobre-mcp` (standalone) or `cobre serve` (subcommand hosted in `cobre-cli`)                                                 |
-| **Execution mode**    | Single-process. No MPI. OpenMP threads for computation                                                                       |
+| **Execution mode**    | Single-process. No MPI. Rayon threads for computation                                                                        |
 | **What it owns**      | MCP protocol handling (stdio/SSE/streamable-HTTP transport), tool dispatch, resource serving, prompt definitions, sandboxing |
 | **What it delegates** | All computation to `cobre-sddp`; all I/O to `cobre-io`; all data model types from `cobre-core`                               |
 | **MPI relationship**  | Never initializes MPI. The `cobre-sddp` library operates in single-rank mode                                                 |
@@ -275,7 +275,7 @@ Executes SDDP training and/or simulation on a case directory. This is the only t
     "name": "cobre/run",
     "arguments": {
       "case_dir": "/data/case_001",
-      "phases": ["both"]
+      "phases": "both"
     },
     "_meta": {
       "progressToken": "run-001"
@@ -1147,12 +1147,12 @@ MCP resources provide read-only access to Cobre data artifacts via URI templates
 
 **URI template variables:**
 
-| Variable      | Type   | Description                                                                 |
-| ------------- | ------ | --------------------------------------------------------------------------- |
-| `case_dir`    | string | URL-encoded absolute path to the case directory                             |
-| `output_dir`  | string | URL-encoded absolute path to the output directory                           |
-| `entity_type` | string | Entity type identifier: `hydros`, `thermals`, `buses`, `lines`, `contracts` |
-| `entity_id`   | string | Entity identifier (e.g., `ITAIPU`)                                          |
+| Variable      | Type   | Description                                                                                                                 |
+| ------------- | ------ | --------------------------------------------------------------------------------------------------------------------------- |
+| `case_dir`    | string | URL-encoded absolute path to the case directory                                                                             |
+| `output_dir`  | string | URL-encoded absolute path to the output directory                                                                           |
+| `entity_type` | string | Entity type identifier: `hydros`, `thermals`, `buses`, `lines`, `contracts`, `pumping_stations`, `non_controllable_sources` |
+| `entity_id`   | string | Entity identifier (e.g., `ITAIPU`)                                                                                          |
 
 ### 3.2 Parquet-to-JSON Conversion Rules
 
@@ -1350,7 +1350,7 @@ The primary transport for local agent interaction (Claude Desktop, agent CLI too
 | `--transport stdio`         | Use stdio transport                                   | (default)         |
 | `--allow-write`             | Enable read-write tools (`run`, `export-results`)     | Disabled          |
 | `--allowed-dirs <paths>`    | Comma-separated allowlist of case/output directories  | Current directory |
-| `--threads <n>`             | Number of OpenMP threads for computation              | Auto-detect       |
+| `--threads <n>`             | Number of Rayon threads for computation               | Auto-detect       |
 | `COBRE_MCP_ALLOWED_DIRS`    | Environment variable alternative for `--allowed-dirs` | (none)            |
 
 ### 5.2 Streamable HTTP Transport (Remote)

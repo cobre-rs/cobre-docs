@@ -156,10 +156,8 @@ table BendersCut {
     slot_index: uint32;          // LP row position (REQUIRED for reproducibility)
     iteration: uint32;
     forward_pass_idx: uint32;
-    scenario_idx: uint32;
     intercept: double;           // alpha - beta' * x_hat
     coefficients: [double];      // beta (length = state_dimension)
-    state_at_generation: [double]; // x_hat (for cut selection)
     is_active: bool = true;
     domination_count: uint32 = 0;
 }
@@ -230,11 +228,9 @@ table StageBasis {
 
 // Policy metadata for resume/warm-start
 table PolicyMetadata {
-    version: string;
     cobre_version: string;
     created_at: string;          // ISO 8601
     completed_iterations: uint32;
-    last_forward_pass: uint32;
     final_lower_bound: double;
     best_upper_bound: double;
     max_iterations: uint32;
@@ -242,11 +238,8 @@ table PolicyMetadata {
     warm_start_cuts: uint32;
     // capacity = warm_start_cuts + max_iterations * forward_passes
     rng_seed: uint64;
-    rng_state: [uint64];         // Full RNG state for resume
     state_dimension: uint32;
     num_stages: uint32;
-    config_hash: string;
-    system_hash: string;
     total_visited_states: uint64 = 0; // Sum of state counts across all stages
                                       // (default 0 for backward compat with
                                       // checkpoints written before this field)

@@ -116,7 +116,7 @@ where `base_seed + iteration` serves as the effective base seed for the simulati
 
 #### Parallel Distribution
 
-The `replications` simulation scenarios (typically 100) are distributed across MPI ranks using **contiguous block assignment**, the same distribution strategy as the training forward pass ([Training Loop SS4.3](./training-loop.md)). Within each rank, **all OpenMP threads** participate in the simulation forward pass using the same thread-trajectory affinity pattern: each thread owns complete trajectories and solves all stages sequentially for its assigned scenarios.
+The `replications` simulation scenarios (typically 100) are distributed across MPI ranks using **contiguous block assignment**, the same distribution strategy as the training forward pass ([Training Loop SS4.3](./training-loop.md)). Within each rank, **all Rayon worker threads** participate in the simulation forward pass using the same thread-trajectory affinity pattern: each thread owns complete trajectories and solves all stages sequentially for its assigned scenarios.
 
 Given $R$ ranks and $N_{\text{rep}}$ replications, each rank processes $\lfloor N_{\text{rep}} / R \rfloor$ or $\lceil N_{\text{rep}} / R \rceil$ scenarios. After all ranks complete, a single `allreduce` aggregates the per-stage cost sums across ranks, yielding the global per-stage mean costs $c_t^{new}$ used in the normalized distance comparison.
 

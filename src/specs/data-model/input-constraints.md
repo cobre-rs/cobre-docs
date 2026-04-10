@@ -106,7 +106,9 @@ Useful for maintenance outages, seasonal restrictions, environmental constraints
 | `direct_mw`  | f64  | Direct flow capacity (null = use base)  |
 | `reverse_mw` | f64  | Reverse flow capacity (null = use base) |
 
-### Pumping Station Bounds (`constraints/pumping_bounds.parquet`) — Optional
+### Pumping Station Bounds (`constraints/pumping_bounds.parquet`) — Optional {#pumping-bounds}
+
+> **Implementation status**: Schema defined but constraint application is a NO-OP stub in the current code. The file is parsed and validated, but bounds are not applied to the LP.
 
 | Column       | Type | Description                           |
 | ------------ | ---- | ------------------------------------- |
@@ -115,7 +117,9 @@ Useful for maintenance outages, seasonal restrictions, environmental constraints
 | `min_m3s`    | f64  | Minimum pumped flow (null = use base) |
 | `max_m3s`    | f64  | Maximum pumped flow (null = use base) |
 
-### Contract Bounds (`constraints/contract_bounds.parquet`) — Optional
+### Contract Bounds (`constraints/contract_bounds.parquet`) — Optional {#contract-bounds}
+
+> **Implementation status**: Schema defined but constraint application is a NO-OP stub in the current code. The file is parsed and validated, but bounds are not applied to the LP.
 
 | Column          | Type | Description                               |
 | --------------- | ---- | ----------------------------------------- |
@@ -255,6 +259,9 @@ Variables use function-like syntax: `variable_type(entity_id)`. For block-specif
 | `pumping_power`      | `pumping_power(id [, block])`      | MW    |                                                    |
 | `contract_import`    | `contract_import(id [, block])`    | MW    |                                                    |
 | `contract_export`    | `contract_export(id [, block])`    | MW    |                                                    |
+| `line_exchange`      | `line_exchange(id [, block])`      | MW    | Net exchange on transmission line                  |
+| `nc_generation`      | `nc_generation(id [, block])`      | MW    | Non-controllable generation (wind/solar)           |
+| `nc_curtailment`     | `nc_curtailment(id [, block])`     | MW    | Non-controllable generation curtailment            |
 
 > **Note on `hydro_outflow`**: Currently defined as an alias for `turbined + spillage`. Future modeling enhancements (CEPEL advanced downstream flow formulations with participation factors) may require `hydro_outflow` to become an independent variable with a more detailed definition. See [Input System Entities §3](input-system-entities.md) future extensions for details.
 

@@ -43,7 +43,7 @@ ferrompi: NOT a dependency of cobre-python
 | Step 1 -- MPI initialization              | **Skipped**. No MPI in the process                                                      |
 | Step 2 -- Topology detection              | **Skipped**. No scheduler or rank detection                                             |
 | Step 3 -- Shared memory communicator      | **Skipped**. No MPI windows                                                             |
-| Step 4 -- OpenMP configuration            | **Active**. Reads `OMP_NUM_THREADS` from environment; defaults to physical core count   |
+| Step 4 -- Rayon configuration             | **Active**. Reads `RAYON_NUM_THREADS` from environment; defaults to physical core count |
 | Step 5 -- LP solver threading suppression | **Active**. Validates `HIGHS_PARALLEL=false`, `MKL_NUM_THREADS=1`                       |
 | Step 6 -- NUMA allocation policy          | **Active** on Linux. Local allocation via `libnuma` if available                        |
 | Step 7 -- Workspace allocation            | **Active**. Thread-local solver workspaces allocated with first-touch NUMA placement    |
@@ -58,7 +58,7 @@ When `num_workers > 1` is requested (or when a non-local backend is explicitly s
 | Step 1 -- MPI initialization              | **Replaced**. Creates a `TcpBackend` or `ShmBackend` instead of `LocalBackend`, depending on the selected backend (see SS7.5)         |
 | Step 2 -- Topology detection              | **Replaced**. Rank and size are assigned by the parent process via function arguments, not by a scheduler                             |
 | Step 3 -- Shared memory communicator      | **Replaced**. For `ShmBackend`, the POSIX shared memory segment provides true shared memory. For `TcpBackend`, `HeapFallback` is used |
-| Step 4 -- OpenMP configuration            | **Active**. Each worker reads `OMP_NUM_THREADS` independently; defaults to physical core count divided by `num_workers`               |
+| Step 4 -- Rayon configuration             | **Active**. Each worker reads `RAYON_NUM_THREADS` independently; defaults to physical core count divided by `num_workers`             |
 | Step 5 -- LP solver threading suppression | **Active**. Same as single-process mode                                                                                               |
 | Step 6 -- NUMA allocation policy          | **Active** on Linux. Each worker process has its own NUMA allocation policy                                                           |
 | Step 7 -- Workspace allocation            | **Active**. Each worker allocates its own thread-local solver workspaces                                                              |
@@ -219,6 +219,10 @@ def run(
           "n_scenarios" and "completed" keys, or None if skipped.
         - "stochastic" (dict | None) -- stochastic preprocessing summary.
         - "hydro_models" (dict | None) -- hydro model summary.
+        - "provenance" (dict) -- run provenance metadata with keys
+          "cobre_version" (str), "started_at" (str, ISO 8601),
+          "finished_at" (str, ISO 8601), "hostname" (str),
+          and "config_hash" (str, SHA-256 of the resolved config).
 
     Raises:
         OSError: If case_dir does not exist or output write fails.
@@ -523,6 +527,8 @@ class NonControllableSource:
     id: int                                      # i32
     name: str
 ```
+
+> **Status: PLANNED -- NOT YET IMPLEMENTED.** Sections 2.5 through 2.10 document a class-based Python API that is designed but not yet present in the codebase. The current implementation exposes a functional, dict-based API (SS2.1 through SS2.4). The classes below represent the planned future API surface and are retained here as a design reference. Do not write code against these classes until they appear in the `cobre` module.
 
 ### 2.5 PARModel
 
@@ -951,11 +957,11 @@ The Global Interpreter Lock (GIL) is the central concurrency constraint at the P
 
 1. **GIL acquired to receive Python call and validate arguments.** When Python calls a PyO3-wrapped function (e.g., `train()`), the GIL is held. PyO3 validates and converts arguments from Python objects to Rust types.
 
-2. **Thread state detached via `py.allow_threads()` before entering Rust computation.** Before invoking any Rust computation (LP solves, cut generation, scenario sampling), the binding code calls `py.allow_threads(|| { ... })` to detach from the Python runtime. On GIL-enabled builds, this releases the GIL, allowing other Python threads to execute. On free-threaded builds (see SS7.5a), this detaches the thread state, preventing the thread from blocking stop-the-world synchronization events (GC, tracing). The same code is correct on both build types.
+2. **Thread state detached via `py.detach()` before entering Rust computation.** Before invoking any Rust computation (LP solves, cut generation, scenario sampling), the binding code calls `py.detach(|| { ... })` to detach from the Python runtime. On GIL-enabled builds, this releases the GIL, allowing other Python threads to execute. On free-threaded builds (see SS7.5a), this detaches the thread state, preventing the thread from blocking stop-the-world synchronization events (GC, tracing). The same code is correct on both build types.
 
-3. **No Rust thread within an OpenMP parallel region ever acquires the GIL.** OpenMP threads spawned during the training or simulation loop are pure Rust/C threads. They never call back into Python, never acquire the GIL, and never touch `PyObject` references. This is guaranteed by construction: the OpenMP callback trampoline pattern ([Hybrid Parallelism](../hpc/hybrid-parallelism.md) SS5.3) calls Rust closures that have no access to `Python<'_>` tokens.
+3. **No Rust thread within a Rayon parallel region ever acquires the GIL.** Rayon threads spawned during the training or simulation loop are pure Rust threads. They never call back into Python, never acquire the GIL, and never touch `PyObject` references. This is guaranteed by construction: the Rayon parallel iterator pattern ([Hybrid Parallelism](../hpc/hybrid-parallelism.md) SS5.3) calls Rust closures that have no access to `Python<'_>` tokens.
 
-4. **GIL reacquired to convert results to Python objects on return.** When Rust computation completes, `py.allow_threads()` returns, reacquiring the GIL. The binding code converts Rust results to Python objects (NumPy arrays, dicts, PyO3 class instances).
+4. **GIL reacquired to convert results to Python objects on return.** When Rust computation completes, `py.detach()` returns, reacquiring the GIL. The binding code converts Rust results to Python objects (NumPy arrays, dicts, PyO3 class instances).
 
 5. **No Python callbacks into the hot loop.** All customization is via configuration (`config_overrides` dict), not runtime callbacks. The optional `progress_callback` is invoked only at iteration boundaries (outside the LP solve parallel regions) with the GIL briefly reacquired.
 
@@ -966,8 +972,8 @@ The Global Interpreter Lock (GIL) is the central concurrency constraint at the P
 The following timeline shows GIL state transitions during a complete `train()` call:
 
 ```
-Python thread                     Rust / OpenMP threads
-=============                     =====================
+Python thread                     Rust / Rayon threads
+=============                     ====================
 
 train(case, config)
   |
@@ -975,19 +981,19 @@ train(case, config)
   |   Validate arguments  |
   |   Convert Python args |
   |   to Rust types       |
-  +-- py.allow_threads() -+
+  +-- py.detach() ---------+
   |                        \
   |   [GIL RELEASED]       +-- Initialize training loop
   |                        |   Allocate solver workspaces
   |                        |
   |                        +-- for iteration = 1..N:
   |                        |     |
-  |                        |     +-- [OpenMP] Forward pass
+  |                        |     +-- [Rayon] Forward pass
   |                        |     |   (parallel LP solves, no GIL)
   |                        |     |
   |                        |     +-- Forward sync (local, no MPI)
   |                        |     |
-  |                        |     +-- [OpenMP] Backward pass
+  |                        |     +-- [Rayon] Backward pass
   |                        |     |   (parallel LP solves, no GIL)
   |                        |     |
   |                        |     +-- Convergence check
@@ -1039,7 +1045,7 @@ train(case, num_workers=N)
   |                            |     Import cobre       Import cobre
   |                            |     Create Communicator Create Communicator
   |                            |       |                  |
-  |                            |     py.allow_threads() py.allow_threads()
+  |                            |     py.detach()        py.detach()
   |                            |       |                  |
   |                            |     [GIL RELEASED]     [GIL RELEASED]
   |                            |     SDDP loop          SDDP loop
@@ -1075,9 +1081,9 @@ train(case, num_workers=N)
 
 ### 3.3 Progress Callback GIL Protocol
 
-When a `progress_callback` is provided, the GIL is reacquired at each iteration boundary -- **outside** any OpenMP parallel region -- to invoke the callback. The sequence per iteration is:
+When a `progress_callback` is provided, the GIL is reacquired at each iteration boundary -- **outside** any Rayon parallel region -- to invoke the callback. The sequence per iteration is:
 
-1. All OpenMP threads complete the backward pass and join (implicit barrier).
+1. All Rayon threads complete the backward pass and join (implicit barrier).
 2. The main Rust thread reacquires the GIL via `Python::with_gil(|py| { ... })`.
 3. The `ProgressEvent` is constructed as a Python object.
 4. The callback is invoked with the event.
@@ -1269,206 +1275,82 @@ This returns a Python `bytes` object (a copy, not zero-copy) to avoid lifetime i
 
 ## 6. Error Handling
 
-### 6.1 Exception Hierarchy
+### 6.1 Exception Mapping
 
-Cobre Python exceptions map from the structured error kind registry defined in [Structured Output](./structured-output.md) SS2.3. The hierarchy is:
+Cobre's Python bindings use **standard Python exceptions** rather than a custom exception hierarchy. The PyO3 layer translates Rust error types from the structured error kind registry ([Structured Output](./structured-output.md) SS2.3) into the three standard exception types below:
 
 ```
 Exception (Python built-in)
-  +-- cobre.CobreError (base for all Cobre exceptions)
-        +-- cobre.ValidationError
-        +-- cobre.SolverError
-        +-- cobre.IOError
-        +-- cobre.WorkerError
+  +-- OSError       -- file/IO errors (missing files, write failures, corrupt outputs)
+  +-- ValueError    -- validation and configuration errors (schema, referential, semantic)
+  +-- RuntimeError  -- solver failures, internal errors, computation errors
 ```
+
+This mapping is intentional: Python users expect standard exceptions in `try/except` blocks, and tools like `pytest.raises` work without importing custom exception types. The error message string includes the structured error kind from the registry for programmatic disambiguation when needed.
 
 ### 6.1a Worker Error Handling
 
-The `WorkerError` exception is raised by the parent process when a worker process fails during multi-process execution (`num_workers > 1`). It is a subclass of `CobreError` and carries information about the failed worker.
-
-```python
-class WorkerError(CobreError):
-    """Raised when a worker process fails during multi-process execution.
-
-    Wraps information about the first failure detected. Raised by the
-    parent (orchestrator) process; remaining live workers are terminated.
-    """
-
-    @property
-    def rank(self) -> int:
-        """Rank of the failed worker (0-based).
-
-        The rank of the first worker whose failure was detected by the
-        parent process (rank assigned during spawning, SS2.1a step 4).
-        """
-        ...
-
-    @property
-    def exit_code(self) -> int | None:
-        """Exit code of the failed worker process.
-
-        The OS exit code returned by the worker process. None if the
-        worker was terminated by a signal (e.g., SIGKILL, SIGSEGV)
-        rather than exiting normally with a non-zero code.
-        """
-        ...
-
-    @property
-    def inner(self) -> CobreError | None:
-        """The original exception from the failed worker, if available.
-
-        When a worker raises a CobreError (or subclass) during execution,
-        the exception is serialized via multiprocessing.Queue and attached
-        here. None if the worker crashed without raising a Python-level
-        exception (e.g., segfault, OOM kill, or a Rust panic that could
-        not be translated).
-        """
-        ...
-```
+In multi-process execution (`num_workers > 1`), when a worker process fails, the parent process raises a `RuntimeError` with a message that includes the failed worker's rank, exit code, and (when available) the original error message from the worker.
 
 **Error propagation protocol:**
 
-1. Each worker process runs inside a `try/except` block that catches all `CobreError` subclasses.
-2. If a worker catches an exception, it places the exception onto a shared error `multiprocessing.Queue` along with its rank, then exits with a non-zero exit code.
+1. Each worker process runs inside a `try/except` block that catches all exceptions.
+2. If a worker catches an exception, it places the error message and kind onto a shared error `multiprocessing.Queue` along with its rank, then exits with a non-zero exit code.
 3. The parent process monitors worker processes via `Process.join()`. When a worker exits with a non-zero exit code (or is terminated by a signal), the parent:
    a. Reads the error from the error queue (if available).
    b. Calls `Process.terminate()` on all remaining live workers.
    c. Calls `Process.join()` on all terminated workers (with a timeout) to clean up OS resources.
-   d. Raises `cobre.WorkerError` with the `rank`, `exit_code`, and `inner` fields populated from the first detected failure.
-4. If multiple workers fail concurrently, only the first detected failure is reported in the `WorkerError`. The `message` field notes that additional workers may have failed.
+   d. Raises `RuntimeError` with a message containing the rank, exit code, and inner error details from the first detected failure.
+4. If multiple workers fail concurrently, only the first detected failure is reported. The message notes that additional workers may have failed.
 
-### 6.2 Exception Class Definitions
+### 6.2 Error Kind to Exception Mapping
 
-```python
-class CobreError(Exception):
-    """Base exception for all Cobre errors.
+| Error Kind (structured-output.md SS2.3) | Python Exception | Notes                                   |
+| --------------------------------------- | ---------------- | --------------------------------------- |
+| `MissingFile`                           | `OSError`        | Missing input file                      |
+| `ParseError`                            | `ValueError`     | Malformed JSON/Parquet                  |
+| `SchemaViolation`                       | `ValueError`     | Schema mismatch                         |
+| `TypeMismatch`                          | `ValueError`     | Wrong data type                         |
+| `OutOfRange`                            | `ValueError`     | Numeric value out of bounds             |
+| `InvalidEnum`                           | `ValueError`     | Invalid enum string                     |
+| `DuplicateId`                           | `ValueError`     | Duplicate entity ID                     |
+| `MissingReference`                      | `ValueError`     | Broken foreign key                      |
+| `CoverageMismatch`                      | `ValueError`     | Incomplete dimensional coverage         |
+| `StageMismatch`                         | `ValueError`     | Stage-related inconsistency             |
+| `IncompatibleSettings`                  | `ValueError`     | Mutually incompatible settings          |
+| `PhysicalConstraint`                    | `ValueError`     | Domain rule violation                   |
+| `CapacityViolation`                     | `ValueError`     | Inconsistent capacity bounds            |
+| `PenaltyConsistency`                    | `ValueError`     | Penalty ordering violation              |
+| `SolverFailure`                         | `RuntimeError`   | LP solver returned unexpected status    |
+| `MpiError`                              | `RuntimeError`   | Not applicable in Python (no MPI)       |
+| `CheckpointFailed`                      | `RuntimeError`   | Checkpoint read/write failure           |
+| `OutputCorrupted`                       | `OSError`        | Output file exists but is unreadable    |
+| `OutputNotFound`                        | `OSError`        | Required output file missing            |
+| `IncompatibleRuns`                      | `ValueError`     | Compared runs have incompatible configs |
+| `WorkerFailed`                          | `RuntimeError`   | Worker process failed (see SS6.1a)      |
 
-    All Cobre exceptions carry the structured error fields from the
-    error schema (structured-output.md SS2.1).
-    """
+### 6.3 Rust Panic Handling
 
-    @property
-    def kind(self) -> str:
-        """Error kind identifier from the registry."""
-        ...
-
-    @property
-    def message(self) -> str:
-        """Human-readable error description."""
-        ...
-
-    @property
-    def context(self) -> dict:
-        """Structured context data."""
-        ...
-
-    @property
-    def suggestion(self) -> str | None:
-        """Actionable remediation hint, or None."""
-        ...
-
-class ValidationError(CobreError):
-    """Raised when input validation fails.
-
-    Corresponds to the 14 validation error kinds from
-    structured-output.md SS2.3.1: MissingFile, ParseError,
-    SchemaViolation, TypeMismatch, OutOfRange, InvalidEnum,
-    DuplicateId, MissingReference, CoverageMismatch, StageMismatch,
-    IncompatibleSettings, PhysicalConstraint, CapacityViolation,
-    PenaltyConsistency.
-
-    When multiple validation errors are found, the exception carries
-    the first error. The full list is available in ValidationResult.
-    """
-    ...
-
-class SolverError(CobreError):
-    """Raised when an LP solver fails during training or simulation.
-
-    Corresponds to the 'SolverFailure' runtime error kind from
-    structured-output.md SS2.3.2.
-    """
-
-    @property
-    def stage(self) -> int | None:
-        """Stage where the solver failed, if available."""
-        ...
-
-    @property
-    def iteration(self) -> int | None:
-        """Iteration where the solver failed, if available."""
-        ...
-
-    @property
-    def solver_status(self) -> str | None:
-        """Solver status string (e.g., 'infeasible', 'unbounded')."""
-        ...
-
-class IOError(CobreError):
-    """Raised when I/O operations fail.
-
-    Corresponds to 'OutputCorrupted' and 'OutputNotFound' runtime
-    error kinds from structured-output.md SS2.3.2.
-
-    Note: This is cobre.IOError, not the built-in Python IOError.
-    The full qualified name avoids shadowing.
-    """
-    ...
-```
-
-### 6.3 Error Kind to Exception Mapping
-
-| Error Kind (structured-output.md SS2.3) | Python Exception        | Notes                                   |
-| --------------------------------------- | ----------------------- | --------------------------------------- |
-| `MissingFile`                           | `cobre.ValidationError` | Missing input file                      |
-| `ParseError`                            | `cobre.ValidationError` | Malformed JSON/Parquet                  |
-| `SchemaViolation`                       | `cobre.ValidationError` | Schema mismatch                         |
-| `TypeMismatch`                          | `cobre.ValidationError` | Wrong data type                         |
-| `OutOfRange`                            | `cobre.ValidationError` | Numeric value out of bounds             |
-| `InvalidEnum`                           | `cobre.ValidationError` | Invalid enum string                     |
-| `DuplicateId`                           | `cobre.ValidationError` | Duplicate entity ID                     |
-| `MissingReference`                      | `cobre.ValidationError` | Broken foreign key                      |
-| `CoverageMismatch`                      | `cobre.ValidationError` | Incomplete dimensional coverage         |
-| `StageMismatch`                         | `cobre.ValidationError` | Stage-related inconsistency             |
-| `IncompatibleSettings`                  | `cobre.ValidationError` | Mutually incompatible settings          |
-| `PhysicalConstraint`                    | `cobre.ValidationError` | Domain rule violation                   |
-| `CapacityViolation`                     | `cobre.ValidationError` | Inconsistent capacity bounds            |
-| `PenaltyConsistency`                    | `cobre.ValidationError` | Penalty ordering violation              |
-| `SolverFailure`                         | `cobre.SolverError`     | LP solver returned unexpected status    |
-| `MpiError`                              | `cobre.CobreError`      | Not applicable in Python (no MPI)       |
-| `CheckpointFailed`                      | `cobre.CobreError`      | Checkpoint read/write failure           |
-| `OutputCorrupted`                       | `cobre.IOError`         | Output file exists but is unreadable    |
-| `OutputNotFound`                        | `cobre.IOError`         | Required output file missing            |
-| `IncompatibleRuns`                      | `cobre.CobreError`      | Compared runs have incompatible configs |
-| `WorkerFailed`                          | `cobre.WorkerError`     | Worker process failed (see SS6.1a)      |
-
-### 6.4 Rust Panic Handling
-
-If a Rust panic occurs during GIL-released computation (e.g., an OpenMP thread panics), the panic is caught at the Rust boundary by PyO3's panic-catching mechanism and translated to a `cobre.CobreError` with:
-
-- `kind`: `"InternalPanic"`
-- `message`: The panic message string
-- `context`: `{"location": "<file>:<line>"}` if available
-- `suggestion`: `"This is an internal error. Please report it with the full traceback."`
+If a Rust panic occurs during GIL-released computation (e.g., a Rayon thread panics), the panic is caught at the Rust boundary by PyO3's panic-catching mechanism and translated to a `RuntimeError` with a message prefixed by `"InternalPanic: "` followed by the panic message string.
 
 > **Invariant**: No Rust panic ever propagates across the FFI boundary as undefined behavior. PyO3 converts all panics to Python exceptions.
 
-### 6.5 GIL Release Failure
+### 6.4 GIL Release Failure
 
-A failure to release the GIL (i.e., `py.allow_threads()` failing) should never happen with correct PyO3 usage. If it occurs, it indicates a programming error in the binding code. This case is not a runtime-recoverable error; it manifests as a `pyo3::PanicException` with a diagnostic message.
+A failure to release the GIL (i.e., `py.detach()` failing) should never happen with correct PyO3 usage. If it occurs, it indicates a programming error in the binding code. This case is not a runtime-recoverable error; it manifests as a `pyo3::PanicException` with a diagnostic message.
 
 ## 7. Threading Model
 
 ### 7.1 Execution Mode Table
 
-| Execution Mode                              | Supported         | Thread Count                   | GIL State During Computation      | Use Case                                        |
-| ------------------------------------------- | ----------------- | ------------------------------ | --------------------------------- | ----------------------------------------------- |
-| Single-process, single-thread               | Yes               | `OMP_NUM_THREADS=1`            | Released                          | Small problems, debugging                       |
-| Single-process, OpenMP threads              | **Yes (default)** | `OMP_NUM_THREADS=N`            | Released                          | Production use from Python                      |
-| Multi-process via `multiprocessing.Process` | Yes (optional)    | `OMP_NUM_THREADS=N` per worker | Released (per-worker independent) | Multi-worker SDDP via `multiprocessing.Process` |
-| Multi-process via MPI                       | **No**            | --                             | --                                | Use `cobre` CLI via subprocess                  |
+| Execution Mode                              | Supported         | Thread Count                     | GIL State During Computation      | Use Case                                        |
+| ------------------------------------------- | ----------------- | -------------------------------- | --------------------------------- | ----------------------------------------------- |
+| Single-process, single-thread               | Yes               | `RAYON_NUM_THREADS=1`            | Released                          | Small problems, debugging                       |
+| Single-process, Rayon threads               | **Yes (default)** | `RAYON_NUM_THREADS=N`            | Released                          | Production use from Python                      |
+| Multi-process via `multiprocessing.Process` | Yes (optional)    | `RAYON_NUM_THREADS=N` per worker | Released (per-worker independent) | Multi-worker SDDP via `multiprocessing.Process` |
+| Multi-process via MPI                       | **No**            | --                               | --                                | Use `cobre` CLI via subprocess                  |
 
-**`start_method` requirement:** Multi-process execution MUST use `multiprocessing.set_start_method("spawn")`. The `"fork"` start method is prohibited because `fork()` in a process with active OpenMP threads causes undefined behavior (POSIX fork-safety rules). The `"spawn"` method creates a fresh Python interpreter per worker, avoiding all fork-safety issues with OpenMP, POSIX locks, and GPU driver state.
+**`start_method` requirement:** Multi-process execution MUST use `multiprocessing.set_start_method("spawn")`. The `"fork"` start method is prohibited because `fork()` in a process with active Rayon threads causes undefined behavior (POSIX fork-safety rules). The `"spawn"` method creates a fresh Python interpreter per worker, avoiding all fork-safety issues with Rayon, POSIX locks, and GPU driver state.
 
 ### 7.2 MPI Prohibition Rationale
 
@@ -1549,7 +1431,7 @@ Each worker process in the multi-process execution model (SS7.3) has the followi
 
 4. **Workers communicate via the selected backend, not via Python IPC.** All inter-worker communication (cut sharing via `allgatherv`, bound synchronization via `allreduce`, barrier synchronization) occurs within the Rust layer through the backend's transport (TCP sockets or POSIX shared memory). Python's `multiprocessing.Queue`, `multiprocessing.Pipe`, and `multiprocessing.Value` are not used for SDDP data exchange.
 
-5. **Independent OpenMP thread pools.** Each worker process has its own OpenMP runtime with its own thread pool. If the user sets `OMP_NUM_THREADS=N` before spawning, each worker creates `N` OpenMP threads. For optimal CPU utilization, the total thread count across all workers should not exceed the physical core count: `num_workers * OMP_NUM_THREADS <= num_physical_cores`.
+5. **Independent Rayon thread pools.** Each worker process has its own Rayon runtime with its own thread pool. If the user sets `RAYON_NUM_THREADS=N` before spawning, each worker creates `N` Rayon threads. For optimal CPU utilization, the total thread count across all workers should not exceed the physical core count: `num_workers * RAYON_NUM_THREADS <= num_physical_cores`.
 
 ### 7.5 Backend Selection from Python
 
@@ -1575,11 +1457,11 @@ CPython 3.14 (October 2025) introduced officially supported free-threaded builds
 
 **Current status (Phase II):** Free-threaded Python is available as an optional, separate build (`python3.14t`). It is not the default. Importing a C extension not marked as free-thread-safe automatically re-enables the GIL for the process lifetime. The GIL-disabled default (Phase III) is estimated for Python ~3.17-3.18 (2028-2030) and requires a separate PEP.
 
-**Impact on the 6-point GIL contract (SS3.1):** All six contract points remain correct on both GIL-enabled and free-threaded builds. On free-threaded builds, `py.allow_threads()` (PyO3 `detach()`) detaches the calling thread from the Python runtime instead of releasing the GIL. This detachment is still necessary: free-threaded CPython triggers stop-the-world synchronization during garbage collection and tracing, and a thread that stays attached while performing pure Rust computation would block these events. The same code works correctly on both build types without conditional compilation.
+**Impact on the 6-point GIL contract (SS3.1):** All six contract points remain correct on both GIL-enabled and free-threaded builds. On free-threaded builds, `py.detach()` detaches the calling thread from the Python runtime instead of releasing the GIL. This detachment is still necessary: free-threaded CPython triggers stop-the-world synchronization during garbage collection and tracing, and a thread that stays attached while performing pure Rust computation would block these events. The same code works correctly on both build types without conditional compilation.
 
 **Impact on MPI prohibition (SS7.2):** Free-threaded Python resolves the GIL/`MPI_THREAD_MULTIPLE` deadlock risk (SS7.2 point 2) because threads can truly execute concurrently. However, the remaining two prohibition reasons -- `MPI_Init_thread` timing conflict (point 1) and dual-FFI-layer fragility (point 3) -- are independent of the GIL and remain valid. The MPI prohibition therefore stands regardless of GIL state. mpi4py 4.1.1 ships free-threaded wheels (`cp314t`) and requests `MPI_THREAD_MULTIPLE` by default, but this benefits direct mpi4py usage, not Cobre's PyO3 layer which avoids MPI entirely.
 
-**Impact on multi-process design (SS7.3-7.4):** The current `multiprocessing.Process`-based multi-worker design remains the recommended approach. A future alternative -- spawning worker threads instead of processes within a single free-threaded Python interpreter -- becomes architecturally viable when: (1) free-threading is the CPython default, (2) all Cobre dependencies in the Python wheel are free-thread-safe, and (3) PyO3's `#[pyclass]` types satisfy the `Sync` requirement (already the case for Cobre's types, which do not hold Python objects across the Rust boundary). This threading-based mode would eliminate `multiprocessing` serialization overhead and shared-memory segment management, but requires careful evaluation of OpenMP thread pool interaction within a single-process multi-worker model. This extension is deferred pending ecosystem maturity.
+**Impact on multi-process design (SS7.3-7.4):** The current `multiprocessing.Process`-based multi-worker design remains the recommended approach. A future alternative -- spawning worker threads instead of processes within a single free-threaded Python interpreter -- becomes architecturally viable when: (1) free-threading is the CPython default, (2) all Cobre dependencies in the Python wheel are free-thread-safe, and (3) PyO3's `#[pyclass]` types satisfy the `Sync` requirement (already the case for Cobre's types, which do not hold Python objects across the Rust boundary). This threading-based mode would eliminate `multiprocessing` serialization overhead and shared-memory segment management, but requires careful evaluation of Rayon thread pool interaction within a single-process multi-worker model. This extension is deferred pending ecosystem maturity.
 
 **PyO3 requirements for free-threading:** Since PyO3 0.23, `#[pyclass]` types must implement `Sync`. Since PyO3 0.28, modules default to thread-safe (`Py_MOD_GIL_NOT_USED`). At implementation time, the `cobre-python` crate should: (1) audit all `#[pyclass]` types for `Sync` compliance, (2) avoid `GILProtected<T>` (removed in current PyO3), (3) use `pyo3::sync::critical_section` for any shared mutable state, and (4) set `gil_used = true` as a temporary escape hatch only if thread-safety audit is incomplete.
 
@@ -1614,7 +1496,7 @@ The [Memory Architecture](../hpc/memory-architecture.md) SS1.1 ownership categor
 | Category (SS1.1)         | Single-Process Behavior                                                                                 |
 | ------------------------ | ------------------------------------------------------------------------------------------------------- |
 | **Shared read-only**     | Regular per-process allocation (no `SharedWindow`). The Python process owns all read-only data directly |
-| **Thread-local mutable** | Unchanged. OpenMP threads own their solver workspaces with first-touch NUMA placement                   |
+| **Thread-local mutable** | Unchanged. Rayon threads own their solver workspaces with first-touch NUMA placement                    |
 | **Rank-local growing**   | Single-rank: the cut pool grows in the one process. No MPI synchronization needed                       |
 | **Temporary**            | Unchanged. Pre-allocated in workspace, reused per LP solve                                              |
 
@@ -1703,41 +1585,40 @@ name = "cobre"
 crate-type = ["cdylib"]
 
 [dependencies]
-pyo3 = { version = "0.22", features = ["extension-module"] }
-numpy = "0.22"                    # PyO3 NumPy integration
-arrow = { version = "53", features = ["ffi"] }  # Arrow FFI for pyarrow
+pyo3 = { version = "0.28.2", features = ["extension-module"] }
+arrow = { version = "58", features = ["ffi"] }   # Arrow FFI for pyarrow
 ```
 
 ### 10.2 Platform Support
 
 | Platform       | Support Level | Notes                                                 |
 | -------------- | ------------- | ----------------------------------------------------- |
-| Linux x86_64   | Primary       | Full support. OpenMP via system GCC/ICC runtime       |
-| Linux aarch64  | Primary       | Full support. OpenMP via system GCC runtime           |
-| macOS x86_64   | Secondary     | OpenMP requires `brew install libomp`                 |
-| macOS aarch64  | Secondary     | Apple Silicon. OpenMP requires `brew install libomp`  |
-| Windows x86_64 | Optional      | May require MSVC + Intel OpenMP or pre-built binaries |
+| Linux x86_64   | Primary       | Full support. Rayon threading (no external runtime)   |
+| Linux aarch64  | Primary       | Full support. Rayon threading (no external runtime)   |
+| macOS x86_64   | Secondary     | Full support. Rayon threading (no external runtime)   |
+| macOS aarch64  | Secondary     | Apple Silicon. Rayon threading (no external runtime)  |
+| Windows x86_64 | Optional      | Rayon threading works natively; no extra dependencies |
 
 ### 10.3 Wheel Contents
 
 The wheel contains:
 
 - The compiled `cobre` shared library (`.so` / `.dylib` / `.pyd`)
-- The OpenMP runtime library (statically linked or bundled)
+- The Rayon thread pool is built into the Rust binary (no external runtime library needed)
 - Type stub file (`cobre.pyi`) for IDE autocompletion and `mypy` support
 - No MPI libraries (ferrompi is not a dependency)
 - No FlatBuffers Python package (policy access is via the Rust layer)
 
 ### 10.4 Python Version Support
 
-Minimum Python version: 3.9 (matching PyO3's minimum supported version). Wheels are built for Python 3.9, 3.10, 3.11, 3.12, 3.13, and 3.14. Free-threaded builds (`cp313t`, `cp314t`) are supported when the `cobre-python` crate passes the PyO3 free-threading audit (see SS7.5a); until then, importing `cobre` on a free-threaded interpreter will re-enable the GIL via the `gil_used = true` module flag.
+Minimum Python version: 3.12 (matching the version requirement in SS2). Wheels are built for Python 3.12, 3.13, and 3.14. Free-threaded builds (`cp313t`, `cp314t`) are supported when the `cobre-python` crate passes the PyO3 free-threading audit (see SS7.5a); until then, importing `cobre` on a free-threaded interpreter will re-enable the GIL via the `gil_used = true` module flag.
 
 ## Cross-References
 
-- [Structured Output](./structured-output.md) -- Error schema (SS2) and error kind registry (SS2.3) that define the exception hierarchy (SS6)
+- [Structured Output](./structured-output.md) -- Error schema (SS2) and error kind registry (SS2.3) that define the exception mapping (SS6)
 - [Convergence Monitoring](../architecture/convergence-monitoring.md) -- Per-iteration output record (SS2.4) that defines progress event fields and Arrow table columns (SS2.7, SS4.3)
-- [Hybrid Parallelism](../hpc/hybrid-parallelism.md) -- OpenMP threading model (SS5), initialization sequence (SS6), OpenMP C FFI strategy (SS5.3) that guarantees GIL contract point 3
-- [Memory Architecture](../hpc/memory-architecture.md) -- Data ownership categories (SS1.1) adapted for single-process mode (SS8.3); NUMA allocation principles (SS3) that apply to OpenMP workspaces
+- [Hybrid Parallelism](../hpc/hybrid-parallelism.md) -- Rayon threading model (SS5), initialization sequence (SS6), Rayon parallel iterator pattern (SS5.3) that guarantees GIL contract point 3
+- [Memory Architecture](../hpc/memory-architecture.md) -- Data ownership categories (SS1.1) adapted for single-process mode (SS8.3); NUMA allocation principles (SS3) that apply to Rayon workspaces
 - [Design Principles](../overview/design-principles.md) -- Format selection criteria (SS1), agent-readability rules (SS6.2)
 - [Validation Architecture](../architecture/validation-architecture.md) -- 5-layer validation pipeline (SS2) invoked by `validate()` and `CaseLoader.load()`
 - [Input System Entities](../data-model/input-system-entities.md) -- Entity field definitions for `Hydro`, `Thermal`, `Bus`, `Line` Python classes

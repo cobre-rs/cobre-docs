@@ -35,42 +35,43 @@ Each iteration follows a fixed sequence:
 
 1. **Forward pass** — Execute $M$ scenario trajectories (SS4)
 2. **Forward synchronization** — `allreduce` ([Communicator Trait SS2.2](../hpc/communicator-trait.md)) aggregates upper bound statistics across ranks
-3. **Backward pass** — Generate cuts from visited states (SS6). After each per-stage state exchange, archive gathered states into the `VisitedStatesArchive` (see SS6.4a).
-4. **Cut synchronization** — `allgatherv` ([Communicator Trait SS2.1](../hpc/communicator-trait.md)) distributes new cuts to all ranks
-   4a. **Cut selection** (conditional: `should_run(iteration)`) — Stage 0 is exempt (see SS6.4a); stages $1 \ldots T-1$ distributed across threads via `into_par_iter()`, each thread calls `select_for_stage` on its assigned stages, deactivations applied sequentially (see [Cut Selection Strategy Trait SS2.2a](./cut-selection-trait.md) and [Cut Selection Strategy Trait SS6.4.4](./cut-selection-trait.md))
-   4b. **Lower bound evaluation** — Rank 0 iterates all stage-0 openings, solves the LP for each with the current FCF cuts, aggregates per-opening objectives via the stage-0 risk measure, and broadcasts the scalar LB to all ranks via `comm.broadcast()` (see [Convergence Monitoring SS3.2](./convergence-monitoring.md))
-5. **Convergence update** — Update bound estimates, evaluate stopping rules (see [Convergence Monitoring](./convergence-monitoring.md))
-6. **Checkpoint** — If the checkpoint interval has elapsed, persist current FCF and iteration state (see [Checkpointing](../hpc/checkpointing.md))
-7. **Logging** — Emit iteration summary (bounds, gap, timings)
+3. **State exchange** — Exchange visited state data between ranks so all ranks have the full set of trial points for the backward pass
+4. **Backward pass** — Generate cuts from visited states (SS6). After each per-stage state exchange, archive gathered states into the `VisitedStatesArchive` (see SS6.4a).
+5. **Cut synchronization** — `allgatherv` ([Communicator Trait SS2.1](../hpc/communicator-trait.md)) distributes new cuts to all ranks
+   5a. **Cut selection** (conditional: `should_run(iteration)`) — Stage 0 is exempt (see SS6.4a); stages $1 \ldots T-1$ distributed across threads via `into_par_iter()`, each thread calls `select_for_stage` on its assigned stages, deactivations applied sequentially (see [Cut Selection Strategy Trait SS2.2a](./cut-selection-trait.md) and [Cut Selection Strategy Trait SS6.4.4](./cut-selection-trait.md))
+   5b. **Lower bound evaluation** — Rank 0 iterates all stage-0 openings, solves the LP for each with the current FCF cuts, aggregates per-opening objectives via the stage-0 risk measure, and broadcasts the scalar LB to all ranks via `comm.broadcast()` (see [Convergence Monitoring SS3.2](./convergence-monitoring.md))
+6. **Convergence update** — Update bound estimates, evaluate stopping rules (see [Convergence Monitoring](./convergence-monitoring.md))
+7. **Checkpoint** — If the checkpoint interval has elapsed, persist current FCF and iteration state (see [Checkpointing](../hpc/checkpointing.md))
+8. **Logging** — Emit iteration summary (bounds, gap, timings)
 
 ### 2.1a Event Emission Points
 
 Each step in the iteration lifecycle (SS2.1) emits a typed event to the shared event channel when an event sender is registered. These events feed all runtime consumers: text logger, JSON-lines writer, TUI renderer, MCP progress notifications, and Parquet convergence writer. Event types are defined in `cobre-core`.
 
-| Step | Lifecycle Phase         | Event Type             | Payload Summary                                                                                                               |
-| ---- | ----------------------- | ---------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
-| 1    | Forward pass            | `ForwardPassComplete`  | iteration, scenarios, ub_mean, ub_std, elapsed_ms                                                                             |
-| 2    | Forward synchronization | `ForwardSyncComplete`  | iteration, global_ub_mean, global_ub_std, ci_95_half_width, sync_time_ms                                                      |
-| 3    | Backward pass           | `BackwardPassComplete` | iteration, cuts_generated, stages_processed, elapsed_ms                                                                       |
-| 4    | Cut synchronization     | `CutSyncComplete`      | iteration, cuts_distributed, cuts_active, cuts_removed, sync_time_ms                                                          |
-| 4a   | Cut selection           | `CutSelectionComplete` | iteration, cuts_deactivated, stages_processed, selection_time_ms, allgatherv_time_ms (only emitted when `should_run` is true) |
-| 4b   | LB evaluation           | `LbEvaluationComplete` | iteration, lower_bound, openings_solved, elapsed_ms                                                                           |
-| 5    | Convergence update      | `ConvergenceUpdate`    | iteration, lower_bound, upper_bound, upper_bound_std, gap, rules_evaluated[]                                                  |
-| 6    | Checkpoint              | `CheckpointComplete`   | iteration, checkpoint_path, elapsed_ms (only when checkpoint interval triggers)                                               |
-| 7    | Logging                 | `IterationSummary`     | iteration, lower_bound, upper_bound, gap, wall_time_ms, iteration_time_ms, forward_ms, backward_ms, lp_solves, memory_peak_mb |
+| Step | Lifecycle Phase         | Event Type             | Payload Summary                                                                                                                                   |
+| ---- | ----------------------- | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1    | Forward pass            | `ForwardPassComplete`  | iteration, scenarios, ub_mean, ub_std, elapsed_ms                                                                                                 |
+| 2    | Forward synchronization | `ForwardSyncComplete`  | iteration, global_ub_mean, global_ub_std, sync_time_ms                                                                                            |
+| 3    | State exchange          | _(no dedicated event)_ | State exchange timing is reported within `BackwardPassComplete.state_exchange`                                                                    |
+| 4    | Backward pass           | `BackwardPassComplete` | iteration, cuts_generated, stages_processed, elapsed_ms, state_exchange, cut_batch_build, rayon_overhead                                          |
+| 5    | Cut synchronization     | `CutSyncComplete`      | iteration, cuts_distributed, cuts_active, cuts_removed, sync_time_ms                                                                              |
+| 5a   | Cut selection           | `CutSelectionComplete` | iteration, cuts_deactivated, stages_processed, selection_time_ms, allgatherv_time_ms (only emitted when `should_run` is true)                     |
+| 6    | Convergence update      | `ConvergenceUpdate`    | iteration, lower_bound, upper_bound, upper_bound_std, gap, rules_evaluated[] (also carries lower bound evaluation results; see SS5b in lifecycle) |
+| 7    | Checkpoint              | `CheckpointComplete`   | iteration, checkpoint_path, elapsed_ms (only when checkpoint interval triggers)                                                                   |
+| 8    | Logging                 | `IterationSummary`     | iteration, lower_bound, upper_bound, gap, wall_time_ms, iteration_time_ms, forward_ms, backward_ms, lp_solves, solve_time_ms                      |
 
 **Lifecycle events** (emitted once per training/simulation run, not per iteration):
 
-| Event Type           | Trigger                     | Payload Summary                                                         |
-| -------------------- | --------------------------- | ----------------------------------------------------------------------- |
-| `TrainingStarted`    | Training loop entry         | case_name, stages, hydros, thermals, ranks, threads_per_rank, timestamp |
-| `TrainingFinished`   | Training loop exit          | reason, iterations, final_lb, final_ub, total_time_ms, total_cuts       |
-| `SimulationProgress` | Simulation batch completion | scenarios_complete, scenarios_total, elapsed_ms                         |
-| `SimulationFinished` | Simulation completion       | scenarios, output_dir, elapsed_ms                                       |
+| Event Type           | Trigger                     | Payload Summary                                                                          |
+| -------------------- | --------------------------- | ---------------------------------------------------------------------------------------- |
+| `TrainingStarted`    | Training loop entry         | case_name, stages, hydros, thermals, ranks, threads_per_rank, timestamp                  |
+| `TrainingFinished`   | Training loop exit          | reason, iterations, final_lb, final_ub, total_time_ms, total_cuts                        |
+| `SimulationProgress` | Simulation batch completion | scenarios_complete, scenarios_total, elapsed_ms, scenario_cost, solve_time_ms, lp_solves |
+| `SimulationFinished` | Simulation completion       | scenarios, output_dir, elapsed_ms                                                        |
 
 The event channel uses an `Option<std::sync::mpsc::Sender<TrainingEvent>>` pattern: when `None`, no events are emitted (zero overhead for library-mode callers). When `Some(sender)`, events are emitted at each step boundary. The channel has a single receiver. Multiple output sinks (text logger, JSON-lines writer, TUI renderer, Parquet convergence writer) are served by a single consumer thread that dispatches each received event to all registered sinks. This fan-out is internal to the consumer, not a property of the channel. See [Convergence Monitoring SS4.1](./convergence-monitoring.md) for the JSON-lines schema, [Terminal UI](../interfaces/terminal-ui.md) for TUI consumption, and [MCP Server](../interfaces/mcp-server.md) for MCP progress notifications.
 
-> **Design note.** The event channel uses `std::sync::mpsc` from the Rust standard library. This avoids introducing `tokio` or `crossbeam` as dependencies in `cobre-sddp` or `cobre-core`. The training loop is synchronous -- it runs inside an MPI process with no async runtime. The channel is unbounded (`mpsc::channel()`) because events are small (< 1 KB each) and emitted at most 7 times per iteration (one per lifecycle step in SS2.1a), so memory pressure from buffered events is negligible. Deferred async interface crates (`cobre-python`, `cobre-mcp`) may bridge to `tokio::sync::broadcast` or equivalent async channels in their own event adapters.
+> **Design note.** The event channel uses `std::sync::mpsc` from the Rust standard library. This avoids introducing `tokio` or `crossbeam` as dependencies in `cobre-sddp` or `cobre-core`. The training loop is synchronous -- it runs inside an MPI process with no async runtime. The channel is unbounded (`mpsc::channel()`) because events are small (< 1 KB each) and emitted at most 8 times per iteration (one per lifecycle step in SS2.1a), so memory pressure from buffered events is negligible. Deferred async interface crates (`cobre-python`, `cobre-mcp`) may bridge to `tokio::sync::broadcast` or equivalent async channels in their own event adapters.
 
 ### 2.1b TrainingEvent Type Definitions
 
@@ -107,14 +108,14 @@ See [Convergence Monitoring](./convergence-monitoring.md) SS2 for the stopping r
 
 #### TrainingEvent enum
 
-The enum has exactly 11 variants: 7 per-iteration events (one per lifecycle step in SS2.1a) and 4 lifecycle events (emitted once per training or simulation run).
+The enum has exactly 12 variants: 8 per-iteration events (one per lifecycle step in SS2.1a) and 4 lifecycle events (emitted once per training or simulation run).
 
 ```rust
 /// Typed events emitted by the SDDP training loop and simulation runner.
 /// Defined in cobre-core. Consumed by cobre-cli, cobre-tui, and cobre-mcp.
 #[derive(Clone, Debug)]
 pub enum TrainingEvent {
-    // ── Per-iteration events (7) ────────────────────────────────────
+    // ── Per-iteration events (8) ────────────────────────────────────
 
     /// Step 1: Forward pass completed for this iteration on the local rank.
     ForwardPassComplete {
@@ -136,13 +137,11 @@ pub enum TrainingEvent {
         global_ub_mean: f64,
         /// Global upper bound standard deviation after allreduce.
         global_ub_std: f64,
-        /// 95% confidence interval half-width.
-        ci_95_half_width: f64,
         /// Wall-clock time for the MPI synchronization, in milliseconds.
         sync_time_ms: u64,
     },
 
-    /// Step 3: Backward pass completed for this iteration.
+    /// Step 4: Backward pass completed for this iteration (includes step 3 state exchange timing).
     BackwardPassComplete {
         iteration: u64,
         /// Number of new cuts generated across all stages.
@@ -151,9 +150,15 @@ pub enum TrainingEvent {
         stages_processed: u32,
         /// Wall-clock time for the backward pass, in milliseconds.
         elapsed_ms: u64,
+        /// Time spent exchanging state data between ranks.
+        state_exchange: Duration,
+        /// Time spent building cut batches.
+        cut_batch_build: Duration,
+        /// Rayon parallelism overhead.
+        rayon_overhead: Duration,
     },
 
-    /// Step 4: Cut synchronization (allgatherv) completed.
+    /// Step 5: Cut synchronization (allgatherv) completed.
     CutSyncComplete {
         iteration: u64,
         /// Number of cuts distributed to all ranks via allgatherv.
@@ -166,7 +171,20 @@ pub enum TrainingEvent {
         sync_time_ms: u64,
     },
 
-    /// Step 5: Convergence check completed.
+    /// Step 5a: Cut selection completed (only emitted when `should_run` is true).
+    CutSelectionComplete {
+        iteration: u64,
+        /// Number of cuts deactivated by the selection strategy.
+        cuts_deactivated: u32,
+        /// Number of stages processed by the selection strategy.
+        stages_processed: u32,
+        /// Wall-clock time for the cut selection pass, in milliseconds.
+        selection_time_ms: u64,
+        /// Wall-clock time for the allgatherv of deactivation masks, in milliseconds.
+        allgatherv_time_ms: u64,
+    },
+
+    /// Step 6: Convergence check completed.
     ConvergenceUpdate {
         iteration: u64,
         /// Current lower bound (non-decreasing).
@@ -181,7 +199,7 @@ pub enum TrainingEvent {
         rules_evaluated: Vec<StoppingRuleResult>,
     },
 
-    /// Step 6: Checkpoint written (only emitted when the checkpoint interval triggers).
+    /// Step 7: Checkpoint written (only emitted when the checkpoint interval triggers).
     CheckpointComplete {
         iteration: u64,
         /// Filesystem path where the checkpoint was written.
@@ -190,7 +208,7 @@ pub enum TrainingEvent {
         elapsed_ms: u64,
     },
 
-    /// Step 7: Full iteration summary with aggregated timings.
+    /// Step 8: Full iteration summary with aggregated timings.
     IterationSummary {
         iteration: u64,
         lower_bound: f64,
@@ -207,8 +225,8 @@ pub enum TrainingEvent {
         backward_ms: u64,
         /// Total number of LP solves in this iteration (forward + backward).
         lp_solves: u64,
-        /// Peak resident memory in megabytes (from platform allocator stats).
-        memory_peak_mb: f64,
+        /// Total solver time in this iteration, in milliseconds.
+        solve_time_ms: f64,
     },
 
     // ── Lifecycle events (4) ────────────────────────────────────────
@@ -255,6 +273,12 @@ pub enum TrainingEvent {
         scenarios_total: u32,
         /// Wall-clock time since simulation started, in milliseconds.
         elapsed_ms: u64,
+        /// Cost for this scenario.
+        scenario_cost: f64,
+        /// Solver time for this scenario, in milliseconds.
+        solve_time_ms: f64,
+        /// Number of LP solves for this scenario.
+        lp_solves: u64,
     },
 
     /// Emitted once when policy simulation completes.

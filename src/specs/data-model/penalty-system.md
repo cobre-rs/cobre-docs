@@ -234,24 +234,24 @@ Stage-varying overrides allow penalty values to change at specific stages for sp
 
 | Column        | Type | Nullable | Description                                       |
 | ------------- | ---- | -------- | ------------------------------------------------- |
-| `bus_id`      | u32  | No       | Bus identifier                                    |
-| `stage_id`    | u32  | No       | Stage identifier                                  |
+| `bus_id`      | i32  | No       | Bus identifier                                    |
+| `stage_id`    | i32  | No       | Stage identifier                                  |
 | `excess_cost` | f64  | Yes      | \$/MWh for excess generation (null = use default) |
 
 ### Line Penalty Overrides (`constraints/penalty_overrides_line.parquet`) — Optional
 
 | Column          | Type | Nullable | Description                                   |
 | --------------- | ---- | -------- | --------------------------------------------- |
-| `line_id`       | u32  | No       | Line identifier                               |
-| `stage_id`      | u32  | No       | Stage identifier                              |
+| `line_id`       | i32  | No       | Line identifier                               |
+| `stage_id`      | i32  | No       | Stage identifier                              |
 | `exchange_cost` | f64  | Yes      | \$/MWh for exchange cost (null = use default) |
 
 ### Hydro Penalty Overrides (`constraints/penalty_overrides_hydro.parquet`) — Optional
 
 | Column                                | Type | Nullable | Description                                     |
 | ------------------------------------- | ---- | -------- | ----------------------------------------------- |
-| `hydro_id`                            | u32  | No       | Hydro identifier                                |
-| `stage_id`                            | u32  | No       | Stage identifier                                |
+| `hydro_id`                            | i32  | No       | Hydro identifier                                |
+| `stage_id`                            | i32  | No       | Stage identifier                                |
 | `spillage_cost`                       | f64  | Yes      | \$/(m3/s·h) for spilled water                   |
 | `fpha_turbined_cost`                  | f64  | Yes      | \$/(m3/s·h) for FPHA turbined flow              |
 | `diversion_cost`                      | f64  | Yes      | \$/(m3/s·h) for diverted water                  |
@@ -271,8 +271,8 @@ Stage-varying overrides allow penalty values to change at specific stages for sp
 
 | Column             | Type | Nullable | Description                                                |
 | ------------------ | ---- | -------- | ---------------------------------------------------------- |
-| `source_id`        | u32  | No       | Non-controllable source identifier                         |
-| `stage_id`         | u32  | No       | Stage identifier                                           |
+| `source_id`        | i32  | No       | Non-controllable source identifier                         |
+| `stage_id`         | i32  | No       | Stage identifier                                           |
 | `curtailment_cost` | f64  | Yes      | \$/MWh for curtailed available generation (null = default) |
 
 **Sparse storage**: Only include entries where values differ from defaults to minimize file size and I/O.

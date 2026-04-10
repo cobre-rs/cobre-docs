@@ -139,7 +139,6 @@ Two mechanisms:
     "3": "line",
     "4": "pumping_station",
     "5": "contract",
-    "6": "battery",
     "7": "non_controllable"
   },
   "bound_type": {
@@ -600,8 +599,8 @@ Per-iteration, per-phase, per-stage histogram of retry escalation levels. One ro
 | `iteration`   | i32    | No       | Iteration number                                                          |
 | `phase`       | string | No       | SDDP phase: `"forward"`, `"backward"`, `"lower_bound"`, or `"simulation"` |
 | `stage`       | i32    | No       | Stage index                                                               |
-| `retry_level` | i32    | No       | Retry escalation level (0-based)                                          |
-| `count`       | i64    | No       | Number of LP solves that reached this retry level                         |
+| `retry_level` | u32    | No       | Retry escalation level (0-based)                                          |
+| `count`       | u64    | No       | Number of LP solves that reached this retry level                         |
 
 **Rows**: sparse — only `(iteration, phase, stage, retry_level)` tuples with `count > 0` are stored.
 

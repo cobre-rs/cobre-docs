@@ -2,13 +2,13 @@
 
 ## Purpose
 
-This spec defines the thread-local solver workspace infrastructure and the LP scaling specification. These components bridge the [Solver Abstraction Layer](./solver-abstraction.md) with the HPC execution layer, ensuring each OpenMP thread has an exclusive, NUMA-local solver instance with pre-allocated buffers for the SDDP hot path. For solver-specific implementations, see [HiGHS Implementation](./solver-highs-impl.md) and [CLP Implementation](./solver-clp-impl.md).
+This spec defines the thread-local solver workspace infrastructure and the LP scaling specification. These components bridge the [Solver Abstraction Layer](./solver-abstraction.md) with the HPC execution layer, ensuring each Rayon thread has an exclusive, NUMA-local solver instance with pre-allocated buffers for the SDDP hot path. For solver-specific implementations, see [HiGHS Implementation](./solver-highs-impl.md) and [CLP Implementation](./solver-clp-impl.md).
 
 ## 1. Thread-Local Solver Infrastructure
 
 ### 1.1 Design Rationale
 
-LP solvers (HiGHS, CLP, CPLEX) are **not thread-safe**. Each OpenMP thread requires its own solver instance. The workspace pattern provides:
+LP solvers (HiGHS, CLP, CPLEX) are **not thread-safe**. Each Rayon thread requires its own solver instance. The workspace pattern provides:
 
 1. **Exclusive ownership** — Each thread owns one solver instance for the entire SDDP run (no pool-based borrow/return). This eliminates synchronization overhead and enables optimal warm-starting.
 2. **Per-stage basis cache** — The workspace stores one basis per stage. The basis from solving stage `t` in iteration `i` is reused to warm-start stage `t` in iteration `i+1`, without external basis save/restore. For checkpoint/restart, the cache is serialized to FlatBuffers (see SS1.2).
@@ -72,7 +72,7 @@ Workspace initialization follows the first-touch NUMA allocation policy:
 2. During initialization, each thread pins to its assigned NUMA node, creates its solver instance, and fills all buffers with zeros (first-touch).
 3. After initialization, the workspace array is immutable in structure — threads access their workspace by thread ID with no synchronization.
 
-**Initialization sequence** (within an OpenMP parallel region):
+**Initialization sequence** (within a Rayon parallel scope):
 
 1. Each thread computes its NUMA node: `numa_node = thread_id / threads_per_numa`
 2. Pin to NUMA node (NUMA bind guard)
@@ -132,15 +132,7 @@ On solver error, the basis for the affected stage is invalidated (slot set to em
 
 Each workspace accumulates per-thread statistics that are aggregated after the parallel region:
 
-| Counter            | Description                                              |
-| ------------------ | -------------------------------------------------------- |
-| Total solves       | Number of LP solves performed by this thread             |
-| Warm starts        | Number of solves that used a cached basis                |
-| Cold starts        | Number of solves without a cached basis                  |
-| Retries            | Number of solves that required retry escalation          |
-| Simplex iterations | Total simplex iterations across all solves               |
-| Total solve time   | Cumulative wall-clock time spent in solver calls         |
-| Max solve time     | Maximum single-solve wall-clock time (outlier detection) |
+For the full list of per-solver statistics fields, see [Solver Interface Trait SS4.3](./solver-interface-trait.md). Key counters include solve counts, simplex iterations, retry histogram, timing breakdowns, and basis reuse metrics.
 
 Aggregation across threads uses simple summation for all counters except max solve time (which uses the maximum across threads).
 
@@ -148,10 +140,10 @@ Aggregation across threads uses simple summation for all counters except max sol
 
 A workspace manager owns the array of all thread-local workspaces within an MPI rank:
 
-- Creates one workspace per OpenMP thread at initialization (within a parallel region for first-touch NUMA).
-- Provides indexed access by thread ID — `workspace[thread_id]`. No locking required since each thread accesses only its own workspace.
+- Creates one workspace per Rayon thread at initialization (within a parallel scope for first-touch NUMA).
+- Provides indexed access by thread index — `workspace[thread_index]`. No locking required since each thread accesses only its own workspace.
 - Provides aggregated statistics across all workspaces (called after parallel regions for logging).
-- The workspace array is structurally immutable after initialization — the number of workspaces equals the number of OpenMP threads and does not change.
+- The workspace array is structurally immutable after initialization — the number of workspaces equals the number of Rayon threads and does not change.
 
 > **Note on SolverPool alternative**: A pool-based pattern (borrow/return from a shared pool of N < threads solver instances) was considered and rejected. The persistent ownership pattern is preferred for SDDP because: (1) warm-starting requires per-stage basis affinity between iterations, which pools break; (2) the memory overhead of one workspace per thread (~36 MB × 48 threads ≈ 1,737 MB per rank) is acceptable on HPC nodes; (3) pool synchronization would add overhead on the hot path.
 
@@ -300,7 +292,7 @@ When scaling is active, the stage solve workflow (SS1.4) is augmented at specifi
 - [LP Formulation](../math/lp-formulation.md) — Constraint structure that defines LP dimensions and row/column layout
 - [Cut Management](../math/cut-management.md) — Cut generation algorithms that produce coefficients stored in physical units
 - [Training Loop](./training-loop.md) — Forward/backward pass orchestration driving the stage solve workflow (SS1.4)
-- [Hybrid Parallelism](../hpc/hybrid-parallelism.md) — OpenMP threading model requiring thread-local solver workspaces
+- [Hybrid Parallelism](../hpc/hybrid-parallelism.md) — Rayon threading model requiring thread-local solver workspaces
 - [Memory Architecture](../hpc/memory-architecture.md) — NUMA topology and first-touch allocation policy for workspace buffers
 - [Binary Formats](../data-model/binary-formats.md) — Cut pool CSR layout (SS3.4)
 - [Configuration Reference](../configuration/configuration-reference.md) — Solver configuration parameters (tolerances, scaling method selection)

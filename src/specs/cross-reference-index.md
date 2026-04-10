@@ -1,6 +1,6 @@
 # Cross-Reference Index
 
-This page provides a centralized navigation index for the 88 specification files in the Cobre documentation. It is designed to help implementers determine which specs to read for a given crate, in what order, and how specs relate to each other through cross-references.
+This page provides a centralized navigation index for the 87 specification files in the Cobre documentation. It is designed to help implementers determine which specs to read for a given crate, in what order, and how specs relate to each other through cross-references.
 
 The index has five components:
 

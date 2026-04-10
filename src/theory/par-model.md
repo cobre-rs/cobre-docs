@@ -45,10 +45,10 @@ This is significant for problem size: a system with 150 hydro plants and a maxim
 
 Cobre stores the natural outputs of the fitting process:
 
-- **Stored**: seasonal means ($\mu_m$), seasonal sample standard deviations ($s_m$), AR order ($p_m$), and AR coefficients in original units ($\psi_{m,\ell}$)
-- **Computed at runtime**: the residual standard deviation $\sigma_m$, derived from the stored quantities to guarantee consistency
+- **Stored**: seasonal means ($\mu_m$), seasonal sample standard deviations ($s_m$), AR order ($p_m$), standardized AR coefficients ($\psi^*_{m,\ell}$, the direct Yule-Walker output), and `residual_std_ratio` (DEC-020)
+- **Computed at runtime**: original-unit AR coefficients ($\psi_{m,\ell}$) and the residual standard deviation $\sigma_m$, derived from the stored standardized quantities and conditioning stats
 
-This design avoids redundancy — $\sigma_m$ is fully determined by the other parameters and recomputing it is inexpensive.
+This design separates the swappable seasonal conditioning from the fixed model dynamics (DEC-020).
 
 ## Yule-Walker Fitting Procedure
 

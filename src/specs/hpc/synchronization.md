@@ -91,11 +91,11 @@ An optional checkpoint barrier (`barrier`) may occur every $N$ iterations if che
 
 ## 2. Thread Coordination Within Rank
 
-Thread coordination within a rank uses OpenMP synchronization primitives, accessed via the C FFI wrapper described in [Hybrid Parallelism §5](./hybrid-parallelism.md).
+Thread coordination within a rank uses Rayon's implicit synchronization, described in [Hybrid Parallelism §5](./hybrid-parallelism.md).
 
 ### 2.1 Forward Pass Thread Coordination
 
-No explicit thread synchronization during the forward pass. Each thread owns complete trajectories (thread-trajectory affinity) and solves them independently. The OpenMP parallel region's implicit barrier at the end ensures all threads have completed before the rank proceeds to the `allgatherv` for trial point collection.
+No explicit thread synchronization during the forward pass. Each thread owns complete trajectories (thread-trajectory affinity) and solves them independently. Rayon's `par_iter_mut` completion ensures all threads have finished before the rank proceeds to the `allgatherv` for trial point collection.
 
 ### 2.2 Backward Pass Thread Coordination
 
@@ -103,37 +103,37 @@ At each backward stage $t$, threads within a rank coordinate in two phases:
 
 **Phase 1 — Parallel evaluation**: Each thread evaluates its assigned trial points, solving all openings sequentially per trial point. Each thread accumulates its generated cuts in a thread-local buffer (no shared writes, no contention). See §3.
 
-**Phase 2 — Collection and communication**: The OpenMP parallel region ends (implicit barrier ensures all threads have finished). The rank's main thread collects cuts from all thread-local buffers and participates in the inter-rank `allgatherv`.
+**Phase 2 — Collection and communication**: The Rayon parallel iterator completes (implicit join ensures all threads have finished). The rank's main thread collects cuts from all thread-local buffers and participates in the inter-rank `allgatherv`.
 
 This two-phase pattern repeats for each stage from $T$ down to 2.
 
 ### 2.3 Synchronization Primitives
 
-| Primitive               | Usage                                                     | Source                                             |
-| ----------------------- | --------------------------------------------------------- | -------------------------------------------------- |
-| OpenMP implicit barrier | End of parallel region — ensures all threads complete     | Automatic at `}` of `#pragma omp parallel`         |
-| OpenMP explicit barrier | If needed within a parallel region (not expected in v1.0) | `#pragma omp barrier` via C FFI                    |
-| Thread-local storage    | Per-thread cut buffers, solver workspaces                 | OpenMP thread ID indexing into pre-allocated array |
+| Primitive                      | Usage                                                    | Source                                                            |
+| ------------------------------ | -------------------------------------------------------- | ----------------------------------------------------------------- |
+| Rayon `par_iter` completion    | End of parallel iteration — ensures all threads complete | Implicit when `par_iter`/`par_iter_mut` returns                   |
+| Rayon `join()` barrier         | Fork-join synchronization point                          | Implicit when `rayon::join()` returns                             |
+| Rust ownership + `Send`/`Sync` | Per-thread cut buffers, solver workspaces                | `rayon::current_thread_index()` indexing into pre-allocated array |
 
-The approved architecture does not require custom spin barriers or lock-free data structures for thread synchronization. OpenMP's implicit barrier at the end of parallel regions provides the necessary synchronization point between the parallel evaluation phase and the single-threaded MPI collection phase.
+The approved architecture does not require custom spin barriers or lock-free data structures for thread synchronization. Rayon's implicit synchronization at parallel iterator completion provides the necessary synchronization point between the parallel evaluation phase and the single-threaded MPI collection phase. Rust's ownership model and `Send`/`Sync` trait bounds enforce thread safety at compile time.
 
 ## 3. Cut Accumulation Pattern
 
 ### 3.1 Thread-Local Accumulation
 
-During the backward pass parallel evaluation phase, each thread accumulates cuts in its own buffer. The buffers are indexed by OpenMP thread ID and pre-allocated at initialization. This design has zero contention during the hot loop — each thread writes exclusively to its own buffer.
+During the backward pass parallel evaluation phase, each thread accumulates cuts in its own buffer. The buffers are indexed by Rayon thread index and pre-allocated at initialization. This design has zero contention during the hot loop — each thread writes exclusively to its own buffer.
 
 | Property          | Value                                                                                 |
 | ----------------- | ------------------------------------------------------------------------------------- |
 | Buffer allocation | Pre-allocated per thread at initialization                                            |
-| Buffer indexing   | OpenMP thread ID (`omp_get_thread_num()`)                                             |
+| Buffer indexing   | Rayon thread index (`rayon::current_thread_index()`)                                  |
 | Contention        | None — pure thread-local writes                                                       |
 | Cache alignment   | Each buffer starts on a cache line boundary (64 bytes) to prevent false sharing       |
 | Capacity          | Sized for expected cuts per thread per stage ($\lceil M / N_{\text{threads}} \rceil$) |
 
 ### 3.2 Collection and Merge
 
-After the OpenMP parallel region ends (implicit barrier), the rank's main thread collects all cuts from the per-thread buffers into a single contiguous array. This array is then used as the send buffer for `allgatherv`.
+After the Rayon parallel iterator completes (implicit join), the rank's main thread collects all cuts from the per-thread buffers into a single contiguous array. This array is then used as the send buffer for `allgatherv`.
 
 ### 3.3 False Sharing Prevention
 
@@ -144,7 +144,7 @@ Adjacent thread buffers must not share cache lines. If two threads' buffers shar
 | Property                  | Forward Pass                             | Backward Pass                                                |
 | ------------------------- | ---------------------------------------- | ------------------------------------------------------------ |
 | Per-stage synchronization | None                                     | `allgatherv` at every stage                                  |
-| Thread coordination       | None (independent trajectories)          | Implicit OpenMP barrier between evaluation and collection    |
+| Thread coordination       | None (independent trajectories)          | Implicit Rayon join between evaluation and collection        |
 | Data flow direction       | Each thread accumulates independently    | Thread-local → rank-local merge → inter-rank `allgatherv`    |
 | Parallelism grain         | Trajectory (coarse)                      | Trial point (coarse), openings sequential within trial point |
 | Post-phase aggregation    | `allgatherv` (states) + `allreduce` (UB) | `broadcast` (LB from rank 0) + convergence check             |
@@ -160,7 +160,7 @@ Adjacent thread buffers must not share cache lines. If two threads' buffers shar
 - [Cut Management Implementation SS7.1a-SS7.1b](../architecture/cut-management-impl.md) — Parallel selection phase and StageLpCache update phase
 - [Work Distribution §1.4](./work-distribution.md) — Post-forward `allreduce` with 4 convergence quantities
 - [Work Distribution §2.2](./work-distribution.md) — Per-stage backward pass execution (6 steps including barrier)
-- [Hybrid Parallelism §5](./hybrid-parallelism.md) — OpenMP C FFI wrapper primitives, implicit barriers
+- [Hybrid Parallelism §5](./hybrid-parallelism.md) — Rayon parallel patterns, implicit synchronization
 - [Convergence Monitoring](../architecture/convergence-monitoring.md) — Stopping rule evaluation using aggregated statistics
 - [Communication Patterns](./communication-patterns.md) — collective operations via Communicator trait: `allgatherv`, `allreduce`
 - [Communicator Trait SS2](./communicator-trait.md) — Method contracts for allgatherv, allreduce, barrier

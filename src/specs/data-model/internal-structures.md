@@ -67,17 +67,21 @@ The `System` struct is the top-level in-memory representation of a fully loaded,
 /// Top-level system representation.
 /// Produced by cobre-io, consumed by cobre-sddp and cobre-stochastic.
 /// Immutable after construction. Shared read-only across threads.
+///
+/// NOTE: This is a simplified sketch showing field groupings. The actual
+/// struct has 27+ fields, all private, accessed via getter methods.
+/// See `cobre-io/src/system.rs` for the definitive field list.
 pub struct System {
-    // Entity collections (canonical ordering by ID)
-    pub buses: Vec<Bus>,
-    pub lines: Vec<Line>,
-    pub hydros: Vec<Hydro>,
-    pub thermals: Vec<Thermal>,
-    pub pumping_stations: Vec<PumpingStation>,
-    pub contracts: Vec<EnergyContract>,
-    pub non_controllable_sources: Vec<NonControllableSource>,
+    // --- Entity collections (canonical ordering by ID) ---
+    buses: Vec<Bus>,
+    lines: Vec<Line>,
+    hydros: Vec<Hydro>,
+    thermals: Vec<Thermal>,
+    pumping_stations: Vec<PumpingStation>,
+    contracts: Vec<EnergyContract>,
+    non_controllable_sources: Vec<NonControllableSource>,
 
-    // O(1) lookup indices (entity ID -> position in collection)
+    // --- O(1) lookup indices (entity ID -> position in collection) ---
     bus_index: HashMap<EntityId, usize>,
     line_index: HashMap<EntityId, usize>,
     hydro_index: HashMap<EntityId, usize>,
@@ -86,29 +90,31 @@ pub struct System {
     contract_index: HashMap<EntityId, usize>,
     non_controllable_source_index: HashMap<EntityId, usize>,
 
-    // Cascade topology (resolved during loading)
-    pub cascade: CascadeTopology,
+    // --- Topology (resolved during loading) ---
+    cascade: CascadeTopology,
+    network: NetworkTopology,
 
-    // Transmission network topology (resolved during loading)
-    pub network: NetworkTopology,
+    // --- Stages and temporal structure ---
+    stages: Vec<Stage>,
+    policy_graph: PolicyGraph,
 
-    // Stages and temporal structure
-    pub stages: Vec<Stage>,
-    pub policy_graph: PolicyGraph,
+    // --- Pre-resolved penalties and bounds ---
+    penalties: ResolvedPenalties,
+    bounds: ResolvedBounds,
 
-    // Pre-resolved penalties and bounds
-    pub penalties: ResolvedPenalties,
-    pub bounds: ResolvedBounds,
+    // --- Scenario pipeline parameters ---
+    inflow_models: Vec<InflowModel>,     // per (hydro, stage)
+    correlation: CorrelationModel,
 
-    // Scenario pipeline parameters
-    pub par_models: Vec<ParModel>,       // per (hydro, stage)
-    pub correlation: CorrelationModel,
+    // --- Initial conditions ---
+    initial_conditions: InitialConditions,
 
-    // Initial conditions
-    pub initial_conditions: InitialConditions,
+    // --- Generic constraints ---
+    generic_constraints: Vec<GenericConstraint>,
 
-    // Generic constraints
-    pub generic_constraints: Vec<GenericConstraint>,
+    // --- Additional fields (see code for full list) ---
+    // discount_factors, block_durations, entity_metadata,
+    // evaporation_coefficients, stage_definitions, ...
 }
 ```
 

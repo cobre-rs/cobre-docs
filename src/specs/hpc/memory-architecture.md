@@ -13,25 +13,25 @@ All runtime data falls into one of four ownership categories, each with distinct
 | Category                 | Owner                           | Access During Training                           | Allocation Strategy                                    | Examples                                                                 |
 | ------------------------ | ------------------------------- | ------------------------------------------------ | ------------------------------------------------------ | ------------------------------------------------------------------------ |
 | **Shared read-only**     | Node (via SharedWindow) or rank | Read by all threads, never modified after init   | SharedWindow leader allocation or per-rank replication | Opening tree, input case data, PAR parameters, spectral factors          |
-| **Thread-local mutable** | OpenMP thread                   | Exclusive read/write by owning thread            | First-touch on owning thread's NUMA node               | Solver workspace, solution buffers, basis cache, cut accumulation buffer |
+| **Thread-local mutable** | Rayon thread                    | Exclusive read/write by owning thread            | First-touch on owning thread's NUMA node               | Solver workspace, solution buffers, basis cache, cut accumulation buffer |
 | **Rank-local growing**   | MPI rank                        | Read by all threads, written at stage boundaries | Pre-allocated with growth capacity                     | Cut pool (grows each iteration)                                          |
-| **Temporary**            | OpenMP thread                   | Allocated/freed within a single solve            | Pre-allocated in workspace, reused                     | RHS patch buffer, scratch arrays                                         |
+| **Temporary**            | Rayon thread                    | Allocated/freed within a single solve            | Pre-allocated in workspace, reused                     | RHS patch buffer, scratch arrays                                         |
 
-**Single-process mode note**: In single-process mode (used by `cobre-python` and `cobre-mcp`), the "Shared read-only" category uses regular per-process heap allocation instead of `SharedWindow<T>`. MPI windows are not available without MPI initialization. The ownership semantics are otherwise identical -- data is still read-only during training, allocated once at initialization, and shared across all OpenMP threads within the process. See [Hybrid Parallelism §1.0a](./hybrid-parallelism.md) for single-process mode details.
+**Single-process mode note**: In single-process mode (used by `cobre-python` and `cobre-mcp`), the "Shared read-only" category uses regular per-process heap allocation instead of `SharedWindow<T>`. MPI windows are not available without MPI initialization. The ownership semantics are otherwise identical -- data is still read-only during training, allocated once at initialization, and shared across all Rayon threads within the process. See [Hybrid Parallelism §1.0a](./hybrid-parallelism.md) for single-process mode details.
 
 ![Per-rank memory architecture — shared read-only (System, PAR, opening tree), thread-local mutable (solver workspaces), rank-local growing (cut pool), temporary (scratch buffers)](../../images/memory-architecture.svg)
 
 ### 1.2 Concurrency Model
 
-Cobre uses OpenMP for intra-rank threading (see [Hybrid Parallelism §5](./hybrid-parallelism.md)). The data sharing model follows OpenMP semantics:
+Cobre uses Rayon for intra-rank threading (see [Hybrid Parallelism §5](./hybrid-parallelism.md)). The data sharing model follows Rust's ownership and borrowing rules, enforced at compile time via `Send` and `Sync` trait bounds:
 
-| OpenMP Clause                    | Data Category        | Implication                                                                            |
-| -------------------------------- | -------------------- | -------------------------------------------------------------------------------------- |
-| `shared`                         | Shared read-only     | All threads see the same pointer; no synchronization needed for reads                  |
-| `private` / indexed by thread ID | Thread-local mutable | Each thread accesses its own workspace by `omp_get_thread_num()`                       |
-| `shared` with barrier            | Rank-local growing   | Written between parallel regions (single-threaded merge), read during parallel regions |
+| Rust/Rayon Pattern                                 | Data Category        | Implication                                                                            |
+| -------------------------------------------------- | -------------------- | -------------------------------------------------------------------------------------- |
+| `&T` where `T: Sync`                               | Shared read-only     | All threads see the same reference; no synchronization needed for reads                |
+| Indexed by `rayon::current_thread_index()`         | Thread-local mutable | Each thread accesses its own workspace by thread index                                 |
+| Written between `par_iter` calls (single-threaded) | Rank-local growing   | Written between parallel regions (single-threaded merge), read during parallel regions |
 
-No `Arc`, `RwLock`, or `Mutex` is needed — OpenMP's shared data model, implicit barriers, and thread-ID-indexed arrays provide the necessary semantics without Rust synchronization primitives.
+No `Arc`, `RwLock`, or `Mutex` is needed — Rust's ownership model, Rayon's implicit join synchronization, and thread-index-indexed arrays provide the necessary semantics. The compiler enforces that shared data is `Sync` and that mutable data is exclusively owned.
 
 ## 2. Per-Rank Memory Budget
 
@@ -124,17 +124,17 @@ Modern HPC nodes have multiple NUMA domains. Memory access latency varies signif
 
 **Principle 2 — One rank per NUMA domain**: The recommended deployment is one MPI rank per NUMA domain (see [Hybrid Parallelism §4.4](./hybrid-parallelism.md) and [SLURM Deployment](./slurm-deployment.md)). This ensures that all threads within a rank share the same NUMA domain, making shared read-only data (case data, opening tree) local to all threads.
 
-**Principle 3 — First-touch initialization**: Large arrays (solution buffers, basis cache) are initialized by the owning thread within an OpenMP parallel region, not by the main thread. This ensures the OS places memory pages on the NUMA node where they will be accessed.
+**Principle 3 — First-touch initialization**: Large arrays (solution buffers, basis cache) are initialized by the owning thread within a Rayon parallel scope, not by the main thread. This ensures the OS places memory pages on the NUMA node where they will be accessed.
 
 ### 3.2 NUMA Initialization Sequence
 
 The initialization of per-thread resources follows the sequence documented in [Solver Workspaces §1.3](../architecture/solver-workspaces.md):
 
 1. Main thread determines NUMA topology via `cobre_comm::slurm` helpers (see [Hybrid Parallelism §1.2](./hybrid-parallelism.md))
-2. OpenMP parallel region is entered
+2. Rayon parallel scope is entered (via `rayon::scope` or `par_iter`)
 3. Each thread creates its solver instance (first-touch allocates solver internals on local NUMA)
 4. Each thread initializes its per-stage basis cache, solution buffers, and scratch arrays
-5. Parallel region ends (implicit barrier)
+5. Parallel scope completes (implicit join)
 6. Main thread verifies all workspaces are initialized
 
 ### 3.3 Cache Line Alignment

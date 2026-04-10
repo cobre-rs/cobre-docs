@@ -155,9 +155,9 @@ pub struct BackwardOutcome {
 
 ## 3. Supporting Types
 
-### 3.1 RiskMeasureConfig
+### 3.1 StageRiskConfig
 
-The `RiskMeasureConfig` enum represents the deserialized form of the `risk_measure` field in `stages.json` ([Input Scenarios SS1.7](../data-model/input-scenarios.md)). It maps directly to the JSON schema:
+The `StageRiskConfig` enum represents the deserialized form of the `risk_measure` field in `stages.json` ([Input Scenarios SS1.7](../data-model/input-scenarios.md)). It maps directly to the JSON schema:
 
 ```rust
 /// Configuration representation of the risk measure, matching the
@@ -165,9 +165,9 @@ The `RiskMeasureConfig` enum represents the deserialized form of the `risk_measu
 ///
 /// Deserialized from either the string `"expectation"` or the object
 /// `{"cvar": {"alpha": ..., "lambda": ...}}`.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum RiskMeasureConfig {
+pub enum StageRiskConfig {
     /// Risk-neutral expected value.
     Expectation,
 
@@ -179,7 +179,7 @@ pub enum RiskMeasureConfig {
 }
 ```
 
-**Conversion:** `RiskMeasureConfig` is validated and converted to `RiskMeasure` during configuration loading (step 3 of the variant selection pipeline in [Extension Points SS6](./extension-points.md)). The validation rules are specified in SS5.
+**Conversion:** `StageRiskConfig` is validated and converted to `RiskMeasure` during configuration loading (step 3 of the variant selection pipeline in [Extension Points SS6](./extension-points.md)). The validation rules are specified in SS5.
 
 ### 3.2 Per-Stage Risk Measure Array
 
@@ -207,7 +207,7 @@ The risk measure uses **enum dispatch** -- a `match` on the `RiskMeasure` varian
 
 ## 5. Validation Rules
 
-The following validation rules apply to `RiskMeasureConfig` during configuration loading. These reproduce rules R1-R3 from [Extension Points SS2.3](./extension-points.md):
+The following validation rules apply to `StageRiskConfig` during configuration loading. These reproduce rules R1-R3 from [Extension Points SS2.3](./extension-points.md):
 
 | Rule | Condition                                   | Error                                                                     |
 | ---- | ------------------------------------------- | ------------------------------------------------------------------------- |

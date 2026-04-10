@@ -88,7 +88,19 @@ pub trait Communicator: Send + Sync {
 /// unsafe code), and `'static` (no borrowed data).
 pub trait CommData: Send + Sync + Copy + Default + 'static {}
 
+/// When the `mpi` feature is enabled, CommData additionally requires
+/// `MpiDatatype` so that values can be passed to MPI collective operations.
+#[cfg(feature = "mpi")]
+pub trait CommData: Send + Sync + Copy + Default + 'static + MpiDatatype {}
+
+#[cfg(not(feature = "mpi"))]
+pub trait CommData: Send + Sync + Copy + Default + 'static {}
+
 /// Blanket implementation: any type satisfying the bounds is CommData.
+#[cfg(feature = "mpi")]
+impl<T: Send + Sync + Copy + Default + 'static + MpiDatatype> CommData for T {}
+
+#[cfg(not(feature = "mpi"))]
 impl<T: Send + Sync + Copy + Default + 'static> CommData for T {}
 ```
 
@@ -150,6 +162,13 @@ pub enum CommError {
     /// The communicator has been finalized or is in an invalid state.
     /// This typically occurs if MPI_Finalize has been called.
     InvalidCommunicator,
+
+    /// A buffer allocation required for a collective operation failed.
+    /// This may occur when assembling large gather/scatter buffers.
+    AllocationFailed {
+        operation: &'static str,
+        bytes_requested: usize,
+    },
 }
 ```
 

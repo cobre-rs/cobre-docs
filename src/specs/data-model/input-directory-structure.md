@@ -268,12 +268,12 @@ LP solver retry parameters for the training phase. These control how aggressivel
 
 Controls automatic parameter estimation when historical inflow data is provided without explicit model statistics or AR coefficients. All fields are optional and fall back to defaults.
 
-| Field                         | Type          | Default  | Description                                                                                           |
-| ----------------------------- | ------------- | -------- | ----------------------------------------------------------------------------------------------------- |
-| `max_order`                   | u32           | 6        | Maximum lag order considered during autoregressive model fitting                                      |
-| `order_selection`             | string        | `"pacf"` | Order selection criterion: `"fixed"` (use `max_order`) or `"pacf"` (periodic partial autocorrelation) |
-| `min_observations_per_season` | u32           | 30       | Minimum observations required per (entity, season) group to proceed with estimation                   |
-| `max_coefficient_magnitude`   | f64 or `null` | `null`   | Maximum allowed absolute AR coefficient; pairs exceeding this are reduced to order 0                  |
+| Field                         | Type          | Default  | Description                                                                                                                                                                  |
+| ----------------------------- | ------------- | -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `max_order`                   | u32           | 6        | Maximum lag order considered during autoregressive model fitting                                                                                                             |
+| `order_selection`             | string        | `"pacf"` | Order selection criterion: `"pacf"` (periodic partial autocorrelation). The value `"fixed"` is a deprecated alias for `"pacf"` and should not be used in new configurations. |
+| `min_observations_per_season` | u32           | 30       | Minimum observations required per (entity, season) group to proceed with estimation                                                                                          |
+| `max_coefficient_magnitude`   | f64 or `null` | `null`   | Maximum allowed absolute AR coefficient; pairs exceeding this are reduced to order 0                                                                                         |
 
 ## 3. Penalties and Costs (Summary)
 

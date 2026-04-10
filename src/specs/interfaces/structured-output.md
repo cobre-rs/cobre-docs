@@ -262,7 +262,7 @@ Emitted once when training or simulation begins. Corresponds to the `TrainingSta
 | `hydros`           | `integer` | Number of hydro plants                |
 | `thermals`         | `integer` | Number of thermal plants              |
 | `ranks`            | `integer` | Number of MPI ranks                   |
-| `threads_per_rank` | `integer` | Number of OpenMP threads per rank     |
+| `threads_per_rank` | `integer` | Number of Rayon threads per rank      |
 | `timestamp`        | `string`  | ISO 8601 timestamp of operation start |
 | `cobre_version`    | `string`  | Cobre version string                  |
 
@@ -608,7 +608,7 @@ Prints version and build information.
   "solver_backend": "highs",
   "solver_version": "1.9.0",
   "mpi_available": true,
-  "features": ["mpi", "openmp", "highs"]
+  "features": ["mpi", "highs"]
 }
 ```
 

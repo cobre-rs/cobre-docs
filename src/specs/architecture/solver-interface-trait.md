@@ -132,7 +132,7 @@ pub trait SolverInterface: Send {
     /// Provides total solve count, total simplex iterations, retry
     /// count, failure count, and cumulative wall-clock time. Counters
     /// accumulate across all solves performed by this instance since
-    /// construction or the last reset.
+    /// construction.
     fn statistics(&self) -> SolverStatistics;
 
     /// Return the solver backend name.
@@ -628,7 +628,7 @@ pub struct SolverStatistics {
     /// Per-level retry success histogram (12 levels, indexed 0..11).
     /// `retry_level_histogram[k]` counts how many solves were recovered at
     /// retry level `k`. The sum equals `success_count - first_try_successes`.
-    pub retry_level_histogram: [u64; 12],
+    pub retry_level_histogram: Vec<u64>,
 }
 ```
 

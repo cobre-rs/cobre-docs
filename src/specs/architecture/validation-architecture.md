@@ -228,7 +228,7 @@ Within each layer, all checks run to completion. If a layer produces errors, sub
 
 After all layers complete, the validation context is evaluated:
 
-- If **any errors** exist, the program emits a validation report and exits with code 3 (see [CLI and Lifecycle](./cli-and-lifecycle.md) SS4).
+- If **any errors** exist, the program emits a validation report and exits with code 1 (see [CLI and Lifecycle](./cli-and-lifecycle.md) SS4).
 - If **only warnings** exist, the program emits the report to the log and continues execution.
 
 ## 4. Error Type Catalog

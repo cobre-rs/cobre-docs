@@ -168,15 +168,31 @@ For a full reset (discard everything): `Highs_destroy(highs)` + `Highs_create()`
 
 The retry strategy follows the behavioral contract defined in [Solver Abstraction SS7](./solver-abstraction.md). HiGHS-specific retry escalation:
 
-| Attempt | Strategy         | HiGHS Actions                                                                                                             |
-| ------- | ---------------- | ------------------------------------------------------------------------------------------------------------------------- |
-| 1       | Clear basis      | `Highs_clearSolver(highs)` — discard cached basis, re-factorize from scratch on next `Highs_run`                          |
-| 2       | Enable presolve  | `Highs_setStringOptionValue(highs, "presolve", "on")` — presolve may simplify a degenerate problem                        |
-| 3       | Switch to primal | `Highs_setIntOptionValue(highs, "simplex_strategy", 4→1)` — primal simplex may handle different degeneracy patterns       |
-| 4       | Relax tolerances | `Highs_setDoubleOptionValue(highs, "primal_feasibility_tolerance", 1e-6)` + dual tolerance — looser than default          |
-| 5       | Switch to IPM    | `Highs_setStringOptionValue(highs, "solver", "ipm")` — interior point method, completely different algorithm, last resort |
+The retry strategy uses a 2-phase escalation with 12 levels and wall-clock time budgets:
 
-After each successful retry, the implementation restores default settings for the next solve. After all retries are exhausted, return a terminal error with the best partial solution if available (call `Highs_getSolution` — HiGHS may have a feasible but suboptimal solution).
+**Phase 1 — Quick recovery (levels 0–5):** Low-cost parameter adjustments with tight time budgets.
+
+| Level | Strategy                | HiGHS Actions                                                                                     |
+| ----- | ----------------------- | ------------------------------------------------------------------------------------------------- |
+| 0     | Clear basis             | `Highs_clearSolver(highs)` — discard cached basis, re-factorize from scratch                      |
+| 1     | Enable presolve         | `Highs_setStringOptionValue(highs, "presolve", "on")`                                             |
+| 2     | Switch to primal        | `Highs_setIntOptionValue(highs, "simplex_strategy", 4)` — primal simplex for different degeneracy |
+| 3     | Relax tolerances (1e-6) | Loosen primal + dual feasibility tolerances to 1e-6                                               |
+| 4     | Scaling strategy 1      | `Highs_setIntOptionValue(highs, "simplex_scale_strategy", 1)`                                     |
+| 5     | Scaling strategy 2      | `Highs_setIntOptionValue(highs, "simplex_scale_strategy", 2)`                                     |
+
+**Phase 2 — Aggressive recovery (levels 6–11):** More expensive strategies with extended time budgets.
+
+| Level | Strategy                | HiGHS Actions                                                                             |
+| ----- | ----------------------- | ----------------------------------------------------------------------------------------- |
+| 6     | Relax tolerances (1e-5) | Loosen primal + dual feasibility tolerances to 1e-5                                       |
+| 7     | Presolve + primal       | Combine presolve with primal simplex                                                      |
+| 8     | Scaling strategy 3      | `Highs_setIntOptionValue(highs, "simplex_scale_strategy", 3)`                             |
+| 9     | Scaling strategy 4      | `Highs_setIntOptionValue(highs, "simplex_scale_strategy", 4)`                             |
+| 10    | Relax tolerances (1e-4) | Loosen primal + dual feasibility tolerances to 1e-4                                       |
+| 11    | Switch to IPM           | `Highs_setStringOptionValue(highs, "solver", "ipm")` — interior point method, last resort |
+
+Each level has an associated wall-clock budget controlled by the `retry_time_budget_seconds` configuration parameter. After each successful retry, the implementation restores default settings for the next solve. After all levels are exhausted, return a terminal error with the best partial solution if available (call `Highs_getSolution` — HiGHS may have a feasible but suboptimal solution).
 
 ## 4. Configuration
 
@@ -185,7 +201,7 @@ After each successful retry, the implementation restores default settings for th
 | Setting                    | HiGHS Option                              | Value        | Rationale                                                                                                  |
 | -------------------------- | ----------------------------------------- | ------------ | ---------------------------------------------------------------------------------------------------------- |
 | Solver algorithm           | `"solver"` → `"simplex"`                  | `"simplex"`  | Simplex required for basis warm-starting                                                                   |
-| Simplex strategy           | `"simplex_strategy"` → `4`                | 4 (dual)     | Dual simplex is the standard for SDDP — cut addition modifies RHS, which is a bound change in dual         |
+| Simplex strategy           | `"simplex_strategy"` → `1`                | 1 (dual)     | Dual simplex is the standard for SDDP — cut addition modifies RHS, which is a bound change in dual         |
 | Presolve                   | `"presolve"` → `"off"`                    | `"off"`      | Disabled for warm-start compatibility; see open point in [Solver Abstraction SS3](./solver-abstraction.md) |
 | Parallel                   | `"parallel"` → `"off"`                    | `"off"`      | Each solver instance is single-threaded (thread safety via exclusive ownership)                            |
 | Output                     | `"output_flag"` → `0`                     | 0 (off)      | Quiet for production; millions of solves per run                                                           |

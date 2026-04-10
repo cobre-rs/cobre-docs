@@ -2,28 +2,42 @@
 
 ## Purpose
 
-This spec defines the infrastructure layer for Cobre output: manifest files for crash recovery, metadata for reproducibility, MPI-native Hive partitioning for parallel writes, and validation/integrity checks.
+This spec defines the infrastructure layer for Cobre output: metadata files for reproducibility, `_SUCCESS` marker files for crash recovery, MPI-native Hive partitioning for parallel writes, and validation/integrity checks.
 
 For output Parquet schemas (simulation and training column definitions), see [Output Schemas](output-schemas.md).
 For output configuration options within `config.json`, see [Configuration Reference](../configuration/configuration-reference.md).
 
-## 1. Manifest Files
+## 1. Completion Marker and Metadata Files
 
-Manifest files enable crash recovery and incremental writes. They track completion status and are updated atomically.
+Run completion is tracked by two separate mechanisms: a `metadata.json` file containing run metadata (timing, configuration snapshot, problem dimensions), and a `_SUCCESS` marker file whose presence indicates successful completion. The old `_manifest.json` pattern with its `status` field has been removed.
 
-### 1.1 Simulation Manifest (`simulation/_manifest.json`)
+### 1.1 Completion Marker (`_SUCCESS`)
+
+Each output phase writes a zero-byte `_SUCCESS` marker file upon successful completion:
+
+- `training/_SUCCESS` — written by rank 0 after all training outputs (Parquet files, metadata, policy checkpoint) are flushed.
+- `simulation/_SUCCESS` — written by rank 0 after the simulation manifest/metadata and all simulation Parquet partitions are confirmed complete.
+
+**Crash Recovery Protocol:**
+
+1. On startup, check whether `_SUCCESS` exists in the relevant output directory.
+2. If absent, the previous run did not complete successfully. Examine existing partition directories to identify completed work.
+3. Resume from incomplete scenarios/iterations.
+4. Write `_SUCCESS` only after all output files are confirmed flushed.
+
+The `_SUCCESS` marker is the last file written in each output phase. Its presence is both necessary and sufficient to consider the output directory complete.
+
+### 1.2 Simulation Metadata (`simulation/metadata.json`)
 
 ```json
 {
-  "$schema": "https://cobre.dev/schemas/v2/simulation_manifest.schema.json",
+  "$schema": "https://cobre.dev/schemas/v2/simulation_metadata.schema.json",
   "version": "2.0.0",
-  "status": "complete",
   "started_at": "2026-01-17T10:00:00Z",
   "completed_at": "2026-01-17T10:15:00Z",
   "scenarios": {
     "total": 2000,
-    "completed": 2000,
-    "failed": 0
+    "completed": 2000
   },
   "partitions_written": ["scenario_id=0/", "scenario_id=1/", "..."],
   "checksum": {
@@ -37,33 +51,25 @@ Manifest files enable crash recovery and incremental writes. They track completi
 }
 ```
 
-| Field                         | Type   | Description                                        |
-| ----------------------------- | ------ | -------------------------------------------------- |
-| `status`                      | string | `"running"`, `"complete"`, `"failed"`, `"partial"` |
-| `started_at`                  | string | ISO 8601 timestamp                                 |
-| `completed_at`                | string | ISO 8601 timestamp (null if not complete)          |
-| `scenarios.total`             | i32    | Total scenarios to simulate                        |
-| `scenarios.completed`         | i32    | Successfully completed scenarios                   |
-| `scenarios.failed`            | i32    | Failed scenarios                                   |
-| `partitions_written`          | array  | List of Hive partition directories written         |
-| `checksum`                    | object | Integrity checksum for validation                  |
-| `mpi_info.world_size`         | i32    | Number of MPI ranks                                |
-| `mpi_info.ranks_participated` | i32    | Ranks that wrote data                              |
+| Field                         | Type   | Description                                |
+| ----------------------------- | ------ | ------------------------------------------ |
+| `started_at`                  | string | ISO 8601 timestamp                         |
+| `completed_at`                | string | ISO 8601 timestamp                         |
+| `scenarios.total`             | i32    | Total scenarios to simulate                |
+| `scenarios.completed`         | i32    | Successfully completed scenarios           |
+| `partitions_written`          | array  | List of Hive partition directories written |
+| `checksum`                    | object | Integrity checksum for validation          |
+| `mpi_info.world_size`         | i32    | Number of MPI ranks                        |
+| `mpi_info.ranks_participated` | i32    | Ranks that wrote data                      |
 
-**Crash Recovery Protocol:**
+### 1.3 Training Metadata (`training/metadata.json`)
 
-1. On startup, check if `_manifest.json` exists with `status: "running"`
-2. If found, read `partitions_written` to identify completed work
-3. Resume from incomplete scenarios
-4. Update manifest atomically on completion
-
-### 1.2 Training Manifest (`training/_manifest.json`)
+Training metadata captures convergence outcome, iteration counts, and cut statistics. The detailed run metadata (timing, configuration snapshot, problem dimensions) is documented in SS2.
 
 ```json
 {
-  "$schema": "https://cobre.dev/schemas/v2/training_manifest.schema.json",
+  "$schema": "https://cobre.dev/schemas/v2/training_metadata.schema.json",
   "version": "2.0.0",
-  "status": "complete",
   "started_at": "2026-01-17T08:00:00Z",
   "completed_at": "2026-01-17T12:30:00Z",
   "iterations": {
@@ -95,7 +101,6 @@ Manifest files enable crash recovery and incremental writes. They track completi
 
 | Field                            | Type   | Description                                                                                                                                                                              |
 | -------------------------------- | ------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `status`                         | string | `"running"`, `"complete"`, `"failed"`, `"converged"`                                                                                                                                     |
 | `iterations.max_iterations`      | i32    | Maximum iterations from `iteration_limit` stopping rule                                                                                                                                  |
 | `iterations.completed`           | i32    | Iterations actually run                                                                                                                                                                  |
 | `iterations.converged_at`        | i32    | Iteration where convergence-oriented rule triggered (null if terminated by safety limit)                                                                                                 |
@@ -106,19 +111,19 @@ Manifest files enable crash recovery and incremental writes. They track completi
 | `cuts.total_active`              | i64    | Active cuts at termination                                                                                                                                                               |
 | `cuts.peak_active`               | i64    | Peak active cuts during training                                                                                                                                                         |
 
-### 1.3 CLI Report Access
+### 1.4 CLI Report Access
 
-Manifest files and metadata are accessible via the `report` subcommand, which reads them from disk and returns structured JSON. This enables agents and scripts to inspect training status, convergence outcome, and simulation progress without parsing the file contents directly.
+Metadata files are accessible via the `report` subcommand, which reads them from disk and returns structured JSON. This enables agents and scripts to inspect training status, convergence outcome, and simulation progress without parsing the file contents directly.
 
 ```bash
-# Query training manifest and metadata
+# Query training metadata
 cobre report /path/to/output --output-format json --section convergence
 
-# Query simulation manifest
+# Query simulation metadata
 cobre report /path/to/output --output-format json --section simulation
 ```
 
-The `report` subcommand is a read-only operation that does not require MPI. It reads the manifest and metadata files documented in §1.1, §1.2, and §2, wraps them in the CLI response envelope (see [CLI and Lifecycle §8](../architecture/cli-and-lifecycle.md) and [Structured Output §4](../interfaces/structured-output.md)), and emits the result to stdout. The MCP tool `cobre/query-convergence` performs the same operation via the MCP protocol (see [MCP Server](../interfaces/mcp-server.md)).
+The `report` subcommand is a read-only operation that does not require MPI. It reads the metadata files documented in SS1.2, SS1.3, and SS2, wraps them in the CLI response envelope (see [CLI and Lifecycle §8](../architecture/cli-and-lifecycle.md) and [Structured Output §4](../interfaces/structured-output.md)), and emits the result to stdout. The MCP tool `cobre/query-convergence` performs the same operation via the MCP protocol (see [MCP Server](../interfaces/mcp-server.md)).
 
 ## 2. Metadata File (`training/metadata.json`)
 
@@ -167,46 +172,10 @@ Comprehensive metadata for reproducibility, audit trails, and debugging.
   },
   "problem_dimensions": {
     "num_stages": 12,
-    "num_blocks_per_stage": [
-      730, 730, 672, 744, 720, 744, 720, 744, 744, 720, 744, 720
-    ],
-    "num_hydros": 160,
-    "num_thermals": 200,
-    "num_buses": 5,
-    "num_lines": 8,
-    "num_pumping_stations": 3,
-    "num_contracts": 2,
-    "num_generic_constraints": 15,
-    "state_dimension": 320,
-    "lp_dimensions": {
-      "variables_per_stage_avg": 1500,
-      "constraints_per_stage_avg": 2000,
-      "nonzeros_per_stage_avg": 8500
-    }
-  },
-  "performance_summary": {
-    "total_lp_solves": 125000000,
-    "avg_lp_time_us": 145,
-    "median_lp_time_us": 132,
-    "p99_lp_time_us": 450,
-    "peak_memory_mb": 16384,
-    "total_communication_time_seconds": 850,
-    "io_write_time_seconds": 45
-  },
-  "data_integrity": {
-    "input_hash": "sha256:abc123...",
-    "config_hash": "sha256:def456...",
-    "policy_hash": "sha256:789xyz...",
-    "convergence_hash": "sha256:uvw012..."
-  },
-  "environment": {
-    "mpi_implementation": "OpenMPI",
-    "mpi_version": "4.1.5",
-    "num_ranks": 128,
-    "cpus_per_rank": 4,
-    "memory_per_rank_gb": 32,
-    "numa_binding": true,
-    "omp_num_threads": 1
+    "num_scenarios": 2000,
+    "num_openings": 50,
+    "num_plants": 360,
+    "num_buses": 5
   }
 }
 ```
@@ -220,15 +189,8 @@ Comprehensive metadata for reproducibility, audit trails, and debugging.
 
 **Notes on `problem_dimensions`:**
 
-- `num_blocks_per_stage` is an array because block count depends on each stage's `block_mode` (block mode is configured per stage, not globally). See [Block Formulations](../math/block-formulations.md).
-- `lp_dimensions` are averages across stages; actual dimensions vary with block count.
-
-**Notes on `data_integrity`:**
-
-- `input_hash`: SHA-256 of concatenated input file hashes.
-- `config_hash`: SHA-256 of normalized `config.json`.
-- `policy_hash`: SHA-256 computed over the policy FlatBuffers files in `policy/cuts/stage_*.bin`. See [Binary Formats](binary-formats.md) §3.2 for the policy directory structure.
-- `convergence_hash`: SHA-256 of `training/convergence.parquet` content.
+- The 5 fields (`num_stages`, `num_scenarios`, `num_openings`, `num_plants`, `num_buses`) reflect the actual code. `num_plants` is the combined count of hydro and thermal plants.
+- Additional dimension fields (e.g., `num_blocks_per_stage`, `num_lines`, `state_dimension`, `lp_dimensions`) are planned but not yet implemented in the code.
 
 ## 3. MPI Direct Hive Partitioning
 
@@ -246,7 +208,8 @@ simulation/
 ├── hydros/
 │   ├── scenario_id=0/data.parquet
 │   └── ...
-└── _manifest.json                       # Written by rank 0 only
+├── metadata.json                        # Written by rank 0 only
+└── _SUCCESS                             # Written by rank 0 after all partitions confirmed
 ```
 
 ### 3.2 Write Semantics
@@ -257,7 +220,7 @@ simulation/
 
 1. Each rank writes its assigned partitions independently (embarrassingly parallel — no inter-rank coordination during writes).
 2. All ranks synchronize at a barrier after writes complete.
-3. Rank 0 writes the manifest file after the barrier.
+3. Rank 0 writes the metadata file and `_SUCCESS` marker after the barrier.
 
 **Atomic write pattern:** Each file is written to a temporary path (`data.parquet.tmp`), flushed to disk, then atomically renamed to `data.parquet`. This prevents partial files from appearing as valid output.
 
@@ -265,12 +228,12 @@ simulation/
 
 ### 3.3 Failure Handling
 
-| Failure Type         | Detection                      | Recovery                            |
-| -------------------- | ------------------------------ | ----------------------------------- |
-| Rank crash mid-write | Missing partitions in manifest | Re-run failed scenarios only        |
-| Partial file write   | Parquet read failure           | Delete and re-write partition       |
-| Manifest corruption  | JSON parse error               | Rebuild from partition listing      |
-| Disk full            | Write error                    | Alert, do not corrupt existing data |
+| Failure Type         | Detection                 | Recovery                            |
+| -------------------- | ------------------------- | ----------------------------------- |
+| Rank crash mid-write | Missing `_SUCCESS` marker | Re-run failed scenarios only        |
+| Partial file write   | Parquet read failure      | Delete and re-write partition       |
+| Metadata corruption  | JSON parse error          | Rebuild from partition listing      |
+| Disk full            | Write error               | Alert, do not corrupt existing data |
 
 ## 4. Output Size Estimates
 
@@ -310,22 +273,22 @@ Each output entity must conform to the Parquet schema defined in [Output Schemas
 
 ### 5.2 Data Integrity Checks
 
-| Check                  | Method                      | Frequency |
-| ---------------------- | --------------------------- | --------- |
-| Parquet file integrity | Footer checksum             | On read   |
-| Partition completeness | Manifest comparison         | Post-run  |
-| Row count consistency  | Cross-entity validation     | Post-run  |
-| Value range validation | Min/max from bounds.parquet | Optional  |
+| Check                  | Method                       | Frequency |
+| ---------------------- | ---------------------------- | --------- |
+| Parquet file integrity | Footer checksum              | On read   |
+| Partition completeness | `_SUCCESS` marker + metadata | Post-run  |
+| Row count consistency  | Cross-entity validation      | Post-run  |
+| Value range validation | Min/max from bounds.parquet  | Optional  |
 
 **Cross-entity validation:** For each scenario, the number of rows in every entity output must be consistent with the stage and block counts for that scenario. For example, `costs/` has one row per (stage, block), while `hydros/` has one row per (stage, block, hydro). Missing or extra rows indicate a write failure.
 
 ### 5.3 Reproducibility Verification
 
-The `data_integrity` section in `metadata.json` (§2) enables reproducibility verification:
+Reproducibility can be verified by comparing output artifacts across runs:
 
-- Given the same inputs (`input_hash`), configuration (`config_hash`), and random seed, the system must produce identical policy and convergence outputs.
-- Two runs can be compared by checking whether their `policy_hash` and `convergence_hash` match.
-- If `input_hash` differs between runs, the policy outputs are not directly comparable.
+- Given the same inputs, configuration, and random seed, the system must produce identical policy and convergence outputs.
+- Two runs can be compared by computing checksums over policy files (`policy/cuts/stage_*.bin`) and `training/convergence.parquet`.
+- If input data differs between runs, the policy outputs are not directly comparable.
 
 ## 6. Output Writer API
 
@@ -395,6 +358,7 @@ pub fn write_results(
     simulation_output: Option<&SimulationOutput>,
     system: &System,
     config: &Config,
+    ctx: &OutputContext,
 ) -> Result<(), OutputError>
 ```
 
@@ -403,10 +367,9 @@ pub fn write_results(
 1. Create `output_dir/training/` and `output_dir/simulation/` directories if they do not exist.
 2. Write dictionary files via `write_dictionaries` (§6.5).
 3. Write training Parquet files via `TrainingParquetWriter` (§6.3).
-4. Write training manifest via `write_training_manifest` (§6.5).
-5. Write metadata via `write_metadata` (§6.5).
-6. If `simulation_output` is `Some`, write simulation manifest via `write_simulation_manifest` (§6.5).
-7. Write `_SUCCESS` marker files.
+4. Write training metadata via `write_training_metadata` (§6.5).
+5. If `simulation_output` is `Some`, write simulation metadata via `write_simulation_metadata` (§6.5).
+6. Write `_SUCCESS` marker files.
 
 `write_results` does NOT write simulation Parquet files. Those are written by the streaming I/O thread during simulation execution, using the `SimulationParquetWriter` (§6.2). By the time `write_results` is called, the simulation Parquet files are already on disk. `write_results` writes only the simulation manifest (which requires the final scenario counts and checksums).
 
@@ -506,7 +469,7 @@ impl SimulationParquetWriter {
     /// This is a consuming method -- the writer cannot be used after
     /// finalization. The returned `SimulationManifest` contains the
     /// scenario counts, partition list, and checksums needed by
-    /// `write_simulation_manifest` (§6.5).
+    /// `write_simulation_metadata` (§6.5).
     ///
     /// # Errors
     ///
@@ -664,34 +627,21 @@ pub enum OutputError {
 These are standalone functions (not methods on a struct) because each writes a single file atomically.
 
 ```rust
-/// Write the simulation manifest to `output_dir/simulation/_manifest.json`.
+/// Write the simulation metadata to `output_dir/simulation/metadata.json`.
 ///
-/// The manifest schema is defined in §1.1. The `manifest` value is
-/// produced by `SimulationParquetWriter::finalize()` (§6.2).
-///
-/// # Errors
-///
-/// Returns `OutputError::IoError` on write failure or
-/// `OutputError::ManifestError` on JSON serialization failure.
-pub fn write_simulation_manifest(
-    path: &Path,
-    manifest: &SimulationManifest,
-) -> Result<(), OutputError>
-
-/// Write the training manifest to `output_dir/training/_manifest.json`.
-///
-/// The manifest schema is defined in §1.2.
+/// The metadata schema is defined in §1.2. The metadata value is
+/// produced by the simulation runner after all scenarios complete.
 ///
 /// # Errors
 ///
 /// Returns `OutputError::IoError` on write failure or
-/// `OutputError::ManifestError` on JSON serialization failure.
-pub fn write_training_manifest(
+/// `OutputError::SerializationError` on JSON serialization failure.
+pub fn write_simulation_metadata(
     path: &Path,
-    manifest: &TrainingManifest,
+    metadata: &SimulationMetadata,
 ) -> Result<(), OutputError>
 
-/// Write the metadata file to `output_dir/training/metadata.json`.
+/// Write the training metadata to `output_dir/training/metadata.json`.
 ///
 /// The metadata schema is defined in §2. The metadata struct
 /// captures the run configuration snapshot, problem dimensions,
@@ -702,7 +652,7 @@ pub fn write_training_manifest(
 ///
 /// Returns `OutputError::IoError` on write failure or
 /// `OutputError::ManifestError` on JSON serialization failure.
-pub fn write_metadata(
+pub fn write_training_metadata(
     path: &Path,
     metadata: &TrainingMetadata,
 ) -> Result<(), OutputError>

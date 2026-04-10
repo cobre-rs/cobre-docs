@@ -6,28 +6,28 @@ This file records architectural and design decisions that affect two or more spe
 
 ## Index
 
-| ID | Decision Summary | Status | Affected Specs |
-| --- | --- | --- | --- |
-| [DEC-001](#dec-001) | StageLpCache as LP construction baseline (one pre-assembled LP per stage in CSC format) | Active | solver-abstraction, binary-formats |
-| [DEC-002](#dec-002) | `postcard` for MPI broadcast serialization of the `System` struct | Active | binary-formats, cross-reference-index |
-| [DEC-003](#dec-003) | FlatBuffers for policy data persistence (cuts, states, vertices, checkpoint data) | Active | binary-formats |
-| [DEC-004](#dec-004) | Parquet for all tabular input data (entity registries, stage-varying overrides, time series) | Active | binary-formats, cross-reference-index |
-| [DEC-005](#dec-005) | Compile-time solver selection via Cargo feature flags; exactly one solver active per binary | Active | solver-abstraction |
-| [DEC-006](#dec-006) | `Box<dyn Trait>` rejected for all closed variant sets; enum dispatch for algorithm variants | Active | solver-interface-trait |
-| [DEC-007](#dec-007) | Selective cut addition baseline: only active cuts are loaded into the solver LP | Active | solver-abstraction |
-| [DEC-008](#dec-008) | LP scaling delegated to solver backend (`SolverAuto`); Cobre does not apply its own scaling | Active | solver-abstraction |
-| [DEC-009](#dec-009) | 60 stages is the production-scale reference baseline for all capacity planning and performance targets | Active | production-scale-reference, communication-patterns, communicator-trait, backend-tcp, backend-testing |
-| [DEC-010](#dec-010) | NUMA-interleaved allocation (`mbind(MPOL_INTERLEAVE)`) for the SharedRegion holding the StageLpCache | Active | memory-architecture |
-| [DEC-011](#dec-011) | One MPI rank per NUMA domain is the recommended deployment model | Active | memory-architecture |
-| [DEC-012](#dec-012) | 6-point GIL management contract; MPI prohibited from Python bindings for 3 independent reasons | Active | python-bindings |
-| [DEC-013](#dec-013) | C API only for solver integration; no C++ solver APIs | Active | design-principles |
-| [DEC-014](#dec-014) | Enlarged `unsafe` boundary: all performance-critical memory operations interacting with solver data | Active | design-principles |
-| [DEC-015](#dec-015) | `SolverError` hard-stop vs. proceed-with-partial mapping | Active | solver-abstraction |
-| [DEC-016](#dec-016) | Cut selection uses deferred parallel execution with DeactivationSet allgatherv and leader-only SharedRegion write | Active | cut-selection-trait, cut-selection-testing, cut-management-impl, training-loop, synchronization |
-| [DEC-017](#dec-017) | Communication-free parallel noise generation via deterministic SipHash-1-3 seed derivation | Active | scenario-generation, sampling-scheme-trait |
-| [DEC-018](#dec-018) | MPI/HPC parameters removed from config.json; all are auto-detected implementation details | Active | configuration-reference, input-directory-structure |
-| [DEC-019](#dec-019) | Rationale to be documented | Active | — |
-| [DEC-020](#dec-020) | Input file stores standardized AR coefficients and `residual_std_ratio`; runtime conversion to original-unit coefficients | Active | scenario-generation, input-scenarios |
+| ID                  | Decision Summary                                                                                                          | Status | Affected Specs                                                                                       |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------- | ------ | ---------------------------------------------------------------------------------------------------- |
+| [DEC-001](#dec-001) | StageLpCache as LP construction baseline (one pre-assembled LP per stage in CSC format)                                   | Active | solver-abstraction, binary-formats                                                                   |
+| [DEC-002](#dec-002) | `postcard` for MPI broadcast serialization of the `System` struct                                                         | Active | binary-formats, cross-reference-index                                                                |
+| [DEC-003](#dec-003) | FlatBuffers for policy data persistence (cuts, states, vertices, checkpoint data)                                         | Active | binary-formats                                                                                       |
+| [DEC-004](#dec-004) | Parquet for all tabular input data (entity registries, stage-varying overrides, time series)                              | Active | binary-formats, cross-reference-index                                                                |
+| [DEC-005](#dec-005) | Compile-time solver selection via Cargo feature flags; exactly one solver active per binary                               | Active | solver-abstraction                                                                                   |
+| [DEC-006](#dec-006) | `Box<dyn Trait>` rejected for all closed variant sets; enum dispatch for algorithm variants                               | Active | solver-interface-trait                                                                               |
+| [DEC-007](#dec-007) | Selective cut addition baseline: only active cuts are loaded into the solver LP                                           | Active | solver-abstraction                                                                                   |
+| [DEC-008](#dec-008) | LP scaling delegated to solver backend (`SolverAuto`); Cobre does not apply its own scaling                               | Active | solver-abstraction                                                                                   |
+| [DEC-009](#dec-009) | 60 stages is the production-scale reference baseline for all capacity planning and performance targets                    | Active | production-scale-reference, communication-patterns, communicator-trait, backend-tcp, backend-testing |
+| [DEC-010](#dec-010) | NUMA-interleaved allocation (`mbind(MPOL_INTERLEAVE)`) for the SharedRegion holding the StageLpCache                      | Active | memory-architecture                                                                                  |
+| [DEC-011](#dec-011) | One MPI rank per NUMA domain is the recommended deployment model                                                          | Active | memory-architecture                                                                                  |
+| [DEC-012](#dec-012) | 6-point GIL management contract; MPI prohibited from Python bindings for 3 independent reasons                            | Active | python-bindings                                                                                      |
+| [DEC-013](#dec-013) | C API only for solver integration; no C++ solver APIs                                                                     | Active | design-principles                                                                                    |
+| [DEC-014](#dec-014) | Enlarged `unsafe` boundary: all performance-critical memory operations interacting with solver data                       | Active | design-principles                                                                                    |
+| [DEC-015](#dec-015) | `SolverError` hard-stop vs. proceed-with-partial mapping                                                                  | Active | solver-abstraction                                                                                   |
+| [DEC-016](#dec-016) | Cut selection uses deferred parallel execution with DeactivationSet allgatherv and leader-only SharedRegion write         | Active | cut-selection-trait, cut-selection-testing, cut-management-impl, training-loop, synchronization      |
+| [DEC-017](#dec-017) | Communication-free parallel noise generation via deterministic SipHash-1-3 seed derivation                                | Active | scenario-generation, sampling-scheme-trait                                                           |
+| [DEC-018](#dec-018) | MPI/HPC parameters removed from config.json; all are auto-detected implementation details                                 | Active | configuration-reference, input-directory-structure                                                   |
+| [DEC-019](#dec-019) | Rationale to be documented                                                                                                | Active | —                                                                                                    |
+| [DEC-020](#dec-020) | Input file stores standardized AR coefficients and `residual_std_ratio`; runtime conversion to original-unit coefficients | Active | scenario-generation, input-scenarios                                                                 |
 
 ---
 
@@ -251,11 +251,9 @@ This file records architectural and design decisions that affect two or more spe
 
 ### DEC-019 {#dec-019}
 
-**Decision**: Rationale to be documented.
+**Decision**: Reserved. No decision recorded.
 
-**Status**: Active
-
-**Affected specs**: —
+**Status**: Void
 
 ---
 

@@ -76,25 +76,29 @@ The `SamplingScheme` enum uses **unit variants** -- it carries no data. Scenario
 
 ## 2. Method Contracts
 
-### 2.1 sample_forward
+### 2.1 ClassSampler::fill
 
-`sample_forward` selects the noise realization for a given forward pass stage. This is the primary method consumed by the forward pass at each stage solve. The method returns a `NoiseVector` containing one noise value per stochastic entity, which the training loop uses to fix the noise terms in the stage LP.
+Noise generation is handled by `ClassSampler`, not by `SamplingScheme` directly. Each `ClassSampler` fills a caller-provided `&mut [f64]` slice in-place, avoiding heap allocation on every stage solve:
 
 ```rust
-impl SamplingScheme {
-    /// Select the noise realization for a forward pass stage.
+impl ClassSampler {
+    /// Fill the output slice with noise values for a forward pass stage.
     ///
-    /// The returned NoiseVector contains one noise value (eta) per
-    /// stochastic entity. For InSample, this is a direct lookup into
+    /// The slice contains one noise value (eta) per stochastic entity
+    /// in this class. For InSample, this is a direct lookup into
     /// the opening tree. For External and Historical, the raw inflow
     /// values are inverted to noise terms via the PAR model
     /// (see [Scenario Generation SS4.3](./scenario-generation.md)).
-    pub fn sample_forward(
+    ///
+    /// # Panics
+    /// Panics if `out.len()` does not match the entity count for this class.
+    pub fn fill(
         &self,
         stage_id: usize,
         scenario_index: usize,
         rng: &mut StageRng,
-    ) -> NoiseVector {
+        out: &mut [f64],
+    ) {
         todo!()
     }
 }
@@ -290,22 +294,9 @@ pub struct ClassSampler {
 
 The `ForwardSampler` is constructed once from `ScenarioSource` during training initialization and passed to the forward pass by shared reference. Each `ClassSampler` independently resolves noise for its class at each stage.
 
-### 3.3 NoiseVector
+### 3.3 Noise Buffer Convention
 
-The `NoiseVector` is the return type of `sample_forward`. It contains one noise value per stochastic entity:
-
-```rust
-/// Noise vector for a single (stage, scenario) pair.
-///
-/// Contains one noise value (eta) per stochastic entity. The entity
-/// ordering matches the entity index used throughout the scenario
-/// generation pipeline ([Scenario Generation SS2.1](./scenario-generation.md)).
-pub struct NoiseVector {
-    /// Noise values, one per stochastic entity.
-    /// Length equals the number of entities in the correlation structure.
-    pub values: Vec<f64>,
-}
-```
+The `ClassSampler::fill()` method writes noise values into a caller-owned `&mut [f64]` slice rather than returning an allocated `NoiseVector` struct. This zero-allocation design avoids per-stage heap allocation in the hot loop. The caller is responsible for pre-allocating a buffer of the correct length (one entry per stochastic entity in the class). The entity ordering matches the entity index used throughout the scenario generation pipeline ([Scenario Generation SS2.1](./scenario-generation.md)).
 
 ## 4. Dispatch Mechanism
 
