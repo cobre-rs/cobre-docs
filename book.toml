@@ -12,6 +12,9 @@ build-dir = "book"
 after = ["links"]
 throw-on-error = true
 
+[preprocessor.mermaid]
+command = "mdbook-mermaid"
+
 [output.html]
 default-theme = "coal"
 preferred-dark-theme = "coal"
@@ -20,6 +23,7 @@ edit-url-template = "https://github.com/cobre-rs/cobre-docs/edit/main/{path}"
 site-url = "/"
 additional-css = ["theme/css/custom.css"]
 no-section-label = false
+additional-js = ["mermaid.min.js", "mermaid-init.js"]
 
 [output.html.fold]
 enable = true

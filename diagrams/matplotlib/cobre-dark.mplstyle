@@ -1,0 +1,75 @@
+# Cobre dark style for matplotlib (matches mdBook coal theme)
+# Usage: plt.style.use('path/to/cobre-dark.mplstyle')
+
+# --- Figure ---
+figure.facecolor:     0F1419
+figure.edgecolor:     0F1419
+figure.dpi:           150
+figure.figsize:       10, 6
+figure.titlesize:     16
+figure.titleweight:   600
+
+# --- Font ---
+font.family:          sans-serif
+font.sans-serif:      IBM Plex Sans, DejaVu Sans, sans-serif
+font.size:            11
+font.color:           C8C6C2
+mathtext.fontset:     cm
+
+# --- Axes ---
+axes.facecolor:       0F1419
+axes.edgecolor:       2D3440
+axes.linewidth:       0.8
+axes.grid:            True
+axes.titlesize:       14
+axes.titleweight:     600
+axes.titlepad:        12
+axes.labelsize:       12
+axes.labelweight:     500
+axes.labelpad:        8
+axes.labelcolor:      C8C6C2
+axes.spines.top:      False
+axes.spines.right:    False
+
+# Brand color cycle (same order, works on dark bg)
+axes.prop_cycle:      cycler('color', ['D4956A', '4A90B8', '4A8B6F', 'F5A623', 'DC4C4C', 'B87333', 'E8E6E3'])
+
+# --- Grid ---
+grid.color:           2D3440
+grid.linewidth:       0.4
+grid.alpha:           0.6
+grid.linestyle:       -
+
+# --- Lines ---
+lines.linewidth:      2.0
+lines.markersize:     6
+
+# --- Ticks ---
+xtick.direction:      out
+ytick.direction:      out
+xtick.labelsize:      10
+ytick.labelsize:      10
+xtick.color:          8B9298
+ytick.color:          8B9298
+xtick.major.width:    0.8
+ytick.major.width:    0.8
+
+# --- Legend ---
+legend.fontsize:      10
+legend.frameon:       True
+legend.framealpha:    0.9
+legend.facecolor:     1A2028
+legend.edgecolor:     2D3440
+legend.labelcolor:    C8C6C2
+legend.fancybox:      True
+
+# --- Text ---
+text.color:           C8C6C2
+
+# --- Savefig ---
+savefig.dpi:          200
+savefig.bbox:         tight
+savefig.pad_inches:   0.15
+savefig.facecolor:    0F1419
+savefig.edgecolor:    0F1419
+savefig.transparent:  False

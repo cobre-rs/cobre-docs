@@ -33,7 +33,7 @@ with terminal condition $V_{T+1}(x) = 0$.
 
 **Key insight**: The value function $V_t(x)$ is convex and piecewise linear (for LP subproblems), enabling outer approximation via Benders cuts.
 
-![Value function approximation via Benders cuts — each iteration adds a cut at a new trial point, tightening the outer approximation toward the true cost-to-go function](../../images/value-function-approximation.svg)
+![Value function approximation via Benders cuts — each iteration adds a cut at a new trial point, tightening the outer approximation toward the true cost-to-go function](../../images/d02-value-function.svg)
 
 ## 3. The SDDP Algorithm
 

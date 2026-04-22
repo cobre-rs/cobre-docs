@@ -3,3 +3,14 @@ book/
 
 # mdBook external-link stub files (created by mdbook build for external SUMMARY.md entries)
 src/https:/
+
+# Python / uv
+.venv/
+__pycache__/
+*.py[cod]
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+
+# Manim cache (only present when the optional `manim` group is installed)
+media/

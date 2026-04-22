@@ -1,0 +1,88 @@
+[project]
+name = "cobre-docs-diagrams"
+version = "0.1.0"
+description = "Diagram rendering scripts for the Cobre methodology reference."
+readme = "README.md"
+requires-python = ">=3.12"
+license = { text = "Apache-2.0" }
+dependencies = [
+    "matplotlib>=3.10",
+    "numpy>=2.0",
+]
+
+# `uv sync`            → runtime deps + dev group (ruff, mypy)
+# `uv sync --group manim` → adds manim (optional; see diagrams/README.md §4)
+[dependency-groups]
+dev = [
+    "ruff>=0.15",
+    "mypy>=1.19",
+]
+manim = [
+    "manim>=0.19",
+]
+
+[tool.uv]
+default-groups = ["dev"]
+# This project is not a library — there is no `src/` layout to build. Marking
+# it as managed-but-unpackaged avoids uv trying to build a wheel on `uv sync`.
+package = false
+
+
+# ---------------------------------------------------------------------------
+# Ruff — format + lint
+# ---------------------------------------------------------------------------
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+extend-exclude = [".venv", "book"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "N", "SIM", "C4", "RUF"]
+
+[tool.ruff.lint.per-file-ignores]
+# Brand modules use UPPER_SNAKE class names as namespaces of constants
+# (mirroring the style of matplotlib's rcParams categories). CapWords here
+# would lose the at-a-glance signal that these are color/font palettes.
+"diagrams/matplotlib/cobre_brand.py" = ["N801"]
+"diagrams/matplotlib/cobre_manim.py" = ["N801"]
+# Diagram scripts mirror mathematical notation (Q for cost-to-go, dQ for its
+# derivative, Q0 for Q at v0). Enforcing snake_case here would divorce code
+# from the math it illustrates.
+"diagrams/matplotlib/d*.py" = ["N806"]
+
+[tool.ruff.format]
+quote-style = "double"
+
+
+# ---------------------------------------------------------------------------
+# mypy --strict
+# ---------------------------------------------------------------------------
+[tool.mypy]
+python_version = "3.12"
+strict = true
+files = ["diagrams/matplotlib"]
+mypy_path = "diagrams/matplotlib"
+
+[[tool.mypy.overrides]]
+module = "manim.*"
+ignore_missing_imports = true
+
+# cobre_manim subclasses manim.Scene, which is untyped (Any) under
+# ignore_missing_imports. Relax the strict subclassing check for this module
+# only — the alternative (shipping manim stubs) isn't worth it for a helper
+# whose sole purpose is to bundle brand defaults.
+[[tool.mypy.overrides]]
+module = "cobre_manim"
+disallow_subclassing_any = false
+
+
+# ---------------------------------------------------------------------------
+# Pyright (LSP in the editor; uses the project .venv)
+# ---------------------------------------------------------------------------
+[tool.pyright]
+venvPath = "."
+venv = ".venv"
+pythonVersion = "3.12"
+include = ["diagrams/matplotlib"]
+extraPaths = ["diagrams/matplotlib"]
+reportMissingImports = "warning"
