@@ -36,7 +36,7 @@ For each hydro $h$ and each season $m \in \{1, \ldots, M\}$ (e.g., $M = 12$ for 
 ## 3. Stored vs. Computed Quantities
 
 The data model stores **seasonal sample statistics** and **standardized AR coefficients** with an explicit residual fraction. The relationship between stored and computed quantities is:
-![PAR model stored vs computed quantities — files on disk store scale-invariant ψ* and residual_std_ratio, runtime converts to original-unit ψ and σ using seasonal stats](../../images/par-stored-vs-computed.svg)
+![PAR model stored vs computed quantities — files on disk store scale-invariant ψ* and residual_std_ratio, runtime converts to original-unit ψ and σ using seasonal stats](../../images/d23-par-stored-vs-computed.svg)
 
 ### Stored in input files
 

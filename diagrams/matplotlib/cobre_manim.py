@@ -77,7 +77,10 @@ class CobreScene(Scene):
     """
 
     def setup(self) -> None:
-        self.camera.background_color = C.MIDNIGHT
+        # manim.Scene.camera is typed as Camera | OpenGLCamera, and only the
+        # former exposes background_color in the type stubs. Both accept this
+        # attribute at runtime — the stub is incomplete.
+        self.camera.background_color = C.MIDNIGHT  # type: ignore[union-attr]
 
     def cobre_axes(self, **kwargs: Any) -> Axes:
         """Create axes with brand styling."""
