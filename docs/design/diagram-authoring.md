@@ -106,14 +106,20 @@ without nesting — and spatial layout is schematic rather than measured.
 
 All such diagrams share one source of truth for styling: the `block_layout`
 helper module in `diagrams/matplotlib/`. This is what guarantees a uniform
-identity across d23 (data-flow), d07–d09 (HPC topology), and anything added
+identity across d23 (data-flow), d07-d09 (HPC topology), and anything added
 later.
 
-### 4.1 Primitives (reference: `diagrams/matplotlib/block_layout.py`)
+### 4.1 Primitives (source: `diagrams/matplotlib/block_layout.py`)
 
-- `block(ax, xy, wh, *, title, body, role)` — single labeled rounded rectangle
-- `nested(ax, outer, children, *, role)` — container with auto-laid-out inner blocks
-- `arrow(ax, src, dst, *, label, kind)` — one of `{transform, dataflow, comm}`
+- `block(ax, xy, wh, *, title, title_mono, role, lw)` → `Placed` — rounded rectangle with optional title; returns a value object exposing edge midpoints (`left_mid`, `right_mid`, `top_mid`, `bottom_mid`) and center (`cx`, `cy`) for arrow connection.
+- `arrow(ax, src, dst, *, label, kind, label_offset)` — directed arrow between `Placed` blocks (auto edge-selection) or raw points; `kind ∈ {dataflow, transform, comm}` selects stroke style.
+- `arrange(bounds, *, rows, cols, pad, gap, reserve_top)` — return `[(xy, wh), …]` for a grid of equal cells inside a bounding box, row-major top-left first.
+- `text / math / caption(ax, xy, s, …)` — typography helpers wired to `BODY_SIZE` / `ANNOT_SIZE` so per-script font choices stay off the critical path.
+
+Constants: `CORNER_RADIUS`, `INNER_PAD`, `GAP`, `TITLE_SIZE`, `BODY_SIZE`, `ANNOT_SIZE`, `LW_BLOCK`, `LW_NESTED`, `ROLES`, `ARROW_STYLES`.
+
+Reference implementation: `diagrams/matplotlib/d23_par_stored_vs_computed.py`
+(the first consumer — proves the primitives at 5 blocks + 3 arrows).
 
 (When a new primitive is needed, add it here — don't inline one-off shapes.)
 
