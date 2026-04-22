@@ -18,7 +18,7 @@ The simulation phase evaluates the trained SDDP policy on a large number of scen
 flowchart TB
     IN["<b>Input</b><br/>trained FCF (cuts) + simulation scenarios config"]
     SEL["<b>Scenario Selection</b><br/><i>per-class: InSample · External · Historical</i>"]
-    subgraph PE ["Parallel Execution — MPI Ranks × Rayon Threads (ranks run concurrently)"]
+    subgraph PE ["Parallel execution — MPI × Rayon (ranks concurrent)"]
         direction TB
         R0["<b>Rank 0</b> · scenarios 0…S/R<br/><br/>per scenario, stage 1…T:<br/>1. realize uncertainties  ·  2. build stage LP + cuts  ·  3. solve LP<br/>4. non-convex refine <i>(optional)</i>  ·  5. stream → writer"]
         R1["<b>Rank 1</b> · scenarios S/R…2S/R<br/><i>same pipeline, different scenarios</i>"]

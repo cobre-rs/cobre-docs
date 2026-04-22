@@ -296,3 +296,21 @@ pre,
   overflow-y: hidden;
   padding: 0.5em 0;
 }
+
+/* --- Mermaid diagrams ---------------------------------------------------- */
+
+/* Center every rendered diagram in the content column. Combined with
+   flowchart.useMaxWidth = false in mermaid-init.js, this keeps small
+   diagrams at their natural size (centered) and scales oversized ones
+   down to fit the column without overflow.                              */
+.mermaid {
+  display: flex;
+  justify-content: center;
+  margin: 1.5rem 0;
+  background: transparent;
+}
+
+.mermaid > svg {
+  max-width: 100%;
+  height: auto;
+}

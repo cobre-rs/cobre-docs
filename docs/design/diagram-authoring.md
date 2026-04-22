@@ -175,6 +175,11 @@ Conventions:
   multi-line labels in sequential flows — every extra `<br/>` inflates node
   height, and tall nodes in a narrow column push neighbours around.
 - Subgraphs for grouping (MPI ranks, validation layers, stages). **Max two levels of nesting** — any deeper and it's a block diagram (§4).
+- **Keep subgraph titles ≤ ~40 characters / one line.** The ELK layout engine
+  reserves space for a single line of subgraph title and doesn't recompute
+  when the label wraps, so a two-line title gets overlapped by the first
+  child node. When more detail is needed, put it in the surrounding prose,
+  not the subgraph label.
 - Per-node `style` directives only when defaults don't communicate — the branded init handles the general case.
 
 Starting points: the seven blocks committed in `e9c3699` (sddp-iteration-cycle,

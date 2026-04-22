@@ -20,7 +20,7 @@ The one exception is **policy loading for warm-start** (SS7), where all ranks lo
 
 ```mermaid
 flowchart TB
-    subgraph R0 ["Rank 0 — sequential load + validate"]
+    subgraph R0 ["Rank 0 — load + validate"]
         direction TB
         C["config.json<br/><i>schema + parse</i>"]
         ST["stages.json<br/><i>branching, noise</i>"]
