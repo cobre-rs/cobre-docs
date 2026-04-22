@@ -43,7 +43,20 @@ SDDP iteratively builds piecewise-linear approximations $\hat{V}_t^k$ at iterati
 2. **Backward pass**: Compute cuts to improve the approximation
 3. **Convergence check**: Evaluate stopping criteria
 
-![SDDP iteration cycle — forward pass samples trial points, backward pass generates Benders cuts, convergence check evaluates the gap](../../images/sddp-iteration-cycle.svg)
+```mermaid
+flowchart TB
+    FWD["<b>1. Forward Pass</b><br/><br/>Sample M scenario trajectories, stages 1…T<br/>Solve stage LPs under current cuts<br/>Record trial points, stage costs → UB<br/><i>MPI: allgatherv trial points + costs</i>"]
+    BWD["<b>2. Backward Pass</b><br/><br/>For stages T → 1:<br/>Evaluate all N openings at each trial point<br/>Extract duals → aggregate 1 Benders cut<br/>Add cut to previous stage's LP<br/><i>MPI: allgatherv cuts per stage</i>"]
+    CHK["<b>3. Stopping Rule Check</b><br/><br/>LB = ρ₀[Q₀(x₀, ω)]<br/>gap = (UB − LB) / max(1, |UB|)<br/>Check: gap ≤ tol · iter limit · stall"]
+    CONV{"converged?"}
+    DONE(["stopped"])
+
+    FWD -->|trial points| BWD
+    BWD -->|new cuts added| CHK
+    CHK --> CONV
+    CONV -->|no · k ← k+1| FWD
+    CONV -->|yes| DONE
+```
 
 ### 3.1 Forward Pass
 

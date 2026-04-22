@@ -18,7 +18,28 @@ Input loading follows a **rank-0 centric** pattern: rank 0 loads and validates a
 
 The one exception is **policy loading for warm-start** (SS7), where all ranks load in parallel to avoid bottlenecking on large policy files.
 
-![Input loading pipeline — rank 0 loads and validates all files in dependency order, then broadcasts the validated System to all ranks](../../images/input-loading-pipeline.svg)
+```mermaid
+flowchart TB
+    subgraph R0 ["Rank 0 — sequential load + validate"]
+        direction TB
+        C["config.json<br/><i>schema + parse</i>"]
+        ST["stages.json<br/><i>branching, noise</i>"]
+        SE["System entities <i>(dependency order)</i><br/>buses → lines → hydros → thermals → ncs<br/><i>each: schema validate → cross-ref → index</i>"]
+        SD["Stochastic data<br/>seasonal_stats → ar_coefficients → correlation → external/<br/><i>PAR fit (if history) or load precomputed</i>"]
+        CN["Constraints<br/><i>generic_constraints + coefficients</i>"]
+        VS(["Validated System"])
+        C --> ST --> SE --> SD --> CN --> VS
+    end
+
+    BC(["broadcast"])
+    ALL["All other ranks:<br/>receive System, allocate, set up solver"]
+    PW["Policy warm-start<br/><i>all ranks read in parallel (exception)</i>"]
+
+    VS --> BC --> ALL
+    PW -.-> ALL
+```
+
+Fail-fast: the first validation error aborts the pipeline. All ranks receive identical validated data.
 
 ## 2. File Loading Sequence
 
@@ -143,18 +164,18 @@ Input files form a directed acyclic graph (DAG) of dependencies. The loading seq
 
 Some files are loaded only when certain conditions are met. Missing optional files are not errors — the loader uses defaults (typically empty collections or identity values).
 
-| Condition                                                 | Effect                                                                                         |
-| --------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
-| `training.enabled = false` in `config.json`               | Skip scenario noise generation (but still load models if simulation needs them)                |
-| `simulation.enabled = false` in `config.json`             | Skip simulation-specific scenario setup                                                        |
+| Condition                                                 | Effect                                                                                          |
+| --------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| `training.enabled = false` in `config.json`               | Skip scenario noise generation (but still load models if simulation needs them)                 |
+| `simulation.enabled = false` in `config.json`             | Skip simulation-specific scenario setup                                                         |
 | `policy.mode = "warm_start"` in `config.json`             | Load `policy/*` files (SS7)                                                                     |
-| Policy graph has cycle (`stages.json`)                    | Validate cycle structure per [Infinite Horizon](../math/infinite-horizon.md)                   |
-| Hydros with FPHA production model, source `"precomputed"` | Require `fpha_hyperplanes.parquet`                                                             |
+| Policy graph has cycle (`stages.json`)                    | Validate cycle structure per [Infinite Horizon](../math/infinite-horizon.md)                    |
+| Hydros with FPHA production model, source `"precomputed"` | Require `fpha_hyperplanes.parquet`                                                              |
 | Hydros with FPHA production model, source `"computed"`    | FPHA hyperplanes computed during Initialization phase from geometry and topology data (see SS8) |
-| `pumping_stations.json` present                           | Load pumping bounds, validate hydro/bus references                                             |
-| `energy_contracts.json` present                           | Load contract bounds                                                                           |
-| `non_controllable_sources.json` present                   | Load NCS penalty overrides                                                                     |
-| `external_scenarios.parquet` present                      | Use external scenarios instead of PAR-generated ones                                           |
+| `pumping_stations.json` present                           | Load pumping bounds, validate hydro/bus references                                              |
+| `energy_contracts.json` present                           | Load contract bounds                                                                            |
+| `non_controllable_sources.json` present                   | Load NCS penalty overrides                                                                      |
+| `external_scenarios.parquet` present                      | Use external scenarios instead of PAR-generated ones                                            |
 
 > **Note on external scenarios scope**: The presence of `external_scenarios.parquet` does NOT imply simulation-only usage. External scenarios can also be used during training — see [Scenario Generation SS4.2](./scenario-generation.md). Loading and validation apply identically regardless of the target phase.
 
@@ -183,7 +204,7 @@ After rank 0 loads and validates all data, it broadcasts to worker ranks. Data i
 | Entity registries | Buses, lines, hydros, thermals, NCS, pumping, contracts    | Single `MPI_Bcast`                               |
 | Scenario models   | PAR parameters, correlation matrices, load models          | Single `MPI_Bcast`                               |
 | Bounds/overrides  | All constraint bounds, penalty overrides, exchange factors | Single `MPI_Bcast` (sparse form, expand locally) |
-| Policy cuts       | FCF cuts for warm-start                                    | Parallel load (SS7)                               |
+| Policy cuts       | FCF cuts for warm-start                                    | Parallel load (SS7)                              |
 
 **Sparse broadcast optimization:** Bounds and penalty override files are broadcast in their sparse Parquet form. Each rank performs the sparse-to-dense expansion locally (SS5). This reduces broadcast volume — only non-default values are transmitted.
 

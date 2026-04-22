@@ -12,7 +12,29 @@ Validation runs on **rank 0 only** during the Validation phase. It collects all 
 
 The pipeline comprises five sequential layers. Each layer depends on the previous one — e.g., referential integrity checks require that schema validation has already confirmed field presence, and semantic checks require that all cross-references have been resolved.
 
-![Validation layers — five sequential gates (Structural, Schema, Referential, Dimensional, Semantic) with fail-fast: if any layer fails, subsequent layers do not run](../../images/validation-layers.svg)
+```mermaid
+flowchart LR
+    L1["<b>1. Structural</b><br/><i>file existence</i>"]
+    L2["<b>2. Schema</b><br/><i>types, ranges</i>"]
+    L3["<b>3. Referential</b><br/><i>cross-refs</i>"]
+    L4["<b>4. Dimensional</b><br/><i>array lengths</i>"]
+    L5["<b>5. Semantic</b><br/><i>domain logic</i>"]
+    OK(["✓ Valid"])
+    A1["ABORT<br/>config.json not found"]
+    A2["ABORT<br/>bus_id: expected u32, got string"]
+    A3["ABORT<br/>hydro.bus_id = 99 not in buses"]
+    A4["ABORT<br/>FPHA: 3 blocks, 5 coefficients"]
+    W5["warn: cascade cycle detected"]
+
+    L1 --> L2 --> L3 --> L4 --> L5 --> OK
+    L1 -.->|fail| A1
+    L2 -.->|fail| A2
+    L3 -.->|fail| A3
+    L4 -.->|fail| A4
+    L5 -.->|issue| W5
+```
+
+Fail-fast: if any layer fails, subsequent layers do not run. Errors are collected within each layer. All validation runs on rank 0; the validated System is then broadcast to every rank.
 
 **Canonicalization** (sorting all entity collections by ID) occurs during loading, before any validation layer executes. This ensures bit-for-bit reproducibility regardless of declaration order in input files (see [Design Principles](../overview/design-principles.md) SS3).
 

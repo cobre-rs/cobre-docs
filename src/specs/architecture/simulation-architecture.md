@@ -14,7 +14,22 @@ The simulation phase evaluates the trained SDDP policy on a large number of scen
 2. **Operational behavior** — Storage trajectories, generation mix, deficit frequency
 3. **Robustness** — Performance across diverse hydrological conditions
 
-![Simulation architecture — input through scenario selection, parallel execution across MPI ranks with per-scenario LP pipeline, output aggregation](../../images/simulation-architecture.svg)
+```mermaid
+flowchart TB
+    IN["<b>Input</b><br/>trained FCF (cuts) + simulation scenarios config"]
+    SEL["<b>Scenario Selection</b><br/><i>per-class: InSample · External · Historical</i>"]
+    subgraph PE ["Parallel Execution — MPI Ranks × Rayon Threads"]
+        direction LR
+        R0["<b>Rank 0</b><br/><i>scenarios 0…S/R</i><br/><br/>per scenario, stage 1…T:<br/>1. realize uncertainties<br/>2. build stage LP + cuts<br/>3. solve LP<br/>4. non-convex refine <i>(opt)</i><br/>5. stream → writer"]
+        R1["<b>Rank 1</b><br/><i>scenarios S/R…2S/R</i><br/><br/>same pipeline,<br/>different scenarios"]
+        RD["<b>Rank R−1</b><br/><i>scenarios (R−1)S/R…S</i><br/><br/>…"]
+    end
+    OUT["<b>Output Aggregation</b><br/>partitioned Parquet per rank → merge manifest<br/><i>cost stats · storage trajectories · deficit frequency</i>"]
+
+    IN --> SEL --> PE --> OUT
+```
+
+No inter-rank communication during simulation — scenarios are statically distributed across ranks; within a rank, work is stolen across Rayon threads.
 
 ### 1.1 Simulation Configuration
 

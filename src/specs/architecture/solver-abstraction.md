@@ -382,7 +382,24 @@ See [HiGHS Implementation](./solver-highs-impl.md) and [CLP Implementation](./so
 
 ## 5. Cut Pool Design
 
-![Cut pool lifecycle and memory layout — cuts transition between Generated, Active, and Deactivated states; pre-allocated flat array with deterministic slot assignment and activity bitmap](../../images/cut-pool-lifecycle.svg)
+```mermaid
+stateDiagram-v2
+    direction LR
+    [*] --> Generated: computed from duals
+    Generated --> Active: add to LP (addRows)
+    Active --> Deactivated: selection removes
+    Deactivated --> Active: re-activate
+    note right of Active
+        warm-start from checkpoint
+        → loaded cuts start Active
+    end note
+    note right of Deactivated
+        retained in pool
+        (never deleted)
+    end note
+```
+
+**Memory layout.** Cuts live in a pre-allocated flat array sized `K_max × (1 + n_state) × 8 bytes`; each cut occupies a deterministic slot `warm_start + iter × M + fwd_idx`, which enables lock-free concurrent writes from multiple threads. A parallel activity bitmap marks which slots are currently Active; only Active cuts are added to the solver LP via `addRows`. Per-cut metadata (`iteration`, `stage`, `forward_pass`, `rhs`, `coefficients[]`) is stored alongside.
 
 ### 5.1 Scope Clarification: Cut Pool vs Solver LP
 

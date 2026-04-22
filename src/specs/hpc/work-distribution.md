@@ -53,7 +53,39 @@ The lower bound is evaluated separately after the backward pass: rank 0 solves a
 
 ## 2. Backward Pass Distribution
 
-![Backward pass stage loop — reverse traversal from stage T to 1, trial points distributed across ranks, per-stage allgatherv synchronization, cuts propagate backward](../../images/backward-pass-stage-loop.svg)
+```mermaid
+flowchart LR
+    subgraph sT ["Stage T"]
+        direction TB
+        dT["distribute trial points<br/>across ranks"]
+        wT["per trial point:<br/>solve N openings → duals<br/>→ aggregate → 1 cut"]
+        gT["allgatherv cuts"]
+        dT --> wT --> gT
+    end
+    subgraph sT1 ["Stage T−1"]
+        direction TB
+        dT1["distribute trial points<br/><i>includes cuts from T</i>"]
+        wT1["per trial point:<br/>solve N openings<br/>→ 1 cut"]
+        gT1["allgatherv cuts"]
+        dT1 --> wT1 --> gT1
+    end
+    ELL["…"]
+    subgraph s1 ["Stage 1"]
+        direction TB
+        d1["distribute trial points<br/><i>all prior cuts available</i>"]
+        w1["per trial point:<br/>solve N openings<br/>→ 1 cut"]
+        g1["allgatherv cuts"]
+        d1 --> w1 --> g1
+    end
+    LB(["evaluate<br/>lower bound"])
+
+    gT -->|cuts| sT1
+    sT1 --> ELL
+    ELL --> s1
+    s1 --> LB
+```
+
+Per-stage barrier: all ranks must finish stage $t$ before any rank starts $t-1$. Cuts propagate backward through the stage chain.
 
 ### 2.1 Trial Point Collection
 

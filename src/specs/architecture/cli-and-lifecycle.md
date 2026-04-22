@@ -129,7 +129,27 @@ Codes 1--2 indicate user-correctable input problems; codes 3--4 indicate case/en
 
 ### 5.1 Phase Diagram
 
-![Execution phases — common startup through scenario generation, then branching into Full Run, Training Only, Simulation Only, or Validation Only modes](../../images/execution-phases.svg)
+```mermaid
+flowchart LR
+    S["Startup<br/><i>MPI init, CLI parse · all ranks</i>"]
+    V["Validation<br/><i>load, schema, refs · rank 0</i>"]
+    I["Initialization<br/><i>broadcast, alloc, solver · all ranks</i>"]
+    G["Scenario Gen<br/><i>PAR fit, opening tree · all ranks</i>"]
+    M{"run mode?"}
+    T["Training"]
+    LP["Load policy"]
+    SIM["Simulation"]
+    F(["Finalize"])
+
+    S --> V --> I --> G --> M
+    M -->|Full Run / Training Only| T
+    M -->|Simulation Only| LP
+    M -->|Validation Only| F
+    T -->|simulation.enabled| SIM
+    T -->|training only| F
+    LP --> SIM
+    SIM --> F
+```
 
 ### 5.2 Phase Responsibilities
 
