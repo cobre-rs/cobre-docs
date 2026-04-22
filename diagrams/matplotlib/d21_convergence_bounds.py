@@ -42,7 +42,15 @@ ax.fill_between(
     label="UB 95% CI",
     zorder=2,
 )
-ax.plot(K, ub, "-", color=COLORS.SIGNAL_RED, linewidth=2.0, label="UB (Monte Carlo)", zorder=4)
+ax.plot(
+    K,
+    ub,
+    "-",
+    color=COLORS.SIGNAL_RED,
+    linewidth=2.0,
+    label="UB (Monte Carlo)",
+    zorder=4,
+)
 ax.plot(
     K,
     ub,
@@ -54,7 +62,15 @@ ax.plot(
     zorder=5,
 )
 
-ax.plot(K, lb, "-", color=COLORS.PATINA, linewidth=2.5, label="LB (monotone ↑)", zorder=4)
+ax.plot(
+    K,
+    lb,
+    "-",
+    color=COLORS.PATINA,
+    linewidth=2.5,
+    label="LB (monotone ↑)",
+    zorder=4,
+)
 
 # Gap callout at k=10, where the gap is still visually obvious.
 k_gap = 10
@@ -96,13 +112,17 @@ ax.annotate(
 
 ax.set_xlabel("iteration $k$")
 ax.set_ylabel("total expected cost")
-ax.set_title("Convergence: lower and upper bound evolution", fontsize=14, fontweight="semibold")
+ax.set_title(
+    "Convergence: lower and upper bound evolution",
+    fontsize=14,
+    fontweight="semibold",
+)
 ax.set_xlim(0, 25)
 ax.set_ylim(60, 150)
 ax.legend(loc="upper right", fontsize=10)
 ax.text(
     12.5,
-    56,
+    43,
     r"Stopping rule: gap $= (\mathrm{UB} - \mathrm{LB})\, /\, \max(1, |\mathrm{UB}|)"
     r" \leq \mathrm{tol}$, or stall / iteration limit",
     ha="center",
