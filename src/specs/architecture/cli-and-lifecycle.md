@@ -130,7 +130,7 @@ Codes 1--2 indicate user-correctable input problems; codes 3--4 indicate case/en
 ### 5.1 Phase Diagram
 
 ```mermaid
-flowchart LR
+flowchart TB
     S["Startup<br/><i>MPI init, CLI parse · all ranks</i>"]
     V["Validation<br/><i>load, schema, refs · rank 0</i>"]
     I["Initialization<br/><i>broadcast, alloc, solver · all ranks</i>"]

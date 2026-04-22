@@ -384,7 +384,7 @@ See [HiGHS Implementation](./solver-highs-impl.md) and [CLP Implementation](./so
 
 ```mermaid
 stateDiagram-v2
-    direction LR
+    direction TB
     [*] --> Generated: computed from duals
     Generated --> Active: add to LP (addRows)
     Active --> Deactivated: selection removes

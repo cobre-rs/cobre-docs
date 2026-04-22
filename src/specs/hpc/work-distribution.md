@@ -54,32 +54,32 @@ The lower bound is evaluated separately after the backward pass: rank 0 solves a
 ## 2. Backward Pass Distribution
 
 ```mermaid
-flowchart LR
+flowchart TB
     subgraph sT ["Stage T"]
-        direction TB
-        dT["distribute trial points<br/>across ranks"]
-        wT["per trial point:<br/>solve N openings → duals<br/>→ aggregate → 1 cut"]
-        gT["allgatherv cuts"]
+        direction LR
+        dT["distribute trial<br/>points across ranks"]
+        wT["per trial point:<br/>solve N openings<br/>→ aggregate → 1 cut"]
+        gT["allgatherv<br/>cuts"]
         dT --> wT --> gT
     end
     subgraph sT1 ["Stage T−1"]
-        direction TB
-        dT1["distribute trial points<br/><i>includes cuts from T</i>"]
+        direction LR
+        dT1["distribute trial points<br/><i>(incl. cuts from T)</i>"]
         wT1["per trial point:<br/>solve N openings<br/>→ 1 cut"]
-        gT1["allgatherv cuts"]
+        gT1["allgatherv<br/>cuts"]
         dT1 --> wT1 --> gT1
     end
-    ELL["…"]
+    ELL(["… stages T−2 → 2 …"])
     subgraph s1 ["Stage 1"]
-        direction TB
-        d1["distribute trial points<br/><i>all prior cuts available</i>"]
+        direction LR
+        d1["distribute trial points<br/><i>(all prior cuts available)</i>"]
         w1["per trial point:<br/>solve N openings<br/>→ 1 cut"]
-        g1["allgatherv cuts"]
+        g1["allgatherv<br/>cuts"]
         d1 --> w1 --> g1
     end
-    LB(["evaluate<br/>lower bound"])
+    LB(["evaluate lower bound"])
 
-    gT -->|cuts| sT1
+    sT -->|cuts propagate backward| sT1
     sT1 --> ELL
     ELL --> s1
     s1 --> LB

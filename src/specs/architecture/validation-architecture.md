@@ -13,18 +13,18 @@ Validation runs on **rank 0 only** during the Validation phase. It collects all 
 The pipeline comprises five sequential layers. Each layer depends on the previous one — e.g., referential integrity checks require that schema validation has already confirmed field presence, and semantic checks require that all cross-references have been resolved.
 
 ```mermaid
-flowchart LR
-    L1["<b>1. Structural</b><br/><i>file existence</i>"]
-    L2["<b>2. Schema</b><br/><i>types, ranges</i>"]
-    L3["<b>3. Referential</b><br/><i>cross-refs</i>"]
-    L4["<b>4. Dimensional</b><br/><i>array lengths</i>"]
-    L5["<b>5. Semantic</b><br/><i>domain logic</i>"]
+flowchart TB
+    L1["<b>1. Structural</b> — file existence"]
+    L2["<b>2. Schema</b> — types, ranges"]
+    L3["<b>3. Referential</b> — cross-refs"]
+    L4["<b>4. Dimensional</b> — array lengths"]
+    L5["<b>5. Semantic</b> — domain logic"]
     OK(["✓ Valid"])
-    A1["ABORT<br/>config.json not found"]
-    A2["ABORT<br/>bus_id: expected u32, got string"]
-    A3["ABORT<br/>hydro.bus_id = 99 not in buses"]
-    A4["ABORT<br/>FPHA: 3 blocks, 5 coefficients"]
-    W5["warn: cascade cycle detected"]
+    A1["ABORT · config.json not found"]
+    A2["ABORT · bus_id: expected u32, got string"]
+    A3["ABORT · hydro.bus_id = 99 not in buses"]
+    A4["ABORT · FPHA: 3 blocks, 5 coefficients"]
+    W5["warn · cascade cycle detected"]
 
     L1 --> L2 --> L3 --> L4 --> L5 --> OK
     L1 -.->|fail| A1

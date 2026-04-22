@@ -160,9 +160,20 @@ rendered client-side by `mdbook-mermaid` against the branded init at
 
 Conventions:
 
-- `flowchart TB` for top-bottom pipelines, `flowchart LR` for timelines, `stateDiagram-v2` for lifecycles
+- **Default to `flowchart TB`** (top-bottom). The mdBook content column is
+  narrow (~700–900 px); a horizontal `LR` layout with more than four nodes
+  in a row squeezes each node to ~80 px, and the text becomes illegible.
+  Use `LR` only when the diagram has **three or fewer nodes** in a row.
+  For stateDiagram-v2, set `direction TB` unless the state machine is
+  genuinely three states or fewer.
+- For `subgraph` content that must be horizontal (e.g., stage-T to stage-1
+  pipelines), keep the **outer** flow `TB` so subgraphs stack vertically,
+  and use `direction LR` **inside** each subgraph.
 - Node shapes: `["text"]` process, `{"text"}` decision, `(["text"])` start/end stadium
 - `<br/>` for line breaks; `<b>…</b>` / `<i>…</i>` for emphasis (`htmlLabels: true` is on)
+- Prefer **short, compact** labels with `·` as a mid-dot separator over
+  multi-line labels in sequential flows — every extra `<br/>` inflates node
+  height, and tall nodes in a narrow column push neighbours around.
 - Subgraphs for grouping (MPI ranks, validation layers, stages). **Max two levels of nesting** — any deeper and it's a block diagram (§4).
 - Per-node `style` directives only when defaults don't communicate — the branded init handles the general case.
 
