@@ -51,6 +51,11 @@ When updating **LP formulation** (`src/specs/math/lp-formulation.md`):
 → Verify column/row layout against `cobre-sddp/src/indexer.rs`
 → LP scaling: Cobre applies own row/col/cost scaling (DEC-021). HiGHS internal scaling disabled.
 
+When **authoring or editing a diagram** (new `src/images/*.svg`, `diagrams/matplotlib/d*.py`, or inline ` ```mermaid ` block in a spec):
+→ Follow: [`docs/design/diagram-authoring.md`](docs/design/diagram-authoring.md) — tool-selection decision table (§1.1), design system for composed blocks (§4.2–4.3), naming (§7), D2 rendering policy (§2).
+→ Consistency rule (§1.3): a family of related diagrams uses the same tool — never mix within a domain.
+→ Reference implementations: `diagrams/matplotlib/d02_value_function.py` (math plot), `diagrams/matplotlib/d23_par_stored_vs_computed.py` (composed block diagram), inline mermaid in `src/specs/math/sddp-algorithm.md` §3 (flowchart).
+
 ---
 
 ## Key References
@@ -61,6 +66,7 @@ When updating **LP formulation** (`src/specs/math/lp-formulation.md`):
 | Software book             | `https://github.com/cobre-rs/cobre/book/`                       | User-facing docs                         |
 | Dev strategy              | `https://github.com/cobre-rs/cobre/docs/design/dev-strategy.md` | Documentation & public presence strategy |
 | CHANGELOG                 | `https://github.com/cobre-rs/cobre/CHANGELOG.md`                | Per-release feature list                 |
+| Diagram authoring guide   | [`docs/design/diagram-authoring.md`](docs/design/diagram-authoring.md) | Tool selection + design system for spec diagrams |
 
 ---
 
