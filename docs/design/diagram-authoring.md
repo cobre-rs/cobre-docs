@@ -155,6 +155,35 @@ table — don't silently pick a color.
 
 These live as constants in `block_layout.py`; do not override per-script.
 
+### 4.4 Transparent background (mandatory for composed-block diagrams)
+
+Composed-block diagrams save with `transparent=True` so they blend with the
+coal-theme mdBook page rather than appearing as white panels stapled onto it.
+Every `d*.py` script in this category ends with:
+
+```python
+fig.savefig(out / f"{stem}.svg", format="svg", bbox_inches="tight",
+            transparent=True)
+```
+
+Consequences the author must keep in mind:
+
+- **Text outside any role-filled block** (figure title, column headers,
+  external captions) must use `COLORS.BODY` (`#C8C6C2`) or `COLORS.BRIGHT`
+  (`#E8E6E3`) explicitly. The default `COLORS.DARK_TEXT` becomes invisible
+  against the coal page.
+- **Text inside a block** stays `DARK_TEXT` — every role fill is a light
+  tint, so dark text on a cream/mint/blush card reads correctly.
+- **`fig.suptitle(...)`** needs `color=COLORS.BRIGHT` for the same reason.
+- **`caption()`** (MID_TEXT on light fill) is only safe _inside_ a block;
+  for a caption sitting on the page background, use
+  `text(ax, ..., size=ANNOT_SIZE, italic=True, color=COLORS.BODY)`
+  rather than `caption(...)`.
+
+Math plots (§3) keep white backgrounds — they read as chart panels and their
+axes/curves rely on dark defaults. Transparent-bg would require retuning
+every curve colour and is out of scope for that category.
+
 ---
 
 ## 5. mermaid — inline flowcharts

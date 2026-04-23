@@ -15,7 +15,7 @@ Cobre employs a hybrid parallelization strategy optimized for modern HPC archite
 | **Topology detection**       | `SharedMemoryProvider::split_local()` ([Communicator Trait §4.1](./communicator-trait.md)) + SLURM integration | Node and NUMA discovery          | Identify co-located ranks, NUMA domain mapping                                         |
 | **Intra-rank threading**     | Rayon                                                                                                          | Threads within a single MPI rank | Parallel LP solves across scenario trajectories                                        |
 
-![Hybrid parallelism architecture — MPI ranks map to NUMA domains, Rayon thread pools within each rank, SharedRegion for intra-node data sharing, ThreadLevel::Funneled constraint](../../images/hybrid-parallelism.svg)
+![Hybrid parallelism architecture — MPI ranks map to NUMA domains, Rayon thread pools within each rank, SharedRegion for intra-node data sharing, ThreadLevel::Funneled constraint](../../images/d07-hybrid-parallelism.svg)
 
 ### 1.0a Single-Process Mode
 

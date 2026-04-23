@@ -50,6 +50,20 @@ ANNOT_SIZE = 10
 LW_BLOCK = 1.4
 LW_NESTED = 1.0
 
+# Content layout (axis units). Use these to position body text inside a block
+# so every diagram has the same rhythm between title and body lines.
+#
+#   block.top    ← top edge
+#   block.top - TITLE_TOP_OFFSET     ← title top (block() places it here, va="top")
+#   block.top - BODY_TOP_OFFSET      ← first body line baseline
+#   block.top - BODY_TOP_OFFSET - 1*BODY_LINE_HEIGHT   ← second body line
+#   block.top - BODY_TOP_OFFSET - i*BODY_LINE_HEIGHT   ← (i+1)th body line
+#   block.bottom + INNER_PAD         ← caption baseline
+#
+TITLE_TOP_OFFSET = 0.20
+BODY_TOP_OFFSET = 0.70
+BODY_LINE_HEIGHT = 0.45
+
 type Role = Literal["storage", "runtime", "compute", "shared", "warning", "neutral"]
 
 # Role → (face_color, border_color). Face colours are intentionally desaturated
@@ -183,7 +197,7 @@ def block(
     if title is not None:
         ax.text(
             placed.left + INNER_PAD,
-            placed.top - INNER_PAD - 0.05,
+            placed.top - TITLE_TOP_OFFSET,
             title,
             fontsize=TITLE_SIZE if not title_mono else BODY_SIZE,
             fontweight="semibold" if not title_mono else "normal",
@@ -374,3 +388,41 @@ def caption(
 ) -> None:
     """Italic annotation at ANNOT_SIZE in MID_TEXT."""
     text(ax, xy, s, size=ANNOT_SIZE, color=COLORS.MID_TEXT, italic=True, ha=ha, va=va)
+
+
+# ---------------------------------------------------------------------------
+# Body-positioning helpers
+# ---------------------------------------------------------------------------
+
+
+def body_position(
+    b: Placed,
+    line: int = 0,
+    *,
+    dx: float = 0.0,
+) -> Point:
+    """Return the (x, y) position for the ``line``-th body row inside block *b*.
+
+    Every script that places multiple lines of labels inside a block should
+    call this instead of computing offsets by hand — that's the only way
+    the design system's rhythm (BODY_TOP_OFFSET, BODY_LINE_HEIGHT) stays
+    consistent across diagrams.
+
+    Line 0 is the first body row; subsequent rows step down by
+    :data:`BODY_LINE_HEIGHT`. The x coordinate is ``b.left + INNER_PAD + dx``
+    so text is left-aligned against the inner-padded left edge by default.
+    """
+    return (
+        b.left + INNER_PAD + dx,
+        b.top - BODY_TOP_OFFSET - line * BODY_LINE_HEIGHT,
+    )
+
+
+def body_center(b: Placed, line: int = 0) -> Point:
+    """Like :func:`body_position` but horizontally centred on the block."""
+    return (b.cx, b.top - BODY_TOP_OFFSET - line * BODY_LINE_HEIGHT)
+
+
+def caption_position(b: Placed, *, dx: float = 0.0) -> Point:
+    """Return (x, y) for a caption at the bottom of block *b*."""
+    return (b.left + INNER_PAD + dx, b.bottom + INNER_PAD + 0.05)
