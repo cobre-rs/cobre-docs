@@ -6,7 +6,7 @@ This spec defines how Cobre distributes computational work across MPI ranks and 
 
 ## 1. Forward Pass Distribution
 
-![Forward pass work distribution — static contiguous block assignment across MPI ranks, thread-trajectory affinity within each rank, allreduce for UB statistics](../../images/forward-pass-distribution.svg)
+![Forward pass work distribution — static contiguous block assignment across MPI ranks, thread-trajectory affinity within each rank, allreduce for UB statistics](../../images/d09-forward-pass-distribution.svg)
 
 ### 1.1 Static Contiguous Block Assignment
 
