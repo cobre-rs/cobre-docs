@@ -224,7 +224,7 @@ The variable $v^{in}_h$ then appears as an LP variable (not a constant) in all c
 
 ## 4b. LP Column and Row Layout
 
-![LP column layout — state variables (storage, AR lags) first for contiguous dual extraction, dispatch variables per block, theta (future cost) last for Benders cuts](../../images/lp-column-layout.svg)
+![LP column layout — state variables (storage, AR lags) first for contiguous dual extraction, dispatch variables per block, theta (future cost) last for Benders cuts](../../images/d24-lp-column-layout.svg)
 
 The stage LP uses a fixed column and row layout that places state variables first (for contiguous dual extraction), followed by auxiliary and equipment columns. With $N = |\mathcal{H}|$ hydros and $L$ = maximum AR order:
 

@@ -97,7 +97,7 @@ The backward pass produces one new cut per stage per trial point per iteration.
 
 > **Discount factor**: When discount rates are active, the discount factor is applied to the $\theta$ variable in the stage $t-1$ objective (i.e., $d_{t-1 \to t} \cdot \theta$), not to the cut coefficients. The cuts themselves remain unmodified. See [Discount Rate](discount-rate.md).
 
-![Scenario tree — forward pass samples M sparse paths while backward pass evaluates all N openings at each trial point](../../images/scenario-tree-forward-backward.svg)
+![Scenario tree — forward pass samples M sparse paths while backward pass evaluates all N openings at each trial point](../../images/d03-scenario-tree.svg)
 
 ### 3.3 Convergence Monitoring
 

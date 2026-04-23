@@ -47,10 +47,10 @@ select = ["E", "F", "I", "B", "UP", "N", "SIM", "C4", "RUF"]
 "diagrams/matplotlib/cobre_manim.py" = ["N801"]
 # Diagram scripts mirror mathematical notation (Q for cost-to-go, dQ for its
 # derivative, Q0 for Q at v0). Enforcing snake_case here would divorce code
-# from the math it illustrates. RUF001 is also relaxed because `×`
-# (multiplication sign) is semantically correct in titles like
-# "MPI ranks × Rayon threads" and shouldn't be folded to `x`.
-"diagrams/matplotlib/d*.py" = ["N806", "RUF001"]
+# from the math it illustrates. RUF001/002/003 are also relaxed because
+# Greek letters (α, π, ξ, σ, μ, ψ) and `×`, `·`, `→` are semantically
+# correct in math diagrams and should not be folded to ASCII lookalikes.
+"diagrams/matplotlib/d*.py" = ["N806", "RUF001", "RUF002", "RUF003"]
 
 [tool.ruff.format]
 quote-style = "double"
