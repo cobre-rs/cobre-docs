@@ -132,7 +132,27 @@ $$
 >
 > Additionally, the **bound stability pre-check** (Phase 1) is not yet implemented: the `bound_tol` and `bound_window` parameters are parsed from configuration but currently discarded -- the rule skips directly to the simulation distance comparison. Until Phase 1 is implemented, the rule may evaluate simulations even when the bound is still actively improving, which is conservative (wastes simulation time) but not incorrect.
 
-## 6 Combining Rules
+## 6 Graceful Shutdown
+
+An external signal interrupts the training loop at the next iteration boundary,
+terminating cleanly with the latest completed iteration's policy persisted.
+
+**Guarantee**: The policy at the moment of termination is usable. The last completed
+iteration's cuts and bounds are recorded; partial-iteration work begun after the signal
+arrives is discarded. The graceful-shutdown guarantee is a special case of the broader
+provenance commitment described in [Reproducibility and Provenance](./reproducibility-and-provenance.md):
+the output artefacts are always in a consistent state, whether the run reached a
+configured stopping rule or was interrupted.
+
+**Unconditional**: Graceful shutdown is not a configurable rule; it is an unconditional
+safety property of the training loop. It is not listed in `stopping_rules` in the case
+configuration and is not subject to `stopping_mode` combination logic.
+
+**Trade-off**: Graceful shutdown costs at most one partial-iteration's runtime — the work
+performed after the signal arrives is discarded. The alternative (immediate termination)
+would leave the policy state inconsistent.
+
+## 7 Combining Rules
 
 **Mode: `"any"` (default)**:
 
@@ -171,7 +191,10 @@ All rules must trigger simultaneously.
 
 This runs until simulation-based convergence OR 500 iterations, whichever comes first.
 
-## 7 Output on Termination
+Graceful shutdown is independent of the `stopping_mode` combination logic — it terminates
+the training loop regardless of whether any or all of the configured rules have triggered.
+
+## 8 Output on Termination
 
 When any stopping rule triggers, the output includes:
 
@@ -183,6 +206,9 @@ When any stopping rule triggers, the output includes:
 | `upper_bound`     | Final simulated upper bound (if available)                                 |
 | `gap`             | Optimality gap: $(\bar{z} - \underline{z}) / \max(1, \lvert\bar{z}\rvert)$ |
 
+The `stopping_rule` field carries the rule that triggered, including `"graceful_shutdown"`
+when an external signal terminated the run.
+
 ## Cross-References
 
 - [Notation Conventions](../overview/notation-conventions.md) — Symbol definitions for bounds and statistical quantities
@@ -190,3 +216,4 @@ When any stopping rule triggers, the output includes:
 - [Cut Management](cut-management.md) — Cut generation and selection that affect convergence speed
 - [Upper Bound Evaluation](upper-bound-evaluation.md) — Monte Carlo simulation for upper bound estimation, used by simulation-based stopping
 - [Risk Measures](risk-measures.md) — Risk-averse formulations that affect bound interpretation
+- [Reproducibility and Provenance](reproducibility-and-provenance.md) — Provenance commitment that the graceful-shutdown guarantee is a special case of

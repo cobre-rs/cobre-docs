@@ -368,3 +368,4 @@ The hot-path solver update pattern (modifying RHS via `changeRowBounds` for inco
 - [Hydro Production Models](../math/hydro-production-models.md) — FPHA plane coefficients ($\gamma$) and productivity ($\rho$)
 - [Equipment Formulations](../math/equipment-formulations.md) — Thermal, contract, pumping variable notation
 - [Solver Abstraction §3](../architecture/solver-abstraction.md) — LP interface for RHS updates and dual extraction
+- [What Cobre Solves](./what-cobre-solves.md) — methodology principles (reproducibility, determinism, declaration order invariance, code as ground truth, agent-readability) that frame this book

@@ -40,8 +40,11 @@
 # Specifications (Historical Design Artifacts)
 
 - [Overview](./specs/overview.md)
-  - [Design Principles](./specs/overview/design-principles.md)
+  - [What Cobre Solves](./specs/overview/what-cobre-solves.md)
+  - [The SDDP Framework in One Page](./specs/overview/sddp-framework-overview.md)
   - [Notation Conventions](./specs/overview/notation-conventions.md)
+  - [How to Read This Book](./specs/overview/how-to-read.md)
+  - [Design Principles](./specs/overview/design-principles.md)
   - [Production Scale Reference](./specs/overview/production-scale-reference.md)
   - [Ecosystem Vision](./specs/overview/ecosystem-vision.md)
   - [Ecosystem Guidelines](./specs/overview/ecosystem-guidelines.md)
