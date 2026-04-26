@@ -214,11 +214,8 @@ The convergence guarantee still holds: with $d_{cycle} < 1$, both the outer (cut
 
 - [SDDP Algorithm](sddp-algorithm.md) — Core algorithm providing the outer approximation (lower bound) that this spec complements
 - [Notation Conventions](../overview/notation-conventions.md) — Standard symbols for state variables, value functions, and cost-to-go
-- [Discount Rate](discount-rate.md) — Discount factor $d$ used in vertex value computation (&sect;5) and Lipschitz accumulation (&sect;4)
+- [Discount Rate](discount-rate.md) — Discount factor $d$ used in vertex value computation (section 5) and Lipschitz accumulation (section 4)
 - [Infinite Horizon](infinite-horizon.md) — Seasonal vertex organization for cyclic policy graphs
 - [Cut Management](cut-management.md) — Outer approximation cuts that provide the lower bound counterpart
 - [Stopping Rules](stopping-rules.md) — Convergence criteria that use the gap between inner and outer approximations
 - [Risk Measures](risk-measures.md) — CVaR objectives where deterministic upper bounds are essential
-- [Binary Formats &sect;3.3](../data-model/binary-formats.md) — FlatBuffers `Vertex` and `StageVertices` schemas for persistence
-- [Input Directory Structure &sect;2.2](../data-model/input-directory-structure.md) — `upper_bound_evaluation` configuration in `config.json`
-- [Configuration Reference](../configuration/configuration-reference.md) — Full configuration schema with defaults

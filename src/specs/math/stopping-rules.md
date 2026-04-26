@@ -190,4 +190,3 @@ When any stopping rule triggers, the output includes:
 - [Cut Management](cut-management.md) — Cut generation and selection that affect convergence speed
 - [Upper Bound Evaluation](upper-bound-evaluation.md) — Monte Carlo simulation for upper bound estimation, used by simulation-based stopping
 - [Risk Measures](risk-measures.md) — Risk-averse formulations that affect bound interpretation
-- [Configuration Reference](../configuration/configuration-reference.md) — JSON schema for `stopping_rules` and `stopping_mode`

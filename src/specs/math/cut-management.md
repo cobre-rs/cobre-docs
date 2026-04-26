@@ -2,7 +2,7 @@
 
 ## Purpose
 
-This spec defines the complete Benders cut lifecycle in Cobre: what cuts represent mathematically, how cut coefficients relate to LP dual variables, how per-scenario cuts are aggregated into a single cut, under what conditions cuts are valid, and what selection strategies are available to control cut pool growth. For cut pool persistence and in-memory layout, see [Binary Formats §3–4](../data-model/binary-formats.md).
+This spec defines the complete Benders cut lifecycle in Cobre: what cuts represent mathematically, how cut coefficients relate to LP dual variables, how per-scenario cuts are aggregated into a single cut, under what conditions cuts are valid, and what selection strategies are available to control cut pool growth.
 
 ## 1. Cut Definition
 
@@ -18,9 +18,11 @@ where:
 - $\alpha$ is the cut intercept
 - $\pi^v_h$ is the storage coefficient for hydro $h$ (marginal value of water)
 - $\pi^{lag}_{h,\ell}$ is the AR lag coefficient for hydro $h$, lag $\ell$ (marginal value of inflow history)
-- $v_h$, $a_{h,\ell}$ are the state variables (see [LP Formulation §4, §5](lp-formulation.md))
+- $v_h$, $a_{h,\ell}$ are the state variables (see [LP Formulation](lp-formulation.md))
 
-The cut coefficients are dense — every state variable (all storage volumes and all AR lags) has a non-zero coefficient in every cut. See [Binary Formats §3.4](../data-model/binary-formats.md) for the implications on memory layout.
+The cut coefficients are dense — every state variable (all storage volumes and all AR lags) has a non-zero coefficient in every cut. This density is a consequence of the full-state LP fixing constraints used for dual extraction.
+
+Cobre adds cuts monotonically across iterations: an active cut is never removed from the lower-bound LP within a training run. Because the cut set only grows, the lower-bound estimate is non-decreasing across iterations of a training run. This is a methodology-level guarantee — the outer approximation of the value function can only become tighter iteration by iteration.
 
 ## 2. Dual Variable Extraction
 
@@ -41,9 +43,9 @@ $$
 
 where $Q_t(\hat{x}_{t-1}, \omega_t)$ is the optimal objective value of the stage $t$ subproblem.
 
-**Sign convention**: By the LP envelope theorem, $\partial Q_t / \partial \hat{x}_j = \pi_j$ where $\pi_j$ is the dual of the fixing constraint $x^{in}_j = \hat{x}_j$. Since the incoming state $\hat{x}_j$ appears on the RHS of its fixing constraint with coefficient $+1$, the cut coefficient equals the fixing constraint dual directly — no scaling factors are needed for either storage or inflow lags. The fixing constraint dual automatically captures all downstream effects: for storage, this includes contributions from the water balance, FPHA hyperplanes, and any generic constraints that reference the incoming storage variable $v^{in}_h$ (see [LP Formulation §4a](lp-formulation.md)).
+**Sign convention**: By the LP envelope theorem, $\partial Q_t / \partial \hat{x}_j = \pi_j$ where $\pi_j$ is the dual of the fixing constraint $x^{in}_j = \hat{x}_j$. Since the incoming state $\hat{x}_j$ appears on the RHS of its fixing constraint with coefficient $+1$, the cut coefficient equals the fixing constraint dual directly — no scaling factors are needed for either storage or inflow lags. The fixing constraint dual automatically captures all downstream effects: for storage, this includes contributions from the water balance, FPHA hyperplanes, and any generic constraints that reference the incoming storage variable $v^{in}_h$ (see [LP Formulation](lp-formulation.md)).
 
-> **Design note**: This "fishing constraint" approach (introducing an incoming-state LP variable fixed to the trial value) is the standard technique used by SDDP.jl and other modern SDDP implementations. It eliminates the need to combine duals from multiple constraint types (water balance, FPHA, generic) to compute storage cut coefficients — the LP solver handles this automatically through the fixing constraint dual. See [LP Formulation §4a](lp-formulation.md) for the constraint definition.
+> **Design note**: This "fishing constraint" approach (introducing an incoming-state LP variable fixed to the trial value) is the standard technique used by SDDP.jl and other modern SDDP implementations. It eliminates the need to combine duals from multiple constraint types (water balance, FPHA, generic) to compute storage cut coefficients — the LP solver handles this automatically through the fixing constraint dual. See [LP Formulation](lp-formulation.md) for the constraint definition.
 
 ## 3. Single-Cut Aggregation
 
@@ -63,13 +65,13 @@ $$
 
 where $p(\omega)$ is the probability of scenario $\omega$.
 
-> **Opening tree correspondence**: The per-scenario cuts $\alpha_t(\omega)$, $\pi_t(\omega)$ correspond to the $N_{\text{openings}}$ noise vectors in the **fixed opening tree** — a pre-generated set of branchings created once before training begins. The backward pass always evaluates all openings, so the aggregation probabilities are uniform: $p(\omega) = 1/N_{\text{openings}}$. See [Scenario Generation §2.3](../architecture/scenario-generation.md).
+> **Opening tree correspondence**: The per-scenario cuts $\alpha_t(\omega)$, $\pi_t(\omega)$ correspond to the $N_{\text{openings}}$ noise vectors in the **fixed opening tree** — a pre-generated set of branchings created once before training begins. The backward pass always evaluates all openings, so the aggregation probabilities are uniform: $p(\omega) = 1/N_{\text{openings}}$. See [Scenario Generation](./scenario-generation.md).
 
 The aggregated cut $(\bar{\alpha}, \bar{\pi}^v, \bar{\pi}^{lag})$ is added to stage $t-1$'s cut pool.
 
 > **Discount factor**: When the problem uses stage-dependent discount rates, discounting is applied to the $\theta$ variable in the stage $t-1$ objective function (i.e., $d_{t-1 \to t} \cdot \theta$), rather than scaling the cut coefficients directly. This is simpler — the cuts remain unmodified and the discount factor appears only in the objective. See [Discount Rate](discount-rate.md) for the discounted Bellman equation and how discount factors interact with cut generation.
 
-> **Multi-cut formulation**: An alternative formulation creates one cut per scenario instead of aggregating, with per-scenario future cost variables $\theta_\omega$. This is deferred — see [Deferred Features §C.3](../deferred.md).
+> **Multi-cut formulation**: An alternative formulation creates one cut per scenario instead of aggregating, with per-scenario future cost variables $\theta_\omega$. This variant is not currently implemented; the single-cut formulation above is the production default.
 
 ## 4. Cut Validity
 
@@ -82,7 +84,7 @@ $$
 **Validity conditions**: The cuts generated by SDDP are valid under:
 
 1. **Convexity of stage subproblems** — guaranteed because all subproblems are LPs
-2. **Relatively complete recourse** — feasibility for all states and scenarios. In Cobre, this is guaranteed by the recourse slack system (Category 1 penalties): every constraint that could be violated by exogenous uncertainty has a penalty slack variable, ensuring the LP is always feasible. See [Penalty System](../data-model/penalty-system.md).
+2. **Relatively complete recourse** — feasibility for all states and scenarios. In Cobre, this is guaranteed by the recourse slack system (Category 1 penalties): every constraint that could be violated by exogenous uncertainty has a penalty slack variable, ensuring the LP is always feasible. See [Penalty System](./penalty-system.md).
 3. **Correct dual extraction** — duals must come from an optimal LP solution (not an infeasible or unbounded one)
 
 ## 5. Cut Growth and Selection Motivation
@@ -95,7 +97,7 @@ Cut selection removes inactive cuts to:
 2. Improve numerical stability (remove near-parallel constraints)
 3. Control memory consumption
 
-**Deactivation mechanism**: Cuts are not deleted — they are deactivated by relaxing their bound to $-\infty$. This preserves cut indices for reproducibility and allows reactivation if needed. See [Binary Formats §4](../data-model/binary-formats.md) for the preallocation strategy.
+**Deactivation mechanism**: Cuts are not deleted — they are deactivated by relaxing their bound to $-\infty$. This preserves cut indices for reproducibility and allows reactivation if needed.
 
 ## 6. Cut Activity
 
@@ -132,7 +134,7 @@ A cut is **Level-1 active** if it was binding at least once during the entire al
 
 - Least aggressive — retains any cut that was ever useful
 - May keep some cuts that were active early but are now permanently dominated
-- Preserves convergence guarantee (see §8)
+- Preserves convergence guarantee (see section 8)
 
 ### 7.2 Limited Memory Level-1 (LML1)
 
@@ -142,7 +144,7 @@ Each cut is timestamped with the most recent iteration at which it was active. P
 
 - More aggressive than Level-1 — forgets cuts that haven't been active recently
 - Memory window $W$ controls the trade-off between retention and aggressiveness
-- Preserves convergence guarantee (see §8)
+- Preserves convergence guarantee (see section 8)
 
 ### 7.3 Dominated Cut Detection
 
@@ -174,7 +176,7 @@ $$
 
 ## 9. Selection Parameters
 
-The cut selection strategy is configured with the following parameters:
+The cut selection strategy is configured with the following parameters (knobs are documented inline in this chapter):
 
 | Parameter         | Description                                                                                     | Applies to        |
 | ----------------- | ----------------------------------------------------------------------------------------------- | ----------------- |
@@ -183,21 +185,14 @@ The cut selection strategy is configured with the following parameters:
 | `check_frequency` | Iterations between selection runs                                                               | All               |
 | `memory_window`   | Iterations to retain inactive cuts (LML1 only; the JSON `threshold` field is mapped to this)    | LML1 only         |
 
-See [Configuration Reference](../configuration/configuration-reference.md) for the JSON schema.
-
 ## Cross-References
 
-- [LP Formulation §4, §5, §11](lp-formulation.md) — Water balance and AR lag constraints that produce duals; Benders cut constraints in the LP
-- [PAR Inflow Model §3](par-inflow-model.md) — AR lag state variables that appear in cut coefficients
-- [Notation Conventions §5.4](../overview/notation-conventions.md) — Dual variable sign convention and cut coefficient derivation
-- [Penalty System](../data-model/penalty-system.md) — Recourse slacks that guarantee relatively complete recourse (cut validity condition)
-- [Binary Formats §3–4](../data-model/binary-formats.md) — Cut pool FlatBuffers schema, CSR memory layout requirements, preallocation strategy, checkpoint/resume semantics
+- [LP Formulation](lp-formulation.md) — Water balance and AR lag constraints that produce duals; Benders cut constraints in the LP
+- [PAR Inflow Model](par-inflow-model.md) — AR lag state variables that appear in cut coefficients
 - [SDDP Algorithm](sddp-algorithm.md) — Forward/backward pass structure that drives cut generation
-- [Scenario Generation](../architecture/scenario-generation.md) — Fixed opening tree (§2.3) that defines backward pass branchings; sampling scheme abstraction (§3)
+- [Scenario Generation](./scenario-generation.md) — Fixed opening tree that defines backward pass branchings; sampling scheme abstraction
+- [Penalty System](./penalty-system.md) — Recourse slacks that guarantee relatively complete recourse (cut validity condition)
 - [Stopping Rules](stopping-rules.md) — Convergence criteria that depend on cut quality
 - [Discount Rate](discount-rate.md) — Discount factor scaling in cut aggregation
 - [Risk Measures](risk-measures.md) — Risk-averse cut generation (CVaR modifies aggregation weights)
-- [Deferred Features §C.3](../deferred.md) — Multi-cut formulation
-- [Block Formulations](block-formulations.md) — block structure that affects how per-block duals contribute to cut coefficients
-- [Cut Management Implementation](../architecture/cut-management-impl.md) — FCF structure, cut selection implementation, serialization, and cross-rank cut synchronization
-- [Configuration Reference](../configuration/configuration-reference.md) — JSON schema for `cut_selection` parameters
+- [Block Formulations](block-formulations.md) — Block structure that affects how per-block duals contribute to cut coefficients

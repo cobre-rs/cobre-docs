@@ -10,7 +10,7 @@ For what each physical element represents and its decision variables, see [syste
 
 ## 1. Cost and Penalty Taxonomy
 
-The objective function includes three categories of penalty/cost terms plus resource costs. This taxonomy aligns with [Penalty System §2](../data-model/penalty-system.md). Understanding these categories is essential for setting appropriate parameter values and interpreting solution reports.
+The objective function includes three categories of penalty/cost terms plus resource costs. This taxonomy aligns with [Penalty System](./penalty-system.md). Understanding these categories is essential for setting appropriate parameter values and interpreting solution reports.
 
 ### 1.1 Resource Costs (Actual Operating Expenses)
 
@@ -76,11 +76,11 @@ $$c^{fill} > c^{sv-} > c^{def} > c^{tv-}, c^{ov\pm}, c^{gv-}, c^{ev}, c^{wv} > c
 5. **Resource costs** ($c^{th}$, $c^{ctr}$): Market-based or fuel-based
 6. **Regularization** ($c^{spill}$, $c^{fpha}$, $c^{div}$, $c^{curt}$, $c^{exch}$): Near-zero
 
-For the full penalty specification, cascade resolution, and stage-varying overrides, see [Penalty System](../data-model/penalty-system.md).
+For the full penalty specification, cascade resolution, and stage-varying overrides, see [Penalty System](./penalty-system.md).
 
 > **Note on Thermal Plants**: Thermal bounds ($\underline{G}_j$, $\bar{G}_j$) are hard constraints with no slack variables. Thermal dispatch is directly controllable, unlike hydro constraints that may be violated due to exogenous inflow uncertainty.
 
-> **FPHA validation rule**: For each hydro using the `fpha` production model, $c^{fpha}_h > c^{spill}_h$ must hold. See [Penalty System §2](../data-model/penalty-system.md).
+> **FPHA validation rule**: For each hydro using the `fpha` production model, $c^{fpha}_h > c^{spill}_h$ must hold. See [Penalty System](./penalty-system.md).
 
 ### 1.6 Objective Function Structure
 
@@ -211,16 +211,9 @@ The variable $v^{in}_h$ then appears as an LP variable (not a constant) in all c
 
 **Dual variable**: $\pi^{fix}_h$ (marginal value of incoming storage for hydro $h$, used directly as the storage cut coefficient — see [cut management](cut-management.md))
 
-**Why this design**: By LP duality, the dual of the fixing constraint $v^{in}_h = \hat{v}_h$ captures the total sensitivity $\partial Q_t / \partial \hat{v}_h$, automatically accounting for all downstream effects through water balance, FPHA, and generic constraints. This eliminates the need to combine duals from multiple constraint types to compute the storage cut coefficient — a single dual value suffices. This is the same "fishing constraint" technique used by SDDP.jl and is analogous to how the AR lag fixing constraints (§5a) work for inflow lags.
+**Why this design**: By LP duality, the dual of the fixing constraint $v^{in}_h = \hat{v}_h$ captures the total sensitivity $\partial Q_t / \partial \hat{v}_h$, automatically accounting for all downstream effects through water balance, FPHA, and generic constraints. This eliminates the need to combine duals from multiple constraint types to compute the storage cut coefficient — a single dual value suffices. This is the same "fishing constraint" technique used by SDDP.jl and is analogous to how the AR lag fixing constraints (section 5a) work for inflow lags.
 
 **Constraint count**: $N$ total constraints, where $N = |\mathcal{H}|$ is the number of operating hydros.
-
-> **Implementation notes**:
->
-> - The incoming storage variable $v^{in}_h$ has **no bounds** — its value is entirely determined by the fixing constraint. The outgoing storage $v_h$ retains its original bounds (§8).
-> - The RHS value $\hat{v}_h$ is patched per scenario during the forward pass ([Training Loop SS4.2a](../architecture/training-loop.md)) and backward pass, at row $h$ ([Solver Abstraction SS2.2](../architecture/solver-abstraction.md)).
-> - The dual extraction for cut coefficients reads $\pi^{fix}_h$ from the contiguous top region of the dual vector, where the row-column index symmetry enables a single slice read for all storage cut coefficients ([Training Loop SS7.2](../architecture/training-loop.md)).
-> - The column for $v^{in}_h$ is placed after the state prefix (after outgoing storage, lag variables, and realized-inflow variables) — see [Solver Abstraction SS2.1](../architecture/solver-abstraction.md) and §4b below. The incoming storage variables are **not** part of the state vector; they are auxiliary variables whose only purpose is to provide a clean dual for cut coefficient extraction.
 
 ## 4b. LP Column and Row Layout
 
@@ -230,13 +223,13 @@ The stage LP uses a fixed column and row layout that places state variables firs
 
 **Column layout**:
 
-| Region        | Index range            | Count | Description                                   |
-| ------------- | ---------------------- | ----- | --------------------------------------------- |
-| `storage`     | $[0, N)$               | $N$   | Outgoing storage volumes (state)              |
-| `inflow_lags` | $[N, N(1{+}L))$        | $NL$  | AR lag variables (state)                      |
-| `z_inflow`    | $[N(1{+}L), N(2{+}L))$ | $N$   | Realized inflow (auxiliary, not state)        |
-| `storage_in`  | $[N(2{+}L), N(3{+}L))$ | $N$   | Incoming storage volumes (auxiliary, for §4a) |
-| `theta`       | $N(3{+}L)$             | $1$   | Future cost variable                          |
+| Region        | Count | Description                                                    |
+| ------------- | ----- | -------------------------------------------------------------- |
+| `storage`     | $N$   | Outgoing storage volumes (state) — first                       |
+| `inflow_lags` | $NL$  | AR lag variables (state) — after storage                       |
+| `z_inflow`    | $N$   | Realized inflow (auxiliary, not state) — after AR lags         |
+| `storage_in`  | $N$   | Incoming storage volumes (auxiliary, for §4a) — after z-inflow |
+| `theta`       | $1$   | Future cost variable — last of the state prefix                |
 
 Equipment columns (turbine, spillage, diversion, thermal, line flows, deficit, excess, slacks) follow immediately after `theta`.
 
@@ -244,24 +237,17 @@ The `z_inflow` region holds one free column per hydro representing the total rea
 
 **Row layout** (dual-relevant prefix):
 
-| Region           | Index range            | Count | Description                                  |
-| ---------------- | ---------------------- | ----- | -------------------------------------------- |
-| `storage_fixing` | $[0, N)$               | $N$   | Storage fixing constraints (§4a)             |
-| `lag_fixing`     | $[N, N(1{+}L))$        | $NL$  | AR lag fixing constraints (§5a)              |
-| `z_inflow`       | $[N(1{+}L), N(2{+}L))$ | $N$   | Realized-inflow definition constraints (§5b) |
+| Region           | Count | Description                                                     |
+| ---------------- | ----- | --------------------------------------------------------------- |
+| `storage_fixing` | $N$   | Storage fixing constraints (§4a) — first                        |
+| `lag_fixing`     | $NL$  | AR lag fixing constraints (§5a) — after storage fixing          |
+| `z_inflow`       | $N$   | Realized-inflow definition constraints (§5b) — after lag fixing |
 
 Equipment rows (water balance, load balance, FPHA, evaporation, outflow bounds, etc.) follow after the z-inflow rows.
 
-**Worked example** ($N = 3$, $L = 2$):
+The state prefix spans the first $N(2 + L)$ rows (storage fixing, then lag fixing, then z-inflow definition). The dual vector over this contiguous prefix gives all storage and inflow-lag cut coefficients in a single slice.
 
-| Region        | Range  | Formula            |
-| ------------- | ------ | ------------------ |
-| `storage`     | 0..3   | $[0, 3)$           |
-| `inflow_lags` | 3..9   | $[3, 3 \times 3)$  |
-| `z_inflow`    | 9..12  | $[9, 3 \times 4)$  |
-| `storage_in`  | 12..15 | $[12, 3 \times 5)$ |
-| `theta`       | 15     | $3 \times 5$       |
-| `n_state`     | 9      | $3 \times 3$       |
+**Worked example** ($N = 3$, $L = 2$): the storage region holds 3 columns, the AR lag region holds 6 (3 hydros × 2 lags), the z-inflow region holds 3, and the incoming-storage region holds 3, so `theta` is the 16th column. The state count (outgoing storage + AR lags) is $N(1 + L) = 9$.
 
 ## 5. AR Inflow Dynamics
 
@@ -273,15 +259,15 @@ a_h = \underbrace{\left( \mu_t - \sum_{\ell=1}^{P_h} \psi_\ell \mu_{t-\ell} \rig
 + \underbrace{\sigma_t \cdot \eta_t}_{\text{stochastic innovation}}
 $$
 
-To maintain the Markov property, lagged inflows $a_{h,\ell}$ are promoted to state variables with explicit fixing constraints — see [SS5a](#5a-ar-lag-fixing-constraints) below.
+To maintain the Markov property, lagged inflows $a_{h,\ell}$ are promoted to state variables with explicit fixing constraints — see section 5a below.
 
 See [PAR(p) inflow model](par-inflow-model.md) for the complete PAR(p) model specification.
 
 ## 5a. AR Lag Fixing Constraints
 
-The AR dynamics equation (SS5) uses lagged inflows $a_{h,\ell}$ as LP variables. To maintain the Markov property in the SDDP decomposition, each lag variable must be fixed to its incoming state value via an explicit equality constraint. These constraints serve a dual purpose: they bind the lag variables to the known incoming state, and their dual multipliers $\pi^{lag}_{h,\ell}$ provide the cut coefficients for the inflow lag dimensions of the Benders cuts (SS11).
+The AR dynamics equation (section 5) uses lagged inflows $a_{h,\ell}$ as LP variables. To maintain the Markov property in the SDDP decomposition, each lag variable must be fixed to its incoming state value via an explicit equality constraint. These constraints serve a dual purpose: they bind the lag variables to the known incoming state, and their dual multipliers $\pi^{lag}_{h,\ell}$ provide the cut coefficients for the inflow lag dimensions of the Benders cuts (section 11).
 
-For each hydro $h \in \mathcal{H}$ and each lag $\ell \in \{0, \ldots, L-1\}$ (0-based, matching the implementation index convention in [Solver Abstraction SS2.2](../architecture/solver-abstraction.md)):
+For each hydro $h \in \mathcal{H}$ and each lag $\ell \in \{0, \ldots, L-1\}$:
 
 $$
 a_{h,\ell} = \hat{a}_{h,\ell}
@@ -293,14 +279,9 @@ where:
 - $\hat{a}_{h,\ell}$ = incoming state value (inflow observation from $\ell$ stages ago, fixed via RHS patching)
 - $L$ = maximum AR order across all hydros (uniform lag storage convention)
 
-**Constraint count**: $N \times L$ total constraints, where $N = |\mathcal{H}|$ is the number of operating hydros and $L$ is the system-wide maximum lag. All hydros store $L$ lags regardless of their individual AR order $P_h$; hydros with $P_h < L$ have zero-valued AR coefficients ($\psi_\ell = 0$ for $\ell > P_h$) in the dynamics equation, but their lag fixing constraints are still present. This uniform layout enables contiguous memory access and SIMD-friendly cut coefficient extraction — see [Solver Abstraction SS2.2](../architecture/solver-abstraction.md) for the row layout.
+**Constraint count**: $N \times L$ total constraints, where $N = |\mathcal{H}|$ is the number of operating hydros and $L$ is the system-wide maximum lag. All hydros store $L$ lags regardless of their individual AR order $P_h$; hydros with $P_h < L$ have zero-valued AR coefficients ($\psi_\ell = 0$ for $\ell > P_h$) in the dynamics equation, but their lag fixing constraints are still present. This uniform layout enables contiguous dual extraction — each lag has a dedicated fixing constraint whose dual provides the cut coefficient directly, and the contiguous arrangement of these constraints in the row prefix (section 4b) allows all lag cut coefficients to be read in a single slice of the dual vector.
 
 **Dual variable**: $\pi^{lag}_{h,\ell}$ (marginal value of inflow history at lag $\ell$ for hydro $h$, used as the cut coefficient for the corresponding inflow lag state variable — see [cut management](cut-management.md))
-
-> **Implementation notes**:
->
-> - The RHS value $\hat{a}_{h,\ell}$ is patched per scenario during the forward pass ([Training Loop SS4.2a](../architecture/training-loop.md)) and backward pass, following the same index formula as the column layout: row $N + \ell \cdot N + h$ for hydro $h$, lag $\ell$ ([Solver Abstraction SS2.2](../architecture/solver-abstraction.md)).
-> - The dual extraction for cut coefficients reads $\pi^{lag}_{h,\ell}$ from the contiguous top region of the dual vector, where the row-column index symmetry enables a single slice read ([Training Loop SS7.2](../architecture/training-loop.md)).
 
 ## 5b. Realized-Inflow Definition Constraints (z-inflow)
 
@@ -320,18 +301,13 @@ where:
 
 The z-inflow variable $z_h$ then enters the water balance constraint (§4) in place of the raw inflow term $a_h$, and its primal value after solving gives the realized inflow for reporting and simulation extraction.
 
-**Constraint count**: $N$ total constraints, where $N = |\mathcal{H}|$ is the number of operating hydros. See §4b for the row layout.
+The z-inflow columns sit between the AR lag columns and the incoming storage columns in the column layout (section 4b). Their constraint rows occupy the third block of the dual-relevant row prefix, after the storage fixing rows and the lag fixing rows. The RHS is patched per scenario with $b_{h,m(t)} + \sigma_{m(t)} \cdot \eta_t$, where $\eta_t$ is the effective noise (possibly clamped for inflow non-negativity — see [Inflow Non-Negativity](inflow-nonnegativity.md)). These are not state variables and do not contribute to cut coefficients.
 
-> **Implementation notes**:
->
-> - The z-inflow columns are placed at $[N(1{+}L), N(2{+}L))$ in the column layout — between the AR lag columns and the incoming storage columns (§4b).
-> - The z-inflow constraint rows are placed at $[N(1{+}L), N(2{+}L))$ in the row layout — after the lag fixing rows and before the water balance rows.
-> - The RHS is patched per scenario with $b_{h,m(t)} + \sigma_{m(t)} \cdot \eta_t$, where $\eta_t$ is the effective noise (possibly clamped for inflow non-negativity — see [Inflow Non-Negativity](inflow-nonnegativity.md)).
-> - These are not state variables and do not contribute to cut coefficients. Their purpose is twofold: (1) provide the realized inflow for the water balance, and (2) enable direct extraction of per-hydro inflow values from the primal solution.
+**Constraint count**: $N$ total constraints, where $N = |\mathcal{H}|$ is the number of operating hydros. See section 4b for the row layout.
 
 ## 6. Hydro Generation Constraints
 
-Cobre supports two production models during training, in increasing order of complexity. A third model (linearized head) is available during simulation only — see [hydro production models §3](hydro-production-models.md). The model can vary by stage or season per hydro — see [Input Hydro Extensions §2](../data-model/input-hydro-extensions.md).
+Cobre supports two production models during training, in increasing order of complexity. A third model (linearized head) is available during simulation only — see [hydro production models §3](hydro-production-models.md). The model can vary by stage or season per hydro.
 
 **Constant Productivity Model** (for each hydro $h \in \mathcal{H}^{const}$, block $k$):
 
@@ -394,7 +370,7 @@ $$
 v_h + \sigma^{fill}_h \geq \underline{V}_h
 $$
 
-with the highest penalty in the system ($c^{fill}_h$). See [Penalty System §7](../data-model/penalty-system.md).
+with the highest penalty in the system ($c^{fill}_h$). See [Penalty System §7](./penalty-system.md).
 
 ### Turbined Flow Bounds (per hydro $h$, block $k$)
 
@@ -447,7 +423,7 @@ The effective penalty for any (entity, stage, penalty_type) tuple follows a thre
 2. **Entity-specific override** (from entity registry JSON)
 3. **Global default** (from `penalties.json`)
 
-For the full resolution semantics and all penalty value definitions, see [Penalty System](../data-model/penalty-system.md).
+For the full resolution semantics and all penalty value definitions, see [Penalty System](./penalty-system.md).
 
 ## 10. Generic Constraints
 
@@ -535,12 +511,9 @@ The combined scaling produces the standard $D_r \cdot A \cdot D_c$ form where $D
 
 - [Notation conventions](../overview/notation-conventions.md) — index sets, parameters, decision variable naming
 - [System elements](system-elements.md) — physical meaning of each element, decision variables, Variable Units Convention
-- [Penalty System](../data-model/penalty-system.md) — three-category taxonomy, penalty names, priority ordering, cascade resolution
-- [Input System Entities](../data-model/input-system-entities.md) — entity registries (contracts §6, NCS §7, GNL §4, pumping §5)
+- [Penalty System](./penalty-system.md) — three-category taxonomy, penalty names, priority ordering, cascade resolution
 - [SDDP algorithm](sddp-algorithm.md) — iterative structure that solves this LP at each stage
 - [PAR(p) inflow model](par-inflow-model.md) — complete AR inflow model specification
 - [Hydro production models](hydro-production-models.md) — constant, linearized head, and FPHA model details
 - [Cut management](cut-management.md) — dual extraction, cut coefficients, aggregation, and selection
-- [Internal Structures](../data-model/internal-structures.md) — Pre-resolved in-memory data model that provides entity data and bounds to the LP builder
-- [Solver Abstraction](../architecture/solver-abstraction.md) — LP layout convention (SS2) mapping this mathematical formulation to solver column/row indices, with exact index formulas and a worked example
 - [Equipment formulations](equipment-formulations.md) — per-equipment constraint derivations, pumping details

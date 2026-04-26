@@ -2,21 +2,13 @@
 
 ## Purpose
 
-This spec defines the unified penalty system that ensures LP feasibility across all scenarios while correctly pricing operational costs and constraint violations. The penalty system uses a three-tier cascade resolution: global defaults → entity overrides → stage overrides.
+This spec defines the unified penalty system that ensures LP feasibility across all scenarios while correctly pricing operational costs and constraint violations. See [LP Formulation](./lp-formulation.md) for how penalties enter the objective function.
 
-This is a key area expected to evolve. See [LP Formulation](../math/lp-formulation.md) for how penalties enter the objective function.
-
-## 1. Design Rationale
+## 1. Cascade Resolution
 
 The LP must always be feasible. Several physical and operational constraints may be impossible to satisfy in extreme scenarios (droughts, equipment failures, etc.). The penalty system provides slack variables with graduated costs to maintain feasibility while signaling the severity of violations.
 
-### Override Resolution Behavior
-
-The penalty system supports three levels of specificity. The effective penalty for a given entity, stage, and penalty type is determined by the most specific value available:
-
-1. **Stage-level override** — If a value is defined for this specific (entity, stage, penalty_type) tuple, it takes precedence.
-2. **Entity-level override** — If no stage override exists, a per-entity default (defined in the entity registry file) is used.
-3. **Global default** — If neither stage nor entity overrides exist, the global default from `penalties.json` applies.
+Cobre's penalty cascade has three levels of specificity: a stage override on a (entity, stage, penalty) triple is most specific, an entity override defined per entity is next, and a global default at the case level is the fallback. The most specific value present wins.
 
 | Query                       | Stage Override? | Entity Override? | Result                |
 | --------------------------- | --------------- | ---------------- | --------------------- |
@@ -24,15 +16,7 @@ The penalty system supports three levels of specificity. The effective penalty f
 | Hydro 0, Stage 60, spillage | Yes (0.02)      | Yes (0.005)      | 0.02 (stage)          |
 | Hydro 1, Stage 30, spillage | No              | No               | 0.01 (global default) |
 
-> **Implementation note**: The resolution behavior above describes the _semantics_ of the cascade, not the algorithm. In practice, the implementation should pre-resolve penalties during input loading (e.g., start from global defaults, apply entity overrides while parsing registries, then batch-apply stage overrides) rather than querying files at runtime. The exact resolution strategy is an implementation concern.
-
-### Format Rationale
-
-| Tier             | File                                      | Format  | Rationale                                                                |
-| ---------------- | ----------------------------------------- | ------- | ------------------------------------------------------------------------ |
-| Global defaults  | `penalties.json`                          | JSON    | Hierarchical config with nested cost categories; natural for defaults    |
-| Entity overrides | `hydros.json`, `buses.json`, etc.         | JSON    | Per-entity overrides co-located with the entity definition               |
-| Stage overrides  | `constraints/penalty_overrides_*.parquet` | Parquet | Sparse per-entity/per-stage tabular overrides in 4 entity-specific files |
+Penalties cascade through three tiers (global default, per-entity, per-stage); defaults live in case-level files.
 
 ## 2. Penalty Categories
 
@@ -63,7 +47,7 @@ These penalties provide slack for physical or operational constraints that may b
 | `outflow_violation_below_cost`    | \$/(m3/s·h) | Outflow < min                 | Environmental minimum flow (operator/regulatory)   | 500–1,000 \$/unit   |
 | `outflow_violation_above_cost`    | \$/(m3/s·h) | Outflow > max                 | Downstream flooding prevention                     | 500–1,000 \$/unit   |
 | `generation_violation_below_cost` | \$/MWh      | Generation < min              | Contractual or environmental minimum generation    | 1,000–2,000 \$/unit |
-| `evaporation_violation_cost`      | \$/(m3/s·h) | Evaporation constraint        | Physical constraint (bidirectional, see Section 6) | 5,000+ \$/unit      |
+| `evaporation_violation_cost`      | \$/(m3/s·h) | Evaporation constraint        | Physical constraint (bidirectional, see Section 5) | 5,000+ \$/unit      |
 | `water_withdrawal_violation_cost` | \$/(m3/s·h) | Unmet water withdrawal        | Human consumption / irrigation commitments         | 1,000–5,000 \$/unit |
 | `generic_violation_cost`          | varies      | Generic constraint violations | User-defined physical or operational constraints   | User-defined        |
 
@@ -89,7 +73,7 @@ $$\text{Filling target} > \text{Storage violation} > \text{Deficit} > \text{Cons
 
 The filling target violation cost must be the highest penalty in the system — filling the dead volume is prioritized above all other objectives. The storage violation below cost must exceed deficit cost — keeping reservoirs above dead volume is more critical than serving load (operating below dead volume risks dam safety and equipment damage).
 
-**FPHA validation rule**: For each hydro using the `fpha` production model, `fpha_turbined_cost > spillage_cost` must hold. The concave FPHA geometry allows interior LP solutions where generation is less than the physical production function would yield — the turbined flow penalty prevents the solver from "spilling through the turbines." See [Internal Structures §3](internal-structures.md) for the full explanation.
+**FPHA validation rule**: For each hydro using the `fpha` production model, `fpha_turbined_cost > spillage_cost` must hold. The concave FPHA geometry allows interior LP solutions where the objective is met with less turbined flow than the physical production function would require — the turbined flow penalty prevents the solver from taking these interior solutions by making every unit of turbined flow carry a small additional cost, which collapses the degenerate interior region.
 
 ### Penalty Ordering Validation
 
@@ -113,72 +97,29 @@ Validation runs on **post-resolution** penalty values — after the three-tier c
 
 **Warning aggregation**: To avoid excessive output when many (entity, stage) pairs violate the same check, warnings are aggregated: one warning per violated check across all entities and stages. The warning message reports the total violation count and the most extreme example (the pair with the largest inversion magnitude).
 
-## 3. Global Penalty Defaults (`penalties.json`)
+## 3. Penalty Defaults and Overrides
 
-This file defines default penalty values for all entities. It is **required** and must be present in the case directory root.
+Default penalty values are set at the case level for buses, lines, hydros, and non-controllable sources. Per-entity overrides may appear in the entity registry; per-stage overrides may appear as sparse tables.
 
-```json
-{
-  "$schema": "https://cobre.dev/schemas/v2/penalties.schema.json",
-  "version": "1.0",
-  "bus": {
-    "deficit_segments": [
-      { "depth_mw": 500, "cost": 1000.0 },
-      { "depth_mw": 1000, "cost": 3000.0 },
-      { "depth_mw": null, "cost": 5000.0 }
-    ],
-    "excess_cost": 100.0
-  },
-  "line": {
-    "exchange_cost": 2.0
-  },
-  "hydro": {
-    "spillage_cost": 0.01,
-    "fpha_turbined_cost": 0.05,
-    "diversion_cost": 0.1,
-    "storage_violation_below_cost": 10000.0,
-    "filling_target_violation_cost": 50000.0,
-    "turbined_violation_below_cost": 500.0,
-    "outflow_violation_below_cost": 500.0,
-    "outflow_violation_above_cost": 500.0,
-    "generation_violation_below_cost": 1000.0,
-    "evaporation_violation_cost": 5000.0,
-    "water_withdrawal_violation_cost": 1000.0,
-    "water_withdrawal_violation_pos_cost": null,
-    "water_withdrawal_violation_neg_cost": null,
-    "evaporation_violation_pos_cost": null,
-    "evaporation_violation_neg_cost": null,
-    "inflow_nonnegativity_cost": null
-  },
-  "non_controllable_source": {
-    "curtailment_cost": 0.005
-  }
-}
-```
+Five additional hydro penalty fields support directional and inflow-specific penalties. All are optional and default to the symmetric value when unset:
 
-### Directional Penalty Overrides
+- `water_withdrawal_violation_pos_cost` — penalty per m3/s of over-withdrawal (withdrew more than target); defaults to `water_withdrawal_violation_cost`
+- `water_withdrawal_violation_neg_cost` — penalty per m3/s of under-withdrawal (withdrew less than target); defaults to `water_withdrawal_violation_cost`
+- `evaporation_violation_pos_cost` — penalty per mm of over-evaporation; defaults to `evaporation_violation_cost`
+- `evaporation_violation_neg_cost` — penalty per mm of under-evaporation; defaults to `evaporation_violation_cost`
+- `inflow_nonnegativity_cost` — penalty per m3/s of inflow non-negativity slack activation (method = `"penalty"`); defaults to 1000.0
 
-Five additional hydro penalty fields support directional and inflow-specific penalties. All are optional and default to the symmetric value when `null`:
-
-| Field                                 | Type          | Default                           | Description                                                                       |
-| ------------------------------------- | ------------- | --------------------------------- | --------------------------------------------------------------------------------- |
-| `water_withdrawal_violation_pos_cost` | f64 or `null` | `water_withdrawal_violation_cost` | Penalty per m3/s of over-withdrawal (withdrew more than target)                   |
-| `water_withdrawal_violation_neg_cost` | f64 or `null` | `water_withdrawal_violation_cost` | Penalty per m3/s of under-withdrawal (withdrew less than target)                  |
-| `evaporation_violation_pos_cost`      | f64 or `null` | `evaporation_violation_cost`      | Penalty per mm of over-evaporation                                                |
-| `evaporation_violation_neg_cost`      | f64 or `null` | `evaporation_violation_cost`      | Penalty per mm of under-evaporation                                               |
-| `inflow_nonnegativity_cost`           | f64 or `null` | 1000.0                            | Penalty per m3/s of inflow non-negativity slack activation (method = `"penalty"`) |
-
-When `null`, the directional withdrawal and evaporation costs fall back to the symmetric `water_withdrawal_violation_cost` and `evaporation_violation_cost` respectively. The `inflow_nonnegativity_cost` defaults to 1000.0 when absent. See [Inflow Non-Negativity](../math/inflow-nonnegativity.md) for details on the penalty method.
+See [Inflow Non-Negativity](./inflow-nonnegativity.md) for details on the penalty method.
 
 ### Piecewise Deficit
 
 Deficit is modeled as piecewise linear segments. Each segment specifies a depth (MW of unmet demand) and cost. Segments are cumulative: first `depth_mw` MW at first cost, next at second cost, etc. The last segment **MUST** have `depth_mw: null` to ensure LP feasibility (unbounded extension).
 
-Deficit segments can be overridden per bus in `buses.json` (see [Input System Entities §1](input-system-entities.md)), but **cannot be stage-varying** (piecewise structure is too complex for per-stage override).
+Deficit segments can be overridden per bus in the entity registry, but **cannot be stage-varying** (piecewise structure is too complex for per-stage override).
 
-## 4. Constraint Violation Categories
+## 4. Constraint Violation Coverage
 
-This section enumerates all constraints in the LP that use slack variables, organized by the system element they belong to. For the full LP constraint formulations, see [LP Formulation](../math/lp-formulation.md).
+This section enumerates all constraints in the LP that use slack variables, organized by the system element they belong to. For the full LP constraint formulations, see [LP Formulation](./lp-formulation.md).
 
 ### System-Level (Bus)
 
@@ -208,7 +149,7 @@ This section enumerates all constraints in the LP that use slack variables, orga
 
 **Maximum storage** (`max_storage_hm3`) is a hard physical limit (reservoir capacity). If storage would exceed the maximum, emergency spillage handles the excess. No slack variable is used.
 
-**Filling target constraint**: At the last filling stage (`entry_stage_id - 1`), a terminal constraint enforces `v_h >= min_storage_hm3`. This uses the `filling_target_violation` slack with the highest penalty in the system (`filling_target_violation_cost`), ensuring the solver prioritizes filling above all other objectives including load serving. The slack only activates when there is physically insufficient water — see [Input System Entities §3](input-system-entities.md) for the filling model description and [Input Constraints §2](input-constraints.md) for the filling inflow sufficiency validation.
+**Filling target constraint**: At the last filling stage (`entry_stage_id - 1`), a terminal constraint enforces `v_h >= min_storage_hm3`. This uses the `filling_target_violation` slack with the highest penalty in the system (`filling_target_violation_cost`), ensuring the solver prioritizes filling above all other objectives including load serving. The slack only activates when there is physically insufficient water.
 
 ### Lines
 
@@ -220,64 +161,15 @@ This section enumerates all constraints in the LP that use slack variables, orga
 
 ### Generic Constraints
 
-User-defined generic constraints (see [Input Constraints](input-constraints.md)) can optionally have slack variables with user-specified penalty costs. These are typically used for physical or operational directives from the system operator, and fall into the **constraint violation** category.
+User-defined generic constraints can optionally have slack variables with user-specified penalty costs. These are typically used for physical or operational directives from the system operator, and fall into the **constraint violation** category.
 
 ### Non-Controllable Sources
 
-**Non-controllable generation bounds**: Generation is bounded by `[0, available_generation]` where `available_generation` comes from the scenario pipeline. Both bounds are hard constraints — no slack variables. The `curtailment_cost` is a regularization term (Category 3) applied to the difference between available and dispatched generation, penalizing curtailment to prioritize using "free" non-controllable energy. Analogous to hydro `spillage_cost` — curtailment discards available energy. See [Input System Entities §7](input-system-entities.md).
+**Non-controllable generation bounds**: Generation is bounded by `[0, available_generation]` where `available_generation` comes from the scenario pipeline. Both bounds are hard constraints — no slack variables. The `curtailment_cost` is a regularization term (Category 3) applied to the difference between available and dispatched generation, penalizing curtailment to prioritize using "free" non-controllable energy. Analogous to hydro `spillage_cost` — curtailment discards available energy.
 
-## 5. Stage-Varying Penalty Overrides
+## 5. Bidirectional Slacks and Directional Overrides
 
-Stage-varying overrides allow penalty values to change at specific stages for specific entities. Only entries that differ from the entity or global defaults need to be specified (sparse storage). Each entity type has its own Parquet file under `constraints/`.
-
-### Bus Penalty Overrides (`constraints/penalty_overrides_bus.parquet`) — Optional
-
-| Column        | Type | Nullable | Description                                       |
-| ------------- | ---- | -------- | ------------------------------------------------- |
-| `bus_id`      | i32  | No       | Bus identifier                                    |
-| `stage_id`    | i32  | No       | Stage identifier                                  |
-| `excess_cost` | f64  | Yes      | \$/MWh for excess generation (null = use default) |
-
-### Line Penalty Overrides (`constraints/penalty_overrides_line.parquet`) — Optional
-
-| Column          | Type | Nullable | Description                                   |
-| --------------- | ---- | -------- | --------------------------------------------- |
-| `line_id`       | i32  | No       | Line identifier                               |
-| `stage_id`      | i32  | No       | Stage identifier                              |
-| `exchange_cost` | f64  | Yes      | \$/MWh for exchange cost (null = use default) |
-
-### Hydro Penalty Overrides (`constraints/penalty_overrides_hydro.parquet`) — Optional
-
-| Column                                | Type | Nullable | Description                                     |
-| ------------------------------------- | ---- | -------- | ----------------------------------------------- |
-| `hydro_id`                            | i32  | No       | Hydro identifier                                |
-| `stage_id`                            | i32  | No       | Stage identifier                                |
-| `spillage_cost`                       | f64  | Yes      | \$/(m3/s·h) for spilled water                   |
-| `fpha_turbined_cost`                  | f64  | Yes      | \$/(m3/s·h) for FPHA turbined flow              |
-| `diversion_cost`                      | f64  | Yes      | \$/(m3/s·h) for diverted water                  |
-| `storage_violation_below_cost`        | f64  | Yes      | \$/hm3 for storage below min                    |
-| `filling_target_violation_cost`       | f64  | Yes      | \$/hm3 for filling target shortfall             |
-| `turbined_violation_below_cost`       | f64  | Yes      | \$/(m3/s·h) for turbined flow below min         |
-| `outflow_violation_below_cost`        | f64  | Yes      | \$/(m3/s·h) for outflow below min               |
-| `outflow_violation_above_cost`        | f64  | Yes      | \$/(m3/s·h) for outflow above max               |
-| `generation_violation_below_cost`     | f64  | Yes      | \$/MWh for generation below min                 |
-| `evaporation_violation_pos_cost`      | f64  | Yes      | \$/(m3/s·h) for positive evaporation violation  |
-| `evaporation_violation_neg_cost`      | f64  | Yes      | \$/(m3/s·h) for negative evaporation violation  |
-| `water_withdrawal_violation_pos_cost` | f64  | Yes      | \$/(m3/s·h) for positive withdrawal violation   |
-| `water_withdrawal_violation_neg_cost` | f64  | Yes      | \$/(m3/s·h) for negative withdrawal violation   |
-| `inflow_nonnegativity_cost`           | f64  | Yes      | \$/(m3/s·h) for inflow non-negativity violation |
-
-### Non-Controllable Source Penalty Overrides (`constraints/penalty_overrides_ncs.parquet`) — Optional
-
-| Column             | Type | Nullable | Description                                                |
-| ------------------ | ---- | -------- | ---------------------------------------------------------- |
-| `source_id`        | i32  | No       | Non-controllable source identifier                         |
-| `stage_id`         | i32  | No       | Stage identifier                                           |
-| `curtailment_cost` | f64  | Yes      | \$/MWh for curtailed available generation (null = default) |
-
-**Sparse storage**: Only include entries where values differ from defaults to minimize file size and I/O.
-
-## 6. Negative Evaporation (Condensation) Handling
+### Negative Evaporation (Condensation) Handling
 
 While evaporation is typically positive (water loss), the evaporation coefficient can be negative:
 
@@ -297,9 +189,11 @@ where:
   evap_slack_negative >= 0  (actual evap < computed evap, including negative target)
 ```
 
-Each slack variable receives its own penalty: `evaporation_violation_pos_cost` for over-evaporation and `evaporation_violation_neg_cost` for under-evaporation. When the directional costs are not specified in `penalties.json` (i.e., `null`), both default to the symmetric `evaporation_violation_cost` value.
+Each slack variable receives its own penalty: `evaporation_violation_pos_cost` for over-evaporation and `evaporation_violation_neg_cost` for under-evaporation. When the directional costs are not specified (i.e., unset), both default to the symmetric `evaporation_violation_cost` value.
 
-## 7. Hydro Variables and Bounds Summary
+Stage-varying overrides follow the same pattern: directional costs may be overridden independently per (entity, stage). Penalty values may vary by stage. Stage-varying overrides are sparse — only entries that differ from defaults are recorded.
+
+## 6. Hydro Variable Bounds Summary
 
 | Variable        | Lower Bound            | Upper Bound         | Lower Slack  | Upper Slack     |
 | --------------- | ---------------------- | ------------------- | ------------ | --------------- |
@@ -322,9 +216,9 @@ During the filling period (`[start_stage_id, entry_stage_id)`), the hydro is in 
 **Operational constraints during filling**:
 
 - **No generation**: `turbined_flow = 0`, `generation = 0` (hard constraint — turbines not installed/operational)
-- **Outflow via spillage only**: During filling, turbines are not operational. Outflow is limited to spillage once water reaches the spillway crest. Bottom discharge outlets are a simulation-only feature (see [Input System Entities §3](input-system-entities.md)).
+- **Outflow via spillage only**: During filling, turbines are not operational. Outflow is limited to spillage once water reaches the spillway crest. Bottom discharge outlets are a simulation-only feature.
 - **Min outflow requirement**: Environmental flow must be met via spillage. If spillage is not physically possible (reservoir level below spillway crest), the `outflow_violation_below` slack absorbs the shortfall.
-- **Filling retention**: `filling_inflow_m3s` (from [Input Constraints §2](input-constraints.md)) is removed from available inflow before the water balance — it goes directly to storage.
+- **Filling retention**: Inflow allocated for filling is removed from available inflow before the water balance — it goes directly to storage.
 - **Storage bounds relaxed**: `min_storage_hm3` does not apply during filling — storage can be anywhere in `[0, max_storage_hm3]`.
 
 **Terminal filling constraint**: At the last filling stage (`entry_stage_id - 1`), a constraint enforces:
@@ -337,9 +231,9 @@ where `filling_target_violation >= 0` has `filling_target_violation_cost` — th
 
 **Transition to operating**: At `entry_stage_id`, the hydro becomes operational. The storage at the end of the last filling stage becomes the initial storage for the first operating stage. If `filling_target_violation > 0` (filling fell short), the operating stage's own `storage_violation_below` slack handles the shortfall — both LPs remain feasible.
 
-**Penalties during filling**: The same `outflow_violation_cost` from `penalties.json` applies. Spillage during filling also incurs `spillage_cost`. The `storage_violation_below` slack is not active during filling (storage is allowed below `min_storage_hm3` by design).
+**Penalties during filling**: The same outflow violation cost applies. Spillage during filling also incurs `spillage_cost`. The `storage_violation_below` slack is not active during filling (storage is allowed below `min_storage_hm3` by design).
 
-## 8. LP Objective Function Impact
+## 7. LP Objective Function Impact
 
 For each stage `t`, block `b`, scenario `s`:
 
@@ -380,10 +274,6 @@ minimize:
 
 ## Cross-References
 
-- [Input System Entities](input-system-entities.md) — Entity registries with optional penalty overrides
-- [Input Constraints](input-constraints.md) — Time-varying entity bounds; generic constraint slack penalties
-- [Input Hydro Extensions](input-hydro-extensions.md) — Hydro geometry for evaporation calculation
-- [Internal Structures](internal-structures.md) — Pre-resolved penalty tables, FPHA turbined cost rationale
-- [LP Formulation](../math/lp-formulation.md) — Cost taxonomy (§1) and penalty terms (§9)
-- [Configuration Reference](../configuration/configuration-reference.md) — Penalty-related config settings
+- [LP Formulation](./lp-formulation.md) — Cost taxonomy (§1) and penalty terms (§9)
+- [Inflow Non-Negativity](./inflow-nonnegativity.md) — Penalty method for inflow non-negativity
 - [Design Principles](../overview/design-principles.md) — General design approach

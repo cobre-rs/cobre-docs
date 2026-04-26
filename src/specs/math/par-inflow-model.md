@@ -17,7 +17,7 @@ where:
 - $a_{h,t}$: Incremental inflow at stage $t$ (m³/s)
 - $\mu_{m(t)}$: Seasonal mean for season $m(t)$
 - $\psi_{m(t),\ell}$: Autoregressive coefficient for lag $\ell$ in season $m(t)$
-- $\sigma_{m(t)}$: Residual standard deviation for season $m(t)$ (**computed** at runtime — see §3)
+- $\sigma_{m(t)}$: Residual standard deviation for season $m(t)$ (**computed** at runtime — see section 3)
 - $\varepsilon_t \sim \mathcal{N}(0, 1)$: Innovation (standardized noise)
 - $m(t)$: Season index for stage $t$ (e.g., month 1–12)
 
@@ -40,7 +40,7 @@ The data model stores **seasonal sample statistics** and **standardized AR coeff
 
 ### Stored in input files
 
-These are provided in `inflow_seasonal_stats.parquet` and `inflow_ar_coefficients.parquet` (see [Input Scenarios §3.1–3.2](../data-model/input-scenarios.md)):
+These are provided in `inflow_seasonal_stats.parquet` and `inflow_ar_coefficients.parquet`:
 
 | Stored quantity      | Column               | File                     | Symbol              | Description                                                                     |
 | -------------------- | -------------------- | ------------------------ | ------------------- | ------------------------------------------------------------------------------- |
@@ -51,7 +51,7 @@ These are provided in `inflow_seasonal_stats.parquet` and `inflow_ar_coefficient
 
 The AR order $p_m$ is **not stored explicitly**. It is derived at runtime from the count of coefficient rows per (hydro_id, stage_id) group in `inflow_ar_coefficients.parquet`.
 
-The standardized coefficient $\psi^*_{m,\ell}$ is the direct output of the Yule-Walker fitting procedure (see §5.4). It is dimensionless — the coefficient of the standardized process $(a_{h,t} - \mu_m) / s_m$. The relationship to the original-unit coefficient $\psi_{m,\ell}$ used in the LP is:
+The standardized coefficient $\psi^*_{m,\ell}$ is the direct output of the Yule-Walker fitting procedure (see section 5.4). It is dimensionless — the coefficient of the standardized process $(a_{h,t} - \mu_m) / s_m$. The relationship to the original-unit coefficient $\psi_{m,\ell}$ used in the LP is:
 
 $$
 \psi_{m,\ell} = \psi^*_{m,\ell} \cdot \frac{s_m}{s_{m-\ell}}
@@ -75,11 +75,11 @@ $$
 
 No autocorrelation values are needed at runtime. All required quantities are derived solely from the stored seasonal stats and AR coefficient file.
 
-> **Why store `residual_std_ratio` rather than $\sigma_m$ directly?** The residual std decomposes as $\sigma_m = s_m \cdot \texttt{residual\_std\_ratio}_m$, where $s_m$ is a **conditioning** quantity (swappable for climate scenario studies) and the ratio is a **model dynamics** property (fixed per PAR fit). Storing $\sigma_m$ directly would bake in a specific $s_m$: when the user swaps seasonal stats for a different climate scenario, the stored $\sigma_m$ would be stale and noise scaling would be inconsistent with the new variability level. Storing the ratio preserves correct proportionality — if seasonal variability changes, noise scales proportionally. See also [PAR Coefficient Storage design document](../../design/PAR-COEFFICIENT-REDESIGN.md) §3.4.
+> **Why store `residual_std_ratio` rather than $\sigma_m$ directly?** The residual std decomposes as $\sigma_m = s_m \cdot \texttt{residual\_std\_ratio}_m$, where $s_m$ is a **conditioning** quantity (swappable for climate scenario studies) and the ratio is a **model dynamics** property (fixed per PAR fit). Storing $\sigma_m$ directly would bake in a specific $s_m$: when the user swaps seasonal stats for a different climate scenario, the stored $\sigma_m$ would be stale and noise scaling would be inconsistent with the new variability level. Storing the ratio preserves correct proportionality — if seasonal variability changes, noise scales proportionally. See also [PAR Coefficient Storage design document](../../design/PAR-COEFFICIENT-REDESIGN.md) section 3.4.
 
 ### LP coefficients
 
-The stored standardized coefficients $\psi^*_{m,\ell}$ are converted to original-unit $\psi_{m,\ell}$ at runtime (see §7.2), and these enter the LP directly (see [LP Formulation §5](lp-formulation.md)). The LP equation is:
+The stored standardized coefficients $\psi^*_{m,\ell}$ are converted to original-unit $\psi_{m,\ell}$ at runtime (see section 7.2), and these enter the LP directly (see [LP Formulation](lp-formulation.md)). The LP equation is:
 
 $$
 a_h = \underbrace{\left( \mu_m - \sum_{\ell=1}^{p} \psi_{m,\ell} \mu_{m-\ell} \right)}_{\text{deterministic base}}
@@ -99,7 +99,7 @@ The default method computes the **periodic PACF** via progressive periodic Yule-
 
 **Algorithm**:
 
-1. For each order $k$ from 1 to $p_{max}$, build and solve the periodic Yule-Walker system (§5.4) at order $k$. The last coefficient $\hat{\psi}^*_{m,k}$ from the order-$k$ solution is the periodic PACF value at lag $k$.
+1. For each order $k$ from 1 to $p_{max}$, build and solve the periodic Yule-Walker system (section 5.4) at order $k$. The last coefficient $\hat{\psi}^*_{m,k}$ from the order-$k$ solution is the periodic PACF value at lag $k$.
 2. Select the order as the **maximum lag with significant PACF**:
 
    $$
@@ -108,7 +108,7 @@ The default method computes the **periodic PACF** via progressive periodic Yule-
 
    where $z_\alpha = 1.96$ (95% confidence) and $N_m$ is the number of observations for season $m$. If no lag is significant, $p_m = 0$ (white noise).
 
-3. Estimate AR coefficients at the selected order using the periodic Yule-Walker system (§5.4).
+3. Estimate AR coefficients at the selected order using the periodic Yule-Walker system (section 5.4).
 
 **Post-selection validation**: After PACF selection, two rejection gates are applied iteratively:
 
@@ -137,7 +137,9 @@ In all methods, $N_m$ is the number of historical observations for season $m$.
 
 ## 5. Fitting Procedure
 
-This section documents the five-step procedure for fitting PAR(p) parameters from historical inflow data. The fitting is performed when the system derives parameters from `inflow_history.parquet` (see [Input Scenarios §2](../data-model/input-scenarios.md)). When pre-computed parameters are provided directly in `inflow_seasonal_stats.parquet` and `inflow_ar_coefficients.parquet`, this procedure is not executed.
+For multi-resolution studies (monthly→quarterly aggregation), the same fitting procedure applies after duration-weighted aggregation; see [Multi-resolution studies](./multi-resolution-studies.md).
+
+This section documents the five-step procedure for fitting PAR(p) parameters from historical inflow data. The fitting is performed when the system derives parameters from `inflow_history.parquet`. When pre-computed parameters are provided directly in `inflow_seasonal_stats.parquet` and `inflow_ar_coefficients.parquet`, this procedure is not executed.
 
 ### 5.1 Notation
 
@@ -265,7 +267,7 @@ Both $\psi^*_{m,\ell}$ (one row per lag) and $\widehat{\texttt{residual\_std\_ra
 
 ### 5.6 Step 5 — Residual Standard Deviation
 
-The residual standard deviation for season $m$ is recovered at runtime from the stored ratio (see §3):
+The residual standard deviation for season $m$ is recovered at runtime from the stored ratio (see section 3):
 
 $$
 \hat{\sigma}_m = \hat{s}_m \cdot \widehat{\texttt{residual\_std\_ratio}}_m
@@ -303,7 +305,7 @@ $$
 where:
 
 - $\phi_{m(t),\ell}$: AR coefficients in **fully standardized** form (correlations between normalized deviations)
-- $\sigma_{m(t)}$: residual standard deviation for season $m(t)$ (derived at runtime — see §3)
+- $\sigma_{m(t)}$: residual standard deviation for season $m(t)$ (derived at runtime — see section 3)
 - $\varepsilon_t \sim \mathcal{N}(0, 1)$: innovation noise
 
 The input files store $\psi^*_{m,\ell}$ (standardized by seasonal std $s_m$, not residual std $\sigma_m$). The next step converts these to original-unit $\psi_{m,\ell}$ for use in the LP.
@@ -326,13 +328,13 @@ These conversions are performed once at LP construction time. They require only 
 
 ### 7.3 LP-Ready Form
 
-Multiplying both sides of the canonical form (7.1) by $\sigma_{m(t)}$ and rearranging yields the LP-ready equation:
+Multiplying both sides of the canonical form (section 7.1) by $\sigma_{m(t)}$ and rearranging yields the LP-ready equation:
 
 $$
 a_{h,t} = \sum_{\ell=1}^{p} \psi_{m(t),\ell} \cdot a_{h,t-\ell} + \left[ \mu_{m(t)} - \sum_{\ell=1}^{p} \psi_{m(t),\ell} \cdot \mu_{m(t-\ell)} \right] + \sigma_{m(t)} \cdot \varepsilon_t
 $$
 
-where $\psi_{m(t),\ell}$ and $\sigma_{m(t)}$ are derived from stored quantities as described in §7.2.
+where $\psi_{m(t),\ell}$ and $\sigma_{m(t)}$ are derived from stored quantities as described in section 7.2.
 
 This decomposes the inflow into three additive components:
 
@@ -348,7 +350,7 @@ $$
 b_{h,m(t)} = \mu_{m(t)} - \sum_{\ell=1}^{p} \psi_{m(t),\ell} \cdot \mu_{m(t-\ell)}
 $$
 
-This is a precomputed constant per (stage, hydro) pair. It absorbs the mean-adjustment arithmetic that would otherwise be repeated at every forward-pass stage transition. With this definition, the LP-ready form (7.3) simplifies to:
+This is a precomputed constant per (stage, hydro) pair. It absorbs the mean-adjustment arithmetic that would otherwise be repeated at every forward-pass stage transition. With this definition, the LP-ready form (section 7.3) simplifies to:
 
 $$
 a_{h,t} = \sum_{\ell=1}^{p} \psi_{m(t),\ell} \cdot a_{h,t-\ell} + b_{h,m(t)} + \sigma_{m(t)} \cdot \varepsilon_t
@@ -356,7 +358,7 @@ $$
 
 ### 7.5 LP RHS Patching Operation
 
-The lagged inflows $a_{h,t-\ell}$ are **LP variables**, not substituted values. In the LP (see [LP Formulation §5](lp-formulation.md)), they appear with coefficients $-\psi_{m(t),\ell}$ in the AR dynamics constraint row, and separate equality constraints fix each lag variable to its incoming state value (see [LP Formulation §5a](lp-formulation.md)):
+The lagged inflows $a_{h,t-\ell}$ are **LP variables**, not substituted values. In the LP (see [LP Formulation](lp-formulation.md)), they appear with coefficients $-\psi_{m(t),\ell}$ in the AR dynamics constraint row, and separate equality constraints fix each lag variable to its incoming state value:
 
 $$
 a_{h,t-\ell} = \hat{a}_{h,t-\ell}
@@ -372,27 +374,77 @@ $$
 
 where:
 
-- $b_{h,m(t)}$ is read from `PrecomputedParLp.deterministic_base[stage][hydro]`
-- $\sigma_{m(t)}$ is read from `PrecomputedParLp.sigma[stage][hydro]`
+- $b_{h,m(t)}$ is the deterministic base for (stage, hydro), precomputed once at LP construction (section 7.4)
+- $\sigma_{m(t)}$ is the noise scale for (stage, hydro), derived from stored ratio at initialization (section 7.2)
 - $\varepsilon_t$ is the scenario noise draw for this (stage, hydro)
 
-The $\psi_{m(t),\ell}$ coefficients from `PrecomputedParLp.psi[stage][hydro][lag]` are written into the constraint matrix **once at LP construction time** as the coefficients on the lagged inflow variables; they are not recomputed per scenario.
+The $\psi_{m(t),\ell}$ coefficients are written into the constraint matrix **once at LP construction time** as the coefficients on the lagged inflow variables; they are not recomputed per scenario.
 
-No division, no mean subtraction, no repeated coefficient transformation — the precomputation in `PrecomputedParLp` eliminates all redundant arithmetic from the hot path.
+No division, no mean subtraction, no repeated coefficient transformation — the three precomputed LP components eliminate all redundant arithmetic from the hot path.
 
 ### 7.6 Summary of LP Components
 
-| Component          | Symbol             | Shape per stage      | LP Role                                   | Source                                                          |
-| ------------------ | ------------------ | -------------------- | ----------------------------------------- | --------------------------------------------------------------- |
-| Lag coefficients   | $\psi_{m(t),\ell}$ | One per (hydro, lag) | Constraint matrix (AR dynamics row)       | Derived from stored $\psi^*$ and $s_m$ at initialization (§7.2) |
-| Deterministic base | $b_{h,m(t)}$       | One per hydro        | AR dynamics constraint RHS (fixed term)   | Precomputed from $\mu$ and $\psi$                               |
-| Noise scale        | $\sigma_{m(t)}$    | One per hydro        | AR dynamics constraint RHS (noise factor) | Derived from stored ratio and $s_m$ at initialization (§7.2)    |
+| Component          | Symbol             | Shape per stage      | LP Role                                   | Source                                                                 |
+| ------------------ | ------------------ | -------------------- | ----------------------------------------- | ---------------------------------------------------------------------- |
+| Lag coefficients   | $\psi_{m(t),\ell}$ | One per (hydro, lag) | Constraint matrix (AR dynamics row)       | Derived from stored $\psi^*$ and $s_m$ at initialization (section 7.2) |
+| Deterministic base | $b_{h,m(t)}$       | One per hydro        | AR dynamics constraint RHS (fixed term)   | Precomputed from $\mu$ and $\psi$                                      |
+| Noise scale        | $\sigma_{m(t)}$    | One per hydro        | AR dynamics constraint RHS (noise factor) | Derived from stored ratio and $s_m$ at initialization (section 7.2)    |
+
+## 8. Spatial Correlation Factorisation
+
+The PAR(p) fitting procedure (section 5) produces per-hydro noise terms $\varepsilon_t$ that are treated as independent across hydro plants. Generating spatially correlated scenarios requires factorising the cross-hydro correlation matrix $C$ so that a vector of independent standard normal draws can be mapped to correlated noise. This section documents the choice of factorisation method and the rationale.
+
+### 8.1 The Problem with Cholesky
+
+The classical approach applies Cholesky factorisation: given $C = L L^\top$ with $L$ lower-triangular, correlated noise is obtained as $L z$ where $z \sim \mathcal{N}(0, I)$. Cholesky requires $C$ to be **strictly positive-definite**. In practice, estimated correlation matrices from hydro inflow series are frequently near-singular or rank-deficient for two reasons:
+
+- **Short sample records**: Brazilian hydro series commonly span 80–90 years, yielding a historical record length $N$ that is comparable to the number of hydro plants in some subsystems. When $N$ is close to the matrix dimension, the sample eigenvalues of $C$ cluster near zero.
+- **Heterogeneous series**: Plants with near-identical hydrological regimes (upstream–downstream pairs, same river basin) produce columns that are nearly linearly dependent, reducing the effective rank of $C$ below its nominal dimension.
+
+A near-singular $C$ causes Cholesky to fail or to produce numerically degenerate lower triangular factors. A separate filtering pass to remove "degenerate" hydros would be required before the factorisation, discarding information and introducing a non-transparent pre-processing decision.
+
+### 8.2 Eigendecomposition with Clipped Square Root
+
+Cobre uses the **symmetric matrix square root via eigendecomposition**. The correlation matrix is decomposed as:
+
+$$
+C = U \Lambda U^\top
+$$
+
+where $U$ is the orthogonal matrix of eigenvectors and $\Lambda = \mathrm{diag}(\lambda_1, \ldots, \lambda_n)$ is the diagonal matrix of eigenvalues. The symmetric square root is then:
+
+$$
+C^{1/2} = U \Lambda^{1/2} U^\top
+$$
+
+To handle near-singular matrices, any eigenvalue $\lambda_i < 0$ (arising from floating-point rounding in the sample estimate) is **clipped to zero** before taking the square root:
+
+$$
+\tilde{\Lambda}^{1/2} = \mathrm{diag}\!\left(\sqrt{\max(\lambda_1, 0)},\, \ldots,\, \sqrt{\max(\lambda_n, 0)}\right)
+$$
+
+Correlated noise is then generated as $C^{1/2} z$ where $z \sim \mathcal{N}(0, I)$.
+
+### 8.3 Why Eigendecomposition
+
+The spectral form handles rank-deficient correlation matrices natively: eigenvectors corresponding to clipped (zero) eigenvalues contribute nothing to the factorisation, which is the correct behaviour for directions of zero variance. No prior filtering of degenerate hydro plants is needed.
+
+The clipping threshold acts as a single, transparent parameter controlling which near-zero eigenvalues are treated as structural zeros. The cross-entity correlation structure is preserved for all eigenvalues above the threshold.
+
+### 8.4 Trade-offs
+
+| Property                        | Eigendecomposition (Cobre)       | Cholesky                            |
+| ------------------------------- | -------------------------------- | ----------------------------------- |
+| Handles rank-deficient $C$      | Yes — clipping makes it robust   | No — requires positive-definiteness |
+| Computational cost              | Higher (full eigendecomposition) | Lower on well-conditioned matrices  |
+| Degenerate-hydro filtering pass | Not required                     | Required for near-singular $C$      |
+| Transparency of approximation   | Single clipping threshold        | Opaque numerical failure or pivot   |
+
+The higher computational cost is acceptable because the factorisation is performed once per study configuration and not on the hot path of the forward pass.
 
 ## Cross-References
 
-- [Input Scenarios §3.1–3.2](../data-model/input-scenarios.md) — Defines `inflow_seasonal_stats.parquet` (μ, s) and `inflow_ar_coefficients.parquet` (ψ\* per lag, residual_std_ratio)
-- [LP Formulation §5](lp-formulation.md) — AR inflow dynamics in the LP: state expansion, lag fixing constraints, dual variables
-- [Internal Structures §14](../data-model/internal-structures.md) — `PrecomputedParLp` struct caching the three LP components derived in section 7
+- [LP Formulation](lp-formulation.md) — AR inflow dynamics in the LP: state expansion, lag fixing constraints, dual variables
 - [Inflow Non-Negativity](inflow-nonnegativity.md) — Methods for handling negative realizations produced by the PAR(p) model
-- [Scenario Generation §4.2](../architecture/scenario-generation.md) — When external scenarios are used in training, a PAR model is fitted to the external data for backward pass opening tree generation. The fitting procedure (§5 above) applies equally to this derived model.
+- [Scenario Generation](./scenario-generation.md) — When external scenarios are used in training, a PAR model is fitted to the external data for backward pass opening tree generation. The fitting procedure (section 5 above) applies equally to this derived model.
 - [Notation Conventions](../overview/notation-conventions.md) — Defines inflow symbols ($a_{h,t}$, $\mu_m$, $\psi_{m,\ell}$, $\sigma_m$) and unit conventions

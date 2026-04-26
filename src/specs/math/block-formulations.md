@@ -32,7 +32,7 @@ This formulation assumes the reservoir can freely redistribute water across bloc
 | LP size          | Smaller (one water balance per hydro)                                                                              |
 | Storage dynamics | End-of-stage only                                                                                                  |
 | Use case         | Long-term strategic planning                                                                                       |
-| Configuration    | `block_mode: "parallel"` per stage in `stages.json` (see [Input Scenarios §1.5](../data-model/input-scenarios.md)) |
+| Configuration    | `block_mode: "parallel"` configured per stage via the `block_mode` parameter |
 
 ## 2. Chronological Blocks
 
@@ -77,13 +77,13 @@ Inter-block storages $v_{h,k}$ for $k < |\mathcal{K}|$ are internal LP variables
 
 ### 2.5 Dual Extraction for Cuts
 
-In chronological mode, the storage fixing constraint $v^{in}_h = \hat{v}_h$ binds the incoming storage LP variable to its trial value (see [LP Formulation §4a](lp-formulation.md)). The dual of this fixing constraint gives the storage cut coefficient directly:
+In chronological mode, the storage fixing constraint $v^{in}_h = \hat{v}_h$ binds the incoming storage LP variable to its trial value (see [LP formulation](lp-formulation.md)). The dual of this fixing constraint gives the storage cut coefficient directly:
 
 $$
 \pi^v_h = \pi^{fix}_h
 $$
 
-By the LP envelope theorem, this dual automatically captures all downstream effects through the chain of inter-block water balances ($v^{in}_h \to v_{h,1} \to \ldots \to v_{h,|\mathcal{K}|}$), FPHA constraints, and generic constraints. No special handling or dual combination is required. See [Cut Management §2](cut-management.md).
+By the LP envelope theorem, this dual automatically captures all downstream effects through the chain of inter-block water balances ($v^{in}_h \to v_{h,1} \to \ldots \to v_{h,|\mathcal{K}|}$), FPHA constraints, and generic constraints. No special handling or dual combination is required. See [Cut management](cut-management.md).
 
 ### 2.6 Characteristics
 
@@ -92,7 +92,7 @@ By the LP envelope theorem, this dual automatically captures all downstream effe
 | LP size          | Larger ($N_{hydro} \times (\lvert\mathcal{K}\rvert - 1)$ additional vars/cons)                                          |
 | Storage dynamics | Intra-stage cycling modeled                                                                                             |
 | Use case         | Short-term planning with storage cycling                                                                                |
-| Configuration    | `block_mode: "chronological"` per stage in `stages.json` (see [Input Scenarios §1.5](../data-model/input-scenarios.md)) |
+| Configuration    | `block_mode: "chronological"` configured per stage via the `block_mode` parameter |
 
 ## 3. Comparison Summary
 
@@ -115,7 +115,7 @@ When running in **simulation-only**, **warm-start**, or **checkpoint resume** mo
 
 This is a **hard validation error** — the solver must reject the run if any mismatch is detected.
 
-> **Scope note**: Block configuration is one of many input properties that must be validated for policy compatibility. Other properties include the number of hydro plants, state variable dimensions, AR orders, and system topology. A comprehensive policy compatibility validation specification is planned — see [Deferred Features §C.9](../deferred.md). Requirements for what metadata the training phase must persist alongside the policy will be defined during the architecture review of [Training Loop](../architecture/training-loop.md), [Simulation Architecture](../architecture/simulation-architecture.md), and [Checkpointing](../hpc/checkpointing.md).
+> **Scope note**: Block configuration is one of many input properties that must be validated for policy compatibility. Other properties include the number of hydro plants, state variable dimensions, AR orders, and system topology.
 
 ## 5. Future Work: Fine-Grained Temporal Resolution
 
@@ -134,17 +134,10 @@ This feature is deferred because it requires:
 - Research into how day types chain within a stage (sequential vs. independent with weighted-average storage)
 - Validation against reference implementations
 
-See [Deferred Features §C.10](../deferred.md) for the full description.
-
 ## Cross-References
 
 - [Notation conventions](../overview/notation-conventions.md) — variable and set definitions ($v_h$, $\hat{v}_h$, $\mathcal{K}$, $\tau_k$, $w_k$)
 - [System elements](system-elements.md) — hydro plant element description and decision variables
 - [LP formulation](lp-formulation.md) — how block formulations integrate into the assembled LP
-- [Cut management](cut-management.md) — cut coefficient extraction from fixing constraint duals (§2)
+- [Cut management](cut-management.md) — cut coefficient extraction from fixing constraint duals
 - [Hydro production models](hydro-production-models.md) — production function constraints that operate within each block
-- [Input scenarios](../data-model/input-scenarios.md) — per-stage `block_mode` field in `stages.json` (§1.5)
-- [Training loop](../architecture/training-loop.md) — training phase that produces the policy (must persist block configuration metadata)
-- [Simulation architecture](../architecture/simulation-architecture.md) — simulation phase that must validate policy compatibility
-- [Checkpointing](../hpc/checkpointing.md) — checkpoint format that stores policy metadata for resume validation
-- [Deferred features](../deferred.md) — policy compatibility validation (§C.9), fine-grained temporal resolution (§C.10)

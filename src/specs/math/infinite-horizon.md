@@ -1,7 +1,5 @@
 # Infinite Periodic Horizon
 
-> **Status: Not Implemented.** This spec describes a planned design that has not yet been implemented.
-
 ## Purpose
 
 This spec defines the infinite periodic horizon formulation for Cobre SDDP: the periodic structure, convergence requirements, cut sharing within cycles, modified forward and backward pass behavior, and convergence criteria. This formulation eliminates "end-of-world" effects where finite-horizon SDDP empties reservoirs near the terminal stage.
@@ -43,7 +41,7 @@ A cyclic policy graph is defined when a transition in `stages.json` points from 
 
 In this example, stage 59 transitions back to stage 48, creating a 12-stage cycle (stages 48-59).
 
-For the complete `policy_graph` schema and per-transition discount rate overrides, see [Input Scenarios &sect;1.2](../data-model/input-scenarios.md).
+The `policy_graph` accepts per-transition discount rate overrides on individual edges.
 
 ## 4 Discount Requirement for Convergence
 
@@ -61,7 +59,7 @@ $$
 
 **Typical setup**: A 6% annual discount rate gives $d_{cycle} \approx 0.94$ per 12-month cycle.
 
-> **Validation**: The system rejects cyclic policy graphs where the cumulative cycle discount factor is $\geq 1$. See [Input Scenarios &sect;1.2](../data-model/input-scenarios.md).
+> **Validation**: The system rejects cyclic policy graphs where the cumulative cycle discount factor is $\geq 1$.
 
 ## 5 Cut Sharing Within Cycles
 
@@ -127,8 +125,6 @@ Convergence is achieved when the value functions at all seasons stabilize — th
 ## Cross-References
 
 - [Discount Rate](discount-rate.md) — Discount factor mechanics, Bellman equation, cumulative discounting
-- [Input Scenarios &sect;1.2](../data-model/input-scenarios.md) — `policy_graph` schema with `type: "cyclic"`, `annual_discount_rate`, and transition definitions
-- [SDDP Algorithm &sect;4.2](sddp-algorithm.md) — High-level overview of cyclic policy graphs
+- [SDDP Algorithm](sddp-algorithm.md) — High-level overview of cyclic policy graphs
 - [Cut Management](cut-management.md) — Cut generation and aggregation (undiscounted cuts, discount on $\theta$)
 - [Stopping Rules](stopping-rules.md) — Convergence criteria using discounted bounds
-- [Configuration Reference](../configuration/configuration-reference.md) — Horizon and cycle configuration parameters

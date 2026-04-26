@@ -16,7 +16,7 @@ When $\eta$ is sufficiently negative (e.g., $\eta < -2$), the total can become n
 
 ## 2. Penalty Classification
 
-The inflow non-negativity penalty $c^{inf}$ is a **Category 2 constraint violation penalty** — it provides slack for a physical constraint (non-negative inflow) that may be impossible to satisfy under extreme noise realizations. Its position in the penalty hierarchy (see [LP Formulation §1.5](lp-formulation.md)):
+The inflow non-negativity penalty $c^{inf}$ is a **Category 2 constraint violation penalty** — it provides slack for a physical constraint (non-negative inflow) that may be impossible to satisfy under extreme noise realizations. Its position in the penalty hierarchy (see [LP Formulation](lp-formulation.md)):
 
 $$c^{tv-}, c^{ov\pm}, c^{gv-}, c^{ev}, c^{wv}, c^{inf} > c^{th}, c^{ctr}$$
 
@@ -100,8 +100,6 @@ where $c^{inf}$ is the penalty cost (default: 1000 \$/(m³/s·h)) and $T = \sum_
 - Adds variables and constraints
 - Slightly affects marginal water values
 
-**Recommended for most production cases.**
-
 ## 5. Method: `truncation`
 
 **Configuration**:
@@ -133,7 +131,7 @@ $$
 - **Breaks AR dynamics**: When truncation occurs, temporal correlation is disrupted
 - May affect long-term storage dynamics
 
-## 6. Method: `truncation_with_penalty`
+## 6. Method: `truncation_with_penalty` — Production Design
 
 **Configuration**:
 
@@ -148,7 +146,47 @@ $$
 }
 ```
 
-**Description**: Hybrid approach that truncates the final inflow but penalizes the statistical violation in the noise term. Based on the YP_FINF slack in SPARHTACUS/SPTcpp.
+This is the production method Cobre uses for inflow non-negativity. The two preceding methods each handle one side of the problem well but leave the other unaddressed: pure truncation keeps the LP lean but biases the inflow distribution upward; pure penalty preserves distribution fidelity but relies entirely on LP slack to absorb every negative excursion. The hybrid combines both mechanisms to cover the full range of noise excursions efficiently.
+
+### 6.1 Production formulation: clamp outside the LP, slack inside the LP
+
+The PAR(p) noise is clamped outside the LP before the scenario is patched in, exactly as in the `truncation` method:
+
+$$
+a_h = \max\left(0, \text{deterministic\_base} + \sum_{\ell=1}^{p} \psi_\ell \cdot \hat{a}_{h,\ell} + \sigma_m \cdot \eta\right)
+$$
+
+Inside the LP, penalty slack columns $\sigma^{inf}_h$ are added to the water-balance constraint, exactly as in the `penalty` method:
+
+**Additional Variables**:
+
+| Variable         | Domain   | Units | Description                 |
+| ---------------- | -------- | ----- | --------------------------- |
+| $\sigma^{inf}_h$ | $\geq 0$ | m³/s  | Inflow non-negativity slack |
+
+**Modified AR Constraint** (inside LP, using the clamped $a_h$):
+
+$$
+a_h + \sigma^{inf}_h = \text{deterministic\_base} + \sum_{\ell=1}^{p} \psi_\ell \cdot a_{h,\ell} + \sigma_m \cdot \eta
+$$
+
+**Objective Function Addition** (outside block summation):
+
+$$
++ \sum_{h \in \mathcal{H}} c^{inf} \cdot \sigma^{inf}_h \cdot T
+$$
+
+### 6.2 Why the hybrid
+
+Clamping and slack columns serve complementary roles that together preserve relatively complete recourse:
+
+- **Clamping handles the common case cheaply.** Most negative excursions are small — the noise term dips slightly below zero for a handful of stages in a scenario tree. Clamping those excursions to zero outside the LP adds no LP variables and no solver work. The inflow handed to the LP is always non-negative, so the water-balance constraint is never violated by the noise term alone.
+- **Slack columns absorb rare large excursions without rejecting the scenario.** When the PAR(p) model produces an extreme realisation, the deterministic base and lag contribution combined with the noise term can still yield a zero inflow after clamping, and the LP's water-balance may still be infeasible without relief. The $\sigma^{inf}_h$ slack column lets the solver relax the non-negativity at a known cost rather than declaring infeasibility. The stage is kept in the training set; the penalty signal propagates into future-cost cuts.
+- **Together they guarantee LP feasibility (Category 1 recourse) across the full noise distribution**, without biasing the distribution upward beyond what truncation already does for small excursions, and without adding LP slack columns for every stage regardless of whether they are needed.
+
+### 6.3 Reference design and equivalence
+
+The literature formulates the same problem using a dimensionless noise-adjustment slack $\xi_h$. This reference design is presented here so readers familiar with the Brazilian stochastic-dispatch literature can map between the two formulations.
 
 **Additional Variables**:
 
@@ -156,7 +194,7 @@ $$
 | -------- | -------- | ----- | -------------------------------------- |
 | $\xi_h$  | $\geq 0$ | -     | Noise adjustment slack (dimensionless) |
 
-**Modified AR Constraint** (in two parts):
+**Modified AR Constraint** (two parts):
 
 **Part A — Modified noise term**:
 
@@ -192,27 +230,16 @@ $$
 
 The penalty is proportional to $\sigma_m \cdot \xi_h$, which is the actual inflow adjustment in m³/s. Note that $\sigma_m$ varies by season, so the effective penalty for a given noise adjustment $\xi_h$ is larger in high-variability seasons and smaller in low-variability seasons. This is by design — a given noise adjustment represents a larger physical inflow correction when $\sigma_m$ is large.
 
-**Advantages**:
-
-- Preserves AR model structure better than pure truncation
-- Penalty signals statistical violation severity
-- Effective inflow is always non-negative
-
-**Disadvantages**:
-
-- More complex formulation
-- Requires careful interaction with noise generation
-
-> **Implementation variant**: The implementation combines Truncation clamping with Penalty slack columns, matching SPTcpp's `truncamento_penalizacao` mode. Specifically: the PAR(p) noise is clamped outside the LP (identical to the `truncation` method, so the inflow patched into the LP is never negative), and penalty slack columns $\sigma^{inf}_h$ are added to the LP (identical to the `penalty` method, allowing the solver to relax the non-negativity if cost-effective). This differs from the $\xi_h$ dimensionless formulation described above, which adjusts the noise term inside the LP. The $\xi_h$ formulation above is the **reference design**; the implementation uses the simpler clamping+slack approach because it reuses the existing `Truncation` and `Penalty` machinery without requiring a separate noise-adjustment constraint. The two approaches are economically equivalent when the penalty cost is set to the same value.
+**Equivalence with the production formulation**: The $\xi_h$ reference design and the production clamp-plus-slack formulation are economically equivalent when both use the same penalty cost $c^{inf}$. In both cases the objective penalty equals $c^{inf}$ multiplied by the physical inflow correction in m³/s·h. The production formulation reuses the existing truncation and penalty mechanisms without introducing a separate noise-adjustment constraint inside the LP, which simplifies the solver's constraint matrix.
 
 ## 7. Comparison Summary
 
 | Method                    | LP Size    | Bias    | AR Preservation | Feasibility | Recommendation |
 | ------------------------- | ---------- | ------- | --------------- | ----------- | -------------- |
 | `none`                    | Base       | None    | Full            | May fail    | Debugging only |
-| `penalty`                 | +vars/cons | Minimal | Full            | Guaranteed  | **Production** |
+| `penalty`                 | +vars/cons | Minimal | Full            | Guaranteed  | Alternative    |
 | `truncation`              | Base       | Upward  | Partial         | Guaranteed  | Quick studies  |
-| `truncation_with_penalty` | +vars/cons | Minimal | Full            | Guaranteed  | Risk-averse    |
+| `truncation_with_penalty` | +vars/cons | Minimal | Full            | Guaranteed  | **Production** |
 
 ## 8. Reference
 
@@ -222,7 +249,5 @@ The penalty is proportional to $\sigma_m \cdot \xi_h$, which is the actual inflo
 
 - [LP Formulation](lp-formulation.md) — Objective function structure and penalty taxonomy where $c^{inf}$ is a Category 2 constraint violation penalty
 - [PAR Inflow Model](par-inflow-model.md) — Defines the PAR(p) model that produces the inflow realizations handled here
-- [Penalty System](../data-model/penalty-system.md) — Penalty hierarchy and cascade resolution
-- [Scenario Generation §2.3](../architecture/scenario-generation.md) — The noise term $\eta$ in the inflow equation comes from the fixed opening tree (pre-generated noise vectors), not from per-iteration random sampling
-- [Notation Conventions](../overview/notation-conventions.md) — Defines the inflow slack variable $\sigma^{inf}_h$ and related notation
-- [Configuration Reference](../configuration/configuration-reference.md) — Runtime configuration for `modeling.inflow_non_negativity`
+- [Penalty System](./penalty-system.md) — Penalty hierarchy and cascade resolution
+- [Scenario Generation](./scenario-generation.md) — The noise term $\eta$ in the inflow equation comes from the fixed opening tree (pre-generated noise vectors), not from per-iteration random sampling

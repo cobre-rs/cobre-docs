@@ -32,7 +32,7 @@ This is a deliberate design decision with consequences across the formulation:
 
 The objective row does carry large coefficients — up to $\tau_k \times c^{def} \approx 730 \times 10{,}000 = 7.3 \times 10^6$ for deep deficit in monthly problems. Modern LP solvers handle objective scaling effectively through internal prescaling, and this is where the scaling challenge is most tractable.
 
-> **Output convention**: All output reports and user-facing marginal costs must apply the $\div \tau_k$ conversion. See [Output Schemas](../data-model/output-schemas.md).
+> **Output convention**: All output reports and user-facing marginal costs must apply the $\div \tau_k$ conversion.
 
 ## 1. System Architecture Overview
 
@@ -188,9 +188,9 @@ Thermal costs represent actual operating expenses (\$50–500/MWh depending on f
 
 For detailed constraints, see [equipment formulations](equipment-formulations.md).
 
-### GNL Thermal Plants (Deferred)
+### GNL Thermal Plants
 
-> **Implementation Status**: The data model is fully specified (see [Input System Entities §4](../data-model/input-system-entities.md)); implementation is deferred. GNL thermals are currently rejected by input validation.
+> **Note**: GNL thermals are not currently dispatched; input validation rejects them.
 
 GNL (Gas Natural Liquefeito) plants require **dispatch anticipation**: the dispatch decision must be committed $L$ stages ahead due to fuel ordering lead times. This introduces additional **state variables** — a committed dispatch pipeline of $L$ values that shift forward at each stage:
 
@@ -200,7 +200,7 @@ GNL (Gas Natural Liquefeito) plants require **dispatch anticipation**: the dispa
 | $g^{gnl}_{j,t+2}$ | Dispatch committed for stage $t+2$  |
 | $\vdots$          | ... up to $L = $ `lag_stages` ahead |
 
-These state variables link stages through the Bellman recursion alongside hydro storage and AR lags. When implemented, GNL thermals will be the only non-hydro elements with state variables in the SDDP formulation.
+These state variables link stages through the Bellman recursion alongside hydro storage and AR lags. GNL thermals are the only non-hydro elements with state variables in the SDDP formulation.
 
 ## 5. Hydro Plants
 
@@ -298,7 +298,7 @@ $$
 
 > **Training models**: Only `constant_productivity` and `fpha` are valid during training (policy construction). The linearized head model is available during simulation (policy evaluation) only.
 
-The production model can vary by stage or season per hydro — see [Input Hydro Extensions §2](../data-model/input-hydro-extensions.md) for model selection modes.
+The production model can vary by stage or season per hydro.
 
 For the complete FPHA formulation and model comparison, see [hydro production models](hydro-production-models.md).
 
@@ -317,7 +317,7 @@ Several hydro constraints are enforced as **soft constraints** with slack variab
 | $r_{h,k}$ met                                 | Water withdrawal commitment              | $\sigma^{r}_{h,k}$    |
 | $v_h \geq \underline{V}_h$ (filling terminal) | Filling target at last filling stage     | $\sigma^{fill}_{h}$   |
 
-Soft constraints allow the optimizer to violate bounds when physically necessary (e.g., drought conditions preventing minimum outflow), with high penalty costs signaling undesirable operation. Maximum storage ($\bar{V}_h$) is a **hard** physical limit — excess water is handled by emergency spillage, not a slack variable. For the penalty priority ordering and cost magnitudes, see [Penalty System §2](../data-model/penalty-system.md). For the complete constraint formulations, see [equipment formulations](equipment-formulations.md).
+Soft constraints allow the optimizer to violate bounds when physically necessary (e.g., drought conditions preventing minimum outflow), with high penalty costs signaling undesirable operation. Maximum storage ($\bar{V}_h$) is a **hard** physical limit — excess water is handled by emergency spillage, not a slack variable. For the penalty priority ordering and cost magnitudes, see [Penalty System](./penalty-system.md). For the complete constraint formulations, see [equipment formulations](equipment-formulations.md).
 
 ### Dead-Volume Filling
 
@@ -329,7 +329,7 @@ Cobre models the commissioning of new hydro plants with a **filling period** dur
 - Environmental flow must be met via spillage, with `outflow_violation_below` slack if impossible
 - A **terminal filling constraint** at the last filling stage enforces $v_h \geq \underline{V}_h$ with the highest penalty in the system ($\sigma^{fill}_h$)
 
-For the full filling model description, see [Input System Entities §3](../data-model/input-system-entities.md) and [Penalty System §7](../data-model/penalty-system.md).
+For the penalty costs associated with filling violations, see [Penalty System](./penalty-system.md).
 
 ### Role in Objective Function
 
@@ -338,9 +338,9 @@ $$
 $$
 
 - **Spillage cost**: Small regularization (\$0.001–0.01 per m³/s·h) to prefer turbining over spilling
-- **FPHA turbined cost**: Regularization applied **only** to hydros using the FPHA production model. Must be > `spillage_cost` for the same plant to prevent interior FPHA solutions. See [Penalty System §2](../data-model/penalty-system.md).
+- **FPHA turbined cost**: Regularization applied **only** to hydros using the FPHA production model. Must be > `spillage_cost` for the same plant to prevent interior FPHA solutions. See [Penalty System](./penalty-system.md).
 - **Diversion cost**: Small regularization, typically higher than spillage (water leaves main cascade)
-- **Slack penalties**: High costs for constraint violations — storage below dead volume, outflow violations, generation violations, evaporation violations, water withdrawal shortfall. See [Penalty System](../data-model/penalty-system.md) for the full penalty taxonomy and priority ordering.
+- **Slack penalties**: High costs for constraint violations — storage below dead volume, outflow violations, generation violations, evaporation violations, water withdrawal shortfall. See [Penalty System](./penalty-system.md) for the full penalty taxonomy and priority ordering.
 - **No generation cost**: Hydro generation has zero marginal fuel cost — its "cost" is the opportunity cost of depleting storage, captured through the value function $V_{t+1}(v_h)$
 
 ### LP Constraint Preview
@@ -370,7 +370,7 @@ For the fully assembled constraints, see [LP formulation](lp-formulation.md).
 
 A **non-controllable source** represents intermittent generation (wind farms, solar plants, small run-of-river hydros, etc.) whose available output depends on external conditions (weather, river flow) rather than dispatch decisions. The solver receives a stochastic availability value per scenario from the scenario pipeline, and can only curtail generation below that availability — it cannot dispatch upward beyond what nature provides.
 
-Non-controllable sources have near-zero marginal cost. The cost of curtailing available generation is a **regularization penalty** (Category 3 in the [Penalty System](../data-model/penalty-system.md)), analogous to `spillage_cost` for hydros — curtailment discards available "free" energy.
+Non-controllable sources have near-zero marginal cost. The cost of curtailing available generation is a **regularization penalty** (Category 3 in the [Penalty System](./penalty-system.md)), analogous to `spillage_cost` for hydros — curtailment discards available "free" energy.
 
 ### Operative States
 
@@ -420,7 +420,7 @@ $$
 
 **Load balance contribution** at connected bus: $+g^{nc}_{r,k}$ (generation injected).
 
-> **Note**: Unlike hydro and thermal plants, non-controllable sources have **no stage-varying operational bounds** beyond the stochastic availability. Their output is entirely determined by the scenario model. See [Input System Entities §7](../data-model/input-system-entities.md) for the data model.
+> **Note**: Unlike hydro and thermal plants, non-controllable sources have **no stage-varying operational bounds** beyond the stochastic availability. Their output is entirely determined by the scenario model.
 
 For detailed constraints, see [equipment formulations](equipment-formulations.md).
 
@@ -470,7 +470,7 @@ For detailed constraints, see [equipment formulations](equipment-formulations.md
 
 **Contracts** represent agreements to buy (import) or sell (export) electricity with external systems outside the modeled region, providing flexibility during shortages and revenue opportunity for surplus.
 
-Each contract is **unidirectional**: it is either an import contract or an export contract, identified by a `type` field. This matches the data model in [Input System Entities §6](../data-model/input-system-entities.md), where each contract has a single `price_per_mwh` and a single `limits.min_mw`/`limits.max_mw` pair.
+Each contract is **unidirectional**: it is either an import contract or an export contract, identified by a `type` field.
 
 ### Decision Variables
 
@@ -517,13 +517,13 @@ The following table maps each physical system element to its LP representation:
 | **Bus**               | —                    | $\delta_{b,k,s}$, $\epsilon_{b,k}$         | Load balance                        | Deficit penalty (high), Excess penalty (low) |
 | **Transmission Line** | —                    | $f^+_{l,k}$, $f^-_{l,k}$                   | Capacity bounds                     | Exchange cost (regularization)               |
 | **Thermal Plant**     | —                    | $g_{j,k,s}$                                | Generation bounds, Segment limits   | Fuel cost                                    |
-| **Thermal (GNL)**     | $g^{gnl}_{j,t+\ell}$ | $g_{j,k,s}$                                | Generation bounds + commit pipeline | Fuel cost (deferred)                         |
+| **Thermal (GNL)**     | $g^{gnl}_{j,t+\ell}$ | $g_{j,k,s}$                                | Generation bounds + commit pipeline | Fuel cost (not currently dispatched)         |
 | **Hydro Plant**       | $v_h$, $a_{h,\ell}$  | $q_{h,k}$, $s_{h,k}$, $u_{h,k}$, $g_{h,k}$ | Water balance, Generation function  | Spillage/diversion cost (regularization)     |
 | **Non-Controllable**  | —                    | $g^{nc}_{r,k}$                             | Availability bound                  | Curtailment penalty (regularization)         |
 | **Pumping Station**   | —                    | $p_{j,k}$                                  | Flow bounds (min/max)               | None (cost via energy consumption)           |
 | **Contract**          | —                    | $\chi_{c,k}$                               | Dispatch bounds (min/max)           | Import cost or Export revenue                |
 
-**Key insight**: The hydro storage variables $v_h$ and AR lag variables $a_{h,\ell}$ are the **only state variables** that currently link stages through the Bellman recursion. When GNL support is implemented, the committed dispatch pipeline $g^{gnl}_{j,t+\ell}$ will add thermal state variables as well. All other elements contribute control variables that are determined within each stage. This structure enables SDDP's decomposition: the stage subproblem optimizes all control variables given the incoming state, and Benders cuts approximate the future cost as a function of the outgoing state.
+**Key insight**: The hydro storage variables $v_h$ and AR lag variables $a_{h,\ell}$ are the **only state variables** that currently link stages through the Bellman recursion. All other elements contribute control variables that are determined within each stage. This structure enables SDDP's decomposition: the stage subproblem optimizes all control variables given the incoming state, and Benders cuts approximate the future cost as a function of the outgoing state.
 
 ## Cross-References
 
@@ -531,4 +531,4 @@ The following table maps each physical system element to its LP representation:
 - [LP formulation](lp-formulation.md) — fully assembled LP constraints combining all elements
 - [Equipment formulations](equipment-formulations.md) — detailed per-equipment constraint derivations
 - [Hydro production models](hydro-production-models.md) — FPHA and linearized head alternatives for the hydro production function
-- [Deferred features](../deferred.md) — GNL thermal dispatch anticipation and battery storage (planned)
+- [Penalty System](./penalty-system.md) — penalty costs, priority ordering, and the full penalty taxonomy

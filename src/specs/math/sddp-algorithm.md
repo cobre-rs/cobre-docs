@@ -2,7 +2,7 @@
 
 ## Purpose
 
-This spec describes the Stochastic Dual Dynamic Programming (SDDP) algorithm as implemented in Cobre: the multistage stochastic formulation, the iterative forward/backward pass structure, convergence monitoring, policy graph topologies, state variable requirements, and the single-cut vs multi-cut trade-off. It serves as the algorithmic foundation referenced by all other mathematical specs.
+This spec describes the Stochastic Dual Dynamic Programming (SDDP) algorithm as implemented in Cobre: the multistage stochastic formulation, the iterative forward/backward pass structure, convergence monitoring, policy graph topologies, state variable requirements, and the single-cut formulation. It serves as the algorithmic foundation referenced by all other mathematical specs.
 
 For notation conventions (index sets, parameters, decision variables, dual variables), see [Notation Conventions](../overview/notation-conventions.md).
 
@@ -69,11 +69,11 @@ For each of $M$ independent scenario trajectories:
 3. Record the optimal state $\hat{x}_t$ (end-of-stage storage volumes and updated AR lags) as the trial point for stage $t$
 4. Pass $\hat{x}_t$ as the incoming state to stage $t+1$
 
-> **Scenario sampling**: "Sample a scenario realization $\omega_t$" is controlled by the **forward sampling scheme** — a configurable abstraction that determines the forward pass noise source. The default scheme (`InSample`) draws a random index $j \in \{0, \ldots, N_{\text{openings}}-1\}$ from the **fixed opening tree** — a set of pre-generated noise vectors generated once before training begins. Alternative schemes (`External`, `Historical`) draw from user-provided data instead. See [Scenario Generation §3](../architecture/scenario-generation.md) for the sampling scheme abstraction and [Input Scenarios §2.1](../data-model/input-scenarios.md) for configuration.
+> **Scenario sampling**: "Sample a scenario realization $\omega_t$" is controlled by the **forward sampling scheme** — a configurable abstraction that determines the forward pass noise source. The default scheme (`InSample`) draws a random index $j \in \{0, \ldots, N_{\text{openings}}-1\}$ from the **fixed opening tree** — a set of pre-generated noise vectors generated once before training begins. Alternative schemes (`External`, `Historical`) draw from user-provided data instead. See [Scenario Generation](./scenario-generation.md) for the sampling scheme abstraction.
 
 The forward pass produces: (a) trial points $\{\hat{x}_t\}$ at each stage for each trajectory, and (b) stage costs for upper bound estimation.
 
-**Parallelization**: Forward trajectories are independent — Cobre distributes $M$ trajectories across MPI ranks, with OpenMP threads solving individual stage LPs within each rank.
+**Parallelization**: Forward trajectories are independent — Cobre distributes $M$ trajectories across MPI ranks, with threads solving individual stage LPs within each rank.
 
 **Warm-starting**: The forward pass LP solution at stage $t$ provides a near-optimal basis for the backward pass solves at the same stage, significantly reducing solve times.
 
@@ -84,16 +84,16 @@ The backward pass improves the value function approximation by generating new Be
 At each stage $t$, for each trial point $\hat{x}_{t-1}$ collected during the forward pass:
 
 1. Solve the stage $t$ LP for **every** scenario $\omega \in \Omega_t$ (branching), using the trial state $\hat{x}_{t-1}$ as incoming state
-2. From each LP solution, extract the optimal objective value $Q_t(\hat{x}_{t-1}, \omega)$ and the dual variables of the fixing constraints (storage fixing and AR lag fixing). The fixing constraint duals give the cut coefficients directly — no combination with FPHA or generic constraint duals is needed. See [Cut Management §2](cut-management.md)
+2. From each LP solution, extract the optimal objective value $Q_t(\hat{x}_{t-1}, \omega)$ and the dual variables of the fixing constraints (storage fixing and AR lag fixing). The fixing constraint duals give the cut coefficients directly — no combination with FPHA or generic constraint duals is needed. See [Cut Management](cut-management.md)
 3. Compute per-scenario cut coefficients $(\alpha(\omega), \pi(\omega))$ from the duals and trial point
-4. Aggregate into a single cut via probability-weighted expectation — see [Cut Management §3](cut-management.md)
+4. Aggregate into a single cut via probability-weighted expectation — see [Cut Management](cut-management.md)
 5. Add the aggregated cut to stage $t-1$'s cut pool
 
-> **Backward branching**: "Every scenario $\omega \in \Omega_t$" refers to all $N_{\text{openings}}$ noise vectors in the **fixed opening tree** for stage $t$. This is the **Complete** backward sampling scheme — the backward pass evaluates ALL openings (the same set across all iterations), regardless of the forward pass noise source. A deferred `MonteCarlo(n)` variant would sample $n$ openings instead; see [Deferred Features §C.14](../deferred.md). The aggregation probabilities $p(\omega)$ in [Cut Management §3](cut-management.md) are uniform over these openings ($p(\omega) = 1/N_{\text{openings}}$). See [Scenario Generation §3.4](../architecture/scenario-generation.md).
+> **Backward branching**: "Every scenario $\omega \in \Omega_t$" refers to all $N_{\text{openings}}$ noise vectors in the **fixed opening tree** for stage $t$. This is the **Complete** backward sampling scheme — the backward pass evaluates ALL openings (the same set across all iterations), regardless of the forward pass noise source. An alternative variant would sample $n$ openings instead of the full tree; the Complete scheme is the production default because it guarantees that cut coefficients average over the full scenario distribution at each stage. The aggregation probabilities $p(\omega)$ in [Cut Management](cut-management.md) are uniform over these openings ($p(\omega) = 1/N_{\text{openings}}$). See [Scenario Generation](./scenario-generation.md).
 
 The backward pass produces one new cut per stage per trial point per iteration.
 
-> **Feasibility**: Every backward LP solve must be feasible. This is guaranteed by the recourse slack system (Category 1 penalties) — see [Penalty System](../data-model/penalty-system.md). The relatively complete recourse property ensures valid cuts; see [Cut Management §4](cut-management.md).
+> **Feasibility**: Every backward LP solve must be feasible. This is guaranteed by the recourse slack system (Category 1 penalties) — see [Penalty System](./penalty-system.md). The relatively complete recourse property ensures valid cuts; see [Cut Management](cut-management.md).
 
 > **Discount factor**: When discount rates are active, the discount factor is applied to the $\theta$ variable in the stage $t-1$ objective (i.e., $d_{t-1 \to t} \cdot \theta$), not to the cut coefficients. The cuts themselves remain unmodified. See [Discount Rate](discount-rate.md).
 
@@ -109,9 +109,7 @@ $$
 
 where $Q_0^k(x_0, \omega)$ is the optimal objective of the stage-0 LP under opening $\omega$ with the current cut approximation at iteration $k$, $x_0$ is the known initial state, and $\rho_0$ is the stage-0 risk measure (expected value under risk-neutral, or CVaR under risk-averse). The per-opening probabilities are uniform: $p(\omega) = 1 / |\Omega_0|$.
 
-Under risk-neutral settings ($\rho_0 = \mathbb{E}$), this reduces to a simple average over all stage-0 opening objectives. This bound increases monotonically as cuts are added.
-
-> **Implementation note**: The lower bound is evaluated after each backward pass and cut synchronization. Rank 0 iterates over all stage-0 openings, rebuilding the LP for each (load model, add cuts, patch forward state + noise, solve). The per-opening objectives are collected, aggregated through the risk measure, then broadcast to all ranks. The LP objective is in scaled cost space (divided by `COST_SCALE_FACTOR`); the result is multiplied by `COST_SCALE_FACTOR` to recover original units.
+Under risk-neutral settings ($\rho_0 = \mathbb{E}$), this reduces to a simple average over all stage-0 opening objectives. Because cuts are added monotonically and never removed within a training run, this bound is non-decreasing across iterations — see [Cut Management](cut-management.md) for the append-only guarantee.
 
 **Upper Bound**: Estimated via Monte Carlo simulation over the forward pass trajectories (see [Upper Bound Evaluation](upper-bound-evaluation.md)):
 
@@ -127,17 +125,17 @@ $$
 
 ### 3.4 Execution Model and Performance Considerations
 
-The SDDP iteration structure has specific properties that guide the parallelization strategy and solver lifecycle design. These are summarized here as architectural constraints; detailed design is in the HPC and architecture specs.
+The SDDP iteration structure has specific properties that guide the parallelization strategy and solver lifecycle design. These are summarized here as architectural constraints; detailed design is in the developer guide.
 
-**Thread-trajectory affinity**: The dominant parallelization strategy assigns each thread ownership of a complete forward trajectory. With $N$ threads (summed across all OpenMP threads of all MPI ranks), $N$ forward passes execute in parallel, each thread solving its trajectory's stage LPs sequentially from $t = 1$ to $T$. The same thread that executed forward pass $k$ also performs the backward pass for the scenarios sampled by forward pass $k$. This affinity pattern preserves cache locality (solver basis, scenario data, LP coefficients remain warm in the thread's cache lines) and simplifies implementation by eliminating cross-thread data handoff.
+**Thread-trajectory affinity**: The dominant parallelization strategy assigns each thread ownership of a complete forward trajectory. With $N$ threads (summed across all ranks), $N$ forward passes execute in parallel, each thread solving its trajectory's stage LPs sequentially from $t = 1$ to $T$. The same thread that executed forward pass $k$ also performs the backward pass for the scenarios sampled by forward pass $k$. This affinity pattern preserves cache locality (solver basis, scenario data, LP coefficients remain warm in the thread's cache lines) and simplifies implementation by eliminating cross-thread data handoff.
 
-**Backward pass synchronization**: Unlike the forward pass (fully parallel), the backward pass has a **hard synchronization barrier at each stage boundary**: all threads must complete cut construction at stage $t$ before any thread proceeds to stage $t-1$. Within a stage, each thread solves its branching scenarios sequentially, reusing the warm solver basis saved from the forward pass at that stage. This sequential branching keeps the solver state hot and avoids redundant LP setup.
+**Backward pass synchronization**: The backward pass enforces a per-stage synchronization barrier: cut construction at stage $t$ completes before cuts at stage $t-1$ are computed. This serializes the algorithm at stage boundaries and is the dominant scaling factor for parallel speedup. Within a stage, each thread's branching scenarios are solved sequentially, reusing the warm solver basis saved from the forward pass at that stage.
 
 **Forward pass state saving**: When the number of forward passes $M$ exceeds the number of available threads $N$, threads must process multiple trajectories in batches. This requires efficiently saving and restoring forward pass state (solver basis, scenario realization, visited states) at stage boundaries — analogous to CPU context switching for threads, but simpler because suspension only occurs at well-defined stage boundaries, not at arbitrary points.
 
-**LP rebuild cost**: Memory constraints prevent keeping all stage LPs with their full cut sets resident simultaneously. The solver must rebuild LPs and add cut constraints when transitioning between stages, which lies on the critical performance path. The design must minimize this rebuild cost through strategies such as cut preallocation, basis persistence, and incremental constraint updates. See [Solver Abstraction](../architecture/solver-abstraction.md) and [Solver Workspaces](../architecture/solver-workspaces.md).
+**LP rebuild cost**: Memory constraints prevent keeping all stage LPs with their full cut sets resident simultaneously. The solver must rebuild LPs and add cut constraints when transitioning between stages, which lies on the critical performance path. The design minimizes this rebuild cost through strategies such as cut preallocation, basis persistence, and incremental constraint updates.
 
-**Fixing constraint dual extraction**: Each state variable (storage and inflow lag) has a dedicated fixing constraint whose dual gives the cut coefficient directly — no preprocessing or dual combination is needed. FPHA hyperplane and generic constraint effects are captured automatically by the LP solver through the fixing constraint dual. See [Cut Management §2](cut-management.md) and [Cut Management Implementation SS5](../architecture/cut-management-impl.md).
+**Fixing constraint dual extraction**: Each state variable (storage and inflow lag) has a dedicated fixing constraint whose dual gives the cut coefficient directly — no preprocessing or dual combination is needed. FPHA hyperplane and generic constraint effects are captured automatically by the LP solver through the fixing constraint dual. See [Cut Management](cut-management.md).
 
 ## 4. Policy Graph Structure
 
@@ -171,14 +169,10 @@ For SDDP to generate valid cuts, the subproblem must satisfy the **Markov proper
 
 **State variables in Cobre**:
 
-| Component      | Variable       | Count                | Description                        |
-| -------------- | -------------- | -------------------- | ---------------------------------- |
-| Hydro storage  | $v_h$          | $N_{hydro}$          | Reservoir volume at end of stage   |
-| AR inflow lags | $a_{h,\ell}$   | $\sum_h P_h$         | Lagged inflows for AR(P) models    |
-| Battery SOC    | $soc_{bat}$    | $N_{battery}$        | Battery state of charge (DEFERRED) |
-| GNL pipeline   | $gnl_{t,\ell}$ | $\sum_{gnl} L_{gnl}$ | Committed GNL dispatch (DEFERRED)  |
-
-> **Note on deferred state variables**: Battery SOC and GNL pipeline state are planned extensions — see [Deferred Features](../deferred.md). For GNL thermals specifically, the data model already accepts GNL configurations but validation rejects them until the solver implementation is ready — see [Equipment Formulations §1.2](equipment-formulations.md).
+| Component      | Variable     | Count        | Description                      |
+| -------------- | ------------ | ------------ | -------------------------------- |
+| Hydro storage  | $v_h$        | $N_{hydro}$  | Reservoir volume at end of stage |
+| AR inflow lags | $a_{h,\ell}$ | $\sum_h P_h$ | Lagged inflows for AR(P) models  |
 
 ### 5.1 AR Lag State Expansion
 
@@ -188,13 +182,11 @@ $$
 a_{h,\ell} = \hat{a}_{h,\ell} \quad \forall h \in \mathcal{H}, \; \ell \in \{1, \ldots, P_h\}
 $$
 
-where $\hat{a}_{h,\ell}$ is the lag $\ell$ inflow value passed from the previous stage. The duals of these fixing constraints ($\pi^{lag}_{h,\ell}$) contribute to cut coefficients, capturing the marginal value of inflow history — see [Cut Management §2](cut-management.md).
+where $\hat{a}_{h,\ell}$ is the lag $\ell$ inflow value passed from the previous stage. The duals of these fixing constraints ($\pi^{lag}_{h,\ell}$) contribute to cut coefficients, capturing the marginal value of inflow history — see [Cut Management](cut-management.md).
 
-See [PAR Inflow Model](par-inflow-model.md) for the complete autoregressive formulation and [LP Formulation §5](lp-formulation.md) for how these constraints appear in the stage LP. For the full LP column and row layout (including auxiliary z-inflow variables between lags and incoming storage), see [LP Formulation §4b](lp-formulation.md).
+See [PAR Inflow Model](par-inflow-model.md) for the complete autoregressive formulation and [LP Formulation](lp-formulation.md) for how these constraints appear in the stage LP.
 
-## 6. Single-Cut vs Multi-Cut Formulation
-
-### 6.1 Single-Cut (Default)
+## 6. Single-Cut Formulation
 
 One aggregated cut per iteration:
 
@@ -207,32 +199,33 @@ where $\bar{\alpha} = \mathbb{E}[\alpha(\omega)]$ and $\bar{\pi} = \mathbb{E}[\p
 - **Pros**: Fewer cuts, smaller LP, faster solves
 - **Cons**: May require more iterations to converge
 
-### 6.2 Multi-Cut (DEFERRED)
+An alternative multi-cut formulation creates one cut per scenario per iteration, with per-scenario future cost variables $\theta_\omega$. This formulation yields a tighter approximation per iteration at the cost of a larger LP. The trade-off analysis and convergence comparison are in [Cut Management](cut-management.md).
 
-One cut per scenario per iteration:
+## 7. Terminal Boundary Cuts
 
-$$
-\theta_{t-1,\omega} \geq \alpha(\omega) + \pi(\omega)^\top x_{t-1} \quad \forall \omega \in \Omega_t
-$$
+A **terminal boundary cut** is a Benders cut on the terminal future-cost function that originates from an external Cobre run rather than from the current run's backward pass. Terminal boundary cuts couple a downstream run's policy with an upstream run's value function at the time-horizon boundary.
 
-- **Pros**: Tighter approximation, fewer iterations
-- **Cons**: More cuts, larger LP, memory-intensive
+**What they represent**: In a chained study, the upstream run builds a policy over a longer or earlier horizon. The future-cost function approximation at the upstream run's terminal stage — a set of Benders cuts — captures the expected cost of continuing from any state at that stage boundary. When the downstream run imports these cuts, they serve as the initial approximation of the cost-to-go at the downstream run's terminal stage $T$.
 
-Cobre implements single-cut by default. Multi-cut is planned for future implementation. See [Deferred Features](../deferred.md) for the full trade-off analysis.
+**The methodology guarantee**: Imported terminal cuts are valid Benders cuts — they satisfy the same lower-bound and convexity conditions as any cut generated internally. Adding them to the initial cut set at stage $T$ is equivalent to seeding the outer approximation with information from the upstream run. The backward pass then generates additional cuts as usual, tightening the approximation from that informed starting point. The append-only property of the cut pool ensures the lower-bound estimate remains non-decreasing throughout training, whether cuts were imported or generated internally.
+
+**The use case**: Chaining Cobre runs for studies that span different horizons or temporal resolutions — for example, a long-horizon strategic study feeding a shorter-horizon detailed study — without re-running the upstream model. The downstream run starts with an already-informed terminal cost, which typically reduces the number of iterations needed for the lower bound to reach the convergence threshold.
+
+**Trade-off**: The imported cuts reflect the upstream run's stochastic model and state discretization. If the downstream run uses a different inflow model, a different set of reservoirs, or a different penalty structure, the imported cuts may be inconsistent with the downstream subproblems. Inconsistencies do not cause infeasibility (the backward pass will generate corrective cuts) but they may slow convergence or produce a looser initial approximation than a consistent import would provide.
+
+For the full treatment of chained studies and horizon coupling, see Part 5 — Coupling and Boundary Conditions.
 
 ## Cross-References
 
 - [Notation Conventions](../overview/notation-conventions.md) — All index sets, parameters, decision variables, and dual variable definitions
 - [LP Formulation](lp-formulation.md) — Complete stage subproblem LP that the forward/backward passes solve
-- [Cut Management](cut-management.md) — Cut generation, aggregation, selection, and validity conditions
+- [Cut Management](cut-management.md) — Cut generation, aggregation, selection, validity conditions, and the append-only monotonicity guarantee
 - [PAR Inflow Model](par-inflow-model.md) — Stochastic inflow model driving uncertainty in the forward pass
 - [Discount Rate](discount-rate.md) — Discounted Bellman equation, stage-dependent rates, discount factor on θ
 - [Infinite Horizon](infinite-horizon.md) — Periodic structure, cycle detection, cut sharing, convergence
 - [Upper Bound Evaluation](upper-bound-evaluation.md) — Upper bound estimation methods
 - [Stopping Rules](stopping-rules.md) — Convergence criteria that terminate the iterative process
 - [Risk Measures](risk-measures.md) — CVaR and risk-averse extensions to the Bellman recursion
-- [Penalty System](../data-model/penalty-system.md) — Recourse slacks guaranteeing feasibility (relatively complete recourse)
-- [Equipment Formulations](equipment-formulations.md) — GNL thermal validation-rejection rule
-- [Scenario Generation](../architecture/scenario-generation.md) — Fixed opening tree (§2.3), sampling scheme abstraction (§3), external scenario integration (§4), complete tree mode (§7)
-- [Deferred Features](../deferred.md) — Multi-cut formulation, Markovian policy graphs, batteries, user-supplied noise openings (C.11), complete tree solver integration (C.12)
-- [Production Scale Reference](../overview/production-scale-reference.md) — Typical problem sizes and state dimensions
+- [Penalty System](./penalty-system.md) — Recourse slacks guaranteeing feasibility (relatively complete recourse)
+- [Equipment Formulations](equipment-formulations.md) — Thermal equipment modelling
+- [Scenario Generation](./scenario-generation.md) — Fixed opening tree, sampling scheme abstraction, complete tree mode

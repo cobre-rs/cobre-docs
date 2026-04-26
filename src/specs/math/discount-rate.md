@@ -75,7 +75,7 @@ Individual transitions may override the global rate:
 }
 ```
 
-For the complete `policy_graph` schema, see [Input Scenarios &sect;1.2](../data-model/input-scenarios.md).
+Transition-specific discount rates are configured per transition in the case-level `policy_graph`.
 
 ## 4 Discount Factor in the Stage Subproblem
 
@@ -158,10 +158,9 @@ For the complete infinite horizon formulation — including cut sharing within c
 
 ## Cross-References
 
-- [Input Scenarios &sect;1.2](../data-model/input-scenarios.md) — `policy_graph` schema with `annual_discount_rate` and per-transition overrides
 - [SDDP Algorithm](sddp-algorithm.md) — Core Bellman equation and forward/backward pass structure that discount rates modify
 - [Cut Management](cut-management.md) — Cut coefficients remain undiscounted; discount applied to $\theta$ in objective
 - [Stopping Rules](stopping-rules.md) — Convergence criteria using discounted lower/upper bounds
 - [Upper Bound Evaluation](upper-bound-evaluation.md) — Inner approximation uses discounted vertex values
 - [Infinite Horizon](infinite-horizon.md) — Cycle detection, cut sharing, modified passes, convergence for periodic problems
-- [Configuration Reference](../configuration/configuration-reference.md) — `stages.json` transition discount rates
+- [Notation Conventions](../overview/notation-conventions.md) — Index sets, parameters, decision variables, and dual variables used throughout
