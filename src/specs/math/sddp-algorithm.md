@@ -161,7 +161,7 @@ For long-term planning, Cobre supports **infinite periodic horizon** with cyclic
 
 > **Symbol note**: All specs use $d$ for the discount factor. The deficit variable uses $\delta$ (lowercase delta), so there is no conflict.
 
-See [Discount Rate](discount-rate.md) for the discounted Bellman equation and [Infinite Horizon](infinite-horizon.md) for the complete cyclic formulation.
+See [Discount Rate](discount-rate.md) for the discounted Bellman equation and [Horizon Modes](horizon-modes.md) for the complete cyclic formulation.
 
 ## 5. State Variables and the Markov Property
 
@@ -222,7 +222,7 @@ For the full treatment of chained studies and horizon coupling, see Part 5 — C
 - [Cut Management](cut-management.md) — Cut generation, aggregation, selection, validity conditions, and the append-only monotonicity guarantee
 - [PAR Inflow Model](par-inflow-model.md) — Stochastic inflow model driving uncertainty in the forward pass
 - [Discount Rate](discount-rate.md) — Discounted Bellman equation, stage-dependent rates, discount factor on θ
-- [Infinite Horizon](infinite-horizon.md) — Periodic structure, cycle detection, cut sharing, convergence
+- [Horizon Modes](horizon-modes.md) — Finite vs cyclic policy graphs; cyclic-mode formal structure (season function, cycle convergence inequality, season-indexed cut pool, fixed-point Bellman operator)
 - [Upper Bound Evaluation](upper-bound-evaluation.md) — Upper bound estimation methods
 - [Stopping Rules](stopping-rules.md) — Convergence criteria that terminate the iterative process
 - [Risk Measures](risk-measures.md) — CVaR and risk-averse extensions to the Bellman recursion

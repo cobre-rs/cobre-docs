@@ -81,7 +81,7 @@ When **authoring or editing a diagram** (new `src/images/*.svg`, `diagrams/matpl
 | Resource                  | Location                                  | Purpose                                  |
 | ------------------------- | ----------------------------------------- | ---------------------------------------- |
 | Cobre code (ground truth) | `https://github.com/cobre-rs/cobre/`                            | Actual implementation                    |
-| Software book             | `https://github.com/cobre-rs/cobre/book/`                       | User-facing docs                         |
+| Software book             | `https://docs.cobre-rs.dev/`                       | User-facing docs                         |
 | Dev strategy              | `https://github.com/cobre-rs/cobre/docs/design/dev-strategy.md` | Documentation & public presence strategy |
 | CHANGELOG                 | `https://github.com/cobre-rs/cobre/CHANGELOG.md`                | Per-release feature list                 |
 | Diagram authoring guide   | [`docs/design/diagram-authoring.md`](docs/design/diagram-authoring.md) | Tool selection + design system for spec diagrams |

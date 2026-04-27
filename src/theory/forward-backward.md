@@ -60,5 +60,5 @@ For the full specification of the forward and backward pass mechanics, including
 ---
 
 > **See also**: For implementation details and usage, see the
-> [SDDP crate documentation](https://cobre-rs.github.io/cobre/crates/sddp.html)
+> [SDDP crate documentation](https://docs.cobre-rs.dev/crates/sddp.html)
 > in the software book.

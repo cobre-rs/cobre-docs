@@ -61,5 +61,5 @@ During the **forward pass**, both inflow scenarios and load noise realizations a
 
 > **See also**: For implementation details and usage, including stochastic load
 > configuration and the `load_seasonal_stats.parquet` input format, see the
-> [Stochastic Modeling guide](https://cobre-rs.github.io/cobre/guide/stochastic-modeling.html)
+> [Stochastic Modeling guide](https://docs.cobre-rs.dev/guide/stochastic-modeling.html)
 > in the software book.

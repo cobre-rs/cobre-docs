@@ -6,7 +6,7 @@
   <rdf:RDF xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:cc="http://creativecommons.org/ns#" xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
    <cc:Work>
     <dc:type rdf:resource="http://purl.org/dc/dcmitype/StillImage"/>
-    <dc:date>2026-04-22T22:20:40.926336</dc:date>
+    <dc:date>2026-04-27T10:58:35.126925</dc:date>
     <dc:format>image/svg+xml</dc:format>
     <dc:creator>
      <cc:Agent>
@@ -41,7 +41,7 @@ Q 104.291188 136.86804 104.291188 138.44808
 L 104.291188 224.29692 
 Q 104.291188 225.87696 105.965188 225.87696 
 z
-" clip-path="url(#pe0975a8982)" style="fill: #f0f4f8; stroke: #4a90b8; stroke-width: 1.2; stroke-linejoin: miter"/>
+" clip-path="url(#p373b2b7f00)" style="fill: #f0f4f8; stroke: #4a90b8; stroke-width: 1.2; stroke-linejoin: miter"/>
    </g>
    <g id="patch_3">
     <path d="M 105.965188 323.31276 
@@ -54,7 +54,7 @@ Q 104.291188 234.30384 104.291188 235.88388
 L 104.291188 321.73272 
 Q 104.291188 323.31276 105.965188 323.31276 
 z
-" clip-path="url(#pe0975a8982)" style="fill: #f5eee4; stroke: #b87333; stroke-width: 1.2; stroke-linejoin: miter"/>
+" clip-path="url(#p373b2b7f00)" style="fill: #f5eee4; stroke: #b87333; stroke-width: 1.2; stroke-linejoin: miter"/>
    </g>
    <g id="patch_4">
     <path d="M 105.965188 420.74856 
@@ -67,7 +67,7 @@ Q 104.291188 331.73964 104.291188 333.31968
 L 104.291188 419.16852 
 Q 104.291188 420.74856 105.965188 420.74856 
 z
-" clip-path="url(#pe0975a8982)" style="fill: #edf5ee; stroke: #4a8b6f; stroke-width: 1.2; stroke-linejoin: miter"/>
+" clip-path="url(#p373b2b7f00)" style="fill: #edf5ee; stroke: #4a8b6f; stroke-width: 1.2; stroke-linejoin: miter"/>
    </g>
    <g id="patch_5">
     <path d="M 105.965188 518.18436 
@@ -80,7 +80,7 @@ Q 104.291188 429.17544 104.291188 430.75548
 L 104.291188 516.60432 
 Q 104.291188 518.18436 105.965188 518.18436 
 z
-" clip-path="url(#pe0975a8982)" style="fill: #ffffff; stroke: #555555; stroke-width: 1.2; stroke-linejoin: miter"/>
+" clip-path="url(#p373b2b7f00)" style="fill: #ffffff; stroke: #555555; stroke-width: 1.2; stroke-linejoin: miter"/>
    </g>
    <g id="patch_6">
     <path d="M 463.085188 225.87696 
@@ -93,7 +93,7 @@ Q 461.411188 136.86804 461.411188 138.44808
 L 461.411188 224.29692 
 Q 461.411188 225.87696 463.085188 225.87696 
 z
-" clip-path="url(#pe0975a8982)" style="fill: #ffffff; stroke: #555555; stroke-linejoin: miter"/>
+" clip-path="url(#p373b2b7f00)" style="fill: #ffffff; stroke: #555555; stroke-linejoin: miter"/>
    </g>
    <g id="patch_7">
     <path d="M 463.085188 323.31276 
@@ -106,7 +106,7 @@ Q 461.411188 234.30384 461.411188 235.88388
 L 461.411188 321.73272 
 Q 461.411188 323.31276 463.085188 323.31276 
 z
-" clip-path="url(#pe0975a8982)" style="fill: #ffffff; stroke: #555555; stroke-linejoin: miter"/>
+" clip-path="url(#p373b2b7f00)" style="fill: #ffffff; stroke: #555555; stroke-linejoin: miter"/>
    </g>
    <g id="patch_8">
     <path d="M 463.085188 420.74856 
@@ -119,7 +119,7 @@ Q 461.411188 331.73964 461.411188 333.31968
 L 461.411188 419.16852 
 Q 461.411188 420.74856 463.085188 420.74856 
 z
-" clip-path="url(#pe0975a8982)" style="fill: #ffffff; stroke: #555555; stroke-linejoin: miter"/>
+" clip-path="url(#p373b2b7f00)" style="fill: #ffffff; stroke: #555555; stroke-linejoin: miter"/>
    </g>
    <g id="patch_9">
     <path d="M 463.085188 518.18436 
@@ -132,7 +132,7 @@ Q 461.411188 429.17544 461.411188 430.75548
 L 461.411188 516.60432 
 Q 461.411188 518.18436 463.085188 518.18436 
 z
-" clip-path="url(#pe0975a8982)" style="fill: #ffffff; stroke: #555555; stroke-linejoin: miter"/>
+" clip-path="url(#p373b2b7f00)" style="fill: #ffffff; stroke: #555555; stroke-linejoin: miter"/>
    </g>
    <g id="text_1">
     <!-- Rank address space  ·  per rank -->
@@ -3952,11 +3952,11 @@ z
    <g id="patch_10">
     <path d="M 460.5246 182.6892 
 Q 451.365395 182.6892 443.547831 182.6892 
-" clip-path="url(#pe0975a8982)" style="fill: none; stroke-dasharray: 4.44,1.92; stroke-dashoffset: 0; stroke: #4a90b8; stroke-width: 1.2; stroke-linecap: round"/>
+" clip-path="url(#p373b2b7f00)" style="fill: none; stroke-dasharray: 4.44,1.92; stroke-dashoffset: 0; stroke: #4a90b8; stroke-width: 1.2; stroke-linecap: round"/>
     <path d="M 450.747831 186.2892 
 L 443.547831 182.6892 
 L 450.747831 179.0892 
-" clip-path="url(#pe0975a8982)" style="fill: none; stroke-dasharray: 4.44,1.92; stroke-dashoffset: 0; stroke: #4a90b8; stroke-width: 1.2; stroke-linecap: round"/>
+" clip-path="url(#p373b2b7f00)" style="fill: none; stroke-dasharray: 4.44,1.92; stroke-dashoffset: 0; stroke: #4a90b8; stroke-width: 1.2; stroke-linecap: round"/>
    </g>
    <g id="text_37">
     <!-- Brazilian PMO case (165 hydros · 120 stages · 50 openings): ~800 MB/rank without SharedRegion · ~450 MB/rank with SharedRegion on 2-rank-per-node placement -->
@@ -5083,7 +5083,7 @@ z
   </g>
  </g>
  <defs>
-  <clipPath id="pe0975a8982">
+  <clipPath id="p373b2b7f00">
    <rect x="88.667188" y="82.62" width="669.6" height="526.68"/>
   </clipPath>
  </defs>

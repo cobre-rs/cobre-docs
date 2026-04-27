@@ -14,12 +14,13 @@ Cobre supports two modes: **Finite** (acyclic) and **Cyclic**
 mode, the guarantee it carries, and the trade-offs that guide the choice
 between them.
 
-**Scope boundary.** This chapter owns the three-mode concept at the
-methodology level. The deep mathematical treatment of the cyclic mode —
-the periodic structure, the season function, the cut-sharing equation, the
-cycle convergence inequality, and the fixed-point Bellman operator — belongs to
-[Infinite Horizon](./infinite-horizon.md). The mechanics of the per-transition
-discount factor and its role in the cycle convergence requirement belong to
+Section 2 introduces the cyclic mode at the idea / guarantee / knob /
+trade-off level; section 3 gives its formal mathematical structure (the
+season function, the cycle convergence inequality, the season-indexed
+cut pool, and the fixed-point Bellman operator); section 4 covers
+forward-pass termination; section 5 covers mode selection. The
+mechanics of the per-transition discount factor and its role in the
+cycle convergence requirement belong to
 [Discount-Rate Handling](./discount-rate.md).
 
 ## 1. Finite (Acyclic) Mode
@@ -62,10 +63,10 @@ cycle's worth of seasonal cut pools represents the entire infinite horizon.
 **Guarantee.** Convergence of the cyclic mode rests on the cumulative discount
 factor around one full cycle falling strictly below one. When that condition
 holds, contributions from distant future cycles become negligible, and the value
-functions at each season stabilise across iterations. The deep treatment of
-this guarantee — including the convergence inequality, the season function, the
-cut-sharing equation, and the fixed-point Bellman operator — is in
-[Infinite Horizon](./infinite-horizon.md).
+functions at each season stabilise across iterations. The formal statement of
+this guarantee — the convergence inequality, the season function, the
+cut-sharing equation, and the fixed-point Bellman operator — is given in
+section 3.
 
 **Knob.** The case configuration declares the policy graph type as cyclic and
 supplies an annual discount rate. The discount rate, together with each
@@ -79,10 +80,105 @@ natural choice for long-term planning studies where a finite terminal condition
 would produce misleading near-terminal policies. The cost is additional
 complexity: the modeller must supply a discount rate, the algorithm must verify
 cycle convergence, and the forward pass requires explicit termination logic
-rather than a natural chain endpoint. Both the convergence requirement and the
-forward-pass termination rules are described in Section 3.
+rather than a natural chain endpoint. Section 3 formalises the convergence
+requirement; section 4 describes the forward-pass termination rules.
 
-## 3. Forward-Pass Termination in Cyclic Mode
+## 3. Cyclic Mode — Mathematical Detail
+
+This section gives the formal structure that section 2 summarised in prose:
+the season function, the cycle convergence inequality, the season-indexed cut
+pool with its cut-sharing equation, the fixed-point Bellman interpretation,
+and the convergence criterion that the algorithm checks across consecutive
+cycles.
+
+### Season Function
+
+For a cycle of length $P$ stages (for example, twelve monthly stages making
+a calendar year), the **season** of stage $t$ is its position within one
+cycle:
+
+$$
+\tau(t) \;=\; (t - 1) \bmod P + 1 \;\in\; \{1, 2, \ldots, P\}.
+$$
+
+Two stages with the same season share the structural properties of the cycle
+at that position: demand pattern, inflow statistics, block definitions, and
+stochastic-process parameters. The cycle is the unit that repeats; the season
+is the position within it.
+
+### Cycle Convergence Inequality
+
+For the value function to remain finite across infinite repetitions, the
+cumulative discount around one full cycle must be strictly below one:
+
+$$
+d_{\text{cycle}} \;=\; \prod_{t \in \text{cycle}} d_{t \to t+1} \;<\; 1.
+$$
+
+This guarantees that the geometric series of cycle contributions converges,
+
+$$
+\lim_{n \to \infty} d_{\text{cycle}}^{\,n} \cdot V_t(x) \;=\; 0,
+$$
+
+so contributions from far-future cycles become negligible. A cyclic policy
+graph whose per-transition factors fail this inequality is rejected at
+validation. See [Discount-Rate Handling](./discount-rate.md) for the
+conversion from the annual rate to the per-transition factors.
+
+### Season-Indexed Cut Pool
+
+Let $\mathcal{C}_\tau = \{\,t : \tau(t) = \tau\,\}$ denote the set of all
+stages occupying season $\tau$. A cut generated at any stage in
+$\mathcal{C}_\tau$ is valid for every stage in $\mathcal{C}_\tau$, so the
+cut pool is indexed by season rather than by absolute stage:
+
+$$
+\underline{V}_\tau(x) \;=\; \max_{k \in \mathcal{K}_\tau}
+\bigl\{\, \alpha_k + \pi_k^{\top} x \,\bigr\}.
+$$
+
+A single cycle of $P$ pools therefore represents the entire infinite
+horizon. The pool-organisation difference between finite and cyclic mode
+reduces to: $T$ pools indexed by absolute stage versus $P$ pools indexed by
+season.
+
+### Fixed-Point Bellman Operator
+
+The cyclic value function satisfies the seasonal Bellman recursion
+
+$$
+V_\tau \;=\; T_\tau\, V_{\tau + 1 \,(\bmod P)},
+$$
+
+where $T_\tau$ is the one-stage Bellman operator at season $\tau$:
+
+$$
+(T_\tau V)(x) \;=\; \mathbb{E}_{\omega_\tau}\!\left[\,
+\min_{x'}\, \bigl\{ c_\tau(x', u) + d \cdot V(x') \bigr\}
+\,\right].
+$$
+
+Cyclic SDDP computes the fixed point of this seasonal operator chain: the
+policy is converged when the value function at every season is stable across
+consecutive cycles.
+
+### Cycle Convergence Criterion
+
+The outer approximation has converged in cyclic mode when the lower bounds
+at every season stabilise across consecutive cycles:
+
+$$
+\max_{\tau \in \{1, \ldots, P\}}
+\bigl|\, \underline{z}^{\,k,\tau} - \underline{z}^{\,k - P,\tau} \,\bigr|
+\;<\; \delta_{\text{cycle}},
+$$
+
+where the tolerance $\delta_{\text{cycle}}$ is a configured stopping
+parameter. See [Stopping Rules](./stopping-rules.md) for the catalogue of
+cyclic-mode stopping criteria.
+
+## 4. Forward-Pass Termination in Cyclic Mode
 
 In finite mode the forward pass ends when it reaches the terminal stage; no
 explicit stopping rule is needed. In cyclic mode there is no terminal stage, so
@@ -107,7 +203,7 @@ The discount mechanics underlying the cumulative-discount condition — the form
 relating the annual rate to the per-transition factor and the running product —
 are described in [Discount-Rate Handling](./discount-rate.md).
 
-## 4. Choosing Between Modes
+## 5. Choosing Between Modes
 
 The choice between finite and cyclic mode is a modelling decision about what
 the study horizon represents.
@@ -151,12 +247,18 @@ organisations are covered in [Cut Management](./cut-management.md). The
 algorithm within which both modes operate is described in
 [SDDP Algorithm](./sddp-algorithm.md).
 
+## 6. Reference
+
+> Costa, B.F.P., Calixto, A.O., Sousa, R.F.S., Figueiredo, R.T., Penna, D.D.J., Khenayfis, L.S., & Oliveira, A.M.R. (2025). "Boundary conditions for hydrothermal operation planning problems: the infinite horizon approach." _Proceeding Series of the Brazilian Society of Computational and Applied Mathematics_, 11(1), 1–7. https://doi.org/10.5540/03.2025.011.01.0355
+
+The cyclic-mode formal structure in section 3 — the season function,
+the cycle convergence inequality, the season-indexed cut pool with its
+cut-sharing equation, and the fixed-point Bellman operator — is drawn
+from this paper. The full bibliographic entry is in
+[Bibliography](../reference/bibliography.md).
+
 ## Cross-References
 
-- [Infinite Horizon](./infinite-horizon.md) — Deep mathematical treatment of
-  the cyclic mode: periodic structure, season function, cycle convergence
-  inequality, cut-sharing equation, forward and backward pass behaviour,
-  fixed-point Bellman operator interpretation.
 - [Discount-Rate Handling](./discount-rate.md) — Annual-rate-to-factor
   conversion, per-transition discount mechanics, cumulative discounting, and
   the cycle convergence requirement.
@@ -165,3 +267,6 @@ algorithm within which both modes operate is described in
 - [SDDP Algorithm](./sddp-algorithm.md) — The algorithm that the horizon mode
   parameterises; finite and cyclic policy graph topologies; terminal boundary
   cut mechanism.
+- [Stopping Rules](./stopping-rules.md) — Cyclic-mode stopping criteria,
+  including the cycle convergence tolerance applied to seasonal lower
+  bounds.

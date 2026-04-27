@@ -4,139 +4,73 @@
 
 ---
 
-# Theory
+# Part 1 — Introduction
 
-- [SDDP Theory](./theory/sddp-theory.md)
-  - [Benders Decomposition](./theory/benders.md)
-  - [Forward and Backward Passes](./theory/forward-backward.md)
-  - [Convergence](./theory/convergence.md)
-  - [Stopping Rules](./theory/stopping-rules.md)
-  - [Stage LP Formulation](./theory/lp-formulation.md)
-  - [Hydro Production Models](./theory/hydro-production.md)
-- [Stochastic Modeling](./theory/stochastic-modeling.md)
-  - [PAR(p) Autoregressive Models](./theory/par-model.md)
-  - [Inflow Non-Negativity](./theory/inflow-nonnegativity.md)
-  - [Spatial Correlation](./theory/spatial-correlation.md)
-  - [Scenario Generation](./theory/scenario-generation.md)
-- [Cut Management](./theory/cut-management.md)
-  - [Single-Cut vs Multi-Cut](./theory/single-multi-cut.md)
-  - [Cut Selection](./theory/cut-selection.md)
-- [Risk Measures](./theory/risk-measures.md)
-  - [CVaR](./theory/cvar.md)
+- [What Cobre Solves](./specs/overview/what-cobre-solves.md)
+- [The SDDP Framework in One Page](./specs/overview/sddp-framework-overview.md)
+- [Notation Conventions](./specs/overview/notation-conventions.md)
+- [How to Read This Book](./specs/overview/how-to-read.md)
 
 ---
 
-# Roadmap
+# Part 2 — System Modelling
 
-- [Overview](./roadmap/overview.md)
-  - [Equipment & Modeling](./roadmap/equipment-modeling.md)
-  - [Algorithm Variants](./roadmap/algorithm-variants.md)
-  - [Stochastic Enhancements](./roadmap/stochastic-enhancements.md)
-  - [Performance & Parallelism](./roadmap/performance-parallelism.md)
-  - [Tooling & Interfaces](./roadmap/tooling-interfaces.md)
-
----
-
-# Specifications (Historical Design Artifacts)
-
-- [Overview](./specs/overview.md)
-  - [What Cobre Solves](./specs/overview/what-cobre-solves.md)
-  - [The SDDP Framework in One Page](./specs/overview/sddp-framework-overview.md)
-  - [Notation Conventions](./specs/overview/notation-conventions.md)
-  - [How to Read This Book](./specs/overview/how-to-read.md)
-  - [Design Principles](./specs/overview/design-principles.md)
-  - [Production Scale Reference](./specs/overview/production-scale-reference.md)
-  - [Ecosystem Vision](./specs/overview/ecosystem-vision.md)
-  - [Ecosystem Guidelines](./specs/overview/ecosystem-guidelines.md)
-  - [Decision Log](./specs/overview/decision-log.md)
-  - [Implementation Ordering](./specs/overview/implementation-ordering.md)
-  - [Spec Gap Inventory](./specs/overview/spec-gap-inventory.md)
-- [Cross-Reference Index](./specs/cross-reference-index.md)
-- [Mathematical Formulations](./specs/math.md)
-  - [SDDP Algorithm](./specs/math/sddp-algorithm.md)
-  - [System Elements](./specs/math/system-elements.md)
-  - [LP Formulation](./specs/math/lp-formulation.md)
-  - [Hydro Production Models](./specs/math/hydro-production-models.md)
-  - [Equipment Formulations](./specs/math/equipment-formulations.md)
-  - [Block Formulations](./specs/math/block-formulations.md)
-  - [Cut Management](./specs/math/cut-management.md)
-  - [LP Warm-Start](./specs/math/lp-warm-start.md)
-  - [PAR Inflow Model](./specs/math/par-inflow-model.md)
-  - [Multi-Resolution Studies](./specs/math/multi-resolution-studies.md)
-  - [Weekly+Monthly Coupled Studies](./specs/math/weekly-monthly-coupled-studies.md)
-  - [Discount Rate](./specs/math/discount-rate.md)
-  - [Infinite Horizon](./specs/math/infinite-horizon.md)
-  - [Risk Measures](./specs/math/risk-measures.md)
-  - [Inflow Non-Negativity](./specs/math/inflow-nonnegativity.md)
-  - [Stopping Rules](./specs/math/stopping-rules.md)
-  - [Upper Bound Evaluation](./specs/math/upper-bound-evaluation.md)
-  - [Penalty System](./specs/math/penalty-system.md)
-- [Data Model](./specs/data-model.md)
-  - [Input Directory Structure](./specs/data-model/input-directory-structure.md)
-  - [Input System Entities](./specs/data-model/input-system-entities.md)
-  - [Input Hydro Extensions](./specs/data-model/input-hydro-extensions.md)
-  - [Input Scenarios](./specs/data-model/input-scenarios.md)
-  - [Input Constraints](./specs/data-model/input-constraints.md)
-  - [Internal Structures](./specs/data-model/internal-structures.md)
-  - [Output Schemas](./specs/data-model/output-schemas.md)
-  - [Output Infrastructure](./specs/data-model/output-infrastructure.md)
-  - [Binary Formats](./specs/data-model/binary-formats.md)
-- [Architecture](./specs/architecture.md)
-  - [Training Loop](./specs/architecture/training-loop.md)
-  - [Simulation Architecture](./specs/architecture/simulation-architecture.md)
-  - [Solver Abstraction Layer](./specs/architecture/solver-abstraction.md)
-  - [HiGHS Implementation](./specs/architecture/solver-highs-impl.md)
-  - [CLP Implementation](./specs/architecture/solver-clp-impl.md)
-  - [Solver Workspaces & LP Scaling](./specs/architecture/solver-workspaces.md)
-  - [Performance Adaptation Layer](./specs/architecture/performance-adaptation-layer.md)
-  - [Scenario Generation](./specs/math/scenario-generation.md)
-  - [Input Loading Pipeline](./specs/architecture/input-loading-pipeline.md)
-  - [Extension Points](./specs/architecture/extension-points.md)
-  - [CLI and Lifecycle](./specs/architecture/cli-and-lifecycle.md)
-  - [Validation Architecture](./specs/architecture/validation-architecture.md)
-  - [Convergence Monitoring](./specs/architecture/convergence-monitoring.md)
-  - [Cut Management Implementation](./specs/architecture/cut-management-impl.md)
-  - [Solver Interface Trait](./specs/architecture/solver-interface-trait.md)
-  - [Solver Interface Testing and Conformance](./specs/architecture/solver-interface-testing.md)
-  - [Risk Measure Trait](./specs/architecture/risk-measure-trait.md)
-  - [Risk Measure Testing and Conformance](./specs/architecture/risk-measure-testing.md)
-  - [Cut Selection Strategy Trait](./specs/architecture/cut-selection-trait.md)
-  - [Cut Selection Testing and Conformance](./specs/architecture/cut-selection-testing.md)
-  - [Horizon Mode Trait](./specs/architecture/horizon-mode-trait.md)
-  - [Horizon Mode Testing and Conformance](./specs/architecture/horizon-mode-testing.md)
-  - [Sampling Scheme Trait](./specs/architecture/sampling-scheme-trait.md)
-  - [Sampling Scheme Testing and Conformance](./specs/architecture/sampling-scheme-testing.md)
-  - [Stopping Rule Trait](./specs/architecture/stopping-rule-trait.md)
-  - [Stopping Rule Testing and Conformance](./specs/architecture/stopping-rule-testing.md)
-- [High-Performance Computing](./specs/hpc.md)
-  - [Work Distribution](./specs/hpc/work-distribution.md)
-  - [Hybrid Parallelism](./specs/hpc/hybrid-parallelism.md)
-  - [Communication Patterns](./specs/hpc/communication-patterns.md)
-  - [Memory Architecture](./specs/hpc/memory-architecture.md)
-  - [Shared Memory and Aggregation](./specs/hpc/shared-memory-aggregation.md)
-  - [Synchronization](./specs/hpc/synchronization.md)
-  - [Checkpointing](./specs/hpc/checkpointing.md)
-  - [SLURM Deployment](./specs/hpc/slurm-deployment.md)
-  - [Communicator Trait](./specs/hpc/communicator-trait.md)
-  - [Backend Registration and Selection](./specs/hpc/backend-selection.md)
-  - [Ferrompi Backend](./specs/hpc/backend-ferrompi.md)
-  - [Shared Memory Backend](./specs/hpc/backend-shm.md)
-  - [TCP Backend](./specs/hpc/backend-tcp.md)
-  - [Local Backend](./specs/hpc/backend-local.md)
-  - [Backend Testing and Conformance](./specs/hpc/backend-testing.md)
-- [Configuration](./specs/configuration.md)
-  - [Configuration Reference](./specs/configuration/configuration-reference.md)
-- [Interfaces](./specs/interfaces.md)
-  - [Structured Output](./specs/interfaces/structured-output.md)
-  - [MCP Server](./specs/interfaces/mcp-server.md)
-  - [Python Bindings](./specs/interfaces/python-bindings.md)
-  - [Terminal UI](./specs/interfaces/terminal-ui.md)
-- [Deferred Features](./specs/deferred.md)
+- [LP Formulation](./specs/math/lp-formulation.md)
+- [System Elements](./specs/math/system-elements.md)
+- [Equipment Formulations](./specs/math/equipment-formulations.md)
+- [Block Formulations](./specs/math/block-formulations.md)
+- [Hydro Production Models](./specs/math/hydro-production-models.md)
+- [Penalty System](./specs/math/penalty-system.md)
+- [Inflow Non-Negativity Treatment](./specs/math/inflow-nonnegativity.md)
 
 ---
 
-# Reference
+# Part 3 — Stochastic Modelling
 
-- [Glossary](./reference/glossary.md)
-- [Bibliography](./reference/bibliography.md)
-- [Notation](./reference/notation.md)
+- [PAR Inflow Model](./specs/math/par-inflow-model.md)
+- [Multi-Resolution Studies](./specs/math/multi-resolution-studies.md)
+- [Weekly+Monthly Coupled Studies](./specs/math/weekly-monthly-coupled-studies.md)
+- [Scenario Generation](./specs/math/scenario-generation.md)
+
+---
+
+# Part 4 — The SDDP Algorithm
+
+- [SDDP Algorithm](./specs/math/sddp-algorithm.md)
+- [Cut Management](./specs/math/cut-management.md)
+- [Warm-Start Basis Prediction](./specs/math/warm-start-basis-prediction.md)
+- [LP Warm-Start](./specs/math/lp-warm-start.md)
+- [Risk Measures](./specs/math/risk-measures.md)
+- [Stopping Rules](./specs/math/stopping-rules.md)
+- [Upper-Bound Evaluation](./specs/math/upper-bound-evaluation.md)
+- [Determinism Guarantees](./specs/math/determinism-guarantees.md)
+- [Reproducibility and Provenance](./specs/math/reproducibility-and-provenance.md)
+
+---
+
+# Part 5 — Coupling and Boundary Conditions
+
+- [Horizon Modes](./specs/math/horizon-modes.md)
+- [Discount-Rate Handling](./specs/math/discount-rate.md)
+
+---
+
+# Part 6 — Worked Examples
+
+- [Toy Single-Reservoir Walkthrough](./specs/examples/toy-single-reservoir.md)
+- [Toy Four-Reservoir Walkthrough](./specs/examples/toy-four-reservoir.md)
+
+---
+
+# Part 7 — Reference
+
+- [Glossary](./specs/reference/glossary.md)
+- [Bibliography](./specs/reference/bibliography.md)
+
+<!--
+This file is the staging TOC for the methodology revamp. It is NOT the
+live mdBook SUMMARY (the live one is SUMMARY.md). On release (Epic 08),
+this file replaces SUMMARY.md atomically.
+
+See docs/design/v0.5.0-spec-sync-plan.md §4 for the source.
+-->

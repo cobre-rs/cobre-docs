@@ -360,7 +360,7 @@ section 2 as `(secondary)`, including deferred crates.
 
 The GIL contract in `src/specs/interfaces/python-bindings.md` is a 6-point contract (current
 authoritative count). When any numbered contract is extended, update the count reference
-in this spec — crate overview files now live in the software book at https://cobre-rs.github.io/cobre/.
+in this spec — crate overview files now live in the software book at https://docs.cobre-rs.dev/.
 
 MPI prohibition has three independent reasons:
 

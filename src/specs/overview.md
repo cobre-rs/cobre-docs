@@ -3,7 +3,7 @@
 > **Note**: These specifications were written before implementation to define
 > contracts and interfaces. With all 8 phases complete, the source of truth for
 > behavior is the [source code](https://github.com/cobre-rs/cobre) and the
-> [software book](https://cobre-rs.github.io/cobre/). These specs remain as
+> [software book](https://docs.cobre-rs.dev/). These specs remain as
 > reference for the design rationale behind implementation decisions.
 
 > **Internal development artifacts**: This section is intended for Cobre

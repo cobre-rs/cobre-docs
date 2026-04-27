@@ -18,7 +18,7 @@ The book is organised into seven Parts. Each Part corresponds to a distinct laye
 
 **Part 5 — Coupling and Boundary Conditions** covers the choices that arise at the horizon boundaries: how the first stage is initialised, how the terminal condition is handled, and how discount rates interact with the cut approximation. This Part also covers the horizon-mode design that governs which boundary conditions apply to a given study. See [Horizon Modes](../math/horizon-modes.md) for the entry point.
 
-**Part 6 — Worked Examples** provides end-to-end walkthroughs of two reference cases: the 1dtoy single-reservoir system and the 4ree four-reservoir system. These chapters trace a complete run from case configuration through training convergence to result interpretation. Readers learning Cobre by doing should start with the worked examples after reading Part 1.
+**Part 6 — Worked Examples** provides two pedagogical walkthroughs of the SDDP loop: a single-reservoir toy case and a four-reservoir toy case, both small enough to verify by hand. These chapters trace one complete iteration with concrete numbers, demonstrating the forward pass, backward pass, cut construction, and lower-bound update. The two cases are simplified illustrations rather than reproductions of the shipped reference cases at `examples/1dtoy/` and `examples/4ree/`. Readers learning SDDP by doing should start with the worked examples after reading Part 1.
 
 **Part 7 — Reference** contains the glossary, bibliography, and notation index. Use Part 7 as a lookup resource during reading, not as a starting point.
 

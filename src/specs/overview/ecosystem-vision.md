@@ -223,8 +223,8 @@ The alternative — SDDP-specific infrastructure — would require a large refac
 - [Design Principles](./design-principles.md) — Detailed design principles governing format selection, declaration order invariance, and agent-readability across the specification corpus
 - [Ecosystem Guidelines](./ecosystem-guidelines.md) — Durable authoring conventions for the Cobre specification corpus; invariants checklist for spec authoring tasks
 - [Implementation Ordering](./implementation-ordering.md) — 8-phase build sequence for the SDDP vertical with per-phase spec reading lists and dependency DAG
-- [cobre-core crate overview](https://cobre-rs.github.io/cobre/crates/core.html) — Power system entity model: entity types, collection structs, and canonicalization requirements
-- [cobre-solver crate overview](https://cobre-rs.github.io/cobre/crates/solver.html) — LP solver abstraction: HiGHS and CLP backends, compile-time selection, solver workspace design
-- [cobre-sddp crate overview](https://cobre-rs.github.io/cobre/crates/sddp.html) — SDDP hydrothermal dispatch vertical: training loop, cut management, scenario pipeline
+- [cobre-core crate overview](https://docs.cobre-rs.dev/crates/core.html) — Power system entity model: entity types, collection structs, and canonicalization requirements
+- [cobre-solver crate overview](https://docs.cobre-rs.dev/crates/solver.html) — LP solver abstraction: HiGHS and CLP backends, compile-time selection, solver workspace design
+- [cobre-sddp crate overview](https://docs.cobre-rs.dev/crates/sddp.html) — SDDP hydrothermal dispatch vertical: training loop, cut management, scenario pipeline
 - [Solver Abstraction](../architecture/solver-abstraction.md) — LP variable layout, solver interface design, and compile-time backend selection
 - [Scenario Generation](../architecture/scenario-generation.md) — PAR(p) scenario generation pipeline, sampling abstraction, and inflow model integration

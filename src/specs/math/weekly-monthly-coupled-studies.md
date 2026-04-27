@@ -175,7 +175,7 @@ from the monthly run — the monthly run itself need not be re-executed.
 
 For horizon-mode semantics and the mechanics of how Cobre represents terminal
 conditions across study boundaries, see
-[Infinite Horizon](./infinite-horizon.md).
+[Horizon Modes](./horizon-modes.md).
 
 ## Cross-References
 
@@ -192,5 +192,5 @@ conditions across study boundaries, see
 - [Multi-Resolution Studies](./multi-resolution-studies.md) — The sibling
   chapter covering mixed-resolution stages within a single study; addresses
   duration-weighted aggregation rather than two-study coupling
-- [Infinite Horizon](./infinite-horizon.md) — Periodic structure and horizon
-  modes; context for how terminal conditions are represented at study boundaries
+- [Horizon Modes](./horizon-modes.md) — Finite vs cyclic policy graphs;
+  context for how terminal conditions are represented at study boundaries

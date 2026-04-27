@@ -187,5 +187,5 @@ order is $p_m^* = 0$ (white-noise model, no autoregressive structure).
 ---
 
 > **See also**: For implementation details and usage, see the
-> [Stochastic Modeling guide](https://cobre-rs.github.io/cobre/guide/stochastic-modeling.html)
+> [Stochastic Modeling guide](https://docs.cobre-rs.dev/guide/stochastic-modeling.html)
 > in the software book.

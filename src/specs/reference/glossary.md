@@ -1,0 +1,160 @@
+# Glossary
+
+Terminology used in the methodology chapters of this book, with Portuguese
+equivalents where they appear in Brazilian regulatory or operational
+documentation. Citations to source papers for the more technical entries
+live in [Bibliography](./bibliography.md).
+
+---
+
+## Power System
+
+| English   | Portuguese       | Definition                                                                                                                                                                                                                                            |
+| --------- | ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Block     | Patamar          | An intra-stage time period (e.g., peak, shoulder, off-peak) representing load-level variation within a stage. Cobre supports two block topologies: **parallel** (independent dispatches) and **chronological** (sequential, with carry-over storage). |
+| Bus       | Barramento       | A node in the electrical network where generation, demand, and transmission lines connect.                                                                                                                                                            |
+| Line      | Linha / Circuito | A transmission line or transformer connecting two buses, modelled with a directional capacity and an exchange cost.                                                                                                                                   |
+| Subsystem | Subsistema       | A region of the interconnected grid (in Brazil: SE/CO, S, NE, N).                                                                                                                                                                                     |
+| Exchange  | Intercâmbio      | Power transfer between buses across a transmission line.                                                                                                                                                                                              |
+| Load      | Carga / Demanda  | Electrical power consumption at a bus, possibly varying per block via a load-factor table.                                                                                                                                                            |
+| Deficit   | Déficit          | Unmet demand — load that cannot be served by available generation. Modelled as a slack variable with a high penalty cost.                                                                                                                             |
+
+---
+
+## Hydro Generation
+
+| English          | Portuguese                                 | Definition                                                                                                                                                                                                           |
+| ---------------- | ------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Hydro plant      | Usina hidrelétrica (UHE)                   | A hydroelectric generating station.                                                                                                                                                                                  |
+| Reservoir        | Reservatório                               | Water storage volume behind a dam.                                                                                                                                                                                   |
+| Storage          | Armazenamento                              | Current water volume in a reservoir, in hm³. The primary state variable in SDDP.                                                                                                                                     |
+| Inflow           | Afluência / Vazão natural                  | Natural water flow arriving at a reservoir, modelled stochastically by a PAR(p) model (or 0-order seasonal sampling for the $p = 0$ degenerate case).                                                                |
+| Turbined outflow | Vazão turbinada                            | Water passing through turbines to generate electricity.                                                                                                                                                              |
+| Spillage         | Vertimento                                 | Water released from a reservoir without generating electricity.                                                                                                                                                      |
+| Cascade          | Cascata                                    | Sequence of hydro plants along the same river, where downstream reservoirs receive turbined plus spilled water from upstream plants.                                                                                 |
+| Downstream       | Jusante                                    | Direction of water flow; the plant that receives outflow from upstream.                                                                                                                                              |
+| Upstream         | Montante                                   | Direction against water flow; the plant whose outflow feeds a downstream plant.                                                                                                                                      |
+| Productivity     | Produtibilidade                            | Conversion factor from water flow (m³/s) to power (MW).                                                                                                                                                              |
+| Run-of-river     | Fio d'água                                 | Hydro plant with no significant storage capacity; storage variable bounds collapse to a single point.                                                                                                                |
+| Diversion        | Desvio                                     | Water bypassed to a separate channel, not passing through turbines.                                                                                                                                                  |
+| Evaporation      | Evaporação                                 | Water loss from the reservoir surface; can be negative under monthly-net conventions, requiring a bidirectional slack.                                                                                               |
+| Forebay level    | Nível de montante                          | Water level at the upstream face of the dam, a function of reservoir storage.                                                                                                                                        |
+| Tailrace level   | Nível de jusante                           | Water level at the downstream channel below the dam, a function of total outflow.                                                                                                                                    |
+| Head             | Queda                                      | Height difference between forebay and tailrace levels, determining generation efficiency.                                                                                                                            |
+| FPHA             | Função de Produção Hidrelétrica Aproximada | Approximate Hydroelectric Production Function — piecewise-linear model of hydro generation as a function of storage, turbined flow, and spillage. See [Hydro Production Models](../math/hydro-production-models.md). |
+| Dead volume      | Volume morto                               | The portion of the reservoir below the minimum operating storage; reservoirs in commissioning are filled to dead volume before entering normal operation.                                                            |
+
+---
+
+## Thermal Generation
+
+| English             | Portuguese                       | Definition                                                                                              |
+| ------------------- | -------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| Thermal unit        | Usina termelétrica (UTE)         | A fossil-fuel or nuclear generating station.                                                            |
+| Minimum generation  | Geração mínima / Inflexibilidade | Minimum output when the unit is committed; modelled as a soft constraint with a penalty slack in Cobre. |
+| Operating cost      | Custo variável unitário (CVU)    | Variable cost per MWh of generation.                                                                    |
+| Marginal cost (CMO) | Custo Marginal de Operação       | Shadow price of the bus load-balance constraint — the cost of one additional MWh of demand at that bus. |
+
+---
+
+## Stochastic Modelling
+
+| English                | Portuguese               | Definition                                                                                                                                                                                                                                              |
+| ---------------------- | ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Scenario               | Cenário                  | One realisation of uncertain quantities (inflows, load, non-controllable sources) along the planning horizon.                                                                                                                                           |
+| Stage                  | Estágio                  | A time period in the planning horizon — typically a month, week, or hour.                                                                                                                                                                               |
+| State variable         | Variável de estado       | Variables that link one stage to the next: storage volumes (always) and AR-lag state (only for PAR(p) with $p \geq 1$).                                                                                                                                 |
+| PAR(p)                 | PAR(p)                   | Periodic Autoregressive model of order $p$ for inflow generation. The order $p_m$ can vary by season $m$; $p_m = 0$ corresponds to white-noise (0-order) seasonal sampling.                                                                             |
+| 0-order inflow         | -                        | The degenerate $p = 0$ case of the PAR(p) model: $a_t = \mu_t + \sigma_t \varepsilon_t$ with $\varepsilon_t \sim \mathcal{N}(0,1)$ iid. No AR-lag state, no AR coefficients in the data file.                                                           |
+| Innovation             | Inovação                 | The independent standardised noise term $\varepsilon_t \sim \mathcal{N}(0,1)$ in the PAR(p) model, representing the unpredictable component after removing autoregressive structure.                                                                    |
+| AR lag                 | Defasagem                | Past inflow values $a_{h, t-\ell}$ that enter the PAR(p) recursion for $p \geq 1$. Stored as state variables in the LP and bound to the previous stage's realised inflow via fixing constraints.                                                        |
+| Yule-Walker equations  | Equações de Yule-Walker  | System of linear equations relating autoregressive coefficients to sample autocorrelations. Cobre uses the **periodic** Yule-Walker variant where the reference season shifts per row to handle multi-season covariance structure.                      |
+| Spatial correlation    | Correlação espacial      | Cross-hydro covariance structure between innovations $\varepsilon_h$. Applied via spectral factorisation $\varepsilon = L\, z$ with $L L^{\top} = \Sigma$, where $z \sim \mathcal{N}(0, I)$.                                                            |
+| Seasonal mean / std    | Média / desvio sazonal   | Per-season parameters $\mu_m, \sigma_m$ stored in `inflow_seasonal_stats.parquet` and used both for sampling 0-order inflows and for converting standardised PAR coefficients to original units.                                                        |
+| Opening                | Abertura                 | A pre-generated noise vector $\varepsilon$ used to evaluate the backward pass at one branch of the scenario tree.                                                                                                                                       |
+| Opening tree           | Árvore de aberturas      | The fixed set of pre-generated noise vectors used in the backward pass; generated once before training begins and reused across all iterations. Each stage carries `num_scenarios` openings. See [Scenario Generation](../math/scenario-generation.md). |
+| In-sample sampling     | Amostragem in-sample     | Forward-pass scheme that draws trajectories from the same opening tree the backward pass uses. Default in Cobre.                                                                                                                                        |
+| Out-of-sample sampling | Amostragem out-of-sample | Forward-pass scheme that draws trajectories from a separate, independent set of openings. Used for unbiased upper-bound estimation.                                                                                                                     |
+
+---
+
+## SDDP Algorithm
+
+| English                      | Portuguese                     | Definition                                                                                                                                                                                                                                          |
+| ---------------------------- | ------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Stage subproblem (stage LP)  | Subproblema de estágio         | The linear programme solved at one stage given an incoming state and a scenario realisation. Carries the cuts accumulated for that stage as constraints on the future-cost variable $\theta$.                                                       |
+| Bellman recursion            | Recursão de Bellman            | Recursive equation $V_t(x_{t-1}) = \min_{x_t}\, c_t(x_t) + d \cdot \mathbb{E}[V_{t+1}(x_t)]$ that defines the cost-to-go functions and underlies the SDDP backward pass.                                                                            |
+| Cost-to-go function          | Função de custo futuro (FCF)   | Expected cost from the current stage to the end of the horizon, as a function of the incoming state. Convex and piecewise-linear under LP subproblems.                                                                                              |
+| Cut (Benders cut)            | Corte (de Benders)             | A linear inequality $\theta \geq \alpha + \pi^{\top} x$ providing a lower bound on the future-cost function. Generated in the backward pass from LP duals at trial states.                                                                          |
+| Cut intercept                | Intercepto                     | The scalar $\alpha$ in a cut, anchoring the hyperplane vertically.                                                                                                                                                                                  |
+| Cut slope (cut coefficient)  | Coeficiente do corte           | The vector $\pi$ in a cut, giving the partial derivative of the future-cost function with respect to each state variable. Negative for storage (more storage means lower cost) under the methodology's sign convention.                             |
+| Fixing constraint            | -                              | An explicit equality $x^{in} = \hat{x}_{t-1}$ added to the stage LP to bind an incoming-state variable to the trial value. Its dual is the cut coefficient for that state directly, with no preprocessing needed.                                   |
+| Trial point                  | Ponto amostral                 | The state visited during a forward pass, used as the anchor where the backward pass evaluates per-opening LPs and aggregates a cut.                                                                                                                 |
+| Forward pass                 | Passagem direta                | Phase that simulates the policy by solving stage LPs sequentially under sampled scenarios, producing trial points and a statistical upper-bound estimate.                                                                                           |
+| Backward pass                | Passagem reversa               | Phase that walks stages in reverse, evaluates all openings at each trial point, extracts duals, and aggregates one cut per stage.                                                                                                                   |
+| Single-cut formulation       | Formulação de corte único      | Aggregation scheme that produces one cut per (stage, trial point) by averaging per-opening cuts with probability weights. Cobre's default. Contrasted with the **multi-cut** formulation (one cut per opening), which Cobre does not currently use. |
+| Outer approximation          | Aproximação exterior           | The piecewise-linear lower bound on the future-cost function constructed from accumulated Benders cuts. The primary output of SDDP training.                                                                                                        |
+| Cut pool                     | Conjunto de cortes             | Collection of all cuts at a given stage. Append-only across iterations within one training run.                                                                                                                                                     |
+| Level-1 cut selection        | -                              | Cut-selection strategy that periodically deactivates cuts that have never been binding, controlling pool growth without losing the binding outer approximation.                                                                                     |
+| Lower bound                  | Limite inferior                | Estimate from solving the stage-1 LP with all cuts active; non-decreasing as cuts accumulate.                                                                                                                                                       |
+| Upper bound                  | Limite superior                | Statistical estimate of policy cost from forward-pass simulations (in-sample or out-of-sample), or a deterministic estimate from an inner approximation.                                                                                            |
+| Optimality gap               | Gap de otimalidade             | Relative difference between upper and lower bounds, the primary convergence diagnostic.                                                                                                                                                             |
+| Bound stalling               | -                              | Stopping criterion that fires when the lower bound stops increasing across a configurable window of iterations.                                                                                                                                     |
+| Dual variable                | Variável dual / Multiplicador  | Shadow price from an LP solution; indicates the marginal value of a constraint right-hand side.                                                                                                                                                     |
+| Epigraph variable            | -                              | The auxiliary LP variable $\theta$ that lower-bounds the true cost-to-go function $V_{t+1}(x_t)$; named after the epigraph of a convex function.                                                                                                    |
+| Relatively complete recourse | Recurso relativamente completo | Property that every stage LP is feasible for any incoming state and scenario realisation. Cobre ensures this via penalty slack variables on every constraint that could otherwise be violated.                                                      |
+| Trajectory record            | Trajetória                     | Data structure capturing one stage's forward-pass result: primal solution, dual solution, stage cost, and end-of-stage state. Used for cut-coefficient extraction in the backward pass and for simulation output.                                   |
+
+---
+
+## Boundary Conditions and Horizon Modes
+
+| English                       | Portuguese        | Definition                                                                                                                                                                                                                                                                     |
+| ----------------------------- | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Policy graph                  | Grafo de política | Directed graph defining the stage structure and transitions of an SDDP problem. Cobre supports finite (acyclic chain) and cyclic policy graphs.                                                                                                                                |
+| Finite horizon (acyclic mode) | Horizonte finito  | Policy graph with a single terminal stage and zero terminal cost-to-go. Susceptible to the **end-of-world effect**: reservoirs are systematically emptied near the terminal stage.                                                                                             |
+| Cyclic mode                   | Modo cíclico      | Policy graph with a back-edge that returns from the last stage of a cycle to the first stage of the next repetition. Used for long-term studies where a finite terminal condition would distort the policy. Replaces what older Brazilian literature calls "infinite horizon". |
+| Season function $\tau(t)$     | Função de estação | The position of stage $t$ within one cycle of length $P$: $\tau(t) = (t-1) \bmod P + 1$. In cyclic mode, cuts are pooled by season, not by absolute stage.                                                                                                                     |
+| Cycle convergence inequality  | -                 | The requirement $d_{\text{cycle}} = \prod_{t \in \text{cycle}} d_{t \to t+1} < 1$ for the cumulative discount around one cycle, ensuring the value function remains finite across infinite repetitions.                                                                        |
+| Discount factor               | Fator de desconto | Multiplicative factor $d \in (0, 1]$ applied to the future-cost variable $\theta$ in the stage objective, reflecting the time value of future costs. Required (strictly less than 1) for cyclic-mode convergence.                                                              |
+| Terminal boundary cut         | -                 | A Benders cut on the terminal future-cost function imported from an upstream Cobre run, used to chain studies (e.g., a weekly run inheriting the monthly run's terminal cuts).                                                                                                 |
+
+---
+
+## Risk Measures
+
+| English               | Portuguese               | Definition                                                                                                                                                                                                                                        |
+| --------------------- | ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Coherent risk measure | Medida de risco coerente | A risk measure satisfying monotonicity, translation equivariance, positive homogeneity, and subadditivity. CVaR is the canonical example used in SDDP.                                                                                            |
+| CVaR                  | CVaR                     | Conditional Value at Risk at level $\alpha$ — the expected cost in the worst $\alpha\%$ of scenarios. The basis for risk-averse aggregation weights in SDDP.                                                                                      |
+| EAVaR                 | -                        | Expectation plus Average Value-at-Risk: the convex combination $(1-\lambda)\,\mathbb{E}[Z] + \lambda \cdot \text{CVaR}_\alpha[Z]$ used as Cobre's parameterised risk measure. $\lambda = 0$ recovers risk-neutral; $\lambda = 1$ gives pure CVaR. |
+| Risk-neutral          | Neutro ao risco          | Optimisation that minimises expected cost only. Probability weights at cut aggregation are uniform $p_\omega = 1/N$.                                                                                                                              |
+| Risk-averse           | Averso ao risco          | Optimisation that penalises high-cost tail scenarios. Cut aggregation reweights toward worse outcomes via the EAVaR formula.                                                                                                                      |
+
+---
+
+## Solver and LP
+
+| English        | Portuguese       | Definition                                                                                                                                                                                                                          |
+| -------------- | ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| LP             | Programa Linear  | Linear Program — an optimisation problem with a linear objective and linear constraints.                                                                                                                                            |
+| Simplex method | Método Simplex   | Algorithm for solving linear programs by traversing vertices of the feasible polytope. Cobre's default warm-start strategy targets simplex bases.                                                                                   |
+| Basis          | Base             | The set of basic variables defining a vertex of the LP feasible region; reused across iterations for warm-starting.                                                                                                                 |
+| Warm-start     | Partida a quente | Reusing a previous solution basis (or basis prediction) to accelerate the simplex method on a modified LP. See [LP Warm-Start](../math/lp-warm-start.md) and [Warm-Start Basis Prediction](../math/warm-start-basis-prediction.md). |
+| HiGHS          | -                | Open-source LP / MIP solver used as Cobre's default backend.                                                                                                                                                                        |
+| CLP            | -                | Open-source LP solver from COIN-OR, available as an alternative compile-time backend.                                                                                                                                               |
+
+---
+
+## Brazilian Power-System Ecosystem
+
+| Term   | Definition                                                                                                                                                                      |
+| ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| ONS    | Operador Nacional do Sistema Elétrico — the Brazilian grid operator.                                                                                                            |
+| CEPEL  | Centro de Pesquisas de Energia Elétrica — R&D centre that develops the official NEWAVE / DECOMP / DESSEM dispatch programs.                                                     |
+| SIN    | Sistema Interligado Nacional — the Brazilian interconnected power system.                                                                                                       |
+| NEWAVE | CEPEL's long-term hydrothermal-dispatch model (monthly stages, multi-year horizon).                                                                                             |
+| DECOMP | CEPEL's medium-term dispatch model (weekly resolution). The "DECOMP-style" scenario tree (deterministic trunk with branching at the last stage) takes its name from this model. |
+| DESSEM | CEPEL's short-term dispatch model (hourly / half-hourly, day-ahead).                                                                                                            |
+| GEVAZP | CEPEL's synthetic scenario-generation tool for hydro inflows.                                                                                                                   |
+| CCEE   | Câmara de Comercialização de Energia Elétrica — Brazilian electricity-trading chamber.                                                                                          |

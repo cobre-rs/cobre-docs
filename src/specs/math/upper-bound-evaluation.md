@@ -262,9 +262,9 @@ The out-of-sample simulation described here is the per-iteration measurement on 
 
 > **Boundary**: this section owns the methodology of the per-iteration estimator; the scenario seed derivation, the distribution of replications across compute resources, and the per-stage cost comparison metric belong to the stopping-rule integration and are specified in [Stopping Rules](./stopping-rules.md) section 5.
 
-## 11 Infinite Horizon
+## 11 Cyclic Mode
 
-For cyclic policy graphs (see [Infinite Horizon](infinite-horizon.md)), the inner approximation operates on the same seasonal cut-pool structure: vertices are organized by season $\tau$, not by absolute stage ID. The Lipschitz constant must account for the cumulative discount around the cycle, which bounds the geometric series of future contributions.
+For cyclic policy graphs (see [Horizon Modes](horizon-modes.md)), the inner approximation operates on the same seasonal cut-pool structure: vertices are organized by season $\tau$, not by absolute stage ID. The Lipschitz constant must account for the cumulative discount around the cycle, which bounds the geometric series of future contributions.
 
 The convergence guarantee still holds: with $d_{cycle} < 1$, both the outer (cut) and inner (vertex) approximations converge to the true value function at the fixed point.
 
@@ -279,7 +279,7 @@ The convergence guarantee still holds: with $d_{cycle} < 1$, both the outer (cut
 - [SDDP Algorithm](sddp-algorithm.md) — Core algorithm providing the outer approximation (lower bound) that this spec complements
 - [Notation Conventions](../overview/notation-conventions.md) — Standard symbols for state variables, value functions, and cost-to-go
 - [Discount Rate](discount-rate.md) — Discount factor $d$ used in vertex value computation (section 5) and Lipschitz accumulation (section 4)
-- [Infinite Horizon](infinite-horizon.md) — Seasonal vertex organization for cyclic policy graphs
+- [Horizon Modes](horizon-modes.md) — Cyclic policy graphs and the season-indexed pool structure that the inner approximation mirrors
 - [Cut Management](cut-management.md) — Outer approximation cuts that provide the lower bound counterpart
 - [Stopping Rules](stopping-rules.md) — Convergence criteria that use the gap between inner and outer approximations; simulation-based stopping rule that consumes the per-iteration out-of-sample estimator (section 10.5)
 - [Risk Measures](risk-measures.md) — CVaR objectives where deterministic upper bounds are essential; CVaR estimator validity under risk-averse policies (section 10.1)
