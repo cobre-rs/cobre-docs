@@ -20,7 +20,7 @@ The book is organised into seven Parts. Each Part corresponds to a distinct laye
 
 **Part 6 — Worked Examples** provides two pedagogical walkthroughs of the SDDP loop: a single-reservoir toy case and a four-reservoir toy case, both small enough to verify by hand. These chapters trace one complete iteration with concrete numbers, demonstrating the forward pass, backward pass, cut construction, and lower-bound update. The two cases are simplified illustrations rather than reproductions of the shipped reference cases at `examples/1dtoy/` and `examples/4ree/`. Readers learning SDDP by doing should start with the worked examples after reading Part 1.
 
-**Part 7 — Reference** contains the glossary, bibliography, and notation index. Use Part 7 as a lookup resource during reading, not as a starting point.
+**Part 7 — Reference** contains the glossary and bibliography. Use Part 7 as a lookup resource during reading, not as a starting point.
 
 ## 2. Tools and Interfaces
 

@@ -24,7 +24,7 @@ At convergence, Cobre provides three bounds on the optimal policy cost:
 
 1. **Lower bound** — the objective value of the stage-zero LP with the current cut approximation. This bound increases monotonically across iterations and converges to the true optimal value.
 2. **Statistical upper bound** — the sample average cost of forward simulations under the current policy, with a confidence interval. This bound decreases as the policy improves.
-3. **Deterministic upper bound** — the cost of a fixed-tree simulation that eliminates sampling noise, used for final convergence assessment.
+3. **Statistical upper bound** — the sample-average cost of out-of-sample forward simulations, with a confidence interval, used for final convergence assessment.
 
 In addition, Cobre provides a **determinism guarantee**: given the same input data, results are identical regardless of the number of MPI ranks or threads used during execution. This guarantee is a property of the algorithm design, not an approximation.
 
@@ -63,5 +63,5 @@ The following principles govern how Cobre is built and how this book describes i
 - [The SDDP Framework in One Page](./sddp-framework-overview.md) — one-page algorithmic framing: forward simulation, backward cut generation, and convergence bounds
 - [How to Read This Book](./how-to-read.md) — navigation guide for the seven-Part structure of this book
 - [SDDP Algorithm](../math/sddp-algorithm.md) — full algorithmic treatment: stage LPs, cut generation, convergence theory
-- [Determinism Guarantees](../math/determinism-guarantees.md) — bit-identical result scope, four coordinating mechanisms, and out-of-scope statement (Part 4.12)
-- [Reproducibility and Provenance](../math/reproducibility-and-provenance.md) — five provenance categories and bookkeeping commitment (Part 4.13)
+- [Determinism Guarantees](../math/determinism-guarantees.md) — bit-identical result scope, four coordinating mechanisms, and out-of-scope statement (Part 4.8)
+- [Reproducibility and Provenance](../math/reproducibility-and-provenance.md) — five provenance categories and bookkeeping commitment (Part 4.9)

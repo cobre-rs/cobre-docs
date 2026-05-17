@@ -218,11 +218,11 @@ Dual variables are essential for cut coefficient computation in SDDP. This secti
 
 ### 5.1 LP Formulation Strategy for Efficient Hot-Path Updates
 
-In the SDDP algorithm, each subproblem solve requires setting the **incoming state** values (storage volumes and AR lags from the previous stage). For computational efficiency with solvers like HiGHS, we formulate constraints so that:
+In the SDDP algorithm, each subproblem solve requires setting the **incoming state** values (storage volumes and AR lags from the previous stage). For computational efficiency with solvers like HiGHS, constraints are formulated so that:
 
 > **Design Principle**: All incoming state variables are **isolated on the right-hand side (RHS)** of their respective constraints.
 
-This allows the hot path (forward/backward passes) to update subproblems by simply modifying row bounds via `changeRowBounds()` without rebuilding constraint matrices. The LP matrix coefficients remain constant across all subproblem solves within a stage.
+This design allows the hot path to update incoming state values by patching row bounds without rebuilding the constraint matrix — only scalar values change between solves, not LP structure.
 
 ### 5.2 Water Balance: LP Form
 
@@ -349,7 +349,7 @@ The cut coefficient for lag $\ell$ is the dual variable $\pi^{lag}_{h,\ell}$ dir
 
 ### 5.6 Implementation Notes
 
-The key property: since incoming state variables appear on the RHS of fixing constraints with coefficient $+1$, no sign change is needed when mapping duals to cut coefficients ($\pi^v_h = \pi^{fix}_h$; for AR lags, $\pi^{lag}_{h,\ell}$ is used directly). Cut coefficient extraction is a single contiguous slice read: `dual[0..n_state]`.
+The key property: since incoming state variables appear on the RHS of fixing constraints with coefficient $+1$, no sign change is needed when mapping duals to cut coefficients ($\pi^v_h = \pi^{fix}_h$; for AR lags, $\pi^{lag}_{h,\ell}$ is used directly). Accordingly, the cut coefficient extraction reads a single contiguous slice of the dual vector covering the state-variable rows.
 
 **Verification check**: In a typical hydrothermal system:
 
@@ -359,8 +359,6 @@ The key property: since incoming state variables appear on the RHS of fixing con
 
 ## Cross-References
 
-- [Design Principles](./design-principles.md) — Foundational design goals and format selection criteria
-- [Production Scale Reference](./production-scale-reference.md) — Typical sizes for each index set and state dimension estimates
 - [LP Formulation](../math/lp-formulation.md) — Complete LP subproblem using this notation
 - [SDDP Algorithm](../math/sddp-algorithm.md) — Algorithm overview and cut generation process
 - [Cut Management](../math/cut-management.md) — Cut coefficient computation and aggregation details

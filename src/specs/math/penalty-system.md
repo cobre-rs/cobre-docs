@@ -276,4 +276,3 @@ minimize:
 
 - [LP Formulation](./lp-formulation.md) — Cost taxonomy (§1) and penalty terms (§9)
 - [Inflow Non-Negativity](./inflow-nonnegativity.md) — Penalty method for inflow non-negativity
-- [Design Principles](../overview/design-principles.md) — General design approach

@@ -12,7 +12,7 @@ For notation conventions (index sets, parameters, decision variables, dual varia
 
 ## 1 Motivation
 
-Standard SDDP provides only a **lower bound** (outer approximation) through cuts. For convergence verification, we need an **upper bound** (inner approximation). This is especially important for:
+Standard SDDP provides only a **lower bound** (outer approximation) through cuts. Convergence verification requires an **upper bound** (inner approximation). This is especially important for:
 
 1. **Risk-averse problems**: CVaR objectives cannot be reliably estimated via Monte Carlo simulation of the policy
 2. **Convergence certificates**: Gap $= \bar{z} - \underline{z}$ provides a true optimality measure

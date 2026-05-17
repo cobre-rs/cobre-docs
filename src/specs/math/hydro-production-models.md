@@ -80,7 +80,7 @@ where:
 - $h_{tail}(q_{out})$ = tailrace (downstream channel) level as function of total outflow
 - $h_{loss}(q)$ = hydraulic head losses in penstock and turbines
 
-**Why linearization is needed**: $\phi$ is nonlinear in $(v, q)$ due to the bilinear product $q \times h_{net}$, nonlinear topology functions $h_{fore}(v)$ and $h_{tail}(q_{out})$, and flow-dependent hydraulic losses. For LP formulation, we approximate $\phi$ with a set of linear hyperplanes.
+**Why linearization is needed**: $\phi$ is nonlinear in $(v, q)$ due to the bilinear product $q \times h_{net}$, nonlinear topology functions $h_{fore}(v)$ and $h_{tail}(q_{out})$, and flow-dependent hydraulic losses. For LP formulation, Cobre approximates $\phi$ with a set of linear hyperplanes.
 
 ### 2.3 Topology Functions
 

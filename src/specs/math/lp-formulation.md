@@ -505,7 +505,7 @@ Column bounds and objective coefficients are not modified by row scaling.
 
 The combined scaling produces the standard $D_r \cdot A \cdot D_c$ form where $D_r$ and $D_c$ are diagonal scaling matrices.
 
-> **Dual unscaling**: LP duals are in the scaled problem's space. To recover original-unit duals: $\pi_i^{original} = \pi_i^{scaled} \cdot d_i^{row} \cdot K$. The per-column and per-row scale factors are stored in the `StageTemplate` for use during dual extraction and cut coefficient computation.
+> **Dual unscaling**: LP duals are in the scaled problem's space. To recover original-unit duals: $\pi_i^{original} = \pi_i^{scaled} \cdot d_i^{row} \cdot K$. The per-column and per-row scale factors are stored in the stage LP template for use during dual extraction and cut coefficient computation.
 
 ## Cross-References
 

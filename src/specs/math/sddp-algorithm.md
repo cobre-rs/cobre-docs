@@ -145,7 +145,6 @@ For implementation, see the cobre developer-guide.
 
 The standard SDDP formulation uses an acyclic directed graph:
 
-<!-- TODO: diagram - Finite Horizon Policy Graph -->
 
 - **Nodes**: Stages $t \in \{1, \ldots, T\}$
 - **Arcs**: Transitions with probabilities (typically deterministic: $p = 1$)
@@ -155,7 +154,6 @@ The standard SDDP formulation uses an acyclic directed graph:
 
 For long-term planning, Cobre supports **infinite periodic horizon** with cyclic graphs:
 
-<!-- TODO: diagram - Cyclic Policy Graph — Infinite Horizon -->
 
 - **Cycle**: Stage $T$ transitions back to stage $1$ (or a cycle start)
 - **Discount**: Cycle transitions require a discount factor $d < 1$ for convergence
@@ -167,7 +165,7 @@ See [Discount Rate](discount-rate.md) for the discounted Bellman equation and [H
 
 ## 5. State Variables and the Markov Property
 
-For SDDP to generate valid cuts, the subproblem must satisfy the **Markov property**: future costs depend only on the current state, not on how we arrived at that state.
+For SDDP to generate valid cuts, the subproblem must satisfy the **Markov property**: future costs depend only on the current state, not on the path by which the current state was reached.
 
 **State variables in Cobre**:
 
