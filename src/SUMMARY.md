@@ -68,9 +68,8 @@
 - [Bibliography](./specs/reference/bibliography.md)
 
 <!--
-This file is the staging TOC for the methodology revamp. It is NOT the
-live mdBook SUMMARY (the live one is SUMMARY.md). On release (Epic 08),
-this file replaces SUMMARY.md atomically.
-
-See docs/design/v0.5.0-spec-sync-plan.md §4 for the source.
+TOC source: docs/design/v0.5.0-spec-sync-plan.md §4.
+Where chapter counts differ from §4, the missing items are absorbed
+into existing chapter sections per §3.9 / §5.4 (spectral correlation),
+§5.5 (inflow non-negativity), §8.4 (no inputs/outputs Part).
 -->
