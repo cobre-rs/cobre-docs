@@ -388,6 +388,189 @@ No division, no mean subtraction, no repeated coefficient transformation — the
 | Deterministic base | $b_{h,m(t)}$       | One per hydro        | AR dynamics constraint RHS (fixed term)   | Precomputed from $\mu$ and $\psi$                               |
 | Noise scale        | $\sigma_{m(t)}$    | One per hydro        | AR dynamics constraint RHS (noise factor) | Derived from stored ratio and $s_m$ at initialization (§7.2)    |
 
+## 8. Annual Component Extension (PAR(p)-A)
+
+The classical PAR(p) model (§1) encodes hydrological memory only through its $p$ monthly lags. When
+the historical record exhibits persistent multi-year wet or dry episodes, $p$ monthly lags are
+insufficient: the model reverts toward the seasonal mean within a few periods. The
+**PAR(p)-A extension** adds one additional regressor — the rolling 12-month average inflow
+$\bar{A}_{h,t-1}$ — that explicitly captures the annual-scale hydrological tendency without
+requiring a very high AR order.
+
+### 8.1 Model Definition
+
+For hydro $h$ at stage $t$ with season $m = m(t)$, the PAR(p)-A model is:
+
+$$
+a_{h,t} = \mu_m + \sum_{\ell=1}^{p} \phi_{m,\ell} \left( a_{h,t-\ell} - \mu_{m-\ell} \right)
+         + \psi_m \left( \bar{A}_{h,t-1} - \mu^A_m \right) + \sigma_m \varepsilon_t
+$$
+
+where:
+
+- $\phi_{m,\ell}$: periodic AR coefficient for lag $\ell$ and season $m$ (same role as $\psi_{m,\ell}$
+  in §1; the notation distinguishes the classical lags from the annual coefficient below)
+- $\psi_m$: **annual component coefficient** for season $m$, expressed in the standardized
+  space of $\bar{A}$
+- $\bar{A}_{h,t-1}$: rolling 12-month average inflow at hydro $h$, centered on the period
+  immediately preceding stage $t$:
+
+$$
+\bar{A}_{h,t-1} = \frac{1}{12} \sum_{\tau=1}^{12} a_{h,t-\tau}
+$$
+
+- $\mu^A_m$: seasonal mean of $\bar{A}$ for season $m$ (see §8.2)
+- $\sigma_m$: residual standard deviation, same as in the classical model (§3)
+- $\varepsilon_t \sim \mathcal{N}(0,1)$: innovation noise
+
+When $\psi_m = 0$ the model reduces exactly to the classical PAR(p) (§1).
+
+### 8.2 Sample Statistics of the Annual Component
+
+To estimate $\psi_m$ and to convert it to original units, two seasonal statistics of $\bar{A}$ are
+required: its mean $\mu^A_m$ and its standard deviation $\sigma^A_m$.
+
+**Rolling average series.** For each hydro $h$ and chronological index $i$ (0-based), define:
+
+$$
+A_i = \frac{1}{12} \sum_{j=0}^{11} a_{h,i-j}
+$$
+
+The target date of $A_i$ is the date of observation $i$. This value is associated with the season
+of observation $i$.
+
+**Seasonal statistics.** For $N^A_m$ rolling-average values falling in season $m$:
+
+$$
+\hat{\mu}^A_m = \frac{1}{N^A_m} \sum_{i : m(i) = m} A_i
+$$
+
+$$
+\hat{\sigma}^A_m = \sqrt{\frac{1}{N^A_m - 1} \sum_{i : m(i) = m} \left( A_i - \hat{\mu}^A_m \right)^2}
+$$
+
+> **Note: Bessel correction divergence from the source literature.** The formula above uses
+> divisor $N^A_m - 1$ (Bessel-corrected sample standard deviation). The original PAR(p)-A
+> derivation (CEPEL DEA-1416/2020, eq. 18) uses the population divisor $N^A_m$. This
+> implementation intentionally diverges to match the `1/(N-1)` convention used throughout
+> the workspace by `estimate_seasonal_stats` (see §5.2). The two values differ by a factor
+> of $\sqrt{N^A_m / (N^A_m - 1)}$, which is negligible at typical historical sample sizes
+> ($N^A_m \geq 20$) but will produce a systematic discrepancy when cross-checking against
+> NEWAVE numerical outputs that follow the population formula.
+
+### 8.3 Extended Yule-Walker System
+
+Fitting the PAR(p)-A model requires estimating $p + 1$ unknowns per season: the $p$ classical AR
+coefficients $\phi^*_{m,1}, \ldots, \phi^*_{m,p}$ (in standardized form) and the annual coefficient
+$\psi_m$. The system in §5.4 is extended by one equation and one unknown.
+
+The $(p+1) \times (p+1)$ extended periodic Yule-Walker matrix for season $m$ appends a row and
+column for the cross-correlations between the monthly series $z_t = (a_{h,t} - \mu_m) / s_m$ and
+the rolling annual series. Concretely, two additional correlation quantities are needed:
+
+**Cross-correlation $\rho^{m-1}_{Z,A}(k-1)$** (last column of the AR block rows): the
+correlation between $z_{t-k}$ and $\bar{A}_{t-1}$, at reference season $m-1$.
+
+**Cross-correlation $\rho^{m-1}_{Z,A}(-1)$** (bottom-right element): the correlation between
+$\bar{A}_{t-1}$ and $z_t$, at reference season $m-1$.
+
+The solution vector $(\phi^*_{m,1}, \ldots, \phi^*_{m,p}, \psi_m)^\top$ is obtained by solving
+this extended system; the details of the full matrix structure follow directly from the periodic
+extension in §5.4.
+
+### 8.4 Original-Unit Reduction
+
+The annual component coefficient $\psi_m$ from the Yule-Walker solution is expressed in the
+standardized space of $\bar{A}$. To enter the LP, it must be converted to the same
+original-unit (m³/s) space as the classical AR coefficients. Define:
+
+$$
+\hat{\psi}_m = \psi_m \cdot \frac{\sigma_m}{\hat{\sigma}^A_m}
+$$
+
+where $\hat{\sigma}^A_m$ is the seasonal standard deviation of $\bar{A}$ from §8.2 and
+$\sigma_m$ is the residual standard deviation of the monthly series. $\hat{\psi}_m$ is the
+annual component coefficient in original units.
+
+**Why the rolling average collapses to per-lag coefficients.** The key observation is that
+$\bar{A}_{h,t-1}$ is a uniform-weight linear combination of the 12 most recent monthly inflows:
+
+$$
+\bar{A}_{h,t-1} = \frac{1}{12} \sum_{j=1}^{12} a_{h,t-j}
+$$
+
+Substituting this into the PAR(p)-A model equation (§8.1) and collecting terms by lag, the
+annual regressor contributes $\hat{\psi}_m / 12$ to the coefficient on every lag $j \in \{1, \ldots, 12\}$.
+Combined with the classical AR contribution $\hat{\phi}_{m,j}$ (which is non-zero only for
+$j \leq p$), the effective per-lag coefficient $\tilde{\phi}_{m,j}$ entering the LP is:
+
+$$
+\tilde{\phi}_{m,j} = \hat{\phi}_{m,j} + \frac{\hat{\psi}_m}{12}, \quad j \leq p
+$$
+
+$$
+\tilde{\phi}_{m,j} = \frac{\hat{\psi}_m}{12}, \quad p < j \leq 12
+$$
+
+where the original-unit classical coefficient is:
+
+$$
+\hat{\phi}_{m,j} = \phi^*_{m,j} \cdot \frac{s_m}{s_{m-j}}
+$$
+
+This reduction is exact: no approximation is introduced. The LP therefore requires a stride of 12
+coefficient slots per (stage, hydro) pair when the annual component is active, even when the
+classical AR order $p < 12$.
+
+### 8.5 LP Integration via State-Fixing Rows
+
+The reduction in §8.4 is the load-bearing architectural insight that allows the PAR(p)-A
+extension to integrate with the existing LP structure at zero cost to the SDDP cut-extraction
+layer.
+
+In the LP formulation (§7), each lagged inflow $a_{h,t-j}$ is already a dedicated state
+variable, fixed by an equality constraint (a "state-fixing row") to its incoming scenario value
+$\hat{a}_{h,t-j}$:
+
+$$
+a_{h,t-j} = \hat{a}_{h,t-j}, \quad j = 1, \ldots, p
+$$
+
+The PAR(p)-A extension widens this set to $j = 1, \ldots, 12$: each of the 12 monthly lags
+required by the rolling average is already — or is now — a state variable. Their coefficients in
+the AR dynamics constraint row are the reduced values $\tilde{\phi}_{m,j}$ from §8.4.
+
+**Chain-rule propagation through duals.** Because the contribution of $\bar{A}_{h,t-1}$ has
+been collapsed into per-lag coefficients on existing state variables, the dual of each
+state-fixing row automatically carries the full chain-rule contribution of the annual component.
+No additional dual variables or cut-extraction logic are needed. When the SDDP backward pass
+collects the dual on row $j$ to form a Benders cut gradient, it already includes the
+$\hat{\psi}_m / 12$ share from the annual term.
+
+Concretely, the cut gradient entry for lag $j$ (as seen by the SDDP cut-extraction layer) is:
+
+$$
+\frac{\partial Q}{\partial a_{h,t-j}} = \lambda_j, \quad j = 1, \ldots, 12
+$$
+
+where $\lambda_j$ is the dual of the state-fixing equality for lag $j$. For $j \leq p$ this
+dual reflects both the classical AR dynamics and the annual contribution; for $p < j \leq 12$ it
+reflects the annual contribution alone. The cut-extraction layer does not distinguish these two
+cases — it reads 12 duals and assembles the cut in the same way regardless of whether
+the annual component is active.
+
+### 8.6 Cross-References
+
+- §3 (Stored vs. Computed Quantities) — The seasonal std $s_m$ and the residual std ratio
+  $\sigma_m / s_m$ used in the unit conversion $\hat{\phi}_{m,j} = \phi^*_{m,j} \cdot s_m / s_{m-j}$
+  are the same stored quantities as for the classical model.
+- §5.4 (Yule-Walker Equations) — The extended PAR(p)-A Yule-Walker system (§8.3) is a direct
+  augmentation of the periodic system in §5.4, appending one row and one column for the annual
+  cross-correlations.
+- §7 (PAR-to-LP Transformation) — The LP structure (constraint matrix entries, RHS patching,
+  `PrecomputedParLp` layout) described in §7 is unchanged. The PAR(p)-A extension only widens
+  the coefficient stride from $p$ to 12 and populates the additional slots with $\hat{\psi}_m / 12$.
+
 ## Cross-References
 
 - [Input Scenarios §3.1–3.2](../data-model/input-scenarios.md) — Defines `inflow_seasonal_stats.parquet` (μ, s) and `inflow_ar_coefficients.parquet` (ψ\* per lag, residual_std_ratio)
