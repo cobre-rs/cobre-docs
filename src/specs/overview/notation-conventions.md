@@ -349,7 +349,7 @@ The cut coefficient for lag $\ell$ is the dual variable $\pi^{lag}_{h,\ell}$ dir
 
 ### 5.6 Implementation Notes
 
-The hot-path solver update pattern (modifying RHS via `changeRowBounds` for incoming state, extracting duals via `getRowDual` for cut coefficients) is documented in [Solver HiGHS Implementation §3](../architecture/solver-highs-impl.md) and [Solver Abstraction §3](../architecture/solver-abstraction.md). The key property: since incoming state variables appear on the RHS of fixing constraints with coefficient $+1$, no sign change is needed when mapping duals to cut coefficients ($\pi^v_h = \pi^{fix}_h$; for AR lags, $\pi^{lag}_{h,\ell}$ is used directly). Cut coefficient extraction is a single contiguous slice read: `dual[0..n_state]`.
+The key property: since incoming state variables appear on the RHS of fixing constraints with coefficient $+1$, no sign change is needed when mapping duals to cut coefficients ($\pi^v_h = \pi^{fix}_h$; for AR lags, $\pi^{lag}_{h,\ell}$ is used directly). Cut coefficient extraction is a single contiguous slice read: `dual[0..n_state]`.
 
 **Verification check**: In a typical hydrothermal system:
 
@@ -367,5 +367,4 @@ The hot-path solver update pattern (modifying RHS via `changeRowBounds` for inco
 - [PAR Inflow Model](../math/par-inflow-model.md) — Detailed PAR(p) model using inflow parameters defined here
 - [Hydro Production Models](../math/hydro-production-models.md) — FPHA plane coefficients ($\gamma$) and productivity ($\rho$)
 - [Equipment Formulations](../math/equipment-formulations.md) — Thermal, contract, pumping variable notation
-- [Solver Abstraction §3](../architecture/solver-abstraction.md) — LP interface for RHS updates and dual extraction
 - [What Cobre Solves](./what-cobre-solves.md) — methodology principles (reproducibility, determinism, declaration order invariance, code as ground truth, agent-readability) that frame this book

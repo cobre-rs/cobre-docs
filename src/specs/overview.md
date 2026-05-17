@@ -35,4 +35,4 @@ The specs are short and self-contained; reading them in order takes under fiftee
 
 ## Navigation
 
-The Specifications section contains 7 subsections: Overview (this section), [Mathematical Formulations](./math.md), [Data Model](./data-model.md), [Architecture](./architecture.md), [High-Performance Computing](./hpc.md), [Configuration](./configuration.md), and [Deferred Features](./deferred.md). Readers encountering the specs for the first time should complete the three overview specs before proceeding to any other subsection.
+See the Table of Contents in the sidebar for the full set of chapters. Readers new to the book should complete the overview chapters before proceeding.

@@ -27,11 +27,11 @@ This formulation assumes the reservoir can freely redistribute water across bloc
 
 ### 1.2 Characteristics
 
-| Aspect           | Description                                                                                                        |
-| ---------------- | ------------------------------------------------------------------------------------------------------------------ |
-| LP size          | Smaller (one water balance per hydro)                                                                              |
-| Storage dynamics | End-of-stage only                                                                                                  |
-| Use case         | Long-term strategic planning                                                                                       |
+| Aspect           | Description                                                                  |
+| ---------------- | ---------------------------------------------------------------------------- |
+| LP size          | Smaller (one water balance per hydro)                                        |
+| Storage dynamics | End-of-stage only                                                            |
+| Use case         | Long-term strategic planning                                                 |
 | Configuration    | `block_mode: "parallel"` configured per stage via the `block_mode` parameter |
 
 ## 2. Chronological Blocks
@@ -87,11 +87,11 @@ By the LP envelope theorem, this dual automatically captures all downstream effe
 
 ### 2.6 Characteristics
 
-| Aspect           | Description                                                                                                             |
-| ---------------- | ----------------------------------------------------------------------------------------------------------------------- |
-| LP size          | Larger ($N_{hydro} \times (\lvert\mathcal{K}\rvert - 1)$ additional vars/cons)                                          |
-| Storage dynamics | Intra-stage cycling modeled                                                                                             |
-| Use case         | Short-term planning with storage cycling                                                                                |
+| Aspect           | Description                                                                       |
+| ---------------- | --------------------------------------------------------------------------------- |
+| LP size          | Larger ($N_{hydro} \times (\lvert\mathcal{K}\rvert - 1)$ additional vars/cons)    |
+| Storage dynamics | Intra-stage cycling modeled                                                       |
+| Use case         | Short-term planning with storage cycling                                          |
 | Configuration    | `block_mode: "chronological"` configured per stage via the `block_mode` parameter |
 
 ## 3. Comparison Summary
@@ -117,7 +117,7 @@ This is a **hard validation error** — the solver must reject the run if any mi
 
 > **Scope note**: Block configuration is one of many input properties that must be validated for policy compatibility. Other properties include the number of hydro plants, state variable dimensions, AR orders, and system topology.
 
-## 5. Future Work: Fine-Grained Temporal Resolution
+## 5. Note on Fine-Grained Temporal Resolution
 
 The current block formulations use a single level of temporal decomposition within each stage: the user defines blocks with durations τ_k, and the LP operates at that resolution in both training and simulation.
 
@@ -127,7 +127,7 @@ A more sophisticated approach — used in commercial tools like PSR's SDDP (v17.
 - Proper representation of intermittent renewable generation profiles
 - Separate temporal resolutions for training (aggregated blocks) and simulation (full typical-day profiles)
 
-This feature is deferred because it requires:
+This extension is out of scope for the current formulation because it requires:
 
 - New input data schemas (day-type definitions, weights, hourly profiles)
 - Separation of the objective time-weighting (day weight × block duration) from the water balance conversion (block duration only)

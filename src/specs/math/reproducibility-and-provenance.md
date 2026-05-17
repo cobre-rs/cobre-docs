@@ -30,9 +30,11 @@ content: the values of the computed quantities.
 
 Provenance is recorded in two user-facing output files, `metadata.json` and
 `stochastic_provenance.json`. These are the artefacts a study author shares
-when reporting results or handing a run to an auditor. Their field-level schema
-is documented in the developer guide; this chapter is concerned with the five
-categories of information they capture and why each category is necessary.
+when reporting results or handing a run to an auditor. This chapter is concerned
+with the five categories of information they capture and why each category is
+necessary.
+
+For implementation, see the cobre developer-guide.
 
 ## 2. What Is Recorded
 

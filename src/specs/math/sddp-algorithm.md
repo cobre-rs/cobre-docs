@@ -125,7 +125,7 @@ $$
 
 ### 3.4 Execution Model and Performance Considerations
 
-The SDDP iteration structure has specific properties that guide the parallelization strategy and solver lifecycle design. These are summarized here as architectural constraints; detailed design is in the developer guide.
+The SDDP iteration structure has specific properties that guide the parallelization strategy and solver lifecycle design. These are summarized here as architectural constraints.
 
 **Thread-trajectory affinity**: The dominant parallelization strategy assigns each thread ownership of a complete forward trajectory. With $N$ threads (summed across all ranks), $N$ forward passes execute in parallel, each thread solving its trajectory's stage LPs sequentially from $t = 1$ to $T$. The same thread that executed forward pass $k$ also performs the backward pass for the scenarios sampled by forward pass $k$. This affinity pattern preserves cache locality (solver basis, scenario data, LP coefficients remain warm in the thread's cache lines) and simplifies implementation by eliminating cross-thread data handoff.
 
@@ -136,6 +136,8 @@ The SDDP iteration structure has specific properties that guide the parallelizat
 **LP rebuild cost**: Memory constraints prevent keeping all stage LPs with their full cut sets resident simultaneously. The solver must rebuild LPs and add cut constraints when transitioning between stages, which lies on the critical performance path. The design minimizes this rebuild cost through strategies such as cut preallocation, basis persistence, and incremental constraint updates.
 
 **Fixing constraint dual extraction**: Each state variable (storage and inflow lag) has a dedicated fixing constraint whose dual gives the cut coefficient directly — no preprocessing or dual combination is needed. FPHA hyperplane and generic constraint effects are captured automatically by the LP solver through the fixing constraint dual. See [Cut Management](cut-management.md).
+
+For implementation, see the cobre developer-guide.
 
 ## 4. Policy Graph Structure
 
