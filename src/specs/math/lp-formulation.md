@@ -438,6 +438,17 @@ where $x_e$ can reference any LP variable using expression syntax:
 - `hydro_storage(id)`, `hydro_turbined(id)`, `hydro_spillage(id)`
 - `thermal_generation(id)`, `bus_deficit(id)`, etc.
 
+The coefficients $\gamma_{g,e}$ and the RHS $b_g$ may be either literal numeric values or **named scalar parameters**. A scalar parameter resolves to a single number per stage and can carry one of four kinds:
+
+| Kind        | Value semantics                                                                                           |
+| ----------- | --------------------------------------------------------------------------------------------------------- |
+| `constant`  | One value for every stage                                                                                 |
+| `per_stage` | Explicit value per stage                                                                                  |
+| `seasonal`  | One value per season; stages inherit the value from their season                                          |
+| `computed`  | Value derived from a small expression evaluated at LP-build time (e.g., a fraction of installed capacity) |
+
+Resolution happens once at LP-build time, so the LP coefficients are still numeric at solve time — the parameter mechanism does not introduce LP-variable coupling between constraints. Methodology relevance: it lets the corpus express ramping limits, capacity caps, and operator-imposed quotas that vary by stage or season without authoring a separate constraint per stage. Coefficient and RHS values can therefore be **stage-varying constants**, not just literal numbers.
+
 Generic constraints can have optional slack variables with configurable penalties.
 
 ## 11. Benders Cuts

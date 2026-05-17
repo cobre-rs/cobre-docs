@@ -11,23 +11,25 @@ All decision variables use **rate units** (MW, m³/s) — see the Variable Units
 The simplest model assumes a linear relationship:
 
 $$
-g_{h,k} = \rho_h \cdot q_{h,k}
+g_{h,k} = \rho_{h,t} \cdot q_{h,k}
 $$
 
-where $\rho_h$ (MW per m³/s) is the hydro productivity:
+where $\rho_{h,t}$ (MW per m³/s) is the hydro productivity for stage $t$:
 
 $$
-\rho_h = \frac{9.81 \times \eta_h \times H^{ref}_h}{1000}
+\rho_{h,t} = \frac{9.81 \times \eta_h \times H^{ref}_{h,t}}{1000}
 $$
 
 with:
 
 - $\eta_h$ = turbine efficiency (typically 0.85–0.92), from the hydro object's `efficiency` field
-- $H^{ref}_h$ = reference net head (meters), typically at 65% storage
+- $H^{ref}_{h,t}$ = reference net head (meters), typically at 65% storage, varying by stage
 
-**LP treatment**: 1 equality constraint per hydro per block. The generation variable $g_{h,k}$ is fully determined by $q_{h,k}$ — no free generation variable is needed. Simple and fast, but ignores head variation with storage.
+**Per-stage productivity**: the productivity coefficient is authored **per (hydro, stage)** rather than per plant. A plant can therefore carry a stage-varying constant productivity — useful when the reference head differs between near-term and far-future stages of the same study, or when the constant model is being used as a coarse approximation that needs different operating points across the horizon. Section 5 covers the energy-conversion scalars derived from this per-stage value.
 
-**Data requirements**: Only `productivity_mw_per_m3s` from `hydros.json`. No geometry or hyperplane data needed.
+**LP treatment**: 1 equality constraint per hydro per block. The generation variable $g_{h,k}$ is fully determined by $q_{h,k}$ — no free generation variable is needed. Simple and fast, but ignores head variation with storage **within a stage**.
+
+**Data requirements**: a per-stage productivity scalar per hydro plant. No geometry or hyperplane data needed.
 
 ## 2. FPHA (Four-Point Head Approximation)
 
@@ -146,13 +148,15 @@ where $\Delta h_{const}$ is in meters (typically 1–5m).
 
 ### 2.4 Productivity
 
-The **specific productivity** converts hydraulic power to electrical power:
+The **specific productivity** $\rho_{esp}$ (MW per (m³/s · m)) converts hydraulic power to electrical power at the operating head:
 
 $$
-g_h = \frac{9.81 \times \eta \times q \times h_{net}}{1000} \quad \text{[MW]}
+\rho_{esp,h} = \frac{9.81 \times \eta_h}{1000}
 $$
 
-where $\eta$ is the turbine-generator efficiency, configured via the `efficiency` field in `hydros.json`. Cobre uses constant efficiency: $\eta = \eta_{ref}$ — from the hydro object's `efficiency.value`.
+so the exact production is $g_h = \rho_{esp,h} \cdot q_h \cdot h_{net}$ in MW. Cobre uses constant efficiency $\eta_h = \eta_{ref}$ per plant.
+
+FPHA plants author $\rho_{esp}$ directly — not a single scalar productivity $\rho$. The equivalent productivity $\rho_{eq}$ at the reference operating point is **derived** from $\rho_{esp}$ and the VHA geometry; the derivation is documented in section 5.1.
 
 ### 2.5 FPHA Hyperplanes
 
@@ -368,17 +372,82 @@ All three models are available during simulation. The linearized head model is p
 
 The production model may vary by stage or by season per hydro, configured via the `stage_ranges` and `seasonal` selection modes in `hydro_production_models.json`.
 
-## 5. Data Requirements Summary
+## 5. Energy-Conversion Quantities
 
-| Data Source                    | Required Fields                              | Used For                        |
-| ------------------------------ | -------------------------------------------- | ------------------------------- |
-| `hydros.json`                  | `generation.productivity_mw_per_m3s`         | Reference $\rho_{ref}$          |
-| `hydros.json`                  | `tailrace` (polynomial or piecewise)         | $h_{tail}(q_{out})$ computation |
-| `hydros.json`                  | `hydraulic_losses` (factor or constant)      | $h_{loss}(q)$ computation       |
-| `hydros.json`                  | `efficiency` (constant)                      | Turbine efficiency $\eta$       |
-| `hydro_geometry.parquet`       | volume_hm3, height_m                         | $h_{fore}(v)$ interpolation     |
-| `fpha_hyperplanes.parquet`     | gamma_0, gamma_v, gamma_q, gamma_s, kappa    | Pre-fitted planes (optional)    |
-| `hydro_production_models.json` | selection_mode, fpha_config per stage/season | Fitting configuration           |
+> **Status: under active development.** The energy-conversion pipeline described in this section is implemented in the Cobre codebase and exercised by the test suite, but has not yet appeared in a tagged release. The formulation here reflects the model currently exercised in development.
+
+The three production models of sections 1–3 describe how generation depends on the operating state. For accounting purposes — natural-inflow energy (ENA), stored reservoir energy (EARM), and per-stage MW/MWh reporting — Cobre reduces each plant's production model to a small set of per-(hydro, stage) scalars at a representative operating point. These scalars are computed once at study setup and reused on every stage of every scenario.
+
+### 5.1 Equivalent Productivity $\rho_{eq}$
+
+The **equivalent productivity** $\rho_{eq,h,t}$ (MW per m³/s) is the single-scalar productivity that the plant would carry at the reference operating point $(V^{ref}_{h,t},\, Q^{ref}_{h,t})$. The derivation depends on the active generation model at stage $t$:
+
+| Generation model        | $\rho_{eq,h,t}$ derivation                                                                                                                                                                                                                                    |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `constant_productivity` | The stored per-(hydro, stage) constant — the same $\rho_{h,t}$ used directly in the LP equality (section 1).                                                                                                                                                  |
+| `linearized_head`       | The stored per-(hydro, stage) constant.                                                                                                                                                                                                                       |
+| `fpha`                  | $\rho_{eq,h,t} = \rho_{esp,h} \cdot h_{eq}(V^{ref}_{h,t},\, Q^{ref}_{h,t})$, where $h_{eq}$ is the net head computed from the VHA geometry (section 2.3) at the reference point. FPHA hydros do **not** author a separate $\rho_{eq}$ scalar — it is derived. |
+
+The reference point $(V^{ref}, Q^{ref})$ is typically chosen as the storage fraction (e.g., 65% of usable volume between $V_{min}$ and $V_{max}$) and the installed turbine capacity. The fraction can be resolved per (hydro, season) so that ENA accounting in flood-season months differs from dry-season months when appropriate.
+
+#### Consistency warning for non-FPHA hydros
+
+When a non-FPHA hydro declares **both** a specific productivity $\rho_{esp}$ and an equivalent productivity (a typical authoring error in cases that were once FPHA), a soft consistency check evaluates the implied $\rho_{esp}^{\,\text{impl}} = \rho_{eq} / h_{eq}(V^{ref}, Q^{ref})$. If the supplied $\rho_{esp}$ diverges from the implied value by more than 5%, a warning is emitted — the case is not aborted because legitimate turbine-retrofit cases break the implicit identity. The warning surfaces the offending plant and stage so the case author can reconcile the two values.
+
+### 5.2 Accumulated Cascade Productivity $\rho_{acum}$
+
+The **accumulated productivity** $\rho_{acum,h,t}$ (MW per m³/s) is the energy that one m³/s of incremental inflow into plant $h$ contributes once it is routed through plant $h$ and every plant downstream of $h$ along the cascade:
+
+$$
+\rho_{acum,h,t} \;=\; \rho_{eq,h,t} \;+\; \sum_{h' \,\in\, \text{downstream}(h)} \rho_{eq,h',t}
+$$
+
+The sum is taken in topological order over the cascade (see [system elements](system-elements.md) for the cascade topology). Plants with no downstream successors have $\rho_{acum} = \rho_{eq}$. The accumulation is per-stage because each summand can vary by stage.
+
+### 5.3 Inflow and Storage in Energy Units
+
+$\rho_{acum}$ converts hydraulic quantities to energy units that downstream reporting expects:
+
+**Incremental inflow energy** (MW):
+
+$$
+\text{ENA}_{h,k} \;=\; \rho_{acum,h,t} \cdot a_{h,k}
+$$
+
+This is the rate-form **natural energy inflow** in MW. Stagewise energy (MWh) is recovered by multiplying by block duration $\tau_k$ in hours.
+
+**Stored reservoir energy** (MWh):
+
+$$
+\text{EARM}^{\,\text{init}}_h \;=\; (V^{init}_h - V^{min}_h) \cdot \rho_{acum,h,t} \cdot \frac{10^6}{3600}
+\qquad
+\text{EARM}^{\,\text{final}}_h \;=\; (V^{final}_h - V^{min}_h) \cdot \rho_{acum,h,t} \cdot \frac{10^6}{3600}
+$$
+
+The conversion factor $10^6 / 3600$ converts hm³ to m³ and seconds to hours so that storage in hm³ multiplied by productivity in MW/(m³/s) yields MWh.
+
+These quantities do not enter the LP — they are accounting outputs derived from the LP solution. Their methodology relevance is that they make the production model auditable in the same energy units used by the load forecast and the cost objective.
+
+### 5.4 Why a Scalar Reduction Exists at All
+
+The full FPHA production function (section 2) is multi-dimensional and concave; constant productivity is a scalar but per-plant; linearized head is bilinear in $(q, v^{avg})$. None of these can be summed across a cascade or scaled by inflow without a reference operating point. The energy-conversion scalars resolve this: each model is reduced to one number per (hydro, stage), at one operating point, and that number is what the cascade-summation, ENA, and EARM formulas above can consume uniformly. The LP continues to enforce the full production model — the scalar reduction is for accounting, not for dispatch.
+
+## 6. Data Requirements Summary
+
+| Data Source                   | Required Fields                                  | Used For                                       |
+| ----------------------------- | ------------------------------------------------ | ---------------------------------------------- |
+| Hydro plant entity            | `tailrace` (polynomial or piecewise)             | $h_{tail}(q_{out})$ computation                |
+| Hydro plant entity            | `hydraulic_losses` (factor or constant)          | $h_{loss}(q)$ computation                      |
+| Hydro plant entity            | `efficiency` (constant)                          | Turbine efficiency $\eta$                      |
+| Hydro plant entity            | `specific_productivity_mw_per_m3s_per_m` (FPHA)  | $\rho_{esp}$ for $\rho_{eq}$ derivation (§5.1) |
+| Hydro plant entity            | Cascade topology (downstream pointer)            | $\rho_{acum}$ topological sum (§5.2)           |
+| Hydro production models input | Per-(hydro, stage) productivity (non-FPHA)       | $\rho_{h,t}$ for sections 1 and 3              |
+| Hydro production models input | Reference-volume fractions per (hydro, season)   | $V^{ref}$ for the energy-conversion reduction  |
+| Hydro production models input | FPHA fitting configuration                       | Plane discretisation, $\kappa$ rule (§2.5–2.6) |
+| Hydro geometry                | volume_hm3, height_m                             | $h_{fore}(v)$ interpolation (§2.3)             |
+| Pre-fitted FPHA planes        | $\gamma_0, \gamma_v, \gamma_q, \gamma_s, \kappa$ | Optional alternative to in-process fitting     |
+
+The productivity coefficient used in sections 1 and 3 is authored per (hydro, stage) in the hydro production models input — there is no fallback to an entity-level scalar. FPHA plants author $\rho_{esp}$ on the hydro entity and let the energy-conversion pipeline derive $\rho_{eq}$; an explicit override per (hydro, stage) is also accepted as a third data source for studies that need to pin $\rho_{eq}$ directly.
 
 ## Cross-References
 

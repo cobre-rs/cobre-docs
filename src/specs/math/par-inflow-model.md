@@ -2,7 +2,7 @@
 
 ## Purpose
 
-This spec defines the Periodic Autoregressive model of order $p$ (PAR(p)) used to capture temporal correlation in inflow time series, including the model definition, parameter semantics, the relationship between stored and computed quantities, the fitting procedure, model order selection, and validation invariants.
+This spec defines the Periodic Autoregressive model of order $p$ (PAR(p)) used to capture temporal correlation in inflow time series, including the model definition, parameter semantics, the relationship between stored and computed quantities, the fitting procedure, model order selection, and validation invariants. Section 9 describes the optional PAR(p)-A extension that adds a single annual coefficient on top of the periodic AR structure to capture multi-year hydrological persistence.
 
 ## 1. Model Definition
 
@@ -110,12 +110,12 @@ The default method computes the **periodic PACF** via progressive periodic Yule-
 
 3. Estimate AR coefficients at the selected order using the periodic Yule-Walker system (section 5.4).
 
-**Post-selection validation**: After PACF selection, two rejection gates are applied iteratively:
+**Post-selection validation — Maceira-Damazio iterative reduction**: After PACF selection, the recursively-composed contributions of each lag through the periodic monthly chain are computed. A negative composed contribution flags potential model instability — under SDDP the corresponding Benders cut can carry the negative composition into the future-cost recursion. When any season's composed contribution is negative, the offending season's AR ceiling is reduced and the PACF selection plus Yule-Walker fit are re-run at the new ceiling. The reduction iterates across all seasons until every season's contribution recursion yields non-negative entries, or every offending season has been reduced to order 0.
 
-- **Negative $\phi_1$ rejection**: If $\hat{\psi}^*_{m,1} < 0$ (first AR coefficient is negative), the order is reduced. Negative $\phi_1$ contradicts the hydrological persistence property (inflows are positively autocorrelated at lag 1).
-- **Contribution-based validation**: The recursively-composed contributions for each lag are computed. If any contribution is negative (indicating potential model instability), the order is reduced to the maximum lag with non-negative contributions. This implements NEWAVE's `reducao_ordem` algorithm.
+For the PAR(p)-A path (section 9), two additional rules extend the PACF gate:
 
-The reduction process is iterative: after each reduction, the PACF selection and coefficient estimation are re-run at the new ceiling, and the validation checks are repeated until all seasons pass or reach order 0.
+- **Structural-zero short-circuit at lag 1**. When the conditional FACP value at lag 1 is exactly zero — which happens when the standardised annual noise series collapses, typically because a degenerate `HistoryClass::Constant` or `HistoryClass::Saturated` bucket has zeroed the seasonal std (section 5.7) — the selected order is forced to 0 (white noise). This blocks degenerate buckets from injecting spurious AR structure.
+- **Minimum order 1 when lag 1 is well defined**. When the lag-1 conditional FACP is non-zero but no lag exceeds the significance threshold, the model defaults to order 1 rather than order 0. Hydrological persistence makes a strict order-0 fit a poor default unless the lag-1 value is structurally absent.
 
 ### 4.2 AIC (Akaike Information Criterion)
 
@@ -164,8 +164,10 @@ $$
 **Seasonal Standard Deviation**:
 
 $$
-\hat{s}_m = \sqrt{\frac{1}{N_m - 1} \sum_{t: m(t) = m} (a_{h,t} - \bar{a}_m)^2}
+\hat{s}_m = \sqrt{\frac{1}{N_m} \sum_{t: m(t) = m} (a_{h,t} - \bar{a}_m)^2}
 $$
+
+The estimator uses the **population divisor** $1/N_m$, not the Bessel-corrected $1/(N_m - 1)$. This matches the Maceira-Damazio convention and is shared by the classical PAR(p) and PAR(p)-A paths. The population divisor is required for self-consistent conditional FACP values and selected orders on the PAR(p)-A path — under a Bessel correction the sample-vs-population scale factor leaks through every Z⊗A cross-correlation. Using the same divisor for the classical path keeps the two paths' seasonal-stats output reusable across configurations.
 
 ### 5.3 Step 2 — Seasonal Autocorrelations
 
@@ -176,8 +178,10 @@ The autocorrelation at lag $\ell$ for season $m$ is computed from standardized d
 For observations at season $m$ with lag $\ell$ reaching back to season $m - \ell$ (mod $M$, where $M$ is the cycle length):
 
 $$
-\hat{\gamma}_m(\ell) = \frac{1}{N_m - 1} \sum_{t: m(t) = m} \left( a_{h,t} - \bar{a}_m \right) \left( a_{h,t-\ell} - \bar{a}_{m-\ell} \right)
+\hat{\gamma}_m(\ell) = \frac{1}{N_m^{(\ell)}} \sum_{t: m(t) = m} \left( a_{h,t} - \bar{a}_m \right) \left( a_{h,t-\ell} - \bar{a}_{m-\ell} \right)
 $$
+
+where $N_m^{(\ell)}$ is the number of year-aligned valid pairs at lag $\ell$ for reference season $m$. The estimator uses the **population divisor** $1/N_m^{(\ell)}$, matching the convention adopted in section 5.2 and shared by the classical and PAR(p)-A paths.
 
 **Autocorrelation**:
 
@@ -278,6 +282,37 @@ For reference, the full expression in terms of fitting quantities is:
 $$
 \hat{\sigma}_m = \hat{s}_m \sqrt{1 - \boldsymbol{r}_m^\top \mathbf{R}_m^{-1} \boldsymbol{r}_m}
 $$
+
+### 5.7 Historical Bucket Classification
+
+Before the seasonal stats and AR coefficients are used by the order-selection rules, each per-(hydro, season) historical bucket is classified by the shape of its observations. The classification can override the empirical $(\hat{\mu}_m, \hat{s}_m)$ for fitting purposes, and the override propagates to **both** the classical PAR(p) and the PAR(p)-A paths because both paths share the seasonal-stats producer.
+
+Four classes are defined:
+
+| Class          | Detection rule                                                           | Override applied                                            |
+| -------------- | ------------------------------------------------------------------------ | ----------------------------------------------------------- |
+| `Default`      | None of the conditions below                                             | None — use empirical $(\hat{\mu}_m, \hat{s}_m)$             |
+| `Constant`     | Every observation equals the same value within float tolerance           | $(\hat{\mu}_m, \hat{s}_m) \leftarrow (\text{value}, 0)$     |
+| `ManyNegative` | Strictly negative observations exceed 10% of the bucket                  | None — diagnostic only, fit proceeds on the empirical stats |
+| `Saturated`    | The modal value (rounded to m³/s) occupies more than 50% of observations | $(\hat{\mu}_m, \hat{s}_m) \leftarrow (\text{cap}, 0)$       |
+
+The classifier runs in the priority order `Constant` → `ManyNegative` → `Saturated` → `Default`. Constancy takes precedence over negative-pathology detection, which in turn takes precedence over saturation.
+
+#### Why $\hat{s}_m = 0$ short-circuits the fit
+
+When the override sets $\hat{s}_m = 0$ for a season, every downstream fitter degenerates predictably:
+
+- On the **classical PAR(p) path**, the periodic autocorrelation $\hat{\rho}_m(\ell)$ becomes zero by the zero-std guard in section 5.3, so the PACF selection (section 4.1) reports no significant lag and returns order 0 implicitly.
+- On the **PAR(p)-A path**, the standardised noise series collapses, the conditional FACP at lag 1 evaluates to exactly zero, and the structural-zero short-circuit (section 4.1) returns order 0 explicitly.
+
+Either way, the bucket cannot inject spurious autoregressive structure into adjacent months' PACFs, and no spatial-correlation contribution flows from it during scenario generation.
+
+#### Interpretation of each class
+
+- **`Constant`** captures plants whose incremental inflow is structurally constant for a given month — typically regulated or transposed flows where the upstream subtraction yields the same value every year. Forcing $(\text{value}, 0)$ records the deterministic level without inventing autoregressive dynamics.
+- **`Saturated`** captures flow caps (turbine or reservoir capacity) and low-flow constants (transposed ecological flows). The modal value is treated as the cap. There is no magnitude threshold — a cap of 0 m³/s qualifies just as readily as a cap at installed capacity.
+- **`ManyNegative`** flags buckets that the upstream incremental-inflow construction has driven below zero for more than 10% of observations. The condition is recorded for operator diagnostics but does not override the fit — the cause is upstream-data quality, not a methodological signal.
+- **`Default`** is the standard path; the empirical stats and the chosen order-selection rule decide the order.
 
 ## 6. Validation Invariants
 
@@ -441,6 +476,113 @@ The clipping threshold acts as a single, transparent parameter controlling which
 | Transparency of approximation   | Single clipping threshold        | Opaque numerical failure or pivot   |
 
 The higher computational cost is acceptable because the factorisation is performed once per study configuration and not on the hot path of the forward pass.
+
+## 9. Annual Component Extension (PAR(p)-A)
+
+The classical PAR(p) of section 1 captures temporal dependence at lags up to a small $p$ (typically $\leq 4$ for monthly cycles, since the periodic Yule-Walker system becomes ill-conditioned at higher orders). On long Brazilian hydro series this is enough to reproduce the within-year persistence but not the multi-year persistence visible in dry/wet super-periods of the historical record. The **PAR(p)-A** extension adds a single annual coefficient on top of the periodic AR structure to capture that longer-range persistence without inflating the AR order.
+
+The extension is selected by the order-selection method `pacf_annual`. When active, the model carries one additional triple per (hydro, season) on top of the classical parameter set.
+
+### 9.1 Augmented Model
+
+Let $A_{h,t-1}$ denote the **rolling 12-month average** of incremental inflows ending one stage before $t$:
+
+$$
+A_{h,t-1} = \frac{1}{12} \sum_{j=1}^{12} a_{h,\, t-j}
+$$
+
+The PAR(p)-A model augments section 1 with the standardised deviation of $A_{h,t-1}$ from its own seasonal mean:
+
+$$
+a_{h,t} \;=\; \mu_{m(t)} \;+\; \sum_{\ell=1}^{p} \psi_{m(t),\ell}\,(a_{h,t-\ell} - \mu_{m(t-\ell)})
+\;+\; \hat{\psi}_{m(t)}\,(A_{h,t-1} - \mu^A_{m(t)-1})
+\;+\; \sigma_{m(t)} \cdot \varepsilon_t
+$$
+
+where:
+
+- $\mu^A_{m}$, $\sigma^A_{m}$: seasonal sample mean and **population-divisor** standard deviation of $A_{h, \cdot}$ at season $m$
+- $\hat{\psi}_{m(t)}$: original-unit annual coefficient at season $m(t)$ — derived at runtime from the standardised stored coefficient (section 9.4)
+- All other symbols carry their classical meaning from section 1
+
+When the PAR(p)-A extension is inactive, the annual term is absent and the model reduces exactly to section 1.
+
+### 9.2 Annual Component Parameters
+
+For each (hydro, season) the PAR(p)-A path stores three additional quantities:
+
+| Quantity                        | Symbol       | Description                                                          |
+| ------------------------------- | ------------ | -------------------------------------------------------------------- |
+| Standardised annual coefficient | $\psi$       | Yule-Walker output for the annual term — dimensionless               |
+| Annual seasonal mean            | $\mu^A_m$    | Sample mean of $A_{h, \cdot}$ at season $m$ (m³/s)                   |
+| Annual seasonal std             | $\sigma^A_m$ | Population-divisor std of $A_{h, \cdot}$ at season $m$ (m³/s, $> 0$) |
+
+The standardised coefficient $\psi$ is the direct output of the extended periodic Yule-Walker system below (section 9.5). Storage of $\mu^A_m$ and $\sigma^A_m$ alongside the seasonal statistics of $a_{h, \cdot}$ enables the runtime unit conversion of section 9.4 without re-reading the historical record.
+
+### 9.3 Estimating $\mu^A_m$ and $\sigma^A_m$
+
+Group rolling-window values $A_t = \frac{1}{12} \sum_{j=0}^{11} a_{h,\, t - 11 + j}$ by the season of their **PDF time-index** $t-1$ (the most recent observation contributing to the window). For each (hydro, season) bucket of values $\{A^{(i)}\}$:
+
+$$
+\hat{\mu}^A_m \;=\; \frac{1}{N^A_m} \sum_{i} A^{(i)}
+\qquad
+\hat{\sigma}^A_m \;=\; \sqrt{\frac{1}{N^A_m} \sum_{i} \bigl(A^{(i)} - \hat{\mu}^A_m\bigr)^2}
+$$
+
+Both estimators use the population divisor $1/N^A_m$, matching the convention of section 5.2 and ensuring no sample-vs-population scale factor leaks into the conditional FACP of section 9.5. At least 13 chronological observations are required for a hydro to participate in PAR(p)-A — that is the minimum needed to form one rolling 12-month average.
+
+### 9.4 Runtime Unit Conversion
+
+The stored standardised coefficient $\psi$ is converted to the original-unit coefficient $\hat{\psi}$ at LP construction time using the seasonal stats and annual stats:
+
+$$
+\hat{\psi}_{m} \;=\; \psi \cdot \frac{s_m}{\sigma^A_m}
+$$
+
+The conversion mirrors section 7.2 for the classical AR coefficients. The runtime annual term entering the LP RHS is then $\hat{\psi}_{m(t)} \cdot \bigl(A_{h,t-1} - \mu^A_{m(t)-1}\bigr)$, where the lagged rolling-window value $A_{h,t-1}$ is itself derived from the lag state variables already carried by the LP.
+
+### 9.5 Order Selection and Coefficient Estimation
+
+PAR(p)-A order selection conditions on the annual noise series. The order-selection input is the **conditional FACP** at lag $k$, defined as the partial autocorrelation between the standardised current-season residual and the standardised residual at lag $k$, **conditioned on** the intermediate standardised annual noise series $Z$ and the previous annual innovation $A_{t-1}$. Computing the conditional FACP requires a partitioned covariance decomposition that distinguishes $Z \otimes Z$, $Z \otimes A$, and $A \otimes Z_{-1}$ blocks.
+
+The conditional FACP feeds the PACF order-selection rule of section 4.1, with the two PAR(p)-A-specific extensions (structural-zero short-circuit and minimum-order-1) already described there.
+
+#### Cross-covariance divisor
+
+The $Z \otimes Z$ block uses the same year-aligned population divisor as the classical autocovariance (section 5.3). The $Z \otimes A$ and $A \otimes Z_{-1}$ blocks use a **max-bucket-size divisor**:
+
+$$
+\hat{\gamma}_{Z \otimes A}(\ell) \;=\; \frac{1}{\max(|A|,\, |Z|)} \sum_i \bigl(Z^{(i)} - \bar{Z}\bigr)\bigl(A^{(i)} - \bar{A}\bigr)
+$$
+
+The max-bucket convention is required because $A$ excludes the first year of $Z$ by construction (a rolling 12-month window cannot anchor in the first 12 observations). The strict-pair count would distort the scale of the cross-correlations and bias the conditional FACP. The PAR(p) path never uses Z⊗A cross-correlations, so the divisor question is PAR(p)-A-specific.
+
+#### Extended periodic Yule-Walker
+
+Once the order $p$ is selected, the coefficients $(\psi^*_{m,1}, \ldots, \psi^*_{m,p}, \psi)$ are recovered by solving the **extended periodic Yule-Walker system**:
+
+$$
+\mathbf{R}^{\,\text{ext}}_m
+\begin{pmatrix} \psi^*_{m,1} \\ \vdots \\ \psi^*_{m,p} \\ \psi \end{pmatrix}
+= \boldsymbol{r}^{\,\text{ext}}_m
+$$
+
+where $\mathbf{R}^{\,\text{ext}}_m$ is the $(p+1) \times (p+1)$ partitioned covariance whose first $p$ rows replicate the classical periodic Yule-Walker rows (section 5.4) and whose last row adds the $Z \otimes A$ and $A \otimes A$ entries. The RHS $\boldsymbol{r}^{\,\text{ext}}_m$ appends the $A \otimes Z_{-1}$ target. The residual std ratio is recovered from the inner product of the solution and the RHS, exactly as in the classical case.
+
+### 9.6 Iterative Order Reduction
+
+The Maceira-Damazio iterative reduction of section 4.1 is applied across the full periodic cycle on the PAR(p)-A path as well: after the initial fit, the recursively-composed contributions of each AR lag through the periodic monthly chain are evaluated, and any negative-contribution season has its AR ceiling reduced before refit. The annual coefficient $\psi$ does not enter the contribution-chain check — it is anchored to the rolling annual mean and so does not propagate through the lag chain.
+
+### 9.7 Activation and Fallback
+
+| Configuration                                                        | Path                                                                                     |
+| -------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| `order_selection: "pacf"`                                            | Classical PAR(p) — annual triple absent (section 5)                                      |
+| `order_selection: "pacf_annual"`                                     | PAR(p)-A — annual triple required for every (hydro, season)                              |
+| Bucket flagged `HistoryClass::Constant` or `Saturated` (section 5.7) | Effective order 0 on either path; annual term suppressed when the seasonal std collapses |
+| Hydro with fewer than 13 observations on PAR(p)-A path               | Hard failure during fitting (no silent fallback to classical)                            |
+
+The two paths share the seasonal-stats producer of section 5.2; switching between them does not silently change $\hat{\mu}_m$ or $\hat{s}_m$. The PAR(p)-A path uses the same spatial-correlation factorisation as the classical path (section 8); the extension affects only the temporal model.
 
 ## Cross-References
 
