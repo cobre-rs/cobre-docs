@@ -422,9 +422,11 @@ A coverage failure never reaches the dispatch pipeline — it is caught alongsid
 
 For FPHA hydros, $\rho_{eq}$ is derived from VHA geometry and $\rho_{esp}$ at the reference operating point. The per-stage energy-productivity input remains available as an **override**: if a row supplies a value for an FPHA $(h, t)$, it replaces the derived value. The production-models JSON file does **not** accept `productivity_mw_per_m3s` for FPHA — that field is rejected at parse time. FPHA hydros are therefore exempt from the non-FPHA conflict and coverage rules.
 
-#### Consistency warning for non-FPHA hydros
+#### Zero as planned-outage marker
 
-When a non-FPHA hydro declares **both** a specific productivity $\rho_{esp}$ on the hydro entity and a resolved $\rho_{eq}$ (a typical authoring error in cases that were once FPHA), a soft consistency check evaluates the implied $\rho_{esp}^{\,\text{impl}} = \rho_{eq} / h_{eq}(V^{ref}, Q^{ref})$. If the supplied $\rho_{esp}$ diverges from the implied value by more than 5%, a warning is emitted — the case is not aborted because legitimate turbine-retrofit cases break the implicit identity. The warning surfaces the offending plant and stage so the case author can reconcile the two values.
+A resolved $\rho_{eq,h,t} = 0$ is **accepted** for non-FPHA hydros and a resolved $\rho_{esp,h} = 0$ is accepted for FPHA hydros. Both are interpreted as a **planned outage** for the affected stage: the LP uses these scalars as multipliers (never divisors), so zero productivity produces zero generation cleanly without any divide-by-zero or feasibility hazard. The same relaxation applies to the parquet $\rho_{eq}$ override, the parquet $\rho_{esp}$ column, and the JSON range-level productivity. Negative values are still rejected at load time as nonsensical.
+
+This relaxation lets real-world cases mark a plant as out-of-service for specific stages without the case author needing to remove it from the system definition, restructure the cascade, or work around a strict-positivity check.
 
 ### 5.2 Accumulated Cascade Productivity $\rho_{acum}$
 
