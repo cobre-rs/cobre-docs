@@ -6,26 +6,27 @@ Cobre is an ecosystem of Rust crates for power system analysis and optimization.
 
 ## This site is the methodology reference
 
-This site documents the theory, design specifications, and roadmap behind Cobre. It is written for researchers, algorithm designers, and contributors who need to understand why the system works the way it does.
+This site documents the theory and computational strategies behind Cobre. It is written for:
+
+- hydrothermal-planning analysts
+- optimization researchers
+- modellers preparing cases
+- decision-makers reading executive-level rationale
 
 **What you will find here:**
 
 - **Theory** — The mathematical foundations: SDDP and Benders decomposition, stochastic inflow modeling with PAR(p), cut management strategies, and risk measures including CVaR.
-- **Specifications archive** — The design-phase artifacts that governed each implementation phase: data model schemas, architectural trait contracts, HPC communication patterns, and testing contracts.
-- **Roadmap** — Planned features and deferred variants, with rationale for what was prioritized in the minimal viable solver.
-- **Reference** — Glossary of domain terms, notation conventions, and bibliography.
+- **Modeling reference** — The modeling decisions made for handling how the power system and the stochastic processes for dealing with uncertainties in the generation resources are represented.
+- **Examples** — Worked reduced examples that allow the users to understand the algorithm's basic principles and create some intuition behind what might be going on in the production cases.
+- **Reference** — Glossary of domain terms and bibliography.
 
-## Software Book
+## Cobre developer guide
 
-For installation instructions, tutorials, user guides, CLI reference, and per-crate API documentation, see the **[Software Book](https://cobre-rs.github.io/cobre/)**.
-
-The software book describes what the software does today. This site describes the theory and design decisions behind it.
+For implementation details — trait signatures, struct layouts, build profiles, FFI contracts, parallelism mechanics — see the cobre developer-guide.
 
 ## Quick links
 
-|                    |                                                                   |
-| ------------------ | ----------------------------------------------------------------- |
-| GitHub             | [github.com/cobre-rs/cobre](https://github.com/cobre-rs/cobre)    |
-| Software Book      | [cobre-rs.github.io/cobre](https://cobre-rs.github.io/cobre/)     |
-| API docs (rustdoc) | [docs.rs/cobre-core](https://docs.rs/cobre-core)                  |
-| License            | [Apache-2.0](https://github.com/cobre-rs/cobre/blob/main/LICENSE) |
+|         |                                                                   |
+| ------- | ----------------------------------------------------------------- |
+| GitHub  | [github.com/cobre-rs/cobre](https://github.com/cobre-rs/cobre)    |
+| License | [Apache-2.0](https://github.com/cobre-rs/cobre/blob/main/LICENSE) |

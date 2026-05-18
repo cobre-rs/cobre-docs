@@ -66,4 +66,4 @@ legend.edgecolor:     DDDDDD
 savefig.dpi:          200
 savefig.bbox:         tight
 savefig.pad_inches:   0.15
-savefig.transparent:  False
+savefig.transparent:  True

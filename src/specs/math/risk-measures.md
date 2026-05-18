@@ -191,7 +191,7 @@ $$
 
 ## 8 Per-Stage Risk Profiles
 
-Risk aversion can vary by stage. The `risk_measure` field in `stages.json` specifies $(\lambda_t, \alpha_t)$ per stage (see [Input Scenarios §1.7](../data-model/input-scenarios.md)):
+Risk aversion can vary by stage. The `risk_measure` field in `stages.json` specifies $(\lambda_t, \alpha_t)$ per stage:
 
 | Option            | Description                                                           |
 | ----------------- | --------------------------------------------------------------------- |
@@ -279,6 +279,5 @@ For risk-averse problems, the value $\underline{z} = V_1(x_0)$ computed by SDDP 
 - [Cut Management](cut-management.md) — Dual extraction and cut coefficient computation; risk-averse aggregation replaces $p(\omega)$ with $\mu^*_\omega$ (§7)
 - [Stopping Rules](stopping-rules.md) — Bound stalling recommended for risk-averse convergence monitoring; simulation-based stopping limitations
 - [Discount Rate](discount-rate.md) — Discount factor $d$ convention and discounted Bellman equation
-- [Infinite Horizon](infinite-horizon.md) — Interaction of risk measures with periodic policy graphs
+- [Horizon Modes](horizon-modes.md) — Interaction of risk measures with cyclic policy graphs
 - [Upper Bound Evaluation](upper-bound-evaluation.md) — SIDP inner approximation for valid upper bounds with CVaR objectives
-- [Input Scenarios §1.7](../data-model/input-scenarios.md) — JSON schema for `risk_measure` field: `"expectation"` or `{"cvar": {"alpha": ..., "lambda": ...}}`

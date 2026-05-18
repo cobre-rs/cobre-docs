@@ -72,4 +72,4 @@ savefig.bbox:         tight
 savefig.pad_inches:   0.15
 savefig.facecolor:    0F1419
 savefig.edgecolor:    0F1419
-savefig.transparent:  False
+savefig.transparent:  True

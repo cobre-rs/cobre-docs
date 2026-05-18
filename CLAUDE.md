@@ -16,32 +16,50 @@ diverge from the code, the spec must be updated — not the other way around.
 
 ---
 
-## Current State (synced to v0.4.1, April 2026)
+## Current State
 
-88 specification files across 7 domains: architecture, math, data-model,
-hpc, interfaces, configuration, overview.
+The corpus is being revamped per
+[`docs/design/v0.5.0-spec-sync-plan.md`](docs/design/v0.5.0-spec-sync-plan.md)
+to become a focused methodology reference. During the revamp:
+
+- **No v0.4.x sync patches**. Do not update the existing 88 spec files
+  to track v0.4.x point releases. Patches against the old shape are
+  either redundant (the file is being deleted, relocated, or rewritten)
+  or actively harmful (they reintroduce the retired prefix discipline
+  and DEC numbering).
+- **Edits land against the new regime**. Every editorial change uses
+  plain numbering and inline rationale paragraphs as set out in the
+  source spec.
+- **The new TOC is staged** in `src/SUMMARY-revamp.md` and is the
+  reference for chapter ordering until the final SUMMARY swap at
+  release time.
+
+Once the revamp lands, this section will be replaced with a normal
+"synced to vX.Y.Z" line.
 
 ---
 
 ## Hard Rules
 
-- **Section prefixes**: `SS` in architecture specs, `§` in HPC specs, plain numbers in overview specs. Never mix.
-- **`§` is HPC-only**: the sole permitted `§` in architecture specs is inside the convention blockquote
-- **Convention blockquote**: reproduced verbatim in trait specs, never paraphrased, never in testing specs. Canonical source: `src/specs/hpc/communicator-trait.md`
 - **No `Box<dyn Trait>`**: enum dispatch for closed variant sets (see solver-interface-trait.md SS5)
-- **Cross-reference index**: always batch-update (never piecemeal). 5 sections must stay consistent.
-- **Decision Log**: changes affecting 2+ spec files must be registered as DEC-NNN before propagating
 - **Serialization**: `postcard` for MPI broadcast, `FlatBuffers` for policy persistence. Never `bincode`.
 - **Ground truth**: code > spec. When they diverge, update the spec.
+- **Batched edits**: changes affecting multiple methodology chapters must
+  be made as a single batch — there is no propagation registry. Edit all
+  affected chapters in one commit (or one PR) so the corpus stays
+  internally consistent.
+- **Plain section numbering**: methodology chapters under `src/specs/` use
+  plain `## 1`, `## 2`, ... numbering. The `§` and `SS` prefix discipline
+  does not apply.
 
 ---
 
-## Spec File Patterns (Read When Relevant)
+## Spec File Patterns
 
-When writing or editing **trait specs** (`*-trait.md` in `src/specs/architecture/`):
-→ Follow: purpose paragraph, convention blockquote, SS1 trait definition.
-→ Minimum 10-14 cross-reference entries. Infallibility claims must cite upstream sections.
-→ Reference: `src/specs/architecture/solver-interface-trait.md` (most complete example)
+The methodology corpus is being revamped per
+[`docs/design/v0.5.0-spec-sync-plan.md`](docs/design/v0.5.0-spec-sync-plan.md).
+Refer to that document for the per-domain triage rules and the canonical
+methodology lens (§0).
 
 When updating **output schemas** (`src/specs/data-model/output-schemas.md`):
 → Verify column count against `cobre-io/src/output/schemas.rs`
@@ -63,7 +81,7 @@ When **authoring or editing a diagram** (new `src/images/*.svg`, `diagrams/matpl
 | Resource                  | Location                                  | Purpose                                  |
 | ------------------------- | ----------------------------------------- | ---------------------------------------- |
 | Cobre code (ground truth) | `https://github.com/cobre-rs/cobre/`                            | Actual implementation                    |
-| Software book             | `https://github.com/cobre-rs/cobre/book/`                       | User-facing docs                         |
+| Software book             | `https://docs.cobre-rs.dev/`                       | User-facing docs                         |
 | Dev strategy              | `https://github.com/cobre-rs/cobre/docs/design/dev-strategy.md` | Documentation & public presence strategy |
 | CHANGELOG                 | `https://github.com/cobre-rs/cobre/CHANGELOG.md`                | Per-release feature list                 |
 | Diagram authoring guide   | [`docs/design/diagram-authoring.md`](docs/design/diagram-authoring.md) | Tool selection + design system for spec diagrams |

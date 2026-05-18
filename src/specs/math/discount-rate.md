@@ -4,7 +4,7 @@
 
 This spec defines how discount rates are incorporated into the Cobre SDDP solver: the discounted Bellman equation, stage-dependent discount factors, effect on the future cost variable $\theta$, cumulative discounting, and the effect on lower/upper bound computation.
 
-For the infinite periodic horizon formulation (where discounting is required for convergence), see [Infinite Horizon](infinite-horizon.md).
+For the cyclic-mode formulation (where discounting is required for convergence), see [Horizon Modes](horizon-modes.md).
 
 For notation conventions (index sets, parameters, decision variables, dual variables), see [Notation Conventions](../overview/notation-conventions.md).
 
@@ -75,7 +75,7 @@ Individual transitions may override the global rate:
 }
 ```
 
-For the complete `policy_graph` schema, see [Input Scenarios &sect;1.2](../data-model/input-scenarios.md).
+Transition-specific discount rates are configured per transition in the case-level `policy_graph`.
 
 ## 4 Discount Factor in the Stage Subproblem
 
@@ -154,14 +154,13 @@ This ensures the value function remains finite: $\lim_{n \to \infty} d_{cycle}^n
 
 **Typical setup**: An annual discount rate of 6% gives $d_{cycle} \approx 0.94$ per 12-month cycle.
 
-For the complete infinite horizon formulation — including cut sharing within cycles, modified forward/backward passes, and convergence criteria — see [Infinite Horizon](infinite-horizon.md).
+For the complete cyclic-mode formulation — including the season-indexed cut pool, the cut-sharing equation, and the cycle convergence criterion — see [Horizon Modes](horizon-modes.md).
 
 ## Cross-References
 
-- [Input Scenarios &sect;1.2](../data-model/input-scenarios.md) — `policy_graph` schema with `annual_discount_rate` and per-transition overrides
 - [SDDP Algorithm](sddp-algorithm.md) — Core Bellman equation and forward/backward pass structure that discount rates modify
 - [Cut Management](cut-management.md) — Cut coefficients remain undiscounted; discount applied to $\theta$ in objective
 - [Stopping Rules](stopping-rules.md) — Convergence criteria using discounted lower/upper bounds
 - [Upper Bound Evaluation](upper-bound-evaluation.md) — Inner approximation uses discounted vertex values
-- [Infinite Horizon](infinite-horizon.md) — Cycle detection, cut sharing, modified passes, convergence for periodic problems
-- [Configuration Reference](../configuration/configuration-reference.md) — `stages.json` transition discount rates
+- [Horizon Modes](horizon-modes.md) — Finite vs cyclic policy graphs; cyclic-mode formal structure (season function, cycle convergence inequality, season-indexed cut pool, fixed-point Bellman operator)
+- [Notation Conventions](../overview/notation-conventions.md) — Index sets, parameters, decision variables, and dual variables used throughout

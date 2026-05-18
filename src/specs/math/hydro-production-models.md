@@ -11,23 +11,25 @@ All decision variables use **rate units** (MW, m³/s) — see the Variable Units
 The simplest model assumes a linear relationship:
 
 $$
-g_{h,k} = \rho_h \cdot q_{h,k}
+g_{h,k} = \rho_{h,t} \cdot q_{h,k}
 $$
 
-where $\rho_h$ (MW per m³/s) is the hydro productivity:
+where $\rho_{h,t}$ (MW per m³/s) is the hydro productivity for stage $t$:
 
 $$
-\rho_h = \frac{9.81 \times \eta_h \times H^{ref}_h}{1000}
+\rho_{h,t} = \frac{9.81 \times \eta_h \times H^{ref}_{h,t}}{1000}
 $$
 
 with:
 
 - $\eta_h$ = turbine efficiency (typically 0.85–0.92), from the hydro object's `efficiency` field
-- $H^{ref}_h$ = reference net head (meters), typically at 65% storage
+- $H^{ref}_{h,t}$ = reference net head (meters), typically at 65% storage, varying by stage
 
-**LP treatment**: 1 equality constraint per hydro per block. The generation variable $g_{h,k}$ is fully determined by $q_{h,k}$ — no free generation variable is needed. Simple and fast, but ignores head variation with storage.
+**Per-stage productivity**: the productivity coefficient is authored **per (hydro, stage)** rather than per plant. A plant can therefore carry a stage-varying constant productivity — useful when the reference head differs between near-term and far-future stages of the same study, or when the constant model is being used as a coarse approximation that needs different operating points across the horizon. Section 5.1 describes how that per-(hydro, stage) value is resolved at load time.
 
-**Data requirements**: Only `productivity_mw_per_m3s` from `hydros.json`. No geometry or hyperplane data needed.
+**LP treatment**: 1 equality constraint per hydro per block. The generation variable $g_{h,k}$ is fully determined by $q_{h,k}$ — no free generation variable is needed. Simple and fast, but ignores head variation with storage **within a stage**.
+
+**Data requirements**: a per-stage productivity scalar per hydro plant. No geometry or hyperplane data needed.
 
 ## 2. FPHA (Four-Point Head Approximation)
 
@@ -50,7 +52,7 @@ This section uses consistent notation with the LP formulation. The following tab
 | $h_{loss}$ | $h_{PerdH}$ (perda hidráulica) | Hydraulic losses            | m     |
 | $q_{out}$  | $Q_{jus}$                      | Total downstream outflow    | m³/s  |
 
-> **Note on lateral flow**: CEPEL models include $q_{lat}$ (lateral tributary flow affecting tailrace level) in $q_{out}$. Cobre currently uses $q_{out} = q + s$ in the LP formulation. Lateral flow effects may be incorporated in future versions — see [Deferred Features](../deferred.md). For FPHA fitting purposes, a reference lateral flow can be assumed when evaluating the exact production function.
+> **Note on lateral flow**: CEPEL models include $q_{lat}$ (lateral tributary flow affecting tailrace level) in $q_{out}$. Cobre uses $q_{out} = q + s$ in the LP formulation. For FPHA fitting purposes, a reference lateral flow can be assumed when evaluating the exact production function.
 
 ### 2.2 Exact Production Function
 
@@ -80,7 +82,7 @@ where:
 - $h_{tail}(q_{out})$ = tailrace (downstream channel) level as function of total outflow
 - $h_{loss}(q)$ = hydraulic head losses in penstock and turbines
 
-**Why linearization is needed**: $\phi$ is nonlinear in $(v, q)$ due to the bilinear product $q \times h_{net}$, nonlinear topology functions $h_{fore}(v)$ and $h_{tail}(q_{out})$, and flow-dependent hydraulic losses. For LP formulation, we approximate $\phi$ with a set of linear hyperplanes.
+**Why linearization is needed**: $\phi$ is nonlinear in $(v, q)$ due to the bilinear product $q \times h_{net}$, nonlinear topology functions $h_{fore}(v)$ and $h_{tail}(q_{out})$, and flow-dependent hydraulic losses. For LP formulation, Cobre approximates $\phi$ with a set of linear hyperplanes.
 
 ### 2.3 Topology Functions
 
@@ -88,7 +90,7 @@ Cobre uses **tabular data with linear interpolation** for topology functions —
 
 #### Forebay Level $h_{fore}(v)$
 
-The upstream water level is obtained from `hydro_geometry.parquet` (see [Input Hydro Extensions §1](../data-model/input-hydro-extensions.md)):
+The upstream water level is read from the volume-height curve in `hydro_geometry.parquet`:
 
 | volume_hm3 | height_m | area_km2 |
 | ---------- | -------- | -------- |
@@ -104,7 +106,7 @@ $$
 
 #### Tailrace Level $h_{tail}(q_{out})$
 
-The downstream water level depends on total outflow. Two representations are supported, matching the `tailrace` tagged union in `hydros.json` (see [Input System Entities §3](../data-model/input-system-entities.md)):
+The downstream water level depends on total outflow. Two representations are supported, matching the `tailrace` tagged union in `hydros.json`:
 
 **Polynomial model** (`type: "polynomial"`):
 
@@ -146,16 +148,15 @@ where $\Delta h_{const}$ is in meters (typically 1–5m).
 
 ### 2.4 Productivity
 
-The **specific productivity** converts hydraulic power to electrical power:
+The **specific productivity** $\rho_{esp}$ (MW per (m³/s · m)) converts hydraulic power to electrical power at the operating head:
 
 $$
-g_h = \frac{9.81 \times \eta \times q \times h_{net}}{1000} \quad \text{[MW]}
+\rho_{esp,h} = \frac{9.81 \times \eta_h}{1000}
 $$
 
-where $\eta$ is the turbine-generator efficiency, configured via the `efficiency` field in `hydros.json`:
+so the exact production is $g_h = \rho_{esp,h} \cdot q_h \cdot h_{net}$ in MW. Cobre uses constant efficiency $\eta_h = \eta_{ref}$ per plant.
 
-- **Constant efficiency** (current): $\eta = \eta_{ref}$ — from the hydro object's `efficiency.value`
-- **Variable efficiency** (future): efficiency as a function of flow — see [deferred features](../deferred.md)
+FPHA plants author $\rho_{esp}$ directly — not a single scalar productivity $\rho$. The equivalent productivity $\rho_{eq}$ at the reference operating point is **derived** from $\rho_{esp}$ and the VHA geometry; the derivation is documented in section 5.1.
 
 ### 2.5 FPHA Hyperplanes
 
@@ -174,9 +175,9 @@ $$
 | $\gamma_q$  | > 0  | More turbined flow → more generation              |
 | $\gamma_s$  | ≤ 0  | More spillage → higher tailrace → less net head   |
 
-**Source of hyperplanes**: Planes are either pre-computed (read from `fpha_hyperplanes.parquet` — see [Input Hydro Extensions §3](../data-model/input-hydro-extensions.md)) or computed from topology data during preprocessing. The fitting process evaluates $\phi$ on a discretization grid over the operating region $[v_{min}, v_{max}] \times [0, q_{max}]$, then constructs the concave envelope of the resulting generation surface.
+**Source of hyperplanes**: Planes are either pre-computed (read from `fpha_hyperplanes.parquet`) or computed from topology data during preprocessing. The fitting process evaluates $\phi$ on a discretization grid over the operating region $[v_{min}, v_{max}] \times [0, q_{max}]$, then constructs the concave envelope of the resulting generation surface.
 
-> **Implementation note (v0.1.4):** The computed-source fitting grid is three-dimensional: volume, turbined flow, and spillage. The volume axis spans $[v_{min}, v_{max}]$ using `volume_discretization_points` uniformly spaced points (default 5). The turbined-flow axis spans $[q_{min}, q_{max}]$ using `turbine_discretization_points` points (default 5), where $q_{min} = \max(1.0, 0.01 \cdot q_{max})$ to avoid degenerate zero-flow tangent planes. The spillage axis uses `spillage_discretization_points` points (default 5) spanning $[0, 0.5 \cdot q_{max}]$, always including $s = 0$ as the first point. Validity range fields (`valid_v_min_hm3`, `valid_v_max_hm3`, `valid_q_max_m3s`) are stored as `null` in computed planes — they are not populated by the current fitting pipeline and reserved for future use.
+> **Implementation note:** The computed-source fitting grid is three-dimensional: volume, turbined flow, and spillage. The volume axis spans $[v_{min}, v_{max}]$ using `volume_discretization_points` uniformly spaced points (default 5). The turbined-flow axis spans $[q_{min}, q_{max}]$ using `turbine_discretization_points` points (default 5), where $q_{min} = \max(1.0, 0.01 \cdot q_{max})$ to avoid degenerate zero-flow tangent planes. The spillage axis uses `spillage_discretization_points` points (default 5) spanning $[0, 0.5 \cdot q_{max}]$, always including $s = 0$ as the first point. Validity range fields (`valid_v_min_hm3`, `valid_v_max_hm3`, `valid_q_max_m3s`) are stored as `null` in computed planes.
 
 ### 2.6 Correction Factor $\kappa$
 
@@ -206,7 +207,7 @@ $$
 
 Minimizes mean squared error between approximation and exact function. Less conservative but more accurate on average.
 
-> **Implementation note (v0.1.4):** Only the worst-case approach is implemented. The MSE minimization approach is specified here for completeness but is not available in the current release. Kappa is computed as the minimum ratio $\phi / \max_m(\text{plane}_m)$ over all 3D grid points where both $\phi > 0$ and $\max_m > 0$; points with zero production are skipped. Kappa must lie in $(0, 1]$; values outside this range produce a fitting error.
+> **Implementation note:** The worst-case approach is the active implementation. Kappa is computed as the minimum ratio $\phi / \max_m(\text{plane}_m)$ over all 3D grid points where both $\phi > 0$ and $\max_m > 0$; points with zero production are skipped. Kappa must lie in $(0, 1]$; values outside this range produce a fitting error.
 
 #### Typical Values
 
@@ -228,7 +229,7 @@ $$
 
 **Sign convention**: $\gamma_s^m \leq 0$ because spillage reduces generation capacity.
 
-> **Implementation note (v0.1.4):** After tangent-plane sampling and redundancy elimination, a greedy removal heuristic selects at most `max_planes_per_hydro` planes (default 10). The heuristic evaluates, for each candidate plane, the increase in maximum approximation error that would result from its removal, then permanently removes the plane whose removal causes the smallest increase. Removal stops early if the concave-envelope property (minimum grid error $\geq -10^{-8}$) would be violated; in that case the result may contain more planes than the target cardinality. The validity range fields are set to `null` in all computed planes.
+> **Implementation note:** After tangent-plane sampling and redundancy elimination, a greedy removal heuristic selects at most `max_planes_per_hydro` planes (default 10). The heuristic evaluates, for each candidate plane, the increase in maximum approximation error that would result from its removal, then permanently removes the plane whose removal causes the smallest increase. Removal stops early if the concave-envelope property (minimum grid error $\geq -10^{-8}$) would be violated; in that case the result may contain more planes than the target cardinality. The validity range fields are set to `null` in all computed planes.
 
 ### 2.8 LP Integration
 
@@ -242,7 +243,7 @@ $$
 
 where $\tilde{\gamma}_0^m = \kappa \times \gamma_0^m$ (pre-scaled intercept).
 
-These are **hard constraints** — no slack variables. Feasibility is ensured through the `fpha_turbined_cost` regularization mechanism (see §2.9).
+These are **hard constraints** — no slack variables. Feasibility is ensured through the `fpha_turbined_cost` regularization mechanism (see section 2.9).
 
 #### Average Storage Computation
 
@@ -252,7 +253,7 @@ $$
 v^{avg}_h = \frac{v^{in}_h + v_h}{2}
 $$
 
-where $v^{in}_h$ is the incoming storage LP variable (fixed to $\hat{v}_h$ via the storage fixing constraint — see [LP Formulation §4a](lp-formulation.md)) and $v_h$ is end-of-stage storage. Both are LP variables, so $v^{in}_h$ appears in the FPHA constraint with coefficient $\gamma_v^m / 2$. The LP solver automatically accounts for this when computing the dual of the storage fixing constraint.
+where $v^{in}_h$ is the incoming storage LP variable (fixed to $\hat{v}_h$ via the storage fixing constraint — see [LP Formulation](lp-formulation.md)) and $v_h$ is end-of-stage storage. Both are LP variables, so $v^{in}_h$ appears in the FPHA constraint with coefficient $\gamma_v^m / 2$. The LP solver automatically accounts for this when computing the dual of the storage fixing constraint.
 
 #### Generation as Independent Variable
 
@@ -263,7 +264,7 @@ When using FPHA, the generation variable $g_{h,k}$ is **not** directly computed 
 3. The optimizer maximizes generation subject to FPHA constraints
 4. At optimum, generation lies on one of the FPHA hyperplane facets
 
-**Key insight**: Because minimizing cost includes maximizing hydro generation (which has zero fuel cost), the optimizer naturally pushes generation to the FPHA surface boundary. The `fpha_turbined_cost` regularization (§2.9) ensures the solution lies on the boundary rather than at an interior point.
+**Key insight**: Because minimizing cost includes maximizing hydro generation (which has zero fuel cost), the optimizer naturally pushes generation to the FPHA surface boundary. The `fpha_turbined_cost` regularization (section 2.9) ensures the solution lies on the boundary rather than at an interior point.
 
 ### 2.9 FPHA Turbined Cost
 
@@ -275,13 +276,13 @@ $$
 
 This cost must satisfy $c^{fpha}_h > c^{spill}_h$ for each plant, ensuring that the optimizer prefers to reduce turbined flow rather than increase spillage when operating near the FPHA boundary. Without this regularization, the optimizer could find degenerate solutions where turbined flow and spillage are both artificially high (with net generation unchanged), because the FPHA surface has a flat region where increasing $q$ and $s$ simultaneously can maintain the same $g$.
 
-This penalty applies **only** to hydros using the FPHA model. Plants with `constant_productivity` do not incur this cost. Plants using `linearized_head` (simulation-only, see §3) are also excluded — the linearized head model uses an equality constraint, not a concave envelope.
+This penalty applies **only** to hydros using the FPHA model. Plants with `constant_productivity` do not incur this cost. Plants using `linearized_head` (simulation-only, see section 3) are also excluded — the linearized head model uses an equality constraint, not a concave envelope.
 
-For the full penalty taxonomy and priority ordering, see [Penalty System](../data-model/penalty-system.md).
+For the full penalty taxonomy and priority ordering, see [Penalty System](./penalty-system.md).
 
 ### 2.10 Impact on Benders Cuts
 
-The FPHA formulation affects water value computation. Because the incoming storage variable $v^{in}_h$ appears in the FPHA constraint (via $v^{avg}_h = (v^{in}_h + v_h)/2$, §2.8), the FPHA hyperplane duals contribute to the marginal value of incoming storage. However, the implementation does **not** require manually combining duals from the water balance and FPHA constraints. Instead, the storage fixing constraint ($v^{in}_h = \hat{v}_h$, see [LP Formulation §4a](lp-formulation.md)) captures the total sensitivity $\partial Q_t / \partial \hat{v}_h$ automatically — the LP solver propagates the FPHA contribution through $v^{in}_h$.
+The FPHA formulation affects water value computation. Because the incoming storage variable $v^{in}_h$ appears in the FPHA constraint (via $v^{avg}_h = (v^{in}_h + v_h)/2$, section 2.8), the FPHA hyperplane duals contribute to the marginal value of incoming storage. However, the implementation does **not** require manually combining duals from the water balance and FPHA constraints. Instead, the storage fixing constraint ($v^{in}_h = \hat{v}_h$, see [LP Formulation](lp-formulation.md)) captures the total sensitivity $\partial Q_t / \partial \hat{v}_h$ automatically — the LP solver propagates the FPHA contribution through $v^{in}_h$.
 
 The cut coefficient for storage is simply the dual of the storage fixing constraint:
 
@@ -341,13 +342,13 @@ Typical use: plants where full FPHA accuracy is justified for near-term training
 
 ### 3.3 Data Requirements
 
-`productivity_mw_per_m3s` from `hydros.json` plus `hydro_geometry.parquet` for the Volume-Height-Area curve. See [Input System Entities §3](../data-model/input-system-entities.md) and [Input Hydro Extensions §1](../data-model/input-hydro-extensions.md).
+`productivity_mw_per_m3s` from `hydros.json` plus `hydro_geometry.parquet` for the Volume-Height-Area curve.
 
 ## 4. Model Selection Guidelines
 
 ### Training (Policy Construction)
 
-Only `constant_productivity` and `fpha` are valid during training. The linearized head model is excluded because it changes the LP between iterations (see §3.1).
+Only `constant_productivity` and `fpha` are valid during training. The linearized head model is excluded because it changes the LP between iterations (see section 3.1).
 
 | Scenario                       | Recommended Model     | Rationale                          |
 | ------------------------------ | --------------------- | ---------------------------------- |
@@ -369,30 +370,125 @@ All three models are available during simulation. The linearized head model is p
 | Plants trained with constant, significant head variation | Linearized head       | Better analytics without FPHA fitting cost |
 | Post-optimization validation                             | Compare all models    | Verify approximation quality               |
 
-The production model can vary by stage or season per hydro. See [Input Hydro Extensions §2](../data-model/input-hydro-extensions.md) for the `stage_ranges` and `seasonal` selection modes and their JSON configuration.
+The production model may vary by stage or by season per hydro, configured via the `stage_ranges` and `seasonal` selection modes in `hydro_production_models.json`.
 
-## 5. Data Requirements Summary
+## 5. Energy-Conversion Quantities
 
-| Data Source                    | Required Fields                              | Used For                        |
-| ------------------------------ | -------------------------------------------- | ------------------------------- |
-| `hydros.json`                  | `generation.productivity_mw_per_m3s`         | Reference $\rho_{ref}$          |
-| `hydros.json`                  | `tailrace` (polynomial or piecewise)         | $h_{tail}(q_{out})$ computation |
-| `hydros.json`                  | `hydraulic_losses` (factor or constant)      | $h_{loss}(q)$ computation       |
-| `hydros.json`                  | `efficiency` (constant)                      | Turbine efficiency $\eta$       |
-| `hydro_geometry.parquet`       | volume_hm3, height_m                         | $h_{fore}(v)$ interpolation     |
-| `fpha_hyperplanes.parquet`     | gamma_0, gamma_v, gamma_q, gamma_s, kappa    | Pre-fitted planes (optional)    |
-| `hydro_production_models.json` | selection_mode, fpha_config per stage/season | Fitting configuration           |
+The three production models of sections 1–3 describe how generation depends on the operating state. For accounting purposes — natural-inflow energy (ENA), stored reservoir energy (EARM), and per-stage MW/MWh reporting — Cobre reduces each plant's production model to a small set of per-(hydro, stage) scalars at a representative operating point. These scalars are computed once at study setup and reused on every stage of every scenario.
 
-For the complete field definitions, see [Input System Entities §3](../data-model/input-system-entities.md) and [Input Hydro Extensions](../data-model/input-hydro-extensions.md).
+### 5.1 Equivalent Productivity $\rho_{eq}$
+
+The **equivalent productivity** $\rho_{eq,h,t}$ (MW per m³/s) is the single-scalar productivity that the plant would carry at the reference operating point $(V^{ref}_{h,t},\, Q^{ref}_{h,t})$. The derivation depends on the active generation model at stage $t$:
+
+| Generation model        | $\rho_{eq,h,t}$ derivation                                                                                                                                                                                                                                                                                                                                          |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `constant_productivity` | A per-(hydro, stage) numeric value authored by the case — see "Authoring sources" below.                                                                                                                                                                                                                                                                            |
+| `linearized_head`       | A per-(hydro, stage) numeric value authored by the case — same resolution as `constant_productivity`.                                                                                                                                                                                                                                                               |
+| `fpha`                  | $\rho_{eq,h,t} = \rho_{esp,h} \cdot h_{eq}(V^{ref}_{h,t},\, Q^{ref}_{h,t})$, where $h_{eq}$ is the net head computed from the VHA geometry (section 2.3) at the reference point. FPHA hydros do **not** author a separate $\rho_{eq}$ scalar in the production-models input — it is derived. A parquet-level override is still accepted (see "FPHA override path"). |
+
+The reference point $(V^{ref}, Q^{ref})$ is typically chosen as the storage fraction (e.g., 65% of usable volume between $V_{min}$ and $V_{max}$) and the installed turbine capacity. The fraction can be resolved per (hydro, season) so that ENA accounting in flood-season months differs from dry-season months when appropriate.
+
+#### Authoring sources for non-FPHA hydros
+
+Two complementary inputs supply $\rho_{eq,h,t}$ for `constant_productivity` and `linearized_head` plants:
+
+1. **Range-level productivity** in the hydro production models input. Each `stage_range` or `seasonal` entry may carry a single `productivity_mw_per_m3s` value that applies to every stage the entry covers. This is the natural authoring shape for "this productivity is the same for the next five stages" — declarative, low-volume.
+2. **Per-stage productivity** in the hydro energy productivity input (a per-row table indexed by `(hydro_id, stage_id)`). Each row may name a specific stage or carry a per-hydro default (no `stage_id` set). This is the natural authoring shape for "this productivity changes every stage" — tabular, high-volume.
+
+Either source — but **not both for the same `(hydro, stage)`** — may supply the value. The contract is symmetric with the generic-constraint authoring contract: a declarative JSON file owns model selection plus range-level values, and a tabular parquet file owns per-stage numerical refinement.
+
+#### Resolution order
+
+For a non-FPHA hydro $h$ at study stage $t$, the value of $\rho_{eq,h,t}$ is resolved in this order:
+
+1. A per-stage row in the energy-productivity input whose `stage_id` matches $t$ exactly.
+2. A per-hydro default row in the energy-productivity input (no `stage_id` set) for hydro $h$.
+3. The `productivity_mw_per_m3s` value from the matching `stage_range` or `seasonal` entry in the production-models input.
+
+The first three options are mutually exclusive at load time (see "Conflict and coverage" below), so this ordering is descriptive rather than a precedence in the sense of "earlier source overrides later"; it is the order in which the resolver consults sources, stopping at the first hit.
+
+#### Conflict and coverage
+
+Two load-time invariants are enforced:
+
+- **Conflict**: when the per-stage parquet row (or the per-hydro default) and the production-models JSON entry both supply a value for the same $(h, t)$, the case is rejected at load time. The error names both files and the offending $(h, t)$.
+- **Coverage**: when neither source supplies a value for some study stage $t$ of a non-FPHA hydro $h$, the case is rejected at load time. The error names the offending $(h, t)$ pair.
+
+A coverage failure never reaches the dispatch pipeline — it is caught alongside the other case-validation rules. This is the same boundary discipline used elsewhere in the load pipeline: structural problems surface as load-time errors, never as deeper dispatch-time panics.
+
+#### FPHA override path
+
+For FPHA hydros, $\rho_{eq}$ is derived from VHA geometry and $\rho_{esp}$ at the reference operating point. The per-stage energy-productivity input remains available as an **override**: if a row supplies a value for an FPHA $(h, t)$, it replaces the derived value. The production-models JSON file does **not** accept `productivity_mw_per_m3s` for FPHA — that field is rejected at parse time. FPHA hydros are therefore exempt from the non-FPHA conflict and coverage rules.
+
+#### Zero as planned-outage marker
+
+A resolved $\rho_{eq,h,t} = 0$ is **accepted** for non-FPHA hydros and a resolved $\rho_{esp,h} = 0$ is accepted for FPHA hydros. Both are interpreted as a **planned outage** for the affected stage: the LP uses these scalars as multipliers (never divisors), so zero productivity produces zero generation cleanly without any divide-by-zero or feasibility hazard. The same relaxation applies to the parquet $\rho_{eq}$ override, the parquet $\rho_{esp}$ column, and the JSON range-level productivity. Negative values are still rejected at load time as nonsensical.
+
+This relaxation lets real-world cases mark a plant as out-of-service for specific stages without the case author needing to remove it from the system definition, restructure the cascade, or work around a strict-positivity check.
+
+### 5.2 Accumulated Cascade Productivity $\rho_{acum}$
+
+The **accumulated productivity** $\rho_{acum,h,t}$ (MW per m³/s) is the energy that one m³/s of incremental inflow into plant $h$ contributes once it is routed through plant $h$ and every plant downstream of $h$ along the cascade:
+
+$$
+\rho_{acum,h,t} \;=\; \rho_{eq,h,t} \;+\; \sum_{h' \,\in\, \text{downstream}(h)} \rho_{eq,h',t}
+$$
+
+The sum is taken in topological order over the cascade (see [system elements](system-elements.md) for the cascade topology). Plants with no downstream successors have $\rho_{acum} = \rho_{eq}$. The accumulation is per-stage because each summand can vary by stage.
+
+### 5.3 Inflow and Storage in Energy Units
+
+$\rho_{acum}$ converts hydraulic quantities to energy units that downstream reporting expects:
+
+**Incremental inflow energy** (MW):
+
+$$
+\text{ENA}_{h,k} \;=\; \rho_{acum,h,t} \cdot a_{h,k}
+$$
+
+This is the rate-form **natural energy inflow** in MW. Stagewise energy (MWh) is recovered by multiplying by block duration $\tau_k$ in hours.
+
+**Stored reservoir energy** (MWh):
+
+$$
+\text{EARM}^{\,\text{init}}_h \;=\; (V^{init}_h - V^{min}_h) \cdot \rho_{acum,h,t} \cdot \frac{10^6}{3600}
+\qquad
+\text{EARM}^{\,\text{final}}_h \;=\; (V^{final}_h - V^{min}_h) \cdot \rho_{acum,h,t} \cdot \frac{10^6}{3600}
+$$
+
+The conversion factor $10^6 / 3600$ converts hm³ to m³ and seconds to hours so that storage in hm³ multiplied by productivity in MW/(m³/s) yields MWh.
+
+These quantities do not enter the LP — they are accounting outputs derived from the LP solution. Their methodology relevance is that they make the production model auditable in the same energy units used by the load forecast and the cost objective.
+
+### 5.4 Why a Scalar Reduction Exists at All
+
+The full FPHA production function (section 2) is multi-dimensional and concave; constant productivity is a scalar but per-plant; linearized head is bilinear in $(q, v^{avg})$. None of these can be summed across a cascade or scaled by inflow without a reference operating point. The energy-conversion scalars resolve this: each model is reduced to one number per (hydro, stage), at one operating point, and that number is what the cascade-summation, ENA, and EARM formulas above can consume uniformly. The LP continues to enforce the full production model — the scalar reduction is for accounting, not for dispatch.
+
+## 6. Data Requirements Summary
+
+| Data Source                     | Required Fields                                                                    | Used For                                                                |
+| ------------------------------- | ---------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| Hydro plant entity              | `tailrace` (polynomial or piecewise)                                               | $h_{tail}(q_{out})$ computation                                         |
+| Hydro plant entity              | `hydraulic_losses` (factor or constant)                                            | $h_{loss}(q)$ computation                                               |
+| Hydro plant entity              | `efficiency` (constant)                                                            | Turbine efficiency $\eta$                                               |
+| Hydro plant entity              | `specific_productivity_mw_per_m3s_per_m` (FPHA)                                    | $\rho_{esp}$ for $\rho_{eq}$ derivation (§5.1)                          |
+| Hydro plant entity              | Cascade topology (downstream pointer)                                              | $\rho_{acum}$ topological sum (§5.2)                                    |
+| Hydro production models input   | Range-level productivity per `stage_range` / `seasonal` entry (non-FPHA, optional) | $\rho_{h,t}$ for sections 1 and 3 (§5.1 authoring source 1)             |
+| Hydro production models input   | Reference-volume fractions per (hydro, season)                                     | $V^{ref}$ for the energy-conversion reduction                           |
+| Hydro production models input   | FPHA fitting configuration                                                         | Plane discretisation, $\kappa$ rule (§2.5–2.6)                          |
+| Hydro energy productivity input | Per-(hydro, stage) `equivalent_productivity_mw_per_m3s`                            | $\rho_{eq,h,t}$ override (§5.1 authoring source 2 + FPHA override path) |
+| Hydro geometry                  | volume_hm3, height_m                                                               | $h_{fore}(v)$ interpolation (§2.3)                                      |
+| Pre-fitted FPHA planes          | $\gamma_0, \gamma_v, \gamma_q, \gamma_s, \kappa$                                   | Optional alternative to in-process fitting                              |
+
+For non-FPHA hydros, the per-(hydro, stage) productivity coefficient is resolved from exactly one of the two authoring sources listed in §5.1: range-level productivity in the production-models input, or per-stage productivity in the energy-productivity input. Supplying a value from both for the same $(h, t)$ is rejected at load time; supplying neither for any study stage of a non-FPHA hydro is also rejected at load time.
+
+For FPHA hydros, the production-models input does not accept a productivity scalar — $\rho_{eq}$ is derived from VHA geometry and $\rho_{esp}$ unless the energy-productivity input supplies an override.
 
 ## Cross-References
 
 - [Notation conventions](../overview/notation-conventions.md) — variable and set definitions ($g_h$, $q_h$, $v_h$, $s_h$, $\rho_h$)
 - [System elements](system-elements.md) — hydro plant element description, decision variables, Variable Units Convention
 - [LP formulation](lp-formulation.md) — how production constraints integrate into the assembled LP
-- [Penalty system](../data-model/penalty-system.md) — `fpha_turbined_cost` regularization, penalty priority ordering
-- [Input System Entities §3](../data-model/input-system-entities.md) — hydro registry with tailrace, hydraulic losses, efficiency fields
-- [Input Hydro Extensions](../data-model/input-hydro-extensions.md) — geometry data, production model selection, FPHA hyperplane schema
+- [Penalty system](./penalty-system.md) — `fpha_turbined_cost` regularization, penalty priority ordering
 - [Cut management](cut-management.md) — Benders cut generation affected by FPHA dual variables
-- [Deferred features](../deferred.md) — variable efficiency, other simulation-only enhancements
-- [Simulation architecture](../architecture/simulation-architecture.md) — simulation step where linearized head and other non-convex enhancements are applied
+- [Equipment formulations](equipment-formulations.md) — thermal and hydro equipment constraint patterns

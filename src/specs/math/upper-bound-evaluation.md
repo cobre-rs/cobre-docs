@@ -12,7 +12,7 @@ For notation conventions (index sets, parameters, decision variables, dual varia
 
 ## 1 Motivation
 
-Standard SDDP provides only a **lower bound** (outer approximation) through cuts. For convergence verification, we need an **upper bound** (inner approximation). This is especially important for:
+Standard SDDP provides only a **lower bound** (outer approximation) through cuts. Convergence verification requires an **upper bound** (inner approximation). This is especially important for:
 
 1. **Risk-averse problems**: CVaR objectives cannot be reliably estimated via Monte Carlo simulation of the policy
 2. **Convergence certificates**: Gap $= \bar{z} - \underline{z}$ provides a true optimality measure
@@ -198,13 +198,77 @@ For stopping rules that use the gap, see [Stopping Rules](stopping-rules.md).
 
 **Recommendation**: Enable upper bound evaluation every 5-10 iterations after an initial burn-in period (10+ iterations) for convergence monitoring without excessive overhead.
 
-## 10 Infinite Horizon
+## 10 Out-of-Sample Simulation Procedure
 
-For cyclic policy graphs (see [Infinite Horizon](infinite-horizon.md)), the inner approximation operates on the same seasonal cut-pool structure: vertices are organized by season $\tau$, not by absolute stage ID. The Lipschitz constant must account for the cumulative discount around the cycle, which bounds the geometric series of future contributions.
+Cobre can also estimate an upper bound on expected total cost by running the trained policy on scenarios drawn independently of the training tree. This procedure produces a **statistical** upper-bound estimate; for the deterministic upper bound applicable to risk-averse policies, see sections 2–9 of this chapter.
+
+### 10.1 Independence from Training
+
+The core methodological guarantee is that the noise used for the simulation forward pass is drawn independently of the noise used during training. Training forward passes sample from the opening tree (see [Scenario Generation](./scenario-generation.md)) to build the scenario tree that drives cut generation; any cost computed by re-running the policy on those same training scenarios would produce a **biased** estimator — the cuts were shaped to be tight at those states. The out-of-sample simulation avoids this by drawing a fresh set of $N$ independent noise realizations from the same opening tree via a separate seed. Because cuts have no dependence on these independent draws, the resulting cost sample is an unbiased estimator of the true expected cost under the current policy.
+
+> **Risk-averse caveat**: The unbiasedness guarantee applies to the expected-cost estimator under risk-neutral evaluation. For risk-averse objectives, the Monte Carlo CVaR estimator is not a valid upper bound on the risk measure — only the deterministic inner approximation (sections 2–9) provides that guarantee. See [Risk Measures](./risk-measures.md).
+
+### 10.2 Monte Carlo Estimator
+
+The simulation executes a complete forward pass for each of the $N$ independent replications, recording the total discounted cost $C_i$ for scenario $i$:
+
+$$
+C_i = \sum_{t=1}^{T} d_{1 \to t} \cdot c_t^{(i)}
+$$
+
+where $c_t^{(i)}$ is the immediate cost at stage $t$ of replication $i$, and $d_{1 \to t}$ is the cumulative discount factor from stage 1 to stage $t$ (see [Discount Rate](./discount-rate.md)).
+
+The **sample mean** is the Monte Carlo estimator of expected total cost:
+
+$$
+\bar{C} = \frac{1}{N} \sum_{i=1}^{N} C_i
+$$
+
+This estimator is **unbiased** under independent draws: $\mathbb{E}[\bar{C}] = \mathbb{E}[C]$. The **sample standard deviation** is:
+
+$$
+\sigma_C = \sqrt{\frac{1}{N-1} \sum_{i=1}^{N} (C_i - \bar{C})^2}
+$$
+
+In addition to mean and standard deviation, the simulation computes the Conditional Value-at-Risk at a specified confidence level $\alpha$ from the sorted scenario costs. For the CVaR estimator and its interpretation under risk-averse policies, see [Risk Measures](./risk-measures.md).
+
+### 10.3 Confidence Interval
+
+Under the normal approximation, the 95% confidence interval for $\mathbb{E}[C]$ has half-width:
+
+$$
+\Delta_{95} = 1.96 \cdot \frac{\sigma_C}{\sqrt{N}}
+$$
+
+The approximation is reliable when $N \geq 20$ (central-limit-theorem regime). The reported interval is $[\bar{C} - \Delta_{95},\; \bar{C} + \Delta_{95}]$.
+
+**Trade-off**: every doubling of $N$ narrows the confidence interval by a factor of $\sqrt{2}$, but costs proportionally more LP solves — $N \times T$ stage subproblems per simulation check. The practical baseline of $N = 100$ replications gives a half-width of roughly $\sigma_C / 10$, which is sufficient to distinguish a converged policy from one still improving.
+
+### 10.4 Configurable Replication Count
+
+The sole knob governing the out-of-sample procedure is the number of replications $N$ (the `replications` parameter of the `simulation` stopping rule). It controls the statistical resolution of the estimator and the compute cost of each stopping check simultaneously.
+
+| $N$ | Confidence interval half-width | LP solves per check ($T = 120$) |
+| --- | ------------------------------ | ------------------------------- |
+| 20  | $\approx \sigma_C / 4.5$       | 2,400                           |
+| 100 | $\approx \sigma_C / 10$        | 12,000                          |
+| 500 | $\approx \sigma_C / 22$        | 60,000                          |
+
+The baseline $N = 100$ is practical for production runs: at the reference scale of $T = 120$ stages and 16 MPI ranks, the simulation check costs approximately 1.7 seconds of wall-clock time per trigger. Raising $N$ narrows the interval linearly in $1/\sqrt{N}$ at a proportional cost in simulation time.
+
+### 10.5 Interaction with the Simulation-Based Stopping Rule
+
+The out-of-sample simulation described here is the per-iteration measurement on which the simulation-based stopping rule operates. Each time the stopping rule fires (every `period` iterations, when the outer-approximation bound is stable), one simulation check is executed, producing $\bar{C}$, $\sigma_C$, and $\Delta_{95}$ for the current iteration. The stopping rule then compares consecutive simulation estimates to test whether the policy has stabilized across iterations. The stopping criterion and the comparison metric are fully specified in [Stopping Rules](./stopping-rules.md) section 5; this chapter owns only the per-iteration estimator (mean, standard deviation, confidence interval) and delegates the convergence decision to that chapter.
+
+> **Boundary**: this section owns the methodology of the per-iteration estimator; the scenario seed derivation, the distribution of replications across compute resources, and the per-stage cost comparison metric belong to the stopping-rule integration and are specified in [Stopping Rules](./stopping-rules.md) section 5.
+
+## 11 Cyclic Mode
+
+For cyclic policy graphs (see [Horizon Modes](horizon-modes.md)), the inner approximation operates on the same seasonal cut-pool structure: vertices are organized by season $\tau$, not by absolute stage ID. The Lipschitz constant must account for the cumulative discount around the cycle, which bounds the geometric series of future contributions.
 
 The convergence guarantee still holds: with $d_{cycle} < 1$, both the outer (cut) and inner (vertex) approximations converge to the true value function at the fixed point.
 
-## 11 References
+## 12 References
 
 > Costa, B.F.P., & Leclere, V. (2023). "Duality of upper bounds in stochastic dynamic programming." _Optimization Online_. https://optimization-online.org/?p=23738
 
@@ -214,11 +278,9 @@ The convergence guarantee still holds: with $d_{cycle} < 1$, both the outer (cut
 
 - [SDDP Algorithm](sddp-algorithm.md) — Core algorithm providing the outer approximation (lower bound) that this spec complements
 - [Notation Conventions](../overview/notation-conventions.md) — Standard symbols for state variables, value functions, and cost-to-go
-- [Discount Rate](discount-rate.md) — Discount factor $d$ used in vertex value computation (&sect;5) and Lipschitz accumulation (&sect;4)
-- [Infinite Horizon](infinite-horizon.md) — Seasonal vertex organization for cyclic policy graphs
+- [Discount Rate](discount-rate.md) — Discount factor $d$ used in vertex value computation (section 5) and Lipschitz accumulation (section 4)
+- [Horizon Modes](horizon-modes.md) — Cyclic policy graphs and the season-indexed pool structure that the inner approximation mirrors
 - [Cut Management](cut-management.md) — Outer approximation cuts that provide the lower bound counterpart
-- [Stopping Rules](stopping-rules.md) — Convergence criteria that use the gap between inner and outer approximations
-- [Risk Measures](risk-measures.md) — CVaR objectives where deterministic upper bounds are essential
-- [Binary Formats &sect;3.3](../data-model/binary-formats.md) — FlatBuffers `Vertex` and `StageVertices` schemas for persistence
-- [Input Directory Structure &sect;2.2](../data-model/input-directory-structure.md) — `upper_bound_evaluation` configuration in `config.json`
-- [Configuration Reference](../configuration/configuration-reference.md) — Full configuration schema with defaults
+- [Stopping Rules](stopping-rules.md) — Convergence criteria that use the gap between inner and outer approximations; simulation-based stopping rule that consumes the per-iteration out-of-sample estimator (section 10.5)
+- [Risk Measures](risk-measures.md) — CVaR objectives where deterministic upper bounds are essential; CVaR estimator validity under risk-averse policies (section 10.1)
+- [Scenario Generation](scenario-generation.md) — Opening-tree definition from which out-of-sample replications draw independent noise realizations (section 10.1)
