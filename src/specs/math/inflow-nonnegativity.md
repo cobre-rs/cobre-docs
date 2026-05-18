@@ -56,12 +56,13 @@ $$
 {
   "modeling": {
     "inflow_non_negativity": {
-      "method": "penalty",
-      "penalty_cost": 1000.0
+      "method": "penalty"
     }
   }
 }
 ```
+
+The penalty cost $c^{inf}$ is authored separately in the penalties file under the hydro section, not inside this block.
 
 **Additional Variables**:
 
@@ -139,12 +140,13 @@ $$
 {
   "modeling": {
     "inflow_non_negativity": {
-      "method": "truncation_with_penalty",
-      "penalty_cost": 1000.0
+      "method": "truncation_with_penalty"
     }
   }
 }
 ```
+
+The slack-column penalty cost $c^{inf}$ is sourced from the penalties file under the hydro section (same key as for the pure-`penalty` method).
 
 This is the production method Cobre uses for inflow non-negativity. The two preceding methods each handle one side of the problem well but leave the other unaddressed: pure truncation keeps the LP lean but biases the inflow distribution upward; pure penalty preserves distribution fidelity but relies entirely on LP slack to absorb every negative excursion. The hybrid combines both mechanisms to cover the full range of noise excursions efficiently.
 

@@ -176,14 +176,15 @@ $$
 
 ## 9. Selection Parameters
 
-The cut selection strategy is configured with the following parameters (knobs are documented inline in this chapter):
+The cut selection strategy is configured with the following parameters (knobs are documented inline in this chapter). Each method consumes exactly one tuning parameter and rejects configurations that omit it; there is no fallback between fields.
 
-| Parameter         | Description                                                                                     | Applies to        |
-| ----------------- | ----------------------------------------------------------------------------------------------- | ----------------- |
-| `method`          | Selection strategy: `"level1"`, `"lml1"`, or `"domination"`                                     | All               |
-| `threshold`       | Level1: activity count (u64). Dominated: epsilon tolerance (f64). LML1: maps to `memory_window` | Level1, Dominated |
-| `check_frequency` | Iterations between selection runs                                                               | All               |
-| `memory_window`   | Iterations to retain inactive cuts (LML1 only; the JSON `threshold` field is mapped to this)    | LML1 only         |
+| Parameter            | Description                                                                                  | Applies to      |
+| -------------------- | -------------------------------------------------------------------------------------------- | --------------- |
+| `method`             | Selection strategy: `"level1"`, `"lml1"`, or `"domination"`                                  | All             |
+| `threshold`          | Activity-count cutoff $K$ for deactivating cuts that were active fewer than $K$ times (§7.1) | Level1 only     |
+| `memory_window`      | Iterations to retain inactive cuts before they are removed (§7.2)                            | LML1 only       |
+| `domination_epsilon` | Tolerance $\epsilon$ for the at-visited-states dominance check (§7.3)                        | Domination only |
+| `check_frequency`    | Iterations between selection runs                                                            | All             |
 
 ## Cross-References
 

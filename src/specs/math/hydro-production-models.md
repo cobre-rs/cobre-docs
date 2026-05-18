@@ -374,8 +374,6 @@ The production model may vary by stage or by season per hydro, configured via th
 
 ## 5. Energy-Conversion Quantities
 
-> **Status: under active development.** The energy-conversion pipeline described in this section is implemented in the Cobre codebase and exercised by the test suite, but has not yet appeared in a tagged release. The formulation here reflects the model currently exercised in development.
-
 The three production models of sections 1–3 describe how generation depends on the operating state. For accounting purposes — natural-inflow energy (ENA), stored reservoir energy (EARM), and per-stage MW/MWh reporting — Cobre reduces each plant's production model to a small set of per-(hydro, stage) scalars at a representative operating point. These scalars are computed once at study setup and reused on every stage of every scenario.
 
 ### 5.1 Equivalent Productivity $\rho_{eq}$
