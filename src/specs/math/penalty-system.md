@@ -105,8 +105,8 @@ Five additional hydro penalty fields support directional and inflow-specific pen
 
 - `water_withdrawal_violation_pos_cost` — penalty per m3/s of over-withdrawal (withdrew more than target); defaults to `water_withdrawal_violation_cost`
 - `water_withdrawal_violation_neg_cost` — penalty per m3/s of under-withdrawal (withdrew less than target); defaults to `water_withdrawal_violation_cost`
-- `evaporation_violation_pos_cost` — penalty per mm of over-evaporation; defaults to `evaporation_violation_cost`
-- `evaporation_violation_neg_cost` — penalty per mm of under-evaporation; defaults to `evaporation_violation_cost`
+- `evaporation_violation_pos_cost` — penalty per m³/s of positive deviation of the signed net evaporation flow from the linearised target; defaults to `evaporation_violation_cost`
+- `evaporation_violation_neg_cost` — penalty per m³/s of negative deviation of the signed net evaporation flow from the linearised target; defaults to `evaporation_violation_cost`
 - `inflow_nonnegativity_cost` — penalty per m3/s of inflow non-negativity slack activation (method = `"penalty"`); defaults to 1000.0
 
 See [Inflow Non-Negativity](./inflow-nonnegativity.md) for details on the penalty method.
@@ -169,41 +169,37 @@ User-defined generic constraints can optionally have slack variables with user-s
 
 ## 5. Bidirectional Slacks and Directional Overrides
 
-### Negative Evaporation (Condensation) Handling
+### Signed Net Evaporation
 
-While evaporation is typically positive (water loss), the evaporation coefficient can be negative:
+The reservoir-surface evaporation flow $Q_{ev,h}$ is a **signed net flux**: positive values represent net evaporative loss, negative values represent net rainfall input on the lake surface (precipitation on the reservoir exceeds open-water evaporation). On tropical and subtropical basins, the per-stage net coefficient is routinely negative for 5–7 months per year, so the negative case is the wet-season norm rather than an exceptional condition. Other situations that can yield a negative value include condensation in humid climates and linearisation artefacts at certain volume/coefficient combinations.
 
-| Condition               | Description                                                                                     |
-| ----------------------- | ----------------------------------------------------------------------------------------------- |
-| Condensation            | Water condensing on reservoir surface in humid climates                                         |
-| Rainfall contribution   | When models include net precipitation effects                                                   |
-| Linearization artifacts | The linear approximation may produce negative values at certain volume/coefficient combinations |
+The evaporation column is bounded symmetrically, $Q_{ev,h} \in [-q^{\max}_{ev,h},\, +q^{\max}_{ev,h}]$, where $q^{\max}_{ev,h}$ is the maximum-magnitude linearised target across stages multiplied by a safety margin. The symmetric bound lets the same column absorb both directions without forcing the over-evaporation slack to fire on every wet-month stage. A negative $Q_{ev,h}$ enters the water-balance equation with the same coefficient as a positive value; the sign of $Q_{ev,h}$ itself controls whether the term subtracts (loss) or adds (rainfall input) from storage.
 
-The evaporation constraint uses **bidirectional slack variables**:
+The evaporation equality row uses **bidirectional slack variables** to absorb deviations from the linearised target:
 
 ```
 Q_evaporated - evap_slack_positive + evap_slack_negative = EvapCoef x Area(V_avg)
 
 where:
-  evap_slack_positive >= 0  (actual evap > computed evap)
-  evap_slack_negative >= 0  (actual evap < computed evap, including negative target)
+  evap_slack_positive >= 0  (Q_evaporated above the linearised target)
+  evap_slack_negative >= 0  (Q_evaporated below the linearised target)
 ```
 
-Each slack variable receives its own penalty: `evaporation_violation_pos_cost` for over-evaporation and `evaporation_violation_neg_cost` for under-evaporation. When the directional costs are not specified (i.e., unset), both default to the symmetric `evaporation_violation_cost` value.
+The slacks themselves remain one-sided ($\geq 0$); the sign of the target is carried by $Q_{ev,h}$ and `EvapCoef`. Each slack receives its own penalty: `evaporation_violation_pos_cost` and `evaporation_violation_neg_cost`. When the directional costs are unset, both default to the symmetric `evaporation_violation_cost` value.
 
 Stage-varying overrides follow the same pattern: directional costs may be overridden independently per (entity, stage). Penalty values may vary by stage. Stage-varying overrides are sparse — only entries that differ from defaults are recorded.
 
 ## 6. Hydro Variable Bounds Summary
 
-| Variable        | Lower Bound            | Upper Bound         | Lower Slack  | Upper Slack     |
-| --------------- | ---------------------- | ------------------- | ------------ | --------------- |
-| `storage`       | `min_storage_hm3`      | `max_storage_hm3`   | With penalty | Emergency spill |
-| `turbined_flow` | `min_turbined_m3s`     | `max_turbined_m3s`  | With penalty | Hard            |
-| `spillage`      | 0                      | Inf                 | Hard         | —               |
-| `outflow`       | `min_outflow_m3s`      | `max_outflow_m3s`   | With penalty | With penalty    |
-| `generation`    | `min_generation_mw`    | `max_generation_mw` | With penalty | Hard            |
-| `evaporation`   | -Inf (can be negative) | +Inf                | With penalty | With penalty    |
-| `withdrawal`    | `water_withdrawal`     | `water_withdrawal`  | With penalty | With penalty    |
+| Variable        | Lower Bound         | Upper Bound         | Lower Slack  | Upper Slack     |
+| --------------- | ------------------- | ------------------- | ------------ | --------------- |
+| `storage`       | `min_storage_hm3`   | `max_storage_hm3`   | With penalty | Emergency spill |
+| `turbined_flow` | `min_turbined_m3s`  | `max_turbined_m3s`  | With penalty | Hard            |
+| `spillage`      | 0                   | Inf                 | Hard         | —               |
+| `outflow`       | `min_outflow_m3s`   | `max_outflow_m3s`   | With penalty | With penalty    |
+| `generation`    | `min_generation_mw` | `max_generation_mw` | With penalty | Hard            |
+| `evaporation`   | $-q^{\max}_{ev,h}$  | $+q^{\max}_{ev,h}$  | With penalty | With penalty    |
+| `withdrawal`    | `water_withdrawal`  | `water_withdrawal`  | With penalty | With penalty    |
 
 > **Generation bounds**: The user explicitly sets `min_generation_mw` and `max_generation_mw`. These are not derived from turbined flow bounds, because the production function is not always constant productivity. When a complete hydro model is available, the installed capacity provides a natural hard upper bound. The lower bound always requires a slack to maintain feasibility.
 

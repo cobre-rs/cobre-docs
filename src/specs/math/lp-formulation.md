@@ -178,6 +178,7 @@ where:
 - $v^{in}_h$ = incoming storage LP variable, fixed to the previous stage's value via the storage fixing constraint (§4a)
 - $a_h$ = incremental inflow (from AR model, see [PAR(p) inflow model](par-inflow-model.md)); equivalently $z_h$ from the z-inflow constraint (§5b)
 - $r_h$ = water withdrawal rate (m³/s), a **fixed RHS parameter** from `water_withdrawal_m3s` (not a per-block LP decision variable). Withdrawal is subtracted from the available water at the stage level, outside the per-block summation
+- $e_{h,k}$ = signed net evaporation flow (m³/s): positive values represent net evaporative loss subtracted from storage; negative values represent net rainfall input on the lake surface that adds to storage through the same coefficient (the leading $-$ sign on $e_{h,k}$ flips the contribution automatically — see [penalty system §5](./penalty-system.md))
 - $w_k = \tau_k / \sum_j \tau_j$ = block weight
 - $\zeta = 0.0036 \times \sum_k \tau_k$ = time conversion factor
 
