@@ -92,11 +92,12 @@ $$
 v = v^{in} + a - q
 $$
 
-**Storage fixing constraint** (binds incoming storage to the trial
-value; its dual becomes the cut coefficient):
+**Incoming-storage pinning** (binds incoming storage to the trial
+value by equal column bounds; the pinned column's reduced cost becomes
+the cut coefficient):
 
 $$
-v^{in} = \hat{v}_{t-1}
+\underline{v}^{in} = \bar{v}^{in} = \hat{v}_{t-1}
 $$
 
 **Inflow** (treated as data, not a state variable; see section 3):
@@ -192,8 +193,8 @@ the average over many simulated trajectories.
 
 The backward pass walks stages $4 \to 1$. At each stage it fixes the
 incoming storage to the trial point from the forward pass, evaluates
-all three openings, reads the storage fixing-constraint dual, computes
-per-opening intercepts, and aggregates into one cut (see
+all three openings, reads the reduced cost of the pinned incoming-storage
+column, computes per-opening intercepts, and aggregates into one cut (see
 [Cut Management](../math/cut-management.md) sections 2–3).
 
 ### Stage 4 (terminal)
@@ -207,9 +208,9 @@ $a_4(\omega) \in \{20, 30, 40\}$.
 | $\omega_2$ | $0$           | 30    | 30                        | 30  | 10       | 500   |
 | $\omega_3$ | $+1$          | 40    | 40                        | 40  | 0        | 0     |
 
-**Storage fixing dual** $\pi^v_4(\omega) = \partial Q_4/\partial \hat{v}_3$.
-By the LP envelope theorem applied to the fixing constraint
-$v^{in}_4 = \hat{v}_3$:
+**Storage cut coefficient** $\pi^v_4(\omega) = \partial Q_4/\partial \hat{v}_3$,
+the reduced cost of the pinned incoming-storage column. By the LP envelope
+theorem applied to the pinned bound $v^{in}_4 = \hat{v}_3$:
 
 - For $\omega_1$ and $\omega_2$ (water-limited, thermal active): one
   extra unit of $\hat{v}_3$ enables one extra unit of turbining,
@@ -282,7 +283,7 @@ more is $+50 - 100/3 \approx +16.7$, so the optimiser pushes $q$ to
 its load-balance bound at $40$, leaving $v_3 = 10$ and the cut value
 at $500/3 \approx 167$.
 
-**Storage fixing duals** $\pi^v_3(\omega) = \partial Q_3/\partial \hat{v}_2$:
+**Storage cut coefficients** $\pi^v_3(\omega) = \partial Q_3/\partial \hat{v}_2$ (reduced costs of the pinned incoming-storage column):
 
 - $\omega_1$ (water-limited): one extra unit of $\hat{v}_2$ frees one
   extra turbine unit, saves $50$ of thermal. $\pi^v_3(\omega_1) = -50$.
@@ -324,9 +325,9 @@ expectation $\bar{Q}_3 = (1/3)(1000 + 500 + 500/3) = 5000/9 \approx 555.6$.
 
 The same procedure repeats at stages 2 and 1. At each stage:
 
-1. Fix the incoming storage to the trial point from the forward pass.
+1. Pin the incoming storage to the trial point from the forward pass (column bounds).
 2. Solve all three opening LPs, including the cut from the next stage.
-3. Read the storage fixing-constraint dual.
+3. Read the reduced cost of the pinned incoming-storage column.
 4. Compute per-opening intercepts via $\hat{\alpha}(\omega) = Q(\omega) - \pi^v(\omega)\,\hat{v}_{t-1}$.
 5. Aggregate by probability-weighted averaging.
 6. Add the cut to the previous stage's LP.
@@ -456,7 +457,7 @@ per-bus dispatch mechanics scale up.
 ## Cross-References
 
 - [SDDP Algorithm](../math/sddp-algorithm.md) — Forward and backward pass structure, lower-bound computation, convergence monitoring
-- [LP Formulation](../math/lp-formulation.md) — Complete stage LP: load balance, water balance, fixing constraints, objective taxonomy
+- [LP Formulation](../math/lp-formulation.md) — Complete stage LP: load balance, water balance, column-bound state pinning, objective taxonomy
 - [Cut Management](../math/cut-management.md) — Dual extraction, per-opening intercepts, single-cut aggregation, cut validity, sign convention
 - [PAR Inflow Model](../math/par-inflow-model.md) — Inflow model definition; the $p = 0$ degenerate case (white noise) used in this walkthrough; stored vs computed quantities
 - [Stopping Rules](../math/stopping-rules.md) — Iteration limit, gap threshold, bound-stalling criteria

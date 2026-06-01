@@ -188,19 +188,68 @@ Thermal costs represent actual operating expenses (\$50–500/MWh depending on f
 
 For detailed constraints, see [equipment formulations](equipment-formulations.md).
 
-### GNL Thermal Plants
+### Anticipated Thermal Plants
 
-> **Note**: GNL thermals are not currently dispatched; input validation rejects them.
+A thermal plant may be flagged as **anticipated** by attaching a per-plant lead $K \geq 1$. The physical motivation is fuel-ordering lead time: LNG (originally _Gás Natural Liquefeito_) terminals, long-haul coal contracts and similar arrangements require the committed dispatch quantity to be locked $K$ stages before the energy is physically delivered. Anticipated thermals therefore split the per-stage thermal decision into two coupled variables — the **commitment**, made at the decision stage $t$, and the **delivered generation**, which is forced to match the matured commitment at the delivery stage $t + K$.
 
-GNL (Gas Natural Liquefeito) plants require **dispatch anticipation**: the dispatch decision must be committed $L$ stages ahead due to fuel ordering lead times. This introduces additional **state variables** — a committed dispatch pipeline of $L$ values that shift forward at each stage:
+The lead is encoded as an integer plant-specific parameter $K_i \geq 1$ (`lead_stages` on the plant entity). A plant with $K_i = 1$ commits one stage ahead; a plant with $K_i = 3$ commits three stages ahead. Plants without the anticipation flag use the standard thermal model from the preceding subsections.
 
-| State Variable    | Description                         |
-| ----------------- | ----------------------------------- |
-| $g^{gnl}_{j,t+1}$ | Dispatch committed for stage $t+1$  |
-| $g^{gnl}_{j,t+2}$ | Dispatch committed for stage $t+2$  |
-| $\vdots$          | ... up to $L = $ `lag_stages` ahead |
+#### State variables and ring-buffer layout
 
-These state variables link stages through the Bellman recursion alongside hydro storage and AR lags. GNL thermals are the only non-hydro elements with state variables in the SDDP formulation.
+Each anticipated plant $i$ carries a ring-buffer pipeline of $K_i$ pending commitments through the Bellman recursion alongside hydro storage and inflow lags. Anticipated thermals are the only non-hydro elements with state variables in the SDDP formulation.
+
+| State variable                 | Slot      | Meaning at the start of stage $t$                                                 |
+| ------------------------------ | --------- | --------------------------------------------------------------------------------- |
+| $x^{\mathrm{a}}_{0,i,t}$       | 0         | Commitment maturing **this** stage — sets the delivered generation at $t$         |
+| $x^{\mathrm{a}}_{1,i,t}$       | 1         | Commitment placed at $t - K_i + 1$, scheduled to deliver at $t + 1$               |
+| $\vdots$                       | $\vdots$  | ...                                                                               |
+| $x^{\mathrm{a}}_{K_i - 1,i,t}$ | $K_i - 1$ | Most-recent commitment, written at $t - 1$, scheduled to deliver at $t + K_i - 1$ |
+
+The state vector reserves $K_{\max} = \max_i K_i$ slots per plant for layout uniformity across stages; slots beyond $K_i$ are padded to zero by an LP equality and carry no information.
+
+#### Decision variable and fishing constraint
+
+At each stage $t$ the plant exposes a **commitment column** $d^i_t$ on the LP. Its bounds replicate the generation bounds of the **delivery stage** $t + K_i$:
+
+$$
+d^i_t \in
+\begin{cases}
+[\,\underline{G}_i(t + K_i),\ \bar{G}_i(t + K_i)\,] & t + K_i < T \\
+\{\,0\,\}                                          & t + K_i \geq T \quad \text{(presolved out)}
+\end{cases}
+$$
+
+The horizon predicate $t + K_i < T$ guarantees the commitment is only opened when there is a delivery stage inside the study horizon; commitments whose delivery would fall outside $T$ are pinned to zero.
+
+The **fishing constraint** binds the per-block generation of plant $i$ to the matured commitment in slot 0 at every stage $t \in [0, T - 1]$:
+
+$$
+\sum_{b} h_b \cdot g_{i,b,t} \;=\; H_t \cdot x^{\mathrm{a}}_{0, i, t}
+$$
+
+where $h_b$ is the duration of block $b$ and $H_t = \sum_b h_b$ is the total stage hours. The fishing row is active at every stage, including the pre-horizon stages where slot 0 is fed by the seeded `past_anticipated_commitments` (see below) rather than by an LP-decided $d^i$.
+
+Column bounds pin each slot to its incoming value, and a separate **decoupled state-out column** writes the LP commitment $d^i_t$ into the post-shift slot $K_i - 1$ for the next stage. The decoupling prevents a write into slot 0 from overlapping a read in the same stage, which is what makes the fishing-at-every-stage predicate safe even at $K_i = 1$.
+
+#### Pre-horizon seed
+
+Because anticipated dispatch carries state across stages, plant $i$ must be primed with $K_i$ pre-horizon commitments — the values that were committed at the negative stages $-K_i, \ldots, -1$ and are scheduled to mature at stages $0, \ldots, K_i - 1$. These live in `initial_conditions.past_anticipated_commitments[i].values_mw`, an array of exactly $K_i$ entries with `values_mw[k]` carrying the commitment that delivers at study stage $k$. The values must satisfy the plant's generation bounds; both the bounds-check and the array-length check are enforced by the semantic validator. An empty list is the default for studies with no anticipated plants.
+
+The seed enters the LP via the slot-0 fishing constraint at stages $0, \ldots, K_i - 1$: at $t = 0$ the LP reads `values_mw[0]` out of slot 0; the ring-buffer shift then moves `values_mw[1]` into slot 0 for stage $1$; and so on. From stage $K_i$ onward, slot 0 carries the LP-decided commitment $d^i_{t - K_i}$.
+
+#### Cost discounted to the delivery stage
+
+Anticipation costs are **charged at the decision stage** but **discounted to the delivery stage** in the same way a real-world option is priced. The objective coefficient on $d^i_t$ is
+
+$$
+\mathrm{obj}\bigl[\,d^i_t\,\bigr] \;=\; c_i(t + K_i) \cdot H_{t + K_i} \cdot d^{\mathrm{NPV}}_{t + K_i}
+$$
+
+where $c_i(\cdot)$ is the unit cost in \$/MWh, $H_{t + K_i}$ is the total hours at the delivery stage, and $d^{\mathrm{NPV}}_{t + K_i}$ is the cumulative NPV discount factor at the delivery stage. The per-block thermal column cost is **zeroed at delivery stages** for anticipated plants so the same energy is not double-priced once via the commitment and once via the per-block dispatch.
+
+#### Cut machinery
+
+Benders cuts propagate the marginal value of the matured commitment back through the ring buffer. The reduced cost of the pinned slot-0 column at stage $t + 1$ is the partial $\partial Q_{t+1} / \partial x^{\mathrm{a}}_{0, i, t+1}$ and is non-zero only when the fishing constraint has bound the LP there. The cut-row builder remaps this coefficient to the predecessor's commitment column (for $K_i = 1$) or to the predecessor's outgoing-state slot one step deeper into the ring buffer (for $K_i \geq 2$), so the subgradient ultimately lands on the original $d^i$ decision regardless of how many stages have elapsed between commitment and delivery.
 
 ## 5. Hydro Plants
 
@@ -353,7 +402,7 @@ $$
 
 where $\text{net\_flows}_{h,k}$ includes all inflow and outflow terms listed above.
 
-**AR lag fixing** (inflow history): $a_{h,\ell} = \hat{a}_{h,\ell}$ for all $\ell \in \{1, \ldots, P_h\}$
+**AR lag pinning** (inflow history): $a_{h,\ell} = \hat{a}_{h,\ell}$ for all $\ell \in \{1, \ldots, P_h\}$, enforced by equal column bounds (not a constraint row)
 
 **Outflow definition**: $o_{h,k} = q_{h,k} + s_{h,k}$
 
@@ -372,6 +421,15 @@ A **non-controllable source** represents intermittent generation (wind farms, so
 
 Non-controllable sources have near-zero marginal cost. The cost of curtailing available generation is a **regularization penalty** (Category 3 in the [Penalty System](./penalty-system.md)), analogous to `spillage_cost` for hydros — curtailment discards available "free" energy.
 
+### Curtailable vs. Must-Run
+
+A per-source flag $\chi_r \in \{\text{curtailable}, \text{must-run}\}$ selects between two LP behaviours for the realized availability $A_r$:
+
+- **Curtailable** (default): the generation column has bounds $[0, A_r]$, the LP is free to curtail any amount below $A_r$, and curtailment is regularised by `curtailment_cost`. This is the standard model for stand-alone wind and solar plants where ramping down is physically feasible and economically justified by the regularisation cost.
+- **Must-run**: the generation column is pinned to the realized availability, $g^{nc}_{r,k} = A_r$, by setting both lower and upper bounds to $A_r$ on every scenario. The curtailment penalty is unused because the curtailment slack is zero by construction. This model is required when the scenario pipeline feeds the LP with an aggregate that has already been pre-netted from demand by the upstream model — for example, NEWAVE-derived `geracao_usinas_nao_simuladas` totals over PCH, PCT, EOL, UFV, and MMGD: those have already been subtracted from `MERC` upstream, so allowing the LP to curtail them double-discounts the must-run contribution and produces a cheaper hydrothermal dispatch than the reference model. On the bundled deterministic 1983 case, leaving the aggregates curtailable gives ≈ 18 % of total NCS supply curtailed, a ≈ +15 % hydro-dispatch swing, and ≈ −23 % spillage versus NEWAVE; pinning them as must-run restores parity while keeping per-source observability in the simulation outputs.
+
+The pin is applied per scenario by overwriting the upper and lower bounds on the NCS column with $A_r$ before each stage solve. The availability ratio $\alpha = \mathrm{clamp}(\mu + \sigma \cdot \eta,\,0,\,1)$ and the per-(stage, block) shape factor multiply the installed capacity exactly as in the curtailable case — only the lower bound differs.
+
 ### Operative States
 
 Non-controllable sources have lifecycle stages controlled by `entry_stage_id` and `exit_stage_id`:
@@ -388,7 +446,7 @@ Non-controllable sources have lifecycle stages controlled by `entry_stage_id` an
 | -------------- | ----- | ---------------------------------------------------- |
 | $g^{nc}_{r,k}$ | MW    | Generation at non-controllable source $r$, block $k$ |
 
-**Curtailment** is **not** a separate LP decision variable — it is derived as $\kappa_{r,k} = A_{r} - g^{nc}_{r,k}$, where $A_r$ is the stochastic available generation for the current (stage, scenario). The implementation may equivalently formulate curtailment as a reward for dispatching (negative cost on $g^{nc}_{r,k}$) rather than a penalty on $(A_r - g^{nc}_{r,k})$; either is valid.
+**Curtailment** is **not** a separate LP decision variable — it is derived as $\kappa_{r,k} = A_{r} - g^{nc}_{r,k}$, where $A_r$ is the stochastic available generation for the current (stage, scenario). The implementation may equivalently formulate curtailment as a reward for dispatching (negative cost on $g^{nc}_{r,k}$) rather than a penalty on $(A_r - g^{nc}_{r,k})$; either is valid. For must-run sources, $\kappa_{r,k} \equiv 0$ by construction (the lower bound on the generation column equals $A_r$), so the regularisation term contributes zero to the objective regardless of how it is signed.
 
 ### Connections to Other Elements
 
@@ -415,7 +473,11 @@ The curtailment cost is a small regularization term (\$0.001–0.01/MWh) that in
 **Generation bounds** (hard constraints, no slack variables):
 
 $$
-0 \leq g^{nc}_{r,k} \leq A_r
+g^{nc}_{r,k} \in
+\begin{cases}
+[\,0,\ A_r\,]   & \text{if } \chi_r = \text{curtailable} \\
+[\,A_r,\ A_r\,] & \text{if } \chi_r = \text{must-run}
+\end{cases}
 $$
 
 **Load balance contribution** at connected bus: $+g^{nc}_{r,k}$ (generation injected).
@@ -512,18 +574,18 @@ For detailed constraints, see [equipment formulations](equipment-formulations.md
 
 The following table maps each physical system element to its LP representation:
 
-| Physical Element      | State Variables      | Control Variables                          | Key Constraints                     | Objective Role                               |
-| --------------------- | -------------------- | ------------------------------------------ | ----------------------------------- | -------------------------------------------- |
-| **Bus**               | —                    | $\delta_{b,k,s}$, $\epsilon_{b,k}$         | Load balance                        | Deficit penalty (high), Excess penalty (low) |
-| **Transmission Line** | —                    | $f^+_{l,k}$, $f^-_{l,k}$                   | Capacity bounds                     | Exchange cost (regularization)               |
-| **Thermal Plant**     | —                    | $g_{j,k,s}$                                | Generation bounds, Segment limits   | Fuel cost                                    |
-| **Thermal (GNL)**     | $g^{gnl}_{j,t+\ell}$ | $g_{j,k,s}$                                | Generation bounds + commit pipeline | Fuel cost (not currently dispatched)         |
-| **Hydro Plant**       | $v_h$, $a_{h,\ell}$  | $q_{h,k}$, $s_{h,k}$, $u_{h,k}$, $g_{h,k}$ | Water balance, Generation function  | Spillage/diversion cost (regularization)     |
-| **Non-Controllable**  | —                    | $g^{nc}_{r,k}$                             | Availability bound                  | Curtailment penalty (regularization)         |
-| **Pumping Station**   | —                    | $p_{j,k}$                                  | Flow bounds (min/max)               | None (cost via energy consumption)           |
-| **Contract**          | —                    | $\chi_{c,k}$                               | Dispatch bounds (min/max)           | Import cost or Export revenue                |
+| Physical Element          | State Variables          | Control Variables                          | Key Constraints                             | Objective Role                               |
+| ------------------------- | ------------------------ | ------------------------------------------ | ------------------------------------------- | -------------------------------------------- |
+| **Bus**                   | —                        | $\delta_{b,k,s}$, $\epsilon_{b,k}$         | Load balance                                | Deficit penalty (high), Excess penalty (low) |
+| **Transmission Line**     | —                        | $f^+_{l,k}$, $f^-_{l,k}$                   | Capacity bounds                             | Exchange cost (regularization)               |
+| **Thermal Plant**         | —                        | $g_{j,k,s}$                                | Generation bounds, Segment limits           | Fuel cost                                    |
+| **Thermal (anticipated)** | $x^{\mathrm{a}}_{s,i,t}$ | $d^i_t$, $g_{j,k,s}$                       | Ring-buffer slot pinning + fishing equality | Commitment cost discounted to delivery stage |
+| **Hydro Plant**           | $v_h$, $a_{h,\ell}$      | $q_{h,k}$, $s_{h,k}$, $u_{h,k}$, $g_{h,k}$ | Water balance, Generation function          | Spillage/diversion cost (regularization)     |
+| **Non-Controllable**      | —                        | $g^{nc}_{r,k}$                             | Availability bound                          | Curtailment penalty (regularization)         |
+| **Pumping Station**       | —                        | $p_{j,k}$                                  | Flow bounds (min/max)                       | None (cost via energy consumption)           |
+| **Contract**              | —                        | $\chi_{c,k}$                               | Dispatch bounds (min/max)                   | Import cost or Export revenue                |
 
-**Key insight**: The hydro storage variables $v_h$ and AR lag variables $a_{h,\ell}$ are the **only state variables** that currently link stages through the Bellman recursion. All other elements contribute control variables that are determined within each stage. This structure enables SDDP's decomposition: the stage subproblem optimizes all control variables given the incoming state, and Benders cuts approximate the future cost as a function of the outgoing state.
+**Key insight**: The hydro storage variables $v_h$, the AR lag variables $a_{h,\ell}$, and the anticipated-thermal ring-buffer slots $x^{\mathrm{a}}_{s,i,t}$ are the **state variables** that link stages through the Bellman recursion. All other elements contribute control variables that are determined within each stage. This structure enables SDDP's decomposition: the stage subproblem optimizes all control variables given the incoming state, and Benders cuts approximate the future cost as a function of the outgoing state.
 
 ## Cross-References
 

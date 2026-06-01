@@ -243,7 +243,7 @@ $$
 
 where $\tilde{\gamma}_0^m = \kappa \times \gamma_0^m$ (pre-scaled intercept).
 
-These are **hard constraints** — no slack variables. Feasibility is ensured through the `fpha_turbined_cost` regularization mechanism (see section 2.9).
+These are **hard constraints** — no slack variables. Feasibility is ensured through the `turbined_cost` regularization mechanism (see section 2.9).
 
 #### Average Storage Computation
 
@@ -253,7 +253,7 @@ $$
 v^{avg}_h = \frac{v^{in}_h + v_h}{2}
 $$
 
-where $v^{in}_h$ is the incoming storage LP variable (fixed to $\hat{v}_h$ via the storage fixing constraint — see [LP Formulation](lp-formulation.md)) and $v_h$ is end-of-stage storage. Both are LP variables, so $v^{in}_h$ appears in the FPHA constraint with coefficient $\gamma_v^m / 2$. The LP solver automatically accounts for this when computing the dual of the storage fixing constraint.
+where $v^{in}_h$ is the incoming storage LP variable (pinned to $\hat{v}_h$ via column bounds — see [LP Formulation §4a](lp-formulation.md)) and $v_h$ is end-of-stage storage. Both are LP variables, so $v^{in}_h$ appears in the FPHA constraint with coefficient $\gamma_v^m / 2$. The LP solver automatically accounts for this in the reduced cost of the pinned $v^{in}_h$ column.
 
 #### Generation as Independent Variable
 
@@ -264,30 +264,32 @@ When using FPHA, the generation variable $g_{h,k}$ is **not** directly computed 
 3. The optimizer maximizes generation subject to FPHA constraints
 4. At optimum, generation lies on one of the FPHA hyperplane facets
 
-**Key insight**: Because minimizing cost includes maximizing hydro generation (which has zero fuel cost), the optimizer naturally pushes generation to the FPHA surface boundary. The `fpha_turbined_cost` regularization (section 2.9) ensures the solution lies on the boundary rather than at an interior point.
+**Key insight**: Because minimizing cost includes maximizing hydro generation (which has zero fuel cost), the optimizer naturally pushes generation to the FPHA surface boundary. The `turbined_cost` regularization (section 2.9) ensures the solution lies on the boundary rather than at an interior point.
 
-### 2.9 FPHA Turbined Cost
+### 2.9 Turbined Cost
 
-For hydros using the FPHA production model, a regularization cost $c^{fpha}_h$ is applied to the turbined flow variable in the objective:
+A small regularization cost $c^{t}_h$ is applied to the turbined flow variable of every hydro in the objective:
 
 $$
-\sum_{k} \tau_k \cdot c^{fpha}_h \cdot q_{h,k}
+\sum_{k} \tau_k \cdot c^{t}_h \cdot q_{h,k}
 $$
 
-This cost must satisfy $c^{fpha}_h > c^{spill}_h$ for each plant, ensuring that the optimizer prefers to reduce turbined flow rather than increase spillage when operating near the FPHA boundary. Without this regularization, the optimizer could find degenerate solutions where turbined flow and spillage are both artificially high (with net generation unchanged), because the FPHA surface has a flat region where increasing $q$ and $s$ simultaneously can maintain the same $g$.
+This cost must satisfy $c^{t}_h > c^{spill}_h$ for each plant. The rule serves two purposes.
 
-This penalty applies **only** to hydros using the FPHA model. Plants with `constant_productivity` do not incur this cost. Plants using `linearized_head` (simulation-only, see section 3) are also excluded — the linearized head model uses an equality constraint, not a concave envelope.
+For hydros using the **FPHA** production model, the regularization keeps the solver on the FPHA surface boundary rather than at an interior point: without it, the optimizer could find degenerate solutions where turbined flow and spillage are both artificially high (with net generation unchanged), because the FPHA surface has a flat region where increasing $q$ and $s$ simultaneously can maintain the same $g$. The penalty making every unit of turbined flow carry a small additional cost collapses the degenerate interior region.
+
+For hydros using **constant productivity**, the same regularization is applied uniformly so that the LP tie-breaks `(turbined, spillage)` decompositions consistently with NEWAVE. Earlier releases gated this cost behind FPHA only, which meant constant-productivity plants paid nothing on the turbine column and the dispatch diverged from the reference model on cases that mix the two production models. Plants using `linearized_head` (simulation-only, see section 3) are not subject to this regularization during training because training uses only `constant_productivity` and `fpha`; during simulation, the cost is irrelevant because no policy is being constructed.
 
 For the full penalty taxonomy and priority ordering, see [Penalty System](./penalty-system.md).
 
 ### 2.10 Impact on Benders Cuts
 
-The FPHA formulation affects water value computation. Because the incoming storage variable $v^{in}_h$ appears in the FPHA constraint (via $v^{avg}_h = (v^{in}_h + v_h)/2$, section 2.8), the FPHA hyperplane duals contribute to the marginal value of incoming storage. However, the implementation does **not** require manually combining duals from the water balance and FPHA constraints. Instead, the storage fixing constraint ($v^{in}_h = \hat{v}_h$, see [LP Formulation](lp-formulation.md)) captures the total sensitivity $\partial Q_t / \partial \hat{v}_h$ automatically — the LP solver propagates the FPHA contribution through $v^{in}_h$.
+The FPHA formulation affects water value computation. Because the incoming storage variable $v^{in}_h$ appears in the FPHA constraint (via $v^{avg}_h = (v^{in}_h + v_h)/2$, section 2.8), the FPHA hyperplane duals contribute to the marginal value of incoming storage. However, the implementation does **not** require manually combining duals from the water balance and FPHA constraints. Instead, pinning $v^{in}_h$ to $\hat{v}_h$ by column bounds (see [LP Formulation §4a](lp-formulation.md)) makes its reduced cost capture the total sensitivity $\partial Q_t / \partial \hat{v}_h$ automatically — the LP solver propagates the FPHA contribution through $v^{in}_h$.
 
-The cut coefficient for storage is simply the dual of the storage fixing constraint:
+The cut coefficient for storage is simply the reduced cost of the pinned $v^{in}_h$ column:
 
 $$
-\pi^v_h = \pi^{fix}_h
+\pi^v_h = \bar{c}^{in}_h / d^{col}_h
 $$
 
 This dual implicitly includes the water balance contribution ($\pi^{wb}_h$), the FPHA contribution ($\frac{1}{2} \sum_m \pi_m^{fpha} \cdot \gamma_v^m$), and any generic constraint contributions — all resolved by the LP solver without explicit dual combination.
@@ -489,6 +491,6 @@ For FPHA hydros, the production-models input does not accept a productivity scal
 - [Notation conventions](../overview/notation-conventions.md) — variable and set definitions ($g_h$, $q_h$, $v_h$, $s_h$, $\rho_h$)
 - [System elements](system-elements.md) — hydro plant element description, decision variables, Variable Units Convention
 - [LP formulation](lp-formulation.md) — how production constraints integrate into the assembled LP
-- [Penalty system](./penalty-system.md) — `fpha_turbined_cost` regularization, penalty priority ordering
+- [Penalty system](./penalty-system.md) — `turbined_cost` regularization, penalty priority ordering
 - [Cut management](cut-management.md) — Benders cut generation affected by FPHA dual variables
 - [Equipment formulations](equipment-formulations.md) — thermal and hydro equipment constraint patterns

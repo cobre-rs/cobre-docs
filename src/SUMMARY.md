@@ -38,7 +38,6 @@
 
 - [SDDP Algorithm](./specs/math/sddp-algorithm.md)
 - [Cut Management](./specs/math/cut-management.md)
-- [Warm-Start Basis Prediction](./specs/math/warm-start-basis-prediction.md)
 - [LP Warm-Start](./specs/math/lp-warm-start.md)
 - [Risk Measures](./specs/math/risk-measures.md)
 - [Stopping Rules](./specs/math/stopping-rules.md)

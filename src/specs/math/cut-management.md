@@ -20,20 +20,22 @@ where:
 - $\pi^{lag}_{h,\ell}$ is the AR lag coefficient for hydro $h$, lag $\ell$ (marginal value of inflow history)
 - $v_h$, $a_{h,\ell}$ are the state variables (see [LP Formulation](lp-formulation.md))
 
-The cut coefficients are dense — every state variable (all storage volumes and all AR lags) has a non-zero coefficient in every cut. This density is a consequence of the full-state LP fixing constraints used for dual extraction.
+The cut coefficients are dense — every state variable (all storage volumes and all AR lags) has a non-zero coefficient in every cut. This density is a consequence of the full-state column-bound pinning used for reduced-cost extraction (§2).
 
 Cobre adds cuts monotonically across iterations: an active cut is never removed from the lower-bound LP within a training run. Because the cut set only grows, the lower-bound estimate is non-decreasing across iterations of a training run. This is a methodology-level guarantee — the outer approximation of the value function can only become tighter iteration by iteration.
 
-## 2. Dual Variable Extraction
+## 2. Reduced-Cost Extraction
 
-After solving the stage $t$ subproblem for trial state $\hat{x}_{t-1}$ and scenario $\omega_t$, the cut coefficients are derived from the LP dual variables of the **fixing constraints** — the equality constraints that bind each state variable to its incoming value.
+After solving the stage $t$ subproblem for trial state $\hat{x}_{t-1}$ and scenario $\omega_t$, the cut coefficients are derived from the LP **reduced costs** of the pinned incoming-state columns — the columns whose lower and upper bounds were set equal to the incoming state value (see [LP Formulation §4a](lp-formulation.md)).
 
-Both storage and inflow lags use the same pattern: an incoming-state LP variable is fixed to the trial value via an equality constraint, and the dual of that constraint gives the cut coefficient directly:
+Both storage and inflow lags use the same pattern: an incoming-state LP variable is pinned to the trial value by equal column bounds, and the reduced cost of that column gives the cut coefficient directly:
 
-| Constraint                            | Dual Variable        | Cut Coefficient                             | Units     |
-| ------------------------------------- | -------------------- | ------------------------------------------- | --------- |
-| Storage fixing (hydro $h$)            | $\pi^{fix}_h$        | $\pi^v_{t,h} = \pi^{fix}_h$                 | \$/hm³    |
-| AR lag fixing (hydro $h$, lag $\ell$) | $\pi^{lag}_{h,\ell}$ | $\pi^{lag}_{t,h,\ell} = \pi^{lag}_{h,\ell}$ | \$/(m³/s) |
+| Pinned column                  | Reduced cost             | Cut coefficient                                                    | Units     |
+| ------------------------------ | ------------------------ | ------------------------------------------------------------------ | --------- |
+| Incoming storage (hydro $h$)   | $\bar{c}^{in}_h$         | $\pi^v_{t,h} = \bar{c}^{in}_h / d^{col}_h$                         | \$/hm³    |
+| AR lag (hydro $h$, lag $\ell$) | $\bar{c}^{lag}_{h,\ell}$ | $\pi^{lag}_{t,h,\ell} = \bar{c}^{lag}_{h,\ell} / d^{col}_{h,\ell}$ | \$/(m³/s) |
+
+where $d^{col}$ is the per-column prescaler factor that unscales the reduced cost; a further factor $K$ converts to original cost units at the reporting boundary (see [LP Formulation §12](lp-formulation.md)). When anticipated thermals are present, each anticipated-state slot column contributes one coefficient by the same rule.
 
 The cut intercept ensures the cut passes through the trial point:
 
@@ -43,9 +45,9 @@ $$
 
 where $Q_t(\hat{x}_{t-1}, \omega_t)$ is the optimal objective value of the stage $t$ subproblem.
 
-**Sign convention**: By the LP envelope theorem, $\partial Q_t / \partial \hat{x}_j = \pi_j$ where $\pi_j$ is the dual of the fixing constraint $x^{in}_j = \hat{x}_j$. Since the incoming state $\hat{x}_j$ appears on the RHS of its fixing constraint with coefficient $+1$, the cut coefficient equals the fixing constraint dual directly — no scaling factors are needed for either storage or inflow lags. The fixing constraint dual automatically captures all downstream effects: for storage, this includes contributions from the water balance, FPHA hyperplanes, and any generic constraints that reference the incoming storage variable $v^{in}_h$ (see [LP Formulation](lp-formulation.md)).
+**Sign convention**: By the LP envelope theorem, $\partial Q_t / \partial \hat{x}_j = \pi_j$, the sensitivity of the optimal value to the pinned incoming state. For a column pinned at $\underline{x}_j = \bar{x}_j = \hat{x}_j$, that sensitivity is exactly the column's reduced cost — equal, by KKT parity, to the multiplier the former equality row $x^{in}_j = \hat{x}_j$ would have carried — so the cut coefficient is taken directly from the reduced cost with no sign flip (after the per-column unscaling above). The reduced cost automatically captures all downstream effects: for storage, this includes contributions from the water balance, FPHA hyperplanes, and any generic constraints that reference the incoming storage variable $v^{in}_h$ (see [LP Formulation](lp-formulation.md)).
 
-> **Design note**: This "fishing constraint" approach (introducing an incoming-state LP variable fixed to the trial value) is the standard technique used by SDDP.jl and other modern SDDP implementations. It eliminates the need to combine duals from multiple constraint types (water balance, FPHA, generic) to compute storage cut coefficients — the LP solver handles this automatically through the fixing constraint dual. See [LP Formulation](lp-formulation.md) for the constraint definition.
+> **Design note**: This "fishing" approach (pinning an incoming-state LP variable to the trial value and reading its sensitivity) is the standard technique used by SDDP.jl and other modern SDDP implementations. Cobre realises it through **column bounds** rather than an equality row: a bound-pinned column's reduced cost is the sensitivity, which removes the $N(1+L)$ (plus anticipated-state) redundant equality rows per stage while keeping the property that one value per state coordinate captures all downstream effects automatically. See [LP Formulation §4a](lp-formulation.md).
 
 ## 3. Single-Cut Aggregation
 
@@ -85,86 +87,82 @@ $$
 
 1. **Convexity of stage subproblems** — guaranteed because all subproblems are LPs
 2. **Relatively complete recourse** — feasibility for all states and scenarios. In Cobre, this is guaranteed by the recourse slack system (Category 1 penalties): every constraint that could be violated by exogenous uncertainty has a penalty slack variable, ensuring the LP is always feasible. See [Penalty System](./penalty-system.md).
-3. **Correct dual extraction** — duals must come from an optimal LP solution (not an infeasible or unbounded one)
+3. **Correct sensitivity extraction** — the reduced costs used as cut coefficients must come from an optimal LP solution (not an infeasible or unbounded one)
 
 ## 5. Cut Growth and Selection Motivation
 
-The number of cuts grows as $\mathcal{O}(\text{iterations} \times \text{forward\_passes})$. Many older cuts become redundant as newer, tighter cuts are generated. Without selection, LP solve time increases linearly with iteration count.
+The number of cuts grows as $\mathcal{O}(\text{iterations} \times \text{forward\_passes})$. Many older cuts become redundant as newer, tighter cuts are generated. Without selection, the number of cut rows the LP carries grows linearly with iteration count.
 
-Cut selection removes inactive cuts to:
+Cut selection **deactivates** redundant cuts to:
 
-1. Reduce LP solve time (fewer constraint rows)
-2. Improve numerical stability (remove near-parallel constraints)
-3. Control memory consumption
+1. Reduce LP solve time (fewer active cut rows baked into the stage template)
+2. Improve numerical stability (drop near-parallel constraints)
+3. Bound the active-cut count per stage
 
-**Deactivation mechanism**: Cuts are not deleted — they are deactivated by relaxing their bound to $-\infty$. This preserves cut indices for reproducibility and allows reactivation if needed.
+**Append-only pool with stable slots**: Cuts are never deleted. Every cut ever generated is retained for the lifetime of the run at a **stable, deterministic slot index** — the slot is a fixed function of the iteration and forward-pass index, which is what makes the cut order reproducible across runs and rank counts (see [Determinism Guarantees](determinism-guarantees.md)). The pool is never compacted.
+
+**Deactivation mechanism**: A deactivated cut keeps its slot but is excluded from the per-iteration template rebake, so only active cuts are encoded as LP rows on each forward/backward solve. In the persistent lower-bound LP — where cut rows are never structurally removed, so the bound stays monotone — deactivation instead toggles the cut row's bound to a trivially-satisfied $\pm\infty$ sentinel. Both routes preserve the slot index for reproducibility and make **reactivation exact**: a cut that selection later restores is re-baked (or its bound restored) at the same slot.
 
 ## 6. Cut Activity
 
-A cut $k$ at stage $t$ is **active** at state $\hat{x}$ if it is binding at the optimal LP solution:
+Cut selection works from a **value-evaluation** view of activity. At a visited forward-pass trial point $\hat{x}$, each cut's value is $\alpha_k + \pi_k^\top \hat{x}$, and the per-state best value is
 
 $$
-\theta^* = \alpha_k + \pi_k^\top \hat{x}
+V^*(\hat{x}) = \max_k \left\{ \alpha_k + \pi_k^\top \hat{x} \right\}
 $$
 
-Equivalently, the dual multiplier $\lambda_k$ of the cut constraint is positive ($\lambda_k > 0$).
-
-**Activity threshold**: A threshold parameter $\epsilon$ relaxes the binding condition:
+taken over **all populated cuts, active and inactive**. A cut is **active (near-optimal) at $\hat{x}$** when its value lies within a tolerance band of the best:
 
 $$
-\text{cut } k \text{ is active at } \hat{x} \iff \theta^* - (\alpha_k + \pi_k^\top \hat{x}) < \epsilon
+\text{cut } k \text{ is active at } \hat{x} \iff V^*(\hat{x}) - (\alpha_k + \pi_k^\top \hat{x}) \le \epsilon
 $$
 
-| Threshold | Effect                                           |
-| --------- | ------------------------------------------------ |
-| 0         | Only strictly binding cuts are active            |
-| 1e-6      | Near-binding cuts included (numerical tolerance) |
-| 1e-3      | Moderately loose cuts retained                   |
-| Large     | All cuts considered active (no selection)        |
+This is equivalent to the cut being binding (or near-binding) at the LP optimum reached from $\hat{x}$ — a cut at the per-state maximum is the one the future-cost variable $\theta$ rests on. The tolerance $\epsilon$ is the strategy's tie-breaking band: `tie_tolerance` for Level1/LML1, `threshold` for Dominated (§9).
+
+| Tolerance  | Effect                                                       |
+| ---------- | ------------------------------------------------------------ |
+| 0          | Only exact-maximum cuts count as active                      |
+| 1e-10      | Default: ties within rounding of the maximum are kept active |
+| larger     | Wider near-optimal band retained                             |
+| very large | All cuts considered active (no deactivation)                 |
 
 ## 7. Selection Strategies
 
-Three cut selection strategies are available, in increasing order of aggressiveness:
+Three cut selection strategies are available, in increasing order of aggressiveness. All three share one **value-evaluation kernel**: every populated cut (active and inactive) is evaluated at every visited trial point, the per-state maximum is taken, and a per-state survival rule decides which cuts to keep. The kernel treats deactivation and reactivation **symmetrically** — in a single pass, a selected cut that is currently inactive is reactivated and an active cut not selected anywhere is deactivated. It is bit-deterministic regardless of thread count (see [Determinism Guarantees](determinism-guarantees.md)).
 
 ### 7.1 Level-1
 
-A cut is **Level-1 active** if it was binding at least once during the entire algorithm execution. Periodically (every $N$ iterations), cuts that have never been active are deactivated. This strategy was originally proposed by de Matos, Philpott & Finardi (2015).
+At each visited trial point, every cut within `tie_tolerance` of the per-state maximum value survives; the selected set is the union of these near-maximum cuts across all visited states. A cut is deactivated only if, at **every** visited state, its value is more than `tie_tolerance` below the maximum there. This strategy was originally proposed by de Matos, Philpott & Finardi (2015).
 
 **Properties**:
 
-- Least aggressive — retains any cut that was ever useful
-- May keep some cuts that were active early but are now permanently dominated
-- Preserves convergence guarantee (see section 8)
+- Least aggressive — retains any cut that is near-optimal at some visited state
+- Preserves the convergence guarantee (see section 8)
 
 ### 7.2 Limited Memory Level-1 (LML1)
 
-Each cut is timestamped with the most recent iteration at which it was active. Periodically, cuts whose timestamp is older than a configurable **memory window** $W$ (in iterations) are deactivated.
+Like Level-1, but at each visited state only the **single oldest** eligible cut within `tie_tolerance` of the maximum survives (oldest = smallest slot index among non-warm-start cuts). The selected set is the union of these oldest-at-maximum cuts across visited states. Guigues & Bandarra (2019).
 
 **Properties**:
 
-- More aggressive than Level-1 — forgets cuts that haven't been active recently
-- Memory window $W$ controls the trade-off between retention and aggressiveness
-- Preserves convergence guarantee (see section 8)
+- More aggressive than Level-1 — when several cuts tie at a state, only the oldest is kept, so redundant near-duplicates are shed faster
+- Preserves the convergence guarantee (see section 8)
 
 ### 7.3 Dominated Cut Detection
 
-A cut $k$ is **dominated** if no other cut in the pool is ever tighter at any visited state. Formally, cut $k$ is dominated by the remaining cuts $\mathcal{S}$ if:
+A cut is **dominated** if, at every visited state, the maximum over all populated cuts exceeds its value by more than `threshold`. Dominated cuts contribute nothing to the policy at any visited state and are deactivated; inactive cuts that achieve the maximum somewhere are reactivated. Formally, cut $k$ is dominated when
 
 $$
-\alpha_k + \pi_k^\top x \leq \max_{j \in \mathcal{S}} \left\{ \alpha_j + \pi_j^\top x \right\} \quad \forall x \in \mathcal{X}
+\max_{j \neq k} \left\{ \alpha_j + \pi_j^\top \hat{x} \right\} - \left( \alpha_k + \pi_k^\top \hat{x} \right) > \text{threshold} \quad \forall \hat{x} \in \text{visited states}
 $$
 
-Since checking this globally is intractable, domination is assessed **at visited states only**: a cut is dominated if at every visited state $\hat{x}$, some other cut achieves a higher (or equal within $\epsilon$) value:
-
-$$
-\Delta_k(\hat{x}) = \max_{j \neq k} \left\{ \alpha_j + \pi_j^\top \hat{x} \right\} - \left( \alpha_k + \pi_k^\top \hat{x} \right) > \epsilon \quad \forall \hat{x} \in \text{visited states}
-$$
+This is the same max-survival logic as Level-1, using the variant's `threshold` field in place of `tie_tolerance`.
 
 **Properties**:
 
 - Most aggressive — directly identifies cuts that provide no value at any known operating point
-- Computational cost is $\mathcal{O}(|\text{cuts}| \times |\text{visited states}|)$ per stage per check
-- May remove cuts that would be active at unvisited states (acceptable as the visited set grows dense)
+- Cost is $\mathcal{O}(|\text{cuts}| \times |\text{visited states}|)$ per stage per check; the kernel evaluates it as a dense matrix product distributed across threads
+- May deactivate cuts that would be active at unvisited states (acceptable as the visited set grows dense)
 
 ## 8. Convergence Guarantee
 
@@ -176,19 +174,20 @@ $$
 
 ## 9. Selection Parameters
 
-The cut selection strategy is configured with the following parameters (knobs are documented inline in this chapter). Each method consumes exactly one tuning parameter and rejects configurations that omit it; there is no fallback between fields.
+The cut selection strategy is configured per variant. Each variant carries `check_frequency` plus its own tolerance field; there is no fallback between fields.
 
-| Parameter            | Description                                                                                  | Applies to      |
-| -------------------- | -------------------------------------------------------------------------------------------- | --------------- |
-| `method`             | Selection strategy: `"level1"`, `"lml1"`, or `"domination"`                                  | All             |
-| `threshold`          | Activity-count cutoff $K$ for deactivating cuts that were active fewer than $K$ times (§7.1) | Level1 only     |
-| `memory_window`      | Iterations to retain inactive cuts before they are removed (§7.2)                            | LML1 only       |
-| `domination_epsilon` | Tolerance $\epsilon$ for the at-visited-states dominance check (§7.3)                        | Domination only |
-| `check_frequency`    | Iterations between selection runs                                                            | All             |
+| Parameter         | Description                                                                                                                            | Applies to     |
+| ----------------- | -------------------------------------------------------------------------------------------------------------------------------------- | -------------- |
+| `method`          | Selection strategy: `"level1"`, `"lml1"`, or `"dominated"`                                                                             | All            |
+| `tie_tolerance`   | Per-state max-survival band: a cut is near-optimal at a state when within `tie_tolerance` of the best cut value there. Default `1e-10` | Level1, LML1   |
+| `threshold`       | Same max-survival band for the domination check (a cut survives if within `threshold` of the maximum at some visited state)            | Dominated only |
+| `check_frequency` | Iterations between selection runs (selection never runs at iteration 0)                                                                | All            |
+
+**Visited-states window**: cut selection scores cuts against the trial points held in the visited-states archive. To bound memory on long runs, the archive keeps only the most recent trial points — roughly those gathered over the last `check_frequency` iterations. After each selection run the archive is trimmed to that window, so a run sees up to about two windows of accumulated states before the trim; older trial points are then evicted.
 
 ## Cross-References
 
-- [LP Formulation](lp-formulation.md) — Water balance and AR lag constraints that produce duals; Benders cut constraints in the LP
+- [LP Formulation](lp-formulation.md) — Column-bound state pinning whose reduced costs give cut coefficients; Benders cut constraints in the LP
 - [PAR Inflow Model](par-inflow-model.md) — AR lag state variables that appear in cut coefficients
 - [SDDP Algorithm](sddp-algorithm.md) — Forward/backward pass structure that drives cut generation
 - [Scenario Generation](./scenario-generation.md) — Fixed opening tree that defines backward pass branchings; sampling scheme abstraction

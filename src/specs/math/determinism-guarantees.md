@@ -9,7 +9,7 @@ the same lower bounds, the same cuts, the same trial-point trajectories, the
 same simulation costs, and the same scenario tree — byte for byte.
 
 This property is not incidental to the implementation. It is an explicit
-methodology commitment, achieved through four coordinated mechanisms described
+methodology commitment, achieved through five coordinated mechanisms described
 in section 3. The companion chapter [Reproducibility and Provenance](./reproducibility-and-provenance.md)
 defines the bookkeeping that makes this commitment actionable: what Cobre
 records so that any run can be independently re-derived.
@@ -42,8 +42,9 @@ pair.
 
 **Training.** The forward pass visits the same trial-point trajectories in the
 same order; the backward pass solves the same subproblems for the same scenarios
-and stages; the resulting cuts have the same coefficients and are appended to
-the cut pool in the same order. The lower-bound sequence at every iteration is
+and stages; the resulting cuts have the same coefficients and occupy the same
+deterministic slot in the cut pool (a fixed function of the iteration and
+forward-pass index). The lower-bound sequence at every iteration is
 identical across runs.
 
 **Simulation.** The simulation phase evaluates the trained policy on the same
@@ -62,7 +63,7 @@ this guarantee. These are addressed in section 4.
 
 ## 3. Methodology Mechanisms
 
-Four coordinated design decisions make the guarantee achievable across all three
+Five coordinated design decisions make the guarantee achievable across all three
 axes.
 
 **LP model reloaded per scenario and per trial point.** Each subproblem solve
@@ -100,6 +101,18 @@ There are no broadcast races, no per-rank entropy, and no dependence on MPI
 message ordering. See [Scenario Generation](./scenario-generation.md) for
 the hash input encoding and the little-endian byte layout that ensures
 cross-platform stability.
+
+**Order-independent parallel cut selection.** Cut selection evaluates every cut
+at every visited trial point and decides survival per cut. The trial points are
+partitioned into fixed-size blocks processed in parallel; each block produces a
+survival bitmap, and the bitmaps are combined by a bitwise OR. Because set union
+is commutative and associative, the selected cut set is identical regardless of
+how the blocks are distributed across threads or how many threads run — a
+single-threaded run and a fully parallel run produce the same deactivations and
+reactivations. The deterministic cut-pool slot index closes the loop: the
+tie-break that keeps the _oldest_ cut at a state (LML1) resolves to the same
+cut in every run, because each cut occupies the same slot in every run. See
+[Cut Management](./cut-management.md).
 
 ## 4. Out of Scope
 

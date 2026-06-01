@@ -57,13 +57,13 @@ These penalties create an artificial cost in the objective function that propaga
 
 These are small costs inserted into the objective function to guide the solver toward physically preferred solutions when the LP would otherwise be indifferent. They do not represent real costs and should be orders of magnitude smaller than any economic cost to avoid distorting the optimal policy.
 
-| Penalty              | Units       | Applied To                     | Purpose                                                                          | Typical Range      |
-| -------------------- | ----------- | ------------------------------ | -------------------------------------------------------------------------------- | ------------------ |
-| `spillage_cost`      | \$/(m3/s·h) | Water spilled                  | Prefer turbining over spilling when solver is indifferent                        | 0.001–0.01 \$/unit |
-| `fpha_turbined_cost` | \$/(m3/s·h) | Turbined flow (FPHA only)      | Prevent interior FPHA solutions; must be > `spillage_cost` per plant (see below) | 0.01–0.1 \$/unit   |
-| `diversion_cost`     | \$/(m3/s·h) | Water diverted                 | Prefer main channel flow; higher than spillage (water leaves cascade)            | 0.01–0.1 \$/unit   |
-| `curtailment_cost`   | \$/MWh      | Curtailed non-controllable gen | Prioritize using available non-controllable generation over curtailing it        | 0.001–0.01 \$/unit |
-| `exchange_cost`      | \$/MWh      | Power flow on lines            | Prefer local supply; avoid unnecessary inter-bus power flows                     | 0.01–1.0 \$/unit   |
+| Penalty            | Units       | Applied To                     | Purpose                                                                                                | Typical Range      |
+| ------------------ | ----------- | ------------------------------ | ------------------------------------------------------------------------------------------------------ | ------------------ |
+| `spillage_cost`    | \$/(m3/s·h) | Water spilled                  | Prefer turbining over spilling when solver is indifferent                                              | 0.001–0.01 \$/unit |
+| `turbined_cost`    | \$/(m3/s·h) | Turbined flow (every hydro)    | Prevent interior FPHA solutions and align with NEWAVE; must be > `spillage_cost` per plant (see below) | 0.01–0.1 \$/unit   |
+| `diversion_cost`   | \$/(m3/s·h) | Water diverted                 | Prefer main channel flow; higher than spillage (water leaves cascade)                                  | 0.01–0.1 \$/unit   |
+| `curtailment_cost` | \$/MWh      | Curtailed non-controllable gen | Prioritize using available non-controllable generation over curtailing it                              | 0.001–0.01 \$/unit |
+| `exchange_cost`    | \$/MWh      | Power flow on lines            | Prefer local supply; avoid unnecessary inter-bus power flows                                           | 0.01–1.0 \$/unit   |
 
 ### Penalty Priority Ordering
 
@@ -73,11 +73,11 @@ $$\text{Filling target} > \text{Storage violation} > \text{Deficit} > \text{Cons
 
 The filling target violation cost must be the highest penalty in the system — filling the dead volume is prioritized above all other objectives. The storage violation below cost must exceed deficit cost — keeping reservoirs above dead volume is more critical than serving load (operating below dead volume risks dam safety and equipment damage).
 
-**FPHA validation rule**: For each hydro using the `fpha` production model, `fpha_turbined_cost > spillage_cost` must hold. The concave FPHA geometry allows interior LP solutions where the objective is met with less turbined flow than the physical production function would require — the turbined flow penalty prevents the solver from taking these interior solutions by making every unit of turbined flow carry a small additional cost, which collapses the degenerate interior region.
+**Turbined-cost validation rule**: For every hydro, `turbined_cost > spillage_cost` must hold. The rule has two motivations. For hydros using the `fpha` model, the concave FPHA geometry allows interior LP solutions where the objective is met with less turbined flow than the physical production function would require — the turbined-flow penalty makes every unit of turbined flow carry a small additional cost, which collapses the degenerate interior region. For hydros using `constant_productivity`, the same penalty applies uniformly so that two solutions with the same generation but different `(turbined, spillage)` decompositions are tie-broken consistently with NEWAVE; without it, constant-productivity plants paid nothing on the turbine column and the dispatch diverged from the reference model.
 
 ### Penalty Ordering Validation
 
-The qualitative ordering above is enforced by five adjacent-pair validation checks. Each check compares a higher-priority penalty against the next lower-priority penalty in the hierarchy. All five checks produce **warnings**, not errors — violating the ordering degrades policy quality but does not break algorithmic correctness. The FPHA validation rule (`fpha_turbined_cost > spillage_cost`) is a separate **error** because it affects LP solution correctness (interior FPHA solutions), not merely policy quality.
+The qualitative ordering above is enforced by five adjacent-pair validation checks. Each check compares a higher-priority penalty against the next lower-priority penalty in the hierarchy. All five checks produce **warnings**, not errors — violating the ordering degrades policy quality but does not break algorithmic correctness. The turbined-cost validation rule (`turbined_cost > spillage_cost`) is a separate **error** because it affects LP solution correctness for FPHA plants (interior FPHA solutions), not merely policy quality.
 
 Validation runs on **post-resolution** penalty values — after the three-tier cascade (global defaults, entity overrides, stage overrides) has been applied. Each (entity, stage) pair is checked independently, so a stage override that inverts the ordering for a specific entity will trigger a warning for that entity at that stage.
 
@@ -93,7 +93,7 @@ Validation runs on **post-resolution** penalty values — after the three-tier c
 
 **Resource costs** (used in checks 4 and 5): thermal generation costs (`cost_per_mwh`) for thermals connected to the bus being checked.
 
-**Regularization costs** (used in check 5): the set {`spillage_cost`, `fpha_turbined_cost`, `diversion_cost`, `curtailment_cost`, `exchange_cost`} across all entities in the system.
+**Regularization costs** (used in check 5): the set {`spillage_cost`, `turbined_cost`, `diversion_cost`, `curtailment_cost`, `exchange_cost`} across all entities in the system.
 
 **Warning aggregation**: To avoid excessive output when many (entity, stage) pairs violate the same check, warnings are aggregated: one warning per violated check across all entities and stages. The warning message reports the total violation count and the most extreme example (the pair with the largest inversion magnitude).
 
@@ -257,7 +257,7 @@ minimize:
 
   // Regularization costs (solution guidance)
   + Sigma_hydro (spillage x spillage_cost)
-  + Sigma_hydro_fpha (turbined_flow x fpha_turbined_cost)
+  + Sigma_hydro (turbined_flow x turbined_cost)
   + Sigma_hydro (diversion x diversion_cost)
   + Sigma_ncs (curtailment x curtailment_cost)
   + Sigma_line (direct_flow x exchange_cost + reverse_flow x exchange_cost)

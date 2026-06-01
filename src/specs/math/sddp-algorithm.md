@@ -84,7 +84,7 @@ The backward pass improves the value function approximation by generating new Be
 At each stage $t$, for each trial point $\hat{x}_{t-1}$ collected during the forward pass:
 
 1. Solve the stage $t$ LP for **every** scenario $\omega \in \Omega_t$ (branching), using the trial state $\hat{x}_{t-1}$ as incoming state
-2. From each LP solution, extract the optimal objective value $Q_t(\hat{x}_{t-1}, \omega)$ and the dual variables of the fixing constraints (storage fixing and AR lag fixing). The fixing constraint duals give the cut coefficients directly — no combination with FPHA or generic constraint duals is needed. See [Cut Management](cut-management.md)
+2. From each LP solution, extract the optimal objective value $Q_t(\hat{x}_{t-1}, \omega)$ and the **reduced costs** of the pinned incoming-state columns (incoming storage and AR lags). These reduced costs give the cut coefficients directly — no combination with FPHA or generic constraint duals is needed. See [Cut Management](cut-management.md)
 3. Compute per-scenario cut coefficients $(\alpha(\omega), \pi(\omega))$ from the duals and trial point
 4. Aggregate into a single cut via probability-weighted expectation — see [Cut Management](cut-management.md)
 5. Add the aggregated cut to stage $t-1$'s cut pool
@@ -135,7 +135,7 @@ The SDDP iteration structure has specific properties that guide the parallelizat
 
 **LP rebuild cost**: Memory constraints prevent keeping all stage LPs with their full cut sets resident simultaneously. The solver must rebuild LPs and add cut constraints when transitioning between stages, which lies on the critical performance path. The design minimizes this rebuild cost through strategies such as cut preallocation, basis persistence, and incremental constraint updates.
 
-**Fixing constraint dual extraction**: Each state variable (storage and inflow lag) has a dedicated fixing constraint whose dual gives the cut coefficient directly — no preprocessing or dual combination is needed. FPHA hyperplane and generic constraint effects are captured automatically by the LP solver through the fixing constraint dual. See [Cut Management](cut-management.md).
+**Reduced-cost cut extraction**: Each state variable (incoming storage and inflow lag) is pinned by column bounds, and the reduced cost of that pinned column gives the cut coefficient directly — no preprocessing or dual combination is needed. FPHA hyperplane and generic constraint effects are captured automatically by the LP solver through the pinned column's reduced cost. See [Cut Management](cut-management.md).
 
 For implementation, see the cobre developer-guide.
 
@@ -145,7 +145,6 @@ For implementation, see the cobre developer-guide.
 
 The standard SDDP formulation uses an acyclic directed graph:
 
-
 - **Nodes**: Stages $t \in \{1, \ldots, T\}$
 - **Arcs**: Transitions with probabilities (typically deterministic: $p = 1$)
 - **Terminal**: $V_{T+1}(x) = 0$ (no future cost beyond stage $T$)
@@ -153,7 +152,6 @@ The standard SDDP formulation uses an acyclic directed graph:
 ### 4.2 Cyclic Graph (Infinite Horizon)
 
 For long-term planning, Cobre supports **infinite periodic horizon** with cyclic graphs:
-
 
 - **Cycle**: Stage $T$ transitions back to stage $1$ (or a cycle start)
 - **Discount**: Cycle transitions require a discount factor $d < 1$ for convergence
@@ -176,13 +174,13 @@ For SDDP to generate valid cuts, the subproblem must satisfy the **Markov proper
 
 ### 5.1 AR Lag State Expansion
 
-The PAR(p) inflow model requires past inflows $a_{h,t-1}, a_{h,t-2}, \ldots$ to compute current inflow. To maintain the Markov property, these lags are included as state variables with **fixing constraints** that bind each lag variable to the corresponding incoming state value:
+The PAR(p) inflow model requires past inflows $a_{h,t-1}, a_{h,t-2}, \ldots$ to compute current inflow. To maintain the Markov property, these lags are included as state variables **pinned by column bounds** to the corresponding incoming state value:
 
 $$
-a_{h,\ell} = \hat{a}_{h,\ell} \quad \forall h \in \mathcal{H}, \; \ell \in \{1, \ldots, P_h\}
+\underline{a}_{h,\ell} = \bar{a}_{h,\ell} = \hat{a}_{h,\ell} \quad \forall h \in \mathcal{H}, \; \ell \in \{1, \ldots, P_h\}
 $$
 
-where $\hat{a}_{h,\ell}$ is the lag $\ell$ inflow value passed from the previous stage. The duals of these fixing constraints ($\pi^{lag}_{h,\ell}$) contribute to cut coefficients, capturing the marginal value of inflow history — see [Cut Management](cut-management.md).
+where $\hat{a}_{h,\ell}$ is the lag $\ell$ inflow value passed from the previous stage. The reduced costs of these pinned columns ($\pi^{lag}_{h,\ell}$) contribute to cut coefficients, capturing the marginal value of inflow history — see [Cut Management](cut-management.md).
 
 See [PAR Inflow Model](par-inflow-model.md) for the complete autoregressive formulation and [LP Formulation](lp-formulation.md) for how these constraints appear in the stage LP.
 

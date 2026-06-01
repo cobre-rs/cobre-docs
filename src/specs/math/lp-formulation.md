@@ -175,7 +175,7 @@ $$
 
 where:
 
-- $v^{in}_h$ = incoming storage LP variable, fixed to the previous stage's value via the storage fixing constraint (§4a)
+- $v^{in}_h$ = incoming storage LP variable, pinned to the previous stage's value via column bounds (§4a)
 - $a_h$ = incremental inflow (from AR model, see [PAR(p) inflow model](par-inflow-model.md)); equivalently $z_h$ from the z-inflow constraint (§5b)
 - $r_h$ = water withdrawal rate (m³/s), a **fixed RHS parameter** from `water_withdrawal_m3s` (not a per-block LP decision variable). Withdrawal is subtracted from the available water at the stage level, outside the per-block summation
 - $e_{h,k}$ = signed net evaporation flow (m³/s): positive values represent net evaporative loss subtracted from storage; negative values represent net rainfall input on the lake surface that adds to storage through the same coefficient (the leading $-$ sign on $e_{h,k}$ flips the contribution automatically — see [penalty system §5](./penalty-system.md))
@@ -191,64 +191,67 @@ where:
 > - The AR inflow $a_h$ is in m³/s (average rate over the stage)
 > - All flow decision variables use rate units (m³/s) — the conversion to volume happens only through $\zeta$ in this constraint
 
-**Dual variable**: $\pi^{wb}_h$ (water value — captures the marginal value of incoming storage as seen through the hydro balance, but is **not** used directly as a cut coefficient; the cut coefficient comes from the storage fixing constraint dual, see §4a and [cut management](cut-management.md))
+**Dual variable**: $\pi^{wb}_h$ (water value — captures the marginal value of incoming storage as seen through the hydro balance, but is **not** used directly as a cut coefficient; the cut coefficient comes from the reduced cost of the pinned incoming-storage column, see §4a and [cut management](cut-management.md))
 
-## 4a. Storage Fixing Constraints
+## 4a. Incoming-Storage Pinning
 
-The water balance (§4), FPHA hyperplanes (§6), and generic constraints (§10) all involve the incoming storage value $\hat{v}_h$. Rather than embedding $\hat{v}_h$ as a constant in the RHS of each of these constraints (which would require collecting duals from all of them to compute cut coefficients), Cobre introduces an explicit **incoming storage LP variable** $v^{in}_h$ with a fixing constraint:
+The water balance (§4), FPHA hyperplanes (§6), and generic constraints (§10) all involve the incoming storage value $\hat{v}_h$. Rather than embedding $\hat{v}_h$ as a constant in the RHS of each of these constraints (which would require collecting duals from all of them to compute cut coefficients), Cobre introduces an explicit **incoming storage LP variable** $v^{in}_h$ that every such constraint references, and **pins** it to the trial value.
 
-For each hydro $h \in \mathcal{H}$:
+For each hydro $h \in \mathcal{H}$, the incoming-storage column (`storage_in`, §4b) is pinned by setting equal lower and upper **column bounds**:
 
 $$
-v^{in}_h = \hat{v}_h
+\underline{v}^{in}_h = \bar{v}^{in}_h = \hat{v}_h
 $$
 
 where:
 
-- $v^{in}_h$ = LP variable representing the incoming storage for hydro $h$ (unbounded)
-- $\hat{v}_h$ = incoming state value (end-of-stage storage from the previous stage, fixed via RHS patching)
+- $v^{in}_h$ = LP variable representing the incoming storage for hydro $h$
+- $\hat{v}_h$ = incoming state value (end-of-stage storage from the previous stage), written into both bounds per scenario via bound patching
+
+> **Pinning by bounds, not by a row.** Earlier Cobre releases pinned the incoming state with an explicit equality _constraint row_ $v^{in}_h = \hat{v}_h$ and read that row's dual. As of v0.8.0 the state is pinned by **column bounds** instead, and the equivalent fixing-row block is a permanent empty sentinel (§4b). Eliminating the per-state fixing rows removes $N(1+L)$ redundant equality rows per stage (plus the anticipated-state rows, §5c); the two formulations are KKT-equivalent — see below.
 
 The variable $v^{in}_h$ then appears as an LP variable (not a constant) in all constraints that depend on incoming storage: the water balance (§4), the FPHA average storage computation (§6), and any generic constraints (§10) that reference incoming storage.
 
-**Dual variable**: $\pi^{fix}_h$ (marginal value of incoming storage for hydro $h$, used directly as the storage cut coefficient — see [cut management](cut-management.md))
+**Cut coefficient**: the storage cut coefficient $\pi^v_h$ is the **reduced cost** of the pinned `storage_in` column (unscaled by its prescaler column factor — see §12 and [cut management](cut-management.md)). No fixing-constraint dual is involved.
 
-**Why this design**: By LP duality, the dual of the fixing constraint $v^{in}_h = \hat{v}_h$ captures the total sensitivity $\partial Q_t / \partial \hat{v}_h$, automatically accounting for all downstream effects through water balance, FPHA, and generic constraints. This eliminates the need to combine duals from multiple constraint types to compute the storage cut coefficient — a single dual value suffices. This is the same "fishing constraint" technique used by SDDP.jl and is analogous to how the AR lag fixing constraints (section 5a) work for inflow lags.
+**Why this design**: By LP duality, when a column is pinned at $\underline{x} = \bar{x}$ its reduced cost equals the sensitivity $\partial Q_t / \partial \hat{v}_h$ of the optimal value to the pinned bound — exactly the multiplier the equivalent equality row $v^{in}_h = \hat{v}_h$ would have carried (KKT parity). This sensitivity automatically accounts for all downstream effects through water balance, FPHA, and generic constraints, so a single reduced-cost value suffices — no combination of duals from multiple constraint types is needed. This is the same "fishing" technique used by SDDP.jl, realised through column bounds rather than a fixing row, and is analogous to how the AR lags (section 5a) are pinned for inflow history.
 
-**Constraint count**: $N$ total constraints, where $N = |\mathcal{H}|$ is the number of operating hydros.
+**Column count**: $N$ pinned incoming-storage columns, where $N = |\mathcal{H}|$ is the number of operating hydros. There is no corresponding fixing-row block.
 
 ## 4b. LP Column and Row Layout
 
 ![LP column layout — state variables (storage, AR lags) first for contiguous dual extraction, dispatch variables per block, theta (future cost) last for Benders cuts](../../images/d24-lp-column-layout.svg)
 
-The stage LP uses a fixed column and row layout that places state variables first (for contiguous dual extraction), followed by auxiliary and equipment columns. With $N = |\mathcal{H}|$ hydros and $L$ = maximum AR order:
+The stage LP uses a fixed column and row layout that places state variables first, followed by auxiliary and equipment columns. State is pinned by **column bounds** on the incoming-state columns (§4a, §5a, §5c), and cut coefficients are read as the **reduced costs** of those columns — so the fixed column order, not a fixed row order, is what enables contiguous coefficient extraction. With $N = |\mathcal{H}|$ hydros, $L$ = maximum AR order, $A$ = number of anticipated thermals, and $K = K_{\max} = \max_i K_i$:
 
 **Column layout**:
 
-| Region        | Count | Description                                                    |
-| ------------- | ----- | -------------------------------------------------------------- |
-| `storage`     | $N$   | Outgoing storage volumes (state) — first                       |
-| `inflow_lags` | $NL$  | AR lag variables (state) — after storage                       |
-| `z_inflow`    | $N$   | Realized inflow (auxiliary, not state) — after AR lags         |
-| `storage_in`  | $N$   | Incoming storage volumes (auxiliary, for §4a) — after z-inflow |
-| `theta`       | $1$   | Future cost variable — last of the state prefix                |
+| Region              | Count | Description                                                                |
+| ------------------- | ----- | -------------------------------------------------------------------------- |
+| `storage`           | $N$   | Outgoing storage volumes (state) — first                                   |
+| `inflow_lags`       | $NL$  | AR lag variables (state) — after storage                                   |
+| `anticipated_state` | $K A$ | Ring-buffer slots for anticipated thermals (state, slot-major plant-minor) |
+| `z_inflow`          | $N$   | Realized inflow (auxiliary, not state) — after the state block             |
+| `storage_in`        | $N$   | Incoming storage volumes (auxiliary, for §4a) — after z-inflow             |
+| `theta`             | $1$   | Future cost variable — last of the state prefix                            |
 
-Equipment columns (turbine, spillage, diversion, thermal, line flows, deficit, excess, slacks) follow immediately after `theta`.
+Equipment columns (turbine, spillage, diversion, thermal, anticipated-decision and anticipated-state-out, line flows, deficit, excess, slacks) follow immediately after `theta`. Two auxiliary blocks are reserved for anticipated thermals: $A$ **anticipated-decision** columns $d^i_t$ carrying the commitment placed at this stage for delivery $K_i$ stages later, and $A$ **anticipated-state-out** columns $y^i_t$ used to decouple the post-shift state from the decision-write coefficient — see §5c.
 
 The `z_inflow` region holds one free column per hydro representing the total realized inflow $z_h = a_h$ (m³/s) for each hydro at the current stage. These are auxiliary columns (zero objective cost, unbounded) whose primal values after solving give the realized inflow. They participate in the water balance (§4) and are defined by the z-inflow constraints (§5b).
 
-**Row layout** (dual-relevant prefix):
+**Row layout** (equality-constraint prefix):
 
-| Region           | Count | Description                                                     |
-| ---------------- | ----- | --------------------------------------------------------------- |
-| `storage_fixing` | $N$   | Storage fixing constraints (§4a) — first                        |
-| `lag_fixing`     | $NL$  | AR lag fixing constraints (§5a) — after storage fixing          |
-| `z_inflow`       | $N$   | Realized-inflow definition constraints (§5b) — after lag fixing |
+Because state is pinned by column bounds (§4a, §5a, §5c) rather than by equality rows, there are **no** state-fixing rows: the former `storage_fixing` ($N$), `lag_fixing` ($NL$), and `anticipated_state_fixing` ($KA$) row blocks are permanent empty sentinels (zero rows). The equality-constraint prefix therefore begins directly with the z-inflow definitions:
 
-Equipment rows (water balance, load balance, FPHA, evaporation, outflow bounds, etc.) follow after the z-inflow rows.
+| Region     | Count | Description                                                         |
+| ---------- | ----- | ------------------------------------------------------------------- |
+| `z_inflow` | $N$   | Realized-inflow definition constraints (§5b) — first equality block |
 
-The state prefix spans the first $N(2 + L)$ rows (storage fixing, then lag fixing, then z-inflow definition). The dual vector over this contiguous prefix gives all storage and inflow-lag cut coefficients in a single slice.
+Equipment rows (water balance, load balance, FPHA, evaporation, outflow bounds, anticipated-fishing and anticipated-state-out equalities, generic constraints, etc.) follow after the z-inflow rows.
 
-**Worked example** ($N = 3$, $L = 2$): the storage region holds 3 columns, the AR lag region holds 6 (3 hydros × 2 lags), the z-inflow region holds 3, and the incoming-storage region holds 3, so `theta` is the 16th column. The state count (outgoing storage + AR lags) is $N(1 + L) = 9$.
+Cut coefficients are **not** read from a contiguous dual slice over a fixing-row prefix. Instead, each incoming-state coordinate is pinned on its own LP column — `storage_in` for storage, `inflow_lags` for AR lags, `anticipated_state` for anticipated-thermal slots — and its cut coefficient is the **reduced cost** of that column (§4a, [cut management](cut-management.md)). The map from a state coordinate to its pinned column is fixed (`state_to_lp_incoming_column`), and each of these incoming-state column regions is contiguous, so all storage, inflow-lag, and anticipated-state coefficients are still gathered by reading a few contiguous slices — of the reduced-cost vector rather than the dual vector.
+
+**Worked example** ($N = 3$, $L = 2$, $A = 0$): the storage region holds 3 columns, the AR lag region holds 6 (3 hydros × 2 lags), the z-inflow region holds 3, and the incoming-storage region holds 3, so `theta` is the 16th column. The state count (outgoing storage + AR lags) is $N(1 + L) = 9$.
 
 ## 5. AR Inflow Dynamics
 
@@ -260,29 +263,29 @@ a_h = \underbrace{\left( \mu_t - \sum_{\ell=1}^{P_h} \psi_\ell \mu_{t-\ell} \rig
 + \underbrace{\sigma_t \cdot \eta_t}_{\text{stochastic innovation}}
 $$
 
-To maintain the Markov property, lagged inflows $a_{h,\ell}$ are promoted to state variables with explicit fixing constraints — see section 5a below.
+To maintain the Markov property, lagged inflows $a_{h,\ell}$ are promoted to state variables pinned by column bounds — see section 5a below.
 
 See [PAR(p) inflow model](par-inflow-model.md) for the complete PAR(p) model specification.
 
-## 5a. AR Lag Fixing Constraints
+## 5a. AR Lag Pinning
 
-The AR dynamics equation (section 5) uses lagged inflows $a_{h,\ell}$ as LP variables. To maintain the Markov property in the SDDP decomposition, each lag variable must be fixed to its incoming state value via an explicit equality constraint. These constraints serve a dual purpose: they bind the lag variables to the known incoming state, and their dual multipliers $\pi^{lag}_{h,\ell}$ provide the cut coefficients for the inflow lag dimensions of the Benders cuts (section 11).
+The AR dynamics equation (section 5) uses lagged inflows $a_{h,\ell}$ as LP variables. To maintain the Markov property in the SDDP decomposition, each lag variable is pinned to its incoming state value via equal lower and upper **column bounds** on the `inflow_lags` column. This binds the lag variables to the known incoming state, and the **reduced cost** of each pinned column provides the cut coefficient $\pi^{lag}_{h,\ell}$ for the corresponding inflow-lag dimension of the Benders cuts (section 11).
 
 For each hydro $h \in \mathcal{H}$ and each lag $\ell \in \{0, \ldots, L-1\}$:
 
 $$
-a_{h,\ell} = \hat{a}_{h,\ell}
+\underline{a}_{h,\ell} = \bar{a}_{h,\ell} = \hat{a}_{h,\ell}
 $$
 
 where:
 
 - $a_{h,\ell}$ = LP variable representing the inflow at lag $\ell$ for hydro $h$
-- $\hat{a}_{h,\ell}$ = incoming state value (inflow observation from $\ell$ stages ago, fixed via RHS patching)
+- $\hat{a}_{h,\ell}$ = incoming state value (inflow observation from $\ell$ stages ago), written into both bounds via bound patching
 - $L$ = maximum AR order across all hydros (uniform lag storage convention)
 
-**Constraint count**: $N \times L$ total constraints, where $N = |\mathcal{H}|$ is the number of operating hydros and $L$ is the system-wide maximum lag. All hydros store $L$ lags regardless of their individual AR order $P_h$; hydros with $P_h < L$ have zero-valued AR coefficients ($\psi_\ell = 0$ for $\ell > P_h$) in the dynamics equation, but their lag fixing constraints are still present. This uniform layout enables contiguous dual extraction — each lag has a dedicated fixing constraint whose dual provides the cut coefficient directly, and the contiguous arrangement of these constraints in the row prefix (section 4b) allows all lag cut coefficients to be read in a single slice of the dual vector.
+**Column count**: $N \times L$ pinned lag columns, where $N = |\mathcal{H}|$ is the number of operating hydros and $L$ is the system-wide maximum lag. All hydros store $L$ lags regardless of their individual AR order $P_h$; hydros with $P_h < L$ have zero-valued AR coefficients ($\psi_\ell = 0$ for $\ell > P_h$) in the dynamics equation, but their lag columns are still present and pinned. This uniform layout keeps the `inflow_lags` columns contiguous, so all lag cut coefficients are read in a single slice of the reduced-cost vector (section 4b). There is no corresponding lag-fixing row block.
 
-**Dual variable**: $\pi^{lag}_{h,\ell}$ (marginal value of inflow history at lag $\ell$ for hydro $h$, used as the cut coefficient for the corresponding inflow lag state variable — see [cut management](cut-management.md))
+**Cut coefficient**: $\pi^{lag}_{h,\ell}$ (marginal value of inflow history at lag $\ell$ for hydro $h$) is the reduced cost of the pinned `inflow_lags` column, unscaled by its prescaler column factor (§12) — see [cut management](cut-management.md).
 
 ## 5b. Realized-Inflow Definition Constraints (z-inflow)
 
@@ -302,9 +305,65 @@ where:
 
 The z-inflow variable $z_h$ then enters the water balance constraint (§4) in place of the raw inflow term $a_h$, and its primal value after solving gives the realized inflow for reporting and simulation extraction.
 
-The z-inflow columns sit between the AR lag columns and the incoming storage columns in the column layout (section 4b). Their constraint rows occupy the third block of the dual-relevant row prefix, after the storage fixing rows and the lag fixing rows. The RHS is patched per scenario with $b_{h,m(t)} + \sigma_{m(t)} \cdot \eta_t$, where $\eta_t$ is the effective noise (possibly clamped for inflow non-negativity — see [Inflow Non-Negativity](inflow-nonnegativity.md)). These are not state variables and do not contribute to cut coefficients.
+The z-inflow columns sit between the AR lag columns and the incoming storage columns in the column layout (section 4b). Because state is pinned by column bounds rather than fixing rows, their constraint rows form the **first** equality block (section 4b). The RHS is patched per scenario with $b_{h,m(t)} + \sigma_{m(t)} \cdot \eta_t$, where $\eta_t$ is the effective noise (possibly clamped for inflow non-negativity — see [Inflow Non-Negativity](inflow-nonnegativity.md)). These are not state variables and do not contribute to cut coefficients.
 
 **Constraint count**: $N$ total constraints, where $N = |\mathcal{H}|$ is the number of operating hydros. See section 4b for the row layout.
+
+## 5c. Anticipated Thermal Dispatch
+
+Anticipated thermals (see [System Elements §4](system-elements.md)) introduce a per-plant ring buffer of $K_i$ pending commitments and a per-stage commitment column. The incoming ring-buffer state is pinned by column bounds (like all other state, §4a); two constraint blocks then couple the remaining variables. The layout is engineered so that the reduced cost on slot 0 of the pinned anticipated-state column at stage $t + 1$ propagates back to the predecessor's commitment column via the standard SDDP cut machinery without any decision-side coefficient corrupting the routing.
+
+### State pinning (column bounds, one per `(slot, plant)`)
+
+For each plant $i \in \{0, \ldots, A - 1\}$ and slot $s \in \{0, \ldots, K - 1\}$, the anticipated-state slot column is pinned by equal column bounds:
+
+$$
+\underline{x}^{\mathrm{a}}_{s, i, t} \;=\; \bar{x}^{\mathrm{a}}_{s, i, t} \;=\; \widehat{x}^{\mathrm{a}}_{s, i, t}
+$$
+
+The value $\widehat{x}^{\mathrm{a}}_{s, i, t}$ is the incoming state from the previous stage's ring-buffer shift (or, at $t = 0$, the seed `past_anticipated_commitments[i].values_mw[s]`). The slot is **pinned** by its column bounds alone; no decision-write coefficient appears anywhere on the slot column. The cut subgradient with respect to the incoming-state coordinate, $\partial Q_t / \partial \widehat{x}^{\mathrm{a}}_{s, i, t}$, is the **reduced cost** of the pinned slot column (§4a). Padding slots $s \geq K_i$ are pinned to zero by the same bounds; their reduced cost is zero because the slot carries no information.
+
+### Fishing equality (one row per anticipated plant, every stage)
+
+For each plant $i$ and every stage $t \in [0, T - 1]$, the per-block generation of plant $i$ is bound to the matured commitment in slot 0:
+
+$$
+\sum_{b = 0}^{B - 1} h_b \cdot g_{i, b, t} \;-\; H_t \cdot x^{\mathrm{a}}_{0, i, t} \;=\; 0
+$$
+
+where $h_b$ is the block-$b$ duration and $H_t = \sum_b h_b$. The row is active at every study stage; at $t < K_i$ the slot-0 value comes from the seed `values_mw[t]` and the LP cannot freely choose the per-block generation. From $t \geq K_i$ onward, slot 0 carries a past LP decision delivered via the ring buffer.
+
+### State-out equality (one row per active plant)
+
+For each plant $i$ active at stage $t$ (i.e., $t + K_i < T$), one auxiliary row pins the **anticipated-state-out** column $y^i_t$ to the decision $d^i_t$:
+
+$$
+y^i_t \;-\; d^i_t \;=\; 0
+$$
+
+The ring-buffer shift between stages uses $y^i_t$ — not $d^i_t$ — as the value written into slot $K_i - 1$ of the next stage's incoming state. The auxiliary $y$ column carries zero objective cost and serves only as the "carrier" that decouples the post-shift state from the decision column. Without this decoupling, the decision column $d^i_t$ would feed directly into the slot whose pinned reduced cost the next stage's cut reads back, corrupting the subgradient routing at $K_i = 1$ (slot 0 = slot $K_i - 1$ collision).
+
+### Objective contributions
+
+Two terms enter the objective for each anticipated plant:
+
+$$
+\sum_{i = 0}^{A - 1} c_i(t + K_i) \cdot H_{t + K_i} \cdot d^{\mathrm{NPV}}_{t + K_i} \cdot d^i_t
+\;-\;
+\sum_{i \in \mathrm{deliver}(t)} \sum_b c_i(t) \cdot h_b \cdot d^{\mathrm{NPV}}_t \cdot g_{i, b, t}
+$$
+
+The first sum is the **commitment cost discounted to the delivery stage** $t + K_i$. The second sum subtracts the standard per-block thermal cost at every delivery stage so the same MWh is not charged twice — once through the matured commitment and once through the per-block dispatch. Anticipated-state columns and anticipated-state-out columns carry zero objective cost; they are pure carriers of state.
+
+### Cut subgradient remapping
+
+When the backward pass returns a subgradient on slot $(s, i)$ of stage $t + 1$ — read as the reduced cost of that pinned slot column — the cut-row builder maps it to a column in the **predecessor's** stage problem as follows:
+
+- $s + 1 = K_i$ (slot 0 viewed from the next stage equals slot $K_i - 1$ viewed from this stage): the coefficient targets the predecessor's commitment column $d^i_{t}$ directly. This is the only branch that fires for $K_i = 1$.
+- $s + 1 < K_i$: the coefficient targets the predecessor's outgoing-state slot $s + 1$, which holds the same commitment one stage earlier in its journey through the ring buffer.
+- $s \geq K_i$ (padding): identity remap; the reduced cost is structurally zero so the cut coefficient on the padded slot does not propagate any sensitivity.
+
+The recursion guarantees that, no matter how many stages elapse between commitment and delivery, the marginal cost of a future obligation reaches the original $d^i$ column it should price.
 
 ## 6. Hydro Generation Constraints
 
@@ -466,7 +525,9 @@ where:
 - $\pi^v_{i,h}$ = coefficient for storage state variable
 - $\pi^{lag}_{i,h,\ell}$ = coefficient for AR lag state variable
 
-Cuts are pre-allocated and toggled active/inactive via bound changes for warm-starting efficiency.
+When anticipated thermals are present, the cut carries one additional coefficient per anticipated-state slot (§5c), read from the same reduced-cost mechanism.
+
+Cuts live in an **append-only pool** at stable slot indices: every cut ever generated is retained for the lifetime of the run, and only the active subset is baked into each iteration's stage template. Deactivation toggles a cut row's bound to a trivially-satisfied $\pm\infty$ sentinel rather than removing the row, so slot indices stay stable and reactivation is exact. See [cut management](cut-management.md).
 
 For cut coefficient derivation, aggregation, and selection strategies, see [cut management](cut-management.md).
 
@@ -517,7 +578,9 @@ Column bounds and objective coefficients are not modified by row scaling.
 
 The combined scaling produces the standard $D_r \cdot A \cdot D_c$ form where $D_r$ and $D_c$ are diagonal scaling matrices.
 
-> **Dual unscaling**: LP duals are in the scaled problem's space. To recover original-unit duals: $\pi_i^{original} = \pi_i^{scaled} \cdot d_i^{row} \cdot K$. The per-column and per-row scale factors are stored in the stage LP template for use during dual extraction and cut coefficient computation.
+> **Dual unscaling**: LP row duals are in the scaled problem's space. To recover original-unit duals: $\pi_i^{original} = \pi_i^{scaled} \cdot d_i^{row} \cdot K$. The per-column and per-row scale factors are stored in the stage LP template for use during dual extraction and cut coefficient computation.
+
+> **Reduced-cost unscaling for cut coefficients**: State cut coefficients are read as the **reduced costs** of the pinned incoming-state columns (§4a), not as row duals. A reduced cost is reported in the scaled problem's space; the original-unit sensitivity is $\pi_j^{original} = (\bar{c}_j^{scaled} / d_j^{col}) \cdot K$ — divide by the column factor, then multiply by $K$. The **division** by $d_j^{col}$ (not multiplication) follows from the column transform $\tilde{x}_j = x_j / d_j^{col}$ of §12.2: HiGHS differentiates the scaled objective with respect to $\tilde{x}_j$, so recovering $\partial Q / \partial x_j$ divides the column factor back out. Because Cobre prescales the matrix itself and the solver's internal simplex scaler is disabled, no second scaling is applied and this single unscaling is exact. (Cut coefficients are stored in scaled cost space — the $\bar{c}_j^{scaled}/d_j^{col}$ value — with $K$ applied only at the reporting boundary, as for all cost-domain quantities.)
 
 ## Cross-References
 

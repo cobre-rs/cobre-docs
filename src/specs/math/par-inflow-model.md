@@ -586,7 +586,7 @@ The two paths share the seasonal-stats producer of section 5.2; switching betwee
 
 ## Cross-References
 
-- [LP Formulation](lp-formulation.md) — AR inflow dynamics in the LP: state expansion, lag fixing constraints, dual variables
+- [LP Formulation](lp-formulation.md) — AR inflow dynamics in the LP: state expansion, lag column pinning, reduced-cost extraction
 - [Inflow Non-Negativity](inflow-nonnegativity.md) — Methods for handling negative realizations produced by the PAR(p) model
 - [Scenario Generation](./scenario-generation.md) — When external scenarios are used in training, a PAR model is fitted to the external data for backward pass opening tree generation. The fitting procedure (section 5 above) applies equally to this derived model.
 - [Notation Conventions](../overview/notation-conventions.md) — Defines inflow symbols ($a_{h,t}$, $\mu_m$, $\psi_{m,\ell}$, $\sigma_m$) and unit conventions

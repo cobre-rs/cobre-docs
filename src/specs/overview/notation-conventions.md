@@ -8,17 +8,17 @@ This spec defines the complete mathematical notation used across all Cobre speci
 
 This document follows [SDDP.jl](https://sddp.dev/stable/) notation conventions for consistency with the broader SDDP literature:
 
-| Convention               | Meaning                                  |
-| ------------------------ | ---------------------------------------- |
-| $t \in \{1, \ldots, T\}$ | Stage index                              |
-| $\omega \in \Omega_t$    | Scenario realization at stage $t$        |
-| $x_t$                    | State variables at end of stage $t$      |
-| $\hat{x}_{t-1}$          | Incoming state (from previous stage)     |
-| $V_t(x)$                 | Value function (cost-to-go) at stage $t$ |
-| $\theta_t$               | Epigraph variable approximating $V_{t}$  |
-| $\pi$                    | Dual variables (Lagrange multipliers)    |
-| $(\alpha, \pi)$          | Cut intercept and coefficients           |
-| $k$                      | Iteration counter                        |
+| Convention               | Meaning                                                                                                    |
+| ------------------------ | ---------------------------------------------------------------------------------------------------------- |
+| $t \in \{1, \ldots, T\}$ | Stage index                                                                                                |
+| $\omega \in \Omega_t$    | Scenario realization at stage $t$                                                                          |
+| $x_t$                    | State variables at end of stage $t$                                                                        |
+| $\hat{x}_{t-1}$          | Incoming state (from previous stage)                                                                       |
+| $V_t(x)$                 | Value function (cost-to-go) at stage $t$                                                                   |
+| $\theta_t$               | Epigraph variable approximating $V_{t}$                                                                    |
+| $\pi$                    | Dual variables (row Lagrange multipliers); state cut coefficients are reduced costs of pinned columns (§5) |
+| $(\alpha, \pi)$          | Cut intercept and coefficients                                                                             |
+| $k$                      | Iteration counter                                                                                          |
 
 ## 2. Index Sets
 
@@ -189,12 +189,14 @@ Per-block variables are indexed by $k \in \mathcal{K}$:
 
 ### 4.2 Stage-Level State Variables
 
-| Variable     | Domain                         | Units | Description                                         |
-| ------------ | ------------------------------ | ----- | --------------------------------------------------- |
-| $v_h$        | $[\underline{V}_h, \bar{V}_h]$ | hm³   | End-of-stage storage                                |
-| $v^{avg}_h$  | -                              | hm³   | Average storage during stage: $(\hat{v}_h + v_h)/2$ |
-| $a_{h,\ell}$ | fixed                          | m³/s  | AR lag $\ell$ (fixed by state transition)           |
-| $\theta$     | $\geq 0$                       | \$    | Future cost (cost-to-go approximation)              |
+| Variable                 | Domain                         | Units | Description                                                                                                            |
+| ------------------------ | ------------------------------ | ----- | ---------------------------------------------------------------------------------------------------------------------- |
+| $v_h$                    | $[\underline{V}_h, \bar{V}_h]$ | hm³   | End-of-stage storage                                                                                                   |
+| $v^{avg}_h$              | -                              | hm³   | Average storage during stage: $(\hat{v}_h + v_h)/2$                                                                    |
+| $a_{h,\ell}$             | fixed                          | m³/s  | AR lag $\ell$ (fixed by state transition)                                                                              |
+| $x^{\mathrm{a}}_{s,i,t}$ | fixed                          | MW    | Slot $s$ of plant $i$'s anticipated-thermal ring buffer at stage $t$ (fixed by state transition); slot 0 matures here. |
+| $d^i_t$                  | $[\underline{G}_i, \bar{G}_i]$ | MW    | Anticipated-thermal commitment placed at stage $t$ for delivery at stage $t + K_i$                                     |
+| $\theta$                 | $\geq 0$                       | \$    | Future cost (cost-to-go approximation)                                                                                 |
 
 ### 4.3 Slack Variables
 
@@ -212,17 +214,17 @@ Slack variables for soft constraints:
 | $\sigma^{r}_{h,k}$                       | $\geq 0$ | m³/s  | Water withdrawal violation         |
 | $\sigma^{inf}_h$                         | $\geq 0$ | m³/s  | Inflow non-negativity (if enabled) |
 
-## 5. Dual Variables
+## 5. Dual Variables and Reduced Costs
 
-Dual variables are essential for cut coefficient computation in SDDP. This section describes how state-linking constraints are formulated in the LP for efficient solver updates, and how the resulting dual variables map to cut coefficients.
+Cut coefficients in SDDP are state sensitivities. This section describes how the incoming state is carried in the LP for efficient solver updates, and how the resulting sensitivities — row duals for true constraints, **reduced costs** for the pinned state columns — map to cut coefficients.
 
 ### 5.1 LP Formulation Strategy for Efficient Hot-Path Updates
 
-In the SDDP algorithm, each subproblem solve requires setting the **incoming state** values (storage volumes and AR lags from the previous stage). For computational efficiency with solvers like HiGHS, constraints are formulated so that:
+In the SDDP algorithm, each subproblem solve requires setting the **incoming state** values (storage volumes and AR lags from the previous stage). For computational efficiency with solvers like HiGHS, Cobre gives each incoming-state coordinate its own LP column and **pins it by setting equal lower and upper column bounds**:
 
-> **Design Principle**: All incoming state variables are **isolated on the right-hand side (RHS)** of their respective constraints.
+> **Design Principle**: Each incoming state coordinate is carried on a dedicated incoming-state column and pinned by equal column bounds; constraints that use incoming state reference that column rather than a constant RHS.
 
-This design allows the hot path to update incoming state values by patching row bounds without rebuilding the constraint matrix — only scalar values change between solves, not LP structure.
+This design allows the hot path to update incoming state values by patching column bounds (and, for the realized-inflow noise, a single row RHS) without rebuilding the constraint matrix — only scalar values change between solves, not LP structure. The cut coefficient for each state coordinate is then the **reduced cost** of its pinned column (§5.4).
 
 ### 5.2 Water Balance: LP Form
 
@@ -232,45 +234,39 @@ $$
 v_h = \hat{v}_h + \zeta \Big[ a_h + \sum_{k \in \mathcal{K}} w_k \cdot \text{net\_flows}_{h,k} \Big]
 $$
 
-For LP implementation, we **rearrange to isolate $\hat{v}_h$ on the RHS**:
-
-$$
-v_h - \zeta \cdot a_h - \zeta \sum_{k \in \mathcal{K}} w_k \cdot \text{net\_flows}_{h,k} = \hat{v}_h
-$$
-
-Expanding the net flows and collecting all LP variables on the LHS:
+For LP implementation, the incoming storage is carried as a dedicated LP variable $v^{in}_h$ (the `storage_in` column) rather than a constant, and **all LP variables are collected on the LHS** with a zero RHS:
 
 $$
 \boxed{
-v_h - \zeta \cdot a_h - \zeta \sum_{k} w_k \Big[
+v_h - v^{in}_h - \zeta \cdot a_h - \zeta \sum_{k} w_k \Big[
   \sum_{i \in \mathcal{U}_h} (q_{i,k} + s_{i,k} + u_{i,k})
   + \sum_{i:\text{div}=h} u_{i,k}
   + \sum_{j:\text{dest}=h} p_{j,k}
   - q_{h,k} - s_{h,k} - u_{h,k} - e_{h,k} - r_{h,k}
   - \sum_{j:\text{src}=h} p_{j,k}
-\Big] = \hat{v}_h
+\Big] = 0
 }
 $$
 
 **LP Structure**:
 
-- **LHS**: Linear combination of LP variables (storage $v_h$, flows $q$, $s$, $u$, etc.)
-- **RHS**: Incoming state $\hat{v}_h$ only (set via row bounds in hot path)
+- **LHS**: Linear combination of LP variables (storage $v_h$, incoming storage $v^{in}_h$, flows $q$, $s$, $u$, etc.)
+- **RHS**: $0$ — the incoming state is _not_ a constraint RHS; it is pinned separately on the $v^{in}_h$ column (§5.1)
 - **Constraint type**: Equality ($=$)
 
-### 5.3 AR Lag Constraints: LP Form
+### 5.3 AR Lag Pinning: LP Form
 
-For autoregressive inflow state variables, the constraint fixes the current-stage lag variable to the incoming value:
+For autoregressive inflow state variables, the lag column is pinned to the incoming value by equal column bounds:
 
 $$
-\boxed{a_{h,\ell} = \hat{a}_{h,\ell}} \quad \forall h \in \mathcal{H}, \; \ell \in \{1, \ldots, P_h\}
+\boxed{\underline{a}_{h,\ell} = \bar{a}_{h,\ell} = \hat{a}_{h,\ell}} \quad \forall h \in \mathcal{H}, \; \ell \in \{1, \ldots, P_h\}
 $$
 
 **LP Structure**:
 
-- **LHS**: Single LP variable $a_{h,\ell}$ (coefficient = 1)
-- **RHS**: Incoming lag value $\hat{a}_{h,\ell}$ (set via row bounds in hot path)
-- **Constraint type**: Equality ($=$)
+- **Column**: $a_{h,\ell}$ (the `inflow_lags` column), bounds set equal to the incoming lag value
+- **Pin value**: Incoming lag $\hat{a}_{h,\ell}$ (set via column bounds in the hot path)
+- **No constraint row**: pinning is a bound, not an equality row
 
 ### 5.4 Cut Coefficient Derivation from Duals
 
@@ -282,78 +278,66 @@ $$
 
 where $\alpha$ is the intercept and $\pi$ are the coefficients with respect to state variables.
 
-**Key principle**: For a constraint written as $\text{LHS} = \text{RHS}$, the dual variable $\pi$ represents:
+**Key principle**: For an incoming-state column pinned at $\underline{x} = \bar{x} = \hat{x}$, the column's **reduced cost** $\bar{c}$ represents:
 
 $$
-\pi = \frac{\partial Q^*}{\partial \text{RHS}}
+\bar{c} = \frac{\partial Q^*}{\partial \hat{x}}
 $$
 
-where $Q^*$ is the optimal objective value. This is the **marginal cost with respect to increasing the RHS**.
+where $Q^*$ is the optimal objective value — the **marginal cost of increasing the pinned bound**. By KKT parity this equals the multiplier the equivalent equality row $x^{in} = \hat{x}$ would have carried.
 
-#### Storage Dual ($\pi^{fix}_h$)
+#### Storage Reduced Cost ($\bar{c}^{in}_h$)
 
-For the storage fixing constraint (see [LP Formulation §4a](../math/lp-formulation.md)):
-
-$$
-\underbrace{v^{in}_h}_{\text{LHS}} = \underbrace{\hat{v}_h}_{\text{RHS}}
-$$
-
-The dual $\pi^{fix}_h$ measures: _"How does optimal cost change if incoming storage $\hat{v}_h$ increases by 1 hm³?"_
+The incoming storage column $v^{in}_h$ is pinned at $\underline{v}^{in}_h = \bar{v}^{in}_h = \hat{v}_h$ (see [LP Formulation §4a](../math/lp-formulation.md)). Its reduced cost $\bar{c}^{in}_h$ measures: _"How does optimal cost change if incoming storage $\hat{v}_h$ increases by 1 hm³?"_
 
 **Economic interpretation**:
 
 - More incoming storage means more water available for generation
 - Water has value (can displace thermal generation or avoid deficit)
 - Therefore, increasing $\hat{v}_h$ **decreases** cost: $\frac{\partial Q^*}{\partial \hat{v}_h} < 0$
-- By LP convention (minimization), this gives $\pi^{fix}_h < 0$
+- By LP convention (minimization), this gives $\bar{c}^{in}_h < 0$, hence $\pi^v_h < 0$
 
 **Cut coefficient**:
 
 $$
-\boxed{\pi^v_h = \pi^{fix}_h}
+\boxed{\pi^v_h = \bar{c}^{in}_h / d^{col}_h}
 $$
 
-No sign change is needed because the incoming state $\hat{v}_h$ appears directly on the RHS with coefficient $+1$. By the LP envelope theorem, this dual automatically captures all downstream effects — water balance, FPHA hyperplanes, and generic constraints — without manual combination of duals from multiple constraint types. See [Cut Management §2](../math/cut-management.md).
+The reduced cost is divided by the column's prescaler factor $d^{col}_h$ to recover the original-unit sensitivity (§12 of [LP Formulation](../math/lp-formulation.md)); no sign change is needed. By the LP envelope theorem, the reduced cost automatically captures all downstream effects — water balance, FPHA hyperplanes, and generic constraints — without manual combination of duals from multiple constraint types. See [Cut Management §2](../math/cut-management.md).
 
-#### AR Lag Dual ($\pi^{lag}_{h,\ell}$)
+#### AR Lag Reduced Cost ($\bar{c}^{lag}_{h,\ell}$)
 
-For the lag fixing constraint:
-
-$$
-\underbrace{a_{h,\ell}}_{\text{LHS}} = \underbrace{\hat{a}_{h,\ell}}_{\text{RHS}}
-$$
-
-The dual $\pi^{lag}_{h,\ell}$ measures: _"How does optimal cost change if incoming lag $\hat{a}_{h,\ell}$ increases by 1 m³/s?"\_
+The lag column $a_{h,\ell}$ is pinned at $\underline{a}_{h,\ell} = \bar{a}_{h,\ell} = \hat{a}_{h,\ell}$. Its reduced cost measures: _"How does optimal cost change if incoming lag $\hat{a}_{h,\ell}$ increases by 1 m³/s?"\_
 
 **Economic interpretation**:
 
 - Higher historical inflow (in the PAR model) correlates with higher expected current inflow
 - Higher inflows reduce cost (more hydro generation possible)
-- Therefore, $\pi^{lag}_{h,\ell} < 0$ (increasing the lag decreases cost)
+- Therefore, $\bar{c}^{lag}_{h,\ell} < 0$ (increasing the lag decreases cost)
 
 **Cut coefficient**:
 
-The cut coefficient for lag $\ell$ is the dual variable $\pi^{lag}_{h,\ell}$ directly, since $\hat{a}_{h,\ell}$ appears on the RHS with coefficient $+1$. No sign change or scaling is needed.
+The cut coefficient for lag $\ell$ is the reduced cost of the pinned lag column, divided by its prescaler factor: $\pi^{lag}_{h,\ell} = \bar{c}^{lag}_{h,\ell} / d^{col}_{h,\ell}$. No sign change is needed.
 
 ### 5.5 Summary Table
 
-| Symbol               | Constraint (LP Form)                    | RHS                | Cut Coefficient                                           |
-| -------------------- | --------------------------------------- | ------------------ | --------------------------------------------------------- |
-| $\pi^{fix}_h$        | $v^{in}_h = \hat{v}_h$ (storage fixing) | $\hat{v}_h$        | $\pi^v_h = \pi^{fix}_h$ (captures all downstream effects) |
-| $\pi^{lag}_{h,\ell}$ | $a_{h,\ell} = \hat{a}_{h,\ell}$         | $\hat{a}_{h,\ell}$ | $\pi^{lag}_{h,\ell}$ (direct)                             |
-| $\pi^{lb}_{b,k}$     | Load balance                            | $D_{b,k}$          | Marginal cost of energy                                   |
-| $\pi^{wb}_h$         | Water balance                           | -                  | Not used directly for cut coefficients                    |
-| $\pi_m^{fpha}$       | FPHA hyperplane $m$                     | -                  | Captured via $\pi^{fix}_h$ automatically                  |
-| $\pi^{gen}_c$        | Generic constraint $c$                  | -                  | Captured via $\pi^{fix}_h$ automatically                  |
-| $\lambda_i$          | Benders cut $i$                         | $\alpha_i$         | Cut activity indicator                                    |
+| Symbol                   | Source                                     | Pinned value / RHS | Cut Coefficient                                                        |
+| ------------------------ | ------------------------------------------ | ------------------ | ---------------------------------------------------------------------- |
+| $\bar{c}^{in}_h$         | Reduced cost of pinned $v^{in}_h$ column   | $\hat{v}_h$        | $\pi^v_h = \bar{c}^{in}_h / d^{col}$ (captures all downstream effects) |
+| $\bar{c}^{lag}_{h,\ell}$ | Reduced cost of pinned $a_{h,\ell}$ column | $\hat{a}_{h,\ell}$ | $\pi^{lag}_{h,\ell} = \bar{c}^{lag}_{h,\ell} / d^{col}$                |
+| $\pi^{lb}_{b,k}$         | Load balance (row dual)                    | $D_{b,k}$          | Marginal cost of energy                                                |
+| $\pi^{wb}_h$             | Water balance (row dual)                   | -                  | Not used directly for cut coefficients                                 |
+| $\pi_m^{fpha}$           | FPHA hyperplane $m$ (row dual)             | -                  | Captured via $\bar{c}^{in}_h$ automatically                            |
+| $\pi^{gen}_c$            | Generic constraint $c$ (row dual)          | -                  | Captured via $\bar{c}^{in}_h$ automatically                            |
+| $\lambda_i$              | Benders cut $i$ (row dual)                 | $\alpha_i$         | Cut activity indicator                                                 |
 
 ### 5.6 Implementation Notes
 
-The key property: since incoming state variables appear on the RHS of fixing constraints with coefficient $+1$, no sign change is needed when mapping duals to cut coefficients ($\pi^v_h = \pi^{fix}_h$; for AR lags, $\pi^{lag}_{h,\ell}$ is used directly). Accordingly, the cut coefficient extraction reads a single contiguous slice of the dual vector covering the state-variable rows.
+The key property: since incoming state coordinates are pinned at equal column bounds, each column's reduced cost _is_ the bound sensitivity directly, so no sign change is needed when mapping to cut coefficients — only the per-column prescaler unscaling ($\pi^v_h = \bar{c}^{in}_h / d^{col}_h$; likewise for AR lags). Cut coefficient extraction reads the reduced costs of the contiguous incoming-state column regions (`storage_in`, `inflow_lags`, and, when present, `anticipated_state`).
 
 **Verification check**: In a typical hydrothermal system:
 
-- $\pi^{fix}_h < 0$ (water has value, more storage reduces cost)
+- $\bar{c}^{in}_h < 0$ (water has value, more storage reduces cost)
 - $\pi^v_h < 0$ (cut value increases as storage decreases — future is more expensive with less water)
 - The cut $\theta \geq \alpha + \pi^v \cdot v$ correctly penalizes low storage
 

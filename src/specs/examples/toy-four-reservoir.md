@@ -10,8 +10,8 @@ phenomena that the single-reservoir case cannot exhibit:
 
 - **Multi-dimensional cuts.** The cut becomes a hyperplane with one
   storage coefficient per reservoir; the optimiser must balance
-  releases across plants by reading per-storage duals from each
-  fixing constraint.
+  releases across plants by reading the per-storage reduced cost of
+  each pinned incoming-storage column.
 - **Per-bus dispatch with independent supply.** Each bus carries its
   own demand and is served by its local hydro and a local thermal;
   the LP solves the regional dispatches simultaneously inside one
@@ -131,8 +131,8 @@ $$
 (For this walkthrough $\zeta = 1$: one m³/s of turbining per stage
 withdraws one hm³.)
 
-**Storage fixing constraints** (their duals become the cut
-coefficients):
+**Incoming-storage pinning** (the reduced cost of each pinned column
+becomes the cut coefficient):
 
 $$
 v^{in}_h \;=\; \hat{v}_{h,t-1}, \qquad h = 1, 2, 3, 4
@@ -243,9 +243,9 @@ Stage 4 cost: $50 \times 10 + 50 \times 2 = 500 + 100 = 600$.
 
 ## 5. Iteration 1 — Backward Pass
 
-The backward pass walks stages $4 \to 1$. At each stage it fixes the
+The backward pass walks stages $4 \to 1$. At each stage it pins the
 incoming storage to the trial point from the forward pass, evaluates
-all three openings, reads the four storage fixing duals, and
+all three openings, reads the four pinned-column reduced costs, and
 aggregates into a 4-coefficient cut. The mechanics follow
 [Cut Management](../math/cut-management.md) sections 2–3, generalised
 from one storage coefficient (single-reservoir case) to four (this
@@ -276,9 +276,10 @@ For each opening, each bus solves its local dispatch independently
 
 $Q_4(\omega_1) = 750 + 300 + 150 + 0 = 1200$.
 
-The storage fixing dual at each bus follows the single-reservoir
-logic: water-limited buses with thermal active have $\pi^v_h = -50$;
-buses where demand is met by hydro alone have $\pi^v_h = 0$.
+The storage cut coefficient at each bus — the reduced cost of the pinned
+incoming-storage column — follows the single-reservoir logic: water-limited
+buses with thermal active have $\pi^v_h = -50$; buses where demand is met by
+hydro alone have $\pi^v_h = 0$.
 
 **$\omega_2$ (mean):**
 
@@ -359,9 +360,9 @@ at H4 has no marginal value at this trial point.
 The same procedure repeats at the earlier stages, with the cut from
 the next stage active in the LP. At each stage:
 
-1. Fix the incoming storage vector $\hat v_{t-1}$.
+1. Pin the incoming storage vector $\hat v_{t-1}$ (column bounds).
 2. Solve all three opening LPs with the next-stage cut active.
-3. Read four storage fixing duals per opening (one per reservoir).
+3. Read four pinned-column reduced costs per opening (one per reservoir).
 4. Compute per-opening intercepts via
    $\hat\alpha(\omega) = Q(\omega) - \sum_h \pi^v_h(\omega)\, \hat v_{h,t-1}$.
 5. Aggregate by probability-weighted averaging into one
@@ -454,7 +455,7 @@ no transmission. It does not cover:
   expected downstream value of released water. See
   [System Elements](../math/system-elements.md) for cascade topology
   and [Cut Management](../math/cut-management.md) for how cascade
-  duals propagate through the fixing-constraint dual.
+  sensitivities propagate through the pinned-column reduced cost.
 - **FPHA production model**: nonlinear head-dependent productivity
   approximated by piecewise-linear hyperplanes; one of the planes
   binds at the optimum and contributes to the storage cut
@@ -484,7 +485,7 @@ no transmission. It does not cover:
 ## Cross-References
 
 - [Toy Single-Reservoir Walkthrough](./toy-single-reservoir.md) — Single-reservoir baseline; core SDDP loop, 0-order inflow, forward/backward/cut in the simplest setting
-- [LP Formulation](../math/lp-formulation.md) — Complete stage LP, column and row layout, fixing constraints, dual extraction
+- [LP Formulation](../math/lp-formulation.md) — Complete stage LP, column and row layout, column-bound state pinning, reduced-cost extraction
 - [System Elements](../math/system-elements.md) — Hydro plant element, cascade topology (not exercised here), water-balance convention, FPHA overview
 - [Hydro Production Models](../math/hydro-production-models.md) — Constant-productivity (used here) and FPHA hyperplane fitting; impact on Benders cut coefficients
 - [PAR Inflow Model](../math/par-inflow-model.md) — Inflow model definition; the $p = 0$ degenerate case (white noise) used here; spatial correlation factorisation for multivariate cases

@@ -75,15 +75,15 @@ Inter-block storages $v_{h,k}$ for $k < |\mathcal{K}|$ are internal LP variables
 1. Cuts are computed with respect to end-of-stage storage only
 2. State dimension does not increase with number of blocks
 
-### 2.5 Dual Extraction for Cuts
+### 2.5 Cut Coefficient Extraction
 
-In chronological mode, the storage fixing constraint $v^{in}_h = \hat{v}_h$ binds the incoming storage LP variable to its trial value (see [LP formulation](lp-formulation.md)). The dual of this fixing constraint gives the storage cut coefficient directly:
+In chronological mode, the incoming storage LP variable $v^{in}_h$ is pinned to its trial value $\hat{v}_h$ by equal column bounds (see [LP formulation §4a](lp-formulation.md)). The **reduced cost** of that pinned column gives the storage cut coefficient directly:
 
 $$
-\pi^v_h = \pi^{fix}_h
+\pi^v_h = \bar{c}^{in}_h / d^{col}_h
 $$
 
-By the LP envelope theorem, this dual automatically captures all downstream effects through the chain of inter-block water balances ($v^{in}_h \to v_{h,1} \to \ldots \to v_{h,|\mathcal{K}|}$), FPHA constraints, and generic constraints. No special handling or dual combination is required. See [Cut management](cut-management.md).
+By the LP envelope theorem, this reduced cost automatically captures all downstream effects through the chain of inter-block water balances ($v^{in}_h \to v_{h,1} \to \ldots \to v_{h,|\mathcal{K}|}$), FPHA constraints, and generic constraints. No special handling or dual combination is required. See [Cut management](cut-management.md).
 
 ### 2.6 Characteristics
 
@@ -139,5 +139,5 @@ This extension is out of scope for the current formulation because it requires:
 - [Notation conventions](../overview/notation-conventions.md) — variable and set definitions ($v_h$, $\hat{v}_h$, $\mathcal{K}$, $\tau_k$, $w_k$)
 - [System elements](system-elements.md) — hydro plant element description and decision variables
 - [LP formulation](lp-formulation.md) — how block formulations integrate into the assembled LP
-- [Cut management](cut-management.md) — cut coefficient extraction from fixing constraint duals
+- [Cut management](cut-management.md) — cut coefficient extraction from pinned-column reduced costs
 - [Hydro production models](hydro-production-models.md) — production function constraints that operate within each block
