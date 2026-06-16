@@ -18,7 +18,7 @@ diverge from the code, the spec must be updated — not the other way around.
 
 ## Current State
 
-**Synced to: cobre v0.8.0 (2026-06-01).**
+**Synced to: cobre v0.8.1 (2026-06-13).**
 
 The corpus is a **methodology-only** reference (math, worked examples,
 reference) organised into the 7-Part TOC in `src/SUMMARY.md`. Architecture,
@@ -51,7 +51,8 @@ When **updating the LP / SDDP / cut / warm-start cluster** (`lp-formulation.md`,
 `determinism-guarantees.md`):
 
 → Verify column/row layout against the `StageIndexer` in
-  `cobre-sddp/src/indexer.rs`.
+  `crates/cobre-sddp/src/lp/indexer/` (struct in `layout.rs`; the
+  `state_to_lp_incoming_column` resolver in `state_mapping.rs`).
 → **State pinning (v0.8.0)**: incoming state (storage, AR lags, anticipated-thermal
   slots) is pinned by **column bounds** on the incoming-state columns, resolved
   via `StageIndexer::state_to_lp_incoming_column`. The `storage_fixing`,
@@ -60,13 +61,38 @@ When **updating the LP / SDDP / cut / warm-start cluster** (`lp-formulation.md`,
 → **Cut subgradient (v0.8.0)**: cut coefficients are the **reduced costs** of
   the pinned columns, unscaled by **dividing** by `col_scale[col]` — not row
   duals. NB: the v0.8.0 CHANGELOG prose says "multiply"; the shipped code
-  divides (`cobre-sddp/src/.../backward.rs`). **Docs follow the code: divide.**
+  divides (`crates/cobre-sddp/src/training/backward/duals_extraction.rs`).
+  **Docs follow the code: divide.**
 → **LP scaling**: Cobre applies its own offline geometric-mean row/col prescaler
-  plus a cost-scale factor; HiGHS's internal simplex scaler is **disabled**
-  (`simplex_scale_strategy = 0`) on all phase profiles — no double-scaling.
+  plus a cost-scale factor; the LP backend's internal simplex scaler is
+  **disabled** (HiGHS: `simplex_scale_strategy = 0`) on all phase profiles — no
+  double-scaling. (The LP backend is now selectable at build time — HiGHS default,
+  CLP opt-in — a relocated/devguide concern; keep methodology backend-generic.)
 → **Cut pool**: append-only with stable, deterministic slot indices; deactivation
   toggles a cut row's RHS to a trivially-satisfied `±∞` sentinel (row never
   removed); only active cuts are baked into each iteration's template.
+→ **Cut selection (v0.8.1)**: periodic-pruning methods
+  (`level1`/`lml1`/`domination`) deactivate cuts; the **dynamic** method (DCS,
+  v0.8.1) instead keeps the pool whole and loads a bounded **resident subset**
+  per solve (lazy-exact). The `training.cut_selection` config was restructured into a tagged `selection` object — renames `active_window`→
+  `seed_window`, `candidate_window`→`candidate_recency`, `nadic`→
+  `max_added_per_round`, `domination_epsilon`→`domination_tolerance`,
+  `cut_activity_tolerance`→`row_activity_tolerance`; removed `enabled`/`method`/
+  `threshold`/`memory_window`/`basis_activity_window`. DCS code: `crates/cobre-sddp/src/cut/dcs.rs`.
+
+When **updating the hydro-production / FPHA cluster** (`hydro-production-models.md`)
+
+→ Computed-FPHA fit is a **3-D convex hull** of the `(volume, turbined)`
+  production cloud at spillage = 0 (flow axis starts at 0; **no** spillage axis;
+  **no** synthetic closing point — the q=0 column anchors), capped at installed
+  capacity, with a least-squares **`α` correction** and a per-plane lateral-flow secant for
+  `γ_S`. Fits are **per-stage**; run-of-river is supported (`γ_V` snapped to 0).
+→ **`reference_volume`** (`volume_hm3` XOR `percentile`) is the single source of
+  truth for the fit and the `ρ_eq` derivation; `reference_volume_hm3` is gone.
+→ Optional `fpha_plane_reduction` (angle/distance, origin plane never merged) and
+  optional exact **piecewise-quartic tailrace** with backwater families.
+→ Verify against `crates/cobre-sddp/src/production/fpha_fitting/`. **Docs follow
+  the code**: the design-doc/CHANGELOG "synthetic closing point" is NOT shipped.
 
 When **authoring or editing a diagram** (new `src/images/*.svg`,
 `diagrams/matplotlib/d*.py`, or inline ` ```mermaid ` block in a spec):
@@ -97,7 +123,7 @@ the content.
 ## Key References
 
 | Resource                  | Location                                                               | Purpose                                          |
-| ------------------------- | ---------------------------------------------------------------------- | ------------------------------------------------ |
+| ------------------------- | --------------------------------------------------------------------- | ------------------------------------------------ |
 | Cobre code (ground truth) | `https://github.com/cobre-rs/cobre/`                                   | Actual implementation                            |
 | Software book             | `https://docs.cobre-rs.dev/`                                           | User-facing docs                                 |
 | Dev strategy              | `https://github.com/cobre-rs/cobre/docs/design/dev-strategy.md`        | Documentation & public presence strategy         |

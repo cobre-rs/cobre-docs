@@ -111,8 +111,16 @@ how the blocks are distributed across threads or how many threads run — a
 single-threaded run and a fully parallel run produce the same deactivations and
 reactivations. The deterministic cut-pool slot index closes the loop: the
 tie-break that keeps the _oldest_ cut at a state (LML1) resolves to the same
-cut in every run, because each cut occupies the same slot in every run. See
-[Cut Management](./cut-management.md).
+cut in every run, because each cut occupies the same slot in every run.
+
+The same discipline extends to **dynamic cut selection (DCS)**, which chooses a
+per-solve resident subset of cuts rather than deactivating any. The resident set
+is seeded from synchronized per-slot pool metadata (not per-worker solve traces),
+the omitted-cut violation scores come from a bit-deterministic batched product,
+and the order in which violated cuts are added is fixed by a total ordering on
+violation magnitude with an ascending-slot-index tie-break. The resident set —
+and therefore the solve result — is consequently identical across thread and MPI
+rank counts. See [Cut Management](./cut-management.md).
 
 ## 4. Out of Scope
 

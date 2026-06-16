@@ -314,6 +314,41 @@ Either way, the bucket cannot inject spurious autoregressive structure into adja
 - **`ManyNegative`** flags buckets that the upstream incremental-inflow construction has driven below zero for more than 10% of observations. The condition is recorded for operator diagnostics but does not override the fit — the cause is upstream-data quality, not a methodological signal.
 - **`Default`** is the standard path; the empirical stats and the chosen order-selection rule decide the order.
 
+### 5.8 Partial-year studies and the pre-study lag window
+
+A study horizon may be **narrower than the seasonal cycle** — e.g. a monthly
+model ($M = 12$) running only September–December. The per-season fitting
+described above must then handle seasons that have few or no in-window
+observations. Two rules keep it well-defined.
+
+**Lag-reachability.** A season is *lag-reachable* only if some stage of the
+(extended) horizon carries it. Each historical observation is resolved to a
+season from the stage date ranges, falling back to the season-map calendar for
+dates predating the horizon; an observation whose resolved season has no stage
+at all is **skipped** — its statistics would never be consumed. Full-cycle
+history therefore does not perturb a partial-year fit.
+
+**Pre-study lag synthesis (for $p > 0$).** The first study stage's
+autoregressive lags reach back to seasons *before* the study start. For each
+lag $k = 1, \ldots, \min(p,\, M - 1)$, the season $k$ calendar positions
+before the first study season is introduced as a **pre-study season** (modular
+on the true cycle length $M$) — unless that season is already covered by a
+study stage (an in-window wrap lag, handled by the cycle-correct lag lookup).
+The seasonal statistics $(\hat{\mu}_m, \hat{s}_m)$ of those out-of-window
+seasons are estimated from history exactly as for in-window seasons, then feed
+the lag terms of the opening study stages — both the coefficient conversion
+$\psi_{m,\ell} = \psi^*_{m,\ell}\, \hat{s}_m / \hat{s}_{m-\ell}$ and the
+deterministic base.
+
+The wrap uses the **true cycle length** $M$ (the number of seasons in the
+season map), not the number of seasons in the study window, together with a
+season **offset** equal to the season of the first study stage — so, e.g., a
+March-start study maps the lag-1 season to February, not December.
+
+**Full-cycle invariance.** When the study spans the full cycle (every season
+already has a study stage) or carries no out-of-window history, nothing is
+synthesized and the fit is bit-identical to before.
+
 ## 6. Validation Invariants
 
 After fitting or loading pre-computed parameters, the following invariants must hold:
@@ -390,6 +425,8 @@ This is a precomputed constant per (stage, hydro) pair. It absorbs the mean-adju
 $$
 a_{h,t} = \sum_{\ell=1}^{p} \psi_{m(t),\ell} \cdot a_{h,t-\ell} + b_{h,m(t)} + \sigma_{m(t)} \cdot \varepsilon_t
 $$
+
+For partial-year studies, the lag-season means $\mu_{m(t-\ell)}$ for seasons preceding the study start are sourced from the pre-study lag window (section 5.8); when no such statistic exists for a given lag season, that lag's mean contribution is treated as zero.
 
 ### 7.5 LP RHS Patching Operation
 

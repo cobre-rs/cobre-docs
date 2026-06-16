@@ -31,74 +31,66 @@ with:
 
 **Data requirements**: a per-stage productivity scalar per hydro plant. No geometry or hyperplane data needed.
 
-## 2. FPHA (Four-Point Head Approximation)
+## 2. FPHA (Função de Produção Hidrelétrica Aproximada)
 
-For accurate modeling of hydroelectric generation, FPHA (Função de Produção Hidrelétrica Aproximada) captures the nonlinear relationship between storage, flow, spillage, and generation through a piecewise-linear approximation.
+For accurate modeling of hydroelectric generation, FPHA (Aproximate Hydropower Production Function) captures the nonlinear relationship between storage, flow, spillage, and generation through a piecewise-linear approximation.
 
 ### 2.1 Notation Mapping
 
-This section uses consistent notation with the LP formulation. The following table maps Cobre symbols to equivalent CEPEL/Portuguese terminology for practitioners familiar with DECOMP/DESSEM:
+This section uses consistent notation with the LP formulation. The following table maps Cobre symbols to equivalent Portuguese terminology for practitioners familiar with DECOMP/DESSEM/NEWAVE:
 
-| Cobre      | CEPEL/Portuguese               | Description                 | Units |
-| ---------- | ------------------------------ | --------------------------- | ----- |
-| $\phi$     | FPH                            | Hydro production function   | MW    |
-| $v$        | $V$                            | Reservoir storage           | hm³   |
-| $q$        | $Q$                            | Turbined flow               | m³/s  |
-| $s$        | $S$                            | Spillage                    | m³/s  |
-| $g_h$      | GH                             | Hydro generation            | MW    |
-| $h_{fore}$ | $h_{mon}$ (montante)           | Forebay (upstream) level    | m     |
-| $h_{tail}$ | $h_{jus}$ (jusante)            | Tailrace (downstream) level | m     |
-| $h_{net}$  | $h_{liq}$ (líquida)            | Net head                    | m     |
-| $h_{loss}$ | $h_{PerdH}$ (perda hidráulica) | Hydraulic losses            | m     |
-| $q_{out}$  | $Q_{jus}$                      | Total downstream outflow    | m³/s  |
+| Cobre      | Portuguese (practitioner reference) | Description                 | Units |
+| ---------- | ----------------------------------- | --------------------------- | ----- |
+| $\phi$     | FPH                                 | Hydro production function   | MW    |
+| $v$        | $V$                                 | Reservoir storage           | hm³   |
+| $q$        | $Q$                                 | Turbined flow               | m³/s  |
+| $s$        | $S$ / $Q_{ver}$                     | Spillage                    | m³/s  |
+| $g_h$      | GH                                  | Hydro generation            | MW    |
+| $h_{fore}$ | $h_{mon}$ (montante)                | Forebay (upstream) level    | m     |
+| $h_{tail}$ | $h_{jus}$ (jusante)                 | Tailrace (downstream) level | m     |
+| $h_{net}$  | $h_{liq}$ (líquida)                 | Net head                    | m     |
+| $h_{loss}$ | $h_{PerdH}$ (perda hidráulica)      | Hydraulic losses            | m     |
+| $q_{out}$  | $Q_{jus}$                           | Total downstream outflow    | m³/s  |
 
-> **Note on lateral flow**: CEPEL models include $q_{lat}$ (lateral tributary flow affecting tailrace level) in $q_{out}$. Cobre uses $q_{out} = q + s$ in the LP formulation. For FPHA fitting purposes, a reference lateral flow can be assumed when evaluating the exact production function.
+> **Note on lateral flow**: spillage and upstream outflows raise the tailrace level ($Q_{jus}$). In the current LP formulation the default is $q_{out} = q + s$ (own turbine + own spill). For FPHA fitting, the lateral-flow secant (§2.7) captures the spillage effect; more general lateral contributions (upstream defluences, post-incremental inflows) are deferred to a future version.
 
 ### 2.2 Exact Production Function
 
 The **exact hydroelectric production function** relates generation to the operating state:
 
 $$
-\phi(v, q, q_{out}) = \rho(q, h_{net}) \times q \times h_{net}
+\phi(v, q, s) = \rho_{esp} \cdot q \cdot h_{net}
 $$
 
 where:
 
 - $v$ = reservoir storage volume (hm³)
 - $q$ = turbined flow (m³/s)
-- $q_{out}$ = total downstream outflow affecting tailrace level (m³/s)
-- $h_{net}$ = net head (m)
-- $\rho$ = specific productivity (MW·s/m⁴)
+- $s$ = spillage flow (m³/s)
+- $h_{net}$ = net head (m), clamped to $\ge 0$
+- $\rho_{esp} = 9.81\,\eta_h / 1000$ (MW·s/m⁴), with constant efficiency $\eta_h$ per plant (default 1.0)
 
 The **net head** is computed as:
 
 $$
-h_{net}(v, q, q_{out}) = h_{fore}(v) - h_{tail}(q_{out}) - h_{loss}(q)
+h_{net}(v, q, s) = h_{fore}(v) - h_{tail}(q + s) - h_{loss}
 $$
 
-where:
+clamped to $\max(h_{net}, 0)$, where:
 
 - $h_{fore}(v)$ = forebay (upstream reservoir) level as function of storage
-- $h_{tail}(q_{out})$ = tailrace (downstream channel) level as function of total outflow
-- $h_{loss}(q)$ = hydraulic head losses in penstock and turbines
+- $h_{tail}(q + s)$ = tailrace (downstream channel) level as function of total outflow
+- $h_{loss}$ = hydraulic head losses (from the factor or constant model)
 
 **Why linearization is needed**: $\phi$ is nonlinear in $(v, q)$ due to the bilinear product $q \times h_{net}$, nonlinear topology functions $h_{fore}(v)$ and $h_{tail}(q_{out})$, and flow-dependent hydraulic losses. For LP formulation, Cobre approximates $\phi$ with a set of linear hyperplanes.
 
 ### 2.3 Topology Functions
 
-Cobre uses **tabular data with linear interpolation** for topology functions — more transparent and easier to validate against surveyed data than polynomial fits.
+Cobre uses **tabular data with linear interpolation** for the forebay curve — more transparent and easier to validate against surveyed data than polynomial fits.
 
 #### Forebay Level $h_{fore}(v)$
 
-The upstream water level is read from the volume-height curve in `hydro_geometry.parquet`:
-
-| volume_hm3 | height_m | area_km2 |
-| ---------- | -------- | -------- |
-| $v_1$      | $h_1$    | $A_1$    |
-| $v_2$      | $h_2$    | $A_2$    |
-| ...        | ...      | ...      |
-
-**Interpolation**: For storage $v$ where $v_i \leq v < v_{i+1}$:
+The upstream water level is read from the volume-height curve in `hydro_geometry.parquet`. For storage $v$ where $v_i \leq v < v_{i+1}$:
 
 $$
 h_{fore}(v) = h_i + \frac{h_{i+1} - h_i}{v_{i+1} - v_i} \times (v - v_i)
@@ -106,7 +98,7 @@ $$
 
 #### Tailrace Level $h_{tail}(q_{out})$
 
-The downstream water level depends on total outflow. Two representations are supported, matching the `tailrace` tagged union in `hydros.json`:
+The downstream water level depends on total outflow. Three representations are supported:
 
 **Polynomial model** (`type: "polynomial"`):
 
@@ -114,53 +106,55 @@ $$
 h_{tail}(q_{out}) = c_0 + c_1 q_{out} + c_2 q_{out}^2 + c_3 q_{out}^3 + c_4 q_{out}^4
 $$
 
-**Piecewise-linear model** (`type: "piecewise"`):
+**Piecewise-linear model** (`type: "piecewise"`): tabular breakpoints with linear interpolation between points.
 
-| outflow_m3s | tailrace_m   |
-| ----------- | ------------ |
-| $q_1$       | $h_{tail,1}$ |
-| $q_2$       | $h_{tail,2}$ |
-| ...         | ...          |
+**Piecewise-quartic families (exact tailrace)**: an optional per-plant tailrace table provides piecewise degree-4 polynomial segments (evaluated via Horner's method), grouped into backwater families keyed by the downstream reservoir's reference forebay level — see §2.3.1.
 
-With linear interpolation between points.
+**Total downstream flow in LP**: $q_{out} = q + s$ (turbined flow + spillage). For FPHA fitting, spillage is fixed at $s = 0$ when building the generation cloud; the lateral-flow secant (§2.7) captures the spillage correction per plane.
 
-**Total downstream flow in LP**: $q_{out} = q + s$ (turbined flow + spillage). For FPHA fitting, a reference spillage $s_{ref}$ (typically 0) is used when evaluating the exact production function across the grid.
+#### 2.3.1 Piecewise-Quartic Tailrace Families (Backwater Coupling)
 
-#### Hydraulic Losses $h_{loss}(q)$
-
-Two models are supported, matching the `hydraulic_losses` tagged union in `hydros.json`:
-
-**Factor model** (`type: "factor"`) — proportional to gross head:
+When plants are hydraulically close, plant $i$'s tailrace level depends on the downstream reservoir's forebay. An optional per-plant tailrace table provides **piecewise-quartic** tailrace segments: the flow domain $[Q_{jus,lo}, Q_{jus,hi}]$ is split into contiguous segments, each a degree-4 polynomial
 
 $$
-h_{loss}(q) = k_{loss} \times (h_{fore} - h_{tail})
+h_{tail}^{(k)}(q_{jus}) = a_0^{(k)} + a_1^{(k)} q_{jus} + a_2^{(k)} q_{jus}^2 + a_3^{(k)} q_{jus}^3 + a_4^{(k)} q_{jus}^4
+$$
+
+evaluated via Horner's method for numerical stability. C0 continuity between segments is enforced to ~1 mm. These segments are grouped into **backwater families** keyed by the downstream reservoir's reference forebay level ($HrefJus$, in metres). At fitting time, the active family is **linearly interpolated** by the downstream plant's resolved stage reference level — clamped to the calibrated level range, never extrapolated. Plants with a single keyless family (no backwater coupling) evaluate that family directly regardless of the downstream level. Plants without a tailrace table use the entity-level polynomial or piecewise-linear tailrace.
+
+#### Hydraulic Losses $h_{loss}$
+
+Two models are supported:
+
+**Factor model** — proportional to gross head:
+
+$$
+h_{loss} = k_{loss} \times (h_{fore} - h_{tail})
 $$
 
 where $k_{loss}$ is typically 0.01–0.05 (1–5% losses).
 
-**Constant model** (`type: "constant"`) — fixed head loss:
+**Constant model** — fixed head loss:
 
 $$
-h_{loss}(q) = \Delta h_{const}
+h_{loss} = \Delta h_{const} \quad \text{(metres)}
 $$
-
-where $\Delta h_{const}$ is in meters (typically 1–5m).
 
 ### 2.4 Productivity
 
-The **specific productivity** $\rho_{esp}$ (MW per (m³/s · m)) converts hydraulic power to electrical power at the operating head:
+The **specific productivity** $\rho_{esp}$ (MW per (m³/s · m)) converts hydraulic power to electrical power:
 
 $$
 \rho_{esp,h} = \frac{9.81 \times \eta_h}{1000}
 $$
 
-so the exact production is $g_h = \rho_{esp,h} \cdot q_h \cdot h_{net}$ in MW. Cobre uses constant efficiency $\eta_h = \eta_{ref}$ per plant.
+so the exact production is $\phi = \rho_{esp} \cdot q \cdot h_{net}$ in MW. Cobre uses constant efficiency $\eta_h$ per plant.
 
 FPHA plants author $\rho_{esp}$ directly — not a single scalar productivity $\rho$. The equivalent productivity $\rho_{eq}$ at the reference operating point is **derived** from $\rho_{esp}$ and the VHA geometry; the derivation is documented in section 5.1.
 
 ### 2.5 FPHA Hyperplanes
 
-The FPHA approximation replaces the nonlinear production function $\phi(v, q, s)$ with a set of $M$ linear hyperplanes that form a **concave upper envelope** of the exact surface. Each hyperplane $m$ defines an upper bound on generation:
+The FPHA approximation replaces the nonlinear production function $\phi(v, q, s)$ with a set of $M$ linear hyperplanes that form a **concave outer approximation** of the exact surface. Each hyperplane $m$ defines an upper bound on generation:
 
 $$
 g_{h,k} \leq \gamma_0^m + \gamma_v^m \cdot v_h^{avg} + \gamma_q^m \cdot q_{h,k} + \gamma_s^m \cdot s_{h,k}
@@ -171,79 +165,91 @@ $$
 | Coefficient | Sign | Meaning                                           |
 | ----------- | ---- | ------------------------------------------------- |
 | $\gamma_0$  | > 0  | Intercept (MW at zero storage, flow, spillage)    |
-| $\gamma_v$  | > 0  | Higher storage → higher forebay → more generation |
-| $\gamma_q$  | > 0  | More turbined flow → more generation              |
+| $\gamma_v$  | ≥ 0  | Higher storage → higher forebay → more generation |
+| $\gamma_q$  | ≥ 0  | More turbined flow → more generation              |
 | $\gamma_s$  | ≤ 0  | More spillage → higher tailrace → less net head   |
 
-**Source of hyperplanes**: Planes are either pre-computed (read from `fpha_hyperplanes.parquet`) or computed from topology data during preprocessing. The fitting process evaluates $\phi$ on a discretization grid over the operating region $[v_{min}, v_{max}] \times [0, q_{max}]$, then constructs the concave envelope of the resulting generation surface.
+**Source of hyperplanes**: planes are either pre-computed (read from `fpha_hyperplanes.parquet`) or computed from topology data during preprocessing. The computed fit is described in §2.6.
 
-> **Implementation note:** The computed-source fitting grid is three-dimensional: volume, turbined flow, and spillage. The volume axis spans $[v_{min}, v_{max}]$ using `volume_discretization_points` uniformly spaced points (default 5). The turbined-flow axis spans $[q_{min}, q_{max}]$ using `turbine_discretization_points` points (default 5), where $q_{min} = \max(1.0, 0.01 \cdot q_{max})$ to avoid degenerate zero-flow tangent planes. The spillage axis uses `spillage_discretization_points` points (default 5) spanning $[0, 0.5 \cdot q_{max}]$, always including $s = 0$ as the first point. Validity range fields (`valid_v_min_hm3`, `valid_v_max_hm3`, `valid_q_max_m3s`) are stored as `null` in computed planes.
+### 2.6 Computed FPHA Fitting Pipeline
 
-### 2.6 Correction Factor $\kappa$
+The computed-FPHA path produces hyperplanes from topology data in four stages: convex-hull fit → $\alpha_{FPHA}$ correction → lateral-flow secant → optional plane reduction. The fit is resolved **per production-model entry** (per season or stage range), so planes can differ across the horizon for the same plant. Results are expanded to per-stage hyperplane rows.
 
-The correction factor $\kappa$ scales the hyperplane intercepts to ensure the approximation is **conservative** — never overestimates generation:
+#### 2.6.1 Grid and Cloud
 
-$$
-g_{FPHA}(v, q, s) = \kappa \times \max_m \left\{ \gamma_0^m + \gamma_v^m \cdot v + \gamma_q^m \cdot q + \gamma_s^m \cdot s \right\}
-$$
+The fitter evaluates the exact production function $\phi = \rho_{esp} \cdot q \cdot h_{net}$ on a uniform two-dimensional grid over the fitting window, **with spillage $s = 0$ and lateral flow $= 0$**. The grid has:
 
-> **Notation note**: We use $\kappa$ (kappa) for the FPHA correction factor to avoid collision with $\alpha$, which is used for Benders cut intercepts (see [cut management](cut-management.md)).
+- **Volume axis**: `volume_discretization_points` uniformly spaced values spanning $[v_{min}, v_{max}]$ (default 5 points).
+- **Flow axis**: `turbine_discretization_points` uniformly spaced values spanning $[0, q_{max}]$ (default 5 points). The axis **starts at $q = 0$**, where generation is zero; this zero-flow column anchors the lower closure of the cloud and eliminates the need for any synthetic closing point.
 
-In practice, $\kappa$ is applied by pre-scaling the intercepts: $\tilde{\gamma}_0^m = \kappa \times \gamma_0^m$.
+Each cloud point is capped at the plant's installed capacity $\bar{G}_h$. Spillage is not a cloud dimension — it is fixed at zero throughout.
 
-#### Worst-Case Approach (Default)
+**Run-of-river plants**: when the plant has a single fitting volume ($v_{min} \approx v_{max}$), two volume samples ~1% of useful storage apart are synthesized to keep the 3-D hull non-degenerate. The resulting $\gamma_V$ residual is then **snapped to exactly 0**, enforcing the correct run-of-river semantics ($\gamma_V = 0$). Run-of-river plants previously failed to fit on the computed path; they are now supported.
 
-$$
-\kappa = \min_{(v,q) \in \text{grid}} \left\{ \frac{\phi(v, q)}{\max_m (\gamma_0^m + \gamma_v^m v + \gamma_q^m q)} \right\}
-$$
+**Determinism**: the cloud points and the hull output are canonically sorted, so the fitted hyperplanes are bit-identical regardless of input ordering and MPI rank count.
 
-This guarantees $g_{FPHA} \leq \phi$ everywhere in the operating region.
+#### 2.6.2 Convex Hull
 
-#### MSE Minimization Approach
+The 3-D convex hull of the $(V, Q, \text{generation})$ cloud is computed via the qhull library. The **upper-envelope facets** — those whose outward normal has a positive generation component — are selected. Each is read as $\text{generation} = \gamma_0 + \gamma_V V + \gamma_Q Q$. The result is a **concave outer approximation** (the smallest concave function lying above $\phi$); non-concave regions of $\phi$ fall inside the hull and their facets drop out. Near-parallel coplanar facets arising from hull triangulation are deduplicated by exact coefficient comparison.
 
-$$
-\kappa = \frac{\sum_{i,j} g_{FPHA} \cdot \phi}{\sum_{i,j} g_{FPHA}^2}
-$$
+#### 2.6.3 Least-Squares $\alpha_{FPHA}$ Correction
 
-Minimizes mean squared error between approximation and exact function. Less conservative but more accurate on average.
-
-> **Implementation note:** The worst-case approach is the active implementation. Kappa is computed as the minimum ratio $\phi / \max_m(\text{plane}_m)$ over all 3D grid points where both $\phi > 0$ and $\max_m > 0$; points with zero production are skipped. Kappa must lie in $(0, 1]$; values outside this range produce a fitting error.
-
-#### Typical Values
-
-| Reservoir Type    | Typical $\kappa$ | Notes                        |
-| ----------------- | ---------------- | ---------------------------- |
-| High-head storage | 0.97–0.99        | Significant head variation   |
-| Medium-head       | 0.98–1.00        | Moderate approximation error |
-| Run-of-river      | 0.99–1.00        | Nearly constant head         |
-
-### 2.7 Spillage Effect on Generation
-
-Spillage affects generation indirectly by raising the tailrace level, which reduces net head. The FPHA constraint incorporates this through $\gamma_s$:
+The raw hull envelope $FPHA_0$ is optimistic where $\phi$ is non-concave and pessimistic where it is concave. A single scalar $\alpha_{FPHA}$ corrects the bias by minimising the mean-squared error between $\alpha_{FPHA} \cdot FPHA_0$ and the exact $\phi$ over the spill$=0$ grid:
 
 $$
-\gamma_s^m = -\rho \times q_{ref} \times \frac{\partial h_{tail}}{\partial q_{out}} \bigg|_{q_{out,ref}}
+\alpha_{FPHA} = \frac{\sum_{i,j} FPHA_0(V_i,Q_j)\,\phi(V_i,Q_j)}{\sum_{i,j} FPHA_0(V_i,Q_j)^2}, \qquad FPHA = \alpha_{FPHA}\cdot FPHA_0
 $$
 
-**Physical interpretation**: Each additional m³/s of spillage raises the tailrace by $\partial h_{tail}/\partial q_{out}$ meters, reducing net head and thus generation.
+Key properties:
 
-**Sign convention**: $\gamma_s^m \leq 0$ because spillage reduces generation capacity.
+- The regression uses the **pointwise minimum** over the raw hull planes as $FPHA_0(V_i, Q_j)$, because the LP applies planes as $g \le \gamma_0^m + \gamma_V^m V + \gamma_Q^m Q$ for every $m$, so the binding cap is the minimum, not the maximum.
+- The regression is over the spill$=0$ grid only — adding a spillage axis would pull $\alpha_{FPHA}$ toward the larger-deviation spill region and degrade the no-spill operating region.
+- $\alpha_{FPHA}$ scales the **whole affine function** ($\gamma_0, \gamma_V, \gamma_Q$ alike), not just the intercept. This is why $\alpha_{FPHA} \ne \kappa$ (the old intercept-only shrink).
+- $\alpha_{FPHA}$ may be **greater or less than 1** (an MSE balance, not a one-sided shrink). Validation requires $\alpha_{FPHA} > 0$. A degenerate denominator (all-zero production) yields the neutral $\alpha_{FPHA} = 1$.
+- Validation also requires $\gamma_V \ge 0$, $\gamma_Q \ge 0$, $\gamma_S \le 0$.
 
-> **Implementation note:** After tangent-plane sampling and redundancy elimination, a greedy removal heuristic selects at most `max_planes_per_hydro` planes (default 10). The heuristic evaluates, for each candidate plane, the increase in maximum approximation error that would result from its removal, then permanently removes the plane whose removal causes the smallest increase. Removal stops early if the concave-envelope property (minimum grid error $\geq -10^{-8}$) would be violated; in that case the result may contain more planes than the target cardinality. The validity range fields are set to `null` in all computed planes.
+> **Notation note**: $\alpha_{FPHA}$ is written with a subscript throughout this chapter to distinguish it from the Benders cut intercept $\alpha$ (see [cut management](cut-management.md)).
 
-### 2.8 LP Integration
+**Fit-quality diagnostic**: after the full pipeline, the relative mean-absolute-deviation of the emitted min-envelope vs the exact $\phi$ over the spill$=0$ grid is computed. A warning is emitted (in canonical plant/stage order) when it exceeds **5%** — typically indicating a strongly non-concave surface that no single $\alpha_{FPHA}$ can track well.
+
+**Precomputed input**: when using `source: "precomputed"`, hyperplanes are read directly from `fpha_hyperplanes.parquet`. For back-compatibility that file retains a `kappa` column (defaulting to 1.0); it is no longer a derived correction — $\alpha_{FPHA}$ is the correction factor for computed planes.
+
+### 2.7 Lateral-Flow Secant
+
+Spillage raises the tailrace level, lowering net head and generation. The $\gamma_S$ coefficient for each plane is fit by a **per-plane 1-D ordinary-least-squares secant** of generation vs lateral flow (in the current default: own spillage $s$) over **9 evenly-spaced samples** of $q_{lat} \in [0, S_{max}]$, evaluated at the plane's representative (active-maximum) operating point:
+
+$$
+S_{max} = \begin{cases}2 \cdot \text{MLT} & \text{if MLT} > 0 \\ 2 \cdot q_{max} & \text{if MLT} = 0\end{cases}
+$$
+
+where MLT is the long-term mean inflow (m³/s). The **representative operating point** for each plane is the spill$=0$ grid point where that plane is the active (tightest) upper bound and attains the largest generation — the operating region the plane actually governs.
+
+**Sign**: $\gamma_S \le 0$ (more lateral flow raises the tailrace, reduces generation). Near-zero slopes $|\gamma_S| < 10^{-10}$ of either sign are **snapped to exactly 0** to protect LP column scaling from near-zero structural coefficients.
+
+**Default lateral axis**: own spillage ($q_{lat} = s$). The more general $Q_{jus}$ composition (upstream defluences, post-incremental inflows with participation factors) is a deferred future extension.
+
+### 2.8 Similar-Hyperplane Reduction
+
+An optional post-fit step merges consecutive **near-parallel or near-coincident** planes into their **mean hyperplane** to shrink the LP. Two mutually-exclusive methods are supported, configured via an `fpha_plane_reduction` block:
+
+- **Angle** (`method: angle`, tolerance in degrees): merge consecutive pairs whose normal-vector angle $\theta = \arccos(\mathbf{n}_1 \cdot \mathbf{n}_2 / \|\mathbf{n}_1\|\|\mathbf{n}_2\|)$ satisfies $\theta < \varepsilon$ (strict). Fully deterministic from coefficients.
+- **Distance** (`method: distance`, tolerance in percent + sample count): merge consecutive pairs whose normalised mean-squared generation difference $\delta = \text{EQM}/\bar{G}_h^2 < \varepsilon/100$. Uses a deterministically-seeded PRNG (seeded from stable plant/stage/plane-pair identity, never from wall clock or MPI rank), so results are bit-identical across input ordering and rank count.
+
+**Origin-plane invariant**: the plane through the origin ($\gamma_0 \approx 0 \wedge \gamma_V \approx 0$, generating zero power at zero turbining) is **never merged**. This guarantees the zero-generation floor.
+
+**Off by default**: no reduction is applied unless an `fpha_plane_reduction` block is present in the production-models config.
+
+### 2.9 LP Integration
 
 #### Final FPHA Constraint
 
 For each hydro $h$ using FPHA, block $k$, and plane $m \in \mathcal{M}_h$:
 
 $$
-g_{h,k} \leq \tilde{\gamma}_0^m + \gamma_v^m \cdot v_h^{avg} + \gamma_q^m \cdot q_{h,k} + \gamma_s^m \cdot s_{h,k}
+g_{h,k} \leq \gamma_0^m + \gamma_v^m \cdot v_h^{avg} + \gamma_q^m \cdot q_{h,k} + \gamma_s^m \cdot s_{h,k}
 $$
 
-where $\tilde{\gamma}_0^m = \kappa \times \gamma_0^m$ (pre-scaled intercept).
-
-These are **hard constraints** — no slack variables. Feasibility is ensured through the `turbined_cost` regularization mechanism (see section 2.9).
+The coefficients are already $\alpha_{FPHA}$-scaled — there is no separate pre-scaling step. These are **hard constraints** — no slack variables. Feasibility is ensured through the `turbined_cost` regularization mechanism (see section 2.10).
 
 #### Average Storage Computation
 
@@ -264,9 +270,9 @@ When using FPHA, the generation variable $g_{h,k}$ is **not** directly computed 
 3. The optimizer maximizes generation subject to FPHA constraints
 4. At optimum, generation lies on one of the FPHA hyperplane facets
 
-**Key insight**: Because minimizing cost includes maximizing hydro generation (which has zero fuel cost), the optimizer naturally pushes generation to the FPHA surface boundary. The `turbined_cost` regularization (section 2.9) ensures the solution lies on the boundary rather than at an interior point.
+**Key insight**: Because minimizing cost includes maximizing hydro generation (which has zero fuel cost), the optimizer naturally pushes generation to the FPHA surface boundary. The `turbined_cost` regularization (section 2.10) ensures the solution lies on the boundary rather than at an interior point.
 
-### 2.9 Turbined Cost
+### 2.10 Turbined Cost
 
 A small regularization cost $c^{t}_h$ is applied to the turbined flow variable of every hydro in the objective:
 
@@ -282,9 +288,9 @@ For hydros using **constant productivity**, the same regularization is applied u
 
 For the full penalty taxonomy and priority ordering, see [Penalty System](./penalty-system.md).
 
-### 2.10 Impact on Benders Cuts
+### 2.11 Impact on Benders Cuts
 
-The FPHA formulation affects water value computation. Because the incoming storage variable $v^{in}_h$ appears in the FPHA constraint (via $v^{avg}_h = (v^{in}_h + v_h)/2$, section 2.8), the FPHA hyperplane duals contribute to the marginal value of incoming storage. However, the implementation does **not** require manually combining duals from the water balance and FPHA constraints. Instead, pinning $v^{in}_h$ to $\hat{v}_h$ by column bounds (see [LP Formulation §4a](lp-formulation.md)) makes its reduced cost capture the total sensitivity $\partial Q_t / \partial \hat{v}_h$ automatically — the LP solver propagates the FPHA contribution through $v^{in}_h$.
+The FPHA formulation affects water value computation. Because the incoming storage variable $v^{in}_h$ appears in the FPHA constraint (via $v^{avg}_h = (v^{in}_h + v_h)/2$, section 2.9), the FPHA hyperplane duals contribute to the marginal value of incoming storage. However, the implementation does **not** require manually combining duals from the water balance and FPHA constraints. Instead, pinning $v^{in}_h$ to $\hat{v}_h$ by column bounds (see [LP Formulation §4a](lp-formulation.md)) makes its reduced cost capture the total sensitivity $\partial Q_t / \partial \hat{v}_h$ automatically — the LP solver propagates the FPHA contribution through $v^{in}_h$.
 
 The cut coefficient for storage is simply the reduced cost of the pinned $v^{in}_h$ column:
 
@@ -356,7 +362,7 @@ Only `constant_productivity` and `fpha` are valid during training. The linearize
 | ------------------------------ | --------------------- | ---------------------------------- |
 | High-head storage reservoirs   | FPHA                  | Significant head variation (>20%)  |
 | Large storage variation plants | FPHA                  | Operating across wide volume range |
-| Run-of-river plants            | Constant productivity | Nearly constant head               |
+| Run-of-river plants            | FPHA or Constant      | Hull now supports run-of-river     |
 | Initial algorithm testing      | Constant productivity | Fast iteration, debug focus        |
 | Near-term stages               | FPHA                  | Accuracy for operational decisions |
 | Far-future stages              | Constant productivity | Computational efficiency           |
@@ -388,7 +394,9 @@ The **equivalent productivity** $\rho_{eq,h,t}$ (MW per m³/s) is the single-sca
 | `linearized_head`       | A per-(hydro, stage) numeric value authored by the case — same resolution as `constant_productivity`.                                                                                                                                                                                                                                                               |
 | `fpha`                  | $\rho_{eq,h,t} = \rho_{esp,h} \cdot h_{eq}(V^{ref}_{h,t},\, Q^{ref}_{h,t})$, where $h_{eq}$ is the net head computed from the VHA geometry (section 2.3) at the reference point. FPHA hydros do **not** author a separate $\rho_{eq}$ scalar in the production-models input — it is derived. A parquet-level override is still accepted (see "FPHA override path"). |
 
-The reference point $(V^{ref}, Q^{ref})$ is typically chosen as the storage fraction (e.g., 65% of usable volume between $V_{min}$ and $V_{max}$) and the installed turbine capacity. The fraction can be resolved per (hydro, season) so that ENA accounting in flood-season months differs from dry-season months when appropriate.
+**Reference volume**: the reference operating volume $V^{ref}_{h,t}$ is declared by a single **`reference_volume`** field in the production-model config entry (`stage_range` or `seasonal`). The field takes exactly one of two forms: an absolute `volume_hm3` value, or a `percentile` (fraction of useful volume between $V_{min}$ and $V_{max}$). This single field is the source of truth for both the computed-FPHA fitting window and the $\rho_{eq}$ derivation above.
+
+The reference flow $Q^{ref}$ is typically set at installed turbine capacity.
 
 #### Authoring sources for non-FPHA hydros
 
@@ -468,19 +476,19 @@ The full FPHA production function (section 2) is multi-dimensional and concave; 
 
 ## 6. Data Requirements Summary
 
-| Data Source                     | Required Fields                                                                    | Used For                                                                |
-| ------------------------------- | ---------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
-| Hydro plant entity              | `tailrace` (polynomial or piecewise)                                               | $h_{tail}(q_{out})$ computation                                         |
-| Hydro plant entity              | `hydraulic_losses` (factor or constant)                                            | $h_{loss}(q)$ computation                                               |
-| Hydro plant entity              | `efficiency` (constant)                                                            | Turbine efficiency $\eta$                                               |
-| Hydro plant entity              | `specific_productivity_mw_per_m3s_per_m` (FPHA)                                    | $\rho_{esp}$ for $\rho_{eq}$ derivation (§5.1)                          |
-| Hydro plant entity              | Cascade topology (downstream pointer)                                              | $\rho_{acum}$ topological sum (§5.2)                                    |
-| Hydro production models input   | Range-level productivity per `stage_range` / `seasonal` entry (non-FPHA, optional) | $\rho_{h,t}$ for sections 1 and 3 (§5.1 authoring source 1)             |
-| Hydro production models input   | Reference-volume fractions per (hydro, season)                                     | $V^{ref}$ for the energy-conversion reduction                           |
-| Hydro production models input   | FPHA fitting configuration                                                         | Plane discretisation, $\kappa$ rule (§2.5–2.6)                          |
-| Hydro energy productivity input | Per-(hydro, stage) `equivalent_productivity_mw_per_m3s`                            | $\rho_{eq,h,t}$ override (§5.1 authoring source 2 + FPHA override path) |
-| Hydro geometry                  | volume_hm3, height_m                                                               | $h_{fore}(v)$ interpolation (§2.3)                                      |
-| Pre-fitted FPHA planes          | $\gamma_0, \gamma_v, \gamma_q, \gamma_s, \kappa$                                   | Optional alternative to in-process fitting                              |
+| Data Source                     | Required Fields                                                                                          | Used For                                                                |
+| ------------------------------- | -------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| Hydro plant entity              | `tailrace` (polynomial, piecewise, or piecewise-quartic families)                                        | $h_{tail}(q_{out})$ computation                                         |
+| Hydro plant entity              | `hydraulic_losses` (factor or constant)                                                                  | $h_{loss}$ computation                                                  |
+| Hydro plant entity              | `efficiency` (constant)                                                                                  | Turbine efficiency $\eta$                                               |
+| Hydro plant entity              | `specific_productivity_mw_per_m3s_per_m` (FPHA)                                                          | $\rho_{esp}$ for $\rho_{eq}$ derivation (§5.1)                          |
+| Hydro plant entity              | Cascade topology (downstream pointer)                                                                    | $\rho_{acum}$ topological sum (§5.2)                                    |
+| Hydro production models input   | Range-level productivity per `stage_range` / `seasonal` entry (non-FPHA, optional)                       | $\rho_{h,t}$ for sections 1 and 3 (§5.1 authoring source 1)             |
+| Hydro production models input   | `reference_volume` per `stage_range` / `seasonal` entry (absolute or percentile)                         | $V^{ref}$ for the energy-conversion reduction and FPHA fitting          |
+| Hydro production models input   | FPHA fitting configuration and optional `fpha_plane_reduction` block                                     | Grid sizes, plane reduction method (§2.6–§2.8)                          |
+| Hydro energy productivity input | Per-(hydro, stage) `equivalent_productivity_mw_per_m3s`                                                  | $\rho_{eq,h,t}$ override (§5.1 authoring source 2 + FPHA override path) |
+| Hydro geometry                  | volume_hm3, height_m                                                                                     | $h_{fore}(v)$ interpolation (§2.3)                                      |
+| Pre-fitted FPHA planes          | $\gamma_0, \gamma_v, \gamma_q, \gamma_s$ (plus `kappa` column retained for back-compat, defaults to 1.0) | Optional alternative to in-process fitting                              |
 
 For non-FPHA hydros, the per-(hydro, stage) productivity coefficient is resolved from exactly one of the two authoring sources listed in §5.1: range-level productivity in the production-models input, or per-stage productivity in the energy-productivity input. Supplying a value from both for the same $(h, t)$ is rejected at load time; supplying neither for any study stage of a non-FPHA hydro is also rejected at load time.
 

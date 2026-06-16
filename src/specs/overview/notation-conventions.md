@@ -111,15 +111,16 @@ Direct calculation: $100 \text{ m³/s} \times 728 \text{ h} \times 3600 \text{ s
 
 ### 3.3 Hydro Parameters
 
-| Symbol                                           | Units     | Description                                  |
-| ------------------------------------------------ | --------- | -------------------------------------------- |
-| $\hat{v}_h$                                      | hm³       | Incoming storage (state from previous stage) |
-| $\bar{V}_h$, $\underline{V}_h$                   | hm³       | Storage bounds                               |
-| $\bar{Q}_h$, $\underline{Q}_h$                   | m³/s      | Turbined flow bounds                         |
-| $\bar{G}_h$, $\underline{G}_h$                   | MW        | Generation bounds                            |
-| $\bar{O}_h$, $\underline{O}_h$                   | m³/s      | Outflow bounds                               |
-| $\rho_h$                                         | MW/(m³/s) | Productivity (constant model)                |
-| $\gamma^m_0, \gamma^m_v, \gamma^m_q, \gamma^m_s$ | -         | FPHA plane coefficients                      |
+| Symbol                                           | Units     | Description                                                                                                                                                                                 |
+| ------------------------------------------------ | --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| $\hat{v}_h$                                      | hm³       | Incoming storage (state from previous stage)                                                                                                                                                |
+| $\bar{V}_h$, $\underline{V}_h$                   | hm³       | Storage bounds                                                                                                                                                                              |
+| $\bar{Q}_h$, $\underline{Q}_h$                   | m³/s      | Turbined flow bounds                                                                                                                                                                        |
+| $\bar{G}_h$, $\underline{G}_h$                   | MW        | Generation bounds                                                                                                                                                                           |
+| $\bar{O}_h$, $\underline{O}_h$                   | m³/s      | Outflow bounds                                                                                                                                                                              |
+| $\rho_h$                                         | MW/(m³/s) | Productivity (constant model)                                                                                                                                                               |
+| $\gamma^m_0, \gamma^m_v, \gamma^m_q, \gamma^m_s$ | -         | FPHA plane coefficients (already $\alpha_{FPHA}$-scaled)                                                                                                                                    |
+| $\alpha_{FPHA}$                                  | -         | FPHA least-squares fit-correction factor; scales the fitted plane set, distinct from the Benders cut intercept $\alpha$. See [Hydro Production Models](../math/hydro-production-models.md). |
 
 ### 3.4 Transmission and Contract Parameters
 
@@ -162,30 +163,30 @@ Direct calculation: $100 \text{ m³/s} \times 728 \text{ h} \times 3600 \text{ s
 > - $s$ (spillage): standard hydrology notation
 > - $u$ (diversion): "bypass" or "desvio" — avoids confusion with demand $D$ or deficit $\delta$
 > - $o$ (outflow): total downstream flow affecting tailrace level
-> - $r$ (withdrawal): "retirada" — consumptive removal from the system
+> - $r$ (withdrawal): "retirada" — consumptive removal from the system; the target is **signed** (negative values represent an inter-basin return/addition)
 > - $\chi$ (contract): Greek chi, visually distinct from cost symbol $c$
 
 ### 4.1 Per-Block Variables
 
 Per-block variables are indexed by $k \in \mathcal{K}$:
 
-| Variable           | Domain                         | Units | Description                                             |
-| ------------------ | ------------------------------ | ----- | ------------------------------------------------------- |
-| $\delta_{b,k,s}$   | $[0, \bar{d}_{b,s}]$           | MW    | Deficit at bus $b$, segment $s$                         |
-| $\epsilon_{b,k}$   | $\geq 0$                       | MW    | Excess generation at bus $b$                            |
-| $f^+_{l,k}$        | $[0, \bar{F}^+_l]$             | MW    | Direct flow on line $l$                                 |
-| $f^-_{l,k}$        | $[0, \bar{F}^-_l]$             | MW    | Reverse flow on line $l$                                |
-| $g_{j,k,s}$        | $[0, \bar{g}_{j,s}]$           | MW    | Thermal generation at plant $j$, segment $s$            |
-| $q_{h,k}$          | $[\underline{Q}_h, \bar{Q}_h]$ | m³/s  | Turbined flow at hydro $h$                              |
-| $s_{h,k}$          | $\geq 0$                       | m³/s  | Spillage at hydro $h$                                   |
-| $g_{h,k}$          | $[\underline{G}_h, \bar{G}_h]$ | MW    | Hydro generation at plant $h$                           |
-| $u_{h,k}$          | $[0, \bar{U}_h]$               | m³/s  | Diversion/bypass flow (to separate channel)             |
-| $o_{h,k}$          | -                              | m³/s  | Total downstream outflow: $o_{h,k} = q_{h,k} + s_{h,k}$ |
-| $e_{h,k}$          | free                           | m³/s  | Evaporation (can be negative for condensation)          |
-| $r_{h,k}$          | $\geq 0$                       | m³/s  | Water withdrawal (consumptive use)                      |
-| $p_{j,k}$          | $[0, \bar{P}_j]$               | m³/s  | Pumped flow at station $j$                              |
-| $\chi^{in}_{c,k}$  | $[0, \bar{C}_c]$               | MW    | Contract import                                         |
-| $\chi^{out}_{c,k}$ | $[0, \bar{C}_c]$               | MW    | Contract export                                         |
+| Variable           | Domain                         | Units | Description                                                                                                                                |
+| ------------------ | ------------------------------ | ----- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| $\delta_{b,k,s}$   | $[0, \bar{d}_{b,s}]$           | MW    | Deficit at bus $b$, segment $s$                                                                                                            |
+| $\epsilon_{b,k}$   | $\geq 0$                       | MW    | Excess generation at bus $b$                                                                                                               |
+| $f^+_{l,k}$        | $[0, \bar{F}^+_l]$             | MW    | Direct flow on line $l$                                                                                                                    |
+| $f^-_{l,k}$        | $[0, \bar{F}^-_l]$             | MW    | Reverse flow on line $l$                                                                                                                   |
+| $g_{j,k,s}$        | $[0, \bar{g}_{j,s}]$           | MW    | Thermal generation at plant $j$, segment $s$                                                                                               |
+| $q_{h,k}$          | $[\underline{Q}_h, \bar{Q}_h]$ | m³/s  | Turbined flow at hydro $h$                                                                                                                 |
+| $s_{h,k}$          | $\geq 0$                       | m³/s  | Spillage at hydro $h$                                                                                                                      |
+| $g_{h,k}$          | $[\underline{G}_h, \bar{G}_h]$ | MW    | Hydro generation at plant $h$                                                                                                              |
+| $u_{h,k}$          | $[0, \bar{U}_h]$               | m³/s  | Diversion/bypass flow (to separate channel)                                                                                                |
+| $o_{h,k}$          | -                              | m³/s  | Total downstream outflow: $o_{h,k} = q_{h,k} + s_{h,k}$                                                                                    |
+| $e_{h,k}$          | free                           | m³/s  | Evaporation (can be negative for condensation)                                                                                             |
+| $r_{h,k}$          | signed                         | m³/s  | Water withdrawal; pinned to a signed target (negative = inter-basin return/addition); the realized value cannot cross zero past the target |
+| $p_{j,k}$          | $[0, \bar{P}_j]$               | m³/s  | Pumped flow at station $j$                                                                                                                 |
+| $\chi^{in}_{c,k}$  | $[0, \bar{C}_c]$               | MW    | Contract import                                                                                                                            |
+| $\chi^{out}_{c,k}$ | $[0, \bar{C}_c]$               | MW    | Contract export                                                                                                                            |
 
 ### 4.2 Stage-Level State Variables
 

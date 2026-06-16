@@ -85,7 +85,7 @@ historical data (see [PAR Inflow Model](./par-inflow-model.md) §4). When the
 historical record does not extend far enough back to fill all $p$ lags — for
 example, when the study start date falls very close to the beginning of the
 available history — earlier lags are filled from the seasonal mean, preserving
-the AR structure while gracefully handling data gaps.
+the AR structure while gracefully handling data gaps. (This is runtime lag-buffer seeding from the seasonal mean — distinct from the fitting-time estimation of out-of-window lag-season statistics from history described in [PAR Inflow Model §5.8](./par-inflow-model.md#58-partial-year-studies-and-the-pre-study-lag-window).)
 
 **The guarantee**: the AR dynamics at each stage of the weekly run are
 consistent with the PAR model parameters. The recent-observation initialization

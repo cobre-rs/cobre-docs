@@ -109,6 +109,8 @@ Five additional hydro penalty fields support directional and inflow-specific pen
 - `evaporation_violation_neg_cost` — penalty per m³/s of negative deviation of the signed net evaporation flow from the linearised target; defaults to `evaporation_violation_cost`
 - `inflow_nonnegativity_cost` — penalty per m3/s of inflow non-negativity slack activation (method = `"penalty"`); defaults to 1000.0
 
+The fallback target for the four directional costs is the entity's **resolved** symmetric cost. If an entity overrides only its symmetric `water_withdrawal_violation_cost` (or `evaporation_violation_cost`), its directional `*_pos_cost` / `*_neg_cost` inherit that entity-level override — not the global symmetric default. The resolution order per directional field is therefore: entity directional override → entity symmetric override → global symmetric default; the global _directional_ default is never used as a fallback for a per-entity directional cost.
+
 See [Inflow Non-Negativity](./inflow-nonnegativity.md) for details on the penalty method.
 
 ### Piecewise Deficit
@@ -185,7 +187,7 @@ where:
   evap_slack_negative >= 0  (Q_evaporated below the linearised target)
 ```
 
-The slacks themselves remain one-sided ($\geq 0$); the sign of the target is carried by $Q_{ev,h}$ and `EvapCoef`. Each slack receives its own penalty: `evaporation_violation_pos_cost` and `evaporation_violation_neg_cost`. When the directional costs are unset, both default to the symmetric `evaporation_violation_cost` value.
+The slacks themselves remain one-sided ($\geq 0$); the sign of the target is carried by $Q_{ev,h}$ and `EvapCoef`. Each slack receives its own penalty: `evaporation_violation_pos_cost` and `evaporation_violation_neg_cost`. When the directional costs are unset, both default to the entity's resolved symmetric `evaporation_violation_cost` — an entity that overrides only the symmetric cost has that override inherited by its directional costs, rather than reverting to the global default.
 
 Stage-varying overrides follow the same pattern: directional costs may be overridden independently per (entity, stage). Penalty values may vary by stage. Stage-varying overrides are sparse — only entries that differ from defaults are recorded.
 

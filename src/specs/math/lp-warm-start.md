@@ -132,8 +132,9 @@ checkpoint reconstruction used on warm-start/resume (§2).
 > status (LOWER vs BASIC) from a fixed-length window of its recent binding
 > history, controlled by a `basis_activity_window` parameter. Because
 > reconstruction now keys purely on slot identity, that activity-window
-> prediction has no observable effect on the resulting basis; the knob is
-> ignored at config load and slated for removal.
+> prediction has no observable effect on the resulting basis; the knob was
+> ignored at config load in v0.8.x and is **removed entirely** in the
+> v0.8.2 `cut_selection` restructure.
 
 ## 5. Solver State Retention
 
