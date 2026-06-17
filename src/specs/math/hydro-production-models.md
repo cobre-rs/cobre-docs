@@ -179,7 +179,7 @@ The computed-FPHA path produces hyperplanes from topology data in four stages: c
 
 The fitter evaluates the exact production function $\phi = \rho_{esp} \cdot q \cdot h_{net}$ on a uniform two-dimensional grid over the fitting window, **with spillage $s = 0$ and lateral flow $= 0$**. The grid has:
 
-- **Volume axis**: `volume_discretization_points` uniformly spaced values spanning $[v_{min}, v_{max}]$ (default 5 points).
+- **Volume axis**: `volume_discretization_points` uniformly spaced values spanning the fitting window $[v_{min}, v_{max}]$ (default 5 points). The window is set by the optional `fitting_window` block inside `fpha_config` (absolute `volume_min_hm3` / `volume_max_hm3` or percentile bounds), defaulting to the plant's full forebay storage range. It is distinct from `reference_volume` (§5.1), which fixes an operating point, not this window.
 - **Flow axis**: `turbine_discretization_points` uniformly spaced values spanning $[0, q_{max}]$ (default 5 points). The axis **starts at $q = 0$**, where generation is zero; this zero-flow column anchors the lower closure of the cloud and eliminates the need for any synthetic closing point.
 
 Each cloud point is capped at the plant's installed capacity $\bar{G}_h$. Spillage is not a cloud dimension — it is fixed at zero throughout.
@@ -212,7 +212,7 @@ Key properties:
 
 **Fit-quality diagnostic**: after the full pipeline, the relative mean-absolute-deviation of the emitted min-envelope vs the exact $\phi$ over the spill$=0$ grid is computed. A warning is emitted (in canonical plant/stage order) when it exceeds **5%** — typically indicating a strongly non-concave surface that no single $\alpha_{FPHA}$ can track well.
 
-**Precomputed input**: when using `source: "precomputed"`, hyperplanes are read directly from `fpha_hyperplanes.parquet`. For back-compatibility that file retains a `kappa` column (defaulting to 1.0); it is no longer a derived correction — $\alpha_{FPHA}$ is the correction factor for computed planes.
+**Precomputed input**: when using `source: "precomputed"`, hyperplanes are read directly from `fpha_hyperplanes.parquet`. That file retains a `kappa` column (defaulting to 1.0); for precomputed planes it is still applied as an intercept-only scale ($\gamma_0 \leftarrow \gamma_0 \cdot \kappa$) and is validated to lie in $(0, 1]$. Only the **computed** path retired $\kappa$ — there the whole-affine $\alpha_{FPHA}$ correction above replaces it.
 
 ### 2.7 Lateral-Flow Secant
 
@@ -222,7 +222,7 @@ $$
 S_{max} = \begin{cases}2 \cdot \text{MLT} & \text{if MLT} > 0 \\ 2 \cdot q_{max} & \text{if MLT} = 0\end{cases}
 $$
 
-where MLT is the long-term mean inflow (m³/s). The **representative operating point** for each plane is the spill$=0$ grid point where that plane is the active (tightest) upper bound and attains the largest generation — the operating region the plane actually governs.
+where MLT is the long-term mean inflow (m³/s). The **representative operating point** for each plane is the spill$=0$ grid point where that plane is the active (tightest) upper bound and attains the largest generation — the operating region the plane actually governs. The secant samples the **uncapped** production function $\phi$ (not clipped at installed capacity $\bar{G}_h$), so the spillage sensitivity is read from the raw head curve and is not flattened wherever the capacity ceiling binds — unlike the cloud and the $\alpha_{FPHA}$ regression (§2.6), which both use the capacity-capped output.
 
 **Sign**: $\gamma_S \le 0$ (more lateral flow raises the tailrace, reduces generation). Near-zero slopes $|\gamma_S| < 10^{-10}$ of either sign are **snapped to exactly 0** to protect LP column scaling from near-zero structural coefficients.
 
@@ -394,7 +394,7 @@ The **equivalent productivity** $\rho_{eq,h,t}$ (MW per m³/s) is the single-sca
 | `linearized_head`       | A per-(hydro, stage) numeric value authored by the case — same resolution as `constant_productivity`.                                                                                                                                                                                                                                                               |
 | `fpha`                  | $\rho_{eq,h,t} = \rho_{esp,h} \cdot h_{eq}(V^{ref}_{h,t},\, Q^{ref}_{h,t})$, where $h_{eq}$ is the net head computed from the VHA geometry (section 2.3) at the reference point. FPHA hydros do **not** author a separate $\rho_{eq}$ scalar in the production-models input — it is derived. A parquet-level override is still accepted (see "FPHA override path"). |
 
-**Reference volume**: the reference operating volume $V^{ref}_{h,t}$ is declared by a single **`reference_volume`** field in the production-model config entry (`stage_range` or `seasonal`). The field takes exactly one of two forms: an absolute `volume_hm3` value, or a `percentile` (fraction of useful volume between $V_{min}$ and $V_{max}$). This single field is the source of truth for both the computed-FPHA fitting window and the $\rho_{eq}$ derivation above.
+**Reference volume**: the reference operating volume $V^{ref}_{h,t}$ is declared by a single **`reference_volume`** field in the production-model config entry (`stage_range` or `seasonal`). The field takes exactly one of two forms: an absolute `volume_hm3` value, or a `percentile` (fraction of useful volume between $V_{min}$ and $V_{max}$); when absent it defaults to 65% of useful volume. This single field is the source of truth for the $\rho_{eq}$ derivation above and for the reservoir reference level at which the computed-FPHA piecewise-quartic tailrace families are interpolated (§2.3.1 — a plant's reference volume sets the downstream forebay level seen by the plant immediately upstream). It does **not** set the computed-FPHA volume fitting window $[V_{min}, V_{max}]$: that window is configured separately by the optional `fitting_window` block inside `fpha_config` (§2.6.1), defaulting to the plant's full forebay storage range.
 
 The reference flow $Q^{ref}$ is typically set at installed turbine capacity.
 
@@ -476,19 +476,20 @@ The full FPHA production function (section 2) is multi-dimensional and concave; 
 
 ## 6. Data Requirements Summary
 
-| Data Source                     | Required Fields                                                                                          | Used For                                                                |
-| ------------------------------- | -------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
-| Hydro plant entity              | `tailrace` (polynomial, piecewise, or piecewise-quartic families)                                        | $h_{tail}(q_{out})$ computation                                         |
-| Hydro plant entity              | `hydraulic_losses` (factor or constant)                                                                  | $h_{loss}$ computation                                                  |
-| Hydro plant entity              | `efficiency` (constant)                                                                                  | Turbine efficiency $\eta$                                               |
-| Hydro plant entity              | `specific_productivity_mw_per_m3s_per_m` (FPHA)                                                          | $\rho_{esp}$ for $\rho_{eq}$ derivation (§5.1)                          |
-| Hydro plant entity              | Cascade topology (downstream pointer)                                                                    | $\rho_{acum}$ topological sum (§5.2)                                    |
-| Hydro production models input   | Range-level productivity per `stage_range` / `seasonal` entry (non-FPHA, optional)                       | $\rho_{h,t}$ for sections 1 and 3 (§5.1 authoring source 1)             |
-| Hydro production models input   | `reference_volume` per `stage_range` / `seasonal` entry (absolute or percentile)                         | $V^{ref}$ for the energy-conversion reduction and FPHA fitting          |
-| Hydro production models input   | FPHA fitting configuration and optional `fpha_plane_reduction` block                                     | Grid sizes, plane reduction method (§2.6–§2.8)                          |
-| Hydro energy productivity input | Per-(hydro, stage) `equivalent_productivity_mw_per_m3s`                                                  | $\rho_{eq,h,t}$ override (§5.1 authoring source 2 + FPHA override path) |
-| Hydro geometry                  | volume_hm3, height_m                                                                                     | $h_{fore}(v)$ interpolation (§2.3)                                      |
-| Pre-fitted FPHA planes          | $\gamma_0, \gamma_v, \gamma_q, \gamma_s$ (plus `kappa` column retained for back-compat, defaults to 1.0) | Optional alternative to in-process fitting                              |
+| Data Source                     | Required Fields                                                                                          | Used For                                                                                                 |
+| ------------------------------- | -------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| Hydro plant entity              | `tailrace` (polynomial, piecewise, or piecewise-quartic families)                                        | $h_{tail}(q_{out})$ computation                                                                          |
+| Hydro plant entity              | `hydraulic_losses` (factor or constant)                                                                  | $h_{loss}$ computation                                                                                   |
+| Hydro plant entity              | `efficiency` (constant)                                                                                  | Turbine efficiency $\eta$                                                                                |
+| Hydro plant entity              | `specific_productivity_mw_per_m3s_per_m` (FPHA)                                                          | $\rho_{esp}$ for $\rho_{eq}$ derivation (§5.1)                                                           |
+| Hydro plant entity              | Cascade topology (downstream pointer)                                                                    | $\rho_{acum}$ topological sum (§5.2)                                                                     |
+| Hydro production models input   | Range-level productivity per `stage_range` / `seasonal` entry (non-FPHA, optional)                       | $\rho_{h,t}$ for sections 1 and 3 (§5.1 authoring source 1)                                              |
+| Hydro production models input   | `reference_volume` per `stage_range` / `seasonal` entry (absolute or percentile)                         | $V^{ref}$ for the energy-conversion reduction (§5.1) and the tailrace backwater reference level (§2.3.1) |
+| Hydro production models input   | FPHA `fitting_window` per `stage_range` / `seasonal` entry (absolute or percentile bounds, optional)     | Computed-FPHA volume grid $[v_{min}, v_{max}]$ (§2.6.1)                                                  |
+| Hydro production models input   | FPHA fitting configuration and optional `fpha_plane_reduction` block                                     | Grid sizes, plane reduction method (§2.6–§2.8)                                                           |
+| Hydro energy productivity input | Per-(hydro, stage) `equivalent_productivity_mw_per_m3s`                                                  | $\rho_{eq,h,t}$ override (§5.1 authoring source 2 + FPHA override path)                                  |
+| Hydro geometry                  | volume_hm3, height_m                                                                                     | $h_{fore}(v)$ interpolation (§2.3)                                                                       |
+| Pre-fitted FPHA planes          | $\gamma_0, \gamma_v, \gamma_q, \gamma_s$ (plus `kappa` column retained for back-compat, defaults to 1.0) | Optional alternative to in-process fitting                                                               |
 
 For non-FPHA hydros, the per-(hydro, stage) productivity coefficient is resolved from exactly one of the two authoring sources listed in §5.1: range-level productivity in the production-models input, or per-stage productivity in the energy-productivity input. Supplying a value from both for the same $(h, t)$ is rejected at load time; supplying neither for any study stage of a non-FPHA hydro is also rejected at load time.
 

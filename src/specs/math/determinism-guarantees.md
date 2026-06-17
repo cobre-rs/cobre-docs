@@ -9,8 +9,8 @@ the same lower bounds, the same cuts, the same trial-point trajectories, the
 same simulation costs, and the same scenario tree — byte for byte.
 
 This property is not incidental to the implementation. It is an explicit
-methodology commitment, achieved through five coordinated mechanisms described
-in section 3. The companion chapter [Reproducibility and Provenance](./reproducibility-and-provenance.md)
+methodology commitment, achieved through a set of coordinated mechanisms
+described in section 3. The companion chapter [Reproducibility and Provenance](./reproducibility-and-provenance.md)
 defines the bookkeeping that makes this commitment actionable: what Cobre
 records so that any run can be independently re-derived.
 
@@ -63,8 +63,8 @@ this guarantee. These are addressed in section 4.
 
 ## 3. Methodology Mechanisms
 
-Five coordinated design decisions make the guarantee achievable across all three
-axes.
+A set of coordinated design decisions makes the guarantee achievable across all
+three axes.
 
 **LP model reloaded per scenario and per trial point.** Each subproblem solve
 uses a freshly constructed LP model. No internal solver state — basis warmth
@@ -121,6 +121,21 @@ and the order in which violated cuts are added is fixed by a total ordering on
 violation magnitude with an ascending-slot-index tie-break. The resident set —
 and therefore the solve result — is consequently identical across thread and MPI
 rank counts. See [Cut Management](./cut-management.md).
+
+**Order-stable parallel model fitting.** The study-setup phase fits two families
+of per-entity models in parallel: the periodic autoregressive (PAR(p)) inflow
+coefficients, fit independently per hydro, and the computed-FPHA hyperplanes, fit
+independently per hydro and stage. Parallelism is over entities, and each
+worker's result is reassembled into its canonical entity slot, so the fitted
+models are a function of the inputs alone — independent of how many threads run
+or how the entities are distributed. Two supporting disciplines keep the fits
+bit-identical: the convex-hull stage sorts its input cloud and output facets into
+a canonical order, so the emitted hyperplanes do not depend on point ordering or
+MPI rank count (see [Hydro Production Models](./hydro-production-models.md)); and
+the optional similar-hyperplane reduction draws its samples from a generator
+seeded only from stable entity/plane identity, never from the wall clock, the
+thread, or the rank. A single-threaded fit and a fully parallel fit therefore
+produce the same models, byte for byte.
 
 ## 4. Out of Scope
 

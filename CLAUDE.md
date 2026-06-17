@@ -18,7 +18,7 @@ diverge from the code, the spec must be updated — not the other way around.
 
 ## Current State
 
-**Synced to: cobre v0.8.1 (2026-06-13).**
+**Synced to: cobre v0.8.2 (2026-06-17).**
 
 The corpus is a **methodology-only** reference (math, worked examples,
 reference) organised into the 7-Part TOC in `src/SUMMARY.md`. Architecture,
