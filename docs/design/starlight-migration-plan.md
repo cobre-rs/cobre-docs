@@ -2,8 +2,9 @@
 
 > Status: **approved — decisions locked (§3, 2026-06-22). Not yet started**;
 > execution begins at M1 (walking skeleton). Foundation is proven in
-> `spike/keystone-starlight/` and the toolset in [`tools.md`](tools.md).
-> Branch: `feat/starlight-migration`.
+> `spike/keystone-starlight/`; the toolset is locked in [`tools.md`](tools.md)
+> and its licensing/attribution obligations in [`licensing.md`](licensing.md)
+> (the tree is **100% FOSS**). Branch: `feat/starlight-migration`.
 
 ## 1. Strategy: parallel-run → cutover → decommission
 
@@ -109,8 +110,9 @@ E6 is active. Set up redirects per D5.
 ### E8 — Parity verification & cutover _(depends: E2–E7)_
 
 Side-by-side parity pass: content completeness, math rendering, internal links,
-search, both themes, mobile. Then **flip `deploy.yml`** to build `site/` instead
-of mdBook; keep the CNAME.
+search, both themes, mobile. **Confirm E10 is complete** (notices page +
+content license ship with the public site). Then **flip `deploy.yml`** to build
+`site/` instead of mdBook; keep the CNAME.
 **Exit:** `methodology.cobre-rs.dev` serves Starlight; mdBook deploy disabled.
 
 ### E9 — Decommission mdBook _(depends: E8 stable)_
@@ -120,6 +122,36 @@ Remove `book.toml`, `src/SUMMARY.md`, the old `src/specs` tree (now migrated),
 `pyproject.toml`/`uv.lock` (retired in E4). Promote `site/` → repo root.
 Rewrite `CLAUDE.md` + `diagram-authoring.md` for the Starlight regime.
 **Exit:** repo is Starlight-only; CLAUDE.md reflects the new stack.
+
+### E10 — Licensing, attribution & content license _(cross-cutting; **gate: must complete before E8 cutover**, since cutover publicly redistributes the runtime libs)_
+
+Per [`licensing.md`](licensing.md) — the stack is **100% FOSS** (GSAP dropped for
+**Motion**, MIT; interactive diagrams are **React Flow**, MIT). Permissive
+licenses require preserving _their_ notices in what we redistribute, not opening
+_our_ source. Tasks:
+
+- **THIRD-PARTY-NOTICES** — generate mechanically (`npx license-checker
+--production --out NOTICES.txt`) → committed `THIRD-PARTY-NOTICES.md` (or a
+  `/licenses` route) with a site-wide footer link; regenerate in CI so it stays
+  current. Must cover the **runtime** libs actually shipped: Starlight runtime,
+  **React + React Flow** (if any interactive diagram ships), Observable Plot
+  (+d3), JSXGraph, Mermaid, KaTeX CSS/fonts, Motion (if a tutorial scene ships).
+  **Do not strip** Astro/Vite `/*! … */` license banners.
+- **JSXGraph** — record "used under the **MIT** option of its LGPL/MIT dual
+  license" in the notices.
+- **D2** — confirm `layout: elk`, **never `tala`** (unlicensed TALA watermarks);
+  MPL-2.0/EPL-2.0 are build-time-only ⇒ no obligation on our SVGs/site.
+- **Fonts** — ship the **SIL OFL 1.1** text beside self-hosted IBM Plex Sans /
+  JetBrains Mono (or use Fontsource, which bundles it); keep KaTeX's MIT notice
+  with its `KaTeX_*` WOFF2 files.
+- **Docs-content license** — add `LICENSE-docs`: prose + figures **CC-BY-4.0**,
+  code samples **Apache-2.0** (matching `cobre-rs/cobre`); short footer notice.
+  Directly enables the pt-BR translation + citation roadmap.
+- **SPDX spot-check** — `npm view <pkg> license` for the community plugins at
+  install (`astro-mermaid`, `astro-d2`, `@lunariajs/starlight`, `starlight-image-zoom`).
+
+**Exit:** notices page live + footer-linked; `LICENSE-docs` set; OFL text ships
+with fonts; CI keeps notices current; D2 confirmed on ELK.
 
 ## 5. Risks & mitigations
 
@@ -133,6 +165,9 @@ Rewrite `CLAUDE.md` + `diagram-authoring.md` for the Starlight regime.
 - **`src/` collision** → D1=(a) `site/` isolation removes it entirely.
 - **Search/UX regressions** → E8 parity checklist is the gate; do not flip deploy
   until it passes.
+- **Missing third-party attribution** (publishing runtime libs without their
+  notices) → E10 gates cutover; generate notices in CI and don't strip bundler
+  license banners. Avoid D2 `layout: tala` (watermarks).
 
 ## 6. Rollback
 
@@ -146,7 +181,8 @@ untouched on `main`). Post-E9, rollback = revert the decommission commit. The
    migrated and deployed to staging. Validates the whole toolchain on real
    content before committing to the full port. _(Highest-value checkpoint.)_
 2. **M2 — Content complete:** E3+E4 done; full corpus at parity on staging.
-3. **M3 — Cutover:** E5–E8; production serves Starlight.
+3. **M3 — Cutover:** E5–E8 **+ E10** (attribution/notices + content license must
+   ship with the public site); production serves Starlight.
 4. **M4 — Clean:** E9; mdBook removed, docs updated.
 
 ## 8. Open follow-ups (out of migration scope)

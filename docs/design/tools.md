@@ -21,20 +21,23 @@ reserved for the handful of figures where dragging genuinely teaches.
 Explorable node-graph diagrams (opt-in, per-figure) use **React Flow**
 (`@xyflow/react`, MIT). i18n is **Starlight-native** + **Lunaria** for
 translation-status tracking; versioning is **`starlight-versions`**. Everything
-interactive runs as an **Astro island** hydrated with `client:visible`. GSAP
-timeline animation and ECharts dashboards are **out of scope for the reference**
-(they belong to the tutorial/onboarding layer, if anywhere).
+interactive runs as an **Astro island** hydrated with `client:visible`.
+Timeline animation (**Motion**, MIT — the preferred animation tool, swapped in
+for GSAP to keep the tree 100% FOSS) and ECharts dashboards are **out of scope
+for the reference** (they belong to the tutorial/onboarding layer, if anywhere).
+Every dependency is OSI-permissive or weak-copyleft-at-build-time — see
+[`licensing.md`](licensing.md).
 
 ---
 
 ## The tiered model
 
-| Tier                            | What                                                                                                               | Tools                                                                                        | Rationale                                                                                                                 |
-| ------------------------------- | ------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
-| **🔒 Lock now**                 | The static-docs core that solves the actual pain (maintainable, themeable, i18n-able, versionable diagrams + docs) | Starlight · KaTeX · D2 · Mermaid · native i18n + Lunaria · `starlight-versions` · image-zoom | Low risk, high fit. Matches the goals: theme-adaptive, no Python, future i18n + versioning.                               |
-| **🧩 Resolve**                  | The math/data figure question — port matplotlib's _correctness_ into JS without losing it                          | TS compute layer + **Observable Plot** (+ **JSXGraph** for dynamic)                          | Keeps correct-by-construction (now _tested_), gains theming + optional interactivity, retires matplotlib **and** ECharts. |
-| **⏸ Defer / opt-in**            | Genuine interactivity ambitions — adopt per-figure only when a static figure can't carry the teaching              | **React Flow** (explorable diagrams)                                                         | Most one-lines / DAGs are fine as static D2. React Flow is the escape hatch when explorability earns its runtime cost.    |
-| **🚫 Out of scope (reference)** | Onboarding flair that belongs to the tutorial layer                                                                | GSAP · ECharts                                                                               | `diagram-authoring.md` already separates reference diagrams from tutorial-layer widgets. Keep that boundary.              |
+| Tier                            | What                                                                                                               | Tools                                                                                        | Rationale                                                                                                                                                          |
+| ------------------------------- | ------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **🔒 Lock now**                 | The static-docs core that solves the actual pain (maintainable, themeable, i18n-able, versionable diagrams + docs) | Starlight · KaTeX · D2 · Mermaid · native i18n + Lunaria · `starlight-versions` · image-zoom | Low risk, high fit. Matches the goals: theme-adaptive, no Python, future i18n + versioning.                                                                        |
+| **🧩 Resolve**                  | The math/data figure question — port matplotlib's _correctness_ into JS without losing it                          | TS compute layer + **Observable Plot** (+ **JSXGraph** for dynamic)                          | Keeps correct-by-construction (now _tested_), gains theming + optional interactivity, retires matplotlib **and** ECharts.                                          |
+| **⏸ Defer / opt-in**            | Genuine interactivity ambitions — adopt per-figure only when a static figure can't carry the teaching              | **React Flow** (explorable diagrams)                                                         | Most one-lines / DAGs are fine as static D2. React Flow is the escape hatch when explorability earns its runtime cost.                                             |
+| **🚫 Out of scope (reference)** | Onboarding flair that belongs to the tutorial layer                                                                | **Motion** (animation, MIT) · ECharts                                                        | `diagram-authoring.md` already separates reference diagrams from tutorial-layer widgets. Motion is the preferred animation tool _when_ a tutorial scene needs one. |
 
 ---
 
@@ -122,11 +125,14 @@ carries a "things might change" note).
 
 ## 🚫 Out of scope for the reference
 
-- **GSAP** (timeline animation, e.g. a reservoir draining over stages) →
+- **Motion** (`motion`, MIT — timeline/scroll animation, e.g. a reservoir
+  draining over stages) is the **preferred animation tool**, but animation
   belongs to the **tutorial/onboarding layer** (`dev-strategy.md` §5), not the
   methodology reference. `diagram-authoring.md` already draws this boundary;
-  keep it. If onboarding ever wants scripted scenes, GSAP is the pick there —
-  Webflow-backed, original team, 100% free incl. MorphSVG/SplitText.
+  keep it. Motion replaces GSAP (which is proprietary/Webflow-owned and
+  revocable) so the dependency tree stays **100% FOSS** — see
+  [`licensing.md`](licensing.md). For simple motion, the native Web Animations
+  API is a zero-dependency option.
 - **ECharts** (dashboard charts) → wrong altitude for math figures; Observable
   Plot covers the reference's plotting needs. Revisit **only** if a genuine
   interactive dashboard (zoom/brush over large series) ever appears.
