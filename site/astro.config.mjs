@@ -38,6 +38,17 @@ export default defineConfig({
     }),
     starlight({
       title: "Cobre Methodology",
+      // Brand mark (ticket-011b, resolves ticket-009's deferred logo). The copper
+      // wordmark+icon SVGs live in src/assets/ (Astro asset pipeline resolves the
+      // string paths). `replacesTitle: false` keeps the "Cobre Methodology" title
+      // text beside the mark. Favicon = the standalone copper icon in public/.
+      logo: {
+        dark: "./src/assets/cobre-logo-dark.svg",
+        light: "./src/assets/cobre-logo-light.svg",
+        alt: "Cobre",
+        replacesTitle: false,
+      },
+      favicon: "/favicon.svg",
       // Architecture B version picker mounts by overriding the `SocialIcons`
       // header slot (the slot the spike proved green). This is distinct from
       // Starlight's `LanguageSelect` slot, so the i18n language picker (root /
@@ -48,19 +59,22 @@ export default defineConfig({
       // currentColor/var() inline SVG. The astro-d2 KEYSTONE in diagrams.css uses
       // HARDCODED d2-palette hex (NOT --dgm vars), so the two files are independent
       // and the order between them is arbitrary (corrected per E2 review,
-      // 2026-06-24). brand.css (E2 / ticket-008) overrides Starlight's own
-      // --sl-color-accent* triple onto the brand flow-blue for both themes;
-      // it is a SEPARATE concern from palette.css (--dgm-* diagram vars).
-      // fonts.css (E2 / ticket-009) self-hosts the brand faces via Fontsource
-      // (IBM Plex Sans body / JetBrains Mono code, OFL 1.1) and sets ONLY
-      // Starlight's --sl-font / --sl-font-mono — a SEPARATE concern from the
-      // brand.css accent triple and the palette.css --dgm-* diagram vars. Order
-      // is independent of the palette-before-diagrams keystone rule above, so it
-      // is appended last.
+      // 2026-06-24). neutrals.css + brand.css (ticket-011b) override Starlight's
+      // own --sl-color-* tokens onto the BRAND palette: neutrals.css owns the warm
+      // greyscale (--sl-color-{black,gray-1..7,white}); brand.css owns the COPPER
+      // accent triple (--sl-color-accent*), the FLOW-BLUE prose-link rule, and the
+      // semantic aside hue families (note=blue/tip=patina/caution=amber/danger=red).
+      // Both are a SEPARATE concern from palette.css (--dgm-* diagram vars); they
+      // touch disjoint property sets, so neutrals-before-brand is for readability,
+      // not cascade. fonts.css (E2 / ticket-009) self-hosts the brand faces via
+      // Fontsource (IBM Plex Sans body / JetBrains Mono code, OFL 1.1) and sets
+      // ONLY --sl-font / --sl-font-mono — again a SEPARATE concern. Order is
+      // independent of the palette-before-diagrams keystone rule above.
       customCss: [
         "./src/styles/katex.css",
         "./src/styles/palette.css",
         "./src/styles/diagrams.css",
+        "./src/styles/neutrals.css",
         "./src/styles/brand.css",
         "./src/styles/fonts.css",
       ],

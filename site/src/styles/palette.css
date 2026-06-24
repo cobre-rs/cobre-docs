@@ -3,13 +3,19 @@
    Any inline SVG that references these vars (or currentColor) flips on toggle
    for free — no per-figure rework. This is the whole keystone. */
 
+/* Brand alignment (BRAND-GUIDELINES.md §2.2 / §2.4 #3 "copper warmth"): the
+   generic non-hydro `--dgm-accent` is a WARM tone (Patina) so diagram marks that
+   are NOT hydro (e.g. the Benders tangent in ValueFunctionPlot) stay on-brand.
+   Flow Blue is reserved for an explicit hydro/water token, `--dgm-hydro`, per the
+   brand's "water/hydro associations" scoping of Flow Blue. */
 :root {
   --dgm-bg: #0f1419;
   --dgm-text: #c8c6c2;
   --dgm-stroke: #8b9298;
   --dgm-storage: #b87333; /* copper */
   --dgm-runtime: #4a8b6f; /* patina */
-  --dgm-accent: #4a90b8; /* flow blue */
+  --dgm-accent: #4a8b6f; /* patina — warm generic accent (non-hydro) */
+  --dgm-hydro: #4a90b8; /* flow blue — hydro/water marks ONLY */
   --dgm-curve: #d4956a; /* copper-light */
 }
 
@@ -19,7 +25,8 @@
   --dgm-stroke: #555555;
   --dgm-storage: #8b5e3c; /* copper-dark */
   --dgm-runtime: #3a6b54;
-  --dgm-accent: #3a7596;
+  --dgm-accent: #3a6b54; /* patina-dark — warm generic accent (non-hydro) */
+  --dgm-hydro: #3a7596; /* flow blue (darker) — hydro/water marks ONLY */
   --dgm-curve: #b87333;
 }
 
@@ -35,4 +42,3 @@
 .vf-plot figure {
   margin: 0;
 }
-
