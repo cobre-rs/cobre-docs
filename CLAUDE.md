@@ -41,7 +41,11 @@ guide (see "Relocated domains" below).
 - **No `Box<dyn Trait>` (cobre code fact)**: cobre uses enum dispatch for
   closed variant sets (e.g. solver `Profile`, `LocalCommKind`). Reflect this if
   a chapter describes the solver interface.
-
+- **Brand colours**: the site identity is **Copper** (`#B87333`), not blue — see
+  [`docs/design/brand.md`](docs/design/brand.md) before any theming. **Never infer
+  brand colour from the `spike/` palette** (its `--dgm-accent` is flow-blue for
+  diagram/hydro use, not the UI accent).
+  
 ---
 
 ## Spec File Patterns
@@ -129,3 +133,4 @@ the content.
 | Dev strategy              | `https://github.com/cobre-rs/cobre/docs/design/dev-strategy.md`        | Documentation & public presence strategy         |
 | CHANGELOG                 | `https://github.com/cobre-rs/cobre/CHANGELOG.md`                       | Per-release feature list (sync source)           |
 | Diagram authoring guide   | [`docs/design/diagram-authoring.md`](docs/design/diagram-authoring.md) | Tool selection + design system for spec diagrams |
+| Brand & colour | [`docs/design/brand.md`](docs/design/brand.md) | Site colour/identity authority — **Copper** primary, Flow Blue for links/hydro only. Consult before any theming. |
