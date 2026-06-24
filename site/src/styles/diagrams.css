@@ -1,0 +1,224 @@
+/* === astro-d2 KEYSTONE ===========================================================
+   astro-d2 / d2 emit the dark palette under @media (prefers-color-scheme: dark),
+   so the diagram follows the OS preference, NOT Starlight's manual toggle — a
+   half-themed page when the two disagree. This block re-keys d2's shared palette
+   classes (fill-N… and stroke-… , shared across ALL d2 diagrams) to Starlight's
+   [data-theme] attribute. Generic + site-wide: one block themes every d2 figure.
+   (Productionization: a rehype plugin rewriting the @media → [data-theme] selector
+   would do this automatically; this CSS proves the mechanism.) */
+:root[data-theme="light"] .d2-svg .fill-N1 {
+  fill: #0a0f25 !important;
+}
+:root[data-theme="light"] .d2-svg .fill-N2 {
+  fill: #676c7e !important;
+}
+:root[data-theme="light"] .d2-svg .fill-N3 {
+  fill: #9499ab !important;
+}
+:root[data-theme="light"] .d2-svg .fill-N4 {
+  fill: #cfd2dd !important;
+}
+:root[data-theme="light"] .d2-svg .fill-N5 {
+  fill: #dee1eb !important;
+}
+:root[data-theme="light"] .d2-svg .fill-N6 {
+  fill: #eef1f8 !important;
+}
+:root[data-theme="light"] .d2-svg .fill-N7 {
+  fill: #ffffff !important;
+}
+:root[data-theme="light"] .d2-svg .fill-B1 {
+  fill: #0d32b2 !important;
+}
+:root[data-theme="light"] .d2-svg .fill-B2 {
+  fill: #0d32b2 !important;
+}
+:root[data-theme="light"] .d2-svg .fill-B3 {
+  fill: #e3e9fd !important;
+}
+:root[data-theme="light"] .d2-svg .fill-B4 {
+  fill: #e3e9fd !important;
+}
+:root[data-theme="light"] .d2-svg .fill-B5 {
+  fill: #edf0fd !important;
+}
+:root[data-theme="light"] .d2-svg .fill-B6 {
+  fill: #f7f8fe !important;
+}
+:root[data-theme="light"] .d2-svg .fill-AA2 {
+  fill: #4a6ff3 !important;
+}
+:root[data-theme="light"] .d2-svg .fill-AA4 {
+  fill: #edf0fd !important;
+}
+:root[data-theme="light"] .d2-svg .fill-AA5 {
+  fill: #f7f8fe !important;
+}
+:root[data-theme="light"] .d2-svg .fill-AB4 {
+  fill: #edf0fd !important;
+}
+:root[data-theme="light"] .d2-svg .fill-AB5 {
+  fill: #f7f8fe !important;
+}
+:root[data-theme="light"] .d2-svg .stroke-N1 {
+  stroke: #0a0f25 !important;
+}
+:root[data-theme="light"] .d2-svg .stroke-N2 {
+  stroke: #676c7e !important;
+}
+:root[data-theme="light"] .d2-svg .stroke-N3 {
+  stroke: #9499ab !important;
+}
+:root[data-theme="light"] .d2-svg .stroke-N4 {
+  stroke: #cfd2dd !important;
+}
+:root[data-theme="light"] .d2-svg .stroke-N5 {
+  stroke: #dee1eb !important;
+}
+:root[data-theme="light"] .d2-svg .stroke-N6 {
+  stroke: #eef1f8 !important;
+}
+:root[data-theme="light"] .d2-svg .stroke-N7 {
+  stroke: #ffffff !important;
+}
+:root[data-theme="light"] .d2-svg .stroke-B1 {
+  stroke: #0d32b2 !important;
+}
+:root[data-theme="light"] .d2-svg .stroke-B2 {
+  stroke: #0d32b2 !important;
+}
+:root[data-theme="light"] .d2-svg .stroke-B3 {
+  stroke: #e3e9fd !important;
+}
+:root[data-theme="light"] .d2-svg .stroke-B4 {
+  stroke: #e3e9fd !important;
+}
+:root[data-theme="light"] .d2-svg .stroke-B5 {
+  stroke: #edf0fd !important;
+}
+:root[data-theme="light"] .d2-svg .stroke-B6 {
+  stroke: #f7f8fe !important;
+}
+:root[data-theme="light"] .d2-svg .stroke-AA2 {
+  stroke: #4a6ff3 !important;
+}
+:root[data-theme="light"] .d2-svg .stroke-AA4 {
+  stroke: #edf0fd !important;
+}
+:root[data-theme="light"] .d2-svg .stroke-AA5 {
+  stroke: #f7f8fe !important;
+}
+:root[data-theme="light"] .d2-svg .stroke-AB4 {
+  stroke: #edf0fd !important;
+}
+:root[data-theme="light"] .d2-svg .stroke-AB5 {
+  stroke: #f7f8fe !important;
+}
+:root[data-theme="dark"] .d2-svg .fill-N1 {
+  fill: #cdd6f4 !important;
+}
+:root[data-theme="dark"] .d2-svg .fill-N2 {
+  fill: #bac2de !important;
+}
+:root[data-theme="dark"] .d2-svg .fill-N3 {
+  fill: #a6adc8 !important;
+}
+:root[data-theme="dark"] .d2-svg .fill-N4 {
+  fill: #585b70 !important;
+}
+:root[data-theme="dark"] .d2-svg .fill-N5 {
+  fill: #45475a !important;
+}
+:root[data-theme="dark"] .d2-svg .fill-N6 {
+  fill: #313244 !important;
+}
+:root[data-theme="dark"] .d2-svg .fill-N7 {
+  fill: #1e1e2e !important;
+}
+:root[data-theme="dark"] .d2-svg .fill-B1 {
+  fill: #cba6f7 !important;
+}
+:root[data-theme="dark"] .d2-svg .fill-B2 {
+  fill: #cba6f7 !important;
+}
+:root[data-theme="dark"] .d2-svg .fill-B3 {
+  fill: #6c7086 !important;
+}
+:root[data-theme="dark"] .d2-svg .fill-B4 {
+  fill: #585b70 !important;
+}
+:root[data-theme="dark"] .d2-svg .fill-B5 {
+  fill: #45475a !important;
+}
+:root[data-theme="dark"] .d2-svg .fill-B6 {
+  fill: #313244 !important;
+}
+:root[data-theme="dark"] .d2-svg .fill-AA2 {
+  fill: #f38ba8 !important;
+}
+:root[data-theme="dark"] .d2-svg .fill-AA4 {
+  fill: #45475a !important;
+}
+:root[data-theme="dark"] .d2-svg .fill-AA5 {
+  fill: #313244 !important;
+}
+:root[data-theme="dark"] .d2-svg .fill-AB4 {
+  fill: #45475a !important;
+}
+:root[data-theme="dark"] .d2-svg .fill-AB5 {
+  fill: #313244 !important;
+}
+:root[data-theme="dark"] .d2-svg .stroke-N1 {
+  stroke: #cdd6f4 !important;
+}
+:root[data-theme="dark"] .d2-svg .stroke-N2 {
+  stroke: #bac2de !important;
+}
+:root[data-theme="dark"] .d2-svg .stroke-N3 {
+  stroke: #a6adc8 !important;
+}
+:root[data-theme="dark"] .d2-svg .stroke-N4 {
+  stroke: #585b70 !important;
+}
+:root[data-theme="dark"] .d2-svg .stroke-N5 {
+  stroke: #45475a !important;
+}
+:root[data-theme="dark"] .d2-svg .stroke-N6 {
+  stroke: #313244 !important;
+}
+:root[data-theme="dark"] .d2-svg .stroke-N7 {
+  stroke: #1e1e2e !important;
+}
+:root[data-theme="dark"] .d2-svg .stroke-B1 {
+  stroke: #cba6f7 !important;
+}
+:root[data-theme="dark"] .d2-svg .stroke-B2 {
+  stroke: #cba6f7 !important;
+}
+:root[data-theme="dark"] .d2-svg .stroke-B3 {
+  stroke: #6c7086 !important;
+}
+:root[data-theme="dark"] .d2-svg .stroke-B4 {
+  stroke: #585b70 !important;
+}
+:root[data-theme="dark"] .d2-svg .stroke-B5 {
+  stroke: #45475a !important;
+}
+:root[data-theme="dark"] .d2-svg .stroke-B6 {
+  stroke: #313244 !important;
+}
+:root[data-theme="dark"] .d2-svg .stroke-AA2 {
+  stroke: #f38ba8 !important;
+}
+:root[data-theme="dark"] .d2-svg .stroke-AA4 {
+  stroke: #45475a !important;
+}
+:root[data-theme="dark"] .d2-svg .stroke-AA5 {
+  stroke: #313244 !important;
+}
+:root[data-theme="dark"] .d2-svg .stroke-AB4 {
+  stroke: #45475a !important;
+}
+:root[data-theme="dark"] .d2-svg .stroke-AB5 {
+  stroke: #313244 !important;
+}

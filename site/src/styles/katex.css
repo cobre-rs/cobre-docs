@@ -1,0 +1,4 @@
+/* KaTeX glyph styling for the manual remark-math + rehype-katex pipeline (D4).
+   rehype-katex renders math to .katex HTML at build time; this stylesheet ships
+   the fonts/spacing rules so the rendered glyphs display correctly site-wide. */
+@import "katex/dist/katex.min.css";
