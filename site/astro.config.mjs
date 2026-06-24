@@ -38,13 +38,18 @@ export default defineConfig({
     }),
     starlight({
       title: "Cobre Methodology",
-      // Brand mark (ticket-011b, resolves ticket-009's deferred logo). The copper
-      // wordmark+icon SVGs live in src/assets/ (Astro asset pipeline resolves the
-      // string paths). `replacesTitle: false` keeps the "Cobre Methodology" title
-      // text beside the mark. Favicon = the standalone copper icon in public/.
+      // Brand mark (ticket-011b, resolves ticket-009's deferred logo). The header
+      // slot is small (~24px), so we use the ICON — a self-contained 128×128 copper
+      // mark on a Midnight tile, the brand's "small contexts / 16px" form — NOT the
+      // wide 400×120 wordmark logos (those duplicate "Cobre" beside the title and
+      // scale to illegibility at this height). `replacesTitle: false` keeps the
+      // "Cobre Methodology" title text beside the icon. Theme-adaptive (Starlight
+      // logo:{dark,light}): the Midnight-tiled icon on dark; a light-surface-tiled
+      // variant on light (cobre-icon-light.svg — derived, copper anchored darker so
+      // it reads on the light tile). The dark-tiled icon is also the favicon.
       logo: {
-        dark: "./src/assets/cobre-logo-dark.svg",
-        light: "./src/assets/cobre-logo-light.svg",
+        dark: "./src/assets/cobre-icon.svg",
+        light: "./src/assets/cobre-icon-light.svg",
         alt: "Cobre",
         replacesTitle: false,
       },

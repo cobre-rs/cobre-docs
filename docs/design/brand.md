@@ -47,8 +47,14 @@
   (`curve`). **Flow Blue is reserved for hydro/water** (`--dgm-hydro`); non-hydro
   "accent" marks (e.g. Benders tangents) use a warm tone. (The `.d2-svg` keystone uses
   d2's own hardcoded palette — a separate system, do not confuse with `--dgm`.)
-- **Logo + favicon:** `cobre-logo-dark.svg` / `cobre-logo-light.svg` in the header
-  (beside the "Cobre Methodology" wordmark); `cobre-icon.svg` as the favicon.
+- **Logo + favicon:** the **icon mark beside the "Cobre Methodology" title**,
+  **theme-adaptive** via Starlight `logo:{dark,light}` — `cobre-icon.svg` (Midnight
+  tile) on dark, `cobre-icon-light.svg` (light brand-surface tile; a **derived**
+  variant with copper anchored on the readable `#B87333`..`#8B5E3C` range, since the
+  original's lighter gradient stops wash out on a light tile) on light. `cobre-icon.svg`
+  is also the favicon. The wide `cobre-logo-{dark,light}.svg` **wordmark** logos are
+  for README-scale headers, **not** the small (~40px) site header — they scale to
+  illegibility and duplicate "Cobre" beside the title.
 
 ## Design principles that constrain styling (§2.4)
 
