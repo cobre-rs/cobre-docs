@@ -1,0 +1,35 @@
+/* Cobre brand accent for Starlight chrome (links, active sidebar item, header,
+   focus rings). Overrides ONLY Starlight's documented `--sl-color-accent*`
+   triple — NOT the `--dgm-*` diagram palette (palette.css, a separate concern).
+
+   Source: the brand flow-blue from the `--dgm` family (palette.css):
+     dark  `--dgm-accent` #4a90b8  ->  hsl(202, 44%, 51%)
+     light `--dgm-accent` #3a7596  ->  hsl(202, 44%, 41%)
+   The triple keeps that brand hue (202), bumps the base saturation to 50% (from
+   the source 44%) for link legibility on the page background — the --dgm diagram
+   accent sits on dark SVG fills where 44% suffices, but Starlight links sit on the
+   page background and need more chroma — and follows Starlight's own lightness
+   discipline so no default purple (hue 224/234/281) bleeds through any component.
+   Dark is the default (:root); light overrides under [data-theme="light"],
+   mirroring the `--dgm` light/dark discipline.
+
+   Starlight derives `--sl-color-text-accent` / `--sl-color-bg-accent` from this
+   triple via var() (text-accent = -high in dark, = base in light), so overriding
+   the triple re-themes those text-on-accent vars automatically — no redeclare.
+
+   Contrast (WCAG AA): dark text-accent(-high) 11.3:1, dark link(base) 5.2:1,
+   light text-accent(base) 5.0:1, light -high 8.4:1 — all vs their page bg. */
+
+/* Dark — the default scope. Ramp: low (muted bg) -> base (links) -> high (text). */
+:root {
+  --sl-color-accent-low: hsl(202, 44%, 22%);
+  --sl-color-accent: hsl(202, 50%, 51%);
+  --sl-color-accent-high: hsl(202, 55%, 80%);
+}
+
+/* Light — inverted ramp per Starlight: high (darkest, text) -> base -> low (lightest bg). */
+:root[data-theme="light"] {
+  --sl-color-accent-high: hsl(202, 55%, 28%);
+  --sl-color-accent: hsl(202, 50%, 41%);
+  --sl-color-accent-low: hsl(202, 60%, 90%);
+}

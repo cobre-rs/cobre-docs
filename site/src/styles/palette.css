@@ -1,0 +1,38 @@
+/* Keystone proof: a single diagram palette, defined per theme.
+   Dark is the default (:root); light overrides under [data-theme='light'].
+   Any inline SVG that references these vars (or currentColor) flips on toggle
+   for free — no per-figure rework. This is the whole keystone. */
+
+:root {
+  --dgm-bg: #0f1419;
+  --dgm-text: #c8c6c2;
+  --dgm-stroke: #8b9298;
+  --dgm-storage: #b87333; /* copper */
+  --dgm-runtime: #4a8b6f; /* patina */
+  --dgm-accent: #4a90b8; /* flow blue */
+  --dgm-curve: #d4956a; /* copper-light */
+}
+
+:root[data-theme="light"] {
+  --dgm-bg: #ffffff;
+  --dgm-text: #1a2028;
+  --dgm-stroke: #555555;
+  --dgm-storage: #8b5e3c; /* copper-dark */
+  --dgm-runtime: #3a6b54;
+  --dgm-accent: #3a7596;
+  --dgm-curve: #b87333;
+}
+
+.dgm-svg {
+  max-width: 100%;
+  height: auto;
+  color: var(--dgm-stroke); /* drives `currentColor` strokes */
+}
+
+.vf-plot {
+  margin: 1rem 0;
+}
+.vf-plot figure {
+  margin: 0;
+}
+

@@ -43,10 +43,27 @@ export default defineConfig({
       // Starlight's `LanguageSelect` slot, so the i18n language picker (root /
       // pt-br) is untouched — the two coexist in the header.
       components: { SocialIcons: "./src/components/VersionPicker.astro" },
-      // E2 appends more entries (brand CSS). diagrams.css holds the astro-d2
-      // KEYSTONE — re-keys d2's .fill-*/.stroke-* palette classes to
-      // :root[data-theme] so D2 figures follow Starlight's manual toggle.
-      customCss: ["./src/styles/katex.css", "./src/styles/diagrams.css"],
+      // palette.css defines the --dgm-* diagram palette (light + dark), consumed
+      // by JS components (ValueFunctionPlot.astro, via getComputedStyle) and any
+      // currentColor/var() inline SVG. The astro-d2 KEYSTONE in diagrams.css uses
+      // HARDCODED d2-palette hex (NOT --dgm vars), so the two files are independent
+      // and the order between them is arbitrary (corrected per E2 review,
+      // 2026-06-24). brand.css (E2 / ticket-008) overrides Starlight's own
+      // --sl-color-accent* triple onto the brand flow-blue for both themes;
+      // it is a SEPARATE concern from palette.css (--dgm-* diagram vars).
+      // fonts.css (E2 / ticket-009) self-hosts the brand faces via Fontsource
+      // (IBM Plex Sans body / JetBrains Mono code, OFL 1.1) and sets ONLY
+      // Starlight's --sl-font / --sl-font-mono — a SEPARATE concern from the
+      // brand.css accent triple and the palette.css --dgm-* diagram vars. Order
+      // is independent of the palette-before-diagrams keystone rule above, so it
+      // is appended last.
+      customCss: [
+        "./src/styles/katex.css",
+        "./src/styles/palette.css",
+        "./src/styles/diagrams.css",
+        "./src/styles/brand.css",
+        "./src/styles/fonts.css",
+      ],
       defaultLocale: "root",
       locales: {
         root: { label: "English", lang: "en" },

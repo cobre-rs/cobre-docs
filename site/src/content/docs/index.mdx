@@ -40,24 +40,24 @@ flowchart LR
   C -- yes --> E([policy])
 ```
 
-`astro-d2` renders the committed conceptual diagram below to inline SVG with the
-ELK layout. The `.d2-svg` keystone CSS re-keys d2's palette classes
-(`fill-N*` / `stroke-*`) to `:root[data-theme]`, so the figure flips with the
-manual theme toggle rather than only the OS preference:
+`astro-d2` renders the conceptual SDDP-loop diagram below to inline SVG with the
+ELK layout. It is a small but representative 4-node flow — the kind of shape and
+edge styling E4 will reuse for real figures. The `.d2-svg` keystone CSS re-keys
+d2's palette classes (`fill-N*` / `stroke-*`) to `:root[data-theme]`, so the
+figure flips with the manual theme toggle rather than only the OS preference:
 
 ```d2
 direction: right
 
-hydro: Hydro plant
-thermal: Thermal plant
-bus: System bus {shape: hexagon}
-demand: Demand
-deficit: Deficit slack {style.stroke-dash: 4}
+forward: Forward pass
+backward: Backward pass {shape: hexagon}
+cuts: Cut pool
+policy: Policy {style.stroke-dash: 4}
 
-hydro -> bus: generation
-thermal -> bus: generation
-bus -> demand: supply
-deficit -> bus: shortfall
+forward -> backward: scenario trajectories
+backward -> cuts: add Benders cuts
+cuts -> forward: tighten value function
+backward -> policy: converged
 ```
 
 ## Compute-plot harness check
