@@ -281,6 +281,12 @@ function main() {
   lines.push("banners with the full license texts.");
   lines.push("");
 
+  // (e) KaTeX WOFF2 font coverage note (ticket-033)
+  lines.push(
+    "KaTeX_*.woff2 font files shipped in the built site are covered by the KaTeX MIT license (no separate font terms).",
+  );
+  lines.push("");
+
   // ---- SPDX summary table ----------------------------------------------------
   lines.push("-".repeat(79));
   lines.push("SPDX SUMMARY");

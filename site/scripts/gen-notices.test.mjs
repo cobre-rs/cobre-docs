@@ -6,6 +6,7 @@
 //   - all expected SPDX strings (MPL-2.0, EPL-2.0, OFL-1.1, ISC,
 //     Apache-2.0, MIT);
 //   - the JSXGraph election preamble note.
+//   - OFL font copyright lines and the KaTeX MIT notice (ticket-033).
 //
 // This test reads the COMMITTED notices file (not re-generated) to prove
 // the committed artifact is correct — it does NOT execute gen-notices.mjs
@@ -131,5 +132,43 @@ test("output does not contain a timestamp (drift-check stability)", () => {
   assert.ok(
     !noticesText.match(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/),
     "Output must not contain an ISO 8601 datetime timestamp.",
+  );
+});
+
+// ---- OFL font notices (ticket-033) -----------------------------------------
+test("contains SIL Open Font License text (OFL-1.1 body present)", () => {
+  assert.ok(
+    noticesText.includes("SIL Open Font License"),
+    "Expected 'SIL Open Font License' in THIRD-PARTY-NOTICES.txt — OFL full text must be present.",
+  );
+});
+
+test("contains IBM Plex Sans foundry copyright (IBM Corp 2019)", () => {
+  assert.ok(
+    noticesText.includes("IBM Corp"),
+    "Expected 'IBM Corp' in THIRD-PARTY-NOTICES.txt — IBM Plex Sans OFL copyright must be present.",
+  );
+});
+
+test("contains JetBrains Mono foundry copyright", () => {
+  assert.ok(
+    noticesText.includes("JetBrains Mono Project Authors"),
+    "Expected 'JetBrains Mono Project Authors' in THIRD-PARTY-NOTICES.txt — JetBrains Mono OFL copyright must be present.",
+  );
+});
+
+// ---- KaTeX MIT notice (ticket-033) -----------------------------------------
+test("contains KaTeX MIT copyright (Khan Academy)", () => {
+  assert.ok(
+    noticesText.includes("Khan Academy"),
+    "Expected 'Khan Academy' in THIRD-PARTY-NOTICES.txt — KaTeX MIT copyright must be present.",
+  );
+});
+
+test("contains KaTeX WOFF2 preamble note (ticket-033)", () => {
+  assert.ok(
+    noticesText.includes("KaTeX_*.woff2") &&
+      noticesText.includes("KaTeX MIT license"),
+    "Expected the KaTeX WOFF2 coverage preamble note (KaTeX_*.woff2 + KaTeX MIT license) in THIRD-PARTY-NOTICES.txt.",
   );
 });

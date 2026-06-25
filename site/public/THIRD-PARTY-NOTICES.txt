@@ -34,6 +34,8 @@ License banners injected by the Astro/Vite bundler into JavaScript and CSS
 output are preserved and not stripped. The notices below supplement those
 banners with the full license texts.
 
+KaTeX_*.woff2 font files shipped in the built site are covered by the KaTeX MIT license (no separate font terms).
+
 -------------------------------------------------------------------------------
 SPDX SUMMARY
 -------------------------------------------------------------------------------
