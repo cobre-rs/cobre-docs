@@ -103,6 +103,14 @@ jobs:
       - name: Check D2 layout (no TALA)
         run: npm run check:d2
 
+      # E10 ticket-035 (licensing.md item 7): SPDX audit gate. Reads the declared
+      # deps' installed `license` fields and fails if any is outside the permissive
+      # allow-list and not the d2/ELK build-time-only exemption — the automated
+      # guard protecting the "100% FOSS" claim / E8 cutover gate. Static metadata
+      # check, pre-build like check:figures/check:d2; needs node_modules (npm ci ran).
+      - name: Check SPDX licenses (FOSS guard)
+        run: npm run check:spdx
+
       - name: Build (multi-version assembly)
         run: npm run build:versions
 
