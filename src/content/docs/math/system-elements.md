@@ -81,6 +81,23 @@ deficit -> bus2: "δ (unserved)" {style.stroke-dash: 4}
 
 The optimizer determines generation and flow decisions at each stage to minimize total expected cost (thermal generation + deficit penalties + regularization costs) while respecting physical constraints and preparing for uncertain future inflows.
 
+### Entity Commissioning Windows
+
+Most entity types may enter service or be decommissioned partway through the horizon, so that planning studies can represent new plants coming online and aging units retiring. An entity carries an optional **commissioning window** defined by two stage indices, `entry_stage_id` and `exit_stage_id`. The window is **half-open**: the entity is active at stage $t$ when
+
+$$
+\text{entry\_stage\_id} \leq t < \text{exit\_stage\_id}
+$$
+
+so the entry stage is **inclusive** and the exit stage is **exclusive** — the entity is gone _from_ its exit stage onward. A null `entry_stage_id` means "active from the first stage"; a null `exit_stage_id` means "never decommissioned". The default for an entity that sets neither is to be active at every stage.
+
+This window applies uniformly to **transmission lines, thermal plants, non-controllable sources, pumping stations, and contracts** (and, for generation, to hydro plants). Outside its window an entity contributes nothing to the dispatch: its decision columns are present in the LP but pinned to zero, so it injects no power, withdraws no power, and consumes no resource. Decommissioning is symmetric to commissioning — both are expressed by the same two fields.
+
+Two element-specific lifecycle mechanisms layer on top of this generic window:
+
+- **Hydro dead-volume filling** (§5) — a hydro plant may _exist_ but be unable to generate while its reservoir is still filling toward the dead volume; this is a distinct commissioning state with its own per-stage storage floors, not just a presence gate.
+- **Anticipated thermals** (§4) — a commitment column is opened only when its delivery stage falls inside the study horizon, an additional horizon predicate beyond the entry/exit window.
+
 ## 2. Buses (Regional Subsystems)
 
 ### Physical Meaning
@@ -317,7 +334,7 @@ Cobre distinguishes two hydro plant subsets based on their operational state:
 | **Operating** | $\mathcal{H}^{op}$   | Plants that can generate electricity; subject to generation constraints |
 | **Filling**   | $\mathcal{H}^{fill}$ | New plants under commissioning, filling dead volume; no generation      |
 
-Most plants are in $\mathcal{H}^{op}$. Filling hydros have target storage constraints instead of generation constraints. Some plants have negligible storage capacity (**run-of-river**) and must pass all inflows through turbines and spillways within the same stage.
+Most plants are in $\mathcal{H}^{op}$. Filling hydros have per-stage target-storage floors instead of generation constraints. Some plants have negligible storage capacity (**run-of-river**) and must pass all inflows through turbines and spillways within the same stage.
 
 ### Decision Variables
 
@@ -406,30 +423,30 @@ For the complete FPHA formulation and model comparison, see [hydro production mo
 
 Several hydro constraints are enforced as **soft constraints** with slack variables and penalties:
 
-| Constraint                                    | Meaning                                  | Slack Variable        |
-| --------------------------------------------- | ---------------------------------------- | --------------------- |
-| $v_h \geq \underline{V}_h$                    | Minimum storage (dead volume)            | $\sigma^{v-}_{h}$     |
-| $q_{h,k} \geq \underline{Q}_h$                | Minimum turbined flow (equipment limits) | $\sigma^{q-}_{h,k}$   |
-| $o_{h,k} \geq \underline{O}_h$                | Minimum outflow (environmental flow)     | $\sigma^{o-}_{h,k}$   |
-| $o_{h,k} \leq \bar{O}_h$                      | Maximum outflow (flood control)          | $\sigma^{o+}_{h,k}$   |
-| $g_{h,k} \geq \underline{G}_h$                | Minimum generation (grid services)       | $\sigma^{g-}_{h,k}$   |
-| $e_{h,k}$ feasible                            | Evaporation within physical limits       | $\sigma^{e\pm}_{h,k}$ |
-| $r_{h,k}$ met                                 | Water withdrawal commitment              | $\sigma^{r}_{h,k}$    |
-| $v_h \geq \underline{V}_h$ (filling terminal) | Filling target at last filling stage     | $\sigma^{fill}_{h}$   |
+| Constraint                                     | Meaning                                       | Slack Variable        |
+| ---------------------------------------------- | --------------------------------------------- | --------------------- |
+| $v_h \geq \underline{V}_h$                     | Minimum storage (dead volume)                 | $\sigma^{v-}_{h}$     |
+| $q_{h,k} \geq \underline{Q}_h$                 | Minimum turbined flow (equipment limits)      | $\sigma^{q-}_{h,k}$   |
+| $o_{h,k} \geq \underline{O}_h$                 | Minimum outflow (environmental flow)          | $\sigma^{o-}_{h,k}$   |
+| $o_{h,k} \leq \bar{O}_h$                       | Maximum outflow (flood control)               | $\sigma^{o+}_{h,k}$   |
+| $g_{h,k} \geq \underline{G}_h$                 | Minimum generation (grid services)            | $\sigma^{g-}_{h,k}$   |
+| $e_{h,k}$ feasible                             | Evaporation within physical limits            | $\sigma^{e\pm}_{h,k}$ |
+| $r_{h,k}$ met                                  | Water withdrawal commitment                   | $\sigma^{r}_{h,k}$    |
+| $v_h \geq V^{\text{target}}_t$ (filling floor) | Per-stage filling target during commissioning | $\sigma^{fill}_{h}$   |
 
 Soft constraints allow the optimizer to violate bounds when physically necessary (e.g., drought conditions preventing minimum outflow), with high penalty costs signaling undesirable operation. Maximum storage ($\bar{V}_h$) is a **hard** physical limit — excess water is handled by emergency spillage, not a slack variable. For the penalty priority ordering and cost magnitudes, see [Penalty System](/math/penalty-system). For the complete constraint formulations, see [equipment formulations](/math/equipment-formulations).
 
 ### Dead-Volume Filling
 
-Cobre models the commissioning of new hydro plants with a **filling period** during which the reservoir accumulates water to reach the dead volume ($\underline{V}_h$). During this period:
+Cobre models the commissioning of new hydro plants with a **filling period** (`[start_stage_id, entry_stage_id)`) during which the reservoir accumulates water to reach the dead volume ($\underline{V}_h$). During this period:
 
 - The hydro has **no generation**: $q_{h,k} = 0$, $g_{h,k} = 0$ (hard constraint)
-- Storage is allowed below $\underline{V}_h$ (the min storage slack is inactive)
-- Outflow is limited to spillage (turbines not operational)
-- Environmental flow must be met via spillage, with `outflow_violation_below` slack if impossible
-- A **terminal filling constraint** at the last filling stage enforces $v_h \geq \underline{V}_h$ with the highest penalty in the system ($\sigma^{fill}_h$)
+- Natural inflow flows freely through the ordinary water balance — there is no retention or impound cap diverting inflow to storage
+- Storage is allowed below $\underline{V}_h$ (the operating min-storage slack is inactive)
+- Outflow is limited to spillage (turbines not operational), with the `outflow_violation_below` slack if environmental flow cannot be met
+- A **per-stage filling floor** $v_h \geq V^{\text{target}}_t$ requires the reservoir to stay on a minimum-accumulation schedule set by `filling_min_rate_m3s`. The floor ramps up to $\underline{V}_h$ at the last filling stage; its slack $\sigma^{fill}_h$ is priced **below** deficit (a fill schedule is not defended as hard as load serving)
 
-For the penalty costs associated with filling violations, see [Penalty System](/math/penalty-system).
+When the plant enters service at `entry_stage_id`, the ordinary soft minimum-storage floor takes over. For the per-stage floor trajectory and the penalty ordering, see [Penalty System](/math/penalty-system).
 
 ### Role in Objective Function
 
@@ -483,13 +500,13 @@ The pin is applied per scenario by overwriting the upper and lower bounds on the
 
 ### Operative States
 
-Non-controllable sources have lifecycle stages controlled by `entry_stage_id` and `exit_stage_id`:
+Non-controllable sources follow the generic commissioning window (§1, _Entity Commissioning Windows_), controlled by `entry_stage_id` and `exit_stage_id`:
 
-| State            | Condition                                    | LP Variables                      |
-| ---------------- | -------------------------------------------- | --------------------------------- |
-| `non_existing`   | Before `entry_stage_id`                      | None                              |
-| `operating`      | Between `entry_stage_id` and `exit_stage_id` | generation, curtailment (derived) |
-| `decommissioned` | After `exit_stage_id`                        | None                              |
+| State            | Condition                                                 | LP Variables                      |
+| ---------------- | --------------------------------------------------------- | --------------------------------- |
+| `non_existing`   | Before `entry_stage_id`                                   | Pinned to zero                    |
+| `operating`      | $\text{entry\_stage\_id} \leq t < \text{exit\_stage\_id}$ | generation, curtailment (derived) |
+| `decommissioned` | At or after `exit_stage_id`                               | Pinned to zero                    |
 
 ### Decision Variables
 
@@ -623,7 +640,7 @@ Because import prices are positive and export prices are negative, this single s
 
 ### LP Constraint Preview
 
-**Capacity bounds**: $\underline{C}_c \leq \chi_{c,k} \leq \bar{C}_c$
+**Capacity bounds**: $\underline{C}_c \leq \chi_{c,k} \leq \bar{C}_c$. A non-zero lower bound $\underline{C}_c$ acts as a hard **take-or-pay** floor — the LP must dispatch at least that quantity at the contract price. Contracts are stateless and honor the generic commissioning window (§1).
 
 For detailed constraints, see [equipment formulations](/math/equipment-formulations).
 

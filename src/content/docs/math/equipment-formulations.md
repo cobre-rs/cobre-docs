@@ -129,11 +129,13 @@ $$
 \sum_{k} \tau_k \sum_{c \in \mathcal{C}} c^{ctr}_c \cdot \chi_{c,k}
 $$
 
-Because import prices ($c^{ctr}_c$) are positive and export prices are negative, this single summation naturally adds import costs and subtracts export revenue.
+Because import prices ($c^{ctr}_c$) are positive and export prices are negative, this single summation naturally adds import costs and subtracts export revenue. The price sign is independent of the load-balance sign: an import column injects $+\chi_{c,k}$ _and_ carries a positive (cost) price; an export column withdraws $-\chi_{c,k}$ _and_ carries a negative (revenue) price.
+
+**Take-or-pay floor and lifecycle.** A non-zero lower bound $\underline{C}_c$ is a hard **take-or-pay** obligation: the LP must dispatch at least $\underline{C}_c$ at the contract price, even when cheaper supply exists. Bounds $[\underline{C}_c, \bar{C}_c]$ and the price $c^{ctr}_c$ may both vary by stage. Contracts honor the generic commissioning window ([system elements §1](/math/system-elements#entity-commissioning-windows)) — outside `[entry_stage_id, exit_stage_id)` the column is pinned to zero. A contract is **stateless**: it carries no state variable and contributes nothing to the Benders cuts.
 
 ## 4. Pumping Stations
 
-Pumping stations transfer water from a source reservoir (downstream) to a destination reservoir (upstream), consuming electrical power in the process.
+Pumping stations transfer water from a source reservoir to a destination reservoir, consuming electrical power in the process. The source-to-destination direction is a modeling choice (typically uphill / against the cascade); the formulation does not require any particular elevation relationship.
 
 **Decision Variables:**
 
@@ -145,7 +147,7 @@ $$
 \underline{P}_j \leq p_{j,k} \leq \bar{P}_j
 $$
 
-Both bounds are hard constraints.
+Both bounds are hard constraints. Pumping stations honor the generic commissioning window ([system elements §1](/math/system-elements#entity-commissioning-windows)): outside `[entry_stage_id, exit_stage_id)` the flow column is pinned to zero, so the station moves no water and draws no power.
 
 **Power Consumption:**
 
