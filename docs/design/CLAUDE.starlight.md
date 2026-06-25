@@ -9,6 +9,9 @@ dispatch.
 - **Dev**: `npm run dev` from repo root (Astro dev server)
 - **Build**: `npm run build` from repo root; `npm run build:versions` for
   multi-version assembly
+- **Build hygiene**: `npm run build` needs a clean (committed) working tree —
+  Lunaria reads git history and errors on the `/lunaria` route with uncommitted
+  changes to tracked files. Build and verify on committed state.
 - **KaTeX**: manual remark-math + rehype-katex (D4) wired in `astro.config.mjs`
   — NOT a Starlight plugin. Math is rendered to static HTML at build time (zero
   client JS).
@@ -52,6 +55,36 @@ developer guide (see "Relocated domains" below).
   [`docs/design/brand.md`](docs/design/brand.md) before any theming. **Never infer
   brand colour from the `spike/` palette** (its `--dgm-accent` is flow-blue for
   diagram/hydro use, not the UI accent).
+
+---
+
+## Methodology Authoring Standards
+
+The corpus is a **general, instance-agnostic methodology reference** — not an
+implementation guide, not a deployment-specific tutorial. (Codified from the
+Part-1 docs review, 2026-06.)
+
+- **No instance magic numbers.** Reference and symbol tables carry meaning, units,
+  and structure — never "typical size/value" columns or instance counts (plant
+  counts, `$/MWh` ranges, horizon lengths). Those hold for some studies and are
+  absurd for others; concrete numbers belong only in an explicit **worked example**
+  (Part 6). If a number encoded a methodological _ordering_ (e.g. a penalty
+  hierarchy), keep the ordering in prose and drop the absolute values.
+- **Symbol keys stay conceptual.** Notation keys and overview tables define what a
+  symbol _means_; they do not carry solver internals (reduced costs, column
+  pinning, prescalers, hot-path details). Keep those in the derivation section that
+  owns them — reinforces _code > spec_ and _Relocated domains_.
+- **Don't justify symbol choices.** State the notation clearly; do not explain why a
+  symbol was chosen (no etymology/provenance asides, especially Portuguese). The
+  bilingual **glossary** and practitioner term-maps (`reference/glossary.md`,
+  `hydro-production-models` §3) are a deliberate translation aid for
+  DECOMP/DESSEM/NEWAVE practitioners — those stay.
+- **Conceptual / overview chapters earn their visuals.** Introduce an idea with the
+  equation(s) + a diagram + the tested-compute plots (use `.mdx` to embed the
+  Observable Plot islands), and keep notation consistent with the deep chapters the
+  overview previews. (Model: SDDP.jl `first_steps`.)
+- **No dev artifacts ship as content.** Spike/scaffold renderer-checks, TODO demos,
+  and harness probes never appear on the published site.
 
 ---
 
