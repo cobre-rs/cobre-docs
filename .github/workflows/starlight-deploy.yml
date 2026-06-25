@@ -1,45 +1,30 @@
 # ──────────────────────────────────────────────────────────────────────────────
-# AUTHORED, NON-ACTIVE cutover deploy (E8 / ticket-030).
+# ACTIVE production deploy for the Astro/Starlight build — cutover 2026-06-25
+# (authored in E8 / ticket-030).
 #
-# This is the production-deploy half of the new Astro/Starlight pipeline: it builds
-# site/, runs the FULL gate suite, writes the methodology.cobre-rs.dev CNAME, and
-# publishes to GitHub Pages — i.e. it does what the live mdBook
-# .github/workflows/deploy.yml does today, but for the Starlight build.
+# This is the live production deploy for methodology.cobre-rs.dev: it builds site/,
+# runs the FULL gate suite, writes the methodology.cobre-rs.dev CNAME (dist/CNAME),
+# and publishes to GitHub Pages. It now OWNS the `push: [main]` → Pages path.
 #
-# It is GATED OFF on purpose. It triggers on `workflow_dispatch` ONLY — there is NO
-# `push: [branches: main]` here. That absence is the structural guarantee that
-# committing this file CANNOT auto-publish: a merge to main runs deploy.yml (mdBook),
-# never this. Production stays on mdBook until the USER performs the cutover.
-#
-# It must NOT be activated until:
-#   * ticket-028 parity is confirmed (parity-report.md mechanical checks PASS +
-#     the orchestrator runtime checklist complete), AND
-#   * the ticket-029 E10 gate passes (`npm run check:e10` — the cutover redistributes
-#     the bundled libraries, so the third-party notices / licensing must ship), AND
-#   * the `// TODO(D5, traffic data):` block in site/astro.config.mjs is reviewed
-#     (the redirects policy is a USER decision).
-#
-# The cutover itself is a documented, reversible USER procedure — NOT a step the
-# author performs. See:
+# The cutover was the atomic commit that added this file's `push: [main]` trigger
+# AND disabled the mdBook .github/workflows/deploy.yml `push` trigger together, so
+# exactly one workflow owns the push→Pages path (shared `concurrency: group:
+# "pages"` is a second backstop). See:
 #   plans/starlight-migration/epic-08-parity-cutover/cutover-runbook.md
-# The runbook's one-line FLIP is what adds `push: [main]` here AND atomically
-# disables deploy.yml's `push: [main]` in the same commit, so exactly one workflow
-# owns the push→Pages path at any moment (the shared concurrency group "pages" is a
-# second backstop). The runbook's one-line ROLLBACK is `git revert` of that commit.
 #
-# This file does NOT touch the live mdBook ci.yml / deploy.yml, the staging
-# starlight-staging.yml, or the verification starlight-ci.yml.
+# ROLLBACK: `git revert` the cutover commit — that restores deploy.yml's `push`
+# trigger (mdBook re-publishes) and drops it here. The mdBook artifacts remain in
+# the tree until the separate decommission step, so the rollback is one revert.
 #
-# Reuses ticket-025's build recipe (Node + pinned d2 + build:versions) verbatim and
-# the starlight-ci.yml gate order verbatim; the upload/deploy actions are copied,
-# pinned-SHA-for-pinned-SHA, from deploy.yml.
+# Build recipe (Node + pinned d2 + build:versions) and gate order mirror
+# starlight-ci.yml; the upload/deploy actions are pinned-SHA copies of deploy.yml.
 # ──────────────────────────────────────────────────────────────────────────────
 
 name: Starlight deploy
 
-# workflow_dispatch ONLY — NO `push:`. See banner: this is the gated-off state; the
-# runbook flip adds `push: { branches: [main] }` here.
 on:
+  push:
+    branches: [main]
   workflow_dispatch:
 
 # Same deploy permissions as deploy.yml: Pages write + OIDC token for deploy-pages.
