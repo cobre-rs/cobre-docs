@@ -13,17 +13,23 @@
 //     (dependencies + devDependencies), mirroring gen-notices.mjs so the two
 //     stay consistent.
 //   - For each, reads node_modules/<pkg>/package.json `license` and classifies
-//     its SPDX id against a PERMISSIVE allow-list. Missing node_modules/<pkg>
-//     fails the gate naming the package (signals `npm ci` was not run).
+//     its SPDX id STRICTLY against a PERMISSIVE allow-list — any id outside the
+//     allow-list (INCLUDING MPL-2.0 / EPL-2.0 or any other copyleft) is a
+//     BLOCKER. Missing node_modules/<pkg> fails the gate naming the package
+//     (signals `npm ci` was not run).
 //   - Classifies the two hard-coded non-npm extras d2 = MPL-2.0 and
 //     ELK = EPL-2.0 SEPARATELY as `build-time-weak-copyleft` — an explicit
-//     build-time-only exemption, deliberately NOT lumped into the permissive
-//     allow-list so the weak-copyleft distinction stays visible in the table.
+//     build-time-only exemption scoped to those extras ONLY (E10 boundary
+//     review), deliberately NOT lumped into the permissive allow-list (so the
+//     weak-copyleft distinction stays visible in the table) and NOT reachable by
+//     the npm-dependency audit path (so a future npm dep claiming MPL/EPL is
+//     flagged for human review, not silently exempted).
 //   - Prints a fixed-width table: pkg, version, SPDX, classification
 //     (permissive | build-time-weak-copyleft | BLOCKER).
 //   - Exits 0 when every entry is permissive or exempt; exits non-zero naming
 //     every BLOCKER (any GPL-* / AGPL-* / LGPL-* / proprietary / empty /
-//     UNLICENSED id, or any SPDX id outside the allow-list and the exemption).
+//     UNLICENSED id, or any SPDX id outside the allow-list — the build-time
+//     exemption applies only to the hard-coded d2/ELK extras).
 //
 // SPDX expression handling (the `license` field may be an expression, not a
 // bare id):
@@ -80,6 +86,12 @@ export const PERMISSIVE_ALLOW_LIST = new Set([
 // output, so no MPL-2.0/EPL-2.0 obligation reaches visitors). These are the
 // ONLY ids allowed outside the permissive allow-list, and they are tracked
 // separately (classification `build-time-weak-copyleft`), never as `permissive`.
+//
+// IMPORTANT (E10 boundary review): this exemption is scoped to the hard-coded
+// NON_NPM_EXTRAS path ONLY (see classifyNonNpmExtra below). It is deliberately
+// NOT consulted by the shared classifyLicense(), so a *future* npm dependency
+// declaring MPL-2.0 / EPL-2.0 is classified BLOCKER (a human must review it)
+// rather than silently passing the gate as build-time-weak-copyleft.
 // ---------------------------------------------------------------------------
 export const BUILD_TIME_WEAK_COPYLEFT = new Set(["MPL-2.0", "EPL-2.0"]);
 
@@ -128,17 +140,22 @@ export function normaliseLicenseField(license) {
 //
 // Input: a raw SPDX expression string (or "" / undefined for a missing field).
 // Output: { classification, spdx, reason, electedArm? } where:
-//   - classification ∈ { permissive | build-time-weak-copyleft | BLOCKER }
+//   - classification ∈ { permissive | BLOCKER }
 //   - spdx: the normalised expression echoed back for the table
 //   - reason: a short human-readable explanation (always set)
 //   - electedArm: for an OR-expression that passed, the allow-listed arm chosen
 //
+// This classifier is STRICT: it knows only the PERMISSIVE_ALLOW_LIST. Anything
+// not positively recognised as permissive — INCLUDING MPL-2.0 / EPL-2.0 and any
+// other copyleft id — is a BLOCKER. The build-time-weak-copyleft exemption is
+// applied ONLY to the hard-coded non-npm extras at their call site
+// (classifyNonNpmExtra), never here (E10 boundary review): an npm dependency is
+// audited via auditNpmDep → classifyLicense and can therefore never be silently
+// exempted as build-time-weak-copyleft.
+//
 // Rules:
 //   - empty / missing / UNLICENSED / NONE  → BLOCKER (an absent license is NOT
 //     permissive).
-//   - a bare id in BUILD_TIME_WEAK_COPYLEFT → build-time-weak-copyleft (the
-//     d2/ELK exemption; expressions are not expected for these, but a bare id
-//     matches).
 //   - an OR-expression `(A OR B)`           → permissive if ANY arm is
 //     allow-listed (electedArm = the first such arm); otherwise BLOCKER.
 //   - an AND-expression `A AND B`           → permissive only if ALL arms are
@@ -173,16 +190,6 @@ export function classifyLicense(rawLicense) {
   // Strip surrounding/loose parentheses for tokenising. A simple flat
   // expression (the only shapes we expect) does not need nested-paren handling.
   const bare = spdx.replace(/[()]/g, " ").trim();
-
-  // Build-time-only weak-copyleft exemption (bare id match: d2 = MPL-2.0,
-  // ELK = EPL-2.0). Checked before the allow-list so it is classified distinctly.
-  if (BUILD_TIME_WEAK_COPYLEFT.has(bare)) {
-    return {
-      classification: CLASS_WEAK_COPYLEFT,
-      spdx,
-      reason: "build-time-only weak copyleft (no obligation on site output)",
-    };
-  }
 
   // OR-expression: passes if ANY arm is allow-listed; note the elected arm.
   if (/\bOR\b/i.test(bare)) {
@@ -233,8 +240,34 @@ export function classifyLicense(rawLicense) {
   return {
     classification: CLASS_BLOCKER,
     spdx,
-    reason: `'${bare}' is not in the permissive allow-list or the build-time exemption`,
+    reason: `'${bare}' is not in the permissive allow-list`,
   };
+}
+
+// ---------------------------------------------------------------------------
+// Classify a hard-coded non-npm extra (d2, ELK). This is the ONLY path that
+// applies the build-time-weak-copyleft exemption (E10 boundary review): the
+// extras are build-time-only tools whose MPL-2.0 / EPL-2.0 source never ships to
+// the browser, so they are exempt by an explicit, hard-coded decision — NOT by
+// anything the shared classifyLicense() does to an arbitrary id.
+//
+// Defensive: only ids in BUILD_TIME_WEAK_COPYLEFT receive the exemption. Any
+// other id (e.g. if a future extra were added with a permissive or a truly
+// blocking license) falls through to the strict classifyLicense(), so the
+// exemption can never leak to an unexpected id even on this path.
+// ---------------------------------------------------------------------------
+export function classifyNonNpmExtra(extra) {
+  const spdx = (extra.spdx ?? "").trim();
+  const bare = spdx.replace(/[()]/g, " ").trim();
+  if (BUILD_TIME_WEAK_COPYLEFT.has(bare)) {
+    return {
+      classification: CLASS_WEAK_COPYLEFT,
+      spdx,
+      reason:
+        "build-time-only weak copyleft, non-npm extra (no obligation on site output)",
+    };
+  }
+  return classifyLicense(spdx);
 }
 
 // ---------------------------------------------------------------------------
@@ -251,7 +284,11 @@ export function readDeclaredDeps(pkgJson) {
 
 // ---------------------------------------------------------------------------
 // Audit one npm dependency: read node_modules/<pkg>/package.json, classify its
-// license. Returns { name, version, spdx, classification, reason, electedArm? }.
+// license STRICTLY via classifyLicense (allow-list only — an npm dep claiming
+// MPL-2.0/EPL-2.0 or any other non-allow-listed copyleft is a BLOCKER, never the
+// build-time-weak-copyleft exemption; that exemption is reserved for the
+// hard-coded non-npm extras, see classifyNonNpmExtra).
+// Returns { name, version, spdx, classification, reason, electedArm? }.
 // A missing node_modules/<pkg> dir or unreadable metadata is itself a failure
 // (returned as a BLOCKER-class row with an explanatory reason) so the caller can
 // print it in the table AND exit non-zero — the audit never silently skips a
@@ -344,10 +381,11 @@ function main() {
   const declaredDeps = readDeclaredDeps(pkgJson);
   const depNames = Object.keys(declaredDeps).sort((a, b) => a.localeCompare(b));
 
-  // Audit every declared npm dependency, then append the two non-npm extras.
+  // Audit every declared npm dependency (strict allow-list via classifyLicense),
+  // then append the two non-npm extras (the ONLY build-time-weak-copyleft path).
   const rows = depNames.map(auditNpmDep);
   for (const extra of NON_NPM_EXTRAS) {
-    const result = classifyLicense(extra.spdx);
+    const result = classifyNonNpmExtra(extra);
     rows.push({
       name: extra.name,
       version: extra.version,

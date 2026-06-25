@@ -6,9 +6,12 @@
 // future refactor of check-spdx.mjs cannot silently weaken it:
 //   - permissive ids (MIT/ISC/Apache-2.0/OFL-1.1 + the rest of the allow-list)
 //     classify as `permissive`;
-//   - the d2/ELK exemption (MPL-2.0/EPL-2.0) classifies as
-//     `build-time-weak-copyleft`, NOT permissive (the distinction must stay
-//     visible);
+//   - the build-time-weak-copyleft exemption (MPL-2.0/EPL-2.0) is scoped to the
+//     hard-coded non-npm extras ONLY (E10 boundary review): it is applied by
+//     classifyNonNpmExtra (d2/ELK → `build-time-weak-copyleft`, NOT permissive),
+//     while the STRICT classifyLicense() used by the npm-dependency audit path
+//     classifies MPL-2.0/EPL-2.0 as BLOCKER — so a future npm dep claiming weak
+//     copyleft is flagged for human review, never silently exempted;
 //   - copyleft / proprietary / empty ids (GPL-3.0-only, AGPL-3.0-or-later,
 //     LGPL-*, UNLICENSED, "") classify as BLOCKER;
 //   - SPDX OR/AND expressions are handled (OR passes on any permissive arm with
@@ -21,6 +24,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   classifyLicense,
+  classifyNonNpmExtra,
   normaliseLicenseField,
   CLASS_PERMISSIVE,
   CLASS_WEAK_COPYLEFT,
@@ -51,9 +55,13 @@ test("classifies every allow-listed id as permissive", () => {
   }
 });
 
-// ---- Build-time-only weak-copyleft exemption (d2 / ELK) --------------------
-test("exempts MPL-2.0 (d2) as build-time-weak-copyleft, not permissive", () => {
-  const r = classifyLicense("MPL-2.0");
+// ---- Build-time-only weak-copyleft exemption is scoped to the non-npm extras
+// ---- ONLY (E10 boundary review). The exemption lives at the call site
+// ---- (classifyNonNpmExtra), NOT inside the shared classifyLicense() that the
+// ---- npm-dependency audit path uses.
+
+test("classifyNonNpmExtra exempts MPL-2.0 (d2) as build-time-weak-copyleft, not permissive", () => {
+  const r = classifyNonNpmExtra({ name: "d2", version: "0.7.1", spdx: "MPL-2.0" });
   assert.equal(r.classification, CLASS_WEAK_COPYLEFT);
   assert.notEqual(
     r.classification,
@@ -62,10 +70,45 @@ test("exempts MPL-2.0 (d2) as build-time-weak-copyleft, not permissive", () => {
   );
 });
 
-test("exempts EPL-2.0 (ELK) as build-time-weak-copyleft, not permissive", () => {
-  const r = classifyLicense("EPL-2.0");
+test("classifyNonNpmExtra exempts EPL-2.0 (ELK) as build-time-weak-copyleft, not permissive", () => {
+  const r = classifyNonNpmExtra({ name: "ELK", version: "x", spdx: "EPL-2.0" });
   assert.equal(r.classification, CLASS_WEAK_COPYLEFT);
   assert.notEqual(r.classification, CLASS_PERMISSIVE);
+});
+
+// The CORE regression guard for the boundary-review fix: an NPM dependency
+// (audited via classifyLicense, NOT the extras path) declaring MPL-2.0 / EPL-2.0
+// must be a BLOCKER — never silently exempted as build-time-weak-copyleft. This
+// is exactly the future-npm-dep scenario the reviewer flagged.
+test("classifyLicense classifies MPL-2.0 (e.g. a future npm dep) as BLOCKER, not exempt", () => {
+  const r = classifyLicense("MPL-2.0");
+  assert.equal(
+    r.classification,
+    CLASS_BLOCKER,
+    "an npm dep claiming MPL-2.0 must be flagged for human review, not exempted",
+  );
+  assert.notEqual(r.classification, CLASS_WEAK_COPYLEFT);
+});
+
+test("classifyLicense classifies EPL-2.0 (e.g. a future npm dep) as BLOCKER, not exempt", () => {
+  const r = classifyLicense("EPL-2.0");
+  assert.equal(r.classification, CLASS_BLOCKER);
+  assert.notEqual(r.classification, CLASS_WEAK_COPYLEFT);
+});
+
+// A non-extra id never receives the exemption even on the extras path: the
+// helper falls through to the strict classifier (defensive scoping).
+test("classifyNonNpmExtra does NOT exempt a non-MPL/EPL id (falls through to strict classifier)", () => {
+  assert.equal(
+    classifyNonNpmExtra({ name: "future", version: "1", spdx: "GPL-3.0-only" })
+      .classification,
+    CLASS_BLOCKER,
+  );
+  assert.equal(
+    classifyNonNpmExtra({ name: "future", version: "1", spdx: "MIT" })
+      .classification,
+    CLASS_PERMISSIVE,
+  );
 });
 
 // ---- Blockers: copyleft / proprietary / absent -----------------------------

@@ -220,7 +220,7 @@ export default defineConfig({
       components: {
         SocialIcons: "./src/components/VersionPicker.astro",
         // Footer override (E10 ticket-031): appends third-party notices link;
-        // ticket-034 will extend this same component with the content-license line.
+        // ticket-034 extended this same component with the content-license line.
         Footer: "./src/components/Footer.astro",
       },
       // palette.css defines the --dgm-* diagram palette (light + dark), consumed

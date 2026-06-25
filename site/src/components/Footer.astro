@@ -1,16 +1,16 @@
 ---
 // Footer override (E10 ticket-031) — wraps Starlight's default Footer so the
 // EditLink / LastUpdated / Pagination slots are fully preserved, then appends
-// a base-aware link to the third-party notices file.
+// two base-aware footer notices: the third-party notices link, and the
+// content/code-license line (the latter added by ticket-034).
 //
 // Base-URL normalisation mirrors the idiom from VersionPicker.astro:
 //   const norm = (b) => (b.endsWith("/") ? b : b + "/");
 // This ensures the href is correct for both root builds (BASE_URL="/")
 // and versioned builds (BASE_URL="/v0.8/").
 //
-// ticket-034 extension point: to add a second footer line (content-license),
-// duplicate the <p class="tpn-notice"> block below and adjust the text/href.
-// Both lines share the .sl-footer-notice wrapper for consistent styling.
+// Both notices are <p class="sl-footer-notice"> blocks inside the
+// .sl-footer-notices wrapper below; add any further notice the same way.
 import Default from "@astrojs/starlight/components/Footer.astro";
 
 const norm = (b: string): string => (b.endsWith("/") ? b : b + "/");
