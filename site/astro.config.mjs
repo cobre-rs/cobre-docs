@@ -54,6 +54,71 @@ export default defineConfig({
         replacesTitle: false,
       },
       favicon: "/favicon.svg",
+      // Explicit 7-Part sidebar (ticket-016). NOT `autogenerate`: the curated TOC
+      // crosses content folders (Parts 2–5 are all `math/…` chapters split across
+      // four Part groups) and uses "Part N — …" labels that autogeneration cannot
+      // reproduce. Labels are verbatim from `src/SUMMARY.md`'s `# Part N — …`
+      // headings; each group's slugs are in SUMMARY.md order. All 29 migrated
+      // chapter slugs appear exactly once. The landing page (index.mdx → `/`) is the
+      // site root and is intentionally NOT a sidebar entry. A slug here that has no
+      // built page fails `astro build` (a slug typo surfaces immediately).
+      sidebar: [
+        {
+          label: "Part 1 — Introduction",
+          items: [
+            "overview/what-cobre-solves",
+            "overview/sddp-framework-overview",
+            "overview/notation-conventions",
+            "overview/how-to-read",
+          ],
+        },
+        {
+          label: "Part 2 — System Modelling",
+          items: [
+            "math/lp-formulation",
+            "math/system-elements",
+            "math/equipment-formulations",
+            "math/block-formulations",
+            "math/hydro-production-models",
+            "math/penalty-system",
+            "math/inflow-nonnegativity",
+          ],
+        },
+        {
+          label: "Part 3 — Stochastic Modelling",
+          items: [
+            "math/par-inflow-model",
+            "math/multi-resolution-studies",
+            "math/weekly-monthly-coupled-studies",
+            "math/scenario-generation",
+          ],
+        },
+        {
+          label: "Part 4 — The SDDP Algorithm",
+          items: [
+            "math/sddp-algorithm",
+            "math/cut-management",
+            "math/lp-warm-start",
+            "math/risk-measures",
+            "math/stopping-rules",
+            "math/upper-bound-evaluation",
+            "math/determinism-guarantees",
+            "math/reproducibility-and-provenance",
+          ],
+        },
+        {
+          label: "Part 5 — Coupling and Boundary Conditions",
+          items: ["math/horizon-modes", "math/discount-rate"],
+        },
+        {
+          label: "Part 6 — Worked Examples",
+          items: ["examples/toy-single-reservoir", "examples/toy-four-reservoir"],
+        },
+        {
+          label: "Part 7 — Reference",
+          items: ["reference/glossary", "reference/bibliography"],
+        },
+      ],
       // Architecture B version picker mounts by overriding the `SocialIcons`
       // header slot (the slot the spike proved green). This is distinct from
       // Starlight's `LanguageSelect` slot, so the i18n language picker (root /

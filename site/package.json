@@ -9,6 +9,8 @@
     "preview": "astro preview",
     "astro": "astro",
     "check": "astro check",
+    "check:math": "node scripts/check-math-parity.mjs",
+    "check:links": "node scripts/check-links.mjs",
     "test": "node --test src/figures/*.test.ts"
   },
   "dependencies": {
