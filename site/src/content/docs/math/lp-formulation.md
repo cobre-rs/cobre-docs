@@ -19,10 +19,10 @@ The objective function includes three categories of penalty/cost terms plus reso
 
 Resource costs represent actual generation or contractual expenditures:
 
-| Cost               | Symbol         | Units  | Typical Values | Objective Term                                           |
-| ------------------ | -------------- | ------ | -------------- | -------------------------------------------------------- |
-| Thermal generation | $c^{th}_{j,s}$ | \$/MWh | 50-500         | $\sum_{j,k,s} \tau_k \cdot c^{th}_{j,s} \cdot g_{j,k,s}$ |
-| Contract dispatch  | $c^{ctr}_c$    | \$/MWh | 50-300         | $\sum_{c,k} \tau_k \cdot c^{ctr}_c \cdot \chi_{c,k}$     |
+| Cost               | Symbol         | Units  | Objective Term                                           |
+| ------------------ | -------------- | ------ | -------------------------------------------------------- |
+| Thermal generation | $c^{th}_{j,s}$ | \$/MWh | $\sum_{j,k,s} \tau_k \cdot c^{th}_{j,s} \cdot g_{j,k,s}$ |
+| Contract dispatch  | $c^{ctr}_c$    | \$/MWh | $\sum_{c,k} \tau_k \cdot c^{ctr}_c \cdot \chi_{c,k}$     |
 
 Contract prices are positive for imports (cost) and negative for exports (revenue), so a single summation naturally handles both directions. See [system elements §8](/math/system-elements) for the unidirectional contract model.
 
@@ -34,37 +34,37 @@ Pumping stations do not have an explicit cost parameter. The cost of pumping is 
 
 These ensure the SDDP algorithm has relatively complete recourse — every subproblem must be feasible regardless of scenario realization:
 
-| Penalty           | Symbol          | Units  | Typical Values | Purpose                              |
-| ----------------- | --------------- | ------ | -------------- | ------------------------------------ |
-| Deficit           | $c^{def}_{b,s}$ | \$/MWh | 1,000-10,000   | Value of unserved energy (piecewise) |
-| Excess generation | $c^{exc}_b$     | \$/MWh | 0.001-0.1      | Absorb uncontrollable surplus        |
+| Penalty           | Symbol          | Units  | Purpose                              |
+| ----------------- | --------------- | ------ | ------------------------------------ |
+| Deficit           | $c^{def}_{b,s}$ | \$/MWh | Value of unserved energy (piecewise) |
+| Excess generation | $c^{exc}_b$     | \$/MWh | Absorb uncontrollable surplus        |
 
 ### 1.3 Category 2: Constraint Violation Penalties (Policy Shaping)
 
 These provide slack for physical or operational constraints that may be impossible to satisfy under extreme conditions. Their cost must be high enough to affect the value function in earlier stages:
 
-| Penalty                  | Symbol       | Units       | Typical Values | Violated Constraint                                     |
-| ------------------------ | ------------ | ----------- | -------------- | ------------------------------------------------------- |
-| Storage below minimum    | $c^{sv-}_h$  | \$/hm³      | 10,000+        | $v_h \geq \underline{V}_h$                              |
-| Filling target shortfall | $c^{fill}_h$ | \$/hm³      | 50,000+        | $v_h \geq \underline{V}_h$ (terminal)                   |
-| Turbined flow minimum    | $c^{tv-}_h$  | \$/(m³/s·h) | 500-1,000      | $q_{h,k} \geq \underline{Q}_h$                          |
-| Outflow minimum          | $c^{ov-}_h$  | \$/(m³/s·h) | 500-1,000      | $o_{h,k} \geq \underline{O}_h$                          |
-| Outflow maximum          | $c^{ov+}_h$  | \$/(m³/s·h) | 500-1,000      | $o_{h,k} \leq \bar{O}_h$                                |
-| Generation minimum       | $c^{gv-}_h$  | \$/MWh      | 1,000-2,000    | $g_{h,k} \geq \underline{G}_h$                          |
-| Evaporation violation    | $c^{ev}_h$   | \$/(m³/s·h) | 5,000+         | Evaporation within physical limits                      |
-| Withdrawal violation     | $c^{wv}_h$   | \$/(m³/s·h) | 1,000-5,000    | Water withdrawal commitment (bidirectional: under/over) |
+| Penalty                  | Symbol       | Units       | Violated Constraint                                     |
+| ------------------------ | ------------ | ----------- | ------------------------------------------------------- |
+| Storage below minimum    | $c^{sv-}_h$  | \$/hm³      | $v_h \geq \underline{V}_h$                              |
+| Filling target shortfall | $c^{fill}_h$ | \$/hm³      | $v_h \geq \underline{V}_h$ (terminal)                   |
+| Turbined flow minimum    | $c^{tv-}_h$  | \$/(m³/s·h) | $q_{h,k} \geq \underline{Q}_h$                          |
+| Outflow minimum          | $c^{ov-}_h$  | \$/(m³/s·h) | $o_{h,k} \geq \underline{O}_h$                          |
+| Outflow maximum          | $c^{ov+}_h$  | \$/(m³/s·h) | $o_{h,k} \leq \bar{O}_h$                                |
+| Generation minimum       | $c^{gv-}_h$  | \$/MWh      | $g_{h,k} \geq \underline{G}_h$                          |
+| Evaporation violation    | $c^{ev}_h$   | \$/(m³/s·h) | Evaporation within physical limits                      |
+| Withdrawal violation     | $c^{wv}_h$   | \$/(m³/s·h) | Water withdrawal commitment (bidirectional: under/over) |
 
 ### 1.4 Category 3: Regularization Costs (Solution Guidance)
 
 Small costs that guide the solver toward physically preferred solutions when the LP would otherwise be indifferent. Must be orders of magnitude smaller than any economic cost:
 
-| Cost               | Symbol          | Units       | Typical Values | Purpose                                         |
-| ------------------ | --------------- | ----------- | -------------- | ----------------------------------------------- |
-| Spillage           | $c^{spill}_h$   | \$/(m³/s·h) | 0.001-0.01     | Prefer turbining over spilling when indifferent |
-| FPHA turbined flow | $c^{fpha}_h$    | \$/(m³/s·h) | 0.01-0.1       | Prevent interior FPHA solutions (FPHA-only)     |
-| Diversion          | $c^{div}_h$     | \$/(m³/s·h) | 0.01-0.1       | Prefer main channel flow                        |
-| Curtailment        | $c^{curt}_r$    | \$/MWh      | 0.001-0.01     | Prioritize using available NCS generation       |
-| Exchange           | $c^{exch}_\ell$ | \$/MWh      | 0.01-1.0       | Prevent unnecessary power flows                 |
+| Cost               | Symbol          | Units       | Purpose                                         |
+| ------------------ | --------------- | ----------- | ----------------------------------------------- |
+| Spillage           | $c^{spill}_h$   | \$/(m³/s·h) | Prefer turbining over spilling when indifferent |
+| FPHA turbined flow | $c^{fpha}_h$    | \$/(m³/s·h) | Prevent interior FPHA solutions (FPHA-only)     |
+| Diversion          | $c^{div}_h$     | \$/(m³/s·h) | Prefer main channel flow                        |
+| Curtailment        | $c^{curt}_r$    | \$/MWh      | Prioritize using available NCS generation       |
+| Exchange           | $c^{exch}_\ell$ | \$/MWh      | Prevent unnecessary power flows                 |
 
 :::note[Note]
 Regularization costs should be at least 2-3 orders of magnitude smaller than economic costs to avoid distorting the optimal solution.
