@@ -96,6 +96,13 @@ jobs:
       - name: Check figures (dependency guard)
         run: npm run check:figures
 
+      # E10 ticket-032 (licensing.md item 3): assert D2 uses ELK, never the
+      # proprietary TALA engine (unlicensed TALA watermarks output). A static
+      # source grep of astro.config.mjs + ```d2 blocks under src/ — pre-build,
+      # like check:figures.
+      - name: Check D2 layout (no TALA)
+        run: npm run check:d2
+
       - name: Build (multi-version assembly)
         run: npm run build:versions
 
