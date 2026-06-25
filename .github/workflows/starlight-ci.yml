@@ -70,9 +70,16 @@ jobs:
       # release asset (reproducible) — NOT `curl … d2lang.com/install.sh | sh`
       # (the banned, unpinned curl|bash pattern). Mirrors ci.yml's
       # binary-then-`sudo mv` style.
-      - name: Install d2 (pinned 0.7.1)
+      # sha256 pinned: d2 v0.7.1 ships no checksums file, so this hash was
+      # computed from the released linux-amd64 asset. A tampered or replaced
+      # tarball fails `sha256sum -c` and aborts the step before extraction.
+      - name: Install d2 (pinned 0.7.1, sha256-verified)
         run: |
-          curl -fsSL https://github.com/terrastruct/d2/releases/download/v0.7.1/d2-v0.7.1-linux-amd64.tar.gz | tar xz
+          d2_tarball=d2-v0.7.1-linux-amd64.tar.gz
+          d2_sha256=eb172adf59f38d1e5a70ab177591356754ffaf9bebb84e0ca8b767dfb421dad7
+          curl -fsSL "https://github.com/terrastruct/d2/releases/download/v0.7.1/${d2_tarball}" -o "${d2_tarball}"
+          echo "${d2_sha256}  ${d2_tarball}" | sha256sum -c -
+          tar xzf "${d2_tarball}"
           sudo mv d2-v0.7.1/bin/d2 /usr/local/bin/d2
           sudo chmod +x /usr/local/bin/d2
 
