@@ -217,7 +217,12 @@ export default defineConfig({
       // header slot (the slot the spike proved green). This is distinct from
       // Starlight's `LanguageSelect` slot, so the i18n language picker (root /
       // pt-br) is untouched — the two coexist in the header.
-      components: { SocialIcons: "./src/components/VersionPicker.astro" },
+      components: {
+        SocialIcons: "./src/components/VersionPicker.astro",
+        // Footer override (E10 ticket-031): appends third-party notices link;
+        // ticket-034 will extend this same component with the content-license line.
+        Footer: "./src/components/Footer.astro",
+      },
       // palette.css defines the --dgm-* diagram palette (light + dark), consumed
       // by JS components (ValueFunctionPlot.astro, via getComputedStyle) and any
       // currentColor/var() inline SVG. The astro-d2 KEYSTONE in diagrams.css uses

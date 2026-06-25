@@ -84,6 +84,15 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # E10 ticket-031: regenerate the third-party notices file and fail if
+      # the committed copy is stale (drift guard). Uses permissions: contents: read
+      # — no push, no auto-commit. Maintainer must run `npm run gen:notices` and
+      # commit the result when deps change.
+      - name: Notices drift guard
+        run: |
+          npm run gen:notices
+          git diff --exit-code -- public/THIRD-PARTY-NOTICES.txt
+
       - name: Check figures (dependency guard)
         run: npm run check:figures
 

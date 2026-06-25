@@ -1,0 +1,47 @@
+---
+// Footer override (E10 ticket-031) — wraps Starlight's default Footer so the
+// EditLink / LastUpdated / Pagination slots are fully preserved, then appends
+// a base-aware link to the third-party notices file.
+//
+// Base-URL normalisation mirrors the idiom from VersionPicker.astro:
+//   const norm = (b) => (b.endsWith("/") ? b : b + "/");
+// This ensures the href is correct for both root builds (BASE_URL="/")
+// and versioned builds (BASE_URL="/v0.8/").
+//
+// ticket-034 extension point: to add a second footer line (content-license),
+// duplicate the <p class="tpn-notice"> block below and adjust the text/href.
+// Both lines share the .sl-footer-notice wrapper for consistent styling.
+import Default from "@astrojs/starlight/components/Footer.astro";
+
+const norm = (b: string): string => (b.endsWith("/") ? b : b + "/");
+const base = norm(import.meta.env.BASE_URL);
+const noticesHref = base + "THIRD-PARTY-NOTICES.txt";
+---
+
+<Default><slot /></Default>
+<div class="sl-footer-notices">
+  <p class="sl-footer-notice">
+    <a href={noticesHref}>Third-party notices</a>
+  </p>
+</div>
+
+<style>
+  .sl-footer-notices {
+    margin-top: 1rem;
+    padding-top: 0.75rem;
+    border-top: 1px solid var(--sl-color-gray-6);
+    text-align: center;
+  }
+  .sl-footer-notice {
+    margin: 0;
+    font-size: var(--sl-text-xs);
+    color: var(--sl-color-gray-3);
+  }
+  .sl-footer-notice a {
+    color: var(--sl-color-gray-3);
+    text-decoration: underline;
+  }
+  .sl-footer-notice a:hover {
+    color: var(--sl-color-white);
+  }
+</style>
