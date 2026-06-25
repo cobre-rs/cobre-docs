@@ -13,6 +13,7 @@
     "check:links": "node scripts/check-links.mjs",
     "check:figures": "node scripts/check-figures.mjs",
     "check:d2": "node scripts/check-d2-layout.mjs",
+    "check:e10": "node scripts/check-e10-gate.mjs",
     "check:spdx": "node scripts/check-spdx.mjs",
     "gen:notices": "node scripts/gen-notices.mjs",
     "test": "node --test src/figures/*.test.ts scripts/*.test.mjs"
