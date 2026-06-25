@@ -1,0 +1,60 @@
+---
+// Architecture B version picker — overrides Starlight's `SocialIcons` slot.
+// Each build knows its own base via import.meta.env.BASE_URL ("/" or "/v0.8/"),
+// so the picker marks the current version and links across the sibling builds.
+import versions from "../../versions.json";
+
+const norm = (b: string): string => (b.endsWith("/") ? b : b + "/");
+const current = norm(import.meta.env.BASE_URL);
+const all = [versions.latest, ...versions.versions];
+const currentLabel =
+  all.find((v) => norm(v.base) === current)?.label ?? all[0].label;
+---
+
+<label class="version-picker" title="Documentation version">
+  <span class="version-picker__label">Version: {currentLabel}</span>
+  <select
+    class="version-picker__select"
+    aria-label="Select documentation version"
+  >
+    {
+      all.map((v) => (
+        <option value={v.base} selected={norm(v.base) === current}>
+          {v.label}
+        </option>
+      ))
+    }
+  </select>
+</label>
+
+<script>
+  const sel = document.querySelector<HTMLSelectElement>(
+    ".version-picker__select",
+  );
+  sel?.addEventListener("change", (event) => {
+    const target = event.currentTarget;
+    if (target instanceof HTMLSelectElement) {
+      window.location.href = target.value;
+    }
+  });
+</script>
+
+<style>
+  .version-picker {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: var(--sl-text-xs);
+  }
+  .version-picker__label {
+    color: var(--sl-color-gray-3);
+    white-space: nowrap;
+  }
+  .version-picker__select {
+    background: var(--sl-color-black);
+    color: var(--sl-color-white);
+    border: 1px solid var(--sl-color-gray-5);
+    border-radius: 0.35rem;
+    padding: 0.15rem 0.4rem;
+  }
+</style>

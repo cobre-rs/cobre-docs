@@ -1,0 +1,39 @@
+{
+  "name": "cobre-docs-site",
+  "type": "module",
+  "version": "0.0.1",
+  "scripts": {
+    "dev": "astro dev",
+    "build": "astro build",
+    "build:versions": "node build-versions.mjs",
+    "preview": "astro preview",
+    "astro": "astro",
+    "check": "astro check",
+    "check:math": "node scripts/check-math-parity.mjs",
+    "check:links": "node scripts/check-links.mjs",
+    "check:figures": "node scripts/check-figures.mjs",
+    "check:d2": "node scripts/check-d2-layout.mjs",
+    "check:e10": "node scripts/check-e10-gate.mjs",
+    "check:spdx": "node scripts/check-spdx.mjs",
+    "gen:notices": "node scripts/gen-notices.mjs",
+    "test": "node --test src/figures/*.test.ts scripts/*.test.mjs"
+  },
+  "dependencies": {
+    "@astrojs/starlight": "^0.40.0",
+    "@fontsource/ibm-plex-sans": "^5.2.8",
+    "@fontsource/jetbrains-mono": "^5.2.8",
+    "@lunariajs/starlight": "^0.1.1",
+    "@observablehq/plot": "^0.6.17",
+    "astro": "^6.4.5",
+    "astro-d2": "^0.11.0",
+    "astro-mermaid": "^2.0.4",
+    "katex": "^0.16.11",
+    "rehype-katex": "^7.0.1",
+    "remark-math": "^6.0.0",
+    "sharp": "^0.34.5"
+  },
+  "devDependencies": {
+    "@astrojs/check": "^0.9.9",
+    "typescript": "^6.0.3"
+  }
+}

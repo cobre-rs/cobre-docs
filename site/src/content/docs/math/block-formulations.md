@@ -1,0 +1,148 @@
+---
+title: Block Formulation Variants
+description: Parallel and chronological block formulations — how intra-stage time periods are handled in the LP, with water balance constraints, LP size, and storage dynamics.
+---
+
+## Purpose
+
+This spec defines the two block formulations supported by Cobre — parallel and chronological — which determine how intra-stage time periods (e.g., peak, off-peak, or hourly resolution) are handled in the LP. The choice of block formulation affects water balance constraints, LP size, and the ability to model intra-stage storage dynamics.
+
+For the variable and set definitions used here, see [notation conventions](/overview/notation-conventions). For how blocks integrate into the full LP, see [LP formulation](/math/lp-formulation). For the system elements that participate in block constraints, see [system elements](/math/system-elements).
+
+## 1. Parallel Blocks (Default)
+
+In parallel blocks mode, all blocks within a stage are **independent** — there is no intra-stage storage dynamics.
+
+### 1.1 Water Balance (Parallel)
+
+A single water balance constraint spans all blocks:
+
+$$
+v_h = \hat{v}_h + \zeta \left[ a_h + \sum_{k \in \mathcal{K}} w_k \cdot \text{net\_flows}_{h,k} \right]
+$$
+
+where:
+
+- $w_k = \tau_k / \sum_j \tau_j$ is the block weight
+- $\text{net\_flows}_{h,k}$ = inflows from upstream − outflows − evaporation − withdrawal
+
+This formulation assumes the reservoir can freely redistribute water across blocks within the stage.
+
+### 1.2 Characteristics
+
+| Aspect           | Description                                                                  |
+| ---------------- | ---------------------------------------------------------------------------- |
+| LP size          | Smaller (one water balance per hydro)                                        |
+| Storage dynamics | End-of-stage only                                                            |
+| Use case         | Long-term strategic planning                                                 |
+| Configuration    | `block_mode: "parallel"` configured per stage via the `block_mode` parameter |
+
+## 2. Chronological Blocks
+
+In chronological blocks mode, blocks are **sequential** within each stage, enabling modeling of intra-stage storage dynamics (e.g., daily cycling patterns within a monthly stage).
+
+### 2.1 Additional Variables
+
+| Variable  | Domain                         | Units | Description                 |
+| --------- | ------------------------------ | ----- | --------------------------- |
+| $v_{h,k}$ | $[\underline{V}_h, \bar{V}_h]$ | hm³   | Storage at end of block $k$ |
+
+The end-of-stage storage (state variable) is: $v_h = v_{h,|\mathcal{K}|}$
+
+### 2.2 Block 1 Water Balance
+
+$$
+v_{h,1} = \hat{v}_h + \zeta_1 \left[ a_h \cdot w_1 + \text{net\_flows}_{h,1} \right]
+$$
+
+where $\zeta_1 = 0.0036 \times \tau_1$ is the time conversion for block 1.
+
+### 2.3 Subsequent Blocks Water Balance
+
+For $k = 2, \ldots, |\mathcal{K}|$:
+
+$$
+v_{h,k} = v_{h,k-1} + \zeta_k \left[ a_h \cdot w_k + \text{net\_flows}_{h,k} \right]
+$$
+
+### 2.4 State Variable Definition
+
+Only **end-of-stage storage** is a state variable:
+
+$$
+v_h = v_{h,|\mathcal{K}|}
+$$
+
+Inter-block storages $v_{h,k}$ for $k < |\mathcal{K}|$ are internal LP variables — not state variables. This ensures:
+
+1. Cuts are computed with respect to end-of-stage storage only
+2. State dimension does not increase with number of blocks
+
+### 2.5 Cut Coefficient Extraction
+
+In chronological mode, the incoming storage LP variable $v^{in}_h$ is pinned to its trial value $\hat{v}_h$ by equal column bounds (see [LP formulation §4a](/math/lp-formulation)). The **reduced cost** of that pinned column gives the storage cut coefficient directly:
+
+$$
+\pi^v_h = \bar{c}^{in}_h / d^{col}_h
+$$
+
+By the LP envelope theorem, this reduced cost automatically captures all downstream effects through the chain of inter-block water balances ($v^{in}_h \to v_{h,1} \to \ldots \to v_{h,|\mathcal{K}|}$), FPHA constraints, and generic constraints. No special handling or dual combination is required. See [Cut management](/math/cut-management).
+
+### 2.6 Characteristics
+
+| Aspect           | Description                                                                       |
+| ---------------- | --------------------------------------------------------------------------------- |
+| LP size          | Larger ($N_{hydro} \times (\lvert\mathcal{K}\rvert - 1)$ additional vars/cons)    |
+| Storage dynamics | Intra-stage cycling modeled                                                       |
+| Use case         | Short-term planning with storage cycling                                          |
+| Configuration    | `block_mode: "chronological"` configured per stage via the `block_mode` parameter |
+
+## 3. Comparison Summary
+
+| Aspect               | Parallel Blocks       | Chronological Blocks                          |
+| -------------------- | --------------------- | --------------------------------------------- |
+| Water balance        | 1 per hydro per stage | $\lvert\mathcal{K}\rvert$ per hydro per stage |
+| Inter-block storage  | Not modeled           | Explicit continuity                           |
+| State variables      | End-of-stage only     | End-of-stage only                             |
+| LP variables         | Fewer                 | More                                          |
+| LP constraints       | Fewer                 | More                                          |
+| Intra-stage dynamics | None                  | Full                                          |
+
+## 4. Policy Compatibility Validation
+
+When running in **simulation-only**, **warm-start**, or **checkpoint resume** modes, the block configuration in the current input data must be compatible with the policy (cuts) that was previously trained. Specifically:
+
+1. **`block_mode` must match** per stage — cuts trained with parallel blocks encode a different LP structure (water balance, inter-block constraints) than cuts trained with chronological blocks. Using a policy with mismatched block mode produces incorrect future cost evaluations.
+
+2. **Block count and durations must match** per stage — the number of blocks, their ordering, and their durations (τ_k) affect the LP structure from which cut coefficients were derived. Any change invalidates the existing cuts.
+
+This is a **hard validation error** — the solver must reject the run if any mismatch is detected.
+
+:::note[Scope note]
+Block configuration is one of many input properties that must be validated for policy compatibility. Other properties include the number of hydro plants, state variable dimensions, AR orders, and system topology.
+:::
+
+## 5. Note on Fine-Grained Temporal Resolution
+
+The current block formulations use a single level of temporal decomposition within each stage: the user defines blocks with durations τ_k, and the LP operates at that resolution in both training and simulation.
+
+A more sophisticated approach — used in commercial tools like PSR's SDDP (v17.3+) — decomposes each stage into **representative typical days**, each containing chronological hourly (or sub-hourly) blocks. This enables:
+
+- Accurate modeling of daily cycling patterns (peak/off-peak storage arbitrage)
+- Proper representation of intermittent renewable generation profiles
+- Separate temporal resolutions for training (aggregated blocks) and simulation (full typical-day profiles)
+
+This extension is out of scope for the current formulation because it requires:
+
+- New input data schemas (day-type definitions, weights, hourly profiles)
+- Separation of the objective time-weighting (day weight × block duration) from the water balance conversion (block duration only)
+- Research into how day types chain within a stage (sequential vs. independent with weighted-average storage)
+- Validation against reference implementations
+
+## Cross-References
+
+- [Notation conventions](/overview/notation-conventions) — variable and set definitions ($v_h$, $\hat{v}_h$, $\mathcal{K}$, $\tau_k$, $w_k$)
+- [System elements](/math/system-elements) — hydro plant element description and decision variables
+- [LP formulation](/math/lp-formulation) — how block formulations integrate into the assembled LP
+- [Cut management](/math/cut-management) — cut coefficient extraction from pinned-column reduced costs
+- [Hydro production models](/math/hydro-production-models) — production function constraints that operate within each block

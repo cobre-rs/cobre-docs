@@ -1,0 +1,6 @@
+{
+  "latest": { "label": "v0.9 (dev)", "base": "/" },
+  "versions": [
+    { "slug": "v0.8", "label": "v0.8", "base": "/v0.8/", "ref": "v0.8" }
+  ]
+}

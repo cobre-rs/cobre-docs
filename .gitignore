@@ -16,3 +16,4 @@ __pycache__/
 media/
 plans/
 src/cobre_docs_diagrams.egg-info/
+.playwright-mcp/

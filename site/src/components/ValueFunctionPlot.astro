@@ -1,0 +1,70 @@
+---
+// Render layer — Observable Plot island. Reads the theme palette from CSS vars
+// and re-renders on the light/dark toggle (Tier 2). Data comes from the tested
+// compute module, never hand-typed.
+---
+
+<div id="vf-plot" class="vf-plot" role="img" aria-label="Future cost Q(v) with Benders tangents"></div>
+
+<script>
+  import * as Plot from "@observablehq/plot";
+  import { Q, samples, bendersTangentAt } from "../figures/valueFunction.ts";
+
+  function cssVar(name: string): string {
+    return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  }
+
+  function render(): void {
+    const el = document.getElementById("vf-plot");
+    if (!el) return;
+
+    const curve = cssVar("--dgm-curve") || "#b87333";
+    const text = cssVar("--dgm-text") || "#888888";
+    // Benders tangents are NOT hydro -> warm accent (Patina), per brand §2.4 #3.
+    // The literal mirrors the --dgm-accent fallback in palette.css (warm, not blue).
+    const accent = cssVar("--dgm-accent") || "#4a8b6f";
+
+    const data = samples(100, 80);
+    const pins = [20, 50, 80];
+    const tangents = pins.flatMap((v0) => {
+      const t = bendersTangentAt(v0);
+      const lo = Math.max(0, v0 - 22);
+      const hi = Math.min(100, v0 + 22);
+      return [
+        { v: lo, y: t.at(lo), k: v0 },
+        { v: hi, y: t.at(hi), k: v0 },
+      ];
+    });
+
+    el.replaceChildren(
+      Plot.plot({
+        width: 640,
+        height: 360,
+        style: { background: "transparent", color: text, fontSize: "13px" },
+        x: { label: "stored volume v (hm³)", grid: true },
+        y: { label: "future cost Q(v)", grid: true },
+        marks: [
+          Plot.line(data, { x: "v", y: "q", stroke: curve, strokeWidth: 2.5 }),
+          Plot.line(tangents, {
+            x: "v",
+            y: "y",
+            z: "k",
+            stroke: accent,
+            strokeWidth: 1,
+            strokeDasharray: "4 3",
+          }),
+          Plot.dot(
+            pins.map((v0) => ({ v: v0, q: Q(v0) })),
+            { x: "v", y: "q", fill: accent, r: 4 },
+          ),
+        ],
+      }),
+    );
+  }
+
+  render();
+  new MutationObserver(render).observe(document.documentElement, {
+    attributes: true,
+    attributeFilter: ["data-theme"],
+  });
+</script>

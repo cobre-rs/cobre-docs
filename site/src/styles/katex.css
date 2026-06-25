@@ -1,0 +1,16 @@
+/* KaTeX glyph styling for the manual remark-math + rehype-katex pipeline (D4).
+   rehype-katex renders math to .katex HTML at build time; this stylesheet ships
+   the fonts/spacing rules so the rendered glyphs display correctly site-wide. */
+@import "katex/dist/katex.min.css";
+
+/* Stock katex.min.css gives .katex-display no overflow handling, so a display
+   equation wider than the content column (e.g. the boxed water-balance LP
+   constraint in overview/notation-conventions §5.2) bleeds rightward over the
+   "On this page" TOC. Confine wide equations to the content column and let them
+   scroll horizontally instead of overflowing. The small vertical padding keeps
+   \boxed{} borders and tall content from being clipped by overflow-y: hidden. */
+.katex-display {
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding-block: 0.25em;
+}

@@ -1,0 +1,178 @@
+# ──────────────────────────────────────────────────────────────────────────────
+# ACTIVE production deploy for the Astro/Starlight build — cutover 2026-06-25
+# (authored in E8 / ticket-030).
+#
+# This is the live production deploy for methodology.cobre-rs.dev: it builds site/,
+# runs the FULL gate suite, writes the methodology.cobre-rs.dev CNAME (dist/CNAME),
+# and publishes to GitHub Pages. It now OWNS the `push: [main]` → Pages path.
+#
+# The cutover was the atomic commit that added this file's `push: [main]` trigger
+# AND disabled the mdBook .github/workflows/deploy.yml `push` trigger together, so
+# exactly one workflow owns the push→Pages path (shared `concurrency: group:
+# "pages"` is a second backstop). See:
+#   plans/starlight-migration/epic-08-parity-cutover/cutover-runbook.md
+#
+# ROLLBACK: `git revert` the cutover commit — that restores deploy.yml's `push`
+# trigger (mdBook re-publishes) and drops it here. The mdBook artifacts remain in
+# the tree until the separate decommission step, so the rollback is one revert.
+#
+# Build recipe (Node + pinned d2 + build:versions) and gate order mirror
+# starlight-ci.yml; the upload/deploy actions are pinned-SHA copies of deploy.yml.
+# ──────────────────────────────────────────────────────────────────────────────
+
+name: Starlight deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# Same deploy permissions as deploy.yml: Pages write + OIDC token for deploy-pages.
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# SAME group as deploy.yml ("pages") so the mdBook deploy and this Starlight deploy
+# can never publish to the repo's one Pages site concurrently. Do not cancel an
+# in-flight deploy.
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    # The Astro project lives in site/, not the repo root. Run every `run:` step
+    # there once instead of `cd site` per step. NB: setup-node's cache option
+    # keys cache-dependency-path off the REPO ROOT regardless, so that path stays
+    # `site/package-lock.json` below.
+    defaults:
+      run:
+        working-directory: site
+
+    steps:
+      # fetch-depth: 0 — Lunaria (the /lunaria dashboard) reads each content file's
+      # git history; a shallow clone makes the Starlight build fail with "could not
+      # retrieve last commit data". Full history is required.
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "25"
+          cache: npm
+          cache-dependency-path: site/package-lock.json
+
+      # astro-d2 shells out to a `d2` executable that must be on PATH at build
+      # time, or D2 fenced blocks silently render nothing. Install a PINNED
+      # release asset (reproducible) — NOT `curl … d2lang.com/install.sh | sh`
+      # (the banned, unpinned curl|bash pattern). Mirrors ci.yml's
+      # binary-then-`sudo mv` style.
+      # sha256 pinned: d2 v0.7.1 ships no checksums file, so this hash was
+      # computed from the released linux-amd64 asset. A tampered or replaced
+      # tarball fails `sha256sum -c` and aborts the step before extraction.
+      - name: Install d2 (pinned 0.7.1, sha256-verified)
+        run: |
+          d2_tarball=d2-v0.7.1-linux-amd64.tar.gz
+          d2_sha256=eb172adf59f38d1e5a70ab177591356754ffaf9bebb84e0ca8b767dfb421dad7
+          curl -fsSL "https://github.com/terrastruct/d2/releases/download/v0.7.1/${d2_tarball}" -o "${d2_tarball}"
+          echo "${d2_sha256}  ${d2_tarball}" | sha256sum -c -
+          tar xzf "${d2_tarball}"
+          sudo mv d2-v0.7.1/bin/d2 /usr/local/bin/d2
+          sudo chmod +x /usr/local/bin/d2
+
+      # Print the pinned version so a silent install failure surfaces here,
+      # before the build, instead of as confusing "missing figures" output.
+      - name: Verify d2
+        run: d2 --version
+
+      - name: Install dependencies
+        run: npm ci
+
+      # ── FULL gate suite (starlight-ci.yml order), fail-closed BEFORE deploy ──
+      # Any failing gate fails this job; the deploy job (needs: build) never runs.
+      # This is exactly the build where the FOSS notices + parity must be proven,
+      # so the cutover keeps the full sweep — no gate is dropped.
+
+      # E10 ticket-031: regenerate the third-party notices file and fail if
+      # the committed copy is stale (drift guard). Uses permissions: contents: read
+      # — no push, no auto-commit. Maintainer must run `npm run gen:notices` and
+      # commit the result when deps change.
+      - name: Notices drift guard
+        run: |
+          npm run gen:notices
+          git diff --exit-code -- public/THIRD-PARTY-NOTICES.txt
+
+      - name: Check figures (dependency guard)
+        run: npm run check:figures
+
+      # E10 ticket-032 (licensing.md item 3): assert D2 uses ELK, never the
+      # proprietary TALA engine (unlicensed TALA watermarks output). A static
+      # source grep of astro.config.mjs + ```d2 blocks under src/ — pre-build,
+      # like check:figures.
+      - name: Check D2 layout (no TALA)
+        run: npm run check:d2
+
+      # E10 ticket-035 (licensing.md item 7): SPDX audit gate. Reads the declared
+      # deps' installed `license` fields and fails if any is outside the permissive
+      # allow-list and not the d2/ELK build-time-only exemption — the automated
+      # guard protecting the "100% FOSS" claim / E8 cutover gate. Static metadata
+      # check, pre-build like check:figures/check:d2; needs node_modules (npm ci ran).
+      - name: Check SPDX licenses (FOSS guard)
+        run: npm run check:spdx
+
+      - name: Build (multi-version assembly)
+        run: npm run build:versions
+
+      # `npm test` MUST run AFTER the build: the scripts/*.test.mjs glob includes
+      # dist-gated tests (i18n-locale, version-assembly) that read dist/index.html
+      # and exit non-zero ("run npm run build first") when dist/ is absent. On a
+      # clean runner there is no dist/ until build:versions runs. (check:figures
+      # stays pre-build — it reads src/, not dist/.) Keep the single glob'd
+      # invocation so new tests are picked up automatically.
+      - name: Test (compute layer + scripts)
+        run: npm test
+
+      - name: Check (astro check)
+        run: npm run check
+
+      - name: Check math parity
+        run: npm run check:math
+
+      - name: Check links
+        run: npm run check:links
+
+      # E10 ticket-029 completion gate: the aggregate assertion that the E10
+      # FOSS-notices/licensing workstream is complete. The public cutover is exactly
+      # when the notices + parity must be proven, so this gate is fail-closed here.
+      - name: Check E10 completion gate
+        run: npm run check:e10
+
+      # ── Publish ──
+      # Write the CNAME so the published artifact preserves the custom domain (a
+      # Pages deploy without it drops methodology.cobre-rs.dev and serves the
+      # *.github.io URL). Mirrors deploy.yml's `echo … > book/CNAME`; the Starlight
+      # equivalent is dist/CNAME (the dir upload-pages-artifact uploads).
+      - name: Add CNAME for custom domain
+        run: echo "methodology.cobre-rs.dev" > dist/CNAME
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa # v3
+        with:
+          path: site/dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e # v4

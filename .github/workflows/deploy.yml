@@ -1,8 +1,11 @@
 name: Deploy docs
 
+# CUTOVER (2026-06-25): the mdBook production deploy is DISABLED. Its `push: [main]`
+# → Pages ownership moved to .github/workflows/starlight-deploy.yml in the same
+# cutover commit. Kept as a manual `workflow_dispatch` lever to re-publish mdBook
+# during the rollback window; removed entirely at decommission. ROLLBACK = revert
+# the cutover commit (restores `push: [main]` here, drops it from starlight-deploy).
 on:
-  push:
-    branches: [main]
   workflow_dispatch:
 
 permissions:

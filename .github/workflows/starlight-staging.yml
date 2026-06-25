@@ -1,0 +1,140 @@
+# Starlight site STAGING — a reviewable preview build of the Astro/Starlight docs
+# in site/, with ZERO production risk (E7 exit gate).
+#
+# This is the deploy half of the new pipeline. It reuses ticket-025's build recipe
+# (Node + pinned d2 + build:versions) and then uploads site/dist/ as a downloadable
+# build ARTIFACT — it does NOT publish to GitHub Pages.
+#
+# Why an artifact and not a Pages deploy: a GitHub repository has exactly ONE Pages
+# site, and that one site is already owned by the live mdBook production deploy
+# (.github/workflows/deploy.yml — it writes the methodology.cobre-rs.dev CNAME and
+# publishes via actions/deploy-pages). Publishing a second site here via
+# actions/deploy-pages would OVERWRITE production — which is the E8 cutover, not E7.
+# So this workflow is structurally incapable of touching production:
+#   * permissions are read-only (contents: read) — NO pages: write, NO id-token: write
+#   * it uses actions/upload-artifact, NOT actions/deploy-pages / upload-pages-artifact
+#   * it writes no CNAME and never references methodology.cobre-rs.dev
+#   * it does NOT trigger on push: [main] (a merge must never auto-publish staging)
+#
+# It is additive and does NOT touch the live mdBook ci.yml / deploy.yml or
+# ticket-025's starlight-ci.yml.
+#
+# ──────────────────────────────────────────────────────────────────────────────
+# Manual "trigger staging + download artifact + serve locally + verify" procedure
+# (for the maintainer — NOT performed by the author):
+#   1. Push feat/starlight-migration and open/refresh a PR to main (or use the
+#      Actions tab `workflow_dispatch` button) to run `Starlight staging`.
+#   2. When the run is green, open it in the Actions UI and download the
+#      `starlight-staging-site` artifact (the complete static site).
+#   3. Unzip and serve locally: from the unzipped dir,
+#        npx http-server -p 8080 .      # or: python3 -m http.server 8080
+#      then open http://localhost:8080/ in a browser.
+#   4. Walk the visual-verification checklist (below). When it passes, the E7 exit
+#      gate ("a preview/staging deploy is green and visually verified") is met.
+#
+# Visual-verification checklist (precursor to the E8 parity pass):
+#   [ ] Landing page (/) renders with the copper brand shell (header icon, title).
+#   [ ] The 7-Part sidebar shows all 29 chapters in the correct Part groups.
+#   [ ] A math-dense chapter (e.g. /math/lp-formulation/) renders KaTeX display
+#       blocks correctly in BOTH light and dark themes.
+#   [ ] A D2 figure renders as inline SVG (build-time) and a mermaid figure renders
+#       (client-side) — confirm theme-adaptive colours.
+#   [ ] An Observable Plot island (e.g. the value-function plot) renders and
+#       recolours on theme toggle.
+#   [ ] Internal cross-chapter links resolve (no 404s) — spot-check a few.
+#   [ ] The language picker (root / pt-BR) and the version picker render in the
+#       header.
+#   [ ] Mobile/narrow-viewport layout is intact.
+#
+#   Note: D2 + KaTeX are build-time/static (visible in the artifact directly);
+#   mermaid + Observable Plot are client-rendered and need the page actually open
+#   in a browser (hence the local server).
+# ──────────────────────────────────────────────────────────────────────────────
+
+name: Starlight staging
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+# Read-only: this build neither needs nor is granted Pages write. The absence of
+# pages: write / id-token: write is the structural guarantee that staging cannot
+# publish to the repo's one (production) Pages site.
+permissions:
+  contents: read
+
+# Cancel superseded runs for the same ref (e.g. a force-push to an open PR).
+concurrency:
+  group: starlight-staging-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    # The Astro project lives in site/, not the repo root. Run every `run:` step
+    # there once instead of `cd site` per step. NB: setup-node's cache option
+    # keys cache-dependency-path off the REPO ROOT regardless, so that path stays
+    # `site/package-lock.json` below.
+    defaults:
+      run:
+        working-directory: site
+
+    steps:
+      # fetch-depth: 0 — Lunaria (the /lunaria dashboard) reads each content file's
+      # git history; a shallow clone makes the Starlight build fail with "could not
+      # retrieve last commit data". Full history is required.
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "25"
+          cache: npm
+          cache-dependency-path: site/package-lock.json
+
+      # astro-d2 shells out to a `d2` executable that must be on PATH at build
+      # time, or D2 fenced blocks silently render nothing. Install a PINNED
+      # release asset (reproducible) — NOT `curl … d2lang.com/install.sh | sh`
+      # (the banned, unpinned curl|bash pattern). Mirrors ci.yml's
+      # binary-then-`sudo mv` style.
+      # sha256 pinned: d2 v0.7.1 ships no checksums file, so this hash was
+      # computed from the released linux-amd64 asset. A tampered or replaced
+      # tarball fails `sha256sum -c` and aborts the step before extraction.
+      - name: Install d2 (pinned 0.7.1, sha256-verified)
+        run: |
+          d2_tarball=d2-v0.7.1-linux-amd64.tar.gz
+          d2_sha256=eb172adf59f38d1e5a70ab177591356754ffaf9bebb84e0ca8b767dfb421dad7
+          curl -fsSL "https://github.com/terrastruct/d2/releases/download/v0.7.1/${d2_tarball}" -o "${d2_tarball}"
+          echo "${d2_sha256}  ${d2_tarball}" | sha256sum -c -
+          tar xzf "${d2_tarball}"
+          sudo mv d2-v0.7.1/bin/d2 /usr/local/bin/d2
+          sudo chmod +x /usr/local/bin/d2
+
+      # Print the pinned version so a silent install failure surfaces here,
+      # before the build, instead of as confusing "missing figures" output.
+      - name: Verify d2
+        run: d2 --version
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build (multi-version assembly)
+        run: npm run build:versions
+
+      # Upload the fully-static built site as a downloadable artifact. This is the
+      # staging "deploy": no Pages, no CNAME, no production resource touched. The
+      # maintainer downloads it, serves it locally, and walks the checklist above.
+      # if-no-files-found: error so a missing dist/ (build silently produced
+      # nothing) fails loudly rather than shipping an empty artifact.
+      - name: Upload staging site artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: starlight-staging-site
+          path: site/dist
+          retention-days: 7
+          if-no-files-found: error

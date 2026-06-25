@@ -1,0 +1,98 @@
+---
+// Render layer — Observable Plot island. Reads the theme palette from CSS vars
+// and re-renders on the light/dark toggle (Tier 2). Data comes from the tested
+// compute module (figures/convergence.ts), never hand-typed.
+---
+
+<div
+  id="convergence-plot"
+  class="vf-plot"
+  role="img"
+  aria-label="SDDP convergence: monotone lower bound and Monte-Carlo upper bound with a 95% confidence band closing the gap"
+>
+</div>
+
+<script>
+  import * as Plot from "@observablehq/plot";
+  import { bounds } from "../figures/convergence.ts";
+
+  function cssVar(name: string): string {
+    return getComputedStyle(document.documentElement)
+      .getPropertyValue(name)
+      .trim();
+  }
+
+  function render(): void {
+    const el = document.getElementById("convergence-plot");
+    if (!el) return;
+
+    const text = cssVar("--dgm-text") || "#c8c6c2";
+    // The UB (Monte-Carlo) series and its CI band are NOT hydro -> warm accent
+    // (Patina), per brand §2.4 #3 (Flow Blue is reserved for water marks). The
+    // LB rides --dgm-storage (copper) to contrast the UB. Literals mirror the
+    // palette.css fallbacks (warm, not blue).
+    const accent = cssVar("--dgm-accent") || "#4a8b6f";
+    const storage = cssVar("--dgm-storage") || "#b87333";
+
+    const data = bounds();
+    const kGap = 10;
+    const gapPoint = data[kGap];
+    const gapSegment = [
+      { k: gapPoint.k, y: gapPoint.lb },
+      { k: gapPoint.k, y: gapPoint.ubMean },
+    ];
+
+    el.replaceChildren(
+      Plot.plot({
+        width: 640,
+        height: 360,
+        style: { background: "transparent", color: text, fontSize: "13px" },
+        x: { label: "iteration k", grid: true, domain: [0, 25] },
+        y: { label: "total expected cost", grid: true },
+        marks: [
+          Plot.areaY(data, {
+            x: "k",
+            y1: "ciLo",
+            y2: "ciHi",
+            fill: accent,
+            fillOpacity: 0.12,
+          }),
+          Plot.line(data, {
+            x: "k",
+            y: "ubMean",
+            stroke: accent,
+            strokeWidth: 2,
+          }),
+          Plot.line(data, {
+            x: "k",
+            y: "lb",
+            stroke: storage,
+            strokeWidth: 2.5,
+          }),
+          Plot.line(gapSegment, {
+            x: "k",
+            y: "y",
+            stroke: storage,
+            strokeWidth: 1.2,
+            strokeDasharray: "2 2",
+          }),
+          Plot.text([gapPoint], {
+            x: "k",
+            y: (d) => (d.lb + d.ubMean) / 2,
+            text: () => "gap",
+            fill: storage,
+            dx: 10,
+            textAnchor: "start",
+            fontWeight: 600,
+          }),
+        ],
+      }),
+    );
+  }
+
+  render();
+  new MutationObserver(render).observe(document.documentElement, {
+    attributes: true,
+    attributeFilter: ["data-theme"],
+  });
+</script>

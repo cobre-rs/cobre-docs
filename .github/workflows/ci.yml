@@ -1,8 +1,10 @@
 name: CI
 
 on:
-  pull_request:
-    branches: [main]
+  # CUTOVER (2026-06-25): mdBook CI stood down. starlight-ci.yml is now the PR gate;
+  # this mdBook CI is removed entirely at decommission. Kept as a manual
+  # workflow_dispatch lever during the rollback window.
+  workflow_dispatch:
 
 jobs:
   build:
