@@ -54,7 +54,12 @@ jobs:
         working-directory: site
 
     steps:
+      # fetch-depth: 0 — Lunaria (the /lunaria dashboard) reads each content file's
+      # git history; a shallow clone makes the Starlight build fail with "could not
+      # retrieve last commit data". Full history is required.
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          fetch-depth: 0
 
       - name: Set up Node
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
