@@ -1,0 +1,26 @@
+{
+  "$schema": "./node_modules/@lunariajs/core/config.schema.json",
+  "repository": {
+    "name": "cobre-rs/cobre-docs",
+    "branch": "main",
+    "hosting": "github"
+  },
+  "defaultLocale": {
+    "label": "English",
+    "lang": "en"
+  },
+  "locales": [
+    {
+      "label": "Português do Brasil",
+      "lang": "pt-br"
+    }
+  ],
+  "files": [
+    {
+      "location": "src/content/docs/**/*.{md,mdx}",
+      "pattern": "src/content/docs/@lang/@path",
+      "ignore": ["src/content/docs/pt-br/**"],
+      "type": "universal"
+    }
+  ]
+}

@@ -1,6 +1,7 @@
 // @ts-check
 import { defineConfig } from "astro/config";
 import starlight from "@astrojs/starlight";
+import lunaria from "@lunariajs/starlight";
 import mermaid from "astro-mermaid";
 import astroD2 from "astro-d2";
 import { unified } from "@astrojs/markdown-remark";
@@ -38,6 +39,13 @@ export default defineConfig({
     }),
     starlight({
       title: "Cobre Methodology",
+      // Translation-status dashboard (ticket-022). @lunariajs/starlight is a
+      // STARLIGHT PLUGIN (not an Astro integration): it hooks Starlight's plugin
+      // API to inject the `/lunaria` route, which reads git history + the tracked
+      // English chapter sources (per lunaria.config.json) and renders per-page
+      // pt-BR translation status. With no pt-br/ content yet it reports 0%
+      // (untranslated) — the intended "ready for translators" state.
+      plugins: [lunaria({ configPath: "./lunaria.config.json", route: "/lunaria" })],
       // Brand mark (ticket-011b, resolves ticket-009's deferred logo). The header
       // slot is small (~24px), so we use the ICON — a self-contained 128×128 copper
       // mark on a Midnight tile, the brand's "small contexts / 16px" form — NOT the
