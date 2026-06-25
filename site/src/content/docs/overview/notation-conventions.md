@@ -62,6 +62,7 @@ This document follows [SDDP.jl](https://sddp.dev/stable/) notation conventions f
 The factor $\zeta$ converts a flow rate in m³/s to a volume in hm³ accumulated over the stage duration.
 
 **Fundamental Relationship**:
+
 $$
 \text{Volume} = \text{Flow Rate} \times \text{Time}
 $$
@@ -88,6 +89,7 @@ $$
 $$
 
 **Dimensional Analysis**:
+
 $$
 [\zeta] = \frac{\text{s}}{\text{h}} \times \frac{\text{m³}}{\text{hm³}} \times \text{h} = \frac{\text{hm³}}{\text{m³/s}}
 $$
@@ -106,6 +108,7 @@ $$
 $$
 
 **Verification**: A constant inflow of $Q = 100$ m³/s over the month yields:
+
 $$
 V = Q \times \zeta = 100 \times 2.6208 = 262.08 \text{ hm³}
 $$
@@ -261,15 +264,16 @@ $$
 For LP implementation, the incoming storage is carried as a dedicated LP variable $v^{in}_h$ (the `storage_in` column) rather than a constant, and **all LP variables are collected on the LHS** with a zero RHS:
 
 $$
-\boxed{
-v_h - v^{in}_h - \zeta \cdot a_h - \zeta \sum_{k} w_k \Big[
+\begin{aligned}
+& v_h - v^{in}_h - \zeta \cdot a_h - \zeta \sum_{k} w_k \Big[
   \sum_{i \in \mathcal{U}_h} (q_{i,k} + s_{i,k} + u_{i,k})
-  + \sum_{i:\text{div}=h} u_{i,k}
+  + \sum_{i:\text{div}=h} u_{i,k} \\
+& \qquad
   + \sum_{j:\text{dest}=h} p_{j,k}
   - q_{h,k} - s_{h,k} - u_{h,k} - e_{h,k} - r_{h,k}
   - \sum_{j:\text{src}=h} p_{j,k}
 \Big] = 0
-}
+\end{aligned}
 $$
 
 **LP Structure**:
@@ -283,7 +287,7 @@ $$
 For autoregressive inflow state variables, the lag column is pinned to the incoming value by equal column bounds:
 
 $$
-\boxed{\underline{a}_{h,\ell} = \bar{a}_{h,\ell} = \hat{a}_{h,\ell}} \quad \forall h \in \mathcal{H}, \; \ell \in \{1, \ldots, P_h\}
+\underline{a}_{h,\ell} = \bar{a}_{h,\ell} = \hat{a}_{h,\ell} \quad \forall h \in \mathcal{H}, \; \ell \in \{1, \ldots, P_h\}
 $$
 
 **LP Structure**:
@@ -324,7 +328,7 @@ The incoming storage column $v^{in}_h$ is pinned at $\underline{v}^{in}_h = \bar
 **Cut coefficient**:
 
 $$
-\boxed{\pi^v_h = \bar{c}^{in}_h / d^{col}_h}
+\pi^v_h = \bar{c}^{in}_h / d^{col}_h
 $$
 
 The reduced cost is divided by the column's prescaler factor $d^{col}_h$ to recover the original-unit sensitivity (§12 of [LP Formulation](/math/lp-formulation)); no sign change is needed. By the LP envelope theorem, the reduced cost automatically captures all downstream effects — water balance, FPHA hyperplanes, and generic constraints — without manual combination of duals from multiple constraint types. See [Cut Management §2](/math/cut-management).
