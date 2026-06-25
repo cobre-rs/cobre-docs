@@ -11,18 +11,24 @@ widgets) — those are user-facing onboarding artifacts for
 `methodology.cobre-rs.dev` and `cobre-rs.dev`. This guide is the rulebook
 for **every diagram you author inside a spec file**.
 
+> **Paths in this guide are post-promotion (repo-root).** All references such as
+> `src/content/docs/`, `src/components/`, `src/styles/diagrams.css`, and
+> `astro.config.mjs` assume the Starlight app sits at the repo root. Until the E9
+> `site/`→root promotion runs, those files live under `site/` (e.g.
+> `site/astro.config.mjs`).
+
 ---
 
 ## 1. Tool selection
 
 ### 1.1 Decision table
 
-| Diagram content                                                                            | Tool                       | Why                                                                                        |
-| ------------------------------------------------------------------------------------------ | -------------------------- | ------------------------------------------------------------------------------------------ |
-| Mathematical function, distribution, convergence curve, histogram                          | **Observable Plot** island | Compute layer unit-tested; markers/curves derived from the math, not placed by eye         |
-| Composed block diagram (nested containers, labeled regions, data flow with math in labels) | **inline D2** (`astro-d2`) | Code-defined topology in a text fence; PR-reviewable as diffs; theme-adaptive via CSS vars |
-| Flowchart, state machine, sequential pipeline, lifecycle                                   | **inline Mermaid**         | No asset to maintain; source lives next to the prose it illustrates; autoTheme             |
-| Power-system one-line (buses, generators, demand/deficit arrows)                           | **inline D2** (`astro-d2`) | D2 handles spatial schematics; covers both schematic and hand-drawn spatial diagram roles  |
+| Diagram content                                                                            | Tool                       | Why                                                                                                      |
+| ------------------------------------------------------------------------------------------ | -------------------------- | -------------------------------------------------------------------------------------------------------- |
+| Mathematical function, distribution, convergence curve, histogram                          | **Observable Plot** island | Compute layer unit-tested; markers/curves derived from the math, not placed by eye                       |
+| Composed block diagram (nested containers, labeled regions, data flow with math in labels) | **inline D2** (`astro-d2`) | Code-defined topology in a text fence; PR-reviewable as diffs; theme-adaptive via the `.d2-svg` keystone |
+| Flowchart, state machine, sequential pipeline, lifecycle                                   | **inline Mermaid**         | No asset to maintain; source lives next to the prose it illustrates; autoTheme                           |
+| Power-system one-line (buses, generators, demand/deficit arrows)                           | **inline D2** (`astro-d2`) | D2 handles spatial schematics; covers both schematic and hand-drawn spatial diagram roles                |
 
 D2 covers both the composed-block and spatial-diagram roles. Observable Plot
 covers the math-plot role. There are no other diagram tools in this pipeline.
@@ -57,11 +63,11 @@ inherits the family's tool.
 
 Each tool has a fixed render path:
 
-| Tool            | Render time | How                                                               | Theme adaptation              |
-| --------------- | ----------- | ----------------------------------------------------------------- | ----------------------------- |
-| Observable Plot | Client-side | Astro island reads `--dgm-*` CSS vars; re-renders on theme toggle | `getComputedStyle` → CSS vars |
-| D2              | Build time  | `astro-d2` renders ` ```d2 ` fences to inline SVG                 | `--dgm-*` CSS vars (keystone) |
-| Mermaid         | Client-side | `astro-mermaid` with `autoTheme: true`                            | Automatic                     |
+| Tool            | Render time | How                                                               | Theme adaptation                          |
+| --------------- | ----------- | ----------------------------------------------------------------- | ----------------------------------------- |
+| Observable Plot | Client-side | Astro island reads `--dgm-*` CSS vars; re-renders on theme toggle | `getComputedStyle` → CSS vars             |
+| D2              | Build time  | `astro-d2` renders ` ```d2 ` fences to inline SVG                 | `.d2-svg` keystone (`[data-theme]` remap) |
+| Mermaid         | Client-side | `astro-mermaid` with `autoTheme: true`                            | Automatic                                 |
 
 **D2 engine: ELK, never TALA.** The `astro-d2` integration is configured with
 `layout: "elk"` in `astro.config.mjs`. TALA is a proprietary layout engine that
@@ -172,12 +178,19 @@ file; no separate SVG to commit. The fence IS the source.
 
 ### 4.2 Theme adaptation
 
-D2 SVGs rendered by `astro-d2` pick up the theme via the `.d2-svg` keystone in
-`src/styles/diagrams.css`. The integration is configured with
-`theme: { default: "0", dark: "200" }` in `astro.config.mjs`, which selects D2's
-built-in light (0) and dark (200) themes at build time. These align with the
-`--dgm-*` palette used by Observable Plot islands, giving a visually consistent
-light/dark appearance across both diagram types.
+D2 SVGs rendered by `astro-d2` carry d2's built-in palette **class names**
+(`fill-N1`, `stroke-B2`, …). The `.d2-svg` keystone in `src/styles/diagrams.css`
+remaps those palette classes to brand-hex values under
+`:root[data-theme="light"]` / `:root[data-theme="dark"]` selectors, so every d2
+figure recolours on theme toggle. The `theme: { default: "0", dark: "200" }`
+setting in `astro.config.mjs` picks d2's base light (0) / dark (200) palette at
+build time; the keystone then maps it onto brand colours.
+
+This keystone uses **hardcoded brand hex** — it is **independent** of the
+`--dgm-*` CSS-var palette that Observable Plot islands read. The two theming
+systems are deliberately separate (see the comment in `astro.config.mjs`): D2
+themes via `[data-theme]`-scoped class remapping, Observable Plot via `--dgm-*`
+vars, Mermaid via `autoTheme`.
 
 **Never introduce ad-hoc hex colors** in a D2 fence. Use D2's built-in styling
 attributes (fill, stroke) with values from the brand palette when overrides are
