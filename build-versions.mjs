@@ -17,9 +17,9 @@
 //     OWN astro.config.mjs (no --config override — an old tag must not be
 //     re-rendered with the current renderer settings):
 //       git worktree add --force .src-<slug> <ref>
-//       astro build --root .src-<slug>/site --outDir <abs .dist-<slug>>
+//       astro build --root .src-<slug> --outDir <abs .dist-<slug>>
 //     NB: this is a repo-root checkout but the Astro project lives in site/, so
-//     --root points at `.src-<slug>/site` (not the worktree root), and --outDir
+//     --root points at `.src-<slug>` (not the worktree root), and --outDir
 //     must be ABSOLUTE — astro resolves a relative --outDir against --root, which
 //     would otherwise land the output inside the worktree instead of beside this
 //     script where the copy step reads it.
@@ -95,7 +95,7 @@ for (const v of builds) {
       "node_modules/.bin/astro",
       [
         "build",
-        ...(v.ref ? ["--root", `.src-${v.slug}/site`] : []),
+        ...(v.ref ? ["--root", `.src-${v.slug}`] : []),
         "--outDir",
         v.ref ? resolve(tmp) : tmp,
       ],
