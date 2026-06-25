@@ -30,7 +30,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { readFileSync, mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import {
@@ -72,6 +74,41 @@ function runScript(args = [], env = {}) {
       stdout: err.stdout ? err.stdout.toString() : "",
       stderr: err.stderr ? err.stderr.toString() : "",
     };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Run `--execute` inside a THROWAWAY git sandbox so the cutover guard is checked
+// against a controlled (pre-cutover) repo state and --execute can NEVER mutate
+// the real repository. CRITICAL: once the real repo's cutover commit lands, its
+// guard PASSES, so running `--execute` against the real tree (cwd=siteDir) would
+// perform the actual promotion. The empty sandbox has no promoted
+// starlight-deploy.yml, so the repo-state signal fails and the move is refused.
+// The script is invoked by ABSOLUTE path with cwd=sandbox, so its REPO_ROOT
+// (git rev-parse --show-toplevel) resolves to the sandbox. COBRE_CUTOVER_CONFIRMED
+// is cleared first, then the test's env applied, so a caller-shell value can't leak.
+function runExecuteInSandbox(env = {}) {
+  const sandbox = mkdtempSync(join(tmpdir(), "promote-guard-"));
+  const childEnv = { ...process.env };
+  delete childEnv.COBRE_CUTOVER_CONFIRMED;
+  Object.assign(childEnv, env);
+  try {
+    execFileSync("git", ["init", "-q"], { cwd: sandbox });
+    const stdout = execFileSync("bash", [scriptAbs, "--execute"], {
+      cwd: sandbox,
+      env: childEnv,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    return { status: 0, stdout, stderr: "" };
+  } catch (err) {
+    return {
+      status: typeof err.status === "number" ? err.status : 1,
+      stdout: err.stdout ? err.stdout.toString() : "",
+      stderr: err.stderr ? err.stderr.toString() : "",
+    };
+  } finally {
+    rmSync(sandbox, { recursive: true, force: true });
   }
 }
 
@@ -264,10 +301,14 @@ test("the REWRITE_MAP has exactly the expected number of entries (9 swaps + 3 bu
 // ---------------------------------------------------------------------------
 
 test("--execute with COBRE_CUTOVER_CONFIRMED=1 exits non-zero naming the cutover repo-state signal", () => {
-  const { status, stderr } = runScript(["--execute"], {
+  const { status, stderr } = runExecuteInSandbox({
     COBRE_CUTOVER_CONFIRMED: "1",
   });
-  assert.notEqual(status, 0, "--execute must fail pre-cutover even with the env set");
+  assert.notEqual(
+    status,
+    0,
+    "--execute must fail without the cutover repo-state signal, even with the env set",
+  );
   assert.match(
     stderr,
     /cutover guard FAILED/i,
