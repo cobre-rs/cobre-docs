@@ -17,3 +17,16 @@ media/
 plans/
 src/cobre_docs_diagrams.egg-info/
 .playwright-mcp/
+
+# ── Astro/Starlight (merged from site/.gitignore at promotion) ──
+# build output
+dist/
+# multi-version build temp + worktree dirs
+.dist-*
+.src-*
+# generated types
+.astro/
+# astro-d2 rendered SVG cache (regenerated from the ```d2 sources on build)
+public/d2/
+# dependencies
+node_modules/

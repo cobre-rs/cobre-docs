@@ -53,7 +53,7 @@ jobs:
     # `site/package-lock.json` below.
     defaults:
       run:
-        working-directory: site
+        working-directory: .
 
     steps:
       # fetch-depth: 0 — Lunaria (the /lunaria dashboard) reads each content file's
@@ -68,7 +68,7 @@ jobs:
         with:
           node-version: "25"
           cache: npm
-          cache-dependency-path: site/package-lock.json
+          cache-dependency-path: package-lock.json
 
       # astro-d2 shells out to a `d2` executable that must be on PATH at build
       # time, or D2 fenced blocks silently render nothing. Install a PINNED

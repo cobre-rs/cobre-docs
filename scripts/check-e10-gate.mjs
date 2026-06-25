@@ -53,12 +53,13 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { join } from "node:path";
 
 // ---------------------------------------------------------------------------
-// Paths. The repo root is two levels up from site/scripts/; the site/ package
-// root is one level up. Resolved relative to this module so the gate runs from
-// any cwd (like gen-notices.mjs / check-spdx.mjs).
+// Paths. Post-promotion the Astro package IS the repo root (one level up from
+// scripts/), so the package root and the repo root coincide. Resolved relative
+// to this module so the gate runs from any cwd (like gen-notices.mjs /
+// check-spdx.mjs).
 // ---------------------------------------------------------------------------
 const siteDir = fileURLToPath(new URL("../", import.meta.url));
-const repoRoot = fileURLToPath(new URL("../../", import.meta.url));
+const repoRoot = fileURLToPath(new URL("../", import.meta.url));
 const publicNotices = fileURLToPath(
   new URL("../public/THIRD-PARTY-NOTICES.txt", import.meta.url),
 );
