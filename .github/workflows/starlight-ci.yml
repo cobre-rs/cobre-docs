@@ -1,0 +1,109 @@
+# Starlight site CI — PR verification for the Astro/Starlight docs in site/.
+#
+# This is the verification half of the new pipeline (E7). It installs Node + a
+# pinned d2 binary, runs the test suite, builds the multi-version site, and runs
+# the corpus quality gates (figures, astro check, math-parity, link-check). It
+# does NOT deploy — no Pages artifact, no CNAME, no pages:/id-token: permissions
+# (that is ticket-026). It is additive and does NOT touch the live mdBook
+# ci.yml / deploy.yml.
+#
+# ──────────────────────────────────────────────────────────────────────────────
+# Manual run & verify (for the maintainer — NOT performed by the author):
+#   1. (Recommended) Lint locally:  actionlint .github/workflows/starlight-ci.yml
+#   2. The workflow is committed on feat/starlight-migration (done by the author).
+#   3. Push the branch and open/refresh a PR to main; GitHub Actions runs
+#      `Starlight CI` automatically (no repo-settings change needed for a CI
+#      workflow using the default read-only GITHUB_TOKEN — Actions is already
+#      enabled, as the mdBook ci.yml runs).
+#   4. Or trigger it manually from the Actions tab via the workflow_dispatch
+#      button once the branch is pushed.
+#   5. Confirm the run is green: `d2 --version` prints v0.7.1, check:figures and
+#      `npm run build:versions` complete, then `npm test` passes (it is dist-gated,
+#      so it runs after the build), and check / check:math / check:links all pass.
+#      (Counts grow with version snapshots — the scripts assert lower bounds;
+#      nothing is hard-coded here.)
+# ──────────────────────────────────────────────────────────────────────────────
+
+name: Starlight CI
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+# Cancel superseded runs for the same ref (e.g. a force-push to an open PR).
+concurrency:
+  group: starlight-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+# Least-privilege: this is a verification-only workflow (no deploy, no Pages).
+# Lock the job token to read-only so it cannot publish even if the repo's default
+# Actions permission is "read and write" (mirrors starlight-staging.yml).
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    # The Astro project lives in site/, not the repo root. Run every `run:` step
+    # there once instead of `cd site` per step. NB: setup-node's cache option
+    # keys cache-dependency-path off the REPO ROOT regardless, so that path stays
+    # `site/package-lock.json` below.
+    defaults:
+      run:
+        working-directory: site
+
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Set up Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "25"
+          cache: npm
+          cache-dependency-path: site/package-lock.json
+
+      # astro-d2 shells out to a `d2` executable that must be on PATH at build
+      # time, or D2 fenced blocks silently render nothing. Install a PINNED
+      # release asset (reproducible) — NOT `curl … d2lang.com/install.sh | sh`
+      # (the banned, unpinned curl|bash pattern). Mirrors ci.yml's
+      # binary-then-`sudo mv` style.
+      - name: Install d2 (pinned 0.7.1)
+        run: |
+          curl -fsSL https://github.com/terrastruct/d2/releases/download/v0.7.1/d2-v0.7.1-linux-amd64.tar.gz | tar xz
+          sudo mv d2-v0.7.1/bin/d2 /usr/local/bin/d2
+          sudo chmod +x /usr/local/bin/d2
+
+      # Print the pinned version so a silent install failure surfaces here,
+      # before the build, instead of as confusing "missing figures" output.
+      - name: Verify d2
+        run: d2 --version
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Check figures (dependency guard)
+        run: npm run check:figures
+
+      - name: Build (multi-version assembly)
+        run: npm run build:versions
+
+      # `npm test` MUST run AFTER the build: the scripts/*.test.mjs glob includes
+      # dist-gated tests (i18n-locale, version-assembly) that read dist/index.html
+      # and exit non-zero ("run npm run build first") when dist/ is absent. On a
+      # clean runner there is no dist/ until build:versions runs. (check:figures
+      # stays pre-build — it reads src/, not dist/.) Keep the single glob'd
+      # invocation so new tests are picked up automatically.
+      - name: Test (compute layer + scripts)
+        run: npm test
+
+      - name: Check (astro check)
+        run: npm run check
+
+      - name: Check math parity
+        run: npm run check:math
+
+      - name: Check links
+        run: npm run check:links

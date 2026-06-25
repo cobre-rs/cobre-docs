@@ -12,6 +12,92 @@ import rehypeKatex from "rehype-katex";
 export default defineConfig({
   // Architecture B: each version build sets its own base (e.g. "/v0.8/").
   base: process.env.DOCS_BASE ?? "/",
+  // D5: mdBook→Starlight URL preservation (ticket-027). mdBook served each
+  // chapter at `/specs/<group>/<chapter>.html` (and the intro at
+  // `/introduction.html`); Starlight serves the SAME chapters at clean
+  // directory URLs with the `specs/` segment dropped: `/<group>/<chapter>/`
+  // (and the landing page at `/`). The mapping is therefore fully mechanical:
+  //   `/specs/<group>/<chapter>.html`  ->  `/<group>/<chapter>/`
+  //   `/introduction.html`             ->  `/`
+  // The `<group>/<chapter>` stems below are the 29 slugs from the starlight
+  // `sidebar` block (the single source of truth for the new slugs); this map is
+  // a hand-written static object literal (NOT computed from the sidebar at
+  // config-eval time) so it stays greppable and reviewable, ordered Part 1 →
+  // Part 7 to mirror src/SUMMARY.md.
+  //
+  // GitHub Pages serves static files only — no `_redirects`, no server-side
+  // rewrites — so each entry must materialise as a static HTML page at the OLD
+  // path. In `output: 'static'` (our default, no SSR adapter) Astro's native
+  // `redirects` does exactly that: it emits a `<meta http-equiv="refresh">`
+  // stub per entry into `dist/` (status codes are ignored in static mode). This
+  // ships in the same `dist/` the deploy serves and needs NO new dependency.
+  //
+  // base-awareness: keys AND destinations are written as site-absolute paths
+  // starting with "/" — do NOT hand-prefix `base`/`DOCS_BASE`; Astro applies
+  // `base` to both sides of `redirects` itself, so a versioned ("/v0.8/")
+  // build resolves these correctly. Destinations are directory-style with a
+  // trailing slash to match Starlight's emitted URLs and avoid an extra hop.
+  //
+  // TODO(D5, traffic data): the migration plan deferred the *policy* of URL
+  // preservation to "decide with traffic data" — the entries below are the
+  // mechanically-known chapter mappings; the residual is a USER decision and is
+  // intentionally NOT pre-populated here. Pull inbound-link / referrer / 404
+  // data for methodology.cobre-rs.dev, then decide:
+  //   (a) Keep redirects at all? The site is young / blast radius is low, so the
+  //       plan's default is to SHIP these 30 (cheap, static, no downside) —
+  //       confirm or drop.
+  //   (b) Any NON-chapter inbound URLs to add? e.g. old asset paths, deep
+  //       `#fragment` targets (note: <meta refresh> cannot preserve a fragment —
+  //       such links land on the page top), or pre-revamp slugs that no longer
+  //       exist. Add a matching entry per the data, or accept the 404. Do NOT
+  //       fabricate these without analytics.
+  //   (c) Pre-revamp mdBook also exposed `/print.html` and `/toc.html` — decide
+  //       whether either warrants a redirect (Starlight has no direct analogue).
+  redirects: {
+    // Part 1 — Introduction
+    "/introduction.html": "/",
+    "/specs/overview/what-cobre-solves.html": "/overview/what-cobre-solves/",
+    "/specs/overview/sddp-framework-overview.html":
+      "/overview/sddp-framework-overview/",
+    "/specs/overview/notation-conventions.html":
+      "/overview/notation-conventions/",
+    "/specs/overview/how-to-read.html": "/overview/how-to-read/",
+    // Part 2 — System Modelling
+    "/specs/math/lp-formulation.html": "/math/lp-formulation/",
+    "/specs/math/system-elements.html": "/math/system-elements/",
+    "/specs/math/equipment-formulations.html": "/math/equipment-formulations/",
+    "/specs/math/block-formulations.html": "/math/block-formulations/",
+    "/specs/math/hydro-production-models.html": "/math/hydro-production-models/",
+    "/specs/math/penalty-system.html": "/math/penalty-system/",
+    "/specs/math/inflow-nonnegativity.html": "/math/inflow-nonnegativity/",
+    // Part 3 — Stochastic Modelling
+    "/specs/math/par-inflow-model.html": "/math/par-inflow-model/",
+    "/specs/math/multi-resolution-studies.html":
+      "/math/multi-resolution-studies/",
+    "/specs/math/weekly-monthly-coupled-studies.html":
+      "/math/weekly-monthly-coupled-studies/",
+    "/specs/math/scenario-generation.html": "/math/scenario-generation/",
+    // Part 4 — The SDDP Algorithm
+    "/specs/math/sddp-algorithm.html": "/math/sddp-algorithm/",
+    "/specs/math/cut-management.html": "/math/cut-management/",
+    "/specs/math/lp-warm-start.html": "/math/lp-warm-start/",
+    "/specs/math/risk-measures.html": "/math/risk-measures/",
+    "/specs/math/stopping-rules.html": "/math/stopping-rules/",
+    "/specs/math/upper-bound-evaluation.html": "/math/upper-bound-evaluation/",
+    "/specs/math/determinism-guarantees.html": "/math/determinism-guarantees/",
+    "/specs/math/reproducibility-and-provenance.html":
+      "/math/reproducibility-and-provenance/",
+    // Part 5 — Coupling and Boundary Conditions
+    "/specs/math/horizon-modes.html": "/math/horizon-modes/",
+    "/specs/math/discount-rate.html": "/math/discount-rate/",
+    // Part 6 — Worked Examples
+    "/specs/examples/toy-single-reservoir.html":
+      "/examples/toy-single-reservoir/",
+    "/specs/examples/toy-four-reservoir.html": "/examples/toy-four-reservoir/",
+    // Part 7 — Reference
+    "/specs/reference/glossary.html": "/reference/glossary/",
+    "/specs/reference/bibliography.html": "/reference/bibliography/",
+  },
   // D4: manual math renderer — remark-math parses $…$ / $$…$$, rehype-katex
   // renders to static .katex HTML at build time (zero client JS). NOT
   // starlight-katex (forbidden by D4). Registered on Astro 6.4's durable
