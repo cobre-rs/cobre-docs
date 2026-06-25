@@ -44,17 +44,17 @@ The wide typical range (0.001--100 \$/MWh) reflects two distinct use cases. At t
 
 These penalties provide slack for physical or operational constraints that may be impossible to satisfy under extreme conditions (e.g., drought, environmental directives from the system operator). Their cost must be high enough to affect the value function in earlier stages, signaling that the system should avoid states that lead to these violations.
 
-| Penalty                           | Units       | Applied To                    | Purpose                                            | Typical Range       |
-| --------------------------------- | ----------- | ----------------------------- | -------------------------------------------------- | ------------------- |
-| `storage_violation_below_cost`    | \$/hm3      | Storage < min (dead volume)   | Reservoir below dead volume — near-physical limit  | 10,000+ \$/unit     |
-| `filling_target_violation_cost`   | \$/hm3      | Filling target not reached    | Terminal filling constraint — highest priority     | 50,000+ \$/unit     |
-| `turbined_violation_below_cost`   | \$/(m3/s·h) | Turbined flow < min           | Equipment limits / ecological flow                 | 500–1,000 \$/unit   |
-| `outflow_violation_below_cost`    | \$/(m3/s·h) | Outflow < min                 | Environmental minimum flow (operator/regulatory)   | 500–1,000 \$/unit   |
-| `outflow_violation_above_cost`    | \$/(m3/s·h) | Outflow > max                 | Downstream flooding prevention                     | 500–1,000 \$/unit   |
-| `generation_violation_below_cost` | \$/MWh      | Generation < min              | Contractual or environmental minimum generation    | 1,000–2,000 \$/unit |
-| `evaporation_violation_cost`      | \$/(m3/s·h) | Evaporation constraint        | Physical constraint (bidirectional, see Section 5) | 5,000+ \$/unit      |
-| `water_withdrawal_violation_cost` | \$/(m3/s·h) | Unmet water withdrawal        | Human consumption / irrigation commitments         | 1,000–5,000 \$/unit |
-| `generic_violation_cost`          | varies      | Generic constraint violations | User-defined physical or operational constraints   | User-defined        |
+| Penalty                           | Units       | Applied To                     | Purpose                                            | Typical Range       |
+| --------------------------------- | ----------- | ------------------------------ | -------------------------------------------------- | ------------------- |
+| `storage_violation_below_cost`    | \$/hm3      | Storage < min (dead volume)    | Reservoir below dead volume — near-physical limit  | above `deficit`     |
+| `filling_target_violation_cost`   | \$/hm3      | Per-stage filling floor missed | Commissioning fill schedule — below `deficit`      | below `deficit`     |
+| `turbined_violation_below_cost`   | \$/(m3/s·h) | Turbined flow < min            | Equipment limits / ecological flow                 | 500–1,000 \$/unit   |
+| `outflow_violation_below_cost`    | \$/(m3/s·h) | Outflow < min                  | Environmental minimum flow (operator/regulatory)   | 500–1,000 \$/unit   |
+| `outflow_violation_above_cost`    | \$/(m3/s·h) | Outflow > max                  | Downstream flooding prevention                     | 500–1,000 \$/unit   |
+| `generation_violation_below_cost` | \$/MWh      | Generation < min               | Contractual or environmental minimum generation    | 1,000–2,000 \$/unit |
+| `evaporation_violation_cost`      | \$/(m3/s·h) | Evaporation constraint         | Physical constraint (bidirectional, see Section 5) | 5,000+ \$/unit      |
+| `water_withdrawal_violation_cost` | \$/(m3/s·h) | Unmet water withdrawal         | Human consumption / irrigation commitments         | 1,000–5,000 \$/unit |
+| `generic_violation_cost`          | varies      | Generic constraint violations  | User-defined physical or operational constraints   | User-defined        |
 
 These penalties create an artificial cost in the objective function that propagates backward through the value function, telling earlier stages to store more water (or dispatch differently) to avoid reaching states where violations are necessary.
 
@@ -75,32 +75,53 @@ These are small costs inserted into the objective function to guide the solver t
 When setting penalty magnitudes, the following ordering must be maintained:
 
 $$
-\text{Filling target} > \text{Storage violation} > \text{Deficit} > \text{Constraint violations} > \text{Resource costs} > \text{Regularization}
+\text{Storage violation} > \text{Deficit} > \text{Constraint violations} > \text{Resource costs} > \text{Regularization}
 $$
 
-The filling target violation cost must be the highest penalty in the system — filling the dead volume is prioritized above all other objectives. The storage violation below cost must exceed deficit cost — keeping reservoirs above dead volume is more critical than serving load (operating below dead volume risks dam safety and equipment damage).
+The **storage violation below** cost is the highest penalty in the system: it must exceed deficit cost, because keeping a reservoir above its dead volume is more critical than serving load (operating below dead volume risks dam safety and equipment damage). Deficit, in turn, exceeds the operational-constraint, resource, and regularization tiers.
+
+The **filling-target** penalty sits on a separate rung, **below** deficit:
+
+$$
+\text{Deficit} > \text{Filling target}
+$$
+
+A commissioning fill schedule must not be defended as hard as load shedding — when nature physically cannot both serve load and keep a filling reservoir on its accumulation schedule, the solver should serve load and let the filling floor slip. The filling-target penalty's position _relative to the operational-constraint tier_ (minimum turbined flow, outflow, generation, evaporation, withdrawal) is left to study calibration: it is only pinned below deficit, not against those operational slacks.
 
 **Turbined-cost validation rule**: For every hydro, `turbined_cost > spillage_cost` must hold. The rule has two motivations. For hydros using the `fpha` model, the concave FPHA geometry allows interior LP solutions where the objective is met with less turbined flow than the physical production function would require — the turbined-flow penalty makes every unit of turbined flow carry a small additional cost, which collapses the degenerate interior region. For hydros using `constant_productivity`, the same penalty applies uniformly so that two solutions with the same generation but different `(turbined, spillage)` decompositions are tie-broken consistently with NEWAVE; without it, constant-productivity plants paid nothing on the turbine column and the dispatch diverged from the reference model.
 
 ### Penalty Ordering Validation
 
-The qualitative ordering above is enforced by five adjacent-pair validation checks. Each check compares a higher-priority penalty against the next lower-priority penalty in the hierarchy. All five checks produce **warnings**, not errors — violating the ordering degrades policy quality but does not break algorithmic correctness. The turbined-cost validation rule (`turbined_cost > spillage_cost`) is a separate **error** because it affects LP solution correctness for FPHA plants (interior FPHA solutions), not merely policy quality.
+The ordering above is enforced by five validation checks. Four follow the main chain (storage → deficit → constraints → resource positivity); a fifth pins the filling-target penalty below deficit as a side branch. All five produce **warnings**, not errors — violating the ordering degrades policy quality but does not break algorithmic correctness. Two separate rules _are_ hard **errors**:
+
+- the turbined-cost rule (`turbined_cost > spillage_cost`), because it affects LP solution correctness for FPHA plants (interior FPHA solutions), not merely policy quality;
+- the **filling-sufficiency** check (see below), because a fill schedule that can never reach the dead volume is a data error, not a calibration choice.
 
 Validation runs on **post-resolution** penalty values — after the three-tier cascade (global defaults, entity overrides, stage overrides) has been applied. Each (entity, stage) pair is checked independently, so a stage override that inverts the ordering for a specific entity will trigger a warning for that entity at that stage.
 
-| Check | Higher Priority                              | Lower Priority                                                     | Comparison Scope  | Severity |
-| ----- | -------------------------------------------- | ------------------------------------------------------------------ | ----------------- | -------- |
-| 1     | `filling_target_violation_cost`              | `storage_violation_below_cost`                                     | Per hydro         | Warning  |
-| 2     | `storage_violation_below_cost`               | `max(deficit_segments[-1].cost)` (last deficit segment on the bus) | Per hydro vs. bus | Warning  |
-| 3     | `max(deficit_segments[-1].cost)`             | `max(constraint_violation_costs)` (see below)                      | Per hydro vs. bus | Warning  |
-| 4     | `min(constraint_violation_costs)`            | `max(resource_costs)` (thermal generation costs)                   | Per bus           | Warning  |
-| 5     | `min(resource_costs)` or `min(deficit_cost)` | `max(regularization_costs)` (see below)                            | System-wide       | Warning  |
+| Check | Higher Priority                   | Lower Priority                                                     | Comparison Scope  | Severity |
+| ----- | --------------------------------- | ------------------------------------------------------------------ | ----------------- | -------- |
+| 1     | `storage_violation_below_cost`    | `max(deficit_segments[-1].cost)` (last deficit segment on the bus) | Per hydro vs. bus | Warning  |
+| 2     | `max(deficit_segments[-1].cost)`  | `filling_target_violation_cost`                                    | Per bus vs. hydro | Warning  |
+| 3     | `max(deficit_segments[-1].cost)`  | `max(constraint_violation_costs)` (see below)                      | Per hydro vs. bus | Warning  |
+| 4     | `min(constraint_violation_costs)` | `max(resource_costs)` (thermal generation costs)                   | Per bus           | Warning  |
+| 5     | `min(resource_costs)`             | `0` (resource costs must be strictly positive)                     | System-wide       | Warning  |
+
+Note that checks 1 and 2 together encode `storage_violation_below_cost > deficit > filling_target_violation_cost`: the filling-target penalty is compared **against deficit only**, never against the storage or operational tiers, so its placement among the operational slacks is unconstrained.
 
 **Constraint violation costs** (used in checks 3 and 4): the set {`turbined_violation_below_cost`, `outflow_violation_below_cost`, `outflow_violation_above_cost`, `generation_violation_below_cost`, `evaporation_violation_cost`, `water_withdrawal_violation_cost`} for the hydro being checked.
 
 **Resource costs** (used in checks 4 and 5): thermal generation costs (`cost_per_mwh`) for thermals connected to the bus being checked.
 
-**Regularization costs** (used in check 5): the set {`spillage_cost`, `turbined_cost`, `diversion_cost`, `curtailment_cost`, `exchange_cost`} across all entities in the system.
+**Regularization costs** are the Category-3 set {`spillage_cost`, `turbined_cost`, `diversion_cost`, `curtailment_cost`, `exchange_cost`}; they should stay orders of magnitude below the resource tier (the validator enforces only that resource costs are positive, not a numeric gap to regularization).
+
+**Filling sufficiency (hard error)**: independent of the ordering, a one-sided feasibility check confirms each filling hydro _can_ reach its dead volume on schedule. It requires the cumulative minimum accumulation over the filling window to cover the gap from the seed storage to the dead volume:
+
+$$
+\sum_{t \in [\text{start\_stage\_id},\, \text{entry\_stage\_id})} \zeta_t \cdot \text{filling\_min\_rate\_m3s}_t \;\geq\; \underline{V}_h - v^{\text{seed}}_h
+$$
+
+where $\zeta_t$ converts m³/s over the stage duration into hm³. A schedule that falls short is rejected as a `BusinessRuleViolation` — the fill could never complete, so the case is malformed.
 
 **Warning aggregation**: To avoid excessive output when many (entity, stage) pairs violate the same check, warnings are aggregated: one warning per violated check across all entities and stages. The warning message reports the total violation count and the most extreme example (the pair with the largest inversion magnitude).
 
@@ -158,7 +179,7 @@ This section enumerates all constraints in the LP that use slack variables, orga
 
 **Maximum storage** (`max_storage_hm3`) is a hard physical limit (reservoir capacity). If storage would exceed the maximum, emergency spillage handles the excess. No slack variable is used.
 
-**Filling target constraint**: At the last filling stage (`entry_stage_id - 1`), a terminal constraint enforces `v_h >= min_storage_hm3`. This uses the `filling_target_violation` slack with the highest penalty in the system (`filling_target_violation_cost`), ensuring the solver prioritizes filling above all other objectives including load serving. The slack only activates when there is physically insufficient water.
+**Filling floors**: While a plant is filling (`[start_stage_id, entry_stage_id)`), each stage carries a **per-stage minimum end-of-stage storage** `V_target[t]` that rises toward `min_storage_hm3`, reaching the dead volume at the last filling stage. Each floor is soft, `v_h + filling_target_violation >= V_target[t]`, penalized by `filling_target_violation_cost`. This penalty sits **below** deficit (a fill schedule is not defended as hard as load serving); the slack absorbs the gap whenever nature physically did not supply enough water to stay on the accumulation schedule. See [§6 Dead-Volume Filling Specifics](#dead-volume-filling-specifics) for the floor trajectory.
 
 ### Lines
 
@@ -218,27 +239,36 @@ Relationship: `outflow = turbined_flow + spillage`, `generation = f(turbined_flo
 
 ### Dead-Volume Filling Specifics
 
-During the filling period (`[start_stage_id, entry_stage_id)`), the hydro is in commissioning state. The reservoir is being filled to `min_storage_hm3` (dead volume). This model is based on CEPEL's dead-volume filling approach (`enchimento de volume morto`).
+During the filling period (`[start_stage_id, entry_stage_id)`), the hydro is in commissioning state: the reservoir accumulates water toward `min_storage_hm3` (dead volume) before it can begin generating. This model is based on CEPEL's dead-volume filling approach (`enchimento de volume morto`).
+
+Filling is governed by a **minimum accumulation rate** `filling_min_rate_m3s` rather than a single end-of-period target. The rate is _not_ an applied inflow and _not_ a cap on natural inflow — it is the floor below which the reservoir is not allowed to lag the fill schedule. From it, Cobre derives a **per-stage minimum end-of-stage storage** $V^{\text{target}}_t$ that rises stage by stage and reaches the dead volume exactly at the last filling stage $L = \text{entry\_stage\_id} - 1$:
+
+$$
+V^{\text{target}}_L = \underline{V}_h, \qquad
+V^{\text{target}}_t = \min\!\Big( V^{\text{target}}_{t+1} - \zeta_{t+1}\,\text{rate}_{t+1},\ \underline{V}_h \Big)
+$$
+
+where $\text{rate}_t$ is the per-stage `filling_min_rate_m3s` (stage overrides allowed) and $\zeta_t$ converts a flow rate sustained over the stage duration into hm³. Equivalently, the floor at the end of stage $t$ is the dead volume minus the accumulation still owed after $t$ — a ramp from the seed storage up to $\underline{V}_h$. The cumulative climb must cover the gap from the initial storage to the dead volume, a feasibility condition checked up front (the filling-sufficiency hard error in §2).
 
 **Operational constraints during filling**:
 
-- **No generation**: `turbined_flow = 0`, `generation = 0` (hard constraint — turbines not installed/operational)
+- **No generation**: `turbined_flow = 0`, `generation = 0` (hard constraint — turbines not installed/operational, so the plant is excluded from the production-function constraints)
 - **Outflow via spillage only**: During filling, turbines are not operational. Outflow is limited to spillage once water reaches the spillway crest. Bottom discharge outlets are a simulation-only feature.
 - **Min outflow requirement**: Environmental flow must be met via spillage. If spillage is not physically possible (reservoir level below spillway crest), the `outflow_violation_below` slack absorbs the shortfall.
-- **Filling retention**: Inflow allocated for filling is removed from available inflow before the water balance — it goes directly to storage.
-- **Storage bounds relaxed**: `min_storage_hm3` does not apply during filling — storage can be anywhere in `[0, max_storage_hm3]`.
+- **Natural inflow flows freely**: incremental inflow and upstream cascade releases enter the reservoir through the ordinary water balance — there is no retention or impound cap that diverts inflow to storage. Whatever nature provides is what fills the reservoir.
+- **Storage floor is the fill schedule**: `min_storage_hm3` does **not** apply as a bound during filling — storage may sit anywhere in `[0, max_storage_hm3]`. The active floor is the per-stage soft target below.
 
-**Terminal filling constraint**: At the last filling stage (`entry_stage_id - 1`), a constraint enforces:
+**Per-stage filling floors**: At every filling stage the LP enforces
 
 ```
-v_h >= min_storage_hm3 - filling_target_violation
+v_h + filling_target_violation >= V_target[t]
 ```
 
-where `filling_target_violation >= 0` has `filling_target_violation_cost` — the highest penalty in the system. This ensures the solver prioritizes filling above all other objectives. The slack only activates when nature physically did not provide enough water.
+with `filling_target_violation >= 0` priced at `filling_target_violation_cost`. This penalty sits **below deficit** in the hierarchy — when nature cannot both serve load and keep the reservoir on schedule, the solver lets the filling floor slip rather than shed load. The slack activates only when the inflow physically did not supply enough water to clear that stage's floor. (This replaces the earlier model's single terminal constraint at `entry_stage_id - 1`; the floor is now enforced at every filling stage.)
 
-**Transition to operating**: At `entry_stage_id`, the hydro becomes operational. The storage at the end of the last filling stage becomes the initial storage for the first operating stage. If `filling_target_violation > 0` (filling fell short), the operating stage's own `storage_violation_below` slack handles the shortfall — both LPs remain feasible.
+**Transition to operating**: At `entry_stage_id`, the hydro becomes operational. The storage at the end of the last filling stage becomes the initial storage for the first operating stage, and the ordinary soft minimum-storage floor (`storage_violation_below` / `storage_violation_below_cost`) takes over. If the fill fell short (`filling_target_violation > 0` at $L$), that operating-stage floor slack absorbs the shortfall — both LPs remain feasible.
 
-**Penalties during filling**: The same outflow violation cost applies. Spillage during filling also incurs `spillage_cost`. The `storage_violation_below` slack is not active during filling (storage is allowed below `min_storage_hm3` by design).
+**Penalties during filling**: The same outflow violation cost applies, and spillage during filling still incurs `spillage_cost`. The `storage_violation_below` slack is **not** active during filling — the per-stage `filling_target_violation` slack is the one that fires, and storage is allowed below `min_storage_hm3` by design.
 
 ## 7. LP Objective Function Impact
 

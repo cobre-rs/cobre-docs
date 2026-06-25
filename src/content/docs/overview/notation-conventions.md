@@ -117,17 +117,17 @@ Direct calculation: $100 \text{ m³/s} \times 728 \text{ h} \times 3600 \text{ s
 
 ### 3.2 Load and Costs
 
-| Symbol                   | Units       | Description                            |
-| ------------------------ | ----------- | -------------------------------------- |
-| $D_{b,k}$                | MW          | Load at bus $b$, block $k$             |
-| $c^{def}_{b,s}$          | \$/MWh      | Deficit cost at bus $b$, segment $s$   |
-| $\bar{d}_{b,s}$          | MW          | Deficit segment depth                  |
-| $c^{exc}_b$              | \$/MWh      | Excess generation cost                 |
-| $c^{th}_{j,s}$           | \$/MWh      | Thermal cost at plant $j$, segment $s$ |
-| $c^{spill}_h$            | \$/(m³/s·h) | Spillage cost                          |
-| $c^{div}_h$              | \$/(m³/s·h) | Diversion cost                         |
-| $c^{exch}_l$             | \$/MWh      | Exchange (transmission) cost           |
-| $c^{imp}_c$, $c^{exp}_c$ | \$/MWh      | Contract import cost / export revenue  |
+| Symbol          | Units       | Description                                              |
+| --------------- | ----------- | -------------------------------------------------------- |
+| $D_{b,k}$       | MW          | Load at bus $b$, block $k$                               |
+| $c^{def}_{b,s}$ | \$/MWh      | Deficit cost at bus $b$, segment $s$                     |
+| $\bar{d}_{b,s}$ | MW          | Deficit segment depth                                    |
+| $c^{exc}_b$     | \$/MWh      | Excess generation cost                                   |
+| $c^{th}_{j,s}$  | \$/MWh      | Thermal cost at plant $j$, segment $s$                   |
+| $c^{spill}_h$   | \$/(m³/s·h) | Spillage cost                                            |
+| $c^{div}_h$     | \$/(m³/s·h) | Diversion cost                                           |
+| $c^{exch}_l$    | \$/MWh      | Exchange (transmission) cost                             |
+| $c^{ctr}_c$     | \$/MWh      | Contract price (signed: + import cost, − export revenue) |
 
 ### 3.3 Hydro Parameters
 
@@ -176,7 +176,7 @@ We use **"season $m$"** as a generic term for the position within the cycle, avo
 - **Generation variables** use $g$ with entity subscript: $g_h$ (hydro at plant $h$), $g_j$ (thermal at plant $j$)
 - **Flow variables** use intuitive single letters: $q$ (turbined), $s$ (spillage), $u$ (diversion/bypass)
 - **Total outflow** is explicitly defined: $o_h = q_h + s_h$ (downstream channel flow)
-- **Contract variables** use $\chi$ (chi) with direction superscript: $\chi^{in}$, $\chi^{out}$
+- **Contract variables** use a single $\chi_c$ (chi) per contract; direction is carried by set membership ($c \in \mathcal{C}^{imp}$ or $c \in \mathcal{C}^{exp}$), not a superscript — each contract is unidirectional
 - **Slack variables** use $\sigma$ with constraint-type superscript
   :::
 
@@ -184,23 +184,22 @@ We use **"season $m$"** as a generic term for the position within the cycle, avo
 
 Per-block variables are indexed by $k \in \mathcal{K}$:
 
-| Variable           | Domain                         | Units | Description                                                                                                                                |
-| ------------------ | ------------------------------ | ----- | ------------------------------------------------------------------------------------------------------------------------------------------ |
-| $\delta_{b,k,s}$   | $[0, \bar{d}_{b,s}]$           | MW    | Deficit at bus $b$, segment $s$                                                                                                            |
-| $\epsilon_{b,k}$   | $\geq 0$                       | MW    | Excess generation at bus $b$                                                                                                               |
-| $f^+_{l,k}$        | $[0, \bar{F}^+_l]$             | MW    | Direct flow on line $l$                                                                                                                    |
-| $f^-_{l,k}$        | $[0, \bar{F}^-_l]$             | MW    | Reverse flow on line $l$                                                                                                                   |
-| $g_{j,k,s}$        | $[0, \bar{g}_{j,s}]$           | MW    | Thermal generation at plant $j$, segment $s$                                                                                               |
-| $q_{h,k}$          | $[\underline{Q}_h, \bar{Q}_h]$ | m³/s  | Turbined flow at hydro $h$                                                                                                                 |
-| $s_{h,k}$          | $\geq 0$                       | m³/s  | Spillage at hydro $h$                                                                                                                      |
-| $g_{h,k}$          | $[\underline{G}_h, \bar{G}_h]$ | MW    | Hydro generation at plant $h$                                                                                                              |
-| $u_{h,k}$          | $[0, \bar{U}_h]$               | m³/s  | Diversion/bypass flow (to separate channel)                                                                                                |
-| $o_{h,k}$          | -                              | m³/s  | Total downstream outflow: $o_{h,k} = q_{h,k} + s_{h,k}$                                                                                    |
-| $e_{h,k}$          | free                           | m³/s  | Evaporation (can be negative for condensation)                                                                                             |
-| $r_{h,k}$          | signed                         | m³/s  | Water withdrawal; pinned to a signed target (negative = inter-basin return/addition); the realized value cannot cross zero past the target |
-| $p_{j,k}$          | $[0, \bar{P}_j]$               | m³/s  | Pumped flow at station $j$                                                                                                                 |
-| $\chi^{in}_{c,k}$  | $[0, \bar{C}_c]$               | MW    | Contract import                                                                                                                            |
-| $\chi^{out}_{c,k}$ | $[0, \bar{C}_c]$               | MW    | Contract export                                                                                                                            |
+| Variable         | Domain                         | Units | Description                                                                                                                                |
+| ---------------- | ------------------------------ | ----- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| $\delta_{b,k,s}$ | $[0, \bar{d}_{b,s}]$           | MW    | Deficit at bus $b$, segment $s$                                                                                                            |
+| $\epsilon_{b,k}$ | $\geq 0$                       | MW    | Excess generation at bus $b$                                                                                                               |
+| $f^+_{l,k}$      | $[0, \bar{F}^+_l]$             | MW    | Direct flow on line $l$                                                                                                                    |
+| $f^-_{l,k}$      | $[0, \bar{F}^-_l]$             | MW    | Reverse flow on line $l$                                                                                                                   |
+| $g_{j,k,s}$      | $[0, \bar{g}_{j,s}]$           | MW    | Thermal generation at plant $j$, segment $s$                                                                                               |
+| $q_{h,k}$        | $[\underline{Q}_h, \bar{Q}_h]$ | m³/s  | Turbined flow at hydro $h$                                                                                                                 |
+| $s_{h,k}$        | $\geq 0$                       | m³/s  | Spillage at hydro $h$                                                                                                                      |
+| $g_{h,k}$        | $[\underline{G}_h, \bar{G}_h]$ | MW    | Hydro generation at plant $h$                                                                                                              |
+| $u_{h,k}$        | $[0, \bar{U}_h]$               | m³/s  | Diversion/bypass flow (to separate channel)                                                                                                |
+| $o_{h,k}$        | -                              | m³/s  | Total downstream outflow: $o_{h,k} = q_{h,k} + s_{h,k}$                                                                                    |
+| $e_{h,k}$        | free                           | m³/s  | Evaporation (can be negative for condensation)                                                                                             |
+| $r_{h,k}$        | signed                         | m³/s  | Water withdrawal; pinned to a signed target (negative = inter-basin return/addition); the realized value cannot cross zero past the target |
+| $p_{j,k}$        | $[\underline{P}_j, \bar{P}_j]$ | m³/s  | Pumped flow at station $j$                                                                                                                 |
+| $\chi_{c,k}$     | $[\underline{C}_c, \bar{C}_c]$ | MW    | Contract dispatch (import if $c \in \mathcal{C}^{imp}$, export if $c \in \mathcal{C}^{exp}$); $\underline{C}_c > 0$ is a take-or-pay floor |
 
 ### 4.2 Stage-Level State Variables
 
@@ -220,7 +219,7 @@ Slack variables for soft constraints:
 | Variable                                 | Domain   | Units | Constraint                         |
 | ---------------------------------------- | -------- | ----- | ---------------------------------- |
 | $\sigma^{v-}_h$                          | $\geq 0$ | hm³   | Storage below minimum              |
-| $\sigma^{fill}_h$                        | $\geq 0$ | hm³   | Filling target shortfall           |
+| $\sigma^{fill}_h$                        | $\geq 0$ | hm³   | Per-stage filling-floor shortfall  |
 | $\sigma^{q-}_{h,k}$                      | $\geq 0$ | m³/s  | Turbined flow below minimum        |
 | $\sigma^{o-}_{h,k}$                      | $\geq 0$ | m³/s  | Outflow below minimum              |
 | $\sigma^{o+}_{h,k}$                      | $\geq 0$ | m³/s  | Outflow above maximum              |

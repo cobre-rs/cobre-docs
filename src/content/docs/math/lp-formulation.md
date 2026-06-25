@@ -43,16 +43,16 @@ These ensure the SDDP algorithm has relatively complete recourse — every subpr
 
 These provide slack for physical or operational constraints that may be impossible to satisfy under extreme conditions. Their cost must be high enough to affect the value function in earlier stages:
 
-| Penalty                  | Symbol       | Units       | Violated Constraint                                     |
-| ------------------------ | ------------ | ----------- | ------------------------------------------------------- |
-| Storage below minimum    | $c^{sv-}_h$  | \$/hm³      | $v_h \geq \underline{V}_h$                              |
-| Filling target shortfall | $c^{fill}_h$ | \$/hm³      | $v_h \geq \underline{V}_h$ (terminal)                   |
-| Turbined flow minimum    | $c^{tv-}_h$  | \$/(m³/s·h) | $q_{h,k} \geq \underline{Q}_h$                          |
-| Outflow minimum          | $c^{ov-}_h$  | \$/(m³/s·h) | $o_{h,k} \geq \underline{O}_h$                          |
-| Outflow maximum          | $c^{ov+}_h$  | \$/(m³/s·h) | $o_{h,k} \leq \bar{O}_h$                                |
-| Generation minimum       | $c^{gv-}_h$  | \$/MWh      | $g_{h,k} \geq \underline{G}_h$                          |
-| Evaporation violation    | $c^{ev}_h$   | \$/(m³/s·h) | Evaporation within physical limits                      |
-| Withdrawal violation     | $c^{wv}_h$   | \$/(m³/s·h) | Water withdrawal commitment (bidirectional: under/over) |
+| Penalty                  | Symbol       | Units       | Violated Constraint                                      |
+| ------------------------ | ------------ | ----------- | -------------------------------------------------------- |
+| Storage below minimum    | $c^{sv-}_h$  | \$/hm³      | $v_h \geq \underline{V}_h$                               |
+| Filling target shortfall | $c^{fill}_h$ | \$/hm³      | $v_h \geq V^{\text{target}}_t$ (per-stage filling floor) |
+| Turbined flow minimum    | $c^{tv-}_h$  | \$/(m³/s·h) | $q_{h,k} \geq \underline{Q}_h$                           |
+| Outflow minimum          | $c^{ov-}_h$  | \$/(m³/s·h) | $o_{h,k} \geq \underline{O}_h$                           |
+| Outflow maximum          | $c^{ov+}_h$  | \$/(m³/s·h) | $o_{h,k} \leq \bar{O}_h$                                 |
+| Generation minimum       | $c^{gv-}_h$  | \$/MWh      | $g_{h,k} \geq \underline{G}_h$                           |
+| Evaporation violation    | $c^{ev}_h$   | \$/(m³/s·h) | Evaporation within physical limits                       |
+| Withdrawal violation     | $c^{wv}_h$   | \$/(m³/s·h) | Water withdrawal commitment (bidirectional: under/over)  |
 
 ### 1.4 Category 3: Regularization Costs (Solution Guidance)
 
@@ -75,15 +75,17 @@ Regularization costs should be at least 2-3 orders of magnitude smaller than eco
 The following ordering must be maintained (from highest to lowest):
 
 $$
-c^{fill} > c^{sv-} > c^{def} > c^{tv-}, c^{ov\pm}, c^{gv-}, c^{ev}, c^{wv} > c^{th}, c^{ctr} > c^{spill}, c^{fpha}, c^{div}, c^{curt}, c^{exch}
+c^{sv-} > c^{def} > c^{tv-}, c^{ov\pm}, c^{gv-}, c^{ev}, c^{wv} > c^{th}, c^{ctr} > c^{spill}, c^{fpha}, c^{div}, c^{curt}, c^{exch}
 $$
 
-1. **Filling target** ($c^{fill}$): Highest penalty — filling dead volume is prioritized above all other objectives
-2. **Storage violation** ($c^{sv-}$): Above deficit — reservoir below dead volume risks dam safety
-3. **Deficit** ($c^{def}$): Value of lost load; exceeds any generation cost
-4. **Constraint violations** ($c^{tv-}$, $c^{ov\pm}$, $c^{gv-}$, $c^{ev}$, $c^{wv}$): Exceed typical marginal cost but allow violation when physically necessary
-5. **Resource costs** ($c^{th}$, $c^{ctr}$): Market-based or fuel-based
-6. **Regularization** ($c^{spill}$, $c^{fpha}$, $c^{div}$, $c^{curt}$, $c^{exch}$): Near-zero
+with the filling-target penalty pinned **below deficit** on a separate rung: $c^{def} > c^{fill}$.
+
+1. **Storage violation** ($c^{sv-}$): Highest penalty — reservoir below dead volume risks dam safety, so it must exceed deficit
+2. **Deficit** ($c^{def}$): Value of lost load; exceeds any generation cost
+3. **Constraint violations** ($c^{tv-}$, $c^{ov\pm}$, $c^{gv-}$, $c^{ev}$, $c^{wv}$): Exceed typical marginal cost but allow violation when physically necessary
+4. **Resource costs** ($c^{th}$, $c^{ctr}$): Market-based or fuel-based
+5. **Regularization** ($c^{spill}$, $c^{fpha}$, $c^{div}$, $c^{curt}$, $c^{exch}$): Near-zero
+6. **Filling target** ($c^{fill}$): Pinned below deficit — a commissioning fill schedule is not defended as hard as load serving. Its position relative to the operational-constraint tier (item 3) is left to study calibration.
 
 For the full penalty specification, cascade resolution, and stage-varying overrides, see [Penalty System](/math/penalty-system).
 
@@ -483,15 +485,18 @@ $$
 \underline{V}_h - \sigma^{v-}_h \leq v_h \leq \bar{V}_h
 $$
 
-The lower bound (dead volume) is soft — the slack $\sigma^{v-}_h$ has a very high penalty above deficit cost. The upper bound (reservoir capacity) is hard; excess water is handled by emergency spillage. During the filling period, the lower bound is inactive (storage can be anywhere in $[0, \bar{V}_h]$).
+The lower bound (dead volume) is soft — the slack $\sigma^{v-}_h$ has a very high penalty above deficit cost. The upper bound (reservoir capacity) is hard; excess water is handled by emergency spillage. During the filling period, this $\underline{V}_h$ lower bound is inactive (storage can be anywhere in $[0, \bar{V}_h]$); the per-stage filling floor below takes its place.
 
-**Filling terminal constraint** (at stage `entry_stage_id - 1`, for filling hydros only):
+**Filling floors** (for filling hydros, at every stage $t \in [\text{start\_stage\_id}, \text{entry\_stage\_id})$):
 
 $$
-v_h + \sigma^{fill}_h \geq \underline{V}_h
+v_h + \sigma^{fill}_h \geq V^{\text{target}}_t,
+\qquad
+V^{\text{target}}_t = \min\!\Big( V^{\text{target}}_{t+1} - \zeta_{t+1}\,\text{rate}_{t+1},\ \underline{V}_h \Big),
+\quad V^{\text{target}}_{L} = \underline{V}_h
 $$
 
-with the highest penalty in the system ($c^{fill}_h$). See [Penalty System §7](/math/penalty-system).
+The minimum end-of-stage storage $V^{\text{target}}_t$ ramps up at the configured accumulation rate `filling_min_rate_m3s` (= $\text{rate}_t$) and reaches the dead volume $\underline{V}_h$ at the last filling stage $L = \text{entry\_stage\_id} - 1$; $\zeta_t$ converts the rate over the stage duration into hm³. The slack $\sigma^{fill}_h$ is priced at $c^{fill}_h$, which is pinned **below deficit** (not the system maximum). This replaces the earlier single terminal constraint at `entry_stage_id - 1`. See [Penalty System §6](/math/penalty-system).
 
 ### Turbined Flow Bounds (per hydro $h$, block $k$)
 

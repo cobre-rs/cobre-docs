@@ -99,12 +99,16 @@ When **updating the LP / SDDP / cut / warm-start cluster** (`lp-formulation.md`,
 `cut-management.md`, `sddp-algorithm.mdx`, `lp-warm-start.md`,
 `determinism-guarantees.md`):
 
-→ Verify column/row layout against the `StageIndexer` in
-`crates/cobre-sddp/src/lp/indexer/` (struct in `layout.rs`; the
-`state_to_lp_incoming_column` resolver in `state_mapping.rs`).
+→ Verify column/row layout against `StateLayout` in
+`crates/cobre-sddp/src/lp/indexer/state_layout.rs` (the
+`state_to_lp_incoming_column` resolver). LP construction itself lives in
+`crates/cobre-sddp/src/lp/builder/` (`columns.rs`, `rows.rs`, `entries.rs`,
+`template.rs`, `layout.rs`); the old `StageIndexer`/`EquipmentCounts` bags were
+retired (post-v0.8.2), their study-shape fields moved to `StudyDimensions` /
+`StageGeometry`.
 → **State pinning (v0.8.0)**: incoming state (storage, AR lags, anticipated-thermal
 slots) is pinned by **column bounds** on the incoming-state columns, resolved
-via `StageIndexer::state_to_lp_incoming_column`. The `storage_fixing`,
+via `StateLayout::state_to_lp_incoming_column`. The `storage_fixing`,
 `lag_fixing`, and `anticipated_state_fixing` row ranges are permanent empty
 sentinels (`0..0`) — there are **no** state-fixing rows.
 → **Cut subgradient (v0.8.0)**: cut coefficients are the **reduced costs** of
@@ -155,6 +159,27 @@ never mix within a domain.
 `src/figures/valueFunction.ts` (Observable Plot math plot), an inline ` ```d2 `
 block in `src/content/docs/math/lp-formulation.md` (schematic), inline mermaid
 in `src/content/docs/math/sddp-algorithm.mdx` (flowchart).
+
+When **updating hydro dead-volume filling or commissioning windows**
+(`penalty-system.md`, `system-elements.md`, `lp-formulation.md`,
+`equipment-formulations.md`):
+→ **Filling (post-v0.8.2)**: `filling = {start_stage_id, filling_min_rate_m3s}`.
+Per-stage minimum end-of-stage storage `V_target[t]` ramps to `min_storage_hm3`
+at the last filling stage `entry_stage_id - 1` (`build_filling_v_target` in
+`lp/builder/template.rs`); soft floor row `v_h + σ_fill ≥ V_target[t]`
+(`lp/builder/rows.rs`), slack cost `filling_target_violation_cost`. The retention
+/ impound cap is **gone** — natural inflow flows freely. Once operating, the
+soft `min_storage` floor (`filled_min_storage_floor`, `rows.rs`) applies.
+→ **Penalty ordering (post-v0.8.2)**: `storage_violation_below_cost > deficit >
+{operational} > resource > regularization`, with the **separate** rule
+`deficit > filling_target_violation_cost` (the fill schedule is not as hard as
+load shedding). Validator: `cobre-io/src/validation/semantic/scenarios.rs`
+(`check_penalty_ordering` + one-sided hard `check_filling_sufficiency`).
+→ **Commissioning windows**: half-open `[entry_stage_id, exit_stage_id)` via
+`commissioning_active` (`lp/builder/mod.rs`); applies to thermals, lines, NCS,
+pumping, contracts (+ hydro generation). Outside the window the entity's columns
+are pinned to `[0, 0]`. NB: the cobre book's "Entity Lifecycle" table calls exit
+"inclusive" — the **code is exclusive**; docs follow the code.
 
 ---
 
