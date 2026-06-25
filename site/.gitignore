@@ -1,5 +1,8 @@
 # build output
 dist/
+# multi-version build temp + worktree dirs
+.dist-*
+.src-*
 # generated types
 .astro/
 # astro-d2 rendered SVG cache (regenerated from the ```d2 sources on build)
