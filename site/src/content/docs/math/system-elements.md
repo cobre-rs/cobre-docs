@@ -43,9 +43,41 @@ All output reports and user-facing marginal costs must apply the $\div \tau_k$ c
 
 A hydrothermal power system in Cobre consists of interconnected physical elements that work together to meet electricity demand at minimum cost under inflow uncertainty:
 
-:::note[Figure — retooled in E4]
-Source figure (matplotlib `system-element-overview.svg`, to be rebuilt as a theme-adaptive D2/Observable Plot figure in E4): System element overview — buses, hydro with reservoir, thermal, NCS, transmission lines, demand, and deficit slack with key variables labeled.
-:::
+System element overview — buses, a hydro plant with its reservoir (inflow in),
+a thermal plant, an NCS (wind/solar) source, a transmission line between buses, a
+demand draw (`d`) off each bus, and a deficit slack (`δ`, dashed) backstopping
+unserved load. Key flow variables are labelled (`f` line flow, `q` hydro
+turbined, `g` thermal, `gⁿᶜ` NCS, `δ` deficit, `d` demand).
+
+```d2
+direction: right
+
+bus1: "Bus 1" {shape: rectangle}
+bus2: "Bus 2" {shape: rectangle}
+
+inflow: "inflow a" {shape: oval}
+reservoir: "Reservoir vₕ" {shape: cylinder}
+hydro: "Hydro  q (turbined)" {shape: circle}
+
+thermal: "Thermal  g" {shape: circle}
+ncs: "NCS (wind / solar)  gⁿᶜ" {shape: circle}
+
+demand1: "Demand d" {shape: oval}
+demand2: "Demand d" {shape: oval}
+deficit: "Deficit slack δ" {shape: oval}
+
+inflow -> reservoir: "a"
+reservoir -> hydro
+hydro -> bus1: "q → g"
+thermal -> bus1: "g"
+ncs -> bus2: "gⁿᶜ"
+
+bus1 <-> bus2: "line flow  f±  (η losses)"
+
+bus1 -> demand1: "d"
+bus2 -> demand2: "d"
+deficit -> bus2: "δ (unserved)" {style.stroke-dash: 4}
+```
 
 The optimizer determines generation and flow decisions at each stage to minimize total expected cost (thermal generation + deficit penalties + regularization costs) while respecting physical constraints and preparing for uncertain future inflows.
 

@@ -1,0 +1,92 @@
+---
+// Render layer — Observable Plot island. Reads the theme palette from CSS vars
+// and re-renders on the light/dark toggle (Tier 2). Data comes from the tested
+// compute module (figures/cvar.ts), never hand-typed.
+---
+
+<div
+  id="cvar-plot"
+  class="vf-plot"
+  role="img"
+  aria-label="Cost distribution f(C) with E[C], VaR and CVaR marked and the (1−α) tail shaded"
+>
+</div>
+
+<script>
+  import * as Plot from "@observablehq/plot";
+  import { riskMoments, samples, tailRegion } from "../figures/cvar.ts";
+
+  function cssVar(name: string): string {
+    return getComputedStyle(document.documentElement)
+      .getPropertyValue(name)
+      .trim();
+  }
+
+  function render(): void {
+    const el = document.getElementById("cvar-plot");
+    if (!el) return;
+
+    // The PDF curve rides the copper ramp; axis text follows the theme text tone.
+    const curve = cssVar("--dgm-curve") || "#d4956a";
+    const text = cssVar("--dgm-text") || "#c8c6c2";
+    // Risk markers (E[C]/VaR/CVaR) and the shaded tail are NOT hydro -> warm
+    // accent (Patina), per brand §2.4 #3. Flow Blue is reserved for water marks.
+    // The literal mirrors the --dgm-accent fallback in palette.css (warm, not blue).
+    const accent = cssVar("--dgm-accent") || "#4a8b6f";
+
+    const shape = 3;
+    const scale = 15;
+    const alpha = 0.1;
+
+    const data = samples(shape, scale);
+    const tail = tailRegion(shape, scale, alpha).points;
+    const { expected, varAlpha, cvarAlpha } = riskMoments(shape, scale, alpha);
+
+    const markers = [
+      { value: expected, label: "E[C]" },
+      { value: varAlpha, label: "VaRα" },
+      { value: cvarAlpha, label: "CVaRα" },
+    ];
+
+    el.replaceChildren(
+      Plot.plot({
+        width: 640,
+        height: 360,
+        style: { background: "transparent", color: text, fontSize: "13px" },
+        x: { label: "total cost C", grid: true, domain: [0, 170] },
+        y: { label: "probability density", grid: true },
+        marks: [
+          Plot.areaY(tail, {
+            x: "x",
+            y: "f",
+            fill: accent,
+            fillOpacity: 0.18,
+          }),
+          Plot.line(data, { x: "x", y: "f", stroke: curve, strokeWidth: 2.5 }),
+          Plot.ruleX(markers, {
+            x: "value",
+            stroke: accent,
+            strokeWidth: 1.4,
+            strokeDasharray: "4 3",
+          }),
+          Plot.text(markers, {
+            x: "value",
+            y: () => 0,
+            text: "label",
+            fill: accent,
+            dy: -8,
+            rotate: -90,
+            textAnchor: "start",
+            fontWeight: 600,
+          }),
+        ],
+      }),
+    );
+  }
+
+  render();
+  new MutationObserver(render).observe(document.documentElement, {
+    attributes: true,
+    attributeFilter: ["data-theme"],
+  });
+</script>

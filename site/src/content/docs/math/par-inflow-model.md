@@ -40,9 +40,37 @@ For each hydro $h$ and each season $m \in \{1, \ldots, M\}$ (e.g., $M = 12$ for 
 
 The data model stores **seasonal sample statistics** and **standardized AR coefficients** with an explicit residual fraction. The relationship between stored and computed quantities is:
 
-:::note[Figure — retooled in E4]
-Source figure (matplotlib `d23-par-stored-vs-computed.svg`, to be rebuilt as a theme-adaptive D2/Observable Plot figure in E4): PAR model stored vs computed quantities — files on disk store scale-invariant ψ\* and residual_std_ratio, runtime converts to original-unit ψ and σ using seasonal stats.
-:::
+Stored vs. computed quantities — the files on disk hold the scale-invariant
+`ψ*` and `residual_std_ratio`; at runtime these are converted to original-unit
+`ψ` and `σ` using the seasonal stats, then consumed by the LP stage subproblem.
+
+```d2
+direction: right
+
+storage: "Storage format — files on disk" {
+  stats: "inflow_seasonal_stats" {
+    f1: "μₘ  —  seasonal mean"
+    f2: "sₘ  —  seasonal std (sample)"
+  }
+  arcoef: "inflow_ar_coefficients" {
+    f1: "ψ*ₘ,ℓ  —  standardized AR coeff"
+    f2: "σₘ / sₘ  —  residual std ratio"
+    f3: "pₘ  —  AR order"
+  }
+}
+
+runtime: "Runtime format — in-memory for LP" {
+  psi: "Original-unit AR coeff:  ψₘ,ℓ = ψ*ₘ,ℓ · sₘ / sₘ₋ℓ"
+  sigma: "Original-unit residual std:  σₘ = sₘ · (σₘ / sₘ)"
+}
+
+lp: "consumed by LP stage subproblem"
+
+storage.stats -> runtime.psi: "× sₘ / sₘ₋ℓ"
+storage.arcoef -> runtime.sigma: "× sₘ"
+runtime.psi -> lp
+runtime.sigma -> lp
+```
 
 ### Stored in input files
 

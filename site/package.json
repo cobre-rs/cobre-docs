@@ -11,7 +11,8 @@
     "check": "astro check",
     "check:math": "node scripts/check-math-parity.mjs",
     "check:links": "node scripts/check-links.mjs",
-    "test": "node --test src/figures/*.test.ts"
+    "check:figures": "node scripts/check-figures.mjs",
+    "test": "node --test src/figures/*.test.ts scripts/*.test.mjs"
   },
   "dependencies": {
     "@astrojs/starlight": "^0.40.0",

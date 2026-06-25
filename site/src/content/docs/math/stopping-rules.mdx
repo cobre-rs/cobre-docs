@@ -3,6 +3,8 @@ title: Stopping Rules
 description: Available stopping rules for the Cobre SDDP solver — iteration limits, time limits, bound stalling, simulation-based stopping, graceful shutdown, and how rules combine.
 ---
 
+import ConvergencePlot from "../../../components/ConvergencePlot.astro";
+
 ## Purpose
 
 This spec defines the available stopping rules for the Cobre SDDP solver, their configuration, and how they combine. It covers iteration limits, time limits, bound stalling, and the recommended simulation-based stopping criterion.
@@ -87,7 +89,9 @@ Under risk-averse formulations (e.g., CVaR), the lower bound $\underline{z}^k$ m
 The current implementation computes distance against a zero baseline rather than consecutive snapshots; the `bound_tol` and `bound_window` parameters are parsed but not yet applied to the pre-check.
 :::
 
-**Configuration**:
+<ConvergencePlot />
+
+_Bound evolution across iterations $k$: the lower bound $\underline{z}^k$ rises monotonically (the append-only cut pool), while the Monte-Carlo upper bound $\bar{z}^k$ descends with a 95% confidence band that tightens as sampling accumulates. The simulation-based rule fires once the gap $(\bar{z}^k - \underline{z}^k)/\max(1,|\bar{z}^k|)$ closes below tolerance and the policy stabilises._
 
 ```json
 {

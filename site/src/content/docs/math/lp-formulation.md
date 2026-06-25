@@ -241,9 +241,45 @@ The variable $v^{in}_h$ then appears as an LP variable (not a constant) in all c
 
 ## 4b. LP Column and Row Layout
 
-:::note[Figure — retooled in E4]
-Source figure (matplotlib `d24-lp-column-layout.svg`, to be rebuilt as a theme-adaptive D2/Observable Plot figure in E4): LP column layout — state variables (storage, AR lags) first for contiguous dual extraction, dispatch variables per block, theta (future cost) last for Benders cuts.
-:::
+LP column layout — state variables (storage, AR lags) first for contiguous
+reduced-cost extraction, dispatch variables per block, and `θ` (future cost) last
+for the Benders cuts, assembled with the constraint-row families below.
+
+```d2
+direction: down
+
+columns: "Decision variables — contiguous column order" {
+  state: "State (coupling)" {
+    vh: "vₕ  —  storage"
+    al: "aₕ,ℓ  —  AR lags"
+    note: "duals → cut coefficients π"
+  }
+  dispatch: "Dispatch (per block k, stage-local)" {
+    f: "fₗ,ₖ  —  flow"
+    q: "qₕ,ₖ  —  hydro gen"
+    qf: "qᶠₕ,ₖ  —  turbined"
+    s: "sₕ,ₖ  —  spill"
+    g: "gⱼ,ₖ  —  thermal"
+    r: "rₙ,ₖ  —  NCS"
+    d: "δᵦ,ₖ,ₛ  —  deficit"
+  }
+  future: "Future" {
+    theta: "θ  —  future cost"
+    note: "cut constraints"
+  }
+  state -> dispatch
+  dispatch -> future
+}
+
+rows: "Constraint rows" {
+  lb: "Load balance  —  per bus, per block"
+  wb: "Water balance  —  per hydro, per block"
+  fix: "Fixing constraints  —  state coupling, duals → π"
+  cut: "Benders cuts:  θ ≥ α + πᵀx" {style.stroke-dash: 4}
+}
+
+columns -> rows: "assembled into stage LP" {style.stroke-dash: 3}
+```
 
 The stage LP uses a fixed column and row layout that places state variables first, followed by auxiliary and equipment columns. State is pinned by **column bounds** on the incoming-state columns (§4a, §5a, §5c), and cut coefficients are read as the **reduced costs** of those columns — so the fixed column order, not a fixed row order, is what enables contiguous coefficient extraction. With $N = |\mathcal{H}|$ hydros, $L$ = maximum AR order, $A$ = number of anticipated thermals, and $K = K_{\max} = \max_i K_i$:
 

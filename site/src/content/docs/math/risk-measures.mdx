@@ -3,6 +3,8 @@ title: Risk Measures
 description: Risk-averse SDDP via CVaR — definitions, dual representations, the subgradient theorem, risk-averse cut generation, and bound-validity implications.
 ---
 
+import CvarPlot from "../../../components/CvarPlot.astro";
+
 ## Purpose
 
 This spec defines the risk-averse SDDP formulation used in Cobre, based on Conditional Value-at-Risk (CVaR). It covers the CVaR definition, the convex combination risk measure, dual representations, the risk-averse subgradient theorem, modified Bellman equation with discount factor, risk-averse cut generation, per-stage risk profiles, and the critical implications for bound validity.
@@ -23,9 +25,9 @@ For notation conventions (index sets, parameters, decision variables, dual varia
 
 Risk-neutral SDDP minimizes expected cost, which can lead to policies that perform poorly in adverse scenarios. **Risk-averse SDDP** incorporates a coherent risk measure (typically CVaR) to protect against tail risks while maintaining the convexity properties required for valid cut generation.
 
-:::note[Figure — retooled in E4]
-Source figure (matplotlib `d22-risk-measure-cvar.svg`, to be rebuilt as a theme-adaptive D2/Observable Plot figure in E4): cost distribution with E[C] and CVaR*α marked, the tail region shaded, and the convex combination ρ = λ·CVaR*α + (1−λ)·E[C].
-:::
+<CvarPlot />
+
+_Cost distribution $f(C)$ for a right-skewed Gamma law with $\mathbb{E}[C]$, $\mathrm{VaR}_\alpha$ and $\mathrm{CVaR}_\alpha$ marked and the worst $(1-\alpha)$ tail shaded. The convex-combination measure $\rho^{\lambda,\alpha}[C] = (1-\lambda)\,\mathbb{E}[C] + \lambda\,\mathrm{CVaR}_\alpha[C]$ interpolates between the risk-neutral mean and the tail. All three markers are derived numerically from the PDF._
 
 ## 2 Conditional Value-at-Risk (CVaR)
 
