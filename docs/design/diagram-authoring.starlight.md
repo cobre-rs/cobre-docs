@@ -57,6 +57,32 @@ one in another. Mixed tools within a domain fragment the visual identity and mak
 the reader re-learn vocabulary. When a new diagram joins an existing family, it
 inherits the family's tool.
 
+### 1.4 Figures in conceptual & overview chapters
+
+**Conceptual and overview chapters earn their visuals.** A chapter that
+introduces an idea before its deep treatment (Part 1, and any "in one page"
+overview) should pair the key equation(s) with a diagram and/or a tested-compute
+plot — the model is SDDP.jl's `first_steps`. Text-only is the exception, not the
+default; a single well-chosen figure lowers the onboarding barrier more than
+another paragraph.
+
+- **Reuse, don't re-author.** A tested-compute plot may appear as a teaser in an
+  overview chapter _and_ in the deep chapter that owns it — one instance per page
+  (each island uses a fixed element `id`). Reusing the same component keeps the
+  teaser correct-by-construction; do not fork a second, hand-tuned copy.
+- **Embedding.** A chapter that embeds an Observable Plot island must be `.mdx`
+  (import with the standard relative path, e.g.
+  `import ValueFunctionPlot from "../../../components/ValueFunctionPlot.astro"`).
+  Inline ` ```d2 ` and ` ```mermaid ` fences work in plain `.md` too.
+- **Notation parity.** Keep the overview's symbols identical to the deep chapter
+  it previews — never introduce a parallel notation just for the overview.
+- **Restraint.** Figures must teach, not decorate. Pick the one or two that carry
+  the concept; do not dump every figure from the deep chapters into the overview.
+
+Reference: `src/content/docs/overview/sddp-framework-overview.mdx` pairs the
+Bellman recursion with the SDDP-loop mermaid flowchart and the
+ValueFunction / Convergence / CVaR plots — each section gets exactly one figure.
+
 ---
 
 ## 2. Rendering policy
@@ -287,6 +313,7 @@ Short record of decisions worth preserving across sessions.
 | 2026-04-22 | Consistency rule established for HPC topology family (all diagrams in a family share one tool)                                                                                                                      | User directive       |
 | 2026-06-xx | Pipeline overhauled for Starlight (E4): math plots → tested-compute Observable Plot islands; composed-block schematics → inline D2 (ELK); spatial diagrams → inline D2; browser-mermaid → astro-mermaid (autoTheme) | E4 epic              |
 | 2026-06-xx | ELK-only mandate established (E10 ticket-032): proprietary TALA layout engine watermarks output without a licence; `check:d2` guard enforces ELK                                                                    | ticket-032           |
+| 2026-06-25 | Onboarding-figures guidance added (§1.4): conceptual/overview chapters pair the key equation with a diagram/plot, reusing the tested-compute islands as teasers (model: SDDP.jl `first_steps`)                      | Part-1 docs review   |
 
 ---
 
