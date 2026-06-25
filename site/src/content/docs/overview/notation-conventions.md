@@ -11,41 +11,41 @@ This spec defines the complete mathematical notation used across all Cobre speci
 
 This document follows [SDDP.jl](https://sddp.dev/stable/) notation conventions for consistency with the broader SDDP literature:
 
-| Convention               | Meaning                                                                                                    |
-| ------------------------ | ---------------------------------------------------------------------------------------------------------- |
-| $t \in \{1, \ldots, T\}$ | Stage index                                                                                                |
-| $\omega \in \Omega_t$    | Scenario realization at stage $t$                                                                          |
-| $x_t$                    | State variables at end of stage $t$                                                                        |
-| $\hat{x}_{t-1}$          | Incoming state (from previous stage)                                                                       |
-| $V_t(x)$                 | Value function (cost-to-go) at stage $t$                                                                   |
-| $\theta_t$               | Epigraph variable approximating $V_{t}$                                                                    |
-| $\pi$                    | Dual variables (row Lagrange multipliers); state cut coefficients are reduced costs of pinned columns (§5) |
-| $(\alpha, \pi)$          | Cut intercept and coefficients                                                                             |
-| $k$                      | Iteration counter                                                                                          |
+| Convention               | Meaning                                   |
+| ------------------------ | ----------------------------------------- |
+| $t \in \{1, \ldots, T\}$ | Stage index                               |
+| $\omega \in \Omega_t$    | Scenario realization at stage $t$         |
+| $x_t$                    | State variables at end of stage $t$       |
+| $\hat{x}_{t-1}$          | Incoming state (from previous stage)      |
+| $V_t(x)$                 | Value function (cost-to-go) at stage $t$  |
+| $\theta_t$               | Epigraph variable approximating $V_{t}$   |
+| $\pi$                    | Dual variables (row Lagrange multipliers) |
+| $(\alpha, \pi)$          | Cut intercept and coefficients            |
+| $k$                      | Iteration counter                         |
 
 ## 2. Index Sets
 
-| Symbol                                      | Description                                                | Typical Size                                               | Notes                                                        |
-| ------------------------------------------- | ---------------------------------------------------------- | ---------------------------------------------------------- | ------------------------------------------------------------ |
-| $t \in \{1, \ldots, T\}$                    | Stages                                                     | 60-120                                                     | 5-10 year monthly horizon                                    |
-| $k \in \mathcal{K}$                         | Blocks within stage                                        | 1-24                                                       | 3 typical (LEVE/MÉDIA/PESADA)                                |
-| $\mathcal{B}$                               | Buses                                                      | 4-10                                                       | 4-5 for SIN subsystems                                       |
-| $\mathcal{H}$                               | Hydro plants                                               | 160                                                        | All plants in system                                         |
-| $\mathcal{H}^{op} \subseteq \mathcal{H}$    | Operating hydros (can generate)                            | $\approx \mathcal{H}$                                      | Most/all plants typically operating                          |
-| $\mathcal{H}^{fill} \subseteq \mathcal{H}$  | Filling hydros (no generation)                             | 0                                                          | Usually 0; rare for new plants under commissioning           |
-| $\mathcal{H}^{fpha} \subseteq \mathcal{H}$  | Hydros using FPHA production model                         | 50                                                         | Subset with fitted hyperplanes                               |
-| $\mathcal{H}^{const} \subseteq \mathcal{H}$ | Hydros using constant productivity                         | $\lvert\mathcal{H}\rvert - \lvert\mathcal{H}^{fpha}\rvert$ | Complement of $\mathcal{H}^{fpha}$ within $\mathcal{H}^{op}$ |
-| $\mathcal{T}$                               | Thermal plants                                             | 130                                                        |                                                              |
-| $\mathcal{R}$                               | Non-controllable generation sources                        | 0                                                          | Renewable curtailment entities                               |
-| $\mathcal{L}$                               | Transmission lines                                         | 10                                                         | Regional interconnections                                    |
-| $\mathcal{C}$                               | All contracts ($\mathcal{C}^{imp} \cup \mathcal{C}^{exp}$) | 10                                                         | Unified contract set                                         |
-| $\mathcal{C}^{imp}$, $\mathcal{C}^{exp}$    | Import/export contracts                                    | 5                                                          |                                                              |
-| $\mathcal{P}$                               | Pumping stations                                           | 5                                                          |                                                              |
-| $\mathcal{G}$                               | Generic constraints                                        | 50                                                         | User-defined                                                 |
-| $\mathcal{S}_b$                             | Deficit segments for bus $b$                               | 1                                                          | Multiple segments optional                                   |
-| $\mathcal{M}_h$                             | FPHA planes for hydro $h$                                  | 125                                                        | Typical value; depends on grid resolution                    |
-| $\mathcal{U}_h$                             | Upstream hydros of $h$                                     | 1-2                                                        | Immediate upstream in cascade                                |
-| $\Omega_t$                                  | Scenario realizations at stage $t$                         | 20                                                         | Standard branching factor                                    |
+| Symbol                                      | Description                                                                                       |
+| ------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| $t \in \{1, \ldots, T\}$                    | Stages                                                                                            |
+| $k \in \mathcal{K}$                         | Blocks within stage                                                                               |
+| $\mathcal{B}$                               | Buses                                                                                             |
+| $\mathcal{H}$                               | Hydro plants                                                                                      |
+| $\mathcal{H}^{op} \subseteq \mathcal{H}$    | Operating hydros (can generate)                                                                   |
+| $\mathcal{H}^{fill} \subseteq \mathcal{H}$  | Filling hydros (no generation)                                                                    |
+| $\mathcal{H}^{fpha} \subseteq \mathcal{H}$  | Hydros using FPHA production model                                                                |
+| $\mathcal{H}^{const} \subseteq \mathcal{H}$ | Hydros using constant productivity (complement of $\mathcal{H}^{fpha}$ within $\mathcal{H}^{op}$) |
+| $\mathcal{T}$                               | Thermal plants                                                                                    |
+| $\mathcal{R}$                               | Non-controllable generation sources                                                               |
+| $\mathcal{L}$                               | Transmission lines                                                                                |
+| $\mathcal{C}$                               | All contracts ($\mathcal{C}^{imp} \cup \mathcal{C}^{exp}$)                                        |
+| $\mathcal{C}^{imp}$, $\mathcal{C}^{exp}$    | Import/export contracts                                                                           |
+| $\mathcal{P}$                               | Pumping stations                                                                                  |
+| $\mathcal{G}$                               | Generic constraints                                                                               |
+| $\mathcal{S}_b$                             | Deficit segments for bus $b$                                                                      |
+| $\mathcal{M}_h$                             | FPHA planes for hydro $h$                                                                         |
+| $\mathcal{U}_h$                             | Upstream hydros of $h$                                                                            |
+| $\Omega_t$                                  | Scenario realizations at stage $t$                                                                |
 
 ## 3. Parameters
 
@@ -178,16 +178,6 @@ We use **"season $m$"** as a generic term for the position within the cycle, avo
 - **Total outflow** is explicitly defined: $o_h = q_h + s_h$ (downstream channel flow)
 - **Contract variables** use $\chi$ (chi) with direction superscript: $\chi^{in}$, $\chi^{out}$
 - **Slack variables** use $\sigma$ with constraint-type superscript
-  :::
-
-:::note[Symbol Selection Rationale]
-
-- $q$ (turbined): from "vazão turbinada" (Portuguese) or "discharge through turbines"
-- $s$ (spillage): standard hydrology notation
-- $u$ (diversion): "bypass" or "desvio" — avoids confusion with demand $D$ or deficit $\delta$
-- $o$ (outflow): total downstream flow affecting tailrace level
-- $r$ (withdrawal): "retirada" — consumptive removal from the system; the target is **signed** (negative values represent an inter-basin return/addition)
-- $\chi$ (contract): Greek chi, visually distinct from cost symbol $c$
   :::
 
 ### 4.1 Per-Block Variables

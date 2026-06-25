@@ -1,71 +1,61 @@
 ---
-title: Cobre Methodology
+title: Cobre Methodology Reference
+description: The methodology reference for the Cobre SDDP-based hydrothermal dispatch ecosystem — the mathematics, algorithm, worked examples, and notation behind the solver.
+template: splash
+hero:
+  tagline: The mathematics behind Cobre's SDDP-based hydrothermal dispatch — formulations, algorithm, and worked examples, kept in lockstep with the code.
+  actions:
+    - text: Start with the SDDP framework
+      link: /overview/sddp-framework-overview
+      icon: right-arrow
+      variant: primary
+    - text: What Cobre solves
+      link: /overview/what-cobre-solves
+      icon: open-book
+      variant: minimal
 ---
 
-import ValueFunctionPlot from "../../components/ValueFunctionPlot.astro";
+import { CardGrid, LinkCard } from "@astrojs/starlight/components";
 
-Methodology reference for the Cobre SDDP-based hydrothermal dispatch ecosystem.
+This is the **methodology reference** for Cobre — the specification corpus for its
+SDDP-based hydrothermal dispatch. It collects the mathematical formulations, the
+algorithm, and worked examples, organised in seven parts. The Cobre **code is the
+ground truth**; these chapters are kept in step with it.
 
-## Math renderer check
-
-This page exercises the D4 math pipeline (manual `remark-math` +
-`rehype-katex`). Inline math such as $x^2$ renders alongside text, while
-display math is centred on its own line:
-
-$$
-\sum_{i=1}^N x_i
-$$
-
-The risk-aversion weight $\bar{\alpha}$ uses a `\command`-in-brace construct —
-the exact LaTeX shape that broke the `starlight-versions` acorn parser, here
-proving `rehype-katex` handles real LaTeX at build time:
-
-$$
-\bar{\alpha}
-$$
-
-## Diagram renderer check
-
-This page also exercises both diagram toolchains so the build proves them.
-
-`astro-mermaid` renders the inline-in-prose flow below; `autoTheme: true` makes
-it follow Starlight's light/dark toggle:
-
-```mermaid
-flowchart LR
-  A([forward pass]) --> B[sample scenarios]
-  B --> C{converged?}
-  C -- no --> D[backward: add cuts]
-  D --> A
-  C -- yes --> E([policy])
-```
-
-`astro-d2` renders the conceptual SDDP-loop diagram below to inline SVG with the
-ELK layout. It is a small but representative 4-node flow — the kind of shape and
-edge styling E4 will reuse for real figures. The `.d2-svg` keystone CSS re-keys
-d2's palette classes (`fill-N*` / `stroke-*`) to `:root[data-theme]`, so the
-figure flips with the manual theme toggle rather than only the OS preference:
-
-```d2
-direction: right
-
-forward: Forward pass
-backward: Backward pass {shape: hexagon}
-cuts: Cut pool
-policy: Policy {style.stroke-dash: 4}
-
-forward -> backward: scenario trajectories
-backward -> cuts: add Benders cuts
-cuts -> forward: tighten value function
-backward -> policy: converged
-```
-
-## Compute-plot harness check
-
-This page also exercises the tested-compute Observable Plot harness — the
-canonical pattern for every math figure. The curve and Benders tangents below
-are derived from the unit-tested `figures/valueFunction.ts` compute module
-(slope == analytic derivative) and rendered by an Observable Plot island that
-reads the `--dgm-*` palette CSS vars and re-renders on the theme toggle:
-
-<ValueFunctionPlot />
+<CardGrid>
+  <LinkCard
+    title="Part 1 — Introduction"
+    href="/overview/sddp-framework-overview"
+    description="The SDDP idea in one page, what Cobre solves, notation conventions, and how to read this book."
+  />
+  <LinkCard
+    title="Part 2 — System Modelling"
+    href="/math/lp-formulation"
+    description="The stage LP: objective, system elements, equipment, blocks, hydro production, and penalties."
+  />
+  <LinkCard
+    title="Part 3 — Stochastic Modelling"
+    href="/math/par-inflow-model"
+    description="The PAR(p) inflow model, multi-resolution studies, and scenario generation."
+  />
+  <LinkCard
+    title="Part 4 — The SDDP Algorithm"
+    href="/math/sddp-algorithm"
+    description="Forward and backward passes, cut management, warm starts, risk measures, stopping rules, and determinism."
+  />
+  <LinkCard
+    title="Part 5 — Coupling & Boundary Conditions"
+    href="/math/horizon-modes"
+    description="Horizon modes and the discount rate that close the multi-stage problem."
+  />
+  <LinkCard
+    title="Part 6 — Worked Examples"
+    href="/examples/toy-single-reservoir"
+    description="Small, fully worked single- and four-reservoir systems that exercise the formulations end to end."
+  />
+  <LinkCard
+    title="Part 7 — Reference"
+    href="/reference/glossary"
+    description="Glossary of domain terminology and the bibliography."
+  />
+</CardGrid>

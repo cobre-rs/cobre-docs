@@ -124,7 +124,7 @@ export default defineConfig({
       theme: { default: "0", dark: "200" },
     }),
     starlight({
-      title: "Cobre Methodology",
+      title: "Cobre Methodology Reference",
       // Translation-status dashboard (ticket-022). @lunariajs/starlight is a
       // STARLIGHT PLUGIN (not an Astro integration): it hooks Starlight's plugin
       // API to inject the `/lunaria` route, which reads git history + the tracked

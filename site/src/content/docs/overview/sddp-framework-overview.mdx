@@ -1,0 +1,112 @@
+---
+title: The SDDP Framework in One Page
+description: Minimum context for the SDDP idea — forward pass, backward pass, bounds, convergence, and risk measures in one page.
+---
+
+import ValueFunctionPlot from "../../../components/ValueFunctionPlot.astro";
+import ConvergencePlot from "../../../components/ConvergencePlot.astro";
+import CvarPlot from "../../../components/CvarPlot.astro";
+
+## Purpose
+
+This chapter gives a reader new to stochastic dynamic programming the minimum context needed to follow the rest of the book. It covers the SDDP idea in one page. Every claim here is developed in detail in [SDDP Algorithm](/math/sddp-algorithm).
+
+## 1. The Core Idea
+
+Optimal dispatch over a multi-stage horizon cannot be solved by enumerating all scenarios: the number of scenario paths grows exponentially with the number of stages. SDDP avoids enumeration by exploiting the structure of the problem.
+
+At each stage, the future is summarised by a **cost-to-go function** $V_t$ — the minimum expected cost from that stage forward, as a function of the incoming state (reservoir levels, inflow lags). The dispatch problem obeys a stagewise (Bellman) recursion: the cost-to-go at stage $t$ is the expected cost of the best decision now plus the cost-to-go of the state that decision leaves behind:
+
+$$
+V_t(x_{t-1}) = \mathbb{E}_{\omega_t}\!\left[\, \min_{x_t}\; c_t^\top x_t + V_{t+1}(x_t) \,\right]
+$$
+
+with terminal condition $V_{T+1}(x) = 0$. The minimisation runs over the feasible stage-$t$ decisions $x_t$ given the incoming state $x_{t-1}$ and the realized uncertainty $\omega_t$. For LP subproblems $V_t$ is convex and piecewise linear — the property SDDP exploits.
+
+SDDP never forms $V_{t+1}$ explicitly. It approximates it from below with a growing collection of affine functions called **Benders cuts**, each a valid underestimator everywhere:
+
+$$
+V_{t+1}(x) \;\ge\; \alpha_i + \pi_i^\top x \qquad \text{for every cut } i
+$$
+
+In the stage problem the future cost is carried by an epigraph variable $\theta$ bounded by every cut ($\theta \ge \alpha_i + \pi_i^\top x$), so the approximation is the upper envelope $\max_i (\alpha_i + \pi_i^\top x)$.
+
+The approximation improves iteratively. Starting with no cuts, the algorithm alternates two passes:
+
+**Forward pass**: Starting from the initial state, simulate a batch of scenario paths forward through all stages, recording the states visited at each stage.
+
+**Backward pass**: Starting from the last stage and working back to stage one, solve each subproblem at each visited state and use the resulting dual information to generate a new cut for the previous stage. The cut encodes how the cost-to-go changes as the incoming state changes.
+
+```mermaid
+flowchart LR
+  A([forward pass]) --> B[sample scenarios]
+  B --> C{converged?}
+  C -- no --> D[backward: add cuts]
+  D --> A
+  C -- yes --> E([policy])
+```
+
+_One SDDP iteration: the forward pass simulates trajectories under the current policy; the backward pass adds a Benders cut at each visited state; the loop repeats until the bounds meet._
+
+As iterations accumulate, the piecewise-linear approximation covers more of the state space and the lower bound rises toward the true optimum:
+
+<ValueFunctionPlot />
+
+_The convex cost-to-go $V(x)$ approximated from below by Benders cuts. Each cut is a tangent at a trial state — its slope is the analytic derivative — and the upper envelope of the cuts tightens toward the true function as cuts are added._
+
+## 2. Bounds and Convergence
+
+SDDP maintains two bounds on the optimal expected cost:
+
+**Lower bound** $\underline{z}$: The objective value of the stage-one subproblem with the current cut approximation. This value is a rigorous lower bound on the optimal cost; it increases monotonically as cuts are added.
+
+**Upper bound** $\overline{z}$: The sample-average cost of forward simulations under the current policy. Because this average is computed from a finite number of scenarios, it carries statistical uncertainty; Cobre reports both the estimate and its confidence interval.
+
+The **optimality gap** is the difference between the two:
+
+$$
+\text{gap} = \overline{z} - \underline{z}
+$$
+
+When the gap falls below the stopping criterion, the algorithm terminates. The stopping rule governs how the gap is assessed; see [Stopping Rules](/math/stopping-rules) for the full treatment.
+
+<ConvergencePlot />
+
+_The monotone lower bound and the Monte-Carlo upper bound (with its 95% confidence band) close the gap as iterations proceed; the run stops when the gap is statistically negligible._
+
+Convergence of SDDP to the optimal value function, under the cut selection strategies used in Cobre, is guaranteed with probability 1 as iterations tend to infinity. In practice, production studies converge in tens to hundreds of iterations.
+
+## 3. Risk Measures
+
+The basic SDDP algorithm minimises expected cost. Cobre supports **risk-averse** formulations through nested risk measures applied at each stage, based on the conditional value-at-risk (CVaR), which shifts weight toward high-cost scenarios:
+
+$$
+\text{CVaR}_\alpha(Z) = \min_{\eta \in \mathbb{R}} \left\{ \eta + \frac{1}{\alpha} \mathbb{E}\left[(Z - \eta)^+\right] \right\}
+$$
+
+where $\alpha \in (0, 1]$ is the confidence level — $\text{CVaR}_\alpha$ is the expected cost in the worst $\alpha$-fraction of scenarios. Cobre uses a convex combination of expectation and CVaR,
+
+$$
+\rho^{\lambda, \alpha}[Z] = (1 - \lambda)\, \mathbb{E}[Z] + \lambda \cdot \text{CVaR}_\alpha[Z]
+$$
+
+with risk-aversion weight $\lambda \in [0, 1]$ ($\lambda = 0$ recovers the risk-neutral mean, $\lambda = 1$ is pure CVaR). The measure is applied inside the backward pass: cut coefficients are aggregated using risk-weighted averages rather than simple expectations. See [Risk Measures](/math/risk-measures) for the formulation.
+
+<CvarPlot />
+
+_Cost distribution with the mean, $\mathrm{VaR}_\alpha$ and $\mathrm{CVaR}_\alpha$ marked and the worst $(1-\alpha)$ tail shaded; raising $\lambda$ moves the policy from the mean toward the tail._
+
+## 4. Where to Go Next
+
+This overview omits every implementation detail: the LP column layout, cut storage, the scenario tree structure, the warm-start strategy, and the distributed-execution design. Those details are the subject of Parts 2 through 7 of this book.
+
+For the full algorithm, with stage LP formulation, cut coefficient derivation, and convergence analysis, see [SDDP Algorithm](/math/sddp-algorithm).
+
+For the cut mechanics — how cuts are generated, stored, and pruned — see [Cut Management](/math/cut-management).
+
+## Cross-References
+
+- [SDDP Algorithm](/math/sddp-algorithm) — complete algorithmic treatment: stage LP formulation, cut generation, convergence proof
+- [Cut Management](/math/cut-management) — cut storage, selection strategies, and domination pruning
+- [Risk Measures](/math/risk-measures) — CVaR and nested risk measure formulations for risk-averse SDDP
+- [Stopping Rules](/math/stopping-rules) — gap-based and iteration-based convergence criteria
