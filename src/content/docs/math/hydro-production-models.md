@@ -189,7 +189,7 @@ The fitter evaluates the exact production function $\phi = \rho_{esp} \cdot q \c
 
 Each cloud point is capped at the plant's installed capacity $\bar{G}_h$. Spillage is not a cloud dimension — it is fixed at zero throughout.
 
-**Run-of-river plants**: when the plant has a single fitting volume ($v_{min} \approx v_{max}$), two volume samples ~1% of useful storage apart are synthesized to keep the 3-D hull non-degenerate. The resulting $\gamma_V$ residual is then **snapped to exactly 0**, enforcing the correct run-of-river semantics ($\gamma_V = 0$). Run-of-river plants previously failed to fit on the computed path; they are now supported.
+**Run-of-river plants**: when the plant has a single fitting volume ($v_{min} \approx v_{max}$), two volume samples ~1% of useful storage apart are synthesized to keep the 3-D hull non-degenerate. The resulting $\gamma_V$ residual is then **snapped to exactly 0**, enforcing the correct run-of-river semantics ($\gamma_V = 0$).
 
 **Determinism**: the cloud points and the hull output are canonically sorted, so the fitted hyperplanes are bit-identical regardless of input ordering and MPI rank count.
 
@@ -291,7 +291,7 @@ This cost must satisfy $c^{t}_h > c^{spill}_h$ for each plant. The rule serves t
 
 For hydros using the **FPHA** production model, the regularization keeps the solver on the FPHA surface boundary rather than at an interior point: without it, the optimizer could find degenerate solutions where turbined flow and spillage are both artificially high (with net generation unchanged), because the FPHA surface has a flat region where increasing $q$ and $s$ simultaneously can maintain the same $g$. The penalty making every unit of turbined flow carry a small additional cost collapses the degenerate interior region.
 
-For hydros using **constant productivity**, the same regularization is applied uniformly so that the LP tie-breaks `(turbined, spillage)` decompositions consistently with NEWAVE. Earlier releases gated this cost behind FPHA only, which meant constant-productivity plants paid nothing on the turbine column and the dispatch diverged from the reference model on cases that mix the two production models. Plants using `linearized_head` (simulation-only, see section 3) are not subject to this regularization during training because training uses only `constant_productivity` and `fpha`; during simulation, the cost is irrelevant because no policy is being constructed.
+For hydros using **constant productivity**, the same regularization is applied uniformly so that the LP tie-breaks `(turbined, spillage)` decompositions consistently with NEWAVE. Applying it uniformly rather than only under FPHA matters on cases that mix the two production models: a constant-productivity plant that paid nothing on the turbine column would diverge from the reference model. Plants using `linearized_head` (simulation-only, see section 3) are not subject to this regularization during training because training uses only `constant_productivity` and `fpha`; during simulation, the cost is irrelevant because no policy is being constructed.
 
 For the full penalty taxonomy and priority ordering, see [Penalty System](/math/penalty-system).
 

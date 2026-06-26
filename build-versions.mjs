@@ -1,5 +1,5 @@
 // Architecture B orchestrator: build each version independently with its own
-// `base`, then assemble into one dist/ tree (e.g. /  +  /v0.8/ once E6 adds
+// `base`, then assemble into one dist/ tree (e.g. /  +  /vX.Y/ once E6 adds
 // real entries; with a single `latest` entry today it is just /).
 //
 // Each entry from versions.json is built into its own temp dir (`.dist-<slug>`,

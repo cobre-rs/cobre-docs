@@ -242,10 +242,6 @@ See [Determinism Guarantees](/math/determinism-guarantees).
 
 The `training.cut_selection` object has two always-on top-level knobs plus an optional tagged `selection` object. Omitting `selection` disables row selection. The `selection.method` field chooses the strategy; each method carries only its own parameters.
 
-**Keys renamed from v0.8.1**: `active_window` → `seed_window`, `candidate_window` → `candidate_recency`, `nadic` → `max_added_per_round`, `domination_epsilon` → `domination_tolerance`, `cut_activity_tolerance` → `row_activity_tolerance` (now top-level / always-on).
-
-**Removed keys** (no longer accepted): `enabled`, the flat top-level `method`, `threshold`, `memory_window`, `basis_activity_window`.
-
 | Math symbol                 | Config key                       | Default                 | Applies to                     |
 | --------------------------- | -------------------------------- | ----------------------- | ------------------------------ |
 | —                           | `row_activity_tolerance`         | `0.0`                   | Always-on (top-level)          |

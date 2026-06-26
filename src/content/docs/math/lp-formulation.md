@@ -230,7 +230,7 @@ where:
 - $\hat{v}_h$ = incoming state value (end-of-stage storage from the previous stage), written into both bounds per scenario via bound patching
 
 :::note[Pinning by bounds not by a row]
-Earlier Cobre releases pinned the incoming state with an explicit equality _constraint row_ $v^{in}_h = \hat{v}_h$ and read that row's dual. As of v0.8.0 the state is pinned by **column bounds** instead, and the equivalent fixing-row block is a permanent empty sentinel (§4b). Eliminating the per-state fixing rows removes $N(1+L)$ redundant equality rows per stage (plus the anticipated-state rows, §5c); the two formulations are KKT-equivalent — see below.
+The incoming state is pinned by **column bounds** rather than by an explicit equality _constraint row_ $v^{in}_h = \hat{v}_h$; the equivalent fixing-row block is a permanent empty sentinel (§4b). Pinning by bounds avoids $N(1+L)$ redundant equality rows per stage (plus the anticipated-state rows, §5c). Reading the pinned column's reduced cost is KKT-equivalent to reading the dual of the equality row a constraint-based formulation would carry — see below.
 :::
 
 The variable $v^{in}_h$ then appears as an LP variable (not a constant) in all constraints that depend on incoming storage: the water balance (§4), the FPHA average storage computation (§6), and any generic constraints (§10) that reference incoming storage.
@@ -543,7 +543,7 @@ where $T = \sum_k \tau_k$ is the total stage duration in hours. Withdrawal viola
 - $r_h < 0$ (scheduled inter-basin return/addition): $\sigma^{w+}_h \leq |r_h|$ (over-delivery slack capped at $|r_h|$; caps $R_h \leq 0$), $\sigma^{w-}_h$ unbounded.
 - $r_h = 0$: both slacks are pinned to zero (presolve-eliminated).
 
-This cap was added in v0.8.1; previously the under-delivery slack was unbounded, which in degenerate cases allowed a run-of-river plant to "un-withdraw" past its target and inject phantom water into the reservoir.
+The cap is what keeps the under-delivery slack bounded: were it unbounded, in degenerate cases a run-of-river plant could "un-withdraw" past its target and inject phantom water into the reservoir.
 
 Storage violation penalties ($c^{sv-}_h \sigma^{v-}_h$ and $c^{fill}_h \sigma^{fill}_h$) appear outside the $\tau_k$ sum because they apply to end-of-stage storage — see §2.
 

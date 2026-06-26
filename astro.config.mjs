@@ -10,7 +10,7 @@ import rehypeKatex from "rehype-katex";
 
 // astro-mermaid and astro-d2 are registered before starlight.
 export default defineConfig({
-  // Architecture B: each version build sets its own base (e.g. "/v0.8/").
+  // Architecture B: each version build sets its own base (e.g. "/vX.Y/").
   base: process.env.DOCS_BASE ?? "/",
   // D5: mdBook→Starlight URL preservation (ticket-027). mdBook served each
   // chapter at `/specs/<group>/<chapter>.html` (and the intro at
@@ -34,7 +34,7 @@ export default defineConfig({
   //
   // base-awareness: keys AND destinations are written as site-absolute paths
   // starting with "/" — do NOT hand-prefix `base`/`DOCS_BASE`; Astro applies
-  // `base` to both sides of `redirects` itself, so a versioned ("/v0.8/")
+  // `base` to both sides of `redirects` itself, so a versioned ("/vX.Y/")
   // build resolves these correctly. Destinations are directory-style with a
   // trailing slash to match Starlight's emitted URLs and avoid an extra hop.
   //

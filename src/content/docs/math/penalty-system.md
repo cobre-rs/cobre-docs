@@ -217,6 +217,10 @@ where:
 
 The slacks themselves remain one-sided ($\geq 0$); the sign of the target is carried by $Q_{ev,h}$ and `EvapCoef`. Each slack receives its own penalty: `evaporation_violation_pos_cost` and `evaporation_violation_neg_cost`. When the directional costs are unset, both default to the entity's resolved symmetric `evaporation_violation_cost` — an entity that overrides only the symmetric cost has that override inherited by its directional costs, rather than reverting to the global default.
 
+:::note[No usable area curve ⇒ evaporation disabled]
+The linearised target $\text{EvapCoef} \times \text{Area}(V_{avg})$ requires a volume–area curve (the reservoir geometry). A plant that declares evaporation coefficients but has **no usable area data** — no geometry rows, or every surface-area sample zero — has a surface flux that is identically zero. Evaporation is then **disabled** for that plant rather than aborting the run: no evaporation column, row, or slacks are emitted, the plant is counted as carrying no evaporation model, and a warning is logged. This is the expected case for a reservoir still filling its dead volume, which legitimately carries a single zero-area geometry point. Malformed coefficients (non-finite values) or a missing season identifier remain hard validation errors.
+:::
+
 Stage-varying overrides follow the same pattern: directional costs may be overridden independently per (entity, stage). Penalty values may vary by stage. Stage-varying overrides are sparse — only entries that differ from defaults are recorded.
 
 ## 6. Hydro Variable Bounds Summary

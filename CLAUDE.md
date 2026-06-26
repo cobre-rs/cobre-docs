@@ -4,14 +4,9 @@
 
 Cobre-docs is the **methodology reference** for the Cobre ecosystem — an Astro
 Starlight site containing the specification corpus for SDDP-based hydrothermal
-dispatch.
-
-> **Current layout.** The Starlight app currently lives in the `site/`
-> subdirectory (the legacy mdBook tree still sits at the repo root pending
-> decommission). Run the `npm` commands below from `site/`, and read the
-> content/component paths in this guide (`src/content/docs/`, `src/components/`,
-> `src/figures/`, `astro.config.mjs`, …) as `site/`-prefixed until the
-> `site/`→root promotion runs — after which they are exactly as written.
+dispatch. The Starlight app lives at the repo root (the legacy mdBook tree was
+decommissioned); the content/component paths in this guide (`src/content/docs/`,
+`src/components/`, `src/figures/`, `astro.config.mjs`, …) are exactly as written.
 
 - **Dev**: `npm run dev` (Astro dev server)
 - **Build**: `npm run build`; `npm run build:versions` for multi-version assembly
@@ -33,7 +28,13 @@ diverge from the code, the spec must be updated — not the other way around.
 
 ## Current State
 
-**Synced to: cobre v0.8.2 (2026-06-17).**
+**Synced to: cobre 0.9.0 (latest).** The published site carries no version
+label — it ships under the **latest** tag only (no versioned builds; see
+`versions.json`), and the methodology corpus itself carries **no version
+annotations, deprecation notices, or migration notes** (per the "Methodology
+Authoring Standards" below and the "Code as ground truth" principle in
+`what-cobre-solves.md`). When syncing to a new cobre release, keep this line as
+the single place a version number appears in the repo.
 
 The corpus is a **methodology-only** reference (math, worked examples,
 reference) organised into the 7-Part sidebar configured in `astro.config.mjs`.
@@ -45,10 +46,15 @@ developer guide (see "Relocated domains" below).
 ## Hard Rules
 
 - **Ground truth**: code > spec. When they diverge, update the spec.
+- **No version numbers in the corpus**: the methodology describes **current**
+  cobre as fact — never "added in vX", "earlier releases", "now removed", or any
+  other version annotation / deprecation / migration note. The only place a
+  cobre version appears is the "Synced to" line above. State a behaviour's
+  rationale in the present tense instead of narrating its history.
 - **Batched edits**: a change to the methodology that touches multiple chapters
   must land as a single batch (one commit / one PR) — there is no propagation
   registry, so the corpus only stays consistent if every affected chapter is
-  edited together. (Example: the v0.8.0 state-pinning change touched
+  edited together. (Example: the state-pinning change touched
   lp-formulation, cut-management, sddp-algorithm, lp-warm-start, determinism,
   notation, glossary, and both worked examples.)
 - **Serialization (cobre code fact)**: `postcard` for MPI broadcast,
@@ -104,33 +110,32 @@ When **updating the LP / SDDP / cut / warm-start cluster** (`lp-formulation.md`,
 `state_to_lp_incoming_column` resolver). LP construction itself lives in
 `crates/cobre-sddp/src/lp/builder/` (`columns.rs`, `rows.rs`, `entries.rs`,
 `template.rs`, `layout.rs`); the old `StageIndexer`/`EquipmentCounts` bags were
-retired (post-v0.8.2), their study-shape fields moved to `StudyDimensions` /
+retired, their study-shape fields moved to `StudyDimensions` /
 `StageGeometry`.
-→ **State pinning (v0.8.0)**: incoming state (storage, AR lags, anticipated-thermal
+→ **State pinning**: incoming state (storage, AR lags, anticipated-thermal
 slots) is pinned by **column bounds** on the incoming-state columns, resolved
 via `StateLayout::state_to_lp_incoming_column`. The `storage_fixing`,
 `lag_fixing`, and `anticipated_state_fixing` row ranges are permanent empty
 sentinels (`0..0`) — there are **no** state-fixing rows.
-→ **Cut subgradient (v0.8.0)**: cut coefficients are the **reduced costs** of
+→ **Cut subgradient**: cut coefficients are the **reduced costs** of
 the pinned columns, unscaled by **dividing** by `col_scale[col]` — not row
-duals. NB: the v0.8.0 CHANGELOG prose says "multiply"; the shipped code
+duals. NB: the cobre CHANGELOG prose says "multiply"; the shipped code
 divides (`crates/cobre-sddp/src/training/backward/duals_extraction.rs`).
 **Docs follow the code: divide.**
 → **LP scaling**: Cobre applies its own offline geometric-mean row/col prescaler
 plus a cost-scale factor; the LP backend's internal simplex scaler is
 **disabled** (HiGHS: `simplex_scale_strategy = 0`) on all phase profiles — no
-double-scaling. (The LP backend is now selectable at build time — HiGHS default,
+double-scaling. (The LP backend is selectable at build time — HiGHS default,
 CLP opt-in — a relocated/devguide concern; keep methodology backend-generic.)
 → **Cut pool**: append-only with stable, deterministic slot indices; deactivation
 toggles a cut row's RHS to a trivially-satisfied `±∞` sentinel (row never
 removed); only active cuts are baked into each iteration's template.
-→ **Cut selection (v0.8.1)**: periodic-pruning methods
-(`level1`/`lml1`/`domination`) deactivate cuts; the **dynamic** method (DCS,
-v0.8.1) instead keeps the pool whole and loads a bounded **resident subset**
-per solve (lazy-exact). The `training.cut_selection` config was restructured into a tagged `selection` object — renames `active_window`→
-`seed_window`, `candidate_window`→`candidate_recency`, `nadic`→
-`max_added_per_round`, `domination_epsilon`→`domination_tolerance`,
-`cut_activity_tolerance`→`row_activity_tolerance`; removed `enabled`/`method`/
+→ **Cut selection**: periodic-pruning methods
+(`level1`/`lml1`/`domination`) deactivate cuts; the **dynamic** method (DCS)
+instead keeps the pool whole and loads a bounded **resident subset**
+per solve (lazy-exact). The `training.cut_selection` config is a tagged `selection` object — keys `seed_window`,
+`candidate_recency`, `max_added_per_round`, `domination_tolerance`,
+`row_activity_tolerance`; there is no `enabled`/`method`/
 `threshold`/`memory_window`/`basis_activity_window`. DCS code: `crates/cobre-sddp/src/cut/dcs.rs`.
 
 When **updating the hydro-production / FPHA cluster** (`hydro-production-models.md`)
@@ -144,6 +149,14 @@ capacity, with a least-squares **`α` correction** and a per-plane lateral-flow 
 truth for the fit and the `ρ_eq` derivation; `reference_volume_hm3` is gone.
 → Optional `fpha_plane_reduction` (angle/distance, origin plane never merged) and
 optional exact **piecewise-quartic tailrace** with backwater families.
+→ **Evaporation needs a usable area-volume curve**: a hydro with evaporation
+coefficients but **no** usable surface-area curve (no geometry rows, or every
+`area_km2` zero — e.g. a reservoir still filling its dead volume) has evaporation
+**disabled** (zero flux) with a warning, **not** a hard error; non-finite
+coefficients or a missing `season_id` remain hard errors
+(`crates/cobre-sddp/src/production/hydro_models/evaporation.rs`,
+`resolve_evaporation_core`). Methodology home: `penalty-system.md` §"Signed Net
+Evaporation".
 → Verify against `crates/cobre-sddp/src/production/fpha_fitting/`. **Docs follow
 the code**: the design-doc/CHANGELOG "synthetic closing point" is NOT shipped.
 
@@ -163,14 +176,14 @@ in `src/content/docs/math/sddp-algorithm.mdx` (flowchart).
 When **updating hydro dead-volume filling or commissioning windows**
 (`penalty-system.md`, `system-elements.md`, `lp-formulation.md`,
 `equipment-formulations.md`):
-→ **Filling (post-v0.8.2)**: `filling = {start_stage_id, filling_min_rate_m3s}`.
+→ **Filling**: `filling = {start_stage_id, filling_min_rate_m3s}`.
 Per-stage minimum end-of-stage storage `V_target[t]` ramps to `min_storage_hm3`
 at the last filling stage `entry_stage_id - 1` (`build_filling_v_target` in
 `lp/builder/template.rs`); soft floor row `v_h + σ_fill ≥ V_target[t]`
 (`lp/builder/rows.rs`), slack cost `filling_target_violation_cost`. The retention
 / impound cap is **gone** — natural inflow flows freely. Once operating, the
 soft `min_storage` floor (`filled_min_storage_floor`, `rows.rs`) applies.
-→ **Penalty ordering (post-v0.8.2)**: `storage_violation_below_cost > deficit >
+→ **Penalty ordering**: `storage_violation_below_cost > deficit >
 {operational} > resource > regularization`, with the **separate** rule
 `deficit > filling_target_violation_cost` (the fill schedule is not as hard as
 load shedding). Validator: `cobre-io/src/validation/semantic/scenarios.rs`
@@ -180,6 +193,10 @@ load shedding). Validator: `cobre-io/src/validation/semantic/scenarios.rs`
 pumping, contracts (+ hydro generation). Outside the window the entity's columns
 are pinned to `[0, 0]`. NB: the cobre book's "Entity Lifecycle" table calls exit
 "inclusive" — the **code is exclusive**; docs follow the code.
+→ **Contracts & pumping** are wired into the LP (`equipment-formulations.md` §3–4,
+`system-elements.md` §7–8): contracts are **stateless** (no Benders cut term),
+unidirectional, with a take-or-pay hard lower bound; pumping stations transfer
+water source→destination and draw bus power with no explicit objective cost.
 
 ---
 
