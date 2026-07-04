@@ -3,6 +3,10 @@ title: Penalty System
 description: Unified penalty taxonomy for LP feasibility, constraint violations, and regularization — cascade resolution, penalty priority ordering, and bidirectional slack variables.
 ---
 
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+import { Content as PenaltiesConfigure } from './_impl/_penalties.configure.mdx';
+import { Content as PenaltiesIO } from './_impl/_penalties.io.mdx';
+
 ## Purpose
 
 This spec defines the unified penalty system that ensures LP feasibility across all scenarios while correctly pricing operational costs and constraint violations. See [LP Formulation](/math/lp-formulation) for how penalties enter the objective function.
@@ -310,6 +314,15 @@ minimize:
 :::note[Note on pumping]
 Pumping stations do not have an explicit cost in the objective. The cost of pumping is implicitly captured through the energy consumed at the connected bus (appears as negative demand in the load balance). The marginal cost at that bus determines the effective pumping cost.
 :::
+
+## Implementation in Cobre
+
+The methodology above defines the penalty taxonomy and priority ordering; the tabs below cover how Cobre's software surface configures and reports the penalty costs that implement it.
+
+<Tabs>
+  <TabItem label="Configure"><PenaltiesConfigure /></TabItem>
+  <TabItem label="Inputs & Outputs"><PenaltiesIO /></TabItem>
+</Tabs>
 
 ## Cross-References
 
