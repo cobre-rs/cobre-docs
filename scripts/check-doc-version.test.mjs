@@ -38,6 +38,11 @@ test("flags a 'COBRE vX.Y.Z' banner token in the strict zone", () => {
   assert.ok(v.some((x) => x.rule === "cobre-version-banner"));
 });
 
+test("flags the title-case 'Cobre vX.Y.Z' banner token in the strict zone (case-insensitive)", () => {
+  const v = detectVersionViolations("This matches Cobre v0.9.0 semantics.", ZONE_STRICT);
+  assert.ok(v.some((x) => x.rule === "cobre-version-banner"));
+});
+
 test("flags a \"cobre_version\" JSON key in the strict zone", () => {
   const v = detectVersionViolations('{"cobre_version": "0.9.0"}', ZONE_STRICT);
   assert.ok(v.some((x) => x.rule === "cobre-version-json"));

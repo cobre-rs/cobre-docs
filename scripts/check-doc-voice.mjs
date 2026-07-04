@@ -168,7 +168,8 @@ function typicalNumberHit(prose) {
   HEDGE.lastIndex = 0;
   let hedgeMatch;
   while ((hedgeMatch = HEDGE.exec(prose)) !== null) {
-    const tail = prose.slice(hedgeMatch.index + hedgeMatch[0].length, hedgeMatch.index + hedgeMatch[0].length + 30);
+    const after = hedgeMatch.index + hedgeMatch[0].length;
+    const tail = prose.slice(after, after + 30);
     const m = HEDGE_NUM.exec(tail);
     if (!m) continue;
     const preceding = (m[1] || "").trim().toLowerCase();

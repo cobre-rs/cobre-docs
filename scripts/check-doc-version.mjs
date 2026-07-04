@@ -113,8 +113,11 @@ const NARRATION_PATTERNS = [
 // ---------------------------------------------------------------------------
 const VERSION_TOKEN_PATTERNS = [
   [
+    // Case-insensitive: the title-case prose spelling "Cobre v0.9.0" is the
+    // dominant form in the corpus and must be caught in strict zones, alongside
+    // lowercase `cobre` (JSON/CLI context) and uppercase `COBRE` (CLI banner).
     "cobre-version-banner",
-    /\b(?:cobre|COBRE)\s+v([0-9][0-9.]*)/g,
+    /\bcobre\s+v([0-9][0-9.]*)/gi,
     (m) => m[1].replace(/\.$/, ""),
   ],
   [
