@@ -21,10 +21,10 @@ it is back in the pool.
 
 | File                          | Role |
 | ----------------------------- | ---- |
-| `policy/cuts/stage_NNN.bin`   | One FlatBuffers binary per stage, root table `StageCuts`: every cut's intercept, coefficient vector, and active flag, plus a per-slot `entity_manifest` that attributes each coefficient position to its owning state variable. Written every training run (unless checkpointing is disabled) and re-read on the next `warm_start` / `resume` run (see Inputs above). |
+| `policy/cuts/stage_NNN.bin`   | One FlatBuffers binary per stage, root table `StageCuts`: every cut's intercept, coefficient vector, and active flag. The coefficient vector is a bare `float64[]`; each position maps to a state variable via `state_dictionary.json` (see the output-format reference). Written every training run (unless checkpointing is disabled) and re-read on the next `warm_start` / `resume` run (see Inputs above). |
 
-For the complete field-by-field record layout (`Cut`, `StageCuts`,
-`entity_manifest`) and the checkpoint-wide `policy/metadata.json` summary, see
+For the complete field-by-field record layout (`Cut`, `StageCuts`) and the
+checkpoint-wide `policy/metadata.json` summary, see
 the output-format reference page in the Reference corpus (not yet published
 on this site). For the schema file itself and per-language `flatc` codegen
 recipes (Python, C++, TypeScript, …) to read a checkpoint outside Cobre, see
