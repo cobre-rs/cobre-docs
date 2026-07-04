@@ -3,6 +3,11 @@ title: Hydro Production Function Models
 description: Constant productivity, FPHA (piecewise-linear convex hull fit), and linearized head models for hydro generation constraints — with fitting pipeline, LP integration, and energy-conversion scalars.
 ---
 
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+import { Content as HydroConfigure } from './_impl/_hydro.configure.mdx';
+import { Content as HydroIO } from './_impl/_hydro.io.mdx';
+import { Content as HydroNotes } from './_impl/_hydro.notes.mdx';
+
 ## Purpose
 
 This spec defines the hydro generation constraint models supported by Cobre, which relate turbined flow and reservoir storage to electrical output. Two models are available during training (policy construction): constant productivity and FPHA. A third model — linearized head — is available only during simulation (policy evaluation) as a higher-fidelity enhancement. The choice among training models trades off accuracy vs. computational cost, and can vary by stage per hydro.
@@ -503,6 +508,16 @@ The full FPHA production function (section 2) is multi-dimensional and concave; 
 For non-FPHA hydros, the per-(hydro, stage) productivity coefficient is resolved from exactly one of the two authoring sources listed in §5.1: range-level productivity in the production-models input, or per-stage productivity in the energy-productivity input. Supplying a value from both for the same $(h, t)$ is rejected at load time; supplying neither for any study stage of a non-FPHA hydro is also rejected at load time.
 
 For FPHA hydros, the production-models input does not accept a productivity scalar — $\rho_{eq}$ is derived from VHA geometry and $\rho_{esp}$ unless the energy-productivity input supplies an override.
+
+## Implementation in Cobre
+
+The methodology above defines the hydro production models; the tabs below cover how Cobre's software surface configures, feeds, and reports on them.
+
+<Tabs>
+  <TabItem label="Configure"><HydroConfigure /></TabItem>
+  <TabItem label="Inputs & Outputs"><HydroIO /></TabItem>
+  <TabItem label="Implementation notes"><HydroNotes /></TabItem>
+</Tabs>
 
 ## Cross-References
 

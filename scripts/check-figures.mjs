@@ -145,6 +145,10 @@ function collectSourceFiles(dir) {
   const files = [];
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
     if (entry.name === "pt-br") continue;
+    // Skip underscore-prefixed entries (e.g. the math/_impl/_*.mdx interleave
+    // partials): Starlight's docsLoader globs `**/[^_]*.{md,mdx}`, so these are
+    // NOT routed pages — mirrors check-math-parity.mjs.
+    if (entry.name.startsWith("_")) continue;
     const full = `${dir}${entry.name}`;
     if (entry.isDirectory()) {
       files.push(...collectSourceFiles(`${full}/`));
