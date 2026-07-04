@@ -1,0 +1,69 @@
+Non-normative software behavior for thermal, contract, pumping, and NCS
+equipment — what Cobre does at runtime, beyond the equations above. This tab
+references the methodology body for the derivations rather than restating
+them.
+
+### Commissioning window: half-open, exit exclusive
+
+Every equipment type in this chapter — thermal plants, transmission lines,
+import/export contracts, pumping stations, and non-controllable sources —
+shares one commissioning-window predicate: an entity is active at stage `t`
+when `entry_stage_id <= t < exit_stage_id`. The entry stage is **inclusive**;
+the exit stage is **exclusive** — the entity is gone starting at
+`exit_stage_id` itself, not decommissioned at the stage after it. Outside its
+window, the entity's LP columns are pinned to `[0, 0]`: a dormant contract
+still emits an output row (`power_mw = 0`, a defined dormant
+`operative_state_code`), it is simply zeroed rather than absent. This
+resolves any "inclusive exit" wording found elsewhere describing the same
+fields — the shipped commissioning predicate treats the exit stage as
+exclusive.
+
+### Contracts are stateless
+
+An energy contract contributes exactly one LP column per block per direction
+and carries **no state variable** — it is not part of the Bellman recursion
+and contributes no term to the Benders cuts (methodology §3). This is a
+structural difference from hydro plants and anticipated thermals, whose
+storage / ring-buffer state variables do carry a cut term. A non-zero
+`min_mw` at a contract's active stages is a hard take-or-pay floor: the LP
+must dispatch at least that quantity at the contract price regardless of
+cheaper alternatives elsewhere in the system. All contract cost — the import
+cost or the (negative) export revenue — is booked inside the `resource_cost`
+component of the per-stage cost breakdown, alongside thermal fuel cost.
+
+### Pumping stations carry no explicit objective cost
+
+A pumping station's flow variable has **no direct term in the objective
+function** (methodology §4). The cost of pumping is entirely implicit:
+pumping draws power at the connected bus in proportion to pumped flow, and
+that draw is priced by whatever the bus's marginal cost happens to be at
+that stage and scenario — cheap when hydro/renewable surplus is on the
+margin, expensive when thermal dispatch is setting the price. This is why
+pumping economically self-selects toward low-price periods without any
+pump-specific cost coefficient to tune.
+
+### Anticipated thermals are the exception to "no cross-stage state" for equipment
+
+Every other equipment type in this chapter is memoryless: its dispatch at
+stage `t` depends only on that stage's own bounds and price. An anticipated
+thermal (`anticipated_config.lead_stages = K`) is the one exception — its
+commitment decision at stage `t` is carried forward as ring-buffer state and
+matures as delivered generation at stage `t + K` (system elements §4). The
+`anticipated_decision(N)` generic-constraint expression lets a case author
+cap or floor that forward commitment directly; referencing a non-anticipated
+thermal with this expression is a hard load-time error, and referencing an
+anticipated thermal's per-block generation with `thermal_generation(N)` is
+accepted but flagged, since it does not read the forward commitment.
+
+### Must-run NCS and the double-discount trap
+
+The `allow_curtailment: false` flag pins an NCS generation column to the
+realized availability every scenario — a bound-equality, not merely an upper
+bound. This exists specifically for aggregate, non-simulated generation
+figures (small hydro, biomass, distributed generation) that an upstream
+source model has already subtracted from load before the dispatch LP runs:
+leaving such an aggregate curtailable lets the LP "curtail" energy that was
+never separately available to curtail, silently cheapening the hydrothermal
+dispatch relative to the reference model it is meant to reproduce.
+Stand-alone wind and solar plants, where curtailment is a real physical and
+economic choice, use the default curtailable behavior instead.
