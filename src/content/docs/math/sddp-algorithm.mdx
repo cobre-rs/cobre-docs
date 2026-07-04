@@ -279,7 +279,7 @@ A **terminal boundary cut** is a Benders cut on the terminal future-cost functio
 
 **Trade-off**: The imported cuts reflect the upstream run's stochastic model and state discretization. If the downstream run uses a different inflow model, a different set of reservoirs, or a different penalty structure, the imported cuts may be inconsistent with the downstream subproblems. Inconsistencies do not cause infeasibility (the backward pass will generate corrective cuts) but they may slow convergence or produce a looser initial approximation than a consistent import would provide.
 
-For the full treatment of chained studies and horizon coupling, see Part 5 — Coupling and Boundary Conditions.
+For the full treatment of chained studies and horizon coupling, see [Horizon Modes](/math/horizon-modes) in Coupling & Boundary Conditions.
 
 ## Cross-References
 

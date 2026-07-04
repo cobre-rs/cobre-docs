@@ -1,8 +1,8 @@
 # cobre-docs
 
-The **methodology reference** for the [Cobre](https://github.com/cobre-rs/cobre)
-ecosystem — the specification corpus (mathematics, worked examples, and notation)
-for SDDP-based hydrothermal dispatch.
+**Cobre Documentation** for the [Cobre](https://github.com/cobre-rs/cobre)
+ecosystem — the mathematics, algorithm, and worked examples behind its
+SDDP-based hydrothermal dispatch, together with how the software implements them.
 
 Published at **[methodology.cobre-rs.dev](https://methodology.cobre-rs.dev)**, built
 with [Astro Starlight](https://starlight.astro.build/).

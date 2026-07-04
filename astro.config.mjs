@@ -124,7 +124,7 @@ export default defineConfig({
       theme: { default: "0", dark: "200" },
     }),
     starlight({
-      title: "Cobre Methodology Reference",
+      title: "Cobre Documentation",
       // Translation-status dashboard (ticket-022). @lunariajs/starlight is a
       // STARLIGHT PLUGIN (not an Astro integration): it hooks Starlight's plugin
       // API to inject the `/lunaria` route, which reads git history + the tracked
@@ -148,26 +148,41 @@ export default defineConfig({
         replacesTitle: false,
       },
       favicon: "/favicon.svg",
-      // Explicit 7-Part sidebar (ticket-016). NOT `autogenerate`: the curated TOC
-      // crosses content folders (Parts 2–5 are all `math/…` chapters split across
-      // four Part groups) and uses "Part N — …" labels that autogeneration cannot
-      // reproduce. Labels are verbatim from `src/SUMMARY.md`'s `# Part N — …`
-      // headings; each group's slugs are in SUMMARY.md order. All 29 migrated
-      // chapter slugs appear exactly once. The landing page (index.mdx → `/`) is the
-      // site root and is intentionally NOT a sidebar entry. A slug here that has no
-      // built page fails `astro build` (a slug typo surfaces immediately).
+      // Unified interleaved sidebar (ticket-005, docs-unification strategy §5
+      // sketch). NOT `autogenerate`: the curated TOC crosses content folders
+      // (System Modelling…Coupling & Boundary Conditions are all `math/…`
+      // chapters split across four groups) and the old Part-N-prefixed labels
+      // are retired in favour of named groups that autogeneration cannot
+      // reproduce. The leading Get-Started group is new (ticket-004 ported the
+      // three `getting-started/*` pages); it also reclaims
+      // `overview/what-cobre-solves` from the old first Part group, leaving the
+      // renamed Introduction group with the remaining three overview slugs.
+      // Every other group's slug set is unchanged from the old 7-Part scaffold,
+      // just relabelled. The pure-software Running-Cobre group and the I/O
+      // reference entries (§5 sketch) are Phase 2 (Epic 03) — do NOT add them
+      // here, a sidebar slug with no built page fails `astro build`. The
+      // landing page (index.mdx → `/`) is the site root and is intentionally
+      // NOT a sidebar entry.
       sidebar: [
         {
-          label: "Part 1 — Introduction",
+          label: "Get Started",
           items: [
             "overview/what-cobre-solves",
+            "getting-started/installation",
+            "getting-started/quickstart",
+            "getting-started/python-quickstart",
+          ],
+        },
+        {
+          label: "Introduction",
+          items: [
             "overview/sddp-framework-overview",
             "overview/notation-conventions",
             "overview/how-to-read",
           ],
         },
         {
-          label: "Part 2 — System Modelling",
+          label: "System Modelling",
           items: [
             "math/lp-formulation",
             "math/system-elements",
@@ -179,7 +194,7 @@ export default defineConfig({
           ],
         },
         {
-          label: "Part 3 — Stochastic Modelling",
+          label: "Stochastic Modelling",
           items: [
             "math/par-inflow-model",
             "math/multi-resolution-studies",
@@ -188,7 +203,7 @@ export default defineConfig({
           ],
         },
         {
-          label: "Part 4 — The SDDP Algorithm",
+          label: "The SDDP Algorithm",
           items: [
             "math/sddp-algorithm",
             "math/cut-management",
@@ -201,15 +216,15 @@ export default defineConfig({
           ],
         },
         {
-          label: "Part 5 — Coupling and Boundary Conditions",
+          label: "Coupling & Boundary Conditions",
           items: ["math/horizon-modes", "math/discount-rate"],
         },
         {
-          label: "Part 6 — Worked Examples",
+          label: "Worked Examples",
           items: ["examples/toy-single-reservoir", "examples/toy-four-reservoir"],
         },
         {
-          label: "Part 7 — Reference",
+          label: "Reference",
           items: ["reference/glossary", "reference/bibliography"],
         },
       ],
