@@ -3,6 +3,10 @@ title: System Element Modeling Overview
 description: Physical components of a hydrothermal power system as modeled by Cobre — buses, hydro plants, thermal units, transmission lines, contracts, and pumping stations.
 ---
 
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+import { Content as NetworkConfigure } from './_impl/_network.configure.mdx';
+import { Content as NetworkIO } from './_impl/_network.io.mdx';
+
 ## Purpose
 
 This spec describes the physical components of a hydrothermal power system as modeled by Cobre: what each element represents, its decision variables, how it connects to other elements, and its role in the optimization objective. It serves as the conceptual foundation between the SDDP algorithm description and the full LP formulation — the reader should understand _what_ is being optimized before seeing _how_ the constraints are assembled.
@@ -660,6 +664,15 @@ The following table maps each physical system element to its LP representation:
 | **Contract**              | —                        | $\chi_{c,k}$                               | Dispatch bounds (min/max)                   | Import cost or Export revenue                |
 
 **Key insight**: The hydro storage variables $v_h$, the AR lag variables $a_{h,\ell}$, and the anticipated-thermal ring-buffer slots $x^{\mathrm{a}}_{s,i,t}$ are the **state variables** that link stages through the Bellman recursion. All other elements contribute control variables that are determined within each stage. This structure enables SDDP's decomposition: the stage subproblem optimizes all control variables given the incoming state, and Benders cuts approximate the future cost as a function of the outgoing state.
+
+## Implementation in Cobre
+
+The methodology above defines every system element; the tabs below cover how Cobre's software surface configures and reports the **network layer** — buses and transmission lines. The remaining elements (thermals, hydros, non-controllable sources, pumping stations, contracts) are covered by their own chapters' Implementation tabs (hydro production models, equipment formulations).
+
+<Tabs>
+  <TabItem label="Configure"><NetworkConfigure /></TabItem>
+  <TabItem label="Inputs & Outputs"><NetworkIO /></TabItem>
+</Tabs>
 
 ## Cross-References
 

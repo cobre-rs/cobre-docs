@@ -1,0 +1,37 @@
+This is a topic-scoped index of the files the network layer touches — it
+names each file and its role, it does not repeat their field-by-field
+schemas. The exhaustive, field-by-field case-directory and output reference
+is owned by the Reference corpus (case-format and output-format pages); those
+pages are not part of this build yet, so the entries below are prose pointers
+rather than links until they land.
+
+### Inputs
+
+| File                                 | Role                                                                                                                                                                       |
+| ------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `system/buses.json`                  | Bus (node) registry — `id`, `name`, and the `deficit_segments` override covered in the Configure tab. Required in every case.                                              |
+| `system/lines.json`                  | Transmission line (edge) registry — `id`, `name`, endpoints, `capacity`, `losses_percent`, and the `exchange_cost` override covered in the Configure tab. Empty array for a single-bus case. |
+| `constraints/exchange_factors.json`  | Optional per-`(line_id, stage_id, block_id)` capacity de-rating multipliers for `capacity.direct_mw` / `capacity.reverse_mw` — planned outages, seasonal de-rating, or time-of-day transfer limits. Absent entries default to a factor of 1.0. |
+
+The stage-varying **penalty** overrides that touch these same two files —
+`excess_cost` on buses and `exchange_cost` on lines — are separate sparse
+parquet inputs owned by the penalty system; see the
+[Penalty System Inputs & Outputs tab](/math/penalty-system#implementation-in-cobre)
+for `constraints/penalty_overrides_bus.parquet` and
+`constraints/penalty_overrides_line.parquet`. This chapter does not repeat
+that index.
+
+For the complete field-by-field schema of every file above, see the
+case-format reference page in the Reference corpus (not yet published on
+this site).
+
+### Outputs
+
+| File / column group     | Role                                                                                                                                                              |
+| ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `simulation/buses/`      | Per-(stage, block, bus) load balance results: `load_mw`, `deficit_mw`, `excess_mw` (and their `_mwh` energy equivalents), and `spot_price` — the load-balance dual. |
+| `simulation/exchanges/`  | Per-(stage, block, line) flow results: `direct_flow_mw`, `reverse_flow_mw`, `net_flow_mw` (and `_mwh`), transmission `losses_mw`/`losses_mwh`, and the monetary `exchange_cost` attributed to that line's flow. |
+
+For the complete output schema (columns, types, file layout), see the
+output-format reference page in the Reference corpus (not yet published on
+this site).
