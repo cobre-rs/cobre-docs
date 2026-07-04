@@ -1,0 +1,31 @@
+This is a topic-scoped index of the files cut management touches. Cuts have
+no case-directory input file of their own — the only configuration surface is
+`training.cut_selection` in `config.json` (see the Configure tab). The topic's
+I/O surface is the **policy checkpoint**: the FlatBuffers `.bin` files that
+persist the cut pool between runs. This tab names that surface and its role;
+it does not repeat the field-by-field record layout, which is owned by the
+Reference corpus (case-format and output-format pages) — those pages are not
+part of this build yet, so the entries below are prose pointers rather than
+links until they land.
+
+### Inputs
+
+There is no case-directory input file for cuts. The one input path is a
+**re-read of a previous run's output**: when the run's policy mode is
+`"warm_start"` or `"resume"`, Cobre loads `policy/cuts/stage_NNN.bin` from a
+prior checkpoint directory and repopulates the cut pool before training
+resumes. See Implementation notes for how a warm-started cut is tracked once
+it is back in the pool.
+
+### Outputs
+
+| File                          | Role |
+| ----------------------------- | ---- |
+| `policy/cuts/stage_NNN.bin`   | One FlatBuffers binary per stage, root table `StageCuts`: every cut's intercept, coefficient vector, and active flag, plus a per-slot `entity_manifest` that attributes each coefficient position to its owning state variable. Written every training run (unless checkpointing is disabled) and re-read on the next `warm_start` / `resume` run (see Inputs above). |
+
+For the complete field-by-field record layout (`Cut`, `StageCuts`,
+`entity_manifest`) and the checkpoint-wide `policy/metadata.json` summary, see
+the output-format reference page in the Reference corpus (not yet published
+on this site). For the schema file itself and per-language `flatc` codegen
+recipes (Python, C++, TypeScript, …) to read a checkpoint outside Cobre, see
+the FlatBuffers-schema reference page (also not yet published).

@@ -3,6 +3,11 @@ title: Cut Management
 description: Complete Benders cut lifecycle — cut definition, reduced-cost extraction, single-cut aggregation, validity conditions, cut pool growth, periodic-pruning strategies, and Dynamic Cut Selection (DCS).
 ---
 
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+import { Content as CutConfigure } from './_impl/_cut-management.configure.mdx';
+import { Content as CutIO } from './_impl/_cut-management.io.mdx';
+import { Content as CutNotes } from './_impl/_cut-management.notes.mdx';
+
 ## Purpose
 
 This spec defines the complete Benders cut lifecycle in Cobre: what cuts represent mathematically, how cut coefficients relate to LP dual variables, how per-scenario cuts are aggregated into a single cut, under what conditions cuts are valid, and what selection strategies are available to control cut pool growth.
@@ -258,6 +263,16 @@ The `training.cut_selection` object has two always-on top-level knobs plus an op
 | $n_{\text{adic}}$           | `selection.max_added_per_round`  | `10` (must be ≥ 1)      | `dynamic`                      |
 | $\varepsilon_{\text{viol}}$ | `selection.violation_tolerance`  | `1e-10`                 | `dynamic`                      |
 | —                           | `selection.start_iteration`      | `2` (must be ≥ 1)       | `dynamic`                      |
+
+## Implementation in Cobre
+
+The methodology above defines the complete Benders cut lifecycle; the tabs below cover how Cobre's software surface configures, persists, and manages cuts at runtime.
+
+<Tabs>
+  <TabItem label="Configure"><CutConfigure /></TabItem>
+  <TabItem label="Inputs & Outputs"><CutIO /></TabItem>
+  <TabItem label="Implementation notes"><CutNotes /></TabItem>
+</Tabs>
 
 ## Cross-References
 
