@@ -16,6 +16,7 @@
     "check:e10": "node scripts/check-e10-gate.mjs",
     "check:spdx": "node scripts/check-spdx.mjs",
     "gen:notices": "node scripts/gen-notices.mjs",
+    "refresh:schemas": "node scripts/refresh-schemas.mjs",
     "test": "node --test src/figures/*.test.ts scripts/*.test.mjs"
   },
   "dependencies": {

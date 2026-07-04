@@ -244,6 +244,7 @@ export default defineConfig({
           items: [
             "reference/case-directory-format",
             "reference/output-format",
+            "reference/json-schemas",
             "reference/error-codes",
             "reference/flatbuffers-schema",
             "reference/cli-reference",
