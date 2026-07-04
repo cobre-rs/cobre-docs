@@ -158,11 +158,13 @@ export default defineConfig({
       // `overview/what-cobre-solves` from the old first Part group, leaving the
       // renamed Introduction group with the remaining three overview slugs.
       // Every other group's slug set is unchanged from the old 7-Part scaffold,
-      // just relabelled. The pure-software Running-Cobre group and the I/O
-      // reference entries (§5 sketch) are Phase 2 (Epic 03) — do NOT add them
-      // here, a sidebar slug with no built page fails `astro build`. The
-      // landing page (index.mdx → `/`) is the site root and is intentionally
-      // NOT a sidebar entry.
+      // just relabelled. The pure-software Running-Cobre group (§5 sketch) is
+      // still Phase 2 (Epic 03, ticket-013+) — do NOT add it here, a sidebar
+      // slug with no built page fails `astro build`. The I/O reference entries
+      // (case-directory-format, output-format, error-codes, flatbuffers-schema)
+      // landed in the Reference group below (ticket-012). The landing page
+      // (index.mdx → `/`) is the site root and is intentionally NOT a sidebar
+      // entry.
       sidebar: [
         {
           label: "Get Started",
@@ -225,7 +227,14 @@ export default defineConfig({
         },
         {
           label: "Reference",
-          items: ["reference/glossary", "reference/bibliography"],
+          items: [
+            "reference/case-directory-format",
+            "reference/output-format",
+            "reference/error-codes",
+            "reference/flatbuffers-schema",
+            "reference/glossary",
+            "reference/bibliography",
+          ],
         },
       ],
       // Architecture B version picker mounts by overriding the `SocialIcons`
