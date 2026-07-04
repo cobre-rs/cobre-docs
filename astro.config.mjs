@@ -131,6 +131,27 @@ export default defineConfig({
       // English chapter sources (per lunaria.config.json) and renders per-page
       // pt-BR translation status. With no pt-br/ content yet it reports 0%
       // (untranslated) — the intended "ready for translators" state.
+      //
+      // Coverage + two design decisions (ticket-019, extending i18n/Lunaria to
+      // the Epics 03–04 software content — math/_impl/*, reference/*, running/*,
+      // getting-started/*):
+      // (a) `math/_impl/_*.mdx` partials are STANDALONE translation units.
+      //     `lunaria.config.json`'s `location` glob (`src/content/docs/**/*.{md,mdx}`)
+      //     matches underscore basenames — Lunaria does NOT apply Starlight's
+      //     `docsLoader` `[^_]*` routing exclusion — so each partial is tracked
+      //     as its own row on the dashboard even though it renders inline into a
+      //     host chapter via `<Tabs>`, not as its own routed page. This is
+      //     intentional (strategy §5): math and config-layer prose localize
+      //     independently. No config change was needed; confirmed empirically
+      //     with a fast-glob run against the same pattern (61 matches, including
+      //     all `_impl/_*.mdx` partials, `reference/*`, `running/*`, and
+      //     `getting-started/*`).
+      // (b) `src/content/docs/pt-br/` stays `.gitkeep`-only — NO mirrored pt-br
+      //     stub scaffold. Starlight falls back to the English source for any
+      //     untranslated page, so 0%-translated across the board (including the
+      //     new software content) is the correct "ready for translators" state,
+      //     not a defect. Do not add empty/stub pt-br `.md`/`.mdx` files — they
+      //     would render as broken pages and skew the dashboard's status.
       plugins: [lunaria({ configPath: "./lunaria.config.json", route: "/lunaria" })],
       // Brand mark (ticket-011b, resolves ticket-009's deferred logo). The header
       // slot is small (~24px), so we use the ICON — a self-contained 128×128 copper
