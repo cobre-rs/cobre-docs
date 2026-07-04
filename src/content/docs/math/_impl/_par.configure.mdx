@@ -1,0 +1,164 @@
+Cobre's `config.json` top-level `estimation` block, the `scenarios/` PAR(p)
+input files, and `scenarios/correlation.json` configure the estimation and
+correlation pipeline the methodology above describes. This tab is the
+field-level configuration reference; the equations these fields feed are in
+the sections above.
+
+### `config.json` — `estimation` Block
+
+The `estimation` block is a top-level key of `config.json` (a sibling of
+`training`), and controls the PAR(p) fitting pipeline whenever
+`inflow_history.parquet` is present:
+
+```json
+{
+  "estimation": {
+    "max_order": 6,
+    "order_selection": "pacf",
+    "min_observations_per_season": 30,
+    "max_coefficient_magnitude": null
+  }
+}
+```
+
+| Field                          | Type            | Default  | Description |
+| ------------------------------ | --------------- | -------- | ----------- |
+| `max_order`                    | integer          | `6`      | Maximum lag order `p_max` considered by PACF order selection (methodology §4.1). |
+| `order_selection`               | string          | `"pacf"` | Order-selection criterion. Exactly two values are accepted: `"pacf"` (classical PAR(p), methodology §1–§8) and `"pacf_annual"` (PAR(p)-A, methodology §9). |
+| `min_observations_per_season`  | integer          | `30`     | Recommended minimum observation count per (hydro, season) group. Below this count, estimation still proceeds — see Implementation notes. |
+| `max_coefficient_magnitude`    | float or `null`  | `null`   | Optional safety net on fitted coefficient magnitude — see Implementation notes for the exact effect. |
+
+Setting `"order_selection": "pacf_annual"` activates the PAR(p)-A annual
+component (methodology §9): the periodic Yule-Walker system is extended with
+the annual cross-correlation term, per-season sample statistics of the
+rolling 12-month average are computed, and the fitted triple
+(ψ, annual mean, annual std) is written to `inflow_annual_component.parquet`
+— see the Inputs & Outputs tab. When absent (or set to `"pacf"`), only the
+classical PAR(p) path runs and no annual triple is produced.
+
+### Inflow Source Resolution — Choosing Which Files to Provide
+
+The PAR(p) inflow model is built from up to five files in `scenarios/`. Three
+of them drive **path resolution** — their presence or absence selects which
+of seven estimation paths Cobre executes:
+
+| Symbol | File                                        | Role                                    |
+| :----: | ------------------------------------------- | ---------------------------------------- |
+| **H**  | `scenarios/inflow_history.parquet`          | Raw historical observations for fitting |
+| **S**  | `scenarios/inflow_seasonal_stats.parquet`   | User-supplied seasonal mean/std         |
+| **R**  | `scenarios/inflow_ar_coefficients.parquet`  | User-supplied AR coefficients           |
+
+The other two files layer **orthogonally** on top of the resolved path:
+`scenarios/correlation.json` wins on every path when present (identity
+correlation otherwise, unless a path estimates it from residuals); and
+`scenarios/inflow_annual_component.parquet` is honored only on the
+pass-through paths (rows 2, 3, 7 below) — the estimation paths (4, 5, 6)
+always overwrite it with fitted values.
+
+| # | H | S | R | Path | Seasonal stats | AR coefficients | Correlation |
+| - | - | - | - | ---- | --------------- | ----------------- | ------------ |
+| 1 | 0 | 0 | 0 | `Deterministic` | no PAR model | none | identity, unless `correlation.json` provided |
+| 2 | 0 | 1 | 0 | `UserStatsWhiteNoise` | user file | order-0 (white noise) | identity, unless `correlation.json` provided |
+| 3 | 0 | 1 | 1 | `UserProvidedNoHistory` | user file | user file | identity, unless `correlation.json` provided |
+| 4 | 1 | 0 | 0 | `FullEstimation` | fitted from H | fitted from H (PACF + Yule-Walker + Maceira-Damazio) | estimated from H residuals, unless `correlation.json` provided |
+| 5 | 1 | 0 | 1 | `UserArHistoryStats` | fitted from H | user file | estimated from H residuals using user coefficients, unless `correlation.json` provided |
+| 6 | 1 | 1 | 0 | `PartialEstimation` | user file (used only for the Yule-Walker solve) | fitted from H | estimated from H residuals using the user stats, unless `correlation.json` provided |
+| 7 | 1 | 1 | 1 | `UserProvidedAll` | user file | user file | identity, unless `correlation.json` provided (history is not re-consumed) |
+
+Cases with `R = 1` but `H = 0` and `S = 0` collapse to row 1 — AR coefficients
+alone cannot drive estimation.
+
+**Practical recipes:**
+
+| Goal                                                       | Files to provide                                                    | Path |
+| ----------------------------------------------------------- | -------------------------------------------------------------------- | ---- |
+| Smoke-test the LP without stochasticity                     | _(no scenarios files)_                                                | 1    |
+| Deterministic seasonal levels, no autoregression             | `inflow_seasonal_stats.parquet`                                       | 2    |
+| Fully user-specified PAR(p) without raw observations         | `inflow_seasonal_stats.parquet`, `inflow_ar_coefficients.parquet`     | 3    |
+| Hands-off: fit everything from raw observations              | `inflow_history.parquet`                                              | 4    |
+| Fit stats from history, override the AR structure            | `inflow_history.parquet`, `inflow_ar_coefficients.parquet`            | 5    |
+| Override the levels (mean/std) but let Cobre fit the AR       | `inflow_history.parquet`, `inflow_seasonal_stats.parquet`             | 6    |
+| Provide every parameter, including the PAR(p)-A annual term   | All three of H, S, R (and optionally the annual file)                | 7    |
+| Pin a custom spatial correlation on any path                  | Add `correlation.json`                                                | any  |
+
+### `scenarios/inflow_history.parquet` — Raw Historical Observations
+
+Required to drive any of the estimation paths (H = 1 above). One row per
+historical observation:
+
+| Column      | Type   | Required | Description |
+| ----------- | ------ | -------- | ----------- |
+| `hydro_id`  | INT32  | Yes      | Hydro plant identifier (matches `id` in `hydros.json`). |
+| `date`      | DATE   | Yes      | Observation date. |
+| `value_m3s` | DOUBLE | Yes      | Historical inflow observation (m³/s); must be finite. |
+
+Every hydro plant in `hydros.json` must have at least one observation in this
+file when estimation is active. When a season has fewer observations than
+`min_observations_per_season`, estimation still proceeds — see Implementation
+notes for the exact behavior.
+
+### `scenarios/correlation.json` — Spatial Correlation Configuration
+
+Named correlation profiles, each grouping entities with a symmetric
+correlation matrix, plus an optional stage-to-profile schedule:
+
+```json
+{
+  "method": "spectral",
+  "profiles": {
+    "default": {
+      "correlation_groups": [
+        {
+          "name": "basin_south",
+          "entities": [
+            { "type": "inflow", "id": 0 },
+            { "type": "inflow", "id": 1 }
+          ],
+          "matrix": [
+            [1.0, 0.7],
+            [0.7, 1.0]
+          ]
+        }
+      ]
+    },
+    "wet_season": {
+      "correlation_groups": [
+        {
+          "name": "basin_south",
+          "entities": [
+            { "type": "inflow", "id": 0 },
+            { "type": "inflow", "id": 1 }
+          ],
+          "matrix": [
+            [1.0, 0.85],
+            [0.85, 1.0]
+          ]
+        }
+      ]
+    }
+  },
+  "schedule": [{ "stage_id": 0, "profile_name": "wet_season" }]
+}
+```
+
+| Field       | Required | Description |
+| ----------- | -------- | ----------- |
+| `method`    | Yes      | Correlation decomposition method. `"spectral"` (eigendecomposition + clipped square root, methodology §8.2) is preferred; `"cholesky"` is also accepted for existing case files and is treated identically. |
+| `profiles`  | Yes      | Named profiles, each holding one or more `correlation_groups`. Must not be empty. |
+| `schedule`  | No       | Optional array of `{ stage_id, profile_name }` entries activating a named profile for a specific stage. Absent means the `"default"` profile (or the sole profile) applies to every stage. Every `profile_name` referenced must exist in `profiles`. |
+
+Each correlation group's `matrix` must be square, match the length of
+`entities`, have diagonal entries exactly `1.0`, off-diagonal entries in
+`[-1.0, 1.0]`, and be symmetric.
+
+**Valid entity types** in `entities[].type`:
+
+- `"inflow"` — hydro inflow series (`id` matches `id` in `hydros.json`)
+- `"load"` — stochastic load demand (`id` matches `id` in `buses.json`)
+- `"ncs"` — non-controllable source availability (`id` matches `id` in
+  `non_controllable_sources.json`)
+
+**Same-type enforcement**: every entity within a single correlation group must
+share the same `type`. Mixing types in one group is rejected at case-load
+time; to correlate inflow with load, define separate groups (one per type)
+with matching correlation structure.

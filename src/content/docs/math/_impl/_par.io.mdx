@@ -1,0 +1,37 @@
+This is a topic-scoped index of the files PAR(p) estimation touches — it
+names each file and its role, it does not repeat their field-by-field
+schemas beyond what the Configure tab already shows for the config-authoring
+surface. The exhaustive, field-by-field case-directory and output reference
+is owned by the Reference corpus (case-format and output-format pages);
+those pages are not part of this build yet, so the entries below are prose
+pointers rather than links until they land.
+
+### Inputs
+
+| File | Role |
+| ---- | ---- |
+| `scenarios/inflow_history.parquet` | Raw historical inflow observations per (hydro, date) — drives the estimation path (H) when present (see the Configure tab). |
+| `scenarios/inflow_seasonal_stats.parquet` | User-supplied or fitted seasonal statistics per (hydro, stage). The `std_m3s` column is the **stored sample standard deviation** of the historical series — not the residual standard deviation used for noise scaling (see Implementation notes). |
+| `scenarios/inflow_ar_coefficients.parquet` | User-supplied or fitted standardized AR coefficients and `residual_std_ratio`, one row per (hydro, stage, lag). The AR order is derived from the row count, not stored explicitly. |
+| `scenarios/inflow_annual_component.parquet` | Optional user-supplied PAR(p)-A annual triple (coefficient, mean, std of the rolling 12-month average). Honored only on the pass-through paths — the estimation paths overwrite it with fitted values (see the Configure tab). |
+| `scenarios/correlation.json` | Named spatial-correlation profiles and optional stage schedule. Wins over estimated or identity correlation on every inflow-source path when present. |
+| `initial_conditions.json` (hydro `past_inflows` rows) | The AR-lag seed: past inflow values ordered most-recent-first, consumed by the opening study stages' lag terms (methodology §7.5). |
+
+For the complete field-by-field schema of each file above, see the
+case-format reference page in the Reference corpus (not yet published on
+this site).
+
+### Outputs
+
+| File | Role |
+| ---- | ---- |
+| `output/stochastic/inflow_seasonal_stats.parquet` | Fitted seasonal statistics, same schema as the input file — written whenever the estimation path ran. |
+| `output/stochastic/inflow_ar_coefficients.parquet` | Fitted AR coefficients, same schema as the input file — written whenever the estimation path ran. |
+| `output/stochastic/inflow_annual_component.parquet` | Fitted PAR(p)-A annual triple — written only when `order_selection: "pacf_annual"` and the estimation path ran. |
+| `output/stochastic/fitting_report.json` | Per-hydro summary of the selected AR order and coefficients — a human-readable complement to the parquet outputs above. |
+| `output/stochastic/correlation.json` | Round-trip export of the resolved correlation model, in the same schema as the `scenarios/correlation.json` input. |
+| `output/stochastic/noise_openings.parquet` | The backward-pass opening tree actually used during training, exported when `exports.stochastic: true`. Copying it back into `scenarios/noise_openings.parquet` replays the same opening tree on a subsequent run — see [Scenario Generation](/math/scenario-generation) for the opening-tree mechanics themselves (out of scope here). |
+
+For the complete output schema (columns, types, file layout), see the
+output-format reference page in the Reference corpus (not yet published on
+this site).

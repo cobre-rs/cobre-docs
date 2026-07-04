@@ -231,7 +231,7 @@ it. See §2 for the TALA watermark rationale.
 
 - `src/content/docs/math/lp-formulation.md` — inline ` ```d2 ` block (LP
   column-layout schematic, d24)
-- `src/content/docs/math/par-inflow-model.md` — inline ` ```d2 ` block (PAR
+- `src/content/docs/math/par-inflow-model.mdx` — inline ` ```d2 ` block (PAR
   stored-vs-computed schematic, d23 equivalent)
 - `src/content/docs/math/system-elements.md` — inline ` ```d2 ` block
   (system-element-overview, now a code-authored schematic)

@@ -3,6 +3,11 @@ title: PAR(p) Inflow Model
 description: Periodic Autoregressive model for inflow time series — parameter semantics, stored vs. computed quantities, Yule-Walker fitting, order selection, spatial correlation factorisation, and PAR(p)-A annual extension.
 ---
 
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+import { Content as ParConfigure } from './_impl/_par.configure.mdx';
+import { Content as ParIO } from './_impl/_par.io.mdx';
+import { Content as ParNotes } from './_impl/_par.notes.mdx';
+
 ## Purpose
 
 This spec defines the Periodic Autoregressive model of order $p$ (PAR(p)) used to capture temporal correlation in inflow time series, including the model definition, parameter semantics, the relationship between stored and computed quantities, the fitting procedure, model order selection, and validation invariants. Section 9 describes the optional PAR(p)-A extension that adds a single annual coefficient on top of the periodic AR structure to capture multi-year hydrological persistence.
@@ -658,6 +663,16 @@ The Maceira-Damazio iterative reduction of section 4.1 is applied across the ful
 | Hydro with fewer than 13 observations on PAR(p)-A path               | Hard failure during fitting (no silent fallback to classical)                            |
 
 The two paths share the seasonal-stats producer of section 5.2; switching between them does not silently change $\hat{\mu}_m$ or $\hat{s}_m$. The PAR(p)-A path uses the same spatial-correlation factorisation as the classical path (section 8); the extension affects only the temporal model.
+
+## Implementation in Cobre
+
+The methodology above defines the PAR(p) inflow model; the tabs below cover how Cobre's software surface configures, feeds, and reports on it.
+
+<Tabs>
+  <TabItem label="Configure"><ParConfigure /></TabItem>
+  <TabItem label="Inputs & Outputs"><ParIO /></TabItem>
+  <TabItem label="Implementation notes"><ParNotes /></TabItem>
+</Tabs>
 
 ## Cross-References
 
