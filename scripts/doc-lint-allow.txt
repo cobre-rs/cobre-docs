@@ -1,0 +1,81 @@
+# Doc-lint baseline allowlist (Epic 04 ticket-015).
+#
+# Grandfathers PRE-EXISTING strict-zone hits found by check-doc-voice.mjs and
+# check-doc-version.mjs on the committed corpus, so those two gates land GREEN
+# while still failing on any NEW violation with no entry here — a ratchet,
+# mirroring cobre's own `scripts/ci/allow-rationale-allowlist.txt` convention.
+#
+# check-doc-counts.mjs does NOT read this file (a stated column/field count
+# disagreeing with its own adjacent table is a plain factual bug, not a
+# voice/version judgement call — it has no grandfather path).
+#
+# Format: one entry per line, `<relpath>:<line>  <rule-id>  # rationale`.
+# `<relpath>` is relative to src/content/docs/. An entry silences EVERY rule
+# that fires on that exact path:line (the rule-id column is documentation,
+# not a filter — see scripts/doc-lint-allowlist.mjs).
+#
+# Scrubbing any of these (rewriting the methodology prose to remove the hedge/
+# version-annotation/false-positive trigger) is explicitly OUT OF SCOPE for
+# ticket-015 (a gate-port ticket) — see its Pending Decisions. Burn-down is a
+# separate, later editorial decision.
+#
+# ── Category 1: cobre-version-annotation narration (violates the "No version
+#    numbers in the corpus" hard rule; CLAUDE.md Pending Decision 1) ──────────
+# The ticket's refinement audit named 4 of these (cut-management.mdx:250,
+# lp-formulation.md:233, lp-formulation.md:546, lp-warm-start.md ~140-141);
+# running the ported gate found 3 MORE of the identical class
+# (lp-warm-start.md:135, hydro-production-models.mdx:299, and the self-
+# referential false positive below) — reported in full per the ticket's
+# "if you find more strict-zone hits than the 8 listed" instruction.
+
+math/cut-management.mdx:250  version-narration-renamed  # "Keys renamed from v0.8.1" — pre-existing version-annotation narration; scrub deferred (Pending Decision 1)
+math/lp-formulation.md:233  version-narration-as-of,version-narration-earlier-releases  # "Earlier Cobre releases ... As of v0.8.0 the state is pinned ..." — two narration hits on one admonition sentence; scrub deferred (Pending Decision 1)
+math/lp-formulation.md:546  version-narration-added  # "This cap was added in v0.8.1" — pre-existing version-annotation narration; scrub deferred (Pending Decision 1)
+math/lp-warm-start.md:135  version-narration-earlier-releases  # "Earlier releases predicted each re-introduced cut's basis ..." — same admonition block as the :140 hit below; NEW hit beyond the ticket's named 4, same class; scrub deferred (Pending Decision 1)
+math/lp-warm-start.md:140  version-narration-removed  # "... removed entirely in the\nv0.8.2 `cut_selection` restructure." (the ticket's "~140-141" hit; the phrase wraps across the hard-wrapped line break) — scrub deferred (Pending Decision 1)
+math/hydro-production-models.mdx:299  version-narration-earlier-releases  # "Earlier releases gated this cost behind FPHA only ..." — NEW hit beyond the ticket's named 4, same class; scrub deferred (Pending Decision 1)
+overview/what-cobre-solves.md:60  version-narration-migration  # SELF-REFERENTIAL FALSE POSITIVE, not a real violation: this is the "Code as ground truth" principle sentence itself STATING the no-version-annotations rule ("... does not carry version annotations, deprecation notices, or migration notes ..."), which trips the bare "migration" pattern. Analogous to cobre's own check_doc_voice.py excluding .claude/rules/* (which quotes every banned phrase as part of its own rule); this port has no equivalent self-reference exclusion, so it is grandfathered here instead. Candidate for a real exclusion mechanism in a future ticket, not a content scrub.
+
+# ── Category 2: unpinned "typical" magnitudes in strict-zone methodology prose
+#    (instance magic numbers; violates the Methodology Authoring Standards'
+#    "No instance magic numbers" rule) ────────────────────────────────────────
+# The ticket's refinement audit named 4 lines in hydro-production-models.mdx
+# (33, 34, 145, 413); running the ported gate confirms only 3 of those 4
+# actually trip the hedge+nearby-magnitude detector (line 413, "typically set
+# at installed turbine capacity", has NO number within the detector's 30-char
+# lookahead — it is a bare hedge with no magnitude to pin, so the ported
+# detector correctly does not flag it; no allowlist entry is needed or added
+# for it). Running the gate also found 8 MORE instances of the identical
+# class across other math/*.mdx chapters that the refinement audit's manual
+# review did not catch — reported in full per the ticket's instruction.
+
+math/hydro-production-models.mdx:33  unpinned-number  # "turbine efficiency (typically 0.85-0.92)" — instance magic number; scrub deferred (Pending Decision 2: physical-constant candidate)
+math/hydro-production-models.mdx:34  unpinned-number  # "typically at 65% storage" — instance magic number; scrub deferred (Pending Decision 2: physical-constant candidate)
+math/hydro-production-models.mdx:145  unpinned-number  # "typically 0.01-0.05 (1-5% losses)" — instance magic number; scrub deferred (Pending Decision 2: physical-constant candidate)
+math/par-inflow-model.mdx:516  unpinned-number  # "Brazilian hydro series commonly span 80-90 years" — instance magic number; NEW beyond the ticket's named 4, same class; scrub deferred
+math/par-inflow-model.mdx:562  unpinned-number  # "captures temporal dependence at lags up to a small p (typically <= 4 ...)" — instance magic number; NEW; scrub deferred
+math/sddp-algorithm.mdx:215  unpinned-number  # "Transitions with probabilities (typically deterministic: p = 1)" — instance magic number; NEW; scrub deferred
+math/system-elements.mdx:196  unpinned-number  # "regularization term (typically $0.01-1.00/MWh)" — instance magic number; NEW; scrub deferred
+math/upper-bound-evaluation.md:262  unpinned-number  # "N = 100 replications gives a half-width of roughly sigma_C / 10" — instance magic number; NEW; scrub deferred
+math/upper-bound-evaluation.md:274  unpinned-number  # "the simulation check costs approximately 1.7 seconds of wall-clock time" — instance magic number; NEW; scrub deferred
+math/weekly-monthly-coupled-studies.md:138  unpinned-number  # "a small number of stages (typically 4-12)" — instance magic number; NEW; scrub deferred
+overview/what-cobre-solves.md:48  unpinned-number  # "roughly 160 hydro plants, 130 thermal units, 20 scenarios per stage, ..." — instance magic numbers; NEW; scrub deferred
+
+# ── Category 3: hype-pattern false positives on legitimate technical English
+#    (NOT actual marketing/promotional voice — see report) ───────────────────
+# The ported _HYPE_PATTERNS (verbatim from cobre's software-prose README/
+# CONTRIBUTING register) over-trigger against this corpus's math-heavy
+# writing style: "zero cost" is used as a literal LP objective-coefficient
+# value (not the Rust-community "zero-cost abstractions" catchphrase), and
+# "not merely"/"not just" are standard logical-contrast connectives in careful
+# technical prose (not marketing puffery). None of the 7 hits below are
+# genuine hype; flagged here as a pattern-calibration finding for the corpus,
+# not a content defect — see report for a recommended follow-up.
+
+math/lp-formulation.md:361  hype-superlative  # "$z_h$ = LP variable ... (free column, zero cost)" — literal LP term, not marketing hype
+math/weekly-monthly-coupled-studies.md:157  hype-superlative  # "zero cost-to-go" — literal terminal value-function condition, not marketing hype
+examples/toy-four-reservoir.md:198  hype-superlative  # "stages 1-3 carry zero cost" — literal worked-example cost value, not marketing hype (LENIENT zone; hype check runs corpus-wide)
+math/penalty-system.mdx:101  hype-contrasting-affirmative  # "not merely policy quality" — logical-contrast connective, not marketing hype
+math/system-elements.mdx:102  hype-contrasting-affirmative  # "not just a presence gate" — logical-contrast connective, not marketing hype
+math/weekly-monthly-coupled-studies.md:11  hype-contrasting-affirmative  # "is not merely a change of time resolution" — logical-contrast connective, not marketing hype
+math/_impl/_equipment.notes.mdx:61  hype-contrasting-affirmative  # "not merely an upper bound" — logical-contrast connective, not marketing hype (LENIENT zone; hype check runs corpus-wide)

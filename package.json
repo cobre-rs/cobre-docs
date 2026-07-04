@@ -15,6 +15,9 @@
     "check:d2": "node scripts/check-d2-layout.mjs",
     "check:e10": "node scripts/check-e10-gate.mjs",
     "check:spdx": "node scripts/check-spdx.mjs",
+    "check:voice": "node scripts/check-doc-voice.mjs",
+    "check:counts": "node scripts/check-doc-counts.mjs",
+    "check:version": "node scripts/check-doc-version.mjs",
     "gen:notices": "node scripts/gen-notices.mjs",
     "refresh:schemas": "node scripts/refresh-schemas.mjs",
     "test": "node --test src/figures/*.test.ts scripts/*.test.mjs"

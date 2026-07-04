@@ -18,24 +18,23 @@
 // `dist/` is absent.
 
 import { readFileSync, readdirSync, existsSync } from "node:fs";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 const contentRoot = fileURLToPath(
   new URL("../src/content/docs/", import.meta.url),
 );
 const distRoot = fileURLToPath(new URL("../dist/", import.meta.url));
 
-if (!existsSync(distRoot)) {
-  console.error(
-    "check:math: dist/ not found — run `npm run build` before `npm run check:math`.",
-  );
-  process.exit(1);
-}
-
 // Recursively collect every .md/.mdx file under src/content/docs/, excluding the
 // pt-br/ subtree (future locale; only the root English corpus is gated here) and
 // index.mdx (the landing page, a renderer smoke-test, not migrated content).
-function collectSourceFiles(dir) {
+//
+// Exported (Epic 04 ticket-015 R5 fold-in) so the underscore-basename exclusion
+// (the `if (entry.name.startsWith("_")) continue;` branch below) can be pinned
+// directly by a node:test fixture (check-math-parity.test.mjs) without
+// depending on dist/ or the rest of the parity-check pipeline. No behavior
+// change — the walk itself is untouched.
+export function collectSourceFiles(dir) {
   const files = [];
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
     if (entry.name === "pt-br") continue;
@@ -44,11 +43,27 @@ function collectSourceFiles(dir) {
     // NOT routed pages and have no mirrored dist HTML to check parity against.
     // They also carry no display math by the two-layer standard, so excluding
     // them loses no coverage.
-    if (entry.name.startsWith("_")) continue;
+    //
+    // FIXED (Epic 04 ticket-015 R5 fold-in): the exclusion is scoped to FILE
+    // basenames only — a directory is always recursed into regardless of its
+    // OWN name. Previously the `_`-prefix check ran before the
+    // isDirectory() branch, so `math/_impl/` itself (the directory) was
+    // never even entered; this was behaviorally invisible on the current
+    // corpus (every file under _impl/ already has its own underscore
+    // basename, e.g. `_hydro.io.mdx`), but did not match the documented
+    // intent above ("skip underscore-prefixed ENTRIES [partials]") and
+    // silently could not collect a hypothetical non-underscore file nested
+    // inside an underscore-named directory (exactly the case
+    // check-math-parity.test.mjs's `_impl/routed.mdx` fixture pins). Verified
+    // this reorder is a no-op on the committed tree: check:math and
+    // check:figures report byte-identical output before/after.
     const full = `${dir}${entry.name}`;
     if (entry.isDirectory()) {
       files.push(...collectSourceFiles(`${full}/`));
-    } else if (/\.(md|mdx)$/.test(entry.name) && entry.name !== "index.mdx") {
+      continue;
+    }
+    if (entry.name.startsWith("_")) continue;
+    if (/\.(md|mdx)$/.test(entry.name) && entry.name !== "index.mdx") {
       files.push(full);
     }
   }
@@ -65,60 +80,90 @@ function countOccurrences(text, needle) {
   return count;
 }
 
-const sourceFiles = collectSourceFiles(contentRoot).sort();
-const failures = [];
-let blocksVerified = 0;
-
-for (const sourcePath of sourceFiles) {
-  const rel = sourcePath.slice(contentRoot.length);
-  const text = readFileSync(sourcePath, "utf8");
-
-  const delimiters = countOccurrences(text, "$$");
-  if (delimiters % 2 !== 0) {
-    failures.push({
-      rel,
-      category: "unbalanced-delimiters",
-      expected: "even",
-      actual: delimiters,
-    });
-    continue;
-  }
-  const expected = delimiters / 2;
-
-  const htmlPath = `${distRoot}${rel.replace(/\.(md|mdx)$/, "")}/index.html`;
-  if (!existsSync(htmlPath)) {
-    failures.push({
-      rel,
-      category: "missing-html",
-      expected,
-      actual: "(no built HTML)",
-    });
-    continue;
-  }
-
-  const html = readFileSync(htmlPath, "utf8");
-  const actual = countOccurrences(html, "katex-display");
-  if (actual !== expected) {
-    failures.push({ rel, category: "parity-mismatch", expected, actual });
-    continue;
-  }
-
-  blocksVerified += expected;
-}
-
-if (failures.length > 0) {
-  console.error(
-    `check:math: ${failures.length} file(s) failed display-math parity:\n`,
-  );
-  for (const f of failures) {
+// ---------------------------------------------------------------------------
+// Main (run only when invoked directly). Kept behind a direct-run guard
+// (Epic 04 ticket-015 R5 fold-in — this script had none before; adding one is
+// what makes `import { collectSourceFiles } from "./check-math-parity.mjs"`
+// safe for check-math-parity.test.mjs, mirroring check-figures.mjs /
+// check-spdx.mjs. Behavior when run directly (`node scripts/check-math-parity.mjs`
+// / `npm run check:math`) is unchanged — this only moves the existing
+// top-level statements inside a function).
+// ---------------------------------------------------------------------------
+function main() {
+  if (!existsSync(distRoot)) {
     console.error(
-      `  ${f.rel}\n    category: ${f.category}\n    expected: ${f.expected}\n    actual:   ${f.actual}\n`,
+      "check:math: dist/ not found — run `npm run build` before `npm run check:math`.",
     );
+    process.exit(1);
   }
-  process.exit(1);
+
+  const sourceFiles = collectSourceFiles(contentRoot).sort();
+  const failures = [];
+  let blocksVerified = 0;
+
+  for (const sourcePath of sourceFiles) {
+    const rel = sourcePath.slice(contentRoot.length);
+    const text = readFileSync(sourcePath, "utf8");
+
+    const delimiters = countOccurrences(text, "$$");
+    if (delimiters % 2 !== 0) {
+      failures.push({
+        rel,
+        category: "unbalanced-delimiters",
+        expected: "even",
+        actual: delimiters,
+      });
+      continue;
+    }
+    const expected = delimiters / 2;
+
+    const htmlPath = `${distRoot}${rel.replace(/\.(md|mdx)$/, "")}/index.html`;
+    if (!existsSync(htmlPath)) {
+      failures.push({
+        rel,
+        category: "missing-html",
+        expected,
+        actual: "(no built HTML)",
+      });
+      continue;
+    }
+
+    const html = readFileSync(htmlPath, "utf8");
+    const actual = countOccurrences(html, "katex-display");
+    if (actual !== expected) {
+      failures.push({ rel, category: "parity-mismatch", expected, actual });
+      continue;
+    }
+
+    blocksVerified += expected;
+  }
+
+  if (failures.length > 0) {
+    console.error(
+      `check:math: ${failures.length} file(s) failed display-math parity:\n`,
+    );
+    for (const f of failures) {
+      console.error(
+        `  ${f.rel}\n    category: ${f.category}\n    expected: ${f.expected}\n    actual:   ${f.actual}\n`,
+      );
+    }
+    process.exit(1);
+  }
+
+  console.log(
+    `check:math: ${sourceFiles.length} files checked, ${blocksVerified} display-math blocks verified.`,
+  );
+  process.exit(0);
 }
 
-console.log(
-  `check:math: ${sourceFiles.length} files checked, ${blocksVerified} display-math blocks verified.`,
-);
-process.exit(0);
+// Run when executed as `node scripts/check-math-parity.mjs`; stay inert when
+// imported (the comparison holds because Node sets argv[1] to the entry
+// script). `argv[1]` is absent when loaded via `node -e`/an importer with no
+// entry file, so guard before pathToFileURL — an import context is never a
+// direct run.
+const entryHref = process.argv[1]
+  ? pathToFileURL(process.argv[1]).href
+  : undefined;
+if (import.meta.url === entryHref) {
+  main();
+}
