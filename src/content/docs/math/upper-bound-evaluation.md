@@ -303,3 +303,4 @@ The convergence guarantee still holds: with $d_{cycle} < 1$, both the outer (cut
 - [Stopping Rules](/math/stopping-rules) — Convergence criteria that use the gap between inner and outer approximations; simulation-based stopping rule that consumes the per-iteration out-of-sample estimator (section 10.5)
 - [Risk Measures](/math/risk-measures) — CVaR objectives where deterministic upper bounds are essential; CVaR estimator validity under risk-averse policies (section 10.1)
 - [Scenario Generation](/math/scenario-generation) — Opening-tree definition from which out-of-sample replications draw independent noise realizations (section 10.1)
+- **Running Cobre:** [Convergence & Diagnostics](/running/interpreting-results/) — the software guide for reading and assessing this estimator's output.

@@ -2,9 +2,8 @@ This is a topic-scoped index of the files PAR(p) estimation touches — it
 names each file and its role, it does not repeat their field-by-field
 schemas beyond what the Configure tab already shows for the config-authoring
 surface. The exhaustive, field-by-field case-directory and output reference
-is owned by the Reference corpus (case-format and output-format pages);
-those pages are not part of this build yet, so the entries below are prose
-pointers rather than links until they land.
+is owned by the Reference corpus ([Case Directory Format](/reference/case-directory-format/)
+and [Output Format](/reference/output-format/) pages).
 
 ### Inputs
 
@@ -18,8 +17,8 @@ pointers rather than links until they land.
 | `initial_conditions.json` (hydro `past_inflows` rows) | The AR-lag seed: past inflow values ordered most-recent-first, consumed by the opening study stages' lag terms (methodology §7.5). |
 
 For the complete field-by-field schema of each file above, see the
-case-format reference page in the Reference corpus (not yet published on
-this site).
+[Case Directory Format](/reference/case-directory-format/) reference page in
+the Reference corpus.
 
 ### Outputs
 
@@ -33,5 +32,5 @@ this site).
 | `output/stochastic/noise_openings.parquet` | The backward-pass opening tree actually used during training, exported when `exports.stochastic: true`. Copying it back into `scenarios/noise_openings.parquet` replays the same opening tree on a subsequent run — see [Scenario Generation](/math/scenario-generation) for the opening-tree mechanics themselves (out of scope here). |
 
 For the complete output schema (columns, types, file layout), see the
-output-format reference page in the Reference corpus (not yet published on
-this site).
+[Output Format](/reference/output-format/) reference page in the Reference
+corpus.

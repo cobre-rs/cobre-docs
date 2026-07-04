@@ -3,11 +3,10 @@ title: Convergence & Diagnostics
 description: Practical analysis patterns for assessing convergence, extracting generation and cost statistics, and troubleshooting simulation results.
 ---
 
-Understanding Results explains what
-each output file contains and how to read it. This page goes one level deeper:
-it provides practical analysis patterns for answering domain questions from the
-data. It assumes you are comfortable loading Parquet files in your preferred
-tool.
+The [Output Format Reference](/reference/output-format/) documents what each
+output file contains. This page goes one level deeper: it provides practical
+analysis patterns for answering domain questions from the data. It assumes you
+are comfortable loading Parquet files in your preferred tool.
 
 The focus is on convergence diagnostics and simulation analysis. By the end
 of this page you will know how to assess whether a run converged, how to
@@ -409,6 +408,6 @@ Possible causes:
 
 ## Related Pages
 
-- Understanding Results — file-by-file walkthrough of every output artifact
+- **Theory:** [Upper Bound Evaluation](/math/upper-bound-evaluation/) — the statistical upper-bound estimator behind the convergence metrics this page analyzes.
 - [Output Format Reference](/reference/output-format/) — complete field-by-field schema for all output files
 - [Configuration](/running/configuration/) — all `config.json` fields including stopping rules and seed

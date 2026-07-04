@@ -1,9 +1,8 @@
 This is a topic-scoped index of the files hydro production touches — it names
 each file and its role, it does not repeat their field-by-field schemas. The
 exhaustive, field-by-field case-directory and output reference is owned by
-the Reference corpus (case-format and output-format pages); those pages are
-not part of this build yet, so the entries below are prose pointers rather
-than links until they land.
+the Reference corpus ([Case Directory Format](/reference/case-directory-format/)
+and [Output Format](/reference/output-format/) pages).
 
 ### Inputs
 
@@ -17,8 +16,8 @@ than links until they land.
 | `initial_conditions.json` (hydro rows) | Per-hydro initial state: `storage` or `filling_storage` (exactly one), plus optional `past_inflows` for AR lag seeding. |
 
 For the complete field-by-field schema of each file above, see the
-case-format reference page in the Reference corpus (not yet published on
-this site).
+[Case Directory Format](/reference/case-directory-format/) reference page in
+the Reference corpus.
 
 ### Outputs
 
@@ -28,5 +27,5 @@ this site).
 | Hydro generation and storage output columns | Per-(stage, block, hydro) dispatch results (turbined flow, spillage, generation, storage) written alongside every other entity's output rows. |
 
 For the complete output schema (columns, types, file layout), see the
-output-format reference page in the Reference corpus (not yet published on
-this site).
+[Output Format](/reference/output-format/) reference page in the Reference
+corpus.
