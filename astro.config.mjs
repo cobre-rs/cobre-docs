@@ -158,13 +158,16 @@ export default defineConfig({
       // `overview/what-cobre-solves` from the old first Part group, leaving the
       // renamed Introduction group with the remaining three overview slugs.
       // Every other group's slug set is unchanged from the old 7-Part scaffold,
-      // just relabelled. The pure-software Running-Cobre group (§5 sketch) is
-      // still Phase 2 (Epic 03, ticket-013+) — do NOT add it here, a sidebar
-      // slug with no built page fails `astro build`. The I/O reference entries
-      // (case-directory-format, output-format, error-codes, flatbuffers-schema)
-      // landed in the Reference group below (ticket-012). The landing page
-      // (index.mdx → `/`) is the site root and is intentionally NOT a sidebar
-      // entry.
+      // just relabelled. The pure-software Running Cobre group (§5 sketch,
+      // ticket-013) lands between Coupling & Boundary Conditions and Worked
+      // Examples: these `running/*` pages have no methodology twin, so they are
+      // standalone MDX (no `<Tabs>`, no `_impl/` partials). The I/O reference
+      // entries (case-directory-format, output-format, error-codes,
+      // flatbuffers-schema) landed in the Reference group below (ticket-012);
+      // `reference/cli-reference` (ticket-013) is the resolved borderline
+      // decision — CLI reference lives in Reference, not Running Cobre. The
+      // landing page (index.mdx → `/`) is the site root and is intentionally
+      // NOT a sidebar entry.
       sidebar: [
         {
           label: "Get Started",
@@ -222,6 +225,17 @@ export default defineConfig({
           items: ["math/horizon-modes", "math/discount-rate"],
         },
         {
+          label: "Running Cobre",
+          items: [
+            "running/configuration",
+            "running/running-studies",
+            "running/policy-management",
+            "running/performance",
+            "running/case-conversion",
+            "running/interpreting-results",
+          ],
+        },
+        {
           label: "Worked Examples",
           items: ["examples/toy-single-reservoir", "examples/toy-four-reservoir"],
         },
@@ -232,6 +246,7 @@ export default defineConfig({
             "reference/output-format",
             "reference/error-codes",
             "reference/flatbuffers-schema",
+            "reference/cli-reference",
             "reference/glossary",
             "reference/bibliography",
           ],

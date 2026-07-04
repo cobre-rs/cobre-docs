@@ -442,7 +442,7 @@ the count is positive (sparse encoding). 5 columns. All non-nullable.
 | `iteration`   | UInt32 | No       | Training iteration number (1-based).                                                                             |
 | `phase`       | Utf8   | No       | Algorithm phase: `"forward"`, `"backward"`, or `"lower_bound"`.                                                  |
 | `stage`       | Int32  | No       | Stage index (0-based).                                                                                           |
-| `retry_level` | UInt32 | No       | Retry escalation level (0--11). See the Solver Safeguards section of the Performance Accelerators guide. |
+| `retry_level` | UInt32 | No       | Retry escalation level (0--11). See the [Solver Safeguards](/running/performance/#solver-safeguards) section of the Performance Accelerators guide. |
 | `count`       | UInt64 | No       | Number of LP solves recovered at this retry level.                                                               |
 
 ### `training/scaling_report.json`
@@ -1278,4 +1278,4 @@ The re-run produces bit-for-bit identical stochastic artifacts because the
 round-trip eliminates the estimation step. The opening tree is loaded directly
 from `scenarios/noise_openings.parquet` instead of being regenerated.
 
-See the Exporting Stochastic Artifacts section of the Running Studies guide for the end-to-end workflow.
+See the [Exporting Stochastic Artifacts](/running/running-studies/#exporting-stochastic-artifacts) section of the Running Studies guide for the end-to-end workflow.
