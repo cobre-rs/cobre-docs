@@ -250,37 +250,22 @@ for the Benders cuts, assembled with the constraint-row families below.
 ```d2
 direction: down
 
-columns: "Decision variables — contiguous column order" {
-  state: "State (coupling)" {
-    vh: "vₕ  —  storage"
-    al: "aₕ,ℓ  —  AR lags"
-    note: "duals → cut coefficients π"
-  }
-  dispatch: "Dispatch (per block k, stage-local)" {
-    f: "fₗ,ₖ  —  flow"
-    q: "qₕ,ₖ  —  hydro gen"
-    qf: "qᶠₕ,ₖ  —  turbined"
-    s: "sₕ,ₖ  —  spill"
-    g: "gⱼ,ₖ  —  thermal"
-    r: "rₙ,ₖ  —  NCS"
-    d: "δᵦ,ₖ,ₛ  —  deficit"
-  }
-  future: "Future" {
-    theta: "θ  —  future cost"
-    note: "cut constraints"
-  }
-  state -> dispatch
-  dispatch -> future
+columns: "Decision-variable columns — fixed contiguous order in x" {
+  state: "1 · State (coupling)\nvₕ storage · aₕ,ℓ AR lags\npinned by column bounds; reduced costs → π"
+  dispatch: "2 · Dispatch (per block k)\nflow · hydro · turbined · spill\nthermal · NCS · deficit"
+  future: "3 · Future\nθ future cost (bounded by cuts)"
+  state -> dispatch -> future
 }
 
-rows: "Constraint rows" {
-  lb: "Load balance  —  per bus, per block"
-  wb: "Water balance  —  per hydro, per block"
-  fix: "Fixing constraints  —  state coupling, duals → π"
+rows: "Constraint-row families" {
+  grid-columns: 1
+  lb: "Load balance — per bus, per block"
+  wb: "Water balance — per hydro, per block"
+  fix: "Fixing — incoming-state coupling"
   cut: "Benders cuts:  θ ≥ α + πᵀx" {style.stroke-dash: 4}
 }
 
-columns -> rows: "assembled into stage LP" {style.stroke-dash: 3}
+columns -> rows: "assembled into the stage LP"
 ```
 
 The stage LP uses a fixed column and row layout that places state variables first, followed by auxiliary and equipment columns. State is pinned by **column bounds** on the incoming-state columns (§4a, §5a, §5c), and cut coefficients are read as the **reduced costs** of those columns — so the fixed column order, not a fixed row order, is what enables contiguous coefficient extraction. With $N = |\mathcal{H}|$ hydros, $L$ = maximum AR order, $A$ = number of anticipated thermals, and $K = K_{\max} = \max_i K_i$:
