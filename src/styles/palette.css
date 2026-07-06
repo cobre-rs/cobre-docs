@@ -38,6 +38,10 @@
 
 .vf-plot {
   margin: 1rem 0;
+  /* Centre the fixed-width (640px) plot svg in the wider content column
+     (Observable Plot renders a display:block svg, so it left-aligns otherwise). */
+  display: flex;
+  justify-content: center;
 }
 .vf-plot figure {
   margin: 0;
