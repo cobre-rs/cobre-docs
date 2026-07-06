@@ -117,51 +117,48 @@ aggregates them into one Benders cut. The sparse-forward / exhaustive-backward
 asymmetry is why SDDP converges where full-tree evaluation is infeasible.
 
 ```d2
-forward: "Forward pass — sparse sampling (M = 2 paths)" {
+direction: down
+
+classes: {
+  st: {shape: circle; width: 56; height: 56}
+  op: {shape: circle; width: 50; height: 50}
+}
+
+forward: "Forward pass — sparse (sample M paths)" {
   direction: right
-  x0: "x₀  root"
-  n1: "t=2"
-  n2: "t=2"
-  n3: "t=2"
-  a1: "t=3"
-  a2: "t=3"
-  a3: "t=3"
-  b1: "t=3"
-  b2: "t=3"
-  b3: "t=3"
-  c1: "t=3"
-  c2: "t=3"
-  c3: "t=3"
 
-  x0 -> n1: "path A" {style.stroke-width: 3}
-  x0 -> n2
-  x0 -> n3: "path B" {style.stroke-width: 3}
-  n1 -> a1
-  n1 -> a2: "sampled" {style.stroke-width: 3}
-  n1 -> a3
-  n2 -> b1
-  n2 -> b2
-  n2 -> b3
-  n3 -> c1
-  n3 -> c2
-  n3 -> c3: "sampled" {style.stroke-width: 3}
+  x0: "x₀" {class: st}
+  a1: "x̂₁ᴬ" {class: st}
+  a2: "x̂₂ᴬ" {class: st}
+  b1: "x̂₁ᴮ" {class: st}
+  b2: "x̂₂ᴮ" {class: st}
+
+  x0 -> a1: "path A"
+  a1 -> a2
+  x0 -> b1: "path B"
+  b1 -> b2
 }
 
-backward: "Backward pass — exhaustive evaluation (N = 3 openings)" {
+backward: "Backward pass — exhaustive (all N openings)" {
   direction: down
-  xhat: "trial point x̂"
-  o1: "ξ₁  →  solve LP  →  dual π₁"
-  o2: "ξ₂  →  solve LP  →  dual π₂"
-  o3: "ξ₃  →  solve LP  →  dual π₃"
-  cut: "Benders cut:  π̄ = E[π],  ᾱ = E[α]" {style.stroke-dash: 4}
 
-  xhat -> o1
-  xhat -> o2
-  xhat -> o3
-  o1 -> cut
-  o2 -> cut
-  o3 -> cut
+  trial: "trial point x̂"
+  o1: "ξ₁" {class: op}
+  o2: "ξ₂" {class: op}
+  o3: "ξ₃" {class: op}
+  agg: "aggregate\nπ̄ = E[π],  ᾱ = E[α]"
+  cut: "one Benders cut\nadded to stage t−1" {style.stroke-dash: 4}
+
+  trial -> o1
+  trial -> o2
+  trial -> o3
+  o1 -> agg
+  o2 -> agg
+  o3 -> agg
+  agg -> cut
 }
+
+forward -> backward: "each visited trial point x̂"
 ```
 
 ### 3.3 Convergence Monitoring
