@@ -204,13 +204,13 @@ don't match, loading fails with a descriptive error.
 
 The typical production coupling pipeline uses boundary cuts as follows:
 
-```text
-Monthly Cobre study (12 stages)
-  └─ policy checkpoint: cuts for stages 0–11
+```d2
+direction: down
 
-Weekly+monthly coupled study (W1, W2, W3, W4, M2)
-  └─ policy.boundary.path = "../monthly/policy"
-  └─ policy.boundary.source_stage = 2  (March cuts → terminal FCF)
+monthly: "Monthly study — 12 stages\npolicy checkpoint: cuts for stages 0–11" {shape: rectangle}
+coupled: "Weekly+monthly coupled study\n(W1 · W2 · W3 · W4 · M2)" {shape: rectangle}
+
+monthly -> coupled: "policy.boundary.path = ../monthly/policy\nsource_stage = 2  (March cuts → terminal FCF)"
 ```
 
 The coupled study's terminal stage (M2) receives the monthly model's March

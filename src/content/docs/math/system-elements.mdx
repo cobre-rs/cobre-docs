@@ -54,33 +54,40 @@ unserved load. Key flow variables are labelled (`f` line flow, `q` hydro
 turbined, `g` thermal, `gⁿᶜ` NCS, `δ` deficit, `d` demand).
 
 ```d2
-direction: right
+direction: down
+
+classes: {
+  hydro: {style: {stroke: "#4a90b8"}}
+  thermal: {style: {stroke: "#f5a623"}}
+  ncs: {style: {stroke: "#4a8b6f"}}
+  deficit: {style: {stroke: "#dc4c4c"}}
+}
 
 bus1: "Bus 1" {shape: rectangle}
 bus2: "Bus 2" {shape: rectangle}
 
-inflow: "inflow a" {shape: oval}
-reservoir: "Reservoir vₕ" {shape: cylinder}
-hydro: "Hydro  q (turbined)" {shape: circle}
+inflow: "inflow a" {shape: oval; class: hydro}
+reservoir: "Reservoir vₕ" {shape: cylinder; class: hydro}
+gen_h: "Hydro q" {class: hydro}
 
-thermal: "Thermal  g" {shape: circle}
-ncs: "NCS (wind / solar)  gⁿᶜ" {shape: circle}
+gen_t: "Thermal g" {class: thermal}
+gen_v: "NCS gⁿᶜ\n(wind / solar)" {class: ncs}
 
 demand1: "Demand d" {shape: oval}
 demand2: "Demand d" {shape: oval}
-deficit: "Deficit slack δ" {shape: oval}
+shed: "Deficit δ" {shape: oval; class: deficit}
 
 inflow -> reservoir: "a"
-reservoir -> hydro
-hydro -> bus1: "q → g"
-thermal -> bus1: "g"
-ncs -> bus2: "gⁿᶜ"
+reservoir -> gen_h
+gen_h -> bus1: "q → g"
+gen_t -> bus1: "g"
+gen_v -> bus2: "gⁿᶜ"
 
 bus1 <-> bus2: "line flow  f±  (η losses)"
 
 bus1 -> demand1: "d"
 bus2 -> demand2: "d"
-deficit -> bus2: "δ (unserved)" {style.stroke-dash: 4}
+shed -> bus2: "δ (unserved)" {style.stroke-dash: 4}
 ```
 
 The optimizer determines generation and flow decisions at each stage to minimize total expected cost (thermal generation + deficit penalties + regularization costs) while respecting physical constraints and preparing for uncertain future inflows.

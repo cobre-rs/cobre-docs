@@ -154,11 +154,13 @@ growth while preserving convergence guarantees.
 The pipeline runs after each iteration's backward pass and cut
 synchronization:
 
-```text
-Stage 1: Strategy-based selection  (check_frequency gated)
-    |
-    v
-Stage 2: Budget enforcement        (every iteration)
+```d2
+direction: down
+
+s1: "Stage 1 · Strategy-based selection\n(check_frequency gated)"
+s2: "Stage 2 · Budget enforcement\n(every iteration)"
+
+s1 -> s2
 ```
 
 ### Stage 1: Strategy-Based Selection

@@ -2,13 +2,63 @@
 import { defineConfig } from "astro/config";
 import starlight from "@astrojs/starlight";
 import lunaria from "@lunariajs/starlight";
-import mermaid from "astro-mermaid";
 import astroD2 from "astro-d2";
 import { unified } from "@astrojs/markdown-remark";
 import remarkMath from "remark-math";
 import rehypeKatex from "rehype-katex";
 
-// astro-mermaid and astro-d2 are registered before starlight.
+// Wrap each astro-d2 inline SVG in a <div class="d2-fig"> (scroll box + native
+// sizing — see src/styles/diagrams.css and Footer.astro `sizeD2Figures`).
+// astro-d2 nests an outer responsive <svg> around an inner <svg class="d2-svg">.
+// We MUST wrap the OUTERMOST svg: wrapping the inner one puts a <div> inside an
+// <svg>, which is invalid HTML — the browser foster-parents the div out, leaving
+// an empty outer svg that fills the column (a huge blank gap, worst on tall
+// diagrams). So we wrap only a top-level svg (parent is not an svg) that
+// contains a d2-svg, and never recurse into it.
+function rehypeWrapD2() {
+  /** @param {any} el */
+  const containsD2 = (el) => {
+    if (!el || el.type !== "element") return false;
+    const cls = /** @type {any[]} */ ([]).concat(el.properties?.className ?? []);
+    if (cls.some((/** @type {any} */ c) => String(c).includes("d2-svg")))
+      return true;
+    return (el.children ?? []).some((/** @type {any} */ c) => containsD2(c));
+  };
+  /** @param {any} node */
+  const walk = (node) => {
+    if (!node || !Array.isArray(node.children)) return;
+    for (let i = 0; i < node.children.length; i++) {
+      const child = node.children[i];
+      const isRawD2 =
+        (child.type === "raw" || child.type === "html") &&
+        typeof child.value === "string" &&
+        child.value.includes("d2-svg");
+      const isOuterD2 =
+        child.type === "element" &&
+        child.tagName === "svg" &&
+        node.tagName !== "svg" &&
+        containsD2(child);
+      if (isRawD2 || isOuterD2) {
+        node.children[i] = {
+          type: "element",
+          tagName: "div",
+          properties: { className: ["d2-fig"] },
+          children: [child],
+        };
+        // do not recurse into the wrapped svg
+      } else {
+        walk(child);
+      }
+    }
+  };
+  return (/** @type {any} */ tree) => walk(tree);
+}
+
+// astro-d2 is registered before starlight. d2 is the SINGLE diagram tool
+// (schematics, flowcharts, network one-lines); Observable-Plot islands cover
+// computed math plots. Mermaid was retired — d2 renders build-time (zero client
+// JS, one themable keystone in src/styles/diagrams.css). See
+// docs/design/diagram-authoring.md.
 export default defineConfig({
   // Architecture B: each version build sets its own base (e.g. "/v0.8/").
   base: process.env.DOCS_BASE ?? "/",
@@ -109,11 +159,10 @@ export default defineConfig({
   markdown: {
     processor: unified({
       remarkPlugins: [remarkMath],
-      rehypePlugins: [rehypeKatex],
+      rehypePlugins: [rehypeKatex, rehypeWrapD2],
     }),
   },
   integrations: [
-    mermaid({ autoTheme: true }),
     // astro-d2 renders ```d2 fenced blocks to inline SVG at build time. The `d2`
     // binary is NOT an npm package and must be on PATH at build time (CI: E7):
     //   curl -fsSL https://d2lang.com/install.sh | sh -s --
@@ -122,6 +171,10 @@ export default defineConfig({
       inline: true,
       layout: "elk",
       theme: { default: "0", dark: "200" },
+      // Tighten the whitespace around every diagram: astro-d2 defaults `pad` to
+      // 100px on all sides (visible as a large empty margin above/around the
+      // figure). 20px keeps shapes off the edge without the wasted space.
+      pad: 20,
     }),
     starlight({
       title: "Cobre Documentation",
@@ -307,6 +360,10 @@ export default defineConfig({
         "./src/styles/neutrals.css",
         "./src/styles/brand.css",
         "./src/styles/fonts.css",
+        // layout.css (measure + table density) is a SEPARATE concern from the
+        // colour/type files above — it touches only --sl-content-width and
+        // table column floors, so its order among them is arbitrary.
+        "./src/styles/layout.css",
       ],
       defaultLocale: "root",
       locales: {

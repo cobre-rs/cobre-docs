@@ -47,20 +47,39 @@ reservoirs are independent — no cascade coupling. There is no
 transmission between buses in this walkthrough; each bus
 self-balances dispatch from its local resources.
 
-```mermaid
-graph LR
-    A1["Inflow a₁<br/>(0-order)"] --> H1["H1<br/>cap 100"]
-    A2["Inflow a₂<br/>(0-order)"] --> H2["H2<br/>cap 100"]
-    A3["Inflow a₃<br/>(0-order)"] --> H3["H3<br/>cap 80"]
-    A4["Inflow a₄<br/>(0-order)"] --> H4["H4<br/>cap 80"]
-    H1 --> B1["Bus 1<br/>D = 25"]
-    H2 --> B2["Bus 2<br/>D = 20"]
-    H3 --> B3["Bus 3<br/>D = 15"]
-    H4 --> B4["Bus 4<br/>D = 12"]
-    T1["Thermal₁<br/>cost 50"] --> B1
-    T2["Thermal₂<br/>cost 50"] --> B2
-    T3["Thermal₃<br/>cost 50"] --> B3
-    T4["Thermal₄<br/>cost 50"] --> B4
+```d2
+direction: right
+
+classes: {
+  hydro: {style: {stroke: "#4a90b8"}}
+  thermal: {style: {stroke: "#f5a623"}}
+}
+
+a1: "Inflow a₁\n(0-order)" {shape: oval; class: hydro}
+a2: "Inflow a₂\n(0-order)" {shape: oval; class: hydro}
+a3: "Inflow a₃\n(0-order)" {shape: oval; class: hydro}
+a4: "Inflow a₄\n(0-order)" {shape: oval; class: hydro}
+h1: "H1\ncap 100" {shape: cylinder; class: hydro}
+h2: "H2\ncap 100" {shape: cylinder; class: hydro}
+h3: "H3\ncap 80" {shape: cylinder; class: hydro}
+h4: "H4\ncap 80" {shape: cylinder; class: hydro}
+b1: "Bus 1\nD = 25"
+b2: "Bus 2\nD = 20"
+b3: "Bus 3\nD = 15"
+b4: "Bus 4\nD = 12"
+t1: "Thermal₁\ncost 50" {class: thermal}
+t2: "Thermal₂\ncost 50" {class: thermal}
+t3: "Thermal₃\ncost 50" {class: thermal}
+t4: "Thermal₄\ncost 50" {class: thermal}
+
+a1 -> h1 -> b1
+a2 -> h2 -> b2
+a3 -> h3 -> b3
+a4 -> h4 -> b4
+t1 -> b1
+t2 -> b2
+t3 -> b3
+t4 -> b4
 ```
 
 **Per-hydro parameters:**

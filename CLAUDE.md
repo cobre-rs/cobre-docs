@@ -147,18 +147,25 @@ optional exact **piecewise-quartic tailrace** with backwater families.
 → Verify against `crates/cobre-sddp/src/production/fpha_fitting/`. **Docs follow
 the code**: the design-doc/CHANGELOG "synthetic closing point" is NOT shipped.
 
-When **authoring or editing a diagram** (new inline ` ```d2 ` schematic, tested
-Observable Plot island under `src/figures/` + `src/components/`, or inline
-` ```mermaid ` block in a spec):
+When **authoring or editing a diagram** (new inline ` ```d2 ` diagram —
+schematic, flowchart, or network one-line — or a tested Observable Plot island
+under `src/figures/` + `src/components/`):
 → Follow [`docs/design/diagram-authoring.md`](docs/design/diagram-authoring.md) —
-tool-selection decision table (§1.1), rendering policy (§2), naming/paths (§7),
-quality gates (§8).
-→ Consistency rule (§1.3): a family of related diagrams uses the same tool —
-never mix within a domain.
+tool-selection decision table (§1.1), the `.d2-svg` brand keystone + semantic
+node-colour vocabulary (§4.2), flowchart idiom (§5), quality gates (§7).
+→ **Two tools only**: **d2** draws every diagram (schematics, flowcharts, loops,
+network one-lines — build-time SVG, one themable keystone in
+`src/styles/diagrams.css`); **Observable Plot** draws every computed math plot.
+**Mermaid was retired (2026-07)** — never add a ` ```mermaid ` fence; write a
+` ```d2 ` flowchart instead. Semantic node colours (hydro→Flow Blue,
+thermal→Spark Amber, NCS→Patina, deficit→Signal Red, generic→copper) come from
+the `classes` vocabulary in diagram-authoring.md §4.2, not ad-hoc hex.
 → Reference implementations: `src/components/ValueFunctionPlot.astro` +
 `src/figures/valueFunction.ts` (Observable Plot math plot), an inline ` ```d2 `
-block in `src/content/docs/math/lp-formulation.md` (schematic), inline mermaid
-in `src/content/docs/math/sddp-algorithm.mdx` (flowchart).
+block in `src/content/docs/math/lp-formulation.md` (schematic), the ` ```d2 `
+SDDP loop in `src/content/docs/math/sddp-algorithm.mdx` (flowchart), and the
+semantic-coloured network one-line in
+`src/content/docs/math/system-elements.mdx`.
 
 When **updating hydro dead-volume filling or commissioning windows**
 (`penalty-system.md`, `system-elements.md`, `lp-formulation.md`,

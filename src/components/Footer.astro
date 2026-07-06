@@ -50,3 +50,25 @@ const noticesHref = base + "THIRD-PARTY-NOTICES.txt";
     color: var(--sl-color-white);
   }
 </style>
+
+<script>
+  // Diagram sizing. astro-d2 wraps each diagram in a RESPONSIVE outer <svg>
+  // (viewBox, no width) that fills the content column and stretches a small
+  // diagram up — oversized shapes/text. Pin each `.d2-fig` figure to its NATIVE
+  // px size (from the viewBox) so it renders 1:1 (text at its authored ~16px);
+  // the `.d2-fig` box (overflow-x:auto, src/styles/diagrams.css) then scrolls a
+  // diagram wider than the column instead of shrinking it. Pure CSS can't reach
+  // the native size through the nested-svg wrapper, hence this tiny script.
+  function sizeD2Figures() {
+    document.querySelectorAll(".d2-fig > svg").forEach((svg) => {
+      const vb = (svg.getAttribute("viewBox") || "").trim().split(/\s+/).map(Number);
+      if (vb.length === 4 && vb[2] > 0 && vb[3] > 0) {
+        (svg as SVGElement).style.width = vb[2] + "px";
+        (svg as SVGElement).style.height = vb[3] + "px";
+      }
+    });
+  }
+  sizeD2Figures();
+  // Re-run after client-side (view-transition) navigations, if enabled.
+  document.addEventListener("astro:page-load", sizeD2Figures);
+</script>

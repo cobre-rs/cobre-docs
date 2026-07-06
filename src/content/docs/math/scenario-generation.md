@@ -41,45 +41,17 @@ For the full PAR(p) model definition, parameter set, and fitting theory, see
 
 ### 1.2 Preprocessing Workflow
 
-```
-┌─────────────────────────────────────────────────────────────────────────────────┐
-│                       PAR Model Preprocessing Pipeline                          │
-├─────────────────────────────────────────────────────────────────────────────────┤
-│                                                                                 │
-│  Input: inflow_seasonal_stats.parquet (μ, s per hydro × stage)                  │
-│         inflow_ar_coefficients.parquet (ψ* per hydro × stage × lag, residual_std_ratio) │
-│         inflow_history.parquet (optional, for lag initialization)               │
-│                                                                                 │
-│  Step 1: Load PAR Parameters                                                    │
-│  For each (hydro h, stage t) with season m = season(t):                         │
-│    μ[h][t] = mean_m3s              (seasonal mean)                              │
-│    s[h][t] = std_m3s               (seasonal sample std)                        │
-│    ψ*[h][t][ℓ] = coefficient       (AR coefficients, standardized by s)         │
-│    r[h][t] = residual_std_ratio    (σ_m/s_m; same for all lags of a group)      │
-│    p[h][t] = max(lag) per group    (AR order derived from coefficient count)     │
-│                              │                                                  │
-│                              ▼                                                  │
-│  Step 2: Convert to Original-Unit Coefficients and Derive σ                    │
-│  For each (hydro h, stage t) with season m = season(t):                         │
-│    ψ[h][t][ℓ] = ψ*[h][t][ℓ] · s[m] / s[m-ℓ]   (runtime conversion)            │
-│    σ[h][t] = s[h][t] · r[h][t]                  (σ = s_m · residual_std_ratio)  │
-│                              │                                                  │
-│                              ▼                                                  │
-│  Step 3: Precompute Stage-Specific Deterministic Components                     │
-│  For each (hydro h, stage t) with season m = season(t):                         │
-│    base[h][t] = μ[h][t] − Σ_ℓ ψ[h][t][ℓ] · μ[h][t−ℓ]                            │
-│    coeff[h][t][ℓ] = ψ[h][t][ℓ]  for ℓ = 1..p[h][t]                              │
-│    scale[h][t] = σ[h][t]                                                        │
-│                              │                                                  │
-│                              ▼                                                  │
-│  Step 4: Initialize Lag State from History                                      │
-│  From inflow_history.parquet (when present):                                    │
-│    lag_state[h][ℓ] = historical_inflow[h][t₀ − ℓ]  for ℓ = 1..max_order         │
-│                              │                                                  │
-│                              ▼                                                  │
-│  Output: Precomputed PAR structure (contiguous arrays for hot-path access)      │
-│                                                                                 │
-└─────────────────────────────────────────────────────────────────────────────────┘
+```d2
+direction: down
+
+input: "Input files\ninflow_seasonal_stats · inflow_ar_coefficients\n(inflow_history — optional, for lag init)" {shape: parallelogram}
+s1: "1 · Load PAR parameters\nμ, s, ψ*, r = σ/s, AR order p  per (hydro, stage)"
+s2: "2 · Convert to original-unit coefficients\nψ = ψ* · sₘ / sₘ₋ℓ ;   σ = s · r"
+s3: "3 · Precompute deterministic components\nbase, coeff[ℓ], scale  per stage"
+s4: "4 · Initialize lag state from history\nlag_state[h][ℓ]  from inflow_history (when present)"
+output: "Output\nprecomputed PAR structure — contiguous arrays (hot-path)" {shape: parallelogram}
+
+input -> s1 -> s2 -> s3 -> s4 -> output
 ```
 
 ### 1.3 PAR Model Fitting from Historical Data
@@ -667,29 +639,67 @@ deterministic trunk with branching only at the final stage — a common structur
 for weekly/monthly short-term planning where uncertainty is resolved at the end
 of the horizon.
 
+```d2
+direction: right
+
+classes: {
+  n: {shape: circle; width: 46; height: 46}
+}
+
+st1: 1 {class: n}
+st2: 2 {class: n}
+st3: 3 {class: n}
+std: "…" {shape: text}
+stT: T {class: n}
+b1: "" {class: n}
+b2: "" {class: n}
+bd: "⋮" {shape: text}
+bN: "" {class: n}
+
+st1 -> st2 -> st3 -> std -> stT
+stT -> b1: "branch 1"
+stT -> b2: "branch 2"
+stT -> bd
+stT -> bN: "branch Nₜ"
 ```
-DECOMP Special Case (N_t = 1 for t < T, N_T branchings at last stage):
 
-Stage:  1        2        3        ...      T
-        ●────────●────────●── ... ──●───────● branch 1
-                                    ├───────● branch 2
-                                    ├───────● branch 3
-                                    └───────● branch N_T
+**General case** — $N_t$ branchings at every stage, so the node count grows
+multiplicatively. With $N_1 = N_2 = 3$ the tree fans to $\prod_{s=1}^{3} N_s = 9$
+nodes at stage 3 (node labels below are the stage index):
 
-General Case (N_t branchings per stage):
+```d2
+direction: right
 
-Stage:  1             2                  3
-        ●─────────────●─────────────────●
-        │             ├─────────────────●
-        │             └─────────────────●
-        ├─────────────●─────────────────●
-        │             ├─────────────────●
-        │             └─────────────────●
-        └─────────────●─────────────────●
-                      ├─────────────────●
-                      └─────────────────●
+classes: {
+  n: {shape: circle; width: 46; height: 46}
+}
 
-Total nodes at stage 3: N_1 × N_2 × N_3
+r: 1 {class: n}
+m1: 2 {class: n}
+m2: 2 {class: n}
+m3: 2 {class: n}
+l1: 3 {class: n}
+l2: 3 {class: n}
+l3: 3 {class: n}
+l4: 3 {class: n}
+l5: 3 {class: n}
+l6: 3 {class: n}
+l7: 3 {class: n}
+l8: 3 {class: n}
+l9: 3 {class: n}
+
+r -> m1
+r -> m2
+r -> m3
+m1 -> l1
+m1 -> l2
+m1 -> l3
+m2 -> l4
+m2 -> l5
+m2 -> l6
+m3 -> l7
+m3 -> l8
+m3 -> l9
 ```
 
 ### 6.3 Relationship to SDDP with External Scenarios

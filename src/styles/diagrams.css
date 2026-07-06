@@ -1,224 +1,203 @@
-/* === astro-d2 KEYSTONE ===========================================================
-   astro-d2 / d2 emit the dark palette under @media (prefers-color-scheme: dark),
-   so the diagram follows the OS preference, NOT Starlight's manual toggle — a
-   half-themed page when the two disagree. This block re-keys d2's shared palette
-   classes (fill-N… and stroke-… , shared across ALL d2 diagrams) to Starlight's
-   [data-theme] attribute. Generic + site-wide: one block themes every d2 figure.
-   (Productionization: a rehype plugin rewriting the @media → [data-theme] selector
-   would do this automatically; this CSS proves the mechanism.) */
-:root[data-theme="light"] .d2-svg .fill-N1 {
-  fill: #0a0f25 !important;
+/* === astro-d2 brand keystone ====================================================
+   astro-d2 renders ```d2 fences to inline SVG at build time, tagging every shape
+   with d2's shared palette classes (fill-N1…, stroke-B1…). d2 emits its own
+   light/dark hexes under @media (prefers-color-scheme), so a diagram would
+   follow the OS preference, not Starlight's manual theme toggle — a half-themed
+   page when the two disagree.
+
+   This keystone re-keys those palette classes to the BRAND tokens
+   (neutrals.css `--sl-color-*` warm greyscale + palette.css `--dgm-*` copper/
+   patina), which are themselves scoped to `[data-theme]`. Because the tokens
+   flip per theme, a SINGLE unscoped rule per class themes both light and dark —
+   no duplicated [data-theme] blocks. `!important` overrides d2's emitted hexes.
+
+   Design (docs/design/brand.md, BRAND-GUIDELINES §2.2/§2.4): schematics read as
+   COPPER LINEWORK on WARM-NEUTRAL card fills — copper is the structural line
+   colour (matching the copper Observable-Plot curves, so the two figure systems
+   cohere), fills stay neutral so copper lands "with restraint on neutral
+   backgrounds". Patina is the non-hydro secondary accent; Flow Blue is reserved
+   for explicit hydro/water marks (a diagram that needs it styles `--dgm-hydro`
+   inline). The slot→brand map lives once in the `.d2-svg` block below; tune
+   there. */
+
+/* Readability across screen sizes. astro-d2 SVGs otherwise scale to fill the
+   content column, so a diagram wider than the column shrinks and its text
+   becomes illegible (e.g. a 1800px schematic in an 810px column → ~7px text).
+   The rehypeWrapD2 plugin (astro.config.mjs) wraps each SVG in `.d2-fig`; here
+   we let a NARROW diagram fill the column (min-width:100% enlarges it) but a
+   WIDE one render at its native width and scroll horizontally (max-content),
+   keeping text at its authored size on every screen. */
+/* astro-d2 nests a RESPONSIVE outer <svg> (viewBox, no width → fills the column
+   and stretches everything up) around the real diagram. To keep text at its
+   authored ~16px, a small script (Footer.astro `sizeD2Figures`) reads each
+   figure's viewBox and pins the outer svg to its NATIVE px width; this CSS then
+   lets a narrow diagram sit centred at native size and a wide one scroll inside
+   the `.d2-fig` box (rather than shrinking to illegible text). */
+.d2-fig {
+  overflow-x: auto;
+  margin: 1rem 0;
+}
+.d2-fig > svg {
+  display: block;
+  max-width: none;
+  height: auto;
+  margin-inline: auto; /* centre a diagram narrower than the column */
+}
+
+.d2-svg {
+  /* Neutrals: ink → background ramp (drives text, hairlines, neutral fills). */
+  --d2-N1: var(--sl-color-white); /* ink — labels */
+  --d2-N2: var(--sl-color-gray-1);
+  --d2-N3: var(--sl-color-gray-3);
+  --d2-N4: var(
+    --sl-color-gray-5
+  ); /* decision-diamond fill — lightened to a subtle card, not a heavy mid-grey */
+  --d2-N5: var(--sl-color-gray-5);
+  --d2-N6: var(--sl-color-gray-6);
+  --d2-N7: var(--sl-color-black); /* page background */
+
+  /* Primary family → COPPER linework (borders, connectors, emphasis).
+     Softened: the line copper is desaturated toward a warm grey so it reads as
+     an accent rather than a dominating full-saturation stroke. */
+  --d2-line: color-mix(in srgb, var(--dgm-storage) 70%, var(--sl-color-gray-3));
+  --d2-B1: var(--d2-line);
+  --d2-B2: var(--d2-line);
+  --d2-B3: color-mix(in srgb, var(--dgm-storage) 55%, var(--sl-color-gray-4));
+
+  /* Primary fills → WARM-NEUTRAL cards (restraint: copper lines, neutral grounds).
+     Depth ramp: background < container < node. */
+  --d2-B4: color-mix(
+    in srgb,
+    var(--sl-color-gray-6) 45%,
+    var(--sl-color-black)
+  ); /* container surface (faint) */
+  --d2-B5: var(--sl-color-gray-6); /* node surface (raised card) */
+  --d2-B6: var(--sl-color-gray-6);
+
+  /* Accent-fill families → NEUTRAL card. d2 assigns these accent slots to some
+     shapes by default (e.g. the cylinder body), which is not semantically
+     meaningful — so they render as ordinary neutral cards. INTENTIONAL semantic
+     colour (hydro/thermal/deficit) is applied per-node in the d2 source via
+     `classes` (see the network schematics), NOT through these slots. --d2-AA2
+     stays patina for any diagram that asks for it explicitly. */
+  --d2-AA2: var(--dgm-accent);
+  --d2-AA4: var(--sl-color-gray-6);
+  --d2-AA5: var(--sl-color-gray-6);
+  --d2-AB4: var(--sl-color-gray-6);
+  --d2-AB5: var(--sl-color-gray-6);
+
+  max-width: 100%;
+  height: auto;
+}
+
+/* Fills */
+.d2-svg .fill-N1 {
+  fill: var(--d2-N1) !important;
+}
+.d2-svg .fill-N2 {
+  fill: var(--d2-N2) !important;
+}
+.d2-svg .fill-N3 {
+  fill: var(--d2-N3) !important;
 }
-:root[data-theme="light"] .d2-svg .fill-N2 {
-  fill: #676c7e !important;
+.d2-svg .fill-N4 {
+  fill: var(--d2-N4) !important;
 }
-:root[data-theme="light"] .d2-svg .fill-N3 {
-  fill: #9499ab !important;
+.d2-svg .fill-N5 {
+  fill: var(--d2-N5) !important;
 }
-:root[data-theme="light"] .d2-svg .fill-N4 {
-  fill: #cfd2dd !important;
+.d2-svg .fill-N6 {
+  fill: var(--d2-N6) !important;
 }
-:root[data-theme="light"] .d2-svg .fill-N5 {
-  fill: #dee1eb !important;
+.d2-svg .fill-N7 {
+  fill: var(--d2-N7) !important;
 }
-:root[data-theme="light"] .d2-svg .fill-N6 {
-  fill: #eef1f8 !important;
+.d2-svg .fill-B1 {
+  fill: var(--d2-B1) !important;
 }
-:root[data-theme="light"] .d2-svg .fill-N7 {
-  fill: #ffffff !important;
+.d2-svg .fill-B2 {
+  fill: var(--d2-B2) !important;
 }
-:root[data-theme="light"] .d2-svg .fill-B1 {
-  fill: #0d32b2 !important;
+.d2-svg .fill-B3 {
+  fill: var(--d2-B3) !important;
 }
-:root[data-theme="light"] .d2-svg .fill-B2 {
-  fill: #0d32b2 !important;
+.d2-svg .fill-B4 {
+  fill: var(--d2-B4) !important;
 }
-:root[data-theme="light"] .d2-svg .fill-B3 {
-  fill: #e3e9fd !important;
+.d2-svg .fill-B5 {
+  fill: var(--d2-B5) !important;
 }
-:root[data-theme="light"] .d2-svg .fill-B4 {
-  fill: #e3e9fd !important;
+.d2-svg .fill-B6 {
+  fill: var(--d2-B6) !important;
 }
-:root[data-theme="light"] .d2-svg .fill-B5 {
-  fill: #edf0fd !important;
+.d2-svg .fill-AA2 {
+  fill: var(--d2-AA2) !important;
 }
-:root[data-theme="light"] .d2-svg .fill-B6 {
-  fill: #f7f8fe !important;
+.d2-svg .fill-AA4 {
+  fill: var(--d2-AA4) !important;
 }
-:root[data-theme="light"] .d2-svg .fill-AA2 {
-  fill: #4a6ff3 !important;
+.d2-svg .fill-AA5 {
+  fill: var(--d2-AA5) !important;
 }
-:root[data-theme="light"] .d2-svg .fill-AA4 {
-  fill: #edf0fd !important;
+.d2-svg .fill-AB4 {
+  fill: var(--d2-AB4) !important;
 }
-:root[data-theme="light"] .d2-svg .fill-AA5 {
-  fill: #f7f8fe !important;
+.d2-svg .fill-AB5 {
+  fill: var(--d2-AB5) !important;
 }
-:root[data-theme="light"] .d2-svg .fill-AB4 {
-  fill: #edf0fd !important;
+
+/* Strokes */
+.d2-svg .stroke-N1 {
+  stroke: var(--d2-N1) !important;
 }
-:root[data-theme="light"] .d2-svg .fill-AB5 {
-  fill: #f7f8fe !important;
+.d2-svg .stroke-N2 {
+  stroke: var(--d2-N2) !important;
 }
-:root[data-theme="light"] .d2-svg .stroke-N1 {
-  stroke: #0a0f25 !important;
+.d2-svg .stroke-N3 {
+  stroke: var(--d2-N3) !important;
 }
-:root[data-theme="light"] .d2-svg .stroke-N2 {
-  stroke: #676c7e !important;
+.d2-svg .stroke-N4 {
+  stroke: var(--d2-N4) !important;
 }
-:root[data-theme="light"] .d2-svg .stroke-N3 {
-  stroke: #9499ab !important;
+.d2-svg .stroke-N5 {
+  stroke: var(--d2-N5) !important;
 }
-:root[data-theme="light"] .d2-svg .stroke-N4 {
-  stroke: #cfd2dd !important;
+.d2-svg .stroke-N6 {
+  stroke: var(--d2-N6) !important;
 }
-:root[data-theme="light"] .d2-svg .stroke-N5 {
-  stroke: #dee1eb !important;
+.d2-svg .stroke-N7 {
+  stroke: var(--d2-N7) !important;
 }
-:root[data-theme="light"] .d2-svg .stroke-N6 {
-  stroke: #eef1f8 !important;
+.d2-svg .stroke-B1 {
+  stroke: var(--d2-B1) !important;
 }
-:root[data-theme="light"] .d2-svg .stroke-N7 {
-  stroke: #ffffff !important;
+.d2-svg .stroke-B2 {
+  stroke: var(--d2-B2) !important;
 }
-:root[data-theme="light"] .d2-svg .stroke-B1 {
-  stroke: #0d32b2 !important;
+.d2-svg .stroke-B3 {
+  stroke: var(--d2-B3) !important;
 }
-:root[data-theme="light"] .d2-svg .stroke-B2 {
-  stroke: #0d32b2 !important;
+.d2-svg .stroke-B4 {
+  stroke: var(--d2-B4) !important;
 }
-:root[data-theme="light"] .d2-svg .stroke-B3 {
-  stroke: #e3e9fd !important;
+.d2-svg .stroke-B5 {
+  stroke: var(--d2-B5) !important;
 }
-:root[data-theme="light"] .d2-svg .stroke-B4 {
-  stroke: #e3e9fd !important;
+.d2-svg .stroke-B6 {
+  stroke: var(--d2-B6) !important;
 }
-:root[data-theme="light"] .d2-svg .stroke-B5 {
-  stroke: #edf0fd !important;
+.d2-svg .stroke-AA2 {
+  stroke: var(--d2-AA2) !important;
 }
-:root[data-theme="light"] .d2-svg .stroke-B6 {
-  stroke: #f7f8fe !important;
+.d2-svg .stroke-AA4 {
+  stroke: var(--d2-AA4) !important;
 }
-:root[data-theme="light"] .d2-svg .stroke-AA2 {
-  stroke: #4a6ff3 !important;
+.d2-svg .stroke-AA5 {
+  stroke: var(--d2-AA5) !important;
 }
-:root[data-theme="light"] .d2-svg .stroke-AA4 {
-  stroke: #edf0fd !important;
+.d2-svg .stroke-AB4 {
+  stroke: var(--d2-AB4) !important;
 }
-:root[data-theme="light"] .d2-svg .stroke-AA5 {
-  stroke: #f7f8fe !important;
-}
-:root[data-theme="light"] .d2-svg .stroke-AB4 {
-  stroke: #edf0fd !important;
-}
-:root[data-theme="light"] .d2-svg .stroke-AB5 {
-  stroke: #f7f8fe !important;
-}
-:root[data-theme="dark"] .d2-svg .fill-N1 {
-  fill: #cdd6f4 !important;
-}
-:root[data-theme="dark"] .d2-svg .fill-N2 {
-  fill: #bac2de !important;
-}
-:root[data-theme="dark"] .d2-svg .fill-N3 {
-  fill: #a6adc8 !important;
-}
-:root[data-theme="dark"] .d2-svg .fill-N4 {
-  fill: #585b70 !important;
-}
-:root[data-theme="dark"] .d2-svg .fill-N5 {
-  fill: #45475a !important;
-}
-:root[data-theme="dark"] .d2-svg .fill-N6 {
-  fill: #313244 !important;
-}
-:root[data-theme="dark"] .d2-svg .fill-N7 {
-  fill: #1e1e2e !important;
-}
-:root[data-theme="dark"] .d2-svg .fill-B1 {
-  fill: #cba6f7 !important;
-}
-:root[data-theme="dark"] .d2-svg .fill-B2 {
-  fill: #cba6f7 !important;
-}
-:root[data-theme="dark"] .d2-svg .fill-B3 {
-  fill: #6c7086 !important;
-}
-:root[data-theme="dark"] .d2-svg .fill-B4 {
-  fill: #585b70 !important;
-}
-:root[data-theme="dark"] .d2-svg .fill-B5 {
-  fill: #45475a !important;
-}
-:root[data-theme="dark"] .d2-svg .fill-B6 {
-  fill: #313244 !important;
-}
-:root[data-theme="dark"] .d2-svg .fill-AA2 {
-  fill: #f38ba8 !important;
-}
-:root[data-theme="dark"] .d2-svg .fill-AA4 {
-  fill: #45475a !important;
-}
-:root[data-theme="dark"] .d2-svg .fill-AA5 {
-  fill: #313244 !important;
-}
-:root[data-theme="dark"] .d2-svg .fill-AB4 {
-  fill: #45475a !important;
-}
-:root[data-theme="dark"] .d2-svg .fill-AB5 {
-  fill: #313244 !important;
-}
-:root[data-theme="dark"] .d2-svg .stroke-N1 {
-  stroke: #cdd6f4 !important;
-}
-:root[data-theme="dark"] .d2-svg .stroke-N2 {
-  stroke: #bac2de !important;
-}
-:root[data-theme="dark"] .d2-svg .stroke-N3 {
-  stroke: #a6adc8 !important;
-}
-:root[data-theme="dark"] .d2-svg .stroke-N4 {
-  stroke: #585b70 !important;
-}
-:root[data-theme="dark"] .d2-svg .stroke-N5 {
-  stroke: #45475a !important;
-}
-:root[data-theme="dark"] .d2-svg .stroke-N6 {
-  stroke: #313244 !important;
-}
-:root[data-theme="dark"] .d2-svg .stroke-N7 {
-  stroke: #1e1e2e !important;
-}
-:root[data-theme="dark"] .d2-svg .stroke-B1 {
-  stroke: #cba6f7 !important;
-}
-:root[data-theme="dark"] .d2-svg .stroke-B2 {
-  stroke: #cba6f7 !important;
-}
-:root[data-theme="dark"] .d2-svg .stroke-B3 {
-  stroke: #6c7086 !important;
-}
-:root[data-theme="dark"] .d2-svg .stroke-B4 {
-  stroke: #585b70 !important;
-}
-:root[data-theme="dark"] .d2-svg .stroke-B5 {
-  stroke: #45475a !important;
-}
-:root[data-theme="dark"] .d2-svg .stroke-B6 {
-  stroke: #313244 !important;
-}
-:root[data-theme="dark"] .d2-svg .stroke-AA2 {
-  stroke: #f38ba8 !important;
-}
-:root[data-theme="dark"] .d2-svg .stroke-AA4 {
-  stroke: #45475a !important;
-}
-:root[data-theme="dark"] .d2-svg .stroke-AA5 {
-  stroke: #313244 !important;
-}
-:root[data-theme="dark"] .d2-svg .stroke-AB4 {
-  stroke: #45475a !important;
-}
-:root[data-theme="dark"] .d2-svg .stroke-AB5 {
-  stroke: #313244 !important;
+.d2-svg .stroke-AB5 {
+  stroke: var(--d2-AB5) !important;
 }
