@@ -61,7 +61,7 @@ This "fishing" approach (pinning an incoming-state LP variable to the trial valu
 
 ### Cut dimension: the enabled state subset
 
-A stage does not have to project its cuts onto the full incoming state. Each stage carries a `state_variables` selection — `{ storage, inflow_lags }`, defaulting to storage-only (`inflow_lags` off) — that governs the **dimension of the cuts it emits**, not merely which state it reports. A dimension that is switched off is genuinely **projected out** of the subgradient: its reduced cost is never read into the cut, and the cut carries no coefficient for it — the result is a lower-dimensional supporting hyperplane, not a full cut with the omitted coordinates zero-padded.
+A stage does not have to project its cuts onto the full incoming state. Each stage carries a `state_variables` selection — `{ storage, inflow_lags }`, defaulting to storage-only (`inflow_lags` off) — that governs the **dimension of the cuts it emits**, distinct from which state it reports. A dimension that is switched off is genuinely **projected out** of the subgradient: its reduced cost is never read into the cut, and the cut carries no coefficient for it — the result is a lower-dimensional supporting hyperplane, not a full cut with the omitted coordinates zero-padded.
 
 - With `inflow_lags` **off** (the default), a cut spans storage alone, even when the study fits a PAR($p$) inflow model — the $N \cdot L$ lag coefficients are omitted, not zeroed.
 - With `inflow_lags` **on**, the AR-lag reduced costs (§2) enter the cut as usual, giving the full storage-plus-lag cut.
