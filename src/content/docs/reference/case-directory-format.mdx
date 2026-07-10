@@ -260,7 +260,7 @@ per-method field tables.
 
 ```json
 {
-  "$schema": "https://raw.githubusercontent.com/cobre-rs/cobre/refs/heads/main/book/src/schemas/config.schema.json",
+  "$schema": "https://docs.cobre-rs.dev/schemas/config.schema.json",
   "training": {
     "forward_passes": 192,
     "stopping_rules": [{ "type": "iteration_limit", "limit": 200 }]
@@ -306,7 +306,7 @@ have `depth_mw: null` (unbounded).
 
 ```json
 {
-  "$schema": "https://raw.githubusercontent.com/cobre-rs/cobre/refs/heads/main/book/src/schemas/penalties.schema.json",
+  "$schema": "https://docs.cobre-rs.dev/schemas/penalties.schema.json",
   "bus": {
     "deficit_segments": [
       { "depth_mw": 500.0, "cost": 7000.0 },
@@ -718,7 +718,7 @@ scenario, injecting a fixed amount with no curtailment freedom.
 
 ```json
 {
-  "$schema": "https://raw.githubusercontent.com/cobre-rs/cobre/refs/heads/main/book/src/schemas/non_controllable_sources.schema.json",
+  "$schema": "https://docs.cobre-rs.dev/schemas/non_controllable_sources.schema.json",
   "non_controllable_sources": [
     {
       "id": 0,
@@ -766,7 +766,7 @@ Stage-varying flow bounds can be overridden via `constraints/pumping_bounds.parq
 
 ```json
 {
-  "$schema": "https://raw.githubusercontent.com/cobre-rs/cobre/refs/heads/main/book/src/schemas/pumping_stations.schema.json",
+  "$schema": "https://docs.cobre-rs.dev/schemas/pumping_stations.schema.json",
   "pumping_stations": [
     {
       "id": 0,
@@ -814,7 +814,7 @@ can be overridden via `constraints/contract_bounds.parquet`.
 
 ```json
 {
-  "$schema": "https://raw.githubusercontent.com/cobre-rs/cobre/refs/heads/main/book/src/schemas/energy_contracts.schema.json",
+  "$schema": "https://docs.cobre-rs.dev/schemas/energy_contracts.schema.json",
   "contracts": [
     {
       "id": 0,
@@ -882,7 +882,7 @@ plant and is identified by a unique `hydro_id`. Results are loaded in
 
 ```json
 {
-  "$schema": "https://raw.githubusercontent.com/cobre-rs/cobre/refs/heads/main/book/src/schemas/production_models.schema.json",
+  "$schema": "https://docs.cobre-rs.dev/schemas/production_models.schema.json",
   "production_models": [ ... ]
 }
 ```
@@ -958,7 +958,7 @@ mutually exclusive — set one pair or the other, not both.
 
 ```json
 {
-  "$schema": "https://raw.githubusercontent.com/cobre-rs/cobre/refs/heads/main/book/src/schemas/production_models.schema.json",
+  "$schema": "https://docs.cobre-rs.dev/schemas/production_models.schema.json",
   "production_models": [
     {
       "hydro_id": 0,
@@ -1131,7 +1131,7 @@ load error.
 
 ```json
 {
-  "$schema": "https://raw.githubusercontent.com/cobre-rs/cobre/refs/heads/main/book/src/schemas/scalar_parameters.schema.json",
+  "$schema": "https://docs.cobre-rs.dev/schemas/scalar_parameters.schema.json",
   "scalar_parameters": [
     {
       "id": 1,

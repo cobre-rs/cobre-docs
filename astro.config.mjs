@@ -62,6 +62,9 @@ function rehypeWrapD2() {
 export default defineConfig({
   // Architecture B: each version build sets its own base (e.g. "/v0.8/").
   base: process.env.DOCS_BASE ?? "/",
+  // Custom domain for absolute URLs (canonical links + sitemap). Cutover target;
+  // methodology.cobre-rs.dev 301-redirects in. Env-overridable for a versioned build.
+  site: process.env.DOCS_SITE ?? "https://docs.cobre-rs.dev",
   // D5: mdBook→Starlight URL preservation (ticket-027). mdBook served each
   // chapter at `/specs/<group>/<chapter>.html` (and the intro at
   // `/introduction.html`); Starlight serves the SAME chapters at clean
@@ -147,6 +150,38 @@ export default defineConfig({
     // Part 7 — Reference
     "/specs/reference/glossary.html": "/reference/glossary/",
     "/specs/reference/bibliography.html": "/reference/bibliography/",
+    // Retired software mdBook paths (the old docs.cobre-rs.dev served the mdBook
+    // flat at these URLs). Map each to its unified twin; omitted chapters (crate
+    // internals → GitHub READMEs, energy-variables, deterministic-suite,
+    // creating-your-own) 404 by design. D5: no analytics yet — these cover the
+    // mdBook SUMMARY chapters that have an unambiguous unified page.
+    "/tutorial/what-cobre-solves.html": "/overview/what-cobre-solves/",
+    "/guide/installation.html": "/getting-started/installation/",
+    "/tutorial/quickstart.html": "/getting-started/quickstart/",
+    "/guide/python-quickstart.html": "/getting-started/python-quickstart/",
+    "/guide/configuration.html": "/running/configuration/",
+    "/guide/performance-accelerators.html": "/running/performance/",
+    "/guide/running-studies.html": "/running/running-studies/",
+    "/guide/policy-management.html": "/running/policy-management/",
+    "/guide/cobre-bridge.html": "/running/case-conversion/",
+    "/guide/interpreting-results.html": "/running/interpreting-results/",
+    "/tutorial/understanding-results.html": "/running/interpreting-results/",
+    "/guide/cli-reference.html": "/reference/cli-reference/",
+    "/guide/scalar-parameters.html": "/reference/case-directory-format/",
+    "/reference/case-format.html": "/reference/case-directory-format/",
+    "/reference/output-format.html": "/reference/output-format/",
+    "/reference/flatbuffers-schema.html": "/reference/flatbuffers-schema/",
+    "/reference/error-codes.html": "/reference/error-codes/",
+    "/reference/schemas.html": "/reference/json-schemas/",
+    "/guide/system-modeling.html": "/math/system-elements/",
+    "/guide/network-topology.html": "/math/system-elements/",
+    "/guide/hydro-plants.html": "/math/hydro-production-models/",
+    "/guide/thermal-units.html": "/math/equipment-formulations/",
+    "/guide/stochastic-modeling.html": "/math/par-inflow-model/",
+    "/guide/block-modes.html": "/math/block-formulations/",
+    "/guide/water-travel-time.html": "/math/lp-formulation/",
+    "/examples/1dtoy.html": "/examples/toy-single-reservoir/",
+    "/examples/4ree.html": "/examples/toy-four-reservoir/",
   },
   // D4: manual math renderer — remark-math parses $…$ / $$…$$, rehype-katex
   // renders to static .katex HTML at build time (zero client JS). NOT

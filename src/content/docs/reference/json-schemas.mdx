@@ -48,7 +48,7 @@ detail.
 
 Every schema is served straight from this site at a stable, versioned-free
 URL: `/schemas/<name>.schema.json` (for example
-`https://methodology.cobre-rs.dev/schemas/config.schema.json` once the site
+`https://docs.cobre-rs.dev/schemas/config.schema.json` once the site
 is live at that domain). Point your editor's JSON Schema mapping there for
 autocompletion and validation while authoring case inputs.
 
@@ -61,11 +61,11 @@ Add a `json.schemas` entry to your workspace `.vscode/settings.json`:
   "json.schemas": [
     {
       "fileMatch": ["config.json"],
-      "url": "https://methodology.cobre-rs.dev/schemas/config.schema.json"
+      "url": "https://docs.cobre-rs.dev/schemas/config.schema.json"
     },
     {
       "fileMatch": ["system/hydros.json"],
-      "url": "https://methodology.cobre-rs.dev/schemas/hydros.schema.json"
+      "url": "https://docs.cobre-rs.dev/schemas/hydros.schema.json"
     }
   ]
 }
@@ -75,7 +75,7 @@ Alternatively, add a `$schema` key directly inside each JSON file:
 
 ```json
 {
-  "$schema": "https://methodology.cobre-rs.dev/schemas/config.schema.json",
+  "$schema": "https://docs.cobre-rs.dev/schemas/config.schema.json",
   "training": {
     "forward_passes": 192,
     "stopping_rules": [{ "type": "iteration_limit", "limit": 200 }]
@@ -95,7 +95,7 @@ Schema Mappings**, add a new mapping, paste the schema URL, and select the
 file pattern.
 
 :::note[Before the site is live]
-Until `methodology.cobre-rs.dev` is serving this site, the identical schema
+Until `docs.cobre-rs.dev` is serving this site, the identical schema
 content is also available straight from the tagged `cobre` repository, e.g.
 `https://raw.githubusercontent.com/cobre-rs/cobre/v0.9.0/book/src/schemas/config.schema.json`.
 :::
