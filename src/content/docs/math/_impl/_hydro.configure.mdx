@@ -90,7 +90,7 @@ Only `id`, `name`, `bus_id`, `downstream_id`, `reservoir`, `outflow`, and
 | `bus_id`         | integer         | Yes      | Identifier of the electrical bus to which this plant's generation is injected. Must match an `id` in `buses.json`. |
 | `downstream_id`  | integer or null | Yes      | Identifier of the plant that receives this plant's outflow. `null` means the plant is at the bottom of its cascade — outflow leaves the system. |
 | `entry_stage_id` | integer or null | No       | Stage index at which the plant enters service (inclusive). `null` means the plant is available from stage 0. |
-| `exit_stage_id`  | integer or null | No       | Stage index at which the plant is decommissioned. The commissioning window is **half-open** `[entry_stage_id, exit_stage_id)`: the plant is active through `exit_stage_id - 1`, and from `exit_stage_id` onward its columns are pinned to `[0, 0]`. `null` means the plant is never decommissioned. |
+| `exit_stage_id`  | integer or null | No       | Stage index at which the plant is decommissioned. The commissioning window is **half-open** `[entry_stage_id, exit_stage_id)`: the plant is active through `exit_stage_id - 1`, and outside the window it is not in service. For a hydro the out-of-service state is **PreFilling** — turbine, spillage, and diversion pinned to zero, storage frozen, and natural inflow routed past the site (see Implementation notes and [system elements §5](/math/system-elements)) — rather than a bare column zero-pin. `null` means the plant is never decommissioned. |
 
 #### Reservoir
 

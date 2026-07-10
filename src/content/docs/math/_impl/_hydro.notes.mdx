@@ -66,6 +66,10 @@ load-time errors — only the missing-area case is downgraded to a warning. See
 [Penalty System §"Signed Net Evaporation"](/math/penalty-system#signed-net-evaporation)
 for the water-balance treatment of the resulting flux.
 
+### Commissioning: the PreFilling state
+
+A hydro's `entry_stage_id`/`exit_stage_id` commissioning window is honored even for a **non-filling** hydro (one with no `filling` block). At any stage outside its window — before `entry_stage_id`, or from `exit_stage_id` onward — the plant is **PreFilling**: the site is not in service, so its turbine, spillage, and diversion columns are pinned to zero, its storage is frozen by the identity $v_h = v^{in}_h$, and its natural inflow is routed past the site to the first active downstream plant (or the network sink). Unlike the generic outside-window zero-pin used for the other entity types, the river is never trapped or duplicated at a site that is not in service. See [system elements §5](/math/system-elements) for the full lifecycle and [penalty system](/math/penalty-system) for the spillage-frozen-versus-costed distinction.
+
 ### Water travel time: in-transit seed and validation
 
 When a plant declares a travel-time arc, the releases already in transit at the

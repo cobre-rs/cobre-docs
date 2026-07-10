@@ -102,7 +102,7 @@ $$
 
 so the entry stage is **inclusive** and the exit stage is **exclusive** — the entity is gone _from_ its exit stage onward. A null `entry_stage_id` means "active from the first stage"; a null `exit_stage_id` means "never decommissioned". The default for an entity that sets neither is to be active at every stage.
 
-This window applies uniformly to **transmission lines, thermal plants, non-controllable sources, pumping stations, and contracts** (and, for generation, to hydro plants). Outside its window an entity contributes nothing to the dispatch: its decision columns are present in the LP but pinned to zero, so it injects no power, withdraws no power, and consumes no resource. Decommissioning is symmetric to commissioning — both are expressed by the same two fields.
+This window applies uniformly to **transmission lines, thermal plants, non-controllable sources, pumping stations, and contracts** (and, for generation, to hydro plants). Outside its window an entity contributes nothing to the dispatch: its decision columns are present in the LP but pinned to zero, so it injects no power, withdraws no power, and consumes no resource. A hydro plant is the exception to this simple zero-pin: outside its commissioning window a hydro enters the **PreFilling** state (§5), which pins its turbine, spillage, and diversion to zero but freezes its storage and routes natural inflow past the not-yet-in-service site rather than trapping or injecting water. Decommissioning is symmetric to commissioning — both are expressed by the same two fields.
 
 Two element-specific lifecycle mechanisms layer on top of this generic window:
 
@@ -461,6 +461,16 @@ Several hydro constraints are enforced as **soft constraints** with slack variab
 
 Soft constraints allow the optimizer to violate bounds when physically necessary (e.g., drought conditions preventing minimum outflow), with high penalty costs signaling undesirable operation. Maximum storage ($\bar{V}_h$) is a **hard** physical limit — excess water is handled by emergency spillage, not a slack variable. For the penalty priority ordering and cost magnitudes, see [Penalty System](/math/penalty-system). For the complete constraint formulations, see [equipment formulations](/math/equipment-formulations).
 
+### Not-Yet-Commissioned Hydros (PreFilling)
+
+A hydro is **PreFilling** whenever it does not yet exist in the dispatch — a filling hydro before its `start_stage_id`, or a **non-filling** hydro at any stage outside its commissioning window (before `entry_stage_id`, or from `exit_stage_id` onward). Unlike the other entity types, this is not a bare column zero-pin: because the physical site is absent, the plant is reformulated so the river flows past it. In this state,
+
+- **Turbine, spillage, and diversion are pinned to zero** ($q_{h,k} = s_{h,k} = u_{h,k} = 0$) — a dam that does not yet exist can neither generate nor spill.
+- **Storage is decoupled** by a frozen identity $v_h = v^{in}_h$: the reservoir volume is held constant, injecting no phantom storage and trapping no water.
+- **Natural inflow is passed through** to the first active downstream plant (or the network sink if none), so incremental inflow and upstream releases reach the cascade below without being lost at the un-built site.
+
+The defining contrast with the filling phase below is **spillage**: it is frozen to zero while PreFilling (there is no reservoir to shed from), and becomes a free decision once filling begins.
+
 ### Dead-Volume Filling
 
 Cobre models the commissioning of new hydro plants with a **filling period** (`[start_stage_id, entry_stage_id)`) during which the reservoir accumulates water to reach the dead volume ($\underline{V}_h$). During this period:
@@ -468,7 +478,7 @@ Cobre models the commissioning of new hydro plants with a **filling period** (`[
 - The hydro has **no generation**: $q_{h,k} = 0$, $g_{h,k} = 0$ (hard constraint)
 - Natural inflow flows freely through the ordinary water balance — there is no retention or impound cap diverting inflow to storage
 - Storage is allowed below $\underline{V}_h$ (the operating min-storage slack is inactive)
-- Outflow is limited to spillage (turbines not operational), with the `outflow_violation_below` slack if environmental flow cannot be met
+- Outflow is limited to spillage (turbines not operational), with the `outflow_violation_below` slack if environmental flow cannot be met. Spillage is a **free** decision during filling — a real impounding reservoir can shed inflow it cannot yet hold — in contrast to the PreFilling state, where spillage is frozen to zero
 - A **per-stage filling floor** $v_h \geq V^{\text{target}}_t$ requires the reservoir to stay on a minimum-accumulation schedule set by `filling_min_rate_m3s`. The floor ramps up to $\underline{V}_h$ at the last filling stage; its slack $\sigma^{fill}_h$ is priced **below** deficit (a fill schedule is not defended as hard as load serving)
 
 When the plant enters service at `entry_stage_id`, the ordinary soft minimum-storage floor takes over. For the per-stage floor trajectory and the penalty ordering, see [Penalty System](/math/penalty-system).
