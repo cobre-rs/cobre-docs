@@ -265,7 +265,7 @@ For detailed constraints, see [equipment formulations](/math/equipment-formulati
 
 A thermal plant may be flagged as **anticipated** by attaching a per-plant lead $K \geq 1$. The physical motivation is fuel-ordering lead time: LNG (originally _Gás Natural Liquefeito_) terminals, long-haul coal contracts and similar arrangements require the committed dispatch quantity to be locked $K$ stages before the energy is physically delivered. Anticipated thermals therefore split the per-stage thermal decision into two coupled variables — the **commitment**, made at the decision stage $t$, and the **delivered generation**, which is forced to match the matured commitment at the delivery stage $t + K$.
 
-The lead is encoded as an integer plant-specific parameter $K_i \geq 1$ (`lead_stages` on the plant entity). A plant with $K_i = 1$ commits one stage ahead; a plant with $K_i = 3$ commits three stages ahead. Plants without the anticipation flag use the standard thermal model from the preceding subsections.
+The lead resolves to an integer plant-specific parameter $K_i \geq 1$, supplied in one of two mutually exclusive forms: a **stage count** (`lead_stages`, calendar-free) or a **physical duration** (`lead_time_hours`, resolved against the stage calendar by end-anchoring the lead on the cumulative stage-hour boundaries). A plant with $K_i = 1$ commits one stage ahead; a plant with $K_i = 3$ commits three stages ahead. A physical lead shorter than the decision stage's own duration resolves to $K_i = 0$, and the plant then dispatches as an ordinary thermal. Plants without the anticipation flag use the standard thermal model from the preceding subsections.
 
 #### State variables and ring-buffer layout
 
@@ -293,6 +293,8 @@ d^i_t \in
 $$
 
 The horizon predicate $t + K_i < T$ guarantees the commitment is only opened when there is a delivery stage inside the study horizon; commitments whose delivery would fall outside $T$ are pinned to zero.
+
+The commitment is also **commissioning-gated at its delivery stage**: the delivery-stage generation bounds $[\underline{G}_i(t + K_i), \bar{G}_i(t + K_i)]$ collapse to $\{0\}$ whenever the plant is not in service at $t + K_i$, so a commitment can never be placed for a delivery stage the plant cannot honour — and a plant whose cap varies across stages cannot be over-committed to a value its delivery stage would reject. Two lead configurations are refused at load: a lead exceeding the study horizon (no in-horizon delivery stage exists), and a physical `lead_time_hours` coarse enough that one decision stage would anchor more than one delivery stage.
 
 The **fishing constraint** binds the per-block generation of plant $i$ to the matured commitment in slot 0 at every stage $t \in [0, T - 1]$:
 

@@ -360,7 +360,7 @@ The z-inflow columns sit between the AR lag columns and the incoming storage col
 
 ## 5c. Anticipated Thermal Dispatch
 
-Anticipated thermals (see [System Elements §4](/math/system-elements)) introduce a per-plant ring buffer of $K_i$ pending commitments and a per-stage commitment column. The incoming ring-buffer state is pinned by column bounds (like all other state, §4a); two constraint blocks then couple the remaining variables. The layout is engineered so that the reduced cost on slot 0 of the pinned anticipated-state column at stage $t + 1$ propagates back to the predecessor's commitment column via the standard SDDP cut machinery without any decision-side coefficient corrupting the routing.
+Anticipated thermals (see [System Elements §4](/math/system-elements)) introduce a per-plant ring buffer of $K_i$ pending commitments and a per-stage commitment column. The lead $K_i$ is the integer stage lead resolved from the plant's `lead_stages` (a stage count) or `lead_time_hours` (a physical duration end-anchored on the stage calendar); every commitment is bounded, costed, and commissioning-gated at its **delivery** stage $t + K_i$, not the decision stage. The incoming ring-buffer state is pinned by column bounds (like all other state, §4a); two constraint blocks then couple the remaining variables. The layout is engineered so that the reduced cost on slot 0 of the pinned anticipated-state column at stage $t + 1$ propagates back to the predecessor's commitment column via the standard SDDP cut machinery without any decision-side coefficient corrupting the routing.
 
 ### State pinning (column bounds, one per `(slot, plant)`)
 
