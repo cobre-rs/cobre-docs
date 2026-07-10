@@ -4,14 +4,15 @@
 ecosystem — the mathematics, algorithm, and worked examples behind its
 SDDP-based hydrothermal dispatch, together with how the software implements them.
 
-Published at **[methodology.cobre-rs.dev](https://methodology.cobre-rs.dev)**, built
+Published at **[docs.cobre-rs.dev](https://docs.cobre-rs.dev)**, built
 with [Astro Starlight](https://starlight.astro.build/).
 
-> **Scope.** This is a _methodology-only_ reference (math, worked examples,
-> reference). Architecture, HPC/parallelism, solver interfaces,
-> data-model/output-schemas, and configuration live in the Cobre **developer
-> guide**, not here. The Cobre code is the ground truth — when a spec diverges from
-> the code, the spec is updated.
+> **Scope.** This is the **single, unified** docs site: an annotation-free math
+> layer (formulation, algorithm, worked examples) interleaved per topic with a
+> version-scoped software layer (configure / I·O tabs, the I/O reference, and
+> running Cobre). Only developer/crate internals live outside it, as `cobre`
+> per-crate READMEs + `ARCHITECTURE.md`. The Cobre code is the ground truth —
+> when a spec diverges from the code, the spec is updated.
 
 ## Local development
 
@@ -28,21 +29,21 @@ npm run build:versions # multi-version assembly (versions.json) → dist/
 
 ## Stack
 
-| Concern        | Tool                                                                                                            |
-| -------------- | --------------------------------------------------------------------------------------------------------------- |
-| Site framework | [Astro Starlight](https://starlight.astro.build/)                                                               |
-| Math           | KaTeX via manual `remark-math` + `rehype-katex` (rendered at build time, zero client JS)                        |
-| Diagrams       | inline [D2](https://d2lang.com/) (ELK engine) for schematics; [Mermaid](https://mermaid.js.org/) for flowcharts |
-| Math plots     | [Observable Plot](https://observablehq.com/plot/) islands backed by a unit-tested TypeScript compute layer      |
-| i18n           | Starlight-native (`en` + `pt-br`) + [Lunaria](https://lunaria.dev/) translation dashboard                       |
-| Versioning     | build-per-tag → subpaths (no plugin); see `build-versions.mjs` + `versions.json`                                |
+| Concern        | Tool                                                                                                                         |
+| -------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| Site framework | [Astro Starlight](https://starlight.astro.build/)                                                                            |
+| Math           | KaTeX via manual `remark-math` + `rehype-katex` (rendered at build time, zero client JS)                                     |
+| Diagrams       | inline [D2](https://d2lang.com/) (ELK engine) for every diagram — schematics, flowcharts, network one-lines (build-time SVG) |
+| Math plots     | [Observable Plot](https://observablehq.com/plot/) islands backed by a unit-tested TypeScript compute layer                   |
+| i18n           | Starlight-native (`en` + `pt-br`) + [Lunaria](https://lunaria.dev/) translation dashboard                                    |
+| Versioning     | build-per-tag → subpaths (no plugin); see `build-versions.mjs` + `versions.json`                                             |
 
 ## Structure
 
 ```
 src/
 ├── content/
-│   ├── docs/             # the 7-Part methodology corpus (29 chapters)
+│   ├── docs/             # the unified corpus — math layer + interleaved software layer
 │   │   ├── index.mdx     #   landing page
 │   │   ├── overview/     #   Part 1 — Introduction
 │   │   ├── math/         #   Parts 2–5 — system & stochastic modelling, SDDP, coupling
@@ -77,7 +78,7 @@ npm run check:e10     # third-party-notices / content-licensing completeness
 
 A push to `main` triggers `.github/workflows/starlight-deploy.yml`, which runs the
 full gate suite, builds the site, and publishes it to GitHub Pages at
-`methodology.cobre-rs.dev`.
+`docs.cobre-rs.dev` (`methodology.cobre-rs.dev` 301-redirects in).
 
 ## License
 
