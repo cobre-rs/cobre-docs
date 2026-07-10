@@ -1,12 +1,35 @@
 # mdBook Retirement & `docs.cobre-rs.dev` Cutover — Runbook
 
-**Status:** ready to execute · **Prepared:** 2026-07-10 (post cobre v0.10.0 sync)
+**Status:** Steps 1–3 **EXECUTED** on the branches (2026-07-10); only Step 4
+(DNS + GitHub-Pages flip + merge) and the next-release Step 5 remain — operator
+actions. **Prepared:** 2026-07-10 (post cobre v0.10.0 sync).
 
 This is the operator runbook for the final cutover: point the unified Starlight
 site at `docs.cobre-rs.dev`, retire the `cobre/book/` mdBook, and relocate the
 generated JSON schemas so nothing breaks. Two repos are involved — **cobre-docs**
 (this repo) and **cobre**. Do the steps in order; each is idempotent and
 `git revert`-able.
+
+> **Executed on the branches (held local, not merged):**
+>
+> - **cobre-docs `feat/docs-unification`** — full cutover config (site, CNAME,
+>   redirects, `$schema` URLs → `docs.cobre-rs.dev/schemas/`), governance,
+>   burndown, schema refresh. 37 commits.
+> - **cobre `docs/unification-t-code`** — the mdBook is **deleted** (commit
+>   `9e8c42b9`): schemas relocated `book/src/schemas/` → `schemas/`, all ~510
+>   `$schema` URLs repointed to cobre's own `raw.githubusercontent.com/.../schemas/`
+>   (self-contained — refined from the earlier `docs.cobre-rs.dev` choice so cobre
+>   does not depend on the docs deploy), `book/` + the mdBook Pages deploy
+>   (`docs.yml`) removed, and the `book/`-scanning CI doc-gates refactored to keep
+>   their non-book coverage (`check_doc_counts` removed as mdBook-only;
+>   `check-docs-examples` kept as a CLI structural-invariant gate). Freshness gate,
+>   all kept gates, `cli_schema` (4/0) and `init` `$schema` (8/0) tests pass with
+>   `book/` gone. 7 commits.
+>
+> **What remains for the operator:** review + merge both branches, then Step 4
+> below (DNS + Pages custom-domain flip). Step 5 (`refresh-schemas.mjs`
+> `SCHEMAS_SUBPATH` → `schemas`) applies only from the first post-merge cobre tag —
+> v0.10.0 and earlier still carry `book/src/schemas`.
 
 ## What is already prepared (no action needed)
 
