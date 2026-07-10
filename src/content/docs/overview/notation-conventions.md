@@ -47,6 +47,10 @@ This document follows [SDDP.jl](https://sddp.dev/stable/) notation conventions f
 | $\mathcal{U}_h$                             | Upstream hydros of $h$                                                                            |
 | $\Omega_t$                                  | Scenario realizations at stage $t$                                                                |
 
+:::note[Entity Indexing]
+Every operational entity index set above ($\mathcal{B}$, $\mathcal{H}$, $\mathcal{T}$, $\mathcal{R}$, $\mathcal{L}$, $\mathcal{C}$, $\mathcal{P}$) is enumerated in the canonical **(operational_start_date, id)** order: primarily by each entity's operational start date, then — among entities sharing a date — by its unique id. This is the order every state block, the dense LP column layout, and the output column order follow. See [Determinism Guarantees](/math/determinism-guarantees) and [LP Formulation](/math/lp-formulation).
+:::
+
 ## 3. Parameters
 
 ### 3.1 Time and Conversion

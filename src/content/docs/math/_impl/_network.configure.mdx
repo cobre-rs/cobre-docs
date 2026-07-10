@@ -17,6 +17,7 @@ Multi-Bus" below.
     {
       "id": 0,
       "name": "SIN",
+      "operational_start_date": "1999-01-01",
       "deficit_segments": [{ "depth_mw": null, "cost": 1000.0 }]
     }
   ]
@@ -27,6 +28,7 @@ Multi-Bus" below.
 | ------------------ | ------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `id`               | integer | Yes      | Unique non-negative bus identifier, referenced by every entity's `bus_id`.                                                                                              |
 | `name`             | string  | Yes      | Human-readable bus name, used in output files and validation messages.                                                                                                  |
+| `operational_start_date` | string (ISO-8601 date) | Yes | Calendar date (`YYYY-MM-DD`) the bus enters the registry's operational history. Provenance and the canonical `(operational_start_date, id)` ordering key (see [Notation Conventions](/overview/notation-conventions)) — independent of any commissioning window. |
 | `deficit_segments` | array   | No       | Bus-level override of the piecewise deficit cost curve. See the [Penalty System Configure tab](/math/penalty-system#implementation-in-cobre) for the segment field table and the two-tier resolution order. |
 
 `excess_cost` has no per-bus field at all: every bus shares the global
@@ -46,6 +48,7 @@ connects buses with one or more line entries:
       "name": "North-South Interconnection",
       "source_bus_id": 0,
       "target_bus_id": 1,
+      "operational_start_date": "2003-07-01",
       "entry_stage_id": null,
       "exit_stage_id": null,
       "capacity": { "direct_mw": 1000.0, "reverse_mw": 800.0 },
@@ -62,6 +65,7 @@ connects buses with one or more line entries:
 | `name`                | string          | Yes      | Human-readable line name.                                                                                                                                                      |
 | `source_bus_id`       | integer         | Yes      | Bus at the source end — defines the direct-flow direction (source → target). Must reference an existing `buses.json` `id`.                                                    |
 | `target_bus_id`       | integer         | Yes      | Bus at the target end — defines the reverse-flow direction (target → source). Must differ from `source_bus_id` (no self-loop lines).                                          |
+| `operational_start_date` | string (ISO-8601 date) | Yes | Calendar date (`YYYY-MM-DD`) the line enters the registry's operational history. Provenance and the canonical `(operational_start_date, id)` ordering key (see [Notation Conventions](/overview/notation-conventions)) — **independent of** `entry_stage_id`/`exit_stage_id` below, which alone gate commissioning. |
 | `entry_stage_id`      | integer or null | No       | Commissioning window start — see [Entity Commissioning Windows](#entity-commissioning-windows) in the body above. `null` means active from stage 0.                            |
 | `exit_stage_id`       | integer or null | No       | Commissioning window end (exclusive). `null` means never decommissioned.                                                                                                       |
 | `capacity.direct_mw`  | number          | Yes      | Hard upper bound on the direct-direction flow variable, MW.                                                                                                                    |

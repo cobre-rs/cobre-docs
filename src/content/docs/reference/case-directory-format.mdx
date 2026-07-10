@@ -586,6 +586,7 @@ Electrical bus registry. Buses are the nodes of the transmission network.
 | ------------------------------------- | -------- | ----------------------------------------------------------------------------------------- |
 | `buses[].id`                          | Yes      | Bus identifier (integer, unique)                                                          |
 | `buses[].name`                        | Yes      | Human-readable bus name (string)                                                          |
+| `buses[].operational_start_date`      | Yes      | Calendar date the bus enters the registry's operational history, ISO-8601 (`YYYY-MM-DD`). Provenance and the canonical `(operational_start_date, id)` ordering key (see [Notation Conventions](/overview/notation-conventions)) |
 | `buses[].deficit_segments`            | No       | Entity-level deficit cost tiers; when absent, global defaults from `penalties.json` apply |
 | `buses[].deficit_segments[].depth_mw` | No       | Segment MW depth; `null` for the final unbounded segment                                  |
 | `buses[].deficit_segments[].cost`     | No       | Cost per MWh of deficit in this tier (USD/MWh)                                            |
@@ -602,6 +603,7 @@ Transmission line registry. Lines connect buses and carry power flows.
 | `lines[].name`                | Yes      | Human-readable line name (string)                                    |
 | `lines[].source_bus_id`       | Yes      | Sending-end bus ID                                                   |
 | `lines[].target_bus_id`       | Yes      | Receiving-end bus ID                                                 |
+| `lines[].operational_start_date` | Yes   | Calendar date the line enters the registry's operational history, ISO-8601 (`YYYY-MM-DD`). Provenance and the canonical `(operational_start_date, id)` ordering key — independent of `entry_stage_id`/`exit_stage_id` below, which alone gate commissioning |
 | `lines[].entry_stage_id`      | No       | Stage when line enters service; `null` = always exists               |
 | `lines[].exit_stage_id`       | No       | Stage when line is decommissioned; `null` = never                    |
 | `lines[].capacity.direct_mw`  | Yes      | Maximum power flow in the direct direction (MW)                      |
@@ -625,6 +627,7 @@ Key fields:
 | `hydros[].bus_id`                                 | Yes      | Bus where generation is injected                                                                              |
 | `hydros[].downstream_id`                          | No       | Downstream plant ID in the cascade; `null` = tailwater                                                        |
 | `hydros[].travel_time_hours`                      | No       | Water travel time [hours] on the main cascade arc to `downstream_id`; `null` or `0.0` = instantaneous. When present and strictly positive, the release is delivered downstream after this delay and carried as in-transit Bellman state (see [System Elements §5](/math/system-elements) and [LP Formulation §5d](/math/lp-formulation)). Requires `initial_conditions.past_defluences` seeding. |
+| `hydros[].operational_start_date`                 | Yes      | Calendar date the plant enters the registry's operational history, ISO-8601 (`YYYY-MM-DD`). Provenance and the canonical `(operational_start_date, id)` ordering key (see [Notation Conventions](/overview/notation-conventions)) — independent of `entry_stage_id`/`exit_stage_id` below, which alone gate commissioning |
 | `hydros[].entry_stage_id`                         | No       | Stage when plant enters service; `null` = always exists                                                       |
 | `hydros[].exit_stage_id`                          | No       | Stage when plant is decommissioned; `null` = never                                                            |
 | `hydros[].reservoir`                              | Yes      | `min_storage_hm3` and `max_storage_hm3` (both >= 0)                                                           |
@@ -677,6 +680,7 @@ Thermal plant registry. Each entry defines a dispatchable generation unit.
 | `thermals[].generation.min_mw`  | Yes      | Minimum dispatch level (MW)                                        |
 | `thermals[].generation.max_mw`  | Yes      | Maximum dispatch level (MW)                                        |
 | `thermals[].cost_per_mwh`       | Yes      | Linear generation cost (USD/MWh)                                   |
+| `thermals[].operational_start_date` | Yes  | Calendar date the unit enters the registry's operational history, ISO-8601 (`YYYY-MM-DD`). Provenance and the canonical `(operational_start_date, id)` ordering key — independent of `entry_stage_id`/`exit_stage_id` below, which alone gate commissioning |
 | `thermals[].entry_stage_id`     | No       | Stage when the unit enters service (`null` = present from stage 0) |
 | `thermals[].exit_stage_id`      | No       | Stage when the unit is decommissioned (`null` = never)             |
 | `thermals[].anticipated_config` | No       | Anticipated-dispatch config (object with `lead_stages` ≥ 1)        |
@@ -698,6 +702,7 @@ optional; when absent, no pumping stations are modeled.
 | `pumping_stations[].source_hydro_id`        | Yes      | Hydro plant from whose reservoir water is extracted                             |
 | `pumping_stations[].destination_hydro_id`   | Yes      | Hydro plant into whose reservoir water is injected                              |
 | `pumping_stations[].consumption_mw_per_m3s` | Yes      | Power drawn per unit of pumped flow [MW/(m³/s)]; must be >= 0                   |
+| `pumping_stations[].operational_start_date` | Yes      | Calendar date the station enters the registry's operational history, ISO-8601 (`YYYY-MM-DD`). Provenance and the canonical `(operational_start_date, id)` ordering key — independent of `entry_stage_id`/`exit_stage_id` below, which alone gate commissioning |
 | `pumping_stations[].entry_stage_id`         | No       | Stage when the station enters service; `null` or absent = present from stage 0  |
 | `pumping_stations[].exit_stage_id`          | No       | Stage when the station is decommissioned; `null` or absent = never              |
 | `pumping_stations[].flow`                   | Yes      | Nested object with `min_m3s` and `max_m3s` (see below)                          |
@@ -721,6 +726,7 @@ Stage-varying flow bounds can be overridden via `constraints/pumping_bounds.parq
       "id": 0,
       "name": "Bombeamento Serra da Mesa",
       "bus_id": 10,
+      "operational_start_date": "2010-09-15",
       "source_hydro_id": 3,
       "destination_hydro_id": 5,
       "consumption_mw_per_m3s": 0.5,
@@ -747,6 +753,7 @@ when absent, no contracts are modeled.
 | `contracts[].price_per_mwh`  | Yes      | Contract price [monetary units/MWh]. Positive = cost (import); negative = revenue (export) |
 | `contracts[].limits.min_mw`  | Yes      | Minimum dispatch level [MW]; use `0.0` unless a take-or-pay floor applies                  |
 | `contracts[].limits.max_mw`  | Yes      | Maximum dispatch level [MW]; must be >= `limits.min_mw`                                    |
+| `contracts[].operational_start_date` | Yes | Calendar date the contract enters the registry's operational history, ISO-8601 (`YYYY-MM-DD`). Provenance and the canonical `(operational_start_date, id)` ordering key — independent of `entry_stage_id`/`exit_stage_id` below, which alone gate commissioning |
 | `contracts[].entry_stage_id` | No       | Stage when the contract enters service; `null` or absent = present from stage 0            |
 | `contracts[].exit_stage_id`  | No       | Stage when the contract is decommissioned; `null` or absent = never                        |
 
@@ -767,6 +774,7 @@ can be overridden via `constraints/contract_bounds.parquet`.
       "id": 0,
       "name": "Import base load",
       "bus_id": 0,
+      "operational_start_date": "2018-01-01",
       "type": "import",
       "price_per_mwh": 200.0,
       "limits": { "min_mw": 0.0, "max_mw": 50.0 }
@@ -775,6 +783,7 @@ can be overridden via `constraints/contract_bounds.parquet`.
       "id": 1,
       "name": "Export revenue (stage 1 only)",
       "bus_id": 0,
+      "operational_start_date": "2019-06-01",
       "type": "export",
       "entry_stage_id": 1,
       "exit_stage_id": 2,

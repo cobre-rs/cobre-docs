@@ -16,6 +16,7 @@ single key `"hydros"` containing an array of plant objects:
       "name": "UHE Tucuruí",
       "bus_id": 0,
       "downstream_id": null,
+      "operational_start_date": "1984-11-22",
       "entry_stage_id": null,
       "exit_stage_id": null,
       "reservoir": {
@@ -76,8 +77,8 @@ single key `"hydros"` containing an array of plant objects:
 }
 ```
 
-Only `id`, `name`, `bus_id`, `downstream_id`, `reservoir`, `outflow`, and
-`generation` are required. All other top-level keys (`tailrace`,
+Only `id`, `name`, `bus_id`, `downstream_id`, `operational_start_date`,
+`reservoir`, `outflow`, and `generation` are required. All other top-level keys (`tailrace`,
 `hydraulic_losses`, `efficiency`, `evaporation`, `diversion`, `filling`,
 `penalties`) are optional and default to off when absent.
 
@@ -89,6 +90,7 @@ Only `id`, `name`, `bus_id`, `downstream_id`, `reservoir`, `outflow`, and
 | `name`           | string          | Yes      | Human-readable plant name. Used in output files, validation messages, and log output. |
 | `bus_id`         | integer         | Yes      | Identifier of the electrical bus to which this plant's generation is injected. Must match an `id` in `buses.json`. |
 | `downstream_id`  | integer or null | Yes      | Identifier of the plant that receives this plant's outflow. `null` means the plant is at the bottom of its cascade — outflow leaves the system. |
+| `operational_start_date` | string (ISO-8601 date) | Yes | Calendar date (`YYYY-MM-DD`) the plant enters the registry's operational history. Provenance and the canonical `(operational_start_date, id)` ordering key (see [Notation Conventions](/overview/notation-conventions)) — independent of `entry_stage_id`/`exit_stage_id` below, which alone gate commissioning. |
 | `entry_stage_id` | integer or null | No       | Stage index at which the plant enters service (inclusive). `null` means the plant is available from stage 0. |
 | `exit_stage_id`  | integer or null | No       | Stage index at which the plant is decommissioned. The commissioning window is **half-open** `[entry_stage_id, exit_stage_id)`: the plant is active through `exit_stage_id - 1`, and outside the window it is not in service. For a hydro the out-of-service state is **PreFilling** — turbine, spillage, and diversion pinned to zero, storage frozen, and natural inflow routed past the site (see Implementation notes and [system elements §5](/math/system-elements)) — rather than a bare column zero-pin. `null` means the plant is never decommissioned. |
 

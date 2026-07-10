@@ -109,6 +109,19 @@ Two element-specific lifecycle mechanisms layer on top of this generic window:
 - **Hydro dead-volume filling** (§5) — a hydro plant may _exist_ but be unable to generate while its reservoir is still filling toward the dead volume; this is a distinct commissioning state with its own per-stage storage floors, not just a presence gate.
 - **Anticipated thermals** (§4) — a commitment column is opened only when its delivery stage falls inside the study horizon, an additional horizon predicate beyond the entry/exit window.
 
+### Operational Start Date
+
+Independent of the commissioning window, every entity also carries a
+required `operational_start_date` — an ISO-8601 calendar date. This field is
+**provenance and the canonical ordering key only**: it fixes the entity's
+position in the canonical `(operational_start_date, id)` order (see
+[Notation Conventions](/overview/notation-conventions) and
+[Determinism Guarantees](/math/determinism-guarantees)), which every state
+block, the LP column layout, and the output column order follow. It does
+**not** compute or gate commissioning. Presence in the dispatch is decided
+solely by the `entry_stage_id`/`exit_stage_id` window above: the two fields
+are independent, and neither is derived from the other.
+
 ## 2. Buses (Regional Subsystems)
 
 ### Physical Meaning
