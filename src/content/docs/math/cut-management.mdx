@@ -28,7 +28,7 @@ where:
 - $\pi^{lag}_{h,\ell}$ is the AR lag coefficient for hydro $h$, lag $\ell$ (marginal value of inflow history)
 - $v_h$, $a_{h,\ell}$ are the state variables (see [LP Formulation](/math/lp-formulation))
 
-The cut coefficients are dense — every state variable (all storage volumes and all AR lags) has a non-zero coefficient in every cut. This density is a consequence of the full-state column-bound pinning used for reduced-cost extraction (§2).
+The cut carries a coefficient for each **enabled** state dimension: storage and AR-lag dimensions are included according to the stage's `state_variables` selection (§2), while in-transit travel-time buckets and anticipated-thermal slots, when present, are always projected in. Within that projected subspace the coefficients are dense — every included coordinate has a non-zero coefficient in every cut — a consequence of the column-bound pinning used for reduced-cost extraction (§2).
 
 Cobre adds cuts monotonically across iterations: an active cut is never removed from the lower-bound LP within a training run. Because the cut set only grows, the lower-bound estimate is non-decreasing across iterations of a training run. This is a methodology-level guarantee — the outer approximation of the value function can only become tighter iteration by iteration.
 
@@ -58,6 +58,16 @@ where $Q_t(\hat{x}_{t-1}, \omega_t)$ is the optimal objective value of the stage
 :::note[Design note]
 This "fishing" approach (pinning an incoming-state LP variable to the trial value and reading its sensitivity) is the standard technique used by SDDP.jl and other modern SDDP implementations. Cobre realises it through **column bounds** rather than an equality row: a bound-pinned column's reduced cost is the sensitivity, which removes the $N(1+L)$ (plus anticipated-state) redundant equality rows per stage while keeping the property that one value per state coordinate captures all downstream effects automatically. See [LP Formulation §4a](/math/lp-formulation).
 :::
+
+### Cut dimension: the enabled state subset
+
+A stage does not have to project its cuts onto the full incoming state. Each stage carries a `state_variables` selection — `{ storage, inflow_lags }`, defaulting to storage-only (`inflow_lags` off) — that governs the **dimension of the cuts it emits**, not merely which state it reports. A dimension that is switched off is genuinely **projected out** of the subgradient: its reduced cost is never read into the cut, and the cut carries no coefficient for it — the result is a lower-dimensional supporting hyperplane, not a full cut with the omitted coordinates zero-padded.
+
+- With `inflow_lags` **off** (the default), a cut spans storage alone, even when the study fits a PAR($p$) inflow model — the $N \cdot L$ lag coefficients are omitted, not zeroed.
+- With `inflow_lags` **on**, the AR-lag reduced costs (§2) enter the cut as usual, giving the full storage-plus-lag cut.
+- In-transit travel-time buckets and anticipated-thermal slots are **always** projected in, independent of this selection.
+
+The cut dimension of a stage's pool is set by its **successor** stage's selection, since the successor generates the cost-to-go the pool approximates; the terminal pool is always full-dimensional. In a multi-rank run each stage's cut synchronization derives its wire layout from that stage's own cut dimension. Fitting a PAR($p > 0$) model but disabling `inflow_lags` on **every** stage — so the fitted inflow memory never reaches any cut — is surfaced as a model-quality warning. The main use of a storage-only projection under a PAR($p$) model is to couple a PAR($p$) study to a storage-only downstream boundary.
 
 ## 3. Single-Cut Aggregation
 

@@ -368,7 +368,7 @@ Scenario sampling is configured per-pass in `config.json` —
 | `num_scenarios`   | Yes      | Number of forward-pass scenarios for this stage (>= 1)            |
 | `season_id`       | No       | Reference to a season in `season_definitions`                     |
 | `block_mode`      | No       | Block execution mode: `"parallel"` (default) or `"chronological"` |
-| `state_variables` | No       | Which state variables are active: `storage`, `inflow_lags`        |
+| `state_variables` | No       | Cut dimension for this stage: `{ storage, inflow_lags }` booleans, defaulting to storage-only (`inflow_lags` off). Governs which state dimensions the stage's cuts project onto — not merely what is reported; a disabled dimension is projected out of the cut, not zero-padded. Travel-time buckets and anticipated-thermal slots are always included. See [Cut Management](/math/cut-management). |
 | `risk_measure`    | No       | Per-stage risk measure: `"expectation"` or CVaR config            |
 | `sampling_method` | No       | Noise method: `"saa"` or other variants                           |
 

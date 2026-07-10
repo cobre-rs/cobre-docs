@@ -318,7 +318,7 @@ See [PAR(p) inflow model](/math/par-inflow-model) for the complete PAR(p) model 
 
 ## 5a. AR Lag Pinning
 
-The AR dynamics equation (section 5) uses lagged inflows $a_{h,\ell}$ as LP variables. To maintain the Markov property in the SDDP decomposition, each lag variable is pinned to its incoming state value via equal lower and upper **column bounds** on the `inflow_lags` column. This binds the lag variables to the known incoming state, and the **reduced cost** of each pinned column provides the cut coefficient $\pi^{lag}_{h,\ell}$ for the corresponding inflow-lag dimension of the Benders cuts (section 11).
+The AR dynamics equation (section 5) uses lagged inflows $a_{h,\ell}$ as LP variables. To maintain the Markov property in the SDDP decomposition, each lag variable is pinned to its incoming state value via equal lower and upper **column bounds** on the `inflow_lags` column. This binds the lag variables to the known incoming state, and the **reduced cost** of each pinned column provides the cut coefficient $\pi^{lag}_{h,\ell}$ for the corresponding inflow-lag dimension of the Benders cuts (section 11). Whether these lag dimensions actually enter the cut is governed by the stage's `state_variables` selection (which defaults to storage-only): when `inflow_lags` is disabled the lag columns are still pinned for the AR dynamics, but their reduced costs are projected out of the cut, yielding a storage-only cut even under a PAR($p$) fit — see [cut management](/math/cut-management).
 
 For each hydro $h \in \mathcal{H}$ and each lag $\ell \in \{0, \ldots, L-1\}$:
 

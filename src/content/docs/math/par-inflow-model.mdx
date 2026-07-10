@@ -130,6 +130,8 @@ $$
 
 where $a_{h,\ell}$ are state variables (lagged inflows) and $\eta_t$ is the sampled noise realization.
 
+Whether the lagged inflows enter the Benders **cuts** is a separate, per-stage choice from whether they drive this inflow equation. A stage's `state_variables` selection defaults to storage-only, so by default a PAR($p$) study's cuts span storage alone — the inflow-lag dimensions are projected out, not zero-padded. Enabling `inflow_lags` on a stage restores the full storage-plus-lag cut; disabling it on **every** stage while fitting a PAR($p > 0$) model raises a model-quality warning, since the fitted inflow memory then never reaches any cut. The storage-only projection is the mechanism by which a PAR($p$) study can be coupled to a storage-only downstream boundary. See [cut management](/math/cut-management).
+
 ## 4. Model Order Selection
 
 The PAR order $p$ can vary by season. Available selection criteria:
