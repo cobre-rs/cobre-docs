@@ -370,7 +370,7 @@ $e_{h,k}$ and $r_{h,k}$ are parameter-driven quantities computed from input data
 ### Connections to Other Elements
 
 - **Bus connection**: Each hydro plant connects to one bus for energy delivery
-- **Cascade topology**: Upstream plants' outflows ($q + s + u$) become downstream plants' inflows, with optional water travel time delay
+- **Cascade topology**: Upstream plants' outflows ($q + s + u$) become downstream plants' inflows, either instantaneously or, on a declared main-cascade arc, delayed by a **water travel time** (see _Cascade Travel Time_ below)
 - **Diversion targets**: Some plants can divert water to a separate downstream plant (not the immediate cascade successor), bounded by $\bar{U}_h$
 - **Pumping stations**: May receive pumped water (increasing storage) or supply water to pumps (decreasing storage)
 
@@ -407,6 +407,18 @@ The reservoir dynamics account for all water flows in and out of the plant:
 :::note[Note on outflow]
 Outflow $o_h = q_h + s_h$ is the water released to the downstream channel (affects tailrace level). Withdrawal $r_h$ and diversion $u_h$ exit through different paths and do not affect the main tailrace.
 :::
+
+### Cascade Travel Time
+
+In a cascade, an upstream plant's outflow ($q + s + u$) becomes a downstream plant's inflow. By default this transfer is **instantaneous** — water released this stage reaches the downstream reservoir within the same stage. When the reach between two plants is long enough that travel is not negligible, a plant may declare a **water travel time** on its main cascade arc, and the release is then delivered to the downstream reservoir a number of stages later instead of immediately.
+
+Cobre carries the water in transit on such an arc as additional **in-transit state** through the Bellman recursion, discretized into maturity lags — one aggregated in-transit bucket per receiving plant per lag. The bucket maturing at a given stage enters the receiving plant's water balance as a delayed inflow; the remaining in-transit volume is carried forward to later stages. Under the [chronological-blocks formulation](/math/block-formulations) the delayed arrival is spread across the arrival stage's blocks by a fixed density; under parallel blocks it is a single stage-level inflow. Because this is a genuine state augmentation — it changes the state vector and the Benders cuts, exactly as reservoir storage and AR lags do — it is formulated at the LP level in [LP formulation §5d](/math/lp-formulation). Confluent arcs feeding one plant are summed into that plant's single in-transit block.
+
+**Scope.** Travel time applies to the **main cascade arc only** — the arc to `downstream_id`. Diversion and pumping transfers remain instantaneous. A travel time that is absent or zero is treated as an instantaneous transfer, adding no state.
+
+**Not-yet-operating downstream.** A release into a downstream plant that has not yet reached operating status — still filling its dead volume, or before its commissioning entry stage — is rejected at load time: the water would arrive at a reservoir that does not yet exist in the dispatch. The receiving plant must be operating over the arrival window.
+
+**Horizon limitation.** In-transit water that would mature after the study's last stage is dropped rather than credited to terminal storage — see [LP formulation §5d](/math/lp-formulation).
 
 ### Production Function (Water to Power)
 
@@ -670,7 +682,7 @@ The following table maps each physical system element to its LP representation:
 | **Pumping Station**       | —                        | $p_{j,k}$                                  | Flow bounds (min/max)                       | None (cost via energy consumption)           |
 | **Contract**              | —                        | $\chi_{c,k}$                               | Dispatch bounds (min/max)                   | Import cost or Export revenue                |
 
-**Key insight**: The hydro storage variables $v_h$, the AR lag variables $a_{h,\ell}$, and the anticipated-thermal ring-buffer slots $x^{\mathrm{a}}_{s,i,t}$ are the **state variables** that link stages through the Bellman recursion. All other elements contribute control variables that are determined within each stage. This structure enables SDDP's decomposition: the stage subproblem optimizes all control variables given the incoming state, and Benders cuts approximate the future cost as a function of the outgoing state.
+**Key insight**: The hydro storage variables $v_h$, the AR lag variables $a_{h,\ell}$, and the anticipated-thermal ring-buffer slots $x^{\mathrm{a}}_{s,i,t}$ are the **state variables** that link stages through the Bellman recursion — joined, when a cascade arc declares a water travel time, by the in-transit buckets carrying released water toward its downstream plant (see [LP formulation §5d](/math/lp-formulation)). All other elements contribute control variables that are determined within each stage. This structure enables SDDP's decomposition: the stage subproblem optimizes all control variables given the incoming state, and Benders cuts approximate the future cost as a function of the outgoing state.
 
 ## Implementation in Cobre
 

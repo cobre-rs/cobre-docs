@@ -185,6 +185,27 @@ The downstream graph is validated to be **acyclic** — no chain of
 with `downstream_id: null` are tailwater plants; each connected component of
 the cascade graph must have exactly one tailwater plant.
 
+#### Water Travel Time (`travel_time_hours`)
+
+The optional `travel_time_hours` field declares how long a release takes to
+travel down the **main cascade arc** to `downstream_id`.
+
+```json
+{ "id": 0, "downstream_id": 1, "travel_time_hours": 48.0 }
+```
+
+| Field               | Type           | Required | Description                                                                                                                                                                                                                                                                     |
+| ------------------- | -------------- | -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `travel_time_hours` | number or null | No       | Travel time on the main cascade arc, in hours. When present, strictly positive, and the plant has a `downstream_id`, the outflow is delivered to the downstream reservoir after this delay instead of in the same stage. Absent, `null`, or `0.0` means an instantaneous transfer. |
+
+When an arc is declared, Cobre carries the water in transit as additional
+Bellman state (see [LP formulation §5d](/math/lp-formulation) and
+[system elements §5](/math/system-elements)). Travel time applies to the main
+cascade arc only — diversion and pumping transfers are always instantaneous.
+Declaring an arc requires seeding the pre-study releases already in transit via
+`initial_conditions.past_defluences`, and the downstream plant must be
+operating over the arrival window — see Implementation notes.
+
 #### Advanced Fields
 
 These fields enable more detailed physical modeling and are all optional.

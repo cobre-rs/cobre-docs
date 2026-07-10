@@ -75,8 +75,14 @@ aside, which is handled separately — carries over from one solve call to the
 next. The result of solving the subproblem for scenario $\omega$ at trial state
 $\hat{x}$ is therefore a function of those inputs alone and is independent of
 what order the solver was previously called in or on which rank the call was
-issued. See [LP Formulation](/math/lp-formulation) for the column and row layout
-that this construction produces.
+issued. The state vector's block ordering is itself canonical: storage, AR lags,
+in-transit travel-time buckets, and anticipated-thermal slots each occupy a
+fixed range, so a cut's coefficient vector has an identical layout regardless of
+rank count or process topology. The in-transit buckets are ordered by
+`(plant, lag)` — the receiving plant in the same canonical entity order every
+other state block uses, then ascending maturity lag — consistent with the
+storage and inflow-lag block orderings. See [LP Formulation](/math/lp-formulation)
+for the column and row layout that this construction produces.
 
 **Total ordering on floating-point comparisons.** In all sort and selection
 paths on the hot forward and backward pass loops, Cobre compares floating-point

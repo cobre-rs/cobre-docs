@@ -490,6 +490,7 @@ start of the study.
 | `storage`             | Yes      | Array of `{ "hydro_id": integer, "value_hm3": number }` entries for operating hydros                              |
 | `filling_storage`     | Yes      | Array of `{ "hydro_id": integer, "value_hm3": number }` entries for filling hydros                                |
 | `past_inflows`        | No       | Array of `{ "hydro_id": integer, "values_m3s": [number], "season_ids": [integer] }` for PAR(p) lag initialization |
+| `past_defluences`     | No       | Array of windowed pre-study release records seeding the in-transit buckets of a declared travel-time arc (see below)  |
 | `recent_observations` | No       | Array of observed inflow entries for mid-season study starts (see below)                                          |
 
 Each `hydro_id` must be unique within its array and must not appear in both
@@ -511,6 +512,26 @@ Each `past_inflows` entry supports an optional `season_ids` field:
 When `season_ids` is present and a season ID is not defined in `season_definitions`, a
 `BusinessRuleViolation` is emitted during semantic validation (Rule 32) when the
 hydro has PAR order > 0 and a `SeasonMap` is available.
+
+**`past_defluences`** supplies the pre-study releases already in transit on a
+declared travel-time arc (`hydros[].travel_time_hours`), so the first stages'
+delayed-arrival buckets are seeded rather than empty. Each entry gives a release
+window and its average rate for an upstream plant whose outflow feeds a
+downstream arc:
+
+| Field        | Type    | Description                                                                            |
+| ------------ | ------- | -------------------------------------------------------------------------------------- |
+| `hydro_id`   | integer | Upstream plant whose release feeds the arc                                             |
+| `start_date` | string  | Start of the release window (inclusive), ISO 8601 YYYY-MM-DD                           |
+| `end_date`   | string  | End of the release window (exclusive), ISO 8601 YYYY-MM-DD; must be after `start_date` |
+| `value_m3s`  | number  | Average release rate over the window in m³/s; finite and non-negative                  |
+
+The windows must cover the arc's in-transit span at study start —
+`[start_0 − travel_time, start_0)` — with no gap and none future-dated past the
+study start; otherwise the study is rejected. When `past_defluences` is absent
+but `past_inflows` is present, a proxy seed is derived from the inflow history
+with a logged caveat. Optional; defaults to an empty array when no arc needs
+seeding.
 
 **`recent_observations`** provides observed inflow data for partial periods
 before the study start. Used to seed the lag accumulator when a study begins
@@ -603,6 +624,7 @@ Key fields:
 | `hydros[].name`                                   | Yes      | Human-readable plant name                                                                                     |
 | `hydros[].bus_id`                                 | Yes      | Bus where generation is injected                                                                              |
 | `hydros[].downstream_id`                          | No       | Downstream plant ID in the cascade; `null` = tailwater                                                        |
+| `hydros[].travel_time_hours`                      | No       | Water travel time [hours] on the main cascade arc to `downstream_id`; `null` or `0.0` = instantaneous. When present and strictly positive, the release is delivered downstream after this delay and carried as in-transit Bellman state (see [System Elements §5](/math/system-elements) and [LP Formulation §5d](/math/lp-formulation)). Requires `initial_conditions.past_defluences` seeding. |
 | `hydros[].entry_stage_id`                         | No       | Stage when plant enters service; `null` = always exists                                                       |
 | `hydros[].exit_stage_id`                          | No       | Stage when plant is decommissioned; `null` = never                                                            |
 | `hydros[].reservoir`                              | Yes      | `min_storage_hm3` and `max_storage_hm3` (both >= 0)                                                           |

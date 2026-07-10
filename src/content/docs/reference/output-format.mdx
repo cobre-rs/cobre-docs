@@ -92,6 +92,9 @@ will not produce `simulation/pumping_stations/`.
     inflow_lags/
       scenario_id=0000/data.parquet
       ...
+    in_transit/                     # when a travel-time arc is declared
+      scenario_id=0000/data.parquet
+      ...
     violations/
       generic/
         scenario_id=0000/data.parquet
@@ -1025,6 +1028,25 @@ triplet. No block dimension — inflow lags are stage-level state variables.
 | `hydro_id`   | Int32   | No       | Hydro plant ID.                                                           |
 | `lag_index`  | Int32   | No       | Autoregressive lag order (1-based). Lag 1 is the previous stage's inflow. |
 | `inflow_m3s` | Float64 | No       | Inflow value for this lag in m³/s.                                        |
+
+---
+
+### `simulation/in_transit/`
+
+Water travel-time in-transit volumes. One row per (stage, downstream hydro,
+maturity lag) triplet. No block dimension — in-transit buckets are stage-level
+state variables. 5 columns. All columns are non-nullable. The directory is
+present **only when the system declares a travel-time arc**
+(`travel_time_hours` present, strictly positive, with a `downstream_id`);
+byte-neutral otherwise.
+
+| Column                  | Type    | Nullable | Description                                                                                                          |
+| ----------------------- | ------- | -------- | ------------------------------------------------------------------------------------------------------------------- |
+| `stage_id`              | Int32   | No       | Stage index (0-based).                                                                                              |
+| `hydro_id`              | Int32   | No       | Downstream (receiving) hydro plant ID the in-transit water is destined for.                                         |
+| `lag`                   | Int32   | No       | Maturity lag (1-based). Lag 1 matures into the receiving plant's reservoir at this stage; deeper lags arrive later. |
+| `in_transit_volume_hm3` | Float64 | No       | In-transit water volume carried at this (stage, plant, lag) bucket in hm³.                                          |
+| `delayed_arrival_hm3`   | Float64 | No       | Volume delivered into the receiving plant's water balance at this stage in hm³; non-zero only at `lag = 1`.         |
 
 ---
 

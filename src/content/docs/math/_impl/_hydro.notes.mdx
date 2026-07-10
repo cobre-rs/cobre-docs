@@ -66,6 +66,35 @@ load-time errors — only the missing-area case is downgraded to a warning. See
 [Penalty System §"Signed Net Evaporation"](/math/penalty-system#signed-net-evaporation)
 for the water-balance treatment of the resulting flux.
 
+### Water travel time: in-transit seed and validation
+
+When a plant declares a travel-time arc, the releases already in transit at the
+study start must be supplied so the first stages' delayed-arrival buckets are
+seeded rather than starting empty. This history lives in
+`initial_conditions.past_defluences`: windowed pre-study release records (a
+`hydro_id`, a release window, and an average rate in m³/s) for the plants whose
+outflow feeds a declared arc.
+
+Load-time validation of a declared arc:
+
+- **History depth.** The `past_defluences` windows must cover the arc's
+  in-transit span at study start — the interval `[start_0 − travel_time, start_0)`
+  ending at the study start. A gap, or no windows at all, is a load-time error,
+  and no window may be future-dated past the study start.
+- **Proxy from `past_inflows`.** When a plant lacks the required
+  `past_defluences` history, Cobre derives a proxy seed from its `past_inflows`
+  and logs a caveat; when neither is available the study is rejected.
+- **Downstream must be operating.** A release into a downstream plant that is
+  still PreFilling/Filling, or before its commissioning entry stage, over the
+  arrival window is rejected — the water would arrive at a reservoir not yet
+  present in the dispatch.
+- **Zero travel time.** A zero (or absent) travel time is treated as undeclared
+  — an instantaneous transfer, adding no bucket and requiring no seed.
+
+The horizon limitation (in-transit water maturing past the last stage is
+dropped, not credited to terminal storage) is covered in
+[LP formulation §5d](/math/lp-formulation).
+
 ### Round-trip parquet export
 
 When hyperplanes are fitted at runtime (`source: "computed"`), the fitted

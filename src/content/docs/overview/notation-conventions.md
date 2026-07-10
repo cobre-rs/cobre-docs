@@ -204,14 +204,15 @@ Per-block variables are indexed by $k \in \mathcal{K}$:
 
 ### 4.2 Stage-Level State Variables
 
-| Variable                 | Domain                         | Units | Description                                                                                                            |
-| ------------------------ | ------------------------------ | ----- | ---------------------------------------------------------------------------------------------------------------------- |
-| $v_h$                    | $[\underline{V}_h, \bar{V}_h]$ | hm³   | End-of-stage storage                                                                                                   |
-| $v^{avg}_h$              | -                              | hm³   | Average storage during stage: $(\hat{v}_h + v_h)/2$                                                                    |
-| $a_{h,\ell}$             | fixed                          | m³/s  | AR lag $\ell$ (fixed by state transition)                                                                              |
-| $x^{\mathrm{a}}_{s,i,t}$ | fixed                          | MW    | Slot $s$ of plant $i$'s anticipated-thermal ring buffer at stage $t$ (fixed by state transition); slot 0 matures here. |
-| $d^i_t$                  | $[\underline{G}_i, \bar{G}_i]$ | MW    | Anticipated-thermal commitment placed at stage $t$ for delivery at stage $t + K_i$                                     |
-| $\theta$                 | $\geq 0$                       | \$    | Future cost (cost-to-go approximation)                                                                                 |
+| Variable                 | Domain                         | Units | Description                                                                                                                        |
+| ------------------------ | ------------------------------ | ----- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| $v_h$                    | $[\underline{V}_h, \bar{V}_h]$ | hm³   | End-of-stage storage                                                                                                               |
+| $v^{avg}_h$              | -                              | hm³   | Average storage during stage: $(\hat{v}_h + v_h)/2$                                                                                |
+| $a_{h,\ell}$             | fixed                          | m³/s  | AR lag $\ell$ (fixed by state transition)                                                                                          |
+| $x^{\mathrm{a}}_{s,i,t}$ | fixed                          | MW    | Slot $s$ of plant $i$'s anticipated-thermal ring buffer at stage $t$ (fixed by state transition); slot 0 matures here.             |
+| $b_{i,d,t}$              | fixed                          | hm³   | In-transit water destined for downstream plant $i$ at maturity lag $d$, stage $t$ (fixed by state transition); lag 1 matures here. |
+| $d^i_t$                  | $[\underline{G}_i, \bar{G}_i]$ | MW    | Anticipated-thermal commitment placed at stage $t$ for delivery at stage $t + K_i$                                                 |
+| $\theta$                 | $\geq 0$                       | \$    | Future cost (cost-to-go approximation)                                                                                             |
 
 ### 4.3 Slack Variables
 
