@@ -686,6 +686,53 @@ Thermal plant registry. Each entry defines a dispatchable generation unit.
 
 ---
 
+### `system/non_controllable_sources.json`
+
+Non-controllable source (NCS) registry. Each entry defines an intermittent or
+aggregate generator — wind, solar, small hydro, biomass, distributed generation —
+whose available output is a scenario input rather than a free LP decision. The
+file is optional; when absent, no non-controllable sources are modeled.
+Per-scenario availability is supplied by the
+`scenarios/non_controllable_factors.json` and
+`scenarios/non_controllable_stats.parquet` inputs.
+
+| Field                                               | Required | Description                                                                                                                                                                                                                                             |
+| --------------------------------------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `non_controllable_sources[].id`                     | Yes      | Source identifier (integer, unique within the file)                                                                                                                                                                                                     |
+| `non_controllable_sources[].name`                   | Yes      | Human-readable source name (string)                                                                                                                                                                                                                     |
+| `non_controllable_sources[].bus_id`                 | Yes      | Bus into which the source's generation is injected                                                                                                                                                                                                      |
+| `non_controllable_sources[].operational_start_date` | Yes      | Calendar date the source enters the registry's operational history, ISO-8601 (`YYYY-MM-DD`). Provenance and the canonical `(operational_start_date, id)` ordering key — independent of `entry_stage_id`/`exit_stage_id` below, which alone gate commissioning |
+| `non_controllable_sources[].max_generation_mw`      | Yes      | Maximum generation (installed capacity) [MW]                                                                                                                                                                                                            |
+| `non_controllable_sources[].allow_curtailment`      | No       | Whether the LP may curtail this source. `true` (default) — dispatch within `[0, max_generation_mw × availability]` at the curtailment cost; `false` — must-run, dispatch pinned to the realized availability every scenario                             |
+| `non_controllable_sources[].curtailment_cost`       | No       | Entity-level curtailment cost override [$/MWh]; falls back to the global `ncs_curtailment_cost` when absent                                                                                                                                             |
+| `non_controllable_sources[].entry_stage_id`         | No       | Stage when the source enters service; `null` or absent = present from stage 0                                                                                                                                                                          |
+| `non_controllable_sources[].exit_stage_id`          | No       | Stage when the source is decommissioned; `null` or absent = never                                                                                                                                                                                     |
+
+A curtailable source (`allow_curtailment: true`) contributes a dispatch variable
+bounded by `[0, max_generation_mw × availability]`, with curtailed energy priced
+at `curtailment_cost` (or the global default). A must-run source
+(`allow_curtailment: false`) is pinned to its realized availability every
+scenario, injecting a fixed amount with no curtailment freedom.
+
+**Minimal valid example:**
+
+```json
+{
+  "$schema": "https://raw.githubusercontent.com/cobre-rs/cobre/refs/heads/main/book/src/schemas/non_controllable_sources.schema.json",
+  "non_controllable_sources": [
+    {
+      "id": 0,
+      "name": "Complexo Eólico Nordeste",
+      "bus_id": 4,
+      "operational_start_date": "2015-06-01",
+      "max_generation_mw": 1200.0
+    }
+  ]
+}
+```
+
+---
+
 ### `system/pumping_stations.json`
 
 Pumping station registry. Each entry defines a pumped-storage or water-transfer
