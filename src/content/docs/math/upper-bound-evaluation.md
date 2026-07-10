@@ -289,7 +289,7 @@ The convergence guarantee still holds: with $d_{cycle} < 1$, both the outer (cut
 
 ## 12 References
 
-> Costa, B.F.P., & Leclere, V. (2023). "Duality of upper bounds in stochastic dynamic programming." _Optimization Online_. https://optimization-online.org/?p=23738
+> Costa, B.F.P., & Leclère, V. (2023). "Duality of upper bounds in stochastic dynamic programming." _Optimization Online_. https://optimization-online.org/?p=23738
 
 > Philpott, A.B., de Matos, V.L., & Finardi, E.C. (2013). "On solving multistage stochastic programs with coherent risk measures." _Operations Research_, 61(4), 957-970. https://doi.org/10.1287/opre.2013.1175
 

@@ -74,11 +74,23 @@ For a glossary of domain terms used throughout the book, see
 
 ---
 
+## Hydro Production
+
+- **Diniz, A.L. & Maceira, M.E.P.** (2008). A four-dimensional model of hydro generation for the short-term hydrothermal dispatch problem considering head and spillage effects. _IEEE Transactions on Power Systems_, 23(3), 1298–1308. [doi:10.1109/TPWRS.2008.922253](https://doi.org/10.1109/TPWRS.2008.922253)
+  The piecewise-linear hydro production model (FPHA) relating storage/head, turbined flow, and spillage to generation. Origin of the approach fitted in [Hydro Production Models](/math/hydro-production-models) §2 — Cobre fits a reduced storage-and-flow variant at spillage = 0, capturing the spillage effect through a lateral-flow secant rather than an explicit spillage axis.
+  _Cited in [Hydro Production Models](/math/hydro-production-models) §2._
+
+---
+
 ## Inflow Modelling
 
 - **Box, G.E.P. & Jenkins, G.M.** (1976). _Time Series Analysis: Forecasting and Control_, revised edition. Holden-Day, San Francisco.
   Foundational textbook for ARMA / autoregressive time-series modelling and the Yule-Walker estimation method that underlies the PAR(p) fitting procedure.
   _Background reference for [PAR Inflow Model](/math/par-inflow-model), [Scenario Generation](/math/scenario-generation)._
+
+- **Maceira, M.E.P. & Damázio, J.M.** (2006). Use of the PAR(p) model in the stochastic dual dynamic programming optimization scheme used in the operation planning of the Brazilian hydropower system. _Probability in the Engineering and Informational Sciences_, 20(1), 143–156. [doi:10.1017/S0269964806060098](https://doi.org/10.1017/S0269964806060098)
+  The periodic autoregressive PAR(p) model as fitted inside SDDP for the Brazilian system. Source of the population-divisor seasonal-statistics convention and the iterative AR-order-reduction procedure that keeps composed lag contributions non-negative.
+  _Cited in [PAR Inflow Model](/math/par-inflow-model) §4.1, §5.2, §9.6._
 
 - **Akaike, H.** (1974). A new look at the statistical model identification. _IEEE Transactions on Automatic Control_, 19(6), 716–723. [doi:10.1109/TAC.1974.1100705](https://doi.org/10.1109/TAC.1974.1100705)
   Akaike Information Criterion (AIC) used for AR-order selection in the PAR(p) model.
@@ -91,6 +103,10 @@ For a glossary of domain terms used throughout the book, see
 - **Larroyd, P.V., Pedrini, R., Beltran, F., Teixeira, G., Finardi, E.C. & Picarelli, L.B.** (2022). Dealing with Negative Inflows in the Long-Term Hydrothermal Scheduling Problem. _Energies_, 15(3), 1115. [doi:10.3390/en15031115](https://doi.org/10.3390/en15031115)
   Inflow non-negativity treatment for PAR(p) models in hydrothermal dispatch — the reference design that motivates the production clamp-plus-slack formulation.
   _Cited in [Inflow Non-Negativity](/math/inflow-nonnegativity) §8._
+
+- **Maceira, M.E.P., Terry, L.A., Costa, F.S., Damázio, J.M. & Melo, A.C.G.** (2002). Chain of optimization models for setting the energy dispatch and spot price in the Brazilian system. In _Proceedings of the 14th Power Systems Computation Conference (PSCC)_, Seville, Spain.
+  The NEWAVE / DECOMP / GEVAZP optimization chain for the Brazilian system. Source of the DECOMP-style scenario tree — a deterministic trunk with branching at the final stage — modelled in complete-tree mode.
+  _Cited in [Scenario Generation](/math/scenario-generation) §6._
 
 ---
 
@@ -113,8 +129,20 @@ For a glossary of domain terms used throughout the book, see
 
 ---
 
+## Numerical Methods
+
+- **Curtis, A.R. & Reid, J.K.** (1972). On the automatic scaling of matrices for Gaussian elimination. _IMA Journal of Applied Mathematics_, 10(1), 118–124. [doi:10.1093/imamat/10.1.118](https://doi.org/10.1093/imamat/10.1.118)
+  Geometric-mean matrix equilibration — the row/column scaling heuristic Cobre applies to condition the stage LP.
+  _Cited in [LP Formulation](/math/lp-formulation) §12._
+
+- **Higham, N.J.** (2002). Computing the nearest correlation matrix — a problem from finance. _IMA Journal of Numerical Analysis_, 22(3), 329–343. [doi:10.1093/imanum/22.3.329](https://doi.org/10.1093/imanum/22.3.329)
+  The nearest positive-semidefinite / correlation-matrix problem underlying the clip-negative-eigenvalues projection used when factorising the spatial correlation matrix.
+  _Background reference for [PAR Inflow Model](/math/par-inflow-model) §8._
+
+---
+
 ## Brazilian Power-System Context
 
 - **CEPEL Technical Documentation.** Centro de Pesquisas de Energia Elétrica. Online manual: [see.cepel.br/manual/libs/latest/](https://see.cepel.br/manual/libs/latest/).
-  Official documentation for the NEWAVE / DECOMP / DESSEM suite of stochastic-dispatch models used by the Brazilian system operator. Source of the FPHA terminology (`q_lat`, `q_out`, `enchimento de volume morto`), the `reducao_ordem` algorithm for PAR-order reduction, and the DECOMP-style scenario tree.
-  _Cited in [Hydro Production Models](/math/hydro-production-models) §1, [Penalty System](/math/penalty-system) §6, [PAR Inflow Model](/math/par-inflow-model) §4.1, [Scenario Generation](/math/scenario-generation) §6.2._
+  Official documentation for the NEWAVE / DECOMP / DESSEM suite of stochastic-dispatch models operated for the Brazilian system. Cited here only for the practitioner terminology map — the DECOMP/DESSEM/NEWAVE Portuguese terms (`q_lat`, `q_out`, `h_mon`/`h_jus`) carried in the glossary and notation tables as a translation aid. The methods those models implement are credited to their primary articles above: FPHA → Diniz & Maceira (2008); PAR(p) and iterative order reduction → Maceira & Damázio (2006); DECOMP-style scenario tree → Maceira et al. (2002). Cobre's dead-volume filling model is its own and is not attributed here.
+  _Cited in [Hydro Production Models](/math/hydro-production-models) §2.1, [Glossary](/reference/glossary)._

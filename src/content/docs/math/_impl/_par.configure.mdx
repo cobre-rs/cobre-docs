@@ -60,7 +60,7 @@ always overwrite it with fitted values.
 | 1 | 0 | 0 | 0 | `Deterministic` | no PAR model | none | identity, unless `correlation.json` provided |
 | 2 | 0 | 1 | 0 | `UserStatsWhiteNoise` | user file | order-0 (white noise) | identity, unless `correlation.json` provided |
 | 3 | 0 | 1 | 1 | `UserProvidedNoHistory` | user file | user file | identity, unless `correlation.json` provided |
-| 4 | 1 | 0 | 0 | `FullEstimation` | fitted from H | fitted from H (PACF + Yule-Walker + Maceira-Damazio) | estimated from H residuals, unless `correlation.json` provided |
+| 4 | 1 | 0 | 0 | `FullEstimation` | fitted from H | fitted from H (PACF + Yule-Walker + Maceira & Damázio) | estimated from H residuals, unless `correlation.json` provided |
 | 5 | 1 | 0 | 1 | `UserArHistoryStats` | fitted from H | user file | estimated from H residuals using user coefficients, unless `correlation.json` provided |
 | 6 | 1 | 1 | 0 | `PartialEstimation` | user file (used only for the Yule-Walker solve) | fitted from H | estimated from H residuals using the user stats, unless `correlation.json` provided |
 | 7 | 1 | 1 | 1 | `UserProvidedAll` | user file | user file | identity, unless `correlation.json` provided (history is not re-consumed) |

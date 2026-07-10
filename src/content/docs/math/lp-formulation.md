@@ -679,7 +679,7 @@ Cut intercepts and coefficients are stored in scaled cost space (divided by $K$)
 
 ### 12.2 Column Scaling (Geometric Mean)
 
-After cost scaling, each column $j$ is assigned a scale factor:
+After cost scaling, each column $j$ is assigned a geometric-mean scale factor — the standard matrix-equilibration heuristic (Curtis & Reid, 1972):
 
 $$
 d_j^{col} = \frac{1}{\sqrt{\max_i |A_{ij}| \cdot \min_i |A_{ij}|}}

@@ -243,7 +243,7 @@ Relationship: `outflow = turbined_flow + spillage`, `generation = f(turbined_flo
 
 ### Dead-Volume Filling Specifics
 
-During the filling period (`[start_stage_id, entry_stage_id)`), the hydro is in commissioning state: the reservoir accumulates water toward `min_storage_hm3` (dead volume) before it can begin generating. This model is based on CEPEL's dead-volume filling approach (`enchimento de volume morto`).
+During the filling period (`[start_stage_id, entry_stage_id)`), the hydro is in commissioning state: the reservoir accumulates water toward `min_storage_hm3` (dead volume) before it can begin generating. This is Cobre's own dead-volume filling model (`enchimento de volume morto`), whose per-stage accumulation schedule is specified below.
 
 :::note[Before filling — the PreFilling phase]
 These specifics govern the **filling** window `[start_stage_id, entry_stage_id)`. Before that window — and, for a **non-filling** hydro, at any stage outside its commissioning window — the plant is **PreFilling**: it does not yet exist in the dispatch. Turbine, spillage, and diversion are all pinned to zero, so **spillage is frozen and incurs no `spillage_cost`** (unlike during filling), storage is held constant by a frozen identity, and natural inflow is routed past the site to the first active downstream plant. See [system elements §5](/math/system-elements) for the full lifecycle.

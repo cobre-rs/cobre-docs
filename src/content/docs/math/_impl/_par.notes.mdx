@@ -17,7 +17,7 @@ silently rescales every noise draw.
 ### Order-selection behavior
 
 The classical PACF order-selection rule (methodology §4.1) and the
-Maceira-Damazio iterative reduction it triggers are applied automatically
+Maceira & Damázio iterative reduction it triggers are applied automatically
 whenever Cobre estimates from `inflow_history.parquet`. Two runtime details
 sit alongside that rule but are not part of the derivation:
 
@@ -30,7 +30,7 @@ sit alongside that rule but are not part of the derivation:
   any fitted coefficient for a (hydro, season) exceeds the threshold in
   magnitude, Cobre clears that group's coefficients entirely (order reset to
   0) and resets its `residual_std_ratio` to `1.0`. This runs as a separate
-  pass from the Maceira-Damazio contribution-chain reduction (methodology
+  pass from the Maceira & Damázio contribution-chain reduction (methodology
   §4.1) — a coefficient can trigger this magnitude cutoff even when its
   composed contribution is non-negative.
 

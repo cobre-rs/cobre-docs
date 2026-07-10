@@ -609,7 +609,8 @@ independent of inflow noise.
 In addition to standard SDDP sampling, Cobre supports a **complete tree**
 execution mode where the solver explores an explicit scenario tree — every
 branching at every stage is visited, with no sampling. This is the approach
-used by CEPEL's DECOMP model for short-term hydrothermal dispatch.
+used by the DECOMP model for short-term hydrothermal dispatch in the Brazilian
+system (Maceira et al., 2002).
 
 In standard SDDP, the forward pass samples one branching per stage, so only a
 fraction of the scenario tree is explored per iteration. In complete tree mode,
