@@ -1,8 +1,8 @@
 // Third-party notices generator (E10 ticket-031).
 //
 // Generates site/public/THIRD-PARTY-NOTICES.txt — a deterministic, byte-stable
-// attribution file covering every npm dependency in site/package.json plus four
-// hard-coded non-npm / transitive extras (d2, ELK, mermaid, d3). Sorted
+// attribution file covering every npm dependency in site/package.json plus three
+// hard-coded non-npm / transitive extras (d2, ELK, d3). Sorted
 // alphabetically by package name so the CI drift check is stable across runs.
 //
 // Usage (from the site/ package root):
@@ -75,13 +75,6 @@ You may obtain a copy of the full license text at:
 Full text: https://www.eclipse.org/legal/epl-2.0/`,
   },
   {
-    name: "mermaid",
-    version: "11.15.0",
-    spdx: "MIT",
-    role: "client-side diagram renderer (transitive via astro-mermaid)",
-    licenseText: readNpmLicenseText("mermaid", "MIT"),
-  },
-  {
     name: "d3",
     version: "7.9.0",
     spdx: "ISC",
@@ -120,8 +113,8 @@ function findLicenseFile(pkgDir) {
 
 // ---------------------------------------------------------------------------
 // Helper: read an npm package's license text (used for npm-installed transitives
-// that ARE in node_modules, namely mermaid and d3).
-// pkgName: bare package name (no scope prefix for these two cases).
+// that ARE in node_modules, namely d3).
+// pkgName: bare package name (no scope prefix).
 // spdxId:  fallback SPDX id string for the placeholder.
 // ---------------------------------------------------------------------------
 function readNpmLicenseText(pkgName, spdxId) {
