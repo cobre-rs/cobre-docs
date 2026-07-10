@@ -33,7 +33,7 @@ diverge from the code, the spec must be updated — not the other way around.
 
 ## Current State
 
-**Synced to: cobre v0.8.2 (2026-06-17).**
+**Synced to: cobre v0.10.0 (2026-07-10).**
 
 The corpus is a **methodology-only** reference (math, worked examples,
 reference) organised into the 7-Part sidebar configured in `astro.config.mjs`.
