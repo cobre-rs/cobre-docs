@@ -2,16 +2,69 @@
 import { defineConfig } from "astro/config";
 import starlight from "@astrojs/starlight";
 import lunaria from "@lunariajs/starlight";
-import mermaid from "astro-mermaid";
 import astroD2 from "astro-d2";
 import { unified } from "@astrojs/markdown-remark";
 import remarkMath from "remark-math";
 import rehypeKatex from "rehype-katex";
 
-// astro-mermaid and astro-d2 are registered before starlight.
+// Wrap each astro-d2 inline SVG in a <div class="d2-fig"> (scroll box + native
+// sizing — see src/styles/diagrams.css and Footer.astro `sizeD2Figures`).
+// astro-d2 nests an outer responsive <svg> around an inner <svg class="d2-svg">.
+// We MUST wrap the OUTERMOST svg: wrapping the inner one puts a <div> inside an
+// <svg>, which is invalid HTML — the browser foster-parents the div out, leaving
+// an empty outer svg that fills the column (a huge blank gap, worst on tall
+// diagrams). So we wrap only a top-level svg (parent is not an svg) that
+// contains a d2-svg, and never recurse into it.
+function rehypeWrapD2() {
+  /** @param {any} el */
+  const containsD2 = (el) => {
+    if (!el || el.type !== "element") return false;
+    const cls = /** @type {any[]} */ ([]).concat(el.properties?.className ?? []);
+    if (cls.some((/** @type {any} */ c) => String(c).includes("d2-svg")))
+      return true;
+    return (el.children ?? []).some((/** @type {any} */ c) => containsD2(c));
+  };
+  /** @param {any} node */
+  const walk = (node) => {
+    if (!node || !Array.isArray(node.children)) return;
+    for (let i = 0; i < node.children.length; i++) {
+      const child = node.children[i];
+      const isRawD2 =
+        (child.type === "raw" || child.type === "html") &&
+        typeof child.value === "string" &&
+        child.value.includes("d2-svg");
+      const isOuterD2 =
+        child.type === "element" &&
+        child.tagName === "svg" &&
+        node.tagName !== "svg" &&
+        containsD2(child);
+      if (isRawD2 || isOuterD2) {
+        node.children[i] = {
+          type: "element",
+          tagName: "div",
+          properties: { className: ["d2-fig"] },
+          children: [child],
+        };
+        // do not recurse into the wrapped svg
+      } else {
+        walk(child);
+      }
+    }
+  };
+  return (/** @type {any} */ tree) => walk(tree);
+}
+
+// astro-d2 is registered before starlight. d2 is the SINGLE diagram tool
+// (schematics, flowcharts, network one-lines); Observable-Plot islands cover
+// computed math plots. Mermaid was retired — d2 renders build-time (zero client
+// JS, one themable keystone in src/styles/diagrams.css). See
+// docs/design/diagram-authoring.md.
 export default defineConfig({
   // Architecture B: each version build sets its own base (e.g. "/vX.Y/").
   base: process.env.DOCS_BASE ?? "/",
+  // Custom domain for absolute URLs (canonical links + sitemap). Cutover target;
+  // methodology.cobre-rs.dev 301-redirects in. Env-overridable for a versioned build.
+  site: process.env.DOCS_SITE ?? "https://docs.cobre-rs.dev",
   // D5: mdBook→Starlight URL preservation (ticket-027). mdBook served each
   // chapter at `/specs/<group>/<chapter>.html` (and the intro at
   // `/introduction.html`); Starlight serves the SAME chapters at clean
@@ -97,6 +150,38 @@ export default defineConfig({
     // Part 7 — Reference
     "/specs/reference/glossary.html": "/reference/glossary/",
     "/specs/reference/bibliography.html": "/reference/bibliography/",
+    // Retired software mdBook paths (the old docs.cobre-rs.dev served the mdBook
+    // flat at these URLs). Map each to its unified twin; omitted chapters (crate
+    // internals → GitHub READMEs, energy-variables, deterministic-suite,
+    // creating-your-own) 404 by design. D5: no analytics yet — these cover the
+    // mdBook SUMMARY chapters that have an unambiguous unified page.
+    "/tutorial/what-cobre-solves.html": "/overview/what-cobre-solves/",
+    "/guide/installation.html": "/getting-started/installation/",
+    "/tutorial/quickstart.html": "/getting-started/quickstart/",
+    "/guide/python-quickstart.html": "/getting-started/python-quickstart/",
+    "/guide/configuration.html": "/running/configuration/",
+    "/guide/performance-accelerators.html": "/running/performance/",
+    "/guide/running-studies.html": "/running/running-studies/",
+    "/guide/policy-management.html": "/running/policy-management/",
+    "/guide/cobre-bridge.html": "/running/case-conversion/",
+    "/guide/interpreting-results.html": "/running/interpreting-results/",
+    "/tutorial/understanding-results.html": "/running/interpreting-results/",
+    "/guide/cli-reference.html": "/reference/cli-reference/",
+    "/guide/scalar-parameters.html": "/reference/case-directory-format/",
+    "/reference/case-format.html": "/reference/case-directory-format/",
+    "/reference/output-format.html": "/reference/output-format/",
+    "/reference/flatbuffers-schema.html": "/reference/flatbuffers-schema/",
+    "/reference/error-codes.html": "/reference/error-codes/",
+    "/reference/schemas.html": "/reference/json-schemas/",
+    "/guide/system-modeling.html": "/math/system-elements/",
+    "/guide/network-topology.html": "/math/system-elements/",
+    "/guide/hydro-plants.html": "/math/hydro-production-models/",
+    "/guide/thermal-units.html": "/math/equipment-formulations/",
+    "/guide/stochastic-modeling.html": "/math/par-inflow-model/",
+    "/guide/block-modes.html": "/math/block-formulations/",
+    "/guide/water-travel-time.html": "/math/lp-formulation/",
+    "/examples/1dtoy.html": "/examples/toy-single-reservoir/",
+    "/examples/4ree.html": "/examples/toy-four-reservoir/",
   },
   // D4: manual math renderer — remark-math parses $…$ / $$…$$, rehype-katex
   // renders to static .katex HTML at build time (zero client JS). NOT
@@ -109,11 +194,10 @@ export default defineConfig({
   markdown: {
     processor: unified({
       remarkPlugins: [remarkMath],
-      rehypePlugins: [rehypeKatex],
+      rehypePlugins: [rehypeKatex, rehypeWrapD2],
     }),
   },
   integrations: [
-    mermaid({ autoTheme: true }),
     // astro-d2 renders ```d2 fenced blocks to inline SVG at build time. The `d2`
     // binary is NOT an npm package and must be on PATH at build time (CI: E7):
     //   curl -fsSL https://d2lang.com/install.sh | sh -s --
@@ -122,15 +206,40 @@ export default defineConfig({
       inline: true,
       layout: "elk",
       theme: { default: "0", dark: "200" },
+      // Tighten the whitespace around every diagram: astro-d2 defaults `pad` to
+      // 100px on all sides (visible as a large empty margin above/around the
+      // figure). 20px keeps shapes off the edge without the wasted space.
+      pad: 20,
     }),
     starlight({
-      title: "Cobre Methodology Reference",
+      title: "Cobre Documentation",
       // Translation-status dashboard (ticket-022). @lunariajs/starlight is a
       // STARLIGHT PLUGIN (not an Astro integration): it hooks Starlight's plugin
       // API to inject the `/lunaria` route, which reads git history + the tracked
       // English chapter sources (per lunaria.config.json) and renders per-page
       // pt-BR translation status. With no pt-br/ content yet it reports 0%
       // (untranslated) — the intended "ready for translators" state.
+      //
+      // Coverage + two design decisions (ticket-019, extending i18n/Lunaria to
+      // the Epics 03–04 software content — math/_impl/*, reference/*, running/*,
+      // getting-started/*):
+      // (a) `math/_impl/_*.mdx` partials are STANDALONE translation units.
+      //     `lunaria.config.json`'s `location` glob (`src/content/docs/**/*.{md,mdx}`)
+      //     matches underscore basenames — Lunaria does NOT apply Starlight's
+      //     `docsLoader` `[^_]*` routing exclusion — so each partial is tracked
+      //     as its own row on the dashboard even though it renders inline into a
+      //     host chapter via `<Tabs>`, not as its own routed page. This is
+      //     intentional (strategy §5): math and config-layer prose localize
+      //     independently. No config change was needed; confirmed empirically
+      //     with a fast-glob run against the same pattern (61 matches, including
+      //     all `_impl/_*.mdx` partials, `reference/*`, `running/*`, and
+      //     `getting-started/*`).
+      // (b) `src/content/docs/pt-br/` stays `.gitkeep`-only — NO mirrored pt-br
+      //     stub scaffold. Starlight falls back to the English source for any
+      //     untranslated page, so 0%-translated across the board (including the
+      //     new software content) is the correct "ready for translators" state,
+      //     not a defect. Do not add empty/stub pt-br `.md`/`.mdx` files — they
+      //     would render as broken pages and skew the dashboard's status.
       plugins: [lunaria({ configPath: "./lunaria.config.json", route: "/lunaria" })],
       // Brand mark (ticket-011b, resolves ticket-009's deferred logo). The header
       // slot is small (~24px), so we use the ICON — a self-contained 128×128 copper
@@ -148,26 +257,46 @@ export default defineConfig({
         replacesTitle: false,
       },
       favicon: "/favicon.svg",
-      // Explicit 7-Part sidebar (ticket-016). NOT `autogenerate`: the curated TOC
-      // crosses content folders (Parts 2–5 are all `math/…` chapters split across
-      // four Part groups) and uses "Part N — …" labels that autogeneration cannot
-      // reproduce. Labels are verbatim from `src/SUMMARY.md`'s `# Part N — …`
-      // headings; each group's slugs are in SUMMARY.md order. All 29 migrated
-      // chapter slugs appear exactly once. The landing page (index.mdx → `/`) is the
-      // site root and is intentionally NOT a sidebar entry. A slug here that has no
-      // built page fails `astro build` (a slug typo surfaces immediately).
+      // Unified interleaved sidebar (ticket-005, docs-unification strategy §5
+      // sketch). NOT `autogenerate`: the curated TOC crosses content folders
+      // (System Modelling…Coupling & Boundary Conditions are all `math/…`
+      // chapters split across four groups) and the old Part-N-prefixed labels
+      // are retired in favour of named groups that autogeneration cannot
+      // reproduce. The leading Get-Started group is new (ticket-004 ported the
+      // three `getting-started/*` pages); it also reclaims
+      // `overview/what-cobre-solves` from the old first Part group, leaving the
+      // renamed Introduction group with the remaining three overview slugs.
+      // Every other group's slug set is unchanged from the old 7-Part scaffold,
+      // just relabelled. The pure-software Running Cobre group (§5 sketch,
+      // ticket-013) lands between Coupling & Boundary Conditions and Worked
+      // Examples: these `running/*` pages have no methodology twin, so they are
+      // standalone MDX (no `<Tabs>`, no `_impl/` partials). The I/O reference
+      // entries (case-directory-format, output-format, error-codes,
+      // flatbuffers-schema) landed in the Reference group below (ticket-012);
+      // `reference/cli-reference` (ticket-013) is the resolved borderline
+      // decision — CLI reference lives in Reference, not Running Cobre. The
+      // landing page (index.mdx → `/`) is the site root and is intentionally
+      // NOT a sidebar entry.
       sidebar: [
         {
-          label: "Part 1 — Introduction",
+          label: "Get Started",
           items: [
             "overview/what-cobre-solves",
+            "getting-started/installation",
+            "getting-started/quickstart",
+            "getting-started/python-quickstart",
+          ],
+        },
+        {
+          label: "Introduction",
+          items: [
             "overview/sddp-framework-overview",
             "overview/notation-conventions",
             "overview/how-to-read",
           ],
         },
         {
-          label: "Part 2 — System Modelling",
+          label: "System Modelling",
           items: [
             "math/lp-formulation",
             "math/system-elements",
@@ -179,7 +308,7 @@ export default defineConfig({
           ],
         },
         {
-          label: "Part 3 — Stochastic Modelling",
+          label: "Stochastic Modelling",
           items: [
             "math/par-inflow-model",
             "math/multi-resolution-studies",
@@ -188,7 +317,7 @@ export default defineConfig({
           ],
         },
         {
-          label: "Part 4 — The SDDP Algorithm",
+          label: "The SDDP Algorithm",
           items: [
             "math/sddp-algorithm",
             "math/cut-management",
@@ -201,16 +330,36 @@ export default defineConfig({
           ],
         },
         {
-          label: "Part 5 — Coupling and Boundary Conditions",
+          label: "Coupling & Boundary Conditions",
           items: ["math/horizon-modes", "math/discount-rate"],
         },
         {
-          label: "Part 6 — Worked Examples",
+          label: "Running Cobre",
+          items: [
+            "running/configuration",
+            "running/running-studies",
+            "running/policy-management",
+            "running/performance",
+            "running/case-conversion",
+            "running/interpreting-results",
+          ],
+        },
+        {
+          label: "Worked Examples",
           items: ["examples/toy-single-reservoir", "examples/toy-four-reservoir"],
         },
         {
-          label: "Part 7 — Reference",
-          items: ["reference/glossary", "reference/bibliography"],
+          label: "Reference",
+          items: [
+            "reference/case-directory-format",
+            "reference/output-format",
+            "reference/json-schemas",
+            "reference/error-codes",
+            "reference/flatbuffers-schema",
+            "reference/cli-reference",
+            "reference/glossary",
+            "reference/bibliography",
+          ],
         },
       ],
       // Architecture B version picker mounts by overriding the `SocialIcons`
@@ -246,6 +395,10 @@ export default defineConfig({
         "./src/styles/neutrals.css",
         "./src/styles/brand.css",
         "./src/styles/fonts.css",
+        // layout.css (measure + table density) is a SEPARATE concern from the
+        // colour/type files above — it touches only --sl-content-width and
+        // table column floors, so its order among them is arbitrary.
+        "./src/styles/layout.css",
       ],
       defaultLocale: "root",
       locales: {

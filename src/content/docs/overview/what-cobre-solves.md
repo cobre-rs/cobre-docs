@@ -5,7 +5,7 @@ description: The multi-stage stochastic hydrothermal dispatch problem — algori
 
 ## Purpose
 
-This chapter answers the foundational question: what problem does Cobre compute, and what does a user get when a run completes? It frames the methodology scope for Part 1 and threads the capability statements that appear throughout the book.
+This chapter answers the foundational question: what problem does Cobre compute, and what does a user get when a run completes? It frames the scope for the chapters that follow and threads the capability statements that appear throughout the book.
 
 ## 1. The Problem
 
@@ -45,7 +45,7 @@ Cobre policies are checkpointable; checkpoints persist the policy across restart
 
 Cobre supports distributed execution with deterministic results across MPI rank and thread configurations. The same study runs on a laptop with a single process or on an HPC cluster with hundreds of ranks; the numerical results are bit-identical.
 
-Cobre is designed for production-scale studies; a 60-stage horizon is the practical baseline. The index dimensions at this scale are roughly 160 hydro plants, 130 thermal units, 20 scenarios per stage, and up to 24 blocks per stage.
+Cobre is designed for production-scale studies: a long planning horizon of many stages, with large fleets of hydro plants and thermal units, many inflow scenarios per stage, and multiple load blocks within each stage.
 
 ## 5. Methodology Principles
 
@@ -64,7 +64,7 @@ The following principles govern how Cobre is built and how this book describes i
 ## Cross-References
 
 - [The SDDP Framework in One Page](/overview/sddp-framework-overview) — one-page algorithmic framing: forward simulation, backward cut generation, and convergence bounds
-- [How to Read This Book](/overview/how-to-read) — navigation guide for the seven-Part structure of this book
+- [How to Read This Book](/overview/how-to-read) — navigation guide for the book's chapter groups and reading paths for different audiences
 - [SDDP Algorithm](/math/sddp-algorithm) — full algorithmic treatment: stage LPs, cut generation, convergence theory
-- [Determinism Guarantees](/math/determinism-guarantees) — bit-identical result scope, four coordinating mechanisms, and out-of-scope statement (Part 4.8)
-- [Reproducibility and Provenance](/math/reproducibility-and-provenance) — five provenance categories and bookkeeping commitment (Part 4.9)
+- [Determinism Guarantees](/math/determinism-guarantees) — bit-identical result scope, four coordinating mechanisms, and out-of-scope statement
+- [Reproducibility and Provenance](/math/reproducibility-and-provenance) — five provenance categories and bookkeeping commitment

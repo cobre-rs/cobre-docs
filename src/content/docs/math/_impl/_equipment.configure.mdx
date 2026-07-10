@@ -1,0 +1,273 @@
+Cobre's `system/thermals.json`, `system/energy_contracts.json`,
+`system/pumping_stations.json`, and `system/non_controllable_sources.json`
+files author the four equipment types that carry dedicated element
+configuration in this chapter. This tab is the field-level configuration
+reference; the equations these fields feed are in the sections above.
+
+### Shared Operational Start Date
+
+Thermals, non-controllable sources, pumping stations, and energy contracts all
+carry a required `operational_start_date` field:
+
+| Field                     | Type                    | Description |
+| -------------------------- | ------------------------ | ----------- |
+| `operational_start_date` | string (ISO-8601 date) | Calendar date (`YYYY-MM-DD`) the entity enters the registry's operational history. Provenance and the canonical `(operational_start_date, id)` ordering key (see [Notation Conventions](/overview/notation-conventions)) — **independent of** the commissioning window below: it does not gate commissioning, and the window does not derive from it. |
+
+### Shared Commissioning Window
+
+Thermals, lines, contracts, pumping stations, and non-controllable sources all
+carry the same optional pair of fields:
+
+| Field            | Type            | Description |
+| ----------------- | --------------- | ----------- |
+| `entry_stage_id` | integer or null | Stage index at which the entity enters service (**inclusive**). `null` means the entity is available from stage 0. |
+| `exit_stage_id`  | integer or null | Stage index at which the entity is decommissioned. The commissioning window is **half-open** `[entry_stage_id, exit_stage_id)`: the entity is active through `exit_stage_id - 1`, and from `exit_stage_id` onward its columns are pinned to `[0, 0]`. `null` means the entity is never decommissioned. |
+
+Outside its window, an entity's decision columns remain present in the LP but
+are pinned to zero: it injects no power, withdraws no power, moves no water,
+and draws no bus power. `entry_stage_id` must fall within the stage range
+declared in `stages.json`. See [system elements §1](/math/system-elements#entity-commissioning-windows)
+for the shared methodology statement — methodology §3–4 above cover how the
+window interacts with contract take-or-pay bounds and pumping flow.
+
+### `system/thermals.json` — Thermal Plant Registry
+
+Thermal units are defined in `system/thermals.json`. The top-level object has
+a single key `"thermals"` containing an array of unit objects:
+
+```json
+{
+  "thermals": [
+    {
+      "id": 0,
+      "name": "UTE1",
+      "bus_id": 0,
+      "operational_start_date": "1998-03-01",
+      "cost_per_mwh": 5.0,
+      "generation": { "min_mw": 0.0, "max_mw": 15.0 }
+    },
+    {
+      "id": 1,
+      "name": "Angra 1",
+      "bus_id": 0,
+      "operational_start_date": "1985-01-01",
+      "entry_stage_id": null,
+      "exit_stage_id": null,
+      "cost_per_mwh": 50.0,
+      "generation": { "min_mw": 0.0, "max_mw": 657.0 },
+      "anticipated_config": { "lead_stages": 2 }
+    }
+  ]
+}
+```
+
+Only `id`, `name`, `bus_id`, `operational_start_date`, `cost_per_mwh`, and
+`generation` are required; `entry_stage_id`, `exit_stage_id`, and
+`anticipated_config` are optional.
+
+#### Core Fields
+
+| Field          | Type   | Required | Description |
+| -------------- | ------ | -------- | ----------- |
+| `id`           | integer | Yes     | Unique non-negative identifier. |
+| `name`         | string  | Yes     | Human-readable plant name. Used in output files, validation messages, and log output. |
+| `bus_id`       | integer | Yes     | Identifier of the electrical bus to which this unit's generation is injected. Must match an `id` in `buses.json`. |
+| `operational_start_date` | string (ISO-8601 date) | Yes | Calendar date (`YYYY-MM-DD`) the unit enters the registry's operational history — see [Shared Operational Start Date](#shared-operational-start-date) above. |
+| `cost_per_mwh` | number  | Yes     | Marginal cost of generation, in dollars per MWh. Must be non-negative. |
+
+#### Generation Bounds
+
+The `generation` block sets the output limits, stored internally as
+`min_generation_mw` / `max_generation_mw` on the entity, and enforced as the
+hard generation bounds from methodology §1.1 in every stage LP.
+
+```json
+"generation": { "min_mw": 0.0, "max_mw": 657.0 }
+```
+
+| Field    | Type   | Description |
+| -------- | ------ | ----------- |
+| `min_mw` | number | Minimum electrical generation, in MW. A non-zero value is a must-run commitment: the solver must dispatch at least this much whenever the unit is in service (subject to the continuous-relaxation caveat in methodology §1.1). |
+| `max_mw` | number | Maximum electrical generation (installed capacity), in MW. |
+
+#### Anticipated Dispatch Configuration (`anticipated_config`)
+
+The optional `anticipated_config` block flags a thermal as anticipated,
+attaching the per-plant lead described in [system elements §4](/math/system-elements#4-thermal-plants). The lead is given in **exactly one** of two mutually exclusive forms — a stage count or a physical duration:
+
+```json
+"anticipated_config": { "lead_stages": 2 }
+```
+
+```json
+"anticipated_config": { "lead_time_hours": 720.0 }
+```
+
+| Field             | Type    | Description |
+| ----------------- | ------- | ----------- |
+| `lead_stages`     | integer | Number of stages of dispatch anticipation, calendar-free. A value of `2` means the commitment for stage `t` must be decided at stage `t - 2`. Must be `>= 1`. |
+| `lead_time_hours` | number  | Physical anticipation lead in hours, resolved against the stage calendar to an integer stage lead by end-anchoring on the cumulative stage-hour boundaries. A lead shorter than the decision stage's own duration resolves to zero stages, and the plant then dispatches as an ordinary thermal. |
+
+Supplying both keys, or neither, is a load error. A lead that exceeds the study horizon — a commitment that could never deliver within it — is rejected at load, as is a physical lead coarse enough that a single decision stage would anchor more than one delivery stage (per-delivery-stage output for that case is not yet supported).
+
+An anticipated plant also requires a matching entry in
+`initial_conditions.json`'s `past_anticipated_commitments`, seeding the
+pre-horizon ring-buffer slots described in system elements §4 ("Pre-horizon
+seed"):
+
+```json
+{
+  "past_anticipated_commitments": [
+    { "thermal_id": 2, "values_mw": [0.0, 0.0] }
+  ]
+}
+```
+
+`values_mw` must have exactly as many entries as the resolved integer lead —
+`lead_stages`, or the stage lead that `lead_time_hours` resolves to — ordered
+oldest-to-most-recent.
+
+#### Constraining Commitments via Generic Constraints
+
+The anticipated-commitment decision variable can be referenced in a generic
+constraint using the `anticipated_decision(N)` expression, where `N` is the
+thermal's `id` — for example, to cap the MW level committed at each decision
+stage:
+
+```json
+{
+  "constraints": [
+    {
+      "id": 1,
+      "name": "cap_ant_t1",
+      "expression": "anticipated_decision(2)",
+      "sense": "<=",
+      "slack": { "enabled": false }
+    }
+  ]
+}
+```
+
+`anticipated_decision(N)` must reference a thermal carrying an
+`anticipated_config` block — referencing a non-anticipated thermal is a hard
+load-time error. `thermal_generation(N)` on an anticipated thermal is accepted
+but flagged with a semantic-ambiguity warning, since that expression reads the
+per-block delivered generation, not the forward commitment.
+
+#### Load-Time Validation Rules
+
+| Rule                        | Error Class          | Description |
+| ---------------------------- | --------------------- | ----------- |
+| Bus reference integrity      | Reference error       | Every `bus_id` must match an `id` in `buses.json`. |
+| Non-negative cost            | Schema error          | `cost_per_mwh` must be non-negative. |
+| Generation bounds ordering   | Physical feasibility  | `min_mw` must be `<= max_mw`. |
+| Anticipated lead validity    | Physical feasibility  | When `anticipated_config` is present, `lead_stages` must be `>= 1` and must not exceed the study's stage count. |
+| Commitment history bijection | Reference error       | Every anticipated thermal must have exactly one `past_anticipated_commitments` entry, with a `values_mw` array of exactly `lead_stages` entries. |
+
+### `system/non_controllable_sources.json` — NCS Registry
+
+Non-controllable sources (wind, solar, small run-of-river hydro) are defined
+in `system/non_controllable_sources.json`:
+
+```json
+{
+  "non_controllable_sources": [
+    {
+      "id": 0,
+      "name": "Wind Farm A",
+      "bus_id": 1,
+      "operational_start_date": "2015-06-01",
+      "max_generation_mw": 100.0
+    }
+  ]
+}
+```
+
+| Field               | Type   | Required | Description |
+| -------------------- | ------ | -------- | ----------- |
+| `id`                 | integer | Yes     | Unique identifier. |
+| `name`               | string  | Yes     | Human-readable source name. |
+| `bus_id`             | integer | Yes     | Bus to which this source's generation is injected. |
+| `operational_start_date` | string (ISO-8601 date) | Yes | Calendar date (`YYYY-MM-DD`) the source enters the registry's operational history — see [Shared Operational Start Date](#shared-operational-start-date) above. |
+| `max_generation_mw`  | number  | Yes     | Installed capacity, in MW — the hard physical upper bound behind the stochastic availability described in methodology §6. |
+| `allow_curtailment`  | boolean | No      | Defaults to `true` (curtailable). Set `false` for must-run sources that pin generation to the realized availability every scenario — see [system elements §6](/math/system-elements#curtailable-vs-must-run) for when this is required (e.g. already-netted aggregate NCS totals). |
+| `curtailment_cost`   | number or null | No | Entity-level override of the global `ncs_curtailment_cost` regularization price. |
+
+The stochastic available generation itself comes from the scenario pipeline
+(`constraints/ncs_bounds.parquet` and the scenario factors/stats files), not
+from this entity file — see the Inputs & Outputs tab.
+
+### `system/pumping_stations.json` — Pumping Station Registry
+
+```json
+{
+  "pumping_stations": [
+    {
+      "id": 0,
+      "name": "Bombeamento Serra da Mesa",
+      "bus_id": 10,
+      "operational_start_date": "2010-09-15",
+      "source_hydro_id": 3,
+      "destination_hydro_id": 5,
+      "consumption_mw_per_m3s": 0.5,
+      "flow": { "min_m3s": 0.0, "max_m3s": 150.0 }
+    }
+  ]
+}
+```
+
+| Field                     | Type    | Required | Description |
+| -------------------------- | ------- | -------- | ----------- |
+| `id`                       | integer | Yes     | Unique identifier. |
+| `name`                     | string  | Yes     | Human-readable station name. |
+| `bus_id`                   | integer | Yes     | Bus from which electrical power is consumed. |
+| `operational_start_date`   | string (ISO-8601 date) | Yes | Calendar date (`YYYY-MM-DD`) the station enters the registry's operational history — see [Shared Operational Start Date](#shared-operational-start-date) above. |
+| `source_hydro_id`          | integer | Yes     | Hydro plant from whose reservoir water is extracted (see methodology §4). Must differ from `destination_hydro_id` — a station modeling a self-transfer (same id on both sides) is a load-time error, since it would silently cancel on one water-balance row while still drawing power. |
+| `destination_hydro_id`     | integer | Yes     | Hydro plant into whose reservoir water is injected (see methodology §4). |
+| `consumption_mw_per_m3s`   | number  | Yes     | Power consumption rate, in MW per m³/s (methodology §4). |
+| `flow.min_m3s` / `flow.max_m3s` | number | Yes | Pumped-flow bounds, in m³/s (methodology §4). |
+
+### `system/energy_contracts.json` — Contract Registry
+
+```json
+{
+  "contracts": [
+    {
+      "id": 0,
+      "name": "Importação Argentina",
+      "bus_id": 5,
+      "operational_start_date": "2005-01-01",
+      "type": "import",
+      "price_per_mwh": 200.0,
+      "limits": { "min_mw": 0.0, "max_mw": 1000.0 }
+    },
+    {
+      "id": 1,
+      "name": "Exportação Uruguai",
+      "bus_id": 6,
+      "operational_start_date": "2020-04-01",
+      "type": "export",
+      "entry_stage_id": 1,
+      "exit_stage_id": 60,
+      "price_per_mwh": -150.0,
+      "limits": { "min_mw": 0.0, "max_mw": 500.0 }
+    }
+  ]
+}
+```
+
+| Field                          | Type    | Required | Description |
+| -------------------------------- | ------- | -------- | ----------- |
+| `id`                             | integer | Yes     | Unique identifier. |
+| `name`                           | string  | Yes     | Human-readable contract name. |
+| `bus_id`                         | integer | Yes     | Bus at which the contracted power is injected or withdrawn. |
+| `operational_start_date`         | string (ISO-8601 date) | Yes | Calendar date (`YYYY-MM-DD`) the contract enters the registry's operational history — see [Shared Operational Start Date](#shared-operational-start-date) above. |
+| `type`                           | string  | Yes     | `"import"` or `"export"` — sets the load-balance sign and the import/export set membership from methodology §3. |
+| `price_per_mwh`                  | number  | Yes     | Contract price, in dollars per MWh. Positive for imports (cost), negative for exports (revenue) — see methodology §3. |
+| `limits.min_mw` / `limits.max_mw`| number  | Yes     | Dispatch bounds, in MW. A non-zero `min_mw` is the hard take-or-pay floor. |
+
+Stage-varying bounds and price are supplied via
+`constraints/contract_bounds.parquet`, which accepts sparse
+`(contract_id, stage_id)` rows carrying any combination of `min_mw`,
+`max_mw`, and `price_per_mwh`; absent rows fall back to the base entity
+values.

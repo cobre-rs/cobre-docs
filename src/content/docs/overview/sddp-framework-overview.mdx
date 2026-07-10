@@ -37,13 +37,20 @@ The approximation improves iteratively. Starting with no cuts, the algorithm alt
 
 **Backward pass**: Starting from the last stage and working back to stage one, solve each subproblem at each visited state and use the resulting dual information to generate a new cut for the previous stage. The cut encodes how the cost-to-go changes as the incoming state changes.
 
-```mermaid
-flowchart LR
-  A([forward pass]) --> B[sample scenarios]
-  B --> C{converged?}
-  C -- no --> D[backward: add cuts]
-  D --> A
-  C -- yes --> E([policy])
+```d2
+direction: down
+
+fwd: forward pass {shape: oval}
+sample: sample scenarios
+conv: converged? {shape: diamond}
+bwd: "backward: add cuts"
+policy: policy {shape: oval}
+
+fwd -> sample
+sample -> conv
+conv -> bwd: no
+bwd -> fwd
+conv -> policy: yes
 ```
 
 _One SDDP iteration: the forward pass simulates trajectories under the current policy; the backward pass adds a Benders cut at each visited state; the loop repeats until the bounds meet._

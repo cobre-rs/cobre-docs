@@ -108,6 +108,43 @@ jobs:
       - name: Check figures (dependency guard)
         run: npm run check:figures
 
+      # Epic 04 ticket-015: the two-voice methodology gates, ported from
+      # cobre's scripts/ci/check_doc_voice.py / check_doc_counts.py /
+      # check_book_version.py. Static source-reading checks (no build needed),
+      # so they run pre-build alongside check:figures. Pre-existing strict-zone
+      # hits are grandfathered in scripts/doc-lint-allow.txt; check:voice and
+      # check:version fail only on a NEW, un-allowlisted violation.
+      - name: Check doc voice (two-voice hype/unpinned-number gate)
+        run: npm run check:voice
+
+      - name: Check doc counts (column/field count vs adjacent table)
+        run: npm run check:counts
+
+      - name: Check doc version (cobre-version references vs the Synced-to anchor)
+        run: npm run check:version
+
+      # ticket-014 (strategy §6b): advisory vendored-JSON-schema validation.
+      # Asserts the COMMITTED public/schemas/ copy is present, exactly 18
+      # files, and every file is well-formed JSON. This needs NO `cobre`
+      # checkout — it is a static-metadata check like check:figures/check:d2.
+      # The tag-drift check (`npm run refresh:schemas -- --check`, which DOES
+      # need a `cobre` checkout) stays a local/maintainer action; the
+      # authoritative freshness gate stays in `cobre` (ticket-016).
+      - name: Check vendored JSON schemas (count + parse)
+        run: |
+          node -e '
+            const { readdirSync, readFileSync } = require("node:fs");
+            const files = readdirSync("public/schemas").filter((f) => f.endsWith(".schema.json"));
+            if (files.length !== 18) {
+              console.error("check:schemas: expected 18 vendored schema files, found " + files.length);
+              process.exit(1);
+            }
+            for (const f of files) {
+              JSON.parse(readFileSync("public/schemas/" + f, "utf8"));
+            }
+            console.log("check:schemas: " + files.length + " vendored schemas present and well-formed");
+          '
+
       # E10 ticket-032 (licensing.md item 3): assert D2 uses ELK, never the
       # proprietary TALA engine (unlicensed TALA watermarks output). A static
       # source grep of astro.config.mjs + ```d2 blocks under src/ — pre-build,

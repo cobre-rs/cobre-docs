@@ -52,6 +52,10 @@
       Plot.plot({
         width: 640,
         height: 360,
+        marginTop: 28,
+        marginRight: 30,
+        marginBottom: 48,
+        marginLeft: 60,
         style: { background: "transparent", color: text, fontSize: "13px" },
         x: { label: "total cost C", grid: true, domain: [0, 170] },
         y: { label: "probability density", grid: true },
@@ -74,6 +78,7 @@
             y: () => 0,
             text: "label",
             fill: accent,
+            dx: -7,
             dy: -8,
             rotate: -90,
             textAnchor: "start",

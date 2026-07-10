@@ -134,10 +134,10 @@ valid cuts.
 
 **The trade-off**: increasing the per-stage scenario count of the weekly run
 increases the computational cost of each backward pass proportionally, while
-improving the representativeness of the cuts generated. For a weekly run with
-a small number of stages (typically 4–12), the absolute cost of a dense tree
-is usually modest relative to the monthly run. The appropriate count is
-determined by the convergence criterion and the available computation time.
+improving the representativeness of the cuts generated. For a weekly run
+spanning only a handful of stages, the absolute cost of a dense tree is usually
+modest relative to the monthly run. The appropriate count is determined by the
+convergence criterion and the available computation time.
 
 ## 5. Trade-offs: Coupling Tightness vs. Independence
 

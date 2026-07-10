@@ -141,14 +141,35 @@ function extractContext(text, index, length) {
 // Recursively collect every .md/.mdx under src/content/docs/, excluding pt-br/
 // (future locale; mirrors check-math-parity.mjs). index.mdx is intentionally
 // INCLUDED (its renderer demos are not retired-SVG references — see header).
-function collectSourceFiles(dir) {
+//
+// Exported (Epic 04 ticket-015 R5 fold-in) so the underscore-basename
+// exclusion below can be pinned directly by a node:test fixture
+// (check-figures.test.mjs), already safe to import since this module already
+// sits behind a direct-run guard (see main() at the bottom).
+//
+// FIXED alongside the export (mirrors the identical fix in
+// check-math-parity.mjs — see that file's comment for the full rationale):
+// the underscore-basename exclusion is scoped to FILES only; a directory is
+// always recursed into regardless of its own name (previously `math/_impl/`
+// the directory was itself skipped, so a hypothetical non-underscore file
+// nested inside it could never be collected). Behaviorally invisible on the
+// committed tree today (every file under _impl/ already has its own
+// underscore basename) — verified check:figures reports byte-identical
+// output before/after.
+export function collectSourceFiles(dir) {
   const files = [];
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
     if (entry.name === "pt-br") continue;
     const full = `${dir}${entry.name}`;
     if (entry.isDirectory()) {
       files.push(...collectSourceFiles(`${full}/`));
-    } else if (/\.(md|mdx)$/.test(entry.name)) {
+      continue;
+    }
+    // Skip underscore-prefixed FILE basenames (e.g. the math/_impl/_*.mdx
+    // interleave partials): Starlight's docsLoader globs `**/[^_]*.{md,mdx}`,
+    // so these are NOT routed pages — mirrors check-math-parity.mjs.
+    if (entry.name.startsWith("_")) continue;
+    if (/\.(md|mdx)$/.test(entry.name)) {
       files.push(full);
     }
   }

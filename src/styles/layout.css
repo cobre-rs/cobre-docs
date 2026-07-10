@@ -1,0 +1,36 @@
+/* Cobre layout & table density — horizontal space usage.
+   A SEPARATE concern from colour (brand.css / neutrals.css / palette.css) and
+   type (fonts.css): this file owns only how content uses horizontal space.
+
+   Two rules, both keyed off the same problem — Starlight's default article
+   measure (`--sl-content-width: 45rem` = 720px) is narrow for a reference that
+   leans on wide multi-column config/schema tables, math display blocks, and
+   code. It leaves large empty gutters on desktop AND starves dense tables. */
+
+/* 1. Article measure. Widen from Starlight's 45rem so desktop reclaims the
+   horizontal space either side of the column and the reference tables get room
+   to breathe. This is the site's single content-width knob — tune here. Prose
+   runs slightly wider than a blog measure as a result; acceptable for a
+   table/math/code-heavy technical reference, and the win on the dense chapters
+   outweighs it. */
+:root {
+  --sl-content-width: 56rem;
+}
+
+/* 2. Table column floor. Starlight already renders tables as
+   `display:block; overflow-x:auto`, so a table wider than the measure scrolls
+   inside its own box. The failure mode is the opposite: a table that *fits* by
+   wrapping, where auto table-layout starves the short columns (e.g. a `Type`
+   column crushed to ~46px, breaking `integer` mid-word) to feed one long
+   `Description` column. A per-cell min-width floors every column so short
+   columns keep their tokens on one line; long prose columns still expand past
+   it, and a table whose floors sum past the measure scrolls (the mobile /
+   many-column case) instead of crushing.
+
+   6em is the minimal safe floor: the widest short token in the config tables
+   (`boolean`, 58px) plus Starlight's 16px×2 cell padding needs ~90px; 6em
+   (96px) clears it with a small margin while keeping single-glyph symbol
+   columns in the notation tables from over-widening. */
+.sl-markdown-content table :is(th, td) {
+  min-width: 6em;
+}

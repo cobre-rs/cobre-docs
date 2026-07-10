@@ -3,6 +3,11 @@ title: PAR(p) Inflow Model
 description: Periodic Autoregressive model for inflow time series — parameter semantics, stored vs. computed quantities, Yule-Walker fitting, order selection, spatial correlation factorisation, and PAR(p)-A annual extension.
 ---
 
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+import { Content as ParConfigure } from './_impl/_par.configure.mdx';
+import { Content as ParIO } from './_impl/_par.io.mdx';
+import { Content as ParNotes } from './_impl/_par.notes.mdx';
+
 ## Purpose
 
 This spec defines the Periodic Autoregressive model of order $p$ (PAR(p)) used to capture temporal correlation in inflow time series, including the model definition, parameter semantics, the relationship between stored and computed quantities, the fitting procedure, model order selection, and validation invariants. Section 9 describes the optional PAR(p)-A extension that adds a single annual coefficient on top of the periodic AR structure to capture multi-year hydrological persistence.
@@ -45,7 +50,7 @@ Stored vs. computed quantities — the files on disk hold the scale-invariant
 `ψ` and `σ` using the seasonal stats, then consumed by the LP stage subproblem.
 
 ```d2
-direction: right
+direction: down
 
 storage: "Storage format — files on disk" {
   stats: "inflow_seasonal_stats" {
@@ -125,6 +130,8 @@ $$
 
 where $a_{h,\ell}$ are state variables (lagged inflows) and $\eta_t$ is the sampled noise realization.
 
+Whether the lagged inflows enter the Benders **cuts** is a separate, per-stage choice from whether they drive this inflow equation. A stage's `state_variables` selection defaults to storage-only, so by default a PAR($p$) study's cuts span storage alone — the inflow-lag dimensions are projected out, not zero-padded. Enabling `inflow_lags` on a stage restores the full storage-plus-lag cut; disabling it on **every** stage while fitting a PAR($p > 0$) model raises a model-quality warning, since the fitted inflow memory then never reaches any cut. The storage-only projection is the mechanism by which a PAR($p$) study can be coupled to a storage-only downstream boundary. See [cut management](/math/cut-management).
+
 ## 4. Model Order Selection
 
 The PAR order $p$ can vary by season. Available selection criteria:
@@ -146,7 +153,7 @@ The default method computes the **periodic PACF** via progressive periodic Yule-
 
 3. Estimate AR coefficients at the selected order using the periodic Yule-Walker system (section 5.4).
 
-**Post-selection validation — Maceira-Damazio iterative reduction**: After PACF selection, the recursively-composed contributions of each lag through the periodic monthly chain are computed. A negative composed contribution flags potential model instability — under SDDP the corresponding Benders cut can carry the negative composition into the future-cost recursion. When any season's composed contribution is negative, the offending season's AR ceiling is reduced and the PACF selection plus Yule-Walker fit are re-run at the new ceiling. The reduction iterates across all seasons until every season's contribution recursion yields non-negative entries, or every offending season has been reduced to order 0.
+**Post-selection validation — iterative order reduction (Maceira & Damázio, 2006)**: After PACF selection, the recursively-composed contributions of each lag through the periodic monthly chain are computed. A negative composed contribution flags potential model instability — under SDDP the corresponding Benders cut can carry the negative composition into the future-cost recursion. When any season's composed contribution is negative, the offending season's AR ceiling is reduced and the PACF selection plus Yule-Walker fit are re-run at the new ceiling. The reduction iterates across all seasons until every season's contribution recursion yields non-negative entries, or every offending season has been reduced to order 0.
 
 For the PAR(p)-A path (section 9), two additional rules extend the PACF gate:
 
@@ -203,7 +210,7 @@ $$
 \hat{s}_m = \sqrt{\frac{1}{N_m} \sum_{t: m(t) = m} (a_{h,t} - \bar{a}_m)^2}
 $$
 
-The estimator uses the **population divisor** $1/N_m$, not the Bessel-corrected $1/(N_m - 1)$. This matches the Maceira-Damazio convention and is shared by the classical PAR(p) and PAR(p)-A paths. The population divisor is required for self-consistent conditional FACP values and selected orders on the PAR(p)-A path — under a Bessel correction the sample-vs-population scale factor leaks through every Z⊗A cross-correlation. Using the same divisor for the classical path keeps the two paths' seasonal-stats output reusable across configurations.
+The estimator uses the **population divisor** $1/N_m$, not the Bessel-corrected $1/(N_m - 1)$. This matches the Maceira & Damázio (2006) convention and is shared by the classical PAR(p) and PAR(p)-A paths. The population divisor is required for self-consistent conditional FACP values and selected orders on the PAR(p)-A path — under a Bessel correction the sample-vs-population scale factor leaks through every Z⊗A cross-correlation. Using the same divisor for the classical path keeps the two paths' seasonal-stats output reusable across configurations.
 
 ### 5.3 Step 2 — Seasonal Autocorrelations
 
@@ -508,7 +515,7 @@ The PAR(p) fitting procedure (section 5) produces per-hydro noise terms $\vareps
 
 The classical approach applies Cholesky factorisation: given $C = L L^\top$ with $L$ lower-triangular, correlated noise is obtained as $L z$ where $z \sim \mathcal{N}(0, I)$. Cholesky requires $C$ to be **strictly positive-definite**. In practice, estimated correlation matrices from hydro inflow series are frequently near-singular or rank-deficient for two reasons:
 
-- **Short sample records**: Brazilian hydro series commonly span 80–90 years, yielding a historical record length $N$ that is comparable to the number of hydro plants in some subsystems. When $N$ is close to the matrix dimension, the sample eigenvalues of $C$ cluster near zero.
+- **Short sample records**: Brazilian hydro inflow series span only a few decades of record, yielding a historical record length $N$ that is comparable to the number of hydro plants in some subsystems. When $N$ is close to the matrix dimension, the sample eigenvalues of $C$ cluster near zero.
 - **Heterogeneous series**: Plants with near-identical hydrological regimes (upstream–downstream pairs, same river basin) produce columns that are nearly linearly dependent, reducing the effective rank of $C$ below its nominal dimension.
 
 A near-singular $C$ causes Cholesky to fail or to produce numerically degenerate lower triangular factors. A separate filtering pass to remove "degenerate" hydros would be required before the factorisation, discarding information and introducing a non-transparent pre-processing decision.
@@ -533,6 +540,8 @@ $$
 \tilde{\Lambda}^{1/2} = \mathrm{diag}\!\left(\sqrt{\max(\lambda_1, 0)},\, \ldots,\, \sqrt{\max(\lambda_n, 0)}\right)
 $$
 
+Clipping negative eigenvalues to zero is the spectral projection of the sample matrix onto the positive-semidefinite cone — the nearest positive-semidefinite matrix in Frobenius norm; see Higham (2002) for the related nearest-correlation-matrix problem.
+
 Correlated noise is then generated as $C^{1/2} z$ where $z \sim \mathcal{N}(0, I)$.
 
 ### 8.3 Why Eigendecomposition
@@ -554,7 +563,7 @@ The higher computational cost is acceptable because the factorisation is perform
 
 ## 9. Annual Component Extension (PAR(p)-A)
 
-The classical PAR(p) of section 1 captures temporal dependence at lags up to a small $p$ (typically $\leq 4$ for monthly cycles, since the periodic Yule-Walker system becomes ill-conditioned at higher orders). On long Brazilian hydro series this is enough to reproduce the within-year persistence but not the multi-year persistence visible in dry/wet super-periods of the historical record. The **PAR(p)-A** extension adds a single annual coefficient on top of the periodic AR structure to capture that longer-range persistence without inflating the AR order.
+The classical PAR(p) of section 1 captures temporal dependence at lags up to a small order $p$ (kept low for monthly cycles, since the periodic Yule-Walker system becomes ill-conditioned at higher orders). On long Brazilian hydro series this is enough to reproduce the within-year persistence but not the multi-year persistence visible in dry/wet super-periods of the historical record. The **PAR(p)-A** extension adds a single annual coefficient on top of the periodic AR structure to capture that longer-range persistence without inflating the AR order.
 
 The extension is selected by the order-selection method `pacf_annual`. When active, the model carries one additional triple per (hydro, season) on top of the classical parameter set.
 
@@ -646,7 +655,7 @@ where $\mathbf{R}^{\,\text{ext}}_m$ is the $(p+1) \times (p+1)$ partitioned cova
 
 ### 9.6 Iterative Order Reduction
 
-The Maceira-Damazio iterative reduction of section 4.1 is applied across the full periodic cycle on the PAR(p)-A path as well: after the initial fit, the recursively-composed contributions of each AR lag through the periodic monthly chain are evaluated, and any negative-contribution season has its AR ceiling reduced before refit. The annual coefficient $\psi$ does not enter the contribution-chain check — it is anchored to the rolling annual mean and so does not propagate through the lag chain.
+The Maceira & Damázio iterative reduction of section 4.1 is applied across the full periodic cycle on the PAR(p)-A path as well: after the initial fit, the recursively-composed contributions of each AR lag through the periodic monthly chain are evaluated, and any negative-contribution season has its AR ceiling reduced before refit. The annual coefficient $\psi$ does not enter the contribution-chain check — it is anchored to the rolling annual mean and so does not propagate through the lag chain.
 
 ### 9.7 Activation and Fallback
 
@@ -658,6 +667,16 @@ The Maceira-Damazio iterative reduction of section 4.1 is applied across the ful
 | Hydro with fewer than 13 observations on PAR(p)-A path               | Hard failure during fitting (no silent fallback to classical)                            |
 
 The two paths share the seasonal-stats producer of section 5.2; switching between them does not silently change $\hat{\mu}_m$ or $\hat{s}_m$. The PAR(p)-A path uses the same spatial-correlation factorisation as the classical path (section 8); the extension affects only the temporal model.
+
+## Implementation in Cobre
+
+The methodology above defines the PAR(p) inflow model; the tabs below cover how Cobre's software surface configures, feeds, and reports on it.
+
+<Tabs>
+  <TabItem label="Configure"><ParConfigure /></TabItem>
+  <TabItem label="Inputs & Outputs"><ParIO /></TabItem>
+  <TabItem label="Implementation notes"><ParNotes /></TabItem>
+</Tabs>
 
 ## Cross-References
 

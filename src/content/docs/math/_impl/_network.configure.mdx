@@ -1,0 +1,94 @@
+Cobre's electrical network is configured through two case-directory files:
+`system/buses.json` (nodes) and `system/lines.json` (edges). This tab covers
+their field-level configuration; the bus's piecewise deficit cost curve is
+priced through the shared penalty cascade and is documented in the
+[Penalty System Configure tab](/math/penalty-system#implementation-in-cobre)
+— this chapter does not repeat that field table.
+
+### `system/buses.json` — Bus Registry
+
+Every generator and every load attaches to a bus (§2). A single-bus
+(copper-plate) system still requires `buses.json` — see "Single-Bus vs
+Multi-Bus" below.
+
+```json
+{
+  "buses": [
+    {
+      "id": 0,
+      "name": "SIN",
+      "operational_start_date": "1999-01-01",
+      "deficit_segments": [{ "depth_mw": null, "cost": 1000.0 }]
+    }
+  ]
+}
+```
+
+| Field              | Type    | Required | Description                                                                                                                                                              |
+| ------------------ | ------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `id`               | integer | Yes      | Unique non-negative bus identifier, referenced by every entity's `bus_id`.                                                                                              |
+| `name`             | string  | Yes      | Human-readable bus name, used in output files and validation messages.                                                                                                  |
+| `operational_start_date` | string (ISO-8601 date) | Yes | Calendar date (`YYYY-MM-DD`) the bus enters the registry's operational history. Provenance and the canonical `(operational_start_date, id)` ordering key (see [Notation Conventions](/overview/notation-conventions)) — independent of any commissioning window. |
+| `deficit_segments` | array   | No       | Bus-level override of the piecewise deficit cost curve. See the [Penalty System Configure tab](/math/penalty-system#implementation-in-cobre) for the segment field table and the two-tier resolution order. |
+
+`excess_cost` has no per-bus field at all: every bus shares the global
+`excess_cost` default from `penalties.json`, optionally refined per stage —
+again documented in the Penalty System chapter, not here.
+
+### `system/lines.json` — Transmission Line Registry
+
+A single-bus system carries an empty `lines` array. A multi-bus system
+connects buses with one or more line entries:
+
+```json
+{
+  "lines": [
+    {
+      "id": 0,
+      "name": "North-South Interconnection",
+      "source_bus_id": 0,
+      "target_bus_id": 1,
+      "operational_start_date": "2003-07-01",
+      "entry_stage_id": null,
+      "exit_stage_id": null,
+      "capacity": { "direct_mw": 1000.0, "reverse_mw": 800.0 },
+      "losses_percent": 2.5,
+      "exchange_cost": 1.0
+    }
+  ]
+}
+```
+
+| Field                 | Type            | Required | Description                                                                                                                                                                    |
+| --------------------- | --------------- | -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `id`                  | integer         | Yes      | Unique non-negative line identifier.                                                                                                                                           |
+| `name`                | string          | Yes      | Human-readable line name.                                                                                                                                                      |
+| `source_bus_id`       | integer         | Yes      | Bus at the source end — defines the direct-flow direction (source → target). Must reference an existing `buses.json` `id`.                                                    |
+| `target_bus_id`       | integer         | Yes      | Bus at the target end — defines the reverse-flow direction (target → source). Must differ from `source_bus_id` (no self-loop lines).                                          |
+| `operational_start_date` | string (ISO-8601 date) | Yes | Calendar date (`YYYY-MM-DD`) the line enters the registry's operational history. Provenance and the canonical `(operational_start_date, id)` ordering key (see [Notation Conventions](/overview/notation-conventions)) — **independent of** `entry_stage_id`/`exit_stage_id` below, which alone gate commissioning. |
+| `entry_stage_id`      | integer or null | No       | Commissioning window start — see [Entity Commissioning Windows](#entity-commissioning-windows) in the body above. `null` means active from stage 0.                            |
+| `exit_stage_id`       | integer or null | No       | Commissioning window end (exclusive). `null` means never decommissioned.                                                                                                       |
+| `capacity.direct_mw`  | number          | Yes      | Hard upper bound on the direct-direction flow variable, MW.                                                                                                                    |
+| `capacity.reverse_mw` | number          | Yes      | Hard upper bound on the reverse-direction flow variable, MW.                                                                                                                   |
+| `losses_percent`      | number          | No       | Transmission loss as a percentage of transmitted power. Defaults to `0.0` (lossless). Sets the transmission efficiency used in body §3 (`efficiency = 1 - losses_percent/100`). |
+| `exchange_cost`       | number or null  | No       | Entity-level override of the flow regularization cost. Falls back to the global `penalties.json` default — see the [Penalty System Configure tab](/math/penalty-system#implementation-in-cobre) for the full resolution cascade. |
+
+Per-stage refinements of both `capacity` bounds and `exchange_cost` are
+supplied by separate files — see the Inputs & Outputs tab.
+
+### Single-Bus vs Multi-Bus
+
+A **single-bus** (copper-plate) system aggregates all generation and load
+into one node: no flow limits, no transmission losses, and no locational
+price differentiation. `lines.json` carries an empty array, and every
+entity's `bus_id` points at the same bus. This is the right starting point
+when isolating dispatch economics from network effects, or when the internal
+transmission network is not the object of study.
+
+A **multi-bus** system connects two or more buses with `lines.json` entries.
+Once a line's capacity binds, each bus resolves its own locational marginal
+price (the load-balance dual, body §2 LP Constraint Preview), and dispatch in
+one bus cannot freely substitute for a shortfall in another. Extending a
+single-bus case to multi-bus is additive: add a bus entry, add a line entry
+connecting it to an existing bus, and repoint the relevant entities'
+`bus_id` — no structural change to the rest of the case is required.

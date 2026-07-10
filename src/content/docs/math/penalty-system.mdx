@@ -3,6 +3,10 @@ title: Penalty System
 description: Unified penalty taxonomy for LP feasibility, constraint violations, and regularization — cascade resolution, penalty priority ordering, and bidirectional slack variables.
 ---
 
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+import { Content as PenaltiesConfigure } from './_impl/_penalties.configure.mdx';
+import { Content as PenaltiesIO } from './_impl/_penalties.io.mdx';
+
 ## Purpose
 
 This spec defines the unified penalty system that ensures LP feasibility across all scenarios while correctly pricing operational costs and constraint violations. See [LP Formulation](/math/lp-formulation) for how penalties enter the objective function.
@@ -243,7 +247,11 @@ Relationship: `outflow = turbined_flow + spillage`, `generation = f(turbined_flo
 
 ### Dead-Volume Filling Specifics
 
-During the filling period (`[start_stage_id, entry_stage_id)`), the hydro is in commissioning state: the reservoir accumulates water toward `min_storage_hm3` (dead volume) before it can begin generating. This model is based on CEPEL's dead-volume filling approach (`enchimento de volume morto`).
+During the filling period (`[start_stage_id, entry_stage_id)`), the hydro is in commissioning state: the reservoir accumulates water toward `min_storage_hm3` (dead volume) before it can begin generating. This is Cobre's own dead-volume filling model (`enchimento de volume morto`), whose per-stage accumulation schedule is specified below.
+
+:::note[Before filling — the PreFilling phase]
+These specifics govern the **filling** window `[start_stage_id, entry_stage_id)`. Before that window — and, for a **non-filling** hydro, at any stage outside its commissioning window — the plant is **PreFilling**: it does not yet exist in the dispatch. Turbine, spillage, and diversion are all pinned to zero, so **spillage is frozen and incurs no `spillage_cost`** (unlike during filling), storage is held constant by a frozen identity, and natural inflow is routed past the site to the first active downstream plant. See [system elements §5](/math/system-elements) for the full lifecycle.
+:::
 
 Filling is governed by a **minimum accumulation rate** `filling_min_rate_m3s` rather than a single end-of-period target. The rate is _not_ an applied inflow and _not_ a cap on natural inflow — it is the floor below which the reservoir is not allowed to lag the fill schedule. From it, Cobre derives a **per-stage minimum end-of-stage storage** $V^{\text{target}}_t$ that rises stage by stage and reaches the dead volume exactly at the last filling stage $L = \text{entry\_stage\_id} - 1$:
 
@@ -314,6 +322,15 @@ minimize:
 :::note[Note on pumping]
 Pumping stations do not have an explicit cost in the objective. The cost of pumping is implicitly captured through the energy consumed at the connected bus (appears as negative demand in the load balance). The marginal cost at that bus determines the effective pumping cost.
 :::
+
+## Implementation in Cobre
+
+The methodology above defines the penalty taxonomy and priority ordering; the tabs below cover how Cobre's software surface configures and reports the penalty costs that implement it.
+
+<Tabs>
+  <TabItem label="Configure"><PenaltiesConfigure /></TabItem>
+  <TabItem label="Inputs & Outputs"><PenaltiesIO /></TabItem>
+</Tabs>
 
 ## Cross-References
 

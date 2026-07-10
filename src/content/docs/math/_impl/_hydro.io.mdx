@@ -1,0 +1,32 @@
+This is a topic-scoped index of the files hydro production touches — it names
+each file and its role, it does not repeat their field-by-field schemas. The
+exhaustive, field-by-field case-directory and output reference is owned by
+the Reference corpus ([Case Directory Format](/reference/case-directory-format/)
+and [Output Format](/reference/output-format/) pages).
+
+### Inputs
+
+| File | Role |
+| ---- | ---- |
+| `system/hydros.json` | Hydro plant registry — core fields, reservoir, outflow, generation model, and the advanced blocks (see the Configure tab). |
+| `system/hydro_production_models.json` | Optional per-hydro production-model selection (`stage_ranges` / `seasonal`), FPHA fitting configuration, and plane reduction. |
+| `system/hydro_geometry.parquet` | Volume-Height-Area (VHA) curves — required for any hydro using computed FPHA or `linearized_head`, and for the evaporation area-volume conversion. |
+| `system/hydro_energy_productivity.parquet` | Per-`(hydro, stage)` equivalent-productivity overrides — the tabular authoring source for §5.1's resolution order, and the FPHA override path. |
+| `system/fpha_hyperplanes.parquet` | Pre-fitted FPHA hyperplane coefficients, read when a plant's `fpha_config.source` is `"precomputed"`. |
+| `initial_conditions.json` (hydro rows) | Per-hydro initial state: `storage` or `filling_storage` (exactly one), optional `past_inflows` for AR lag seeding, and optional `past_defluences` seeding the pre-study releases in transit on a declared travel-time arc. |
+
+For the complete field-by-field schema of each file above, see the
+[Case Directory Format](/reference/case-directory-format/) reference page in
+the Reference corpus.
+
+### Outputs
+
+| File | Role |
+| ---- | ---- |
+| `output/hydro_models/fpha_hyperplanes.parquet` | Fitted hyperplane coefficients when `fpha_config.source` is `"computed"` — the same schema as the `system/fpha_hyperplanes.parquet` input, so it round-trips: copy it into `system/` and switch `source` to `"precomputed"` to reuse a prior fit without refitting. See Implementation notes for the round-trip workflow. |
+| Hydro generation and storage output columns | Per-(stage, block, hydro) dispatch results (turbined flow, spillage, generation, storage) written alongside every other entity's output rows. |
+| `simulation/in_transit/` | Per-(stage, downstream hydro, maturity lag) in-transit water volumes on declared travel-time arcs — five columns (`stage_id`, `hydro_id`, `lag`, `in_transit_volume_hm3`, `delayed_arrival_hm3`). Written only when a travel-time arc is declared; absent (byte-neutral) otherwise. |
+
+For the complete output schema (columns, types, file layout), see the
+[Output Format](/reference/output-format/) reference page in the Reference
+corpus.

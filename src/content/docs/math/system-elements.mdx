@@ -3,6 +3,10 @@ title: System Element Modeling Overview
 description: Physical components of a hydrothermal power system as modeled by Cobre — buses, hydro plants, thermal units, transmission lines, contracts, and pumping stations.
 ---
 
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+import { Content as NetworkConfigure } from './_impl/_network.configure.mdx';
+import { Content as NetworkIO } from './_impl/_network.io.mdx';
+
 ## Purpose
 
 This spec describes the physical components of a hydrothermal power system as modeled by Cobre: what each element represents, its decision variables, how it connects to other elements, and its role in the optimization objective. It serves as the conceptual foundation between the SDDP algorithm description and the full LP formulation — the reader should understand _what_ is being optimized before seeing _how_ the constraints are assembled.
@@ -50,33 +54,40 @@ unserved load. Key flow variables are labelled (`f` line flow, `q` hydro
 turbined, `g` thermal, `gⁿᶜ` NCS, `δ` deficit, `d` demand).
 
 ```d2
-direction: right
+direction: down
+
+classes: {
+  hydro: {style: {stroke: "#4a90b8"}}
+  thermal: {style: {stroke: "#f5a623"}}
+  ncs: {style: {stroke: "#4a8b6f"}}
+  deficit: {style: {stroke: "#dc4c4c"}}
+}
 
 bus1: "Bus 1" {shape: rectangle}
 bus2: "Bus 2" {shape: rectangle}
 
-inflow: "inflow a" {shape: oval}
-reservoir: "Reservoir vₕ" {shape: cylinder}
-hydro: "Hydro  q (turbined)" {shape: circle}
+inflow: "inflow a" {shape: oval; class: hydro}
+reservoir: "Reservoir vₕ" {shape: cylinder; class: hydro}
+gen_h: "Hydro q" {class: hydro}
 
-thermal: "Thermal  g" {shape: circle}
-ncs: "NCS (wind / solar)  gⁿᶜ" {shape: circle}
+gen_t: "Thermal g" {class: thermal}
+gen_v: "NCS gⁿᶜ\n(wind / solar)" {class: ncs}
 
 demand1: "Demand d" {shape: oval}
 demand2: "Demand d" {shape: oval}
-deficit: "Deficit slack δ" {shape: oval}
+shed: "Deficit δ" {shape: oval; class: deficit}
 
 inflow -> reservoir: "a"
-reservoir -> hydro
-hydro -> bus1: "q → g"
-thermal -> bus1: "g"
-ncs -> bus2: "gⁿᶜ"
+reservoir -> gen_h
+gen_h -> bus1: "q → g"
+gen_t -> bus1: "g"
+gen_v -> bus2: "gⁿᶜ"
 
 bus1 <-> bus2: "line flow  f±  (η losses)"
 
 bus1 -> demand1: "d"
 bus2 -> demand2: "d"
-deficit -> bus2: "δ (unserved)" {style.stroke-dash: 4}
+shed -> bus2: "δ (unserved)" {style.stroke-dash: 4}
 ```
 
 The optimizer determines generation and flow decisions at each stage to minimize total expected cost (thermal generation + deficit penalties + regularization costs) while respecting physical constraints and preparing for uncertain future inflows.
@@ -91,12 +102,25 @@ $$
 
 so the entry stage is **inclusive** and the exit stage is **exclusive** — the entity is gone _from_ its exit stage onward. A null `entry_stage_id` means "active from the first stage"; a null `exit_stage_id` means "never decommissioned". The default for an entity that sets neither is to be active at every stage.
 
-This window applies uniformly to **transmission lines, thermal plants, non-controllable sources, pumping stations, and contracts** (and, for generation, to hydro plants). Outside its window an entity contributes nothing to the dispatch: its decision columns are present in the LP but pinned to zero, so it injects no power, withdraws no power, and consumes no resource. Decommissioning is symmetric to commissioning — both are expressed by the same two fields.
+This window applies uniformly to **transmission lines, thermal plants, non-controllable sources, pumping stations, and contracts** (and, for generation, to hydro plants). Outside its window an entity contributes nothing to the dispatch: its decision columns are present in the LP but pinned to zero, so it injects no power, withdraws no power, and consumes no resource. A hydro plant is the exception to this simple zero-pin: outside its commissioning window a hydro enters the **PreFilling** state (§5), which pins its turbine, spillage, and diversion to zero but freezes its storage and routes natural inflow past the not-yet-in-service site rather than trapping or injecting water. Decommissioning is symmetric to commissioning — both are expressed by the same two fields.
 
 Two element-specific lifecycle mechanisms layer on top of this generic window:
 
 - **Hydro dead-volume filling** (§5) — a hydro plant may _exist_ but be unable to generate while its reservoir is still filling toward the dead volume; this is a distinct commissioning state with its own per-stage storage floors, not just a presence gate.
 - **Anticipated thermals** (§4) — a commitment column is opened only when its delivery stage falls inside the study horizon, an additional horizon predicate beyond the entry/exit window.
+
+### Operational Start Date
+
+Independent of the commissioning window, every entity also carries a
+required `operational_start_date` — an ISO-8601 calendar date. This field is
+**provenance and the canonical ordering key only**: it fixes the entity's
+position in the canonical `(operational_start_date, id)` order (see
+[Notation Conventions](/overview/notation-conventions) and
+[Determinism Guarantees](/math/determinism-guarantees)), which every state
+block, the LP column layout, and the output column order follow. It does
+**not** compute or gate commissioning. Presence in the dispatch is decided
+solely by the `entry_stage_id`/`exit_stage_id` window above: the two fields
+are independent, and neither is derived from the other.
 
 ## 2. Buses (Regional Subsystems)
 
@@ -189,7 +213,7 @@ $$
 \sum_{k \in \mathcal{K}} \tau_k \sum_{l \in \mathcal{L}} c^{exch}_l \cdot (f^+_{l,k} + f^-_{l,k})
 $$
 
-The exchange cost is a **regularization term** (typically \$0.01–1.00/MWh) that prevents degenerate solutions with unnecessary power circulation and guides the solver toward physically meaningful flow patterns.
+The exchange cost is a **regularization term** — a small per-unit cost on interchange flow — that prevents degenerate solutions with unnecessary power circulation and guides the solver toward physically meaningful flow patterns.
 
 ### LP Constraint Preview
 
@@ -254,7 +278,7 @@ For detailed constraints, see [equipment formulations](/math/equipment-formulati
 
 A thermal plant may be flagged as **anticipated** by attaching a per-plant lead $K \geq 1$. The physical motivation is fuel-ordering lead time: LNG (originally _Gás Natural Liquefeito_) terminals, long-haul coal contracts and similar arrangements require the committed dispatch quantity to be locked $K$ stages before the energy is physically delivered. Anticipated thermals therefore split the per-stage thermal decision into two coupled variables — the **commitment**, made at the decision stage $t$, and the **delivered generation**, which is forced to match the matured commitment at the delivery stage $t + K$.
 
-The lead is encoded as an integer plant-specific parameter $K_i \geq 1$ (`lead_stages` on the plant entity). A plant with $K_i = 1$ commits one stage ahead; a plant with $K_i = 3$ commits three stages ahead. Plants without the anticipation flag use the standard thermal model from the preceding subsections.
+The lead resolves to an integer plant-specific parameter $K_i \geq 1$, supplied in one of two mutually exclusive forms: a **stage count** (`lead_stages`, calendar-free) or a **physical duration** (`lead_time_hours`, resolved against the stage calendar by end-anchoring the lead on the cumulative stage-hour boundaries). A plant with $K_i = 1$ commits one stage ahead; a plant with $K_i = 3$ commits three stages ahead. A physical lead shorter than the decision stage's own duration resolves to $K_i = 0$, and the plant then dispatches as an ordinary thermal. Plants without the anticipation flag use the standard thermal model from the preceding subsections.
 
 #### State variables and ring-buffer layout
 
@@ -282,6 +306,8 @@ d^i_t \in
 $$
 
 The horizon predicate $t + K_i < T$ guarantees the commitment is only opened when there is a delivery stage inside the study horizon; commitments whose delivery would fall outside $T$ are pinned to zero.
+
+The commitment is also **commissioning-gated at its delivery stage**: the delivery-stage generation bounds $[\underline{G}_i(t + K_i), \bar{G}_i(t + K_i)]$ collapse to $\{0\}$ whenever the plant is not in service at $t + K_i$, so a commitment can never be placed for a delivery stage the plant cannot honour — and a plant whose cap varies across stages cannot be over-committed to a value its delivery stage would reject. Two lead configurations are refused at load: a lead exceeding the study horizon (no in-horizon delivery stage exists), and a physical `lead_time_hours` coarse enough that one decision stage would anchor more than one delivery stage.
 
 The **fishing constraint** binds the per-block generation of plant $i$ to the matured commitment in slot 0 at every stage $t \in [0, T - 1]$:
 
@@ -359,7 +385,7 @@ $e_{h,k}$ and $r_{h,k}$ are parameter-driven quantities computed from input data
 ### Connections to Other Elements
 
 - **Bus connection**: Each hydro plant connects to one bus for energy delivery
-- **Cascade topology**: Upstream plants' outflows ($q + s + u$) become downstream plants' inflows, with optional water travel time delay
+- **Cascade topology**: Upstream plants' outflows ($q + s + u$) become downstream plants' inflows, either instantaneously or, on a declared main-cascade arc, delayed by a **water travel time** (see _Cascade Travel Time_ below)
 - **Diversion targets**: Some plants can divert water to a separate downstream plant (not the immediate cascade successor), bounded by $\bar{U}_h$
 - **Pumping stations**: May receive pumped water (increasing storage) or supply water to pumps (decreasing storage)
 
@@ -396,6 +422,18 @@ The reservoir dynamics account for all water flows in and out of the plant:
 :::note[Note on outflow]
 Outflow $o_h = q_h + s_h$ is the water released to the downstream channel (affects tailrace level). Withdrawal $r_h$ and diversion $u_h$ exit through different paths and do not affect the main tailrace.
 :::
+
+### Cascade Travel Time
+
+In a cascade, an upstream plant's outflow ($q + s + u$) becomes a downstream plant's inflow. By default this transfer is **instantaneous** — water released this stage reaches the downstream reservoir within the same stage. When the reach between two plants is long enough that travel is not negligible, a plant may declare a **water travel time** on its main cascade arc, and the release is then delivered to the downstream reservoir a number of stages later instead of immediately.
+
+Cobre carries the water in transit on such an arc as additional **in-transit state** through the Bellman recursion, discretized into maturity lags — one aggregated in-transit bucket per receiving plant per lag. The bucket maturing at a given stage enters the receiving plant's water balance as a delayed inflow; the remaining in-transit volume is carried forward to later stages. Under the [chronological-blocks formulation](/math/block-formulations) the delayed arrival is spread across the arrival stage's blocks by a fixed density; under parallel blocks it is a single stage-level inflow. Because this is a genuine state augmentation — it changes the state vector and the Benders cuts, exactly as reservoir storage and AR lags do — it is formulated at the LP level in [LP formulation §5d](/math/lp-formulation). Confluent arcs feeding one plant are summed into that plant's single in-transit block.
+
+**Scope.** Travel time applies to the **main cascade arc only** — the arc to `downstream_id`. Diversion and pumping transfers remain instantaneous. A travel time that is absent or zero is treated as an instantaneous transfer, adding no state.
+
+**Not-yet-operating downstream.** A release into a downstream plant that has not yet reached operating status — still filling its dead volume, or before its commissioning entry stage — is rejected at load time: the water would arrive at a reservoir that does not yet exist in the dispatch. The receiving plant must be operating over the arrival window.
+
+**Horizon limitation.** In-transit water that would mature after the study's last stage is dropped rather than credited to terminal storage — see [LP formulation §5d](/math/lp-formulation).
 
 ### Production Function (Water to Power)
 
@@ -436,6 +474,16 @@ Several hydro constraints are enforced as **soft constraints** with slack variab
 
 Soft constraints allow the optimizer to violate bounds when physically necessary (e.g., drought conditions preventing minimum outflow), with high penalty costs signaling undesirable operation. Maximum storage ($\bar{V}_h$) is a **hard** physical limit — excess water is handled by emergency spillage, not a slack variable. For the penalty priority ordering and cost magnitudes, see [Penalty System](/math/penalty-system). For the complete constraint formulations, see [equipment formulations](/math/equipment-formulations).
 
+### Not-Yet-Commissioned Hydros (PreFilling)
+
+A hydro is **PreFilling** whenever it does not yet exist in the dispatch — a filling hydro before its `start_stage_id`, or a **non-filling** hydro at any stage outside its commissioning window (before `entry_stage_id`, or from `exit_stage_id` onward). Unlike the other entity types, this is not a bare column zero-pin: because the physical site is absent, the plant is reformulated so the river flows past it. In this state,
+
+- **Turbine, spillage, and diversion are pinned to zero** ($q_{h,k} = s_{h,k} = u_{h,k} = 0$) — a dam that does not yet exist can neither generate nor spill.
+- **Storage is decoupled** by a frozen identity $v_h = v^{in}_h$: the reservoir volume is held constant, injecting no phantom storage and trapping no water.
+- **Natural inflow is passed through** to the first active downstream plant (or the network sink if none), so incremental inflow and upstream releases reach the cascade below without being lost at the un-built site.
+
+The defining contrast with the filling phase below is **spillage**: it is frozen to zero while PreFilling (there is no reservoir to shed from), and becomes a free decision once filling begins.
+
 ### Dead-Volume Filling
 
 Cobre models the commissioning of new hydro plants with a **filling period** (`[start_stage_id, entry_stage_id)`) during which the reservoir accumulates water to reach the dead volume ($\underline{V}_h$). During this period:
@@ -443,7 +491,7 @@ Cobre models the commissioning of new hydro plants with a **filling period** (`[
 - The hydro has **no generation**: $q_{h,k} = 0$, $g_{h,k} = 0$ (hard constraint)
 - Natural inflow flows freely through the ordinary water balance — there is no retention or impound cap diverting inflow to storage
 - Storage is allowed below $\underline{V}_h$ (the operating min-storage slack is inactive)
-- Outflow is limited to spillage (turbines not operational), with the `outflow_violation_below` slack if environmental flow cannot be met
+- Outflow is limited to spillage (turbines not operational), with the `outflow_violation_below` slack if environmental flow cannot be met. Spillage is a **free** decision during filling — a real impounding reservoir can shed inflow it cannot yet hold — in contrast to the PreFilling state, where spillage is frozen to zero
 - A **per-stage filling floor** $v_h \geq V^{\text{target}}_t$ requires the reservoir to stay on a minimum-accumulation schedule set by `filling_min_rate_m3s`. The floor ramps up to $\underline{V}_h$ at the last filling stage; its slack $\sigma^{fill}_h$ is priced **below** deficit (a fill schedule is not defended as hard as load serving)
 
 When the plant enters service at `entry_stage_id`, the ordinary soft minimum-storage floor takes over. For the per-stage floor trajectory and the penalty ordering, see [Penalty System](/math/penalty-system).
@@ -659,7 +707,16 @@ The following table maps each physical system element to its LP representation:
 | **Pumping Station**       | —                        | $p_{j,k}$                                  | Flow bounds (min/max)                       | None (cost via energy consumption)           |
 | **Contract**              | —                        | $\chi_{c,k}$                               | Dispatch bounds (min/max)                   | Import cost or Export revenue                |
 
-**Key insight**: The hydro storage variables $v_h$, the AR lag variables $a_{h,\ell}$, and the anticipated-thermal ring-buffer slots $x^{\mathrm{a}}_{s,i,t}$ are the **state variables** that link stages through the Bellman recursion. All other elements contribute control variables that are determined within each stage. This structure enables SDDP's decomposition: the stage subproblem optimizes all control variables given the incoming state, and Benders cuts approximate the future cost as a function of the outgoing state.
+**Key insight**: The hydro storage variables $v_h$, the AR lag variables $a_{h,\ell}$, and the anticipated-thermal ring-buffer slots $x^{\mathrm{a}}_{s,i,t}$ are the **state variables** that link stages through the Bellman recursion — joined, when a cascade arc declares a water travel time, by the in-transit buckets carrying released water toward its downstream plant (see [LP formulation §5d](/math/lp-formulation)). All other elements contribute control variables that are determined within each stage. This structure enables SDDP's decomposition: the stage subproblem optimizes all control variables given the incoming state, and Benders cuts approximate the future cost as a function of the outgoing state.
+
+## Implementation in Cobre
+
+The methodology above defines every system element; the tabs below cover how Cobre's software surface configures and reports the **network layer** — buses and transmission lines. The remaining elements (thermals, hydros, non-controllable sources, pumping stations, contracts) are covered by their own chapters' Implementation tabs (hydro production models, equipment formulations).
+
+<Tabs>
+  <TabItem label="Configure"><NetworkConfigure /></TabItem>
+  <TabItem label="Inputs & Outputs"><NetworkIO /></TabItem>
+</Tabs>
 
 ## Cross-References
 

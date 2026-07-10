@@ -159,7 +159,7 @@ jobs:
       # *.github.io URL). Mirrors deploy.yml's `echo … > book/CNAME`; the Starlight
       # equivalent is dist/CNAME (the dir upload-pages-artifact uploads).
       - name: Add CNAME for custom domain
-        run: echo "methodology.cobre-rs.dev" > dist/CNAME
+        run: echo "docs.cobre-rs.dev" > dist/CNAME
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa # v3

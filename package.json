@@ -15,7 +15,12 @@
     "check:d2": "node scripts/check-d2-layout.mjs",
     "check:e10": "node scripts/check-e10-gate.mjs",
     "check:spdx": "node scripts/check-spdx.mjs",
+    "check:voice": "node scripts/check-doc-voice.mjs",
+    "check:counts": "node scripts/check-doc-counts.mjs",
+    "check:version": "node scripts/check-doc-version.mjs",
     "gen:notices": "node scripts/gen-notices.mjs",
+    "refresh:schemas": "node scripts/refresh-schemas.mjs",
+    "refresh:recordings": "node scripts/refresh-recordings.mjs",
     "test": "node --test src/figures/*.test.ts scripts/*.test.mjs"
   },
   "dependencies": {
@@ -26,7 +31,6 @@
     "@observablehq/plot": "^0.6.17",
     "astro": "^6.4.5",
     "astro-d2": "^0.11.0",
-    "astro-mermaid": "^2.0.4",
     "katex": "^0.16.11",
     "rehype-katex": "^7.0.1",
     "remark-math": "^6.0.0",

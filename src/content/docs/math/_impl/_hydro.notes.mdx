@@ -1,0 +1,109 @@
+Non-normative software behavior for the hydro production models — what Cobre
+does at runtime, beyond the equations above. This tab references the
+methodology body for the derivations rather than restating them.
+
+### Computed-FPHA fitting behavior
+
+The computed path (§2.6–§2.7 above) evaluates the exact production function
+on a (volume, turbined-flow) grid at spillage fixed to `0`. The flow axis
+starts at `q = 0`; that zero-flow column is generation-zero by construction
+and anchors the lower closure of the cloud, so the fitter needs neither a
+synthetic closing point nor a spillage axis in the cloud itself — spillage
+sensitivity is captured separately by the per-plane lateral-flow secant
+(§2.7), not by adding a third grid dimension.
+
+The 3-D convex hull's upper-envelope facets are corrected by a single
+least-squares `alpha_FPHA` scalar. That correction scales the **whole affine
+plane** — intercept and both slopes together — not just the intercept; this
+is why it replaces (rather than equals) the retired `kappa` shrink, which
+only touched the intercept and now survives solely on the precomputed input
+path (validated in `(0, 1]`).
+
+### Run-of-river support
+
+A plant whose fitting volume range collapses to a single point (constant
+forebay) is fit by synthesizing two nearby volume samples so the 3-D hull
+stays non-degenerate, then snapping the resulting `gamma_v` residual to
+exactly `0`. This enforces the correct run-of-river semantics — generation on
+these planes does not vary with storage — and is why run-of-river plants are
+supported on the computed path rather than rejected.
+
+### Fit-quality warning
+
+After the full pipeline, Cobre compares the fitted min-envelope against the
+exact production function on the spillage-`0` grid and computes their
+relative mean-absolute deviation. When it exceeds 5%, a warning is logged
+naming the plant and stage:
+
+```
+Warning: hydro 'UHE Example' stage 3 FPHA fit deviation = 6.2 % (> 5 %).
+Consider increasing discretization points or narrowing the fitting window.
+```
+
+The warning is informational — the run continues with the fitted planes. A
+high deviation typically indicates a strongly non-concave production surface
+that no single `alpha_FPHA` scalar can track well; narrowing `fitting_window`
+or raising the discretization point counts are the usual remedies.
+
+### Determinism guarantees
+
+The fitting cloud points and the hull output are canonically sorted, so
+fitted hyperplanes are bit-identical regardless of input ordering and MPI
+rank count. The `fpha_plane_reduction` distance method's sampled draws are
+seeded from stable plant/stage/plane-pair identity — never wall clock or MPI
+rank — so its merges are equally reproducible.
+
+### Evaporation: disabled with a warning, not a hard error
+
+A hydro that declares `evaporation.coefficients_mm` but has **no usable
+area-volume curve** — no rows in `system/hydro_geometry.parquet`, or every
+`area_km2` value is zero — does not fail to load. Evaporation is instead
+**disabled** (zero flux) for that hydro, with a warning naming the plant,
+because a zero surface area yields zero evaporative flux regardless of the
+authored coefficients. Non-finite coefficients and a stage with no
+`season_id` (which evaporation needs to select a calendar month) remain hard
+load-time errors — only the missing-area case is downgraded to a warning. See
+[Penalty System §"Signed Net Evaporation"](/math/penalty-system#signed-net-evaporation)
+for the water-balance treatment of the resulting flux.
+
+### Commissioning: the PreFilling state
+
+A hydro's `entry_stage_id`/`exit_stage_id` commissioning window is honored even for a **non-filling** hydro (one with no `filling` block). At any stage outside its window — before `entry_stage_id`, or from `exit_stage_id` onward — the plant is **PreFilling**: the site is not in service, so its turbine, spillage, and diversion columns are pinned to zero, its storage is frozen by the identity $v_h = v^{in}_h$, and its natural inflow is routed past the site to the first active downstream plant (or the network sink). Unlike the generic outside-window zero-pin used for the other entity types, the river is never trapped or duplicated at a site that is not in service. See [system elements §5](/math/system-elements) for the full lifecycle and [penalty system](/math/penalty-system) for the spillage-frozen-versus-costed distinction.
+
+### Water travel time: in-transit seed and validation
+
+When a plant declares a travel-time arc, the releases already in transit at the
+study start must be supplied so the first stages' delayed-arrival buckets are
+seeded rather than starting empty. This history lives in
+`initial_conditions.past_defluences`: windowed pre-study release records (a
+`hydro_id`, a release window, and an average rate in m³/s) for the plants whose
+outflow feeds a declared arc.
+
+Load-time validation of a declared arc:
+
+- **History depth.** The `past_defluences` windows must cover the arc's
+  in-transit span at study start — the interval `[start_0 − travel_time, start_0)`
+  ending at the study start. A gap, or no windows at all, is a load-time error,
+  and no window may be future-dated past the study start.
+- **Proxy from `past_inflows`.** When a plant lacks the required
+  `past_defluences` history, Cobre derives a proxy seed from its `past_inflows`
+  and logs a caveat; when neither is available the study is rejected.
+- **Downstream must be operating.** A release into a downstream plant that is
+  still PreFilling/Filling, or before its commissioning entry stage, over the
+  arrival window is rejected — the water would arrive at a reservoir not yet
+  present in the dispatch.
+- **Zero travel time.** A zero (or absent) travel time is treated as undeclared
+  — an instantaneous transfer, adding no bucket and requiring no seed.
+
+The horizon limitation (in-transit water maturing past the last stage is
+dropped, not credited to terminal storage) is covered in
+[LP formulation §5d](/math/lp-formulation).
+
+### Round-trip parquet export
+
+When hyperplanes are fitted at runtime (`source: "computed"`), the fitted
+coefficients are automatically written to
+`output/hydro_models/fpha_hyperplanes.parquet` using the same schema as the
+`system/fpha_hyperplanes.parquet` input. To reuse a prior fit without
+refitting on a subsequent run, copy this output file into `system/` and
+change `source` to `"precomputed"` in `hydro_production_models.json`.

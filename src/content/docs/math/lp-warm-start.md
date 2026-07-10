@@ -129,10 +129,14 @@ generated it. To reconstruct a basis for the current LP:
 
 This single mechanism handles all three churn cases — drops, reorders, and
 additions — and serves both within-run reactivation and the cross-run
-checkpoint reconstruction used on warm-start/resume (§2). Because
-reconstruction keys purely on slot identity, a re-introduced cut's basis
-status is determined wholly by that identity — there is no configurable
-activity-window prediction of its LOWER-vs-BASIC status.
+checkpoint reconstruction used on warm-start/resume (§2).
+
+:::note[Basis status is not predicted]
+Basis reconstruction keys purely on slot identity, so a re-introduced cut's
+basis status (LOWER vs BASIC) is not predicted from a fixed-length window of
+its recent binding history. The resulting basis is fully determined by slot
+identity, with no activity-window heuristic in play.
+:::
 
 ## 5. Solver State Retention
 

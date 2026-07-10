@@ -35,19 +35,26 @@ block. The reservoir receives a stochastic inflow drawn from a 0-order
 seasonal-sampling model; the thermal unit and a deficit slack cover any
 shortfall that the reservoir cannot serve.
 
-```mermaid
-graph LR
-    INF["Inflow a_t<br/>(0-order)"]
-    RES["Reservoir<br/>v  cap 100"]
-    GEN["Hydro q"]
-    TH["Thermal g_th<br/>cost 50"]
-    DEF["Deficit δ<br/>cost 1000"]
-    BUS["Bus<br/>demand D = 40"]
+```d2
+direction: right
 
-    INF --> RES
-    RES --> GEN --> BUS
-    TH --> BUS
-    DEF --> BUS
+classes: {
+  hydro: {style: {stroke: "#4a90b8"}}
+  thermal: {style: {stroke: "#f5a623"}}
+  deficit: {style: {stroke: "#dc4c4c"}}
+}
+
+inf: "Inflow aₜ\n(0-order)" {shape: oval; class: hydro}
+res: "Reservoir v\ncap 100" {shape: cylinder; class: hydro}
+gen: Hydro q {class: hydro}
+th: "Thermal g_th\ncost 50" {class: thermal}
+def: "Deficit δ\ncost 1000" {class: deficit}
+bus: "Bus\ndemand D = 40"
+
+inf -> res
+res -> gen -> bus
+th -> bus
+def -> bus
 ```
 
 **Case parameters** (chosen for hand-verifiability):

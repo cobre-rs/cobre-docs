@@ -259,7 +259,7 @@ $$
 
 The approximation is reliable when $N \geq 20$ (central-limit-theorem regime). The reported interval is $[\bar{C} - \Delta_{95},\; \bar{C} + \Delta_{95}]$.
 
-**Trade-off**: every doubling of $N$ narrows the confidence interval by a factor of $\sqrt{2}$, but costs proportionally more LP solves — $N \times T$ stage subproblems per simulation check. The practical baseline of $N = 100$ replications gives a half-width of roughly $\sigma_C / 10$, which is sufficient to distinguish a converged policy from one still improving.
+**Trade-off**: every doubling of $N$ narrows the confidence interval by a factor of $\sqrt{2}$, but costs proportionally more LP solves — $N \times T$ stage subproblems per simulation check. Because the half-width shrinks as $\sigma_C / \sqrt{N}$, a sufficiently large replication count resolves the interval finely enough to distinguish a converged policy from one still improving.
 
 ### 10.4 Configurable Replication Count
 
@@ -271,7 +271,7 @@ The sole knob governing the out-of-sample procedure is the number of replication
 | 100 | $\approx \sigma_C / 10$        | 12,000                          |
 | 500 | $\approx \sigma_C / 22$        | 60,000                          |
 
-The baseline $N = 100$ is practical for production runs: at the reference scale of $T = 120$ stages and 16 MPI ranks, the simulation check costs approximately 1.7 seconds of wall-clock time per trigger. Raising $N$ narrows the interval linearly in $1/\sqrt{N}$ at a proportional cost in simulation time.
+Raising $N$ narrows the interval as $1/\sqrt{N}$ while the per-check cost — $N \times T$ LP solves — grows linearly in $N$, so the replication count trades statistical resolution directly against compute per stopping check.
 
 ### 10.5 Interaction with the Simulation-Based Stopping Rule
 
@@ -289,7 +289,7 @@ The convergence guarantee still holds: with $d_{cycle} < 1$, both the outer (cut
 
 ## 12 References
 
-> Costa, B.F.P., & Leclere, V. (2023). "Duality of upper bounds in stochastic dynamic programming." _Optimization Online_. https://optimization-online.org/?p=23738
+> Costa, B.F.P., & Leclère, V. (2023). "Duality of upper bounds in stochastic dynamic programming." _Optimization Online_. https://optimization-online.org/?p=23738
 
 > Philpott, A.B., de Matos, V.L., & Finardi, E.C. (2013). "On solving multistage stochastic programs with coherent risk measures." _Operations Research_, 61(4), 957-970. https://doi.org/10.1287/opre.2013.1175
 
@@ -303,3 +303,4 @@ The convergence guarantee still holds: with $d_{cycle} < 1$, both the outer (cut
 - [Stopping Rules](/math/stopping-rules) — Convergence criteria that use the gap between inner and outer approximations; simulation-based stopping rule that consumes the per-iteration out-of-sample estimator (section 10.5)
 - [Risk Measures](/math/risk-measures) — CVaR objectives where deterministic upper bounds are essential; CVaR estimator validity under risk-averse policies (section 10.1)
 - [Scenario Generation](/math/scenario-generation) — Opening-tree definition from which out-of-sample replications draw independent noise realizations (section 10.1)
+- **Running Cobre:** [Convergence & Diagnostics](/running/interpreting-results/) — the software guide for reading and assessing this estimator's output.

@@ -1,0 +1,128 @@
+Cobre's cut-management knobs live entirely in `config.json`'s
+`training.cut_selection` block — there is no per-case data file for cuts (the
+cut pool is generated during training, not authored by the case). This tab is
+the field-level configuration reference; the selection algorithms themselves
+stay in the methodology sections above (§6–§9).
+
+### `training.cut_selection` — Row Management Configuration
+
+The block has two **always-on** top-level fields plus an optional tagged
+`selection` sub-object. Omitting `selection` (or setting it to `null`)
+disables row selection — the pool then only grows, with no deactivation pass
+of any kind. This is the default.
+
+| Field                    | Type    | Default | Description |
+| ------------------------ | ------- | ------- | ----------- |
+| `row_activity_tolerance` | number  | `0.0`   | Minimum dual-multiplier magnitude for a cut row to count as binding at a solution point. Rows whose dual falls below this are treated as inactive for `active_count` / `last_active_iter` tracking — the staleness metadata Stage 2 (below) sorts on. This is **not** the same tolerance as a selection method's own near-optimal band (`tie_tolerance` / `domination_tolerance`, methodology §6); it feeds tracking metadata, not the value-evaluation kernel itself. |
+| `max_active_per_stage`   | integer | `null` (no cap) | Hard cap on active rows per stage LP, enforced every iteration after the selection method (if any) runs — this is "Stage 2" of the row-management pipeline, distinct from the strategy-based "Stage 1" the `selection` object configures. When the cap is exceeded, rows are evicted least-recently-active first (`last_active_iter` ascending), tie-broken by least-frequently-active (`active_count` ascending); rows generated in the current iteration are never evicted. |
+| `selection`              | object or `null` | `null` | The active selection method and its parameters — see below. |
+
+```json
+{
+  "training": {
+    "cut_selection": {
+      "row_activity_tolerance": 1e-6,
+      "max_active_per_stage": 4000,
+      "selection": null
+    }
+  }
+}
+```
+
+### The `selection` Object
+
+`selection.method` is the discriminator; each method exposes only its own
+parameters. Supplying a field that belongs to a different method is a
+config-load error, and a misspelled `method` is rejected with the list of
+valid methods. The four methods are **mutually exclusive** by construction of
+the tagged shape — choosing `"dynamic"` means none of `"level1"` / `"lml1"` /
+`"domination"` can also run, and vice versa.
+
+#### `"level1"` and `"lml1"`
+
+Both periodic-pruning methods (methodology §7.1–§7.2) share the same two
+fields:
+
+| Field             | Type    | Default | Description |
+| ----------------- | ------- | ------- | ----------- |
+| `tie_tolerance`   | number  | `1e-10` | A cut is active at a visited state when its value is within this of the per-state maximum there. |
+| `check_frequency` | integer | `5`     | Iterations between periodic-pruning selection runs. Must be `> 0`. |
+
+```json
+"selection": { "method": "level1", "tie_tolerance": 1e-10, "check_frequency": 5 }
+```
+
+#### `"domination"`
+
+The most aggressive periodic-pruning method (methodology §7.3):
+
+| Field                  | Type    | Default | Description |
+| ---------------------- | ------- | ------- | ----------- |
+| `domination_tolerance` | number  | required, no default | A cut survives if within this of the maximum at any visited state. |
+| `check_frequency`      | integer | `5`     | Iterations between periodic-pruning selection runs. Must be `> 0`. |
+
+```json
+"selection": { "method": "domination", "domination_tolerance": 1e-6, "check_frequency": 5 }
+```
+
+#### `"dynamic"` (Dynamic Cut Selection / DCS)
+
+The per-solve lazy method (methodology §8):
+
+| Field                 | Type    | Default | Description |
+| --------------------- | ------- | ------- | ----------- |
+| `start_iteration`     | integer | `2`     | First 1-based training iteration at which the lazy loop becomes active. Must be `>= 1`. |
+| `seed_window`         | integer | `5`     | Number of most-recent iterations whose cuts seed the initial resident set (methodology §8.5). `0` is valid — seeds only the current iteration. |
+| `candidate_recency`   | integer or `null` | `null` (unbounded) | Only cuts generated within the last `candidate_recency` iterations are scored as candidates. `null` (the default) is unbounded — every pool cut is a candidate, which preserves the exactness guarantee (methodology §8.2, §9). `Some(n)` (must be `>= 1`) makes the loop deliberately inexact: cuts older than the window are never added, even when violated. |
+| `max_added_per_round` | integer | `10`    | Maximum number of most-violated candidate cuts added per lazy-solve round. Must be `>= 1`. |
+| `violation_tolerance` | number  | `1e-10` | Absolute violation tolerance for accepting a candidate cut. Must be `> 0`. |
+
+```json
+"selection": {
+  "method": "dynamic",
+  "start_iteration": 2,
+  "seed_window": 5,
+  "max_added_per_round": 10,
+  "violation_tolerance": 1e-10
+}
+```
+
+### Full Examples
+
+Dynamic Cut Selection with a per-stage budget:
+
+```json
+{
+  "training": {
+    "cut_selection": {
+      "row_activity_tolerance": 1e-6,
+      "max_active_per_stage": 4000,
+      "selection": {
+        "method": "dynamic",
+        "start_iteration": 2,
+        "seed_window": 5,
+        "max_added_per_round": 10,
+        "violation_tolerance": 1e-10
+      }
+    }
+  }
+}
+```
+
+Level-1 periodic pruning with a per-stage budget:
+
+```json
+{
+  "training": {
+    "cut_selection": {
+      "row_activity_tolerance": 1e-6,
+      "max_active_per_stage": 500,
+      "selection": {
+        "method": "level1",
+        "tie_tolerance": 1e-10,
+        "check_frequency": 5
+      }
+    }
+  }
+}
+```

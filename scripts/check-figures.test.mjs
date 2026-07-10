@@ -7,7 +7,10 @@
 // node:test + node:assert/strict, mirroring src/figures/*.test.ts.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { detectFigureViolations } from "./check-figures.mjs";
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, sep } from "node:path";
+import { detectFigureViolations, collectSourceFiles } from "./check-figures.mjs";
 
 test("flags an ../../images/ asset reference", () => {
   const text = "![value function](../../images/d02-value-function.svg)";
@@ -92,4 +95,29 @@ test("reports multiple violations in one file", () => {
   // 1 image-path hit + 2 stem hits (d02-value-function appears inside the path
   // AND d24-lp-column-layout) → at least 3.
   assert.ok(v.length >= 3, `expected >=3 violations, got ${v.length}`);
+});
+
+// ---- collectSourceFiles underscore-basename exclusion (Epic 04 ticket-015 R5
+// fold-in) — the equivalent of check-math-parity.test.mjs's fixture, pinning
+// the SAME exclusion rule in check-figures.mjs's own walk.
+
+function buildFixture() {
+  const root = mkdtempSync(join(tmpdir(), "check-figures-test-"));
+  const rootDir = root + sep;
+  writeFileSync(join(root, "keep.mdx"), "# Keep\n");
+  writeFileSync(join(root, "_skip.mdx"), "# Skip\n");
+  mkdirSync(join(root, "_impl"));
+  writeFileSync(join(root, "_impl", "_partial.mdx"), "# Partial\n");
+  writeFileSync(join(root, "_impl", "routed.mdx"), "# Routed\n");
+  return rootDir;
+}
+
+test("collectSourceFiles collects exactly keep.mdx and _impl/routed.mdx, excluding the two underscore-basename files", () => {
+  const root = buildFixture();
+  try {
+    const files = collectSourceFiles(root).map((f) => f.slice(root.length));
+    assert.deepEqual(files.sort(), ["_impl/routed.mdx", "keep.mdx"].sort());
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });

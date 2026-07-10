@@ -1,0 +1,35 @@
+# Doc-lint baseline allowlist (Epic 04 ticket-015; burned down in ticket-028).
+#
+# Grandfathers PRE-EXISTING strict-zone hits found by check-doc-voice.mjs and
+# check-doc-version.mjs on the committed corpus, so those two gates land GREEN
+# while still failing on any NEW violation with no entry here — a ratchet,
+# mirroring cobre's own `scripts/ci/allow-rationale-allowlist.txt` convention.
+#
+# check-doc-counts.mjs does NOT read this file (a stated column/field count
+# disagreeing with its own adjacent table is a plain factual bug, not a
+# voice/version judgement call — it has no grandfather path).
+#
+# Format: one entry per line, `<relpath>:<line>  <rule-id>  # rationale`.
+# `<relpath>` is relative to src/content/docs/. An entry silences EVERY rule
+# that fires on that exact path:line (the rule-id column is documentation,
+# not a filter — see scripts/doc-lint-allowlist.mjs).
+#
+# ── STATE: EMPTY ─────────────────────────────────────────────────────────────
+# ticket-028 burned the grandfather set down to zero: the three categories of
+# pre-existing hit were resolved at the source rather than tolerated —
+#   • Category 1 (cobre-version-annotation narration) — the offending prose was
+#     rewritten in present tense with no version reference.
+#   • Category 2 (unpinned "typical" instance magnitudes) — the hedged numbers
+#     were scrubbed to qualitative descriptions, preserving all methodology.
+#   • Category 3 (hype false positives on legitimate math prose) — the detector
+#     was calibrated instead of the prose ("zero cost" dropped from the
+#     superlative list; the "not just"/"not merely" logical-contrast family
+#     dropped from the contrasting-affirmative list — see check-doc-voice.mjs).
+#   • The lone self-referential false positive (the "Code as ground truth"
+#     sentence that STATES the no-version rule and thereby tripped the bare
+#     "migration" pattern) is now excluded structurally by the self-reference
+#     guard in check-doc-version.mjs, not grandfathered here.
+#
+# The gate remains active: any genuinely NEW hit must be fixed at the source, or
+# marked with an inline `<!-- doc-voice-ok: reason -->` for a real exception, or
+# (for a hit under editorial review) added below with a rationale.

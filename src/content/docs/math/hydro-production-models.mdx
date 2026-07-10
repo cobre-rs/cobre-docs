@@ -3,6 +3,11 @@ title: Hydro Production Function Models
 description: Constant productivity, FPHA (piecewise-linear convex hull fit), and linearized head models for hydro generation constraints — with fitting pipeline, LP integration, and energy-conversion scalars.
 ---
 
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+import { Content as HydroConfigure } from './_impl/_hydro.configure.mdx';
+import { Content as HydroIO } from './_impl/_hydro.io.mdx';
+import { Content as HydroNotes } from './_impl/_hydro.notes.mdx';
+
 ## Purpose
 
 This spec defines the hydro generation constraint models supported by Cobre, which relate turbined flow and reservoir storage to electrical output. Two models are available during training (policy construction): constant productivity and FPHA. A third model — linearized head — is available only during simulation (policy evaluation) as a higher-fidelity enhancement. The choice among training models trades off accuracy vs. computational cost, and can vary by stage per hydro.
@@ -25,8 +30,8 @@ $$
 
 with:
 
-- $\eta_h$ = turbine efficiency (typically 0.85–0.92), from the hydro object's `efficiency` field
-- $H^{ref}_{h,t}$ = reference net head (meters), typically at 65% storage, varying by stage
+- $\eta_h$ = turbine efficiency (a dimensionless factor below 1), from the hydro object's `efficiency` field
+- $H^{ref}_{h,t}$ = reference net head (meters), evaluated at the reference storage level and varying by stage
 
 **Per-stage productivity**: the productivity coefficient is authored **per (hydro, stage)** rather than per plant. A plant can therefore carry a stage-varying constant productivity — useful when the reference head differs between near-term and far-future stages of the same study, or when the constant model is being used as a coarse approximation that needs different operating points across the horizon. Section 5.1 describes how that per-(hydro, stage) value is resolved at load time.
 
@@ -36,7 +41,7 @@ with:
 
 ## 2. FPHA (Função de Produção Hidrelétrica Aproximada)
 
-For accurate modeling of hydroelectric generation, FPHA (Aproximate Hydropower Production Function) captures the nonlinear relationship between storage, flow, spillage, and generation through a piecewise-linear approximation.
+For accurate modeling of hydroelectric generation, FPHA (Aproximate Hydropower Production Function) captures the nonlinear relationship between storage, flow, spillage, and generation through a piecewise-linear approximation. The approach follows the piecewise-linear hydro production model of Diniz & Maceira (2008); that model is four-dimensional (forebay/head, turbined flow, and tailrace/spillage), whereas Cobre fits a reduced variant over storage and turbined flow at spillage = 0, capturing the spillage effect through the per-plane lateral-flow secant of §2.7 rather than an explicit spillage axis.
 
 ### 2.1 Notation Mapping
 
@@ -137,7 +142,7 @@ $$
 h_{loss} = k_{loss} \times (h_{fore} - h_{tail})
 $$
 
-where $k_{loss}$ is typically 0.01–0.05 (1–5% losses).
+where $k_{loss}$ is a small dimensionless fraction of the gross head.
 
 **Constant model** — fixed head loss:
 
@@ -291,7 +296,7 @@ This cost must satisfy $c^{t}_h > c^{spill}_h$ for each plant. The rule serves t
 
 For hydros using the **FPHA** production model, the regularization keeps the solver on the FPHA surface boundary rather than at an interior point: without it, the optimizer could find degenerate solutions where turbined flow and spillage are both artificially high (with net generation unchanged), because the FPHA surface has a flat region where increasing $q$ and $s$ simultaneously can maintain the same $g$. The penalty making every unit of turbined flow carry a small additional cost collapses the degenerate interior region.
 
-For hydros using **constant productivity**, the same regularization is applied uniformly so that the LP tie-breaks `(turbined, spillage)` decompositions consistently with NEWAVE. Applying it uniformly rather than only under FPHA matters on cases that mix the two production models: a constant-productivity plant that paid nothing on the turbine column would diverge from the reference model. Plants using `linearized_head` (simulation-only, see section 3) are not subject to this regularization during training because training uses only `constant_productivity` and `fpha`; during simulation, the cost is irrelevant because no policy is being constructed.
+For hydros using **constant productivity**, the same regularization is applied uniformly so that the LP tie-breaks `(turbined, spillage)` decompositions consistently with NEWAVE. Applying it to constant-productivity plants — not to FPHA plants alone — keeps every turbine column priced, so the dispatch matches the reference model even on cases that mix the two production models. Plants using `linearized_head` (simulation-only, see section 3) are not subject to this regularization during training because training uses only `constant_productivity` and `fpha`; during simulation, the cost is irrelevant because no policy is being constructed.
 
 For the full penalty taxonomy and priority ordering, see [Penalty System](/math/penalty-system).
 
@@ -503,6 +508,16 @@ The full FPHA production function (section 2) is multi-dimensional and concave; 
 For non-FPHA hydros, the per-(hydro, stage) productivity coefficient is resolved from exactly one of the two authoring sources listed in §5.1: range-level productivity in the production-models input, or per-stage productivity in the energy-productivity input. Supplying a value from both for the same $(h, t)$ is rejected at load time; supplying neither for any study stage of a non-FPHA hydro is also rejected at load time.
 
 For FPHA hydros, the production-models input does not accept a productivity scalar — $\rho_{eq}$ is derived from VHA geometry and $\rho_{esp}$ unless the energy-productivity input supplies an override.
+
+## Implementation in Cobre
+
+The methodology above defines the hydro production models; the tabs below cover how Cobre's software surface configures, feeds, and reports on them.
+
+<Tabs>
+  <TabItem label="Configure"><HydroConfigure /></TabItem>
+  <TabItem label="Inputs & Outputs"><HydroIO /></TabItem>
+  <TabItem label="Implementation notes"><HydroNotes /></TabItem>
+</Tabs>
 
 ## Cross-References
 

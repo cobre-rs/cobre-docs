@@ -1,0 +1,78 @@
+Non-normative software behavior for cut management — what Cobre does at
+runtime, beyond the equations above. This tab references the methodology body
+for the derivations rather than restating them.
+
+### Reduced-cost unscaling divides by `col_scale`, not multiplies
+
+Methodology §2 derives each cut coefficient from the reduced cost of a pinned
+incoming-state column, unscaled by that column's prescaler factor. In code
+terms the unscaling step is a **division**:
+`coefficient = reduced_cost / col_scale[col]` (empty `col_scale` ⇒ the raw
+reduced cost, unscaled). The cobre CHANGELOG's prose for this step says
+"multiply"; the shipped extraction code
+(`crates/cobre-sddp/src/training/backward/duals_extraction.rs`) divides. This
+tab — and the methodology body it supports — follows the code: **divide**.
+
+### Append-only pool, deterministic slots
+
+Every cut ever generated is retained for the lifetime of the run at a stable
+slot index — a fixed function of the iteration and forward-pass index that
+generated it (methodology §5). The pool is never compacted, and nothing is
+ever deleted from it; "deactivation" always means something narrower than
+removal (below).
+
+### Deactivation is a bound sentinel, never a row removal
+
+Cobre's row-management pipeline touches two different LPs, and "deactivating"
+a cut means something slightly different in each:
+
+- In the **per-iteration forward/backward stage LP** — rebuilt from the stage
+  template at the start of each solve — a deactivated cut is simply omitted
+  from that iteration's template rebake. Only active cuts are encoded as LP
+  rows on each forward/backward solve; there is no row to toggle because the
+  row was never emitted.
+- In the **persistent lower-bound LP** — where cut rows are never
+  structurally removed, so the training lower bound stays monotone — the same
+  deactivation instead toggles the cut row's bound to a trivially-satisfied
+  ±∞ sentinel. The row stays in place; it simply stops constraining the
+  solve.
+
+Both routes preserve the slot index, which is what makes reactivation exact:
+a cut that a later selection pass restores is re-baked into the template (or
+has its bound restored), at the same slot, with the same coefficients it was
+generated with.
+
+### Two-stage pipeline, run every iteration
+
+The row-management pipeline runs after each iteration's backward pass and cut
+synchronization, in two stages:
+
+1. **Strategy-based selection** (`level1` / `lml1` / `domination`) — gated by
+   `check_frequency`; runs only at iterations that are a multiple of it.
+   Stage 0 is always exempt from this pass, because stage 0's rows drive the
+   lower bound directly and are never a backward-pass successor. Selection
+   runs in parallel across stages. `dynamic` (DCS) never runs this stage at
+   all — it has no `check_frequency` gating and never deactivates pool cuts.
+2. **Budget enforcement** (`max_active_per_stage`) — runs **every** iteration,
+   regardless of `check_frequency`, as a hard-cap safety net on top of
+   whatever Stage 1 (or DCS) leaves active.
+
+### DCS is lazy-exact, not a deactivation pass
+
+Dynamic Cut Selection (methodology §8) never deactivates a pool cut. Each
+stage solve instead starts from a small resident subset — seeded from cuts
+active at this stage within the last `seed_window` iterations plus every cut
+generated this iteration — and grows it by repeatedly scoring the omitted
+candidates and adding the most-violated ones, up to the bounded inner-loop cap
+(50 rounds, not user-configurable). The loop stops as soon as no candidate is
+violated, at which point the resident-subset optimum already equals the
+full-pool optimum — no extra "final" solve is needed to confirm it. If the cap
+is hit first, all remaining violated candidates are added and one closing
+solve is performed, which still preserves exactness (methodology §8.3).
+
+A cut loaded into the pool via `policy.mode = "warm_start"` or `"resume"`
+(Inputs & Outputs tab) carries a reserved sentinel `iteration_generated` value
+rather than a real iteration number. Under DCS's `candidate_recency` window
+this sentinel saturates to age zero, so a warm-started cut is always inside
+any finite `candidate_recency` window — only cuts generated during the
+current run's own iterations can age out of it.

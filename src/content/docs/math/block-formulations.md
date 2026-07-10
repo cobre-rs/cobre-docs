@@ -65,7 +65,17 @@ $$
 v_{h,k} = v_{h,k-1} + \zeta_k \left[ a_h \cdot w_k + \text{net\_flows}_{h,k} \right]
 $$
 
-### 2.4 State Variable Definition
+Each block chains its storage from the previous block's end storage $v_{h,k-1}$, so the per-block boundaries $v_{h,0} = \hat{v}_h, v_{h,1}, \ldots, v_{h,|\mathcal{K}|}$ form a within-stage storage trajectory.
+
+:::note[Pre-commissioning hydros]
+A hydro that has not yet entered service freezes each block's storage identity in chronological mode — $v_{h,k} - v_{h,k-1} = 0$ for every block — holding storage constant while the site does not yet exist. See [system elements](/math/system-elements) for the full commissioning lifecycle.
+:::
+
+### 2.4 Per-Block Production and Evaporation
+
+Each block's hydro production (FPHA) and evaporation are evaluated on **that block's own average storage** $(v_{h,k-1} + v_{h,k})/2$, rather than the single stage-average storage that parallel mode shares across all blocks. A storage-dependent production or evaporation coefficient $\gamma_v$ therefore enters the block-$k$ constraint as $-\gamma_v/2$ on **both** bounding storage columns $v_{h,k-1}$ and $v_{h,k}$, so the block sees the mean of its entry and exit storage. This lets a chronological stage capture the head and evaporative-area variation that tracks the within-stage storage trajectory.
+
+### 2.5 State Variable Definition
 
 Only **end-of-stage storage** is a state variable:
 
@@ -78,7 +88,7 @@ Inter-block storages $v_{h,k}$ for $k < |\mathcal{K}|$ are internal LP variables
 1. Cuts are computed with respect to end-of-stage storage only
 2. State dimension does not increase with number of blocks
 
-### 2.5 Cut Coefficient Extraction
+### 2.6 Cut Coefficient Extraction
 
 In chronological mode, the incoming storage LP variable $v^{in}_h$ is pinned to its trial value $\hat{v}_h$ by equal column bounds (see [LP formulation §4a](/math/lp-formulation)). The **reduced cost** of that pinned column gives the storage cut coefficient directly:
 
@@ -88,7 +98,7 @@ $$
 
 By the LP envelope theorem, this reduced cost automatically captures all downstream effects through the chain of inter-block water balances ($v^{in}_h \to v_{h,1} \to \ldots \to v_{h,|\mathcal{K}|}$), FPHA constraints, and generic constraints. No special handling or dual combination is required. See [Cut management](/math/cut-management).
 
-### 2.6 Characteristics
+### 2.7 Characteristics
 
 | Aspect           | Description                                                                       |
 | ---------------- | --------------------------------------------------------------------------------- |
@@ -108,19 +118,28 @@ By the LP envelope theorem, this reduced cost automatically captures all downstr
 | LP constraints       | Fewer                 | More                                          |
 | Intra-stage dynamics | None                  | Full                                          |
 
-## 4. Policy Compatibility Validation
+## 4. Cross-Mode Policy Portability
 
-When running in **simulation-only**, **warm-start**, or **checkpoint resume** modes, the block configuration in the current input data must be compatible with the policy (cuts) that was previously trained. Specifically:
+A policy (the set of Benders cuts) trained under one block formulation can be loaded and simulated under the other — parallel-trained cuts drive a chronological simulation, and vice versa — and a policy trained with one block count can be simulated with a different one. This is a **guarantee**, not a coincidence: it follows directly from the state-variable definition in §2.5.
 
-1. **`block_mode` must match** per stage — cuts trained with parallel blocks encode a different LP structure (water balance, inter-block constraints) than cuts trained with chronological blocks. Using a policy with mismatched block mode produces incorrect future cost evaluations.
+### 4.1 Why cuts are block-count- and block-mode-independent
 
-2. **Block count and durations must match** per stage — the number of blocks, their ordering, and their durations (τ_k) affect the LP structure from which cut coefficients were derived. Any change invalidates the existing cuts.
+Only end-of-stage storage is carried as state (§2.5); the interior block storages are internal LP columns. A cut approximates the future-cost function over the **incoming state vector**, whose dimension — end-of-stage storage plus any inflow lags and augmented slots — does not depend on how many blocks a stage carries or whether they are parallel or chronological. The storage cut coefficient is the reduced cost of the pinned incoming-state storage column (§2.6), whose identity is likewise block-structure-independent. The resulting cut coefficients are therefore **identical** across block modes and block counts, and loading them into a differently-blocked LP is exact, not approximate.
 
-This is a **hard validation error** — the solver must reject the run if any mismatch is detected.
+This is what unlocks a **coarse-train / fine-simulate** workflow: train the policy with a cheap block partition (a few parallel blocks) and simulate it with a finer chronological partition that resolves intra-stage cycling — the trained cost-to-go is reused unchanged.
 
-:::note[Scope note]
-Block configuration is one of many input properties that must be validated for policy compatibility. Other properties include the number of hydro plants, state variable dimensions, AR orders, and system topology.
-:::
+### 4.2 What policy load validates
+
+Policy load is validated unconditionally against the current study (the check cannot be disabled), but on **state identity, not block structure**:
+
+- The **state-vector dimension** must match.
+- A **per-slot entity manifest** embedded in each policy file must match — every state coordinate must attach to the same entity (same type, id, and sub-index) it was trained on, which rejects a policy that matches by dimension count but binds its coordinates to different plants.
+
+There is **no** `block_mode`, block-count, or block-duration check anywhere in policy validation. See [output format](/reference/output-format) for the embedded manifest.
+
+### 4.3 Training provenance
+
+For traceability, `policy/metadata.json` records the mode the policy was trained under in `training_block_mode` (and `training_block_mode_per_stage` when it varies across stages). This is provenance only — it does not gate loading.
 
 ## 5. Note on Fine-Grained Temporal Resolution
 

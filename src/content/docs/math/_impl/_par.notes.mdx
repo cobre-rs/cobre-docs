@@ -1,0 +1,67 @@
+Non-normative software behavior for PAR(p) estimation — what Cobre does at
+runtime, beyond the equations above. This tab references the methodology
+body for the derivations rather than restating them.
+
+### `std_m3s` vs `sigma_m`
+
+The two files in the Inputs & Outputs tab store two different standard
+deviations, and the software surface never conflates them: `std_m3s` (column
+in `inflow_seasonal_stats.parquet`) is the **stored sample standard
+deviation** of the historical series for a (hydro, season) — a fixed,
+on-disk number. `sigma_m`, the residual standard deviation that scales the
+stochastic innovation term, is never stored directly; it is **computed at
+runtime** from `std_m3s` and the stored `residual_std_ratio` column
+(methodology §3). Reading `std_m3s` as if it were `sigma_m` — or vice versa —
+silently rescales every noise draw.
+
+### Order-selection behavior
+
+The classical PACF order-selection rule (methodology §4.1) and the
+Maceira & Damázio iterative reduction it triggers are applied automatically
+whenever Cobre estimates from `inflow_history.parquet`. Two runtime details
+sit alongside that rule but are not part of the derivation:
+
+- **`min_observations_per_season` is a warning, not a load-time error.** When
+  a (hydro, season) group has fewer historical observations than the
+  configured value (default 30), Cobre logs a model-quality warning naming
+  the plant and season and proceeds with the fit anyway. The threshold is a
+  quality signal, not a hard gate.
+- **`max_coefficient_magnitude` is an independent safety net.** When set and
+  any fitted coefficient for a (hydro, season) exceeds the threshold in
+  magnitude, Cobre clears that group's coefficients entirely (order reset to
+  0) and resets its `residual_std_ratio` to `1.0`. This runs as a separate
+  pass from the Maceira & Damázio contribution-chain reduction (methodology
+  §4.1) — a coefficient can trigger this magnitude cutoff even when its
+  composed contribution is non-negative.
+
+### History classification runs before any order selection
+
+Before PACF selection sees a (hydro, season) bucket, the history
+classification pipeline (methodology §5.7) runs automatically: constant,
+saturated, and negative-dominated series are detected and, for the first two,
+routed to a degenerate order-0 fit rather than left to over-fit a
+structurally uninformative bucket. This classification is unconditional —
+it always runs when estimating from history, on both the classical PAR(p)
+and PAR(p)-A paths.
+
+### PAR(p)-A annual-component runtime behavior
+
+Setting `order_selection: "pacf_annual"` (Configure tab) extends the
+estimation pipeline with the steps of methodology §9. At runtime this adds
+one requirement not visible in the equations: a hydro needs **at least 13
+chronological observations** to participate in PAR(p)-A — the minimum to
+form one rolling 12-month average (§9.3). A hydro with fewer observations on
+the PAR(p)-A path is a **hard estimation failure**; there is no silent
+fallback to the classical path (methodology §9.7).
+
+### Determinism guarantee
+
+PAR(p) fitting is one of the model families covered by Cobre's
+order-stable parallel fitting guarantee: coefficients are fit independently
+per hydro and reassembled into a canonical per-hydro slot, so the fitted
+model is a function of the inputs alone — independent of how many threads
+run or how hydros are distributed across them. See
+[Determinism Guarantees §3](/math/determinism-guarantees) for the full
+mechanism, which this chapter's estimation pipeline shares with the
+computed-FPHA fitting pipeline described in
+[Hydro Production Models](/math/hydro-production-models).

@@ -3,6 +3,11 @@ title: Equipment-Specific Formulations
 description: Detailed LP constraints for each equipment type — thermal, transmission, contracts, pumping, NCS — with objective contributions and load balance entries.
 ---
 
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+import { Content as EquipmentConfigure } from './_impl/_equipment.configure.mdx';
+import { Content as EquipmentIO } from './_impl/_equipment.io.mdx';
+import { Content as EquipmentNotes } from './_impl/_equipment.notes.mdx';
+
 ## Purpose
 
 This spec details the LP constraints for each equipment type in Cobre. While [system elements](/math/system-elements) describes _what_ each element is and its decision variables, this spec contains the _detailed mathematical constraints_ governing each equipment type's behavior within the LP. The reading order is: [system elements](/math/system-elements) → [LP formulation](/math/lp-formulation) → **this spec** (per-equipment deep dives).
@@ -216,6 +221,16 @@ Curtailment is **not** a separate LP decision variable — it is derived as $\ka
 :::note[Block distribution of available generation]
 The scenario pipeline produces a single available generation value $A_r$ per (stage, scenario). This value is used identically across all blocks within the stage — NCS generation is distributed proportionally to block duration. An alternative would be per-block factors (analogous to load demand and exchange capacity), trading uniform treatment for finer intra-stage granularity. Cobre does not currently support NCS block factors.
 :::
+
+## Implementation in Cobre
+
+The methodology above defines every equipment type's LP constraints; the tabs below cover how Cobre's software surface configures, feeds, and reports on the four element types with dedicated configuration files — thermals, contracts, pumping stations, and non-controllable sources.
+
+<Tabs>
+  <TabItem label="Configure"><EquipmentConfigure /></TabItem>
+  <TabItem label="Inputs & Outputs"><EquipmentIO /></TabItem>
+  <TabItem label="Implementation notes"><EquipmentNotes /></TabItem>
+</Tabs>
 
 ## Cross-References
 
