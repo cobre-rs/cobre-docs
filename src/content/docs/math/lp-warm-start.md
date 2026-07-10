@@ -131,14 +131,11 @@ This single mechanism handles all three churn cases — drops, reorders, and
 additions — and serves both within-run reactivation and the cross-run
 checkpoint reconstruction used on warm-start/resume (§2).
 
-:::note[Retired knob]
-Earlier releases predicted each re-introduced cut's basis
-status (LOWER vs BASIC) from a fixed-length window of its recent binding
-history, controlled by a `basis_activity_window` parameter. Because
-reconstruction now keys purely on slot identity, that activity-window
-prediction has no observable effect on the resulting basis; the knob was
-ignored at config load in v0.8.x and is **removed entirely** in the
-v0.8.2 `cut_selection` restructure.
+:::note[Basis status is not predicted]
+Basis reconstruction keys purely on slot identity, so a re-introduced cut's
+basis status (LOWER vs BASIC) is not predicted from a fixed-length window of
+its recent binding history. The resulting basis is fully determined by slot
+identity, with no activity-window heuristic in play.
 :::
 
 ## 5. Solver State Retention

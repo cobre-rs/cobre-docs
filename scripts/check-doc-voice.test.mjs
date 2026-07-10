@@ -57,9 +57,14 @@ test("a doc-voice-ok marked line is exempted even in the strict zone", () => {
   assert.deepEqual(detectVoiceViolations(text, ZONE_STRICT), []);
 });
 
-test("a bold-wrapped narration phrase is still matched (markdown '**' stripped before matching)", () => {
+test("a bold-wrapped hype phrase is still matched (markdown '**' stripped before matching)", () => {
+  // "more than **just**" -> after '**' stripping -> "more than just", which the
+  // retained hype-contrasting-affirmative pattern matches. (The "not merely" /
+  // "not just" family was dropped in the ticket-028 calibration as legitimate
+  // logical-contrast connectives, so this exercises the '**'-stripping path via
+  // the pattern that remains.)
   const v = detectVoiceViolations(
-    "This is not **merely** a presence gate but a full lifecycle state.",
+    "This is more than **just** a presence gate — it is a full lifecycle state.",
     ZONE_STRICT,
   );
   assert.ok(v.some((x) => x.rule === "hype-contrasting-affirmative"));

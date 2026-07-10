@@ -177,6 +177,34 @@ function buildBlocks(text) {
   });
 }
 
+// ---------------------------------------------------------------------------
+// Self-reference guard (ticket-028). The corpus's own "Code as ground truth"
+// principle sentence STATES the no-version-annotations rule by naming the very
+// constructs the narration patterns hunt for: "… it does not carry version
+// annotations, deprecation notices, or migration notes …". A clause that
+// NEGATES carrying such notes is describing the policy, not narrating a version
+// change, so a bare-lexical narration hit ("migration", "deprecated") landing
+// inside it is a false positive. Detected conservatively: the clause containing
+// the match — bounded by the nearest sentence/clause breaks on each side — must
+// contain an explicit "does not carry" / "carries no" / "carry no" / "without"
+// / "no" negation governing an "annotations|notices|notes" enumeration. Real
+// change-narration ("a migration guide added in v0.9") never has this shape, so
+// the exclusion cannot mask a genuine version annotation.
+// ---------------------------------------------------------------------------
+const NEGATED_ANNOTATION_ENUM =
+  /\b(?:does not carry|do not carry|carries no|carry no|without|no)\b[^.;]*\b(?:annotations?|notices?|notes?)\b/i;
+
+function inRuleSelfReference(joined, matchIndex) {
+  const clauseStart =
+    Math.max(
+      joined.lastIndexOf(".", matchIndex - 1),
+      joined.lastIndexOf(";", matchIndex - 1),
+    ) + 1;
+  const nextDot = joined.indexOf(".", matchIndex);
+  const clauseEnd = nextDot === -1 ? joined.length : nextDot;
+  return NEGATED_ANNOTATION_ENUM.test(joined.slice(clauseStart, clauseEnd));
+}
+
 // Map a character offset within a block's joined text back to its physical
 // line number.
 function lineForOffset(block, offset) {
@@ -200,6 +228,11 @@ export function detectVersionViolations(text, zone) {
     if (zone === ZONE_STRICT) {
       for (const [rule, pattern] of NARRATION_PATTERNS) {
         for (const m of block.joined.matchAll(pattern)) {
+          // Skip a narration hit that lands inside the corpus's own statement
+          // of the no-version-annotations rule (see inRuleSelfReference) — a
+          // sentence forbidding "migration notes" is not itself a migration
+          // note.
+          if (inRuleSelfReference(block.joined, m.index)) continue;
           violations.push({
             lineno: lineForOffset(block, m.index),
             rule,

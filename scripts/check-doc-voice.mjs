@@ -50,12 +50,27 @@ const allowlistPath = join(scriptDir, "doc-lint-allow.txt");
 // ---------------------------------------------------------------------------
 const HYPE_PATTERNS = [
   [
+    // NOTE (ticket-028 calibration): "zero[- ]cost" was dropped from this
+    // superlative list. In this math-heavy corpus "zero cost" / "zero
+    // cost-to-go" is a literal LP term — the objective coefficient of a free
+    // column, or the terminal value-function condition $V_{T+1}(x) = 0$ — not
+    // the Rust-community "zero-cost abstractions" marketing catchphrase the
+    // pattern was ported to catch. It over-fired on legitimate methodology
+    // prose with no promotional use in sight. "zero[- ]overhead" is kept: it
+    // has no literal LP meaning here, so a hit would still be genuine hype.
     "hype-superlative",
-    /\b(blazing[- ]?fast|blazingly|lightning[- ]?fast|world[- ]class|best[- ]in[- ]class|cutting[- ]edge|state[- ]of[- ]the[- ]art|game[- ]chang(?:ing|er)|revolutionar(?:y|ize)|revolutioniz\w*|seamless(?:ly)?|effortless(?:ly)?|production[- ]grade|battle[- ]tested|turnkey|supercharg\w*|unleash\w*|high[- ]fidelity|dramatically|zero[- ]cost|zero[- ]overhead)\b/i,
+    /\b(blazing[- ]?fast|blazingly|lightning[- ]?fast|world[- ]class|best[- ]in[- ]class|cutting[- ]edge|state[- ]of[- ]the[- ]art|game[- ]chang(?:ing|er)|revolutionar(?:y|ize)|revolutioniz\w*|seamless(?:ly)?|effortless(?:ly)?|production[- ]grade|battle[- ]tested|turnkey|supercharg\w*|unleash\w*|high[- ]fidelity|dramatically|zero[- ]overhead)\b/i,
   ],
   [
+    // NOTE (ticket-028 calibration): the "not just" / "not merely" family was
+    // dropped. In careful technical writing these are ordinary logical-contrast
+    // connectives ("the coupling is not merely a change of time resolution",
+    // "not just a presence gate but a full lifecycle state"), not marketing
+    // puffery. "more than just" is retained — it survives as the recognisably
+    // promotional "more than just a <thing>" construction and does not fire on
+    // the corpus's technical prose.
     "hype-contrasting-affirmative",
-    /(more than just\b|not just an?\b|isn't just\b|is not just\b|isn't merely\b|is not merely\b|not merely\b)/i,
+    /(more than just\b)/i,
   ],
 ];
 

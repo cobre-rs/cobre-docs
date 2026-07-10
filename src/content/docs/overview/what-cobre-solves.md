@@ -45,7 +45,7 @@ Cobre policies are checkpointable; checkpoints persist the policy across restart
 
 Cobre supports distributed execution with deterministic results across MPI rank and thread configurations. The same study runs on a laptop with a single process or on an HPC cluster with hundreds of ranks; the numerical results are bit-identical.
 
-Cobre is designed for production-scale studies; a 60-stage horizon is the practical baseline. The index dimensions at this scale are roughly 160 hydro plants, 130 thermal units, 20 scenarios per stage, and up to 24 blocks per stage.
+Cobre is designed for production-scale studies: a long planning horizon of many stages, with large fleets of hydro plants and thermal units, many inflow scenarios per stage, and multiple load blocks within each stage.
 
 ## 5. Methodology Principles
 

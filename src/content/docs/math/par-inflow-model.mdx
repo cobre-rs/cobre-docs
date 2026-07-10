@@ -515,7 +515,7 @@ The PAR(p) fitting procedure (section 5) produces per-hydro noise terms $\vareps
 
 The classical approach applies Cholesky factorisation: given $C = L L^\top$ with $L$ lower-triangular, correlated noise is obtained as $L z$ where $z \sim \mathcal{N}(0, I)$. Cholesky requires $C$ to be **strictly positive-definite**. In practice, estimated correlation matrices from hydro inflow series are frequently near-singular or rank-deficient for two reasons:
 
-- **Short sample records**: Brazilian hydro series commonly span 80–90 years, yielding a historical record length $N$ that is comparable to the number of hydro plants in some subsystems. When $N$ is close to the matrix dimension, the sample eigenvalues of $C$ cluster near zero.
+- **Short sample records**: Brazilian hydro inflow series span only a few decades of record, yielding a historical record length $N$ that is comparable to the number of hydro plants in some subsystems. When $N$ is close to the matrix dimension, the sample eigenvalues of $C$ cluster near zero.
 - **Heterogeneous series**: Plants with near-identical hydrological regimes (upstream–downstream pairs, same river basin) produce columns that are nearly linearly dependent, reducing the effective rank of $C$ below its nominal dimension.
 
 A near-singular $C$ causes Cholesky to fail or to produce numerically degenerate lower triangular factors. A separate filtering pass to remove "degenerate" hydros would be required before the factorisation, discarding information and introducing a non-transparent pre-processing decision.
@@ -561,7 +561,7 @@ The higher computational cost is acceptable because the factorisation is perform
 
 ## 9. Annual Component Extension (PAR(p)-A)
 
-The classical PAR(p) of section 1 captures temporal dependence at lags up to a small $p$ (typically $\leq 4$ for monthly cycles, since the periodic Yule-Walker system becomes ill-conditioned at higher orders). On long Brazilian hydro series this is enough to reproduce the within-year persistence but not the multi-year persistence visible in dry/wet super-periods of the historical record. The **PAR(p)-A** extension adds a single annual coefficient on top of the periodic AR structure to capture that longer-range persistence without inflating the AR order.
+The classical PAR(p) of section 1 captures temporal dependence at lags up to a small order $p$ (kept low for monthly cycles, since the periodic Yule-Walker system becomes ill-conditioned at higher orders). On long Brazilian hydro series this is enough to reproduce the within-year persistence but not the multi-year persistence visible in dry/wet super-periods of the historical record. The **PAR(p)-A** extension adds a single annual coefficient on top of the periodic AR structure to capture that longer-range persistence without inflating the AR order.
 
 The extension is selected by the order-selection method `pacf_annual`. When active, the model carries one additional triple per (hydro, season) on top of the classical parameter set.
 
