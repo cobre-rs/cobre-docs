@@ -1,6 +1,6 @@
 ---
 title: CLI Reference
-description: Complete reference for every `cobre` subcommand, flag, exit code, and environment variable.
+description: Complete reference for every `cobre` subcommand, flag, and exit code.
 ---
 
 ## Synopsis
@@ -13,7 +13,7 @@ cobre [--color <WHEN>] <SUBCOMMAND> [OPTIONS]
 
 | Option           | Type                          | Default | Description                                                                                                                                                   |
 | ---------------- | ----------------------------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `--color <WHEN>` | `auto` \| `always` \| `never` | `auto`  | Control ANSI color output on stderr. `always` forces color on — useful under `mpiexec` which pipes stderr through a non-TTY. Also honoured via `COBRE_COLOR`. |
+| `--color <WHEN>` | `auto` \| `always` \| `never` | `auto`  | Control ANSI color output on stderr. `auto` colors only when stderr is a terminal; `always` forces color on — useful under `mpiexec` which pipes stderr through a non-TTY. |
 
 ## Subcommands
 
@@ -87,7 +87,8 @@ Stochastic artifact export is controlled by `exports.stochastic` in `config.json
 | Option           | Type    | Default              | Description                                                                                                                                                            |
 | ---------------- | ------- | -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `--output <DIR>` | Path    | `<CASE_DIR>/output/` | Output directory for results                                                                                                                                           |
-| `--threads <N>`  | integer | `1`                  | Number of worker threads per MPI rank. Each thread solves its own LP instances; scenarios are distributed across threads. Resolves: `--threads` > `COBRE_THREADS` > 1. |
+| `--threads <N>`  | integer | `1`                  | Number of worker threads per MPI rank. Each thread solves its own LP instances; scenarios are distributed across threads. |
+| `--comm-backend <WHICH>` | `auto` \| `local` \| `mpi` | `auto` | Communication backend. `auto` selects the MPI backend when the process is launched under an MPI launcher (`mpiexec`/`mpirun`/`srun`) and the local backend otherwise; `local` forces a single process; `mpi` forces the MPI backend and fails with a clear message on a binary built without MPI support. |
 | `--quiet`        | flag    | off                  | Suppress the banner and progress bars. Errors still go to stderr                                                                                                       |
 
 ### Config-First Principle
@@ -404,11 +405,4 @@ See [Error Codes](/reference/error-codes/) for a detailed catalog.
 
 ## Environment Variables
 
-| Variable             | Description                                                                                                                                             |
-| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `COBRE_COMM_BACKEND` | Override the communication backend at runtime. Set to `local` to force the local backend even when the binary was compiled with `mpi` support.          |
-| `COBRE_THREADS`      | Number of worker threads per MPI rank for `cobre run`. Overridden by the `--threads` flag. Must be a positive integer.                                  |
-| `COBRE_COLOR`        | Override color output when `--color auto` is in effect. Set to `always` or `never`. Ignored if `--color always` or `--color never` is given explicitly. |
-| `FORCE_COLOR`        | Force color output on (any non-empty value). Checked after `COBRE_COLOR`. See [force-color.org](https://force-color.org).                               |
-| `NO_COLOR`           | Disable colored terminal output. Respected by the banner and error formatters. Set to any non-empty value. See [no-color.org](https://no-color.org).    |
-| `COLUMNS`            | Terminal width hint. Used by progress bars under MPI (where stderr is a pipe) to compute correct cursor movement. Inherited from the launching shell.   |
+Cobre reads **no configuration** from environment variables. Every setting comes from the case's config/data files and from `cobre` CLI arguments — thread count from `--threads`, color from `--color`, and the communication backend from `--comm-backend`. Terminal width (for progress rendering under a piped stderr) and the hostname recorded in run provenance are queried directly from the terminal and the OS. The one environment signal cobre still consults is whether it was launched under an MPI launcher, used only by `--comm-backend auto` to select a backend — a runtime fact, not a configuration channel.

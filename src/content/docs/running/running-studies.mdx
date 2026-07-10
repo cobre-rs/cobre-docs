@@ -150,6 +150,16 @@ The thread pool is used for forward-pass batching and simulation scenario
 evaluation. Speedup depends on the number of forward passes and simulation
 scenarios configured.
 
+### Communication Backend
+
+A single `cobre run` uses the local (single-process) backend; launching under an
+MPI launcher (`mpiexec`, `mpirun`, or `srun`) distributes the work across ranks.
+By default (`--comm-backend auto`) cobre detects the launcher and selects the
+backend accordingly, so no flag is needed in either case. Pass
+`--comm-backend mpi` to force the MPI backend — it fails with a clear message on a
+binary built without MPI support — or `--comm-backend local` to force a single
+process even under a launcher.
+
 ### Quiet Mode for Scripts
 
 ```bash
