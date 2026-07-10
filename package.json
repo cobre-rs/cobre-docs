@@ -20,6 +20,7 @@
     "check:version": "node scripts/check-doc-version.mjs",
     "gen:notices": "node scripts/gen-notices.mjs",
     "refresh:schemas": "node scripts/refresh-schemas.mjs",
+    "refresh:recordings": "node scripts/refresh-recordings.mjs",
     "test": "node --test src/figures/*.test.ts scripts/*.test.mjs"
   },
   "dependencies": {
