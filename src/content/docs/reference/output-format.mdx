@@ -33,7 +33,6 @@ will not produce `simulation/pumping_stations/`.
       entities.csv
       variables.csv
       bounds.parquet
-      state_dictionary.json
     timing/
       iterations.parquet
       mpi_ranks.parquet
@@ -490,7 +489,7 @@ written only at iterations where selection ran. 10 columns.
 
 ### `training/dictionaries/`
 
-Five self-documenting files that allow output Parquet files to be interpreted
+Four self-documenting files that allow output Parquet files to be interpreted
 without reference to the original input case. All files are written atomically.
 
 #### `codes.json`
@@ -588,39 +587,6 @@ resolution (global / entity / stage overrides).
 | `lower_bound`      | Float64 | No       | Resolved lower bound value in the bound's natural unit.  |
 | `upper_bound`      | Float64 | No       | Resolved upper bound value in the bound's natural unit.  |
 
-#### `state_dictionary.json`
-
-Describes the state space structure used by the algorithm: which entities have
-state variables, how many state dimensions they contribute, and what units
-apply. Useful for interpreting cut coefficient vectors in the policy checkpoint.
-
-```json
-{
-  "version": "1.0",
-  "state_dimension": 164,
-  "storage_states": [
-    { "hydro_id": 0, "dimension_index": 0, "unit": "hm3" },
-    { "hydro_id": 1, "dimension_index": 1, "unit": "hm3" }
-  ],
-  "inflow_lag_states": [
-    { "hydro_id": 0, "lag_index": 1, "dimension_index": 2, "unit": "m3s" }
-  ]
-}
-```
-
-| Field                                 | Description                                                                                                   |
-| ------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
-| `state_dimension`                     | Total number of state variables. Equals the length of each cut's coefficient vector in the policy checkpoint. |
-| `storage_states`                      | One entry per hydro plant that contributes a reservoir storage state variable.                                |
-| `storage_states[].hydro_id`           | Hydro plant ID.                                                                                               |
-| `storage_states[].dimension_index`    | 0-based index of this state variable in the coefficient vector.                                               |
-| `storage_states[].unit`               | Physical unit: always `"hm3"` (hectare-metres cubed).                                                         |
-| `inflow_lag_states`                   | One entry per (hydro, lag) pair that contributes an inflow lag state variable.                                |
-| `inflow_lag_states[].hydro_id`        | Hydro plant ID.                                                                                               |
-| `inflow_lag_states[].lag_index`       | Autoregressive lag order (1-based).                                                                           |
-| `inflow_lag_states[].dimension_index` | 0-based index in the coefficient vector.                                                                      |
-| `inflow_lag_states[].unit`            | Physical unit: always `"m3s"` (cubic metres per second).                                                      |
-
 ---
 
 ## Policy Checkpoint
@@ -649,8 +615,24 @@ contained in the file is:
 | `iteration`          | uint32    | Training iteration that generated this cut.                                                                                          |
 | `forward_pass_index` | uint32    | Forward pass index within the generating iteration.                                                                                  |
 | `intercept`          | float64   | Pre-computed cut intercept: `alpha - beta' * x_hat`, where `x_hat` is the state at the generating forward pass node.                 |
-| `coefficients`       | float64[] | Gradient coefficient vector. Length equals `state_dimension` from `state_dictionary.json`.                                           |
+| `coefficients`       | float64[] | Gradient coefficient vector. Length equals the state dimension — the number of entries in the embedded entity manifest below, also `state_dimension` in `policy/metadata.json`.                                           |
 | `is_active`          | bool      | Whether this cut is currently active in the LP. Inactive cuts are retained for potential reactivation by the cut selection strategy. |
+
+Each `stage_NNN.bin` also embeds a **per-slot entity manifest** — one entry per
+state-vector dimension, in canonical cut-coefficient order — recording which
+entity each coefficient position belongs to. It is the self-describing
+replacement for the former `state_dictionary.json` sidecar, and it is what
+policy-load validation checks (see [policy management](/running/policy-management)):
+a policy whose dimensions match the current study by count but bind to different
+entities is rejected.
+
+| Manifest field    | Type   | Description                                                                                                          |
+| ----------------- | ------ | -------------------------------------------------------------------------------------------------------------------- |
+| `entity_type`     | uint8  | State-dimension kind: `0` HydroStorage, `1` HydroInflowLag, `2` AnticipatedThermalState, `3` HydroTransitBucket.     |
+| `entity_id`       | int32  | Owning entity id — for a transit bucket, the downstream hydro.                                                        |
+| `subindex`        | uint32 | Secondary index within the entity: the inflow-lag order, anticipated-commitment ring slot, or transit maturity lag.  |
+| `was_active`      | bool   | Whether the owning entity was operationally active at this stage (excluded from the load-time identity check).       |
+| `delivery_anchor` | int32  | Calendar-anchor slot for delivery-timed dimensions; a sentinel value when not applicable.                            |
 
 The encoding uses the FlatBuffers runtime builder API (little-endian, no
 reflection, no generated code). Field order in the binary matches the
@@ -681,6 +663,8 @@ The logical record structure is:
 FlatBuffers binary file encoding the visited forward-pass trial points for a
 single stage. One file per stage. Present only when `exports.states` is `true`
 (default is `false`). The `states/` directory is omitted entirely when disabled.
+Like the cut files, each `stage_NNN.bin` embeds the per-slot entity manifest
+describing its state dimensions.
 
 Trial points are the state vectors observed at each forward-pass scenario
 during training. They are always collected in memory regardless of the cut
@@ -691,7 +675,7 @@ they serve as a diagnostic and analysis artifact.
 | Field             | Type      | Description                                                                      |
 | ----------------- | --------- | -------------------------------------------------------------------------------- |
 | `stage_id`        | uint32    | Stage index (0-based).                                                           |
-| `state_dimension` | uint32    | Length of each state vector. Must match `state_dictionary.json`.                 |
+| `state_dimension` | uint32    | Length of each state vector; equals the `state_dimension` in `policy/metadata.json`. |
 | `count`           | uint32    | Number of state vectors stored for this stage.                                   |
 | `data`            | float64[] | Flat array of `count * state_dimension` elements, row-major (one state per row). |
 
@@ -707,7 +691,7 @@ machine-readable by tooling that inspects policy files.
 | `completed_iterations` | integer   | No       | Number of training iterations completed at checkpoint time.                                                                      |
 | `final_lower_bound`    | number    | No       | Lower bound value after the final completed iteration.                                                                           |
 | `best_upper_bound`     | number    | Yes      | Best upper bound observed during training. `null` when upper bound evaluation was disabled.                                      |
-| `state_dimension`      | integer   | No       | Length of each cut's coefficient vector. Must match `state_dictionary.json`.                                                     |
+| `state_dimension`      | integer   | No       | Length of each cut's coefficient vector.                                                                                         |
 | `num_stages`           | integer   | No       | Number of stages. Must match the case configuration on resume.                                                                   |
 | `training_block_mode`  | string    | No       | Block mode the policy was trained under: `"parallel"` or `"chronological"`. Provenance only — policy load does not gate on it (cuts are block-mode-independent). |
 | `training_block_mode_per_stage` | string[] | Yes | Per-stage training block mode; present only when the mode varies across stages, `null`/absent when uniform.                    |

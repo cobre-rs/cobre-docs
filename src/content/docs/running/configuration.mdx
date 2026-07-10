@@ -426,7 +426,6 @@ Controls policy persistence (checkpoint saving and warm-start loading).
 | ------------------------ | ---------------------------------------- | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------- |
 | `path`                   | string                                   | `"./policy"` | Directory where policy data (cuts, states) is stored.                                                                                       |
 | `mode`                   | `"fresh"`, `"warm_start"`, or `"resume"` | `"fresh"`    | Initialization mode. `"fresh"` starts from scratch; `"warm_start"` loads cuts from a previous run; `"resume"` continues an interrupted run. |
-| `validate_compatibility` | boolean                                  | `true`       | When loading a policy, verify that entity counts, stage counts, and cut dimensions match the current system.                                |
 | `boundary`               | object or null                           | `null`       | Terminal boundary cut configuration for coupling with an outer model's FCF. See below.                                                      |
 
 ### `checkpointing`
