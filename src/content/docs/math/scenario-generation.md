@@ -29,12 +29,16 @@ store standardized AR coefficients ($\psi^*_{m,\ell}$, the direct Yule-Walker
 output) and `residual_std_ratio` ($\sigma_m / s_m$) — not original-unit
 coefficients and not $\sigma_m$ directly. Preprocessing converts these at
 startup: $\psi_{m,\ell} = \psi^*_{m,\ell} \cdot s_m / s_{m-\ell}$ and
-$\sigma_m = s_m \cdot \texttt{residual\_std\_ratio}_m$. This separation keeps
-the swappable seasonal conditioning ($s_m$) distinct from the fixed model
-dynamics ($\psi^*$, residual_std_ratio): a different conditioning stream can
-be substituted without re-fitting the AR dynamics — only the seasonal stats
-file changes. The preprocessing pipeline produces contiguous stage-indexed
-arrays ready for hot-path access.
+$\sigma_m = s_m \cdot \texttt{residual\_std\_ratio}_m$. This is the two-plane
+split of the [PAR(p) model](/math/par-inflow-model): the dimensionless
+**dynamics** ($\psi^*$, `residual_std_ratio`) stay fixed while the
+**conditioning** seasonal stats ($\mu_m$, $s_m$) carry the magnitude. Because
+the dynamics are stored standardized by $s_m$, re-conditioning the seasonal
+stats — e.g. a climate scenario that shifts both the seasonal mean and the
+seasonal variability — rescales the coefficients and the noise proportionally
+with no re-fit; only `inflow_seasonal_stats.parquet` changes, and the
+correlation structure is preserved. The preprocessing pipeline produces
+contiguous stage-indexed arrays ready for hot-path access.
 
 For the full PAR(p) model definition, parameter set, and fitting theory, see
 [PAR(p) Inflow Model](/math/par-inflow-model).
@@ -69,11 +73,13 @@ The fitting process:
    deviation ($s_m$) per season
 3. **Standardization** — Transform observations to zero-mean, unit-variance per
    season
-4. **Order selection** — For each season, compute the Periodic Autocorrelation
-   Function (PACF) up to `max_order` and select the order where the PACF
-   coefficient becomes insignificant
-5. **Yule-Walker solution** — Solve the Yule-Walker equations via LU
-   factorization of the Toeplitz autocorrelation matrix
+4. **Order selection** — For each season, compute the periodic partial
+   autocorrelation function (PACF) up to `max_order`, select the largest lag
+   whose PACF exceeds the significance threshold $1.96 / \sqrt{N_m}$, then apply
+   the Maceira & Damázio contribution-based order reduction
+5. **Yule-Walker solution** — Solve the periodic Yule-Walker system (whose
+   correlation matrix is symmetric but **not** Toeplitz) via Gaussian
+   elimination with partial pivoting
 6. **Store direct output** — Store the standardized coefficients
    $\psi^*_{m,\ell}$ (direct Yule-Walker output) and the computed
    `residual_std_ratio` in `inflow_ar_coefficients.parquet`; no conversion to
@@ -86,16 +92,19 @@ The fitted model output includes: seasonal means ($\mu_m$, $s_m$) stored in
 coefficient rows per (hydro, stage) group — it is not stored as a separate
 field.
 
-**Fitted model validation** follows the invariants defined in
-[PAR(p) Inflow Model](/math/par-inflow-model):
+**Fitted model validation.** Two checks run on the fitted (or loaded)
+parameters:
 
-| Check                       | Severity | Description                                                         |
-| --------------------------- | -------- | ------------------------------------------------------------------- |
-| Positive residual variance  | Error    | $\sigma_m^2 > 0$ for all seasons                                    |
-| PAR seasonal stability      | Warning  | Per-season AR polynomial roots outside unit circle                  |
-| Correlation matrix symmetry | Warning  | $R_m$ symmetric (spectral decomposition clips negative eigenvalues) |
-| No systematic bias          | Warning  | Residuals $\varepsilon_t$ mean near zero                            |
-| AR order consistency        | Error    | Lags are contiguous {1, 2, ..., p} per (hydro, stage) group         |
+| Check                 | Severity | Description                                                                                        |
+| --------------------- | -------- | -------------------------------------------------------------------------------------------------- |
+| Positive sample std   | Error    | A season with AR order $> 0$ must have $s_m > 0$ — a zero std cannot normalise the AR coefficients |
+| Low residual variance | Warning  | $\texttt{residual\_std\_ratio}^2 < 0.01$ — the AR fit explains more than 99% of the variance       |
+
+Model stability is **not** enforced by a post-hoc unit-root test; it is enforced
+during fitting by the Maceira & Damázio contribution-based order reduction (see
+[PAR(p) Inflow Model](/math/par-inflow-model) section 4.1). A season with a
+negative lag-1 coefficient, a negative composed contribution, or a coefficient
+exceeding `max_coefficient_magnitude` has its order reduced and is refit.
 
 ## 2. Noise Generation
 
@@ -114,9 +123,10 @@ The generation process:
    $D = V \operatorname{diag}(\sqrt{\max(0,\lambda)}) V^T$ transforms
    independent noise into correlated noise: $\eta = D \cdot z$. Negative
    eigenvalues are clipped to zero, yielding the nearest
-   positive-semidefinite approximation. The `method` field in
-   `correlation.json` defaults to `"spectral"`; `"cholesky"` is accepted for
-   backward compatibility.
+   positive-semidefinite approximation. Spectral factorisation is the only
+   method Cobre implements — the `method` field in `correlation.json` is
+   `"spectral"` (see [PAR(p) Inflow Model](/math/par-inflow-model) section 8
+   for why the spectral square root is used in place of Cholesky).
 3. **Entity assignment** — Each entity in the group receives its own
    correlated noise value $\eta_i$ from the transformed vector.
 
@@ -186,8 +196,8 @@ pass iterates over them at every iteration of the algorithm.
 The per-stage branching factor $N_t$ is configured per study. Uniform
 branching ($N_t = N$ for all $t$) is the common case in standard SDDP, but
 per-stage variable branching is supported — this is required for complete tree
-mode (section 6.2), where the DECOMP special case uses $N_t = 1$ for $t < T$
-and $N_T = K$.
+mode (section 6.2), where the deterministic-trunk special case uses $N_t = 1$
+for $t < T$ and $N_T = K$.
 
 **Tree generation:**
 
@@ -232,7 +242,7 @@ tree entries. This is **orthogonal** to the sampling scheme abstraction
 with noise vectors; the sampling scheme governs _which_ noise source the
 forward pass uses.
 
-**SAA** (Sample Average Approximation) is the implemented `sampling_method`:
+**SAA** (Sample Average Approximation) is the default `sampling_method`:
 uniform Monte Carlo random sampling from the deterministic-seeded RNG. Each
 noise vector component $z_i$ is drawn as an independent standard normal
 $\mathcal{N}(0,1)$, then transformed by the spectral correlation factor
@@ -240,13 +250,13 @@ $\mathcal{N}(0,1)$, then transformed by the spectral correlation factor
 
 **Summary of sampling methods:**
 
-| Method       | Description                                                               | Status              |
-| ------------ | ------------------------------------------------------------------------- | ------------------- |
-| `saa`        | Sample Average Approximation — uniform Monte Carlo from seeded RNG        | Implemented         |
-| `lhs`        | Latin Hypercube Sampling — stratified, uniform marginal coverage          | Implemented         |
-| `qmc_sobol`  | Quasi-Monte Carlo (Sobol sequences) — low-discrepancy deterministic-like  | Implemented         |
-| `qmc_halton` | Quasi-Monte Carlo (Halton sequences) — alternative low-discrepancy method | Implemented         |
-| `selective`  | Selective/Representative Sampling — clustering on historical data         | Not yet implemented |
+| Method                 | Description                                                                                                                                                                              |
+| ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `saa`                  | Sample Average Approximation — uniform Monte Carlo from the seeded RNG                                                                                                                   |
+| `lhs`                  | Latin Hypercube Sampling — stratified, uniform marginal coverage                                                                                                                         |
+| `qmc_sobol`            | Quasi-Monte Carlo (Sobol sequences) — low-discrepancy                                                                                                                                    |
+| `qmc_halton`           | Quasi-Monte Carlo (Halton sequences) — alternative low-discrepancy method                                                                                                                |
+| `historical_residuals` | Draws each opening's inflow noise from a stored historical-residual window; those residuals already embed cross-entity correlation, so the spectral transform is skipped for such stages |
 
 **Per-stage variation.** The `sampling_method` field can vary per stage,
 enabling mixed strategies in a single run.
@@ -368,8 +378,7 @@ historical record.
 - **Use case**: Policy validation against observed conditions, historical
   replay analysis
 
-This corresponds to NEWAVE's `TENDENCIA HIDROLOGICA` convention, which is also
-the semantics used by SDDP.jl's `Historical` sampling scheme.
+This matches the semantics of SDDP.jl's `Historical` sampling scheme.
 
 ### 3.3 Forward Pass Model
 
@@ -509,8 +518,8 @@ The historical and external schemes share the same SDDP forward pass: the
 sampler returns a standardised noise residual $\eta_t$ and the LP reconstructs
 the realised inflow from $\eta_t$ together with the lag state carried in the
 state vector. The lag state at stage 0 is taken uniformly from
-`initial_conditions.past_inflows` for every scenario, matching NEWAVE's
-`TENDENCIA HIDROLOGICA` convention.
+`initial_conditions.past_inflows` for every scenario, so all forward replays
+share a single hydrological starting tendency.
 
 For the implied $\eta_t$ on a historical window to reconstruct the raw
 historical observation exactly when the LP starts from the same $x_0$, the
@@ -608,9 +617,8 @@ independent of inflow noise.
 
 In addition to standard SDDP sampling, Cobre supports a **complete tree**
 execution mode where the solver explores an explicit scenario tree — every
-branching at every stage is visited, with no sampling. This is the approach
-used by the DECOMP model for short-term hydrothermal dispatch in the Brazilian
-system (Maceira et al., 2002).
+branching at every stage is visited, with no sampling. It targets short-horizon
+studies whose full tree is small enough to enumerate exhaustively.
 
 In standard SDDP, the forward pass samples one branching per stage, so only a
 fraction of the scenario tree is explored per iteration. In complete tree mode,
@@ -634,11 +642,11 @@ stage are drawn from the opening tree (section 2.3), so
 $N_t = N_{\text{openings}}$ when using uniform branching, or the tree can have
 variable branching factors per stage.
 
-**DECOMP special case:** $N_t = 1$ for all stages except the last ($t = T$),
-where $N_T$ equals the number of external scenario branchings. This produces a
-deterministic trunk with branching only at the final stage — a common structure
-for weekly/monthly short-term planning where uncertainty is resolved at the end
-of the horizon.
+**Deterministic-trunk special case:** $N_t = 1$ for all stages except the last
+($t = T$), where $N_T$ equals the number of external scenario branchings. This
+produces a deterministic trunk with branching only at the final stage — a common
+structure for weekly/monthly short-term planning where uncertainty is resolved
+at the end of the horizon.
 
 ```d2
 direction: right
@@ -720,7 +728,7 @@ To bridge the two modes, the forward pass can be configured to **force
 exhaustive visitation** — cycling through all branching indices without
 replacement rather than sampling with replacement. When combined with a single
 forward pass per branching at the final stage, this degenerates exactly into
-the complete tree for the DECOMP special case.
+the complete tree for the deterministic-trunk special case.
 
 ### 6.4 Scope and Limitations
 
@@ -731,8 +739,7 @@ Production-scale SDDP problems (60–120 stages) make full trees intractable;
 the mode is intended for:
 
 - Short-horizon problems (5–12 stages, weekly resolution)
-- DECOMP-like configurations with deterministic trunks and branching only at
-  specific stages
+- Deterministic-trunk configurations with branching only at specific stages
 - Validation and benchmarking against SDDP solutions on small instances
 
 The complete tree solver integration (tree enumeration, node-to-subproblem
@@ -745,5 +752,5 @@ mapping, result aggregation) is not yet implemented.
 - [SDDP Algorithm](/math/sddp-algorithm) — Forward/backward pass structure, cut generation, convergence; references sampling scheme abstraction (sections 3.1–3.2)
 - [Cut Management](/math/cut-management) — Cut generation, storage, and selection; uses opening tree branchings as the backward pass input
 - [Multi-Resolution Studies](/math/multi-resolution-studies) — Multi-resolution modeling configurations; uses scenario generation with varied stage counts
-- [Weekly+Monthly Coupled Studies](/math/weekly-monthly-coupled-studies) — Coupled weekly/monthly study configurations; uses complete tree mode and DECOMP special case
+- [Weekly+Monthly Coupled Studies](/math/weekly-monthly-coupled-studies) — Coupled weekly/monthly study configurations; uses complete tree mode and the deterministic-trunk special case
 - [Determinism Guarantees](/math/determinism-guarantees) — Formal guarantees of bit-identical reproduction across ranks, restarts, and platform variants; grounded in the seed derivation architecture of section 2.2

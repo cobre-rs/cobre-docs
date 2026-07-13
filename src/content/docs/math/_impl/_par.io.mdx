@@ -20,6 +20,42 @@ For the complete field-by-field schema of each file above, see the
 [Case Directory Format](/reference/case-directory-format/) reference page in
 the Reference corpus.
 
+### Externally-fitted PAR models
+
+Cobre accepts fully user-supplied parameters — you may fit a PAR($p$) model with
+**any** method outside Cobre and hand it the two parquet files (the
+`UserProvidedNoHistory` and `UserProvidedAll` paths on the Configure tab).
+Cobre then skips fitting and only validates the inputs. The fields do **not**
+encode Cobre's fitting method — they encode the [two-plane
+representation](/math/par-inflow-model) — so any fit maps onto them by the table
+below. Let $s_m$ be your series' seasonal sample std, $\sigma_m$ your model's
+innovation (residual) std, and $\psi_{m,\ell}$ your original-unit AR
+coefficients.
+
+| Column (file)                                   | Fill with                                  | Meaning                                                   |
+| ----------------------------------------------- | ------------------------------------------ | --------------------------------------------------------- |
+| `mean_m3s` (`inflow_seasonal_stats`)            | $\mu_m$                                     | Seasonal mean of the series (m³/s)                        |
+| `std_m3s` (`inflow_seasonal_stats`)             | $s_m$                                       | Seasonal **sample** std of the series (m³/s)              |
+| `coefficient` (`inflow_ar_coefficients`)        | $\psi^*_{m,\ell} = \psi_{m,\ell}\,s_{m-\ell}/s_m$ | AR coefficient **standardized by the seasonal std**       |
+| `residual_std_ratio` (`inflow_ar_coefficients`) | $\sigma_m / s_m$                            | Innovation std as a fraction of the seasonal std          |
+
+Rules Cobre enforces (or that silently mis-scale the model if broken):
+
+- **Standardize by the seasonal std $s_m$, never by the innovation std
+  $\sigma_m$.** The two normalisations differ whenever the residual ratio varies
+  across seasons; feeding $\sigma$-standardized coefficients here rescales every
+  lag by $r_{m-\ell}/r_m$. See the methodology's [standardization-basis
+  note](/math/par-inflow-model).
+- **Use one consistent $s_m$.** The $s_m$ you divide by when standardizing must
+  be exactly the `std_m3s` you store — Cobre reconstructs $\psi$ and $\sigma$
+  from the stored `std_m3s`, so a mismatch is silent.
+- `residual_std_ratio` must be finite and in $(0, 1]$ (for a proper one-step fit
+  $\sigma_m \le s_m$ always), and **identical across all lag rows** of the same
+  (hydro, stage) group.
+- Lags must be contiguous $1, 2, \ldots, p$; the **AR order $p$ is implicit** in
+  the row count (there is no order column). White noise = no coefficient rows
+  for that (hydro, stage), i.e. order 0 with an implied ratio of 1.
+
 ### Outputs
 
 | File | Role |

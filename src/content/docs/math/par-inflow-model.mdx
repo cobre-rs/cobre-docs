@@ -49,6 +49,27 @@ Stored vs. computed quantities — the files on disk hold the scale-invariant
 `ψ*` and `residual_std_ratio`; at runtime these are converted to original-unit
 `ψ` and `σ` using the seasonal stats, then consumed by the LP stage subproblem.
 
+**Two planes.** Every PAR($p$) parameter sits on one of two planes, and the
+split is deliberate:
+
+- **Conditioning plane** — the seasonal mean $\mu_m$ and seasonal _sample_
+  standard deviation $s_m$ (both m³/s): the level and magnitude of the series.
+  A study may _re-condition_ these — e.g. a climate scenario that shifts both
+  the seasonal mean and the seasonal variability.
+- **Dynamics plane** — the standardized coefficients $\psi^*_{m,\ell}$ and the
+  residual std ratio $r_m = \sigma_m/s_m$ (both dimensionless): the _shape_ of
+  the temporal dependence, independent of magnitude.
+
+Runtime re-couples the two via $\psi_{m,\ell} = \psi^*_{m,\ell}\,s_m/s_{m-\ell}$
+and $\sigma_m = s_m\,r_m$, so re-conditioning the first plane rescales both the
+coefficients and the noise while preserving the correlation structure. Note the
+**standardization basis**: $\psi^*$ is the coefficient of the process normalised
+by the **seasonal std $s_m$**, not by the innovation std $\sigma_m$ — the two
+normalisations differ whenever $r_m$ varies across seasons, and only the
+$s_m$-normalised form re-couples against the conditioning plane. (This is the
+distinction an externally-fitted model must respect — see the software layer's
+Inputs & Outputs tab.)
+
 ```d2
 direction: down
 
@@ -134,7 +155,16 @@ Whether the lagged inflows enter the Benders **cuts** is a separate, per-stage c
 
 ## 4. Model Order Selection
 
-The PAR order $p$ can vary by season. Available selection criteria:
+The PAR order $p$ can vary by season. Cobre exposes one order-selection
+configuration key — `estimation.order_selection` — with exactly two accepted
+values: `"pacf"` (the classical periodic PACF method, the default) and
+`"pacf_annual"` (the same PACF rule augmented with the annual component,
+PAR(p)-A — see section 9). The classical method is described below. The fitting
+run is bounded by `max_order` (the largest lag considered, default 6),
+`min_observations_per_season` (groups with fewer observations are skipped), and
+an optional `max_coefficient_magnitude` safety net (any season whose fitted
+coefficient exceeds it is reduced to order 0 before the contribution analysis
+runs).
 
 ### 4.1 PACF (Periodic Partial Autocorrelation Function) -- Default
 
@@ -159,24 +189,6 @@ For the PAR(p)-A path (section 9), two additional rules extend the PACF gate:
 
 - **Structural-zero short-circuit at lag 1**. When the conditional FACP value at lag 1 is exactly zero — which happens when the standardised annual noise series collapses, typically because a degenerate `HistoryClass::Constant` or `HistoryClass::Saturated` bucket has zeroed the seasonal std (section 5.7) — the selected order is forced to 0 (white noise). This blocks degenerate buckets from injecting spurious AR structure.
 - **Minimum order 1 when lag 1 is well defined**. When the lag-1 conditional FACP is non-zero but no lag exceeds the significance threshold, the model defaults to order 1 rather than order 0. Hydrological persistence makes a strict order-0 fit a poor default unless the lag-1 value is structurally absent.
-
-### 4.2 AIC (Akaike Information Criterion)
-
-$$
-\text{AIC}_m(p) = N_m \ln(\hat{\sigma}_m^2) + 2p
-$$
-
-### 4.3 BIC (Bayesian Information Criterion)
-
-$$
-\text{BIC}_m(p) = N_m \ln(\hat{\sigma}_m^2) + p \ln(N_m)
-$$
-
-### 4.4 Coefficient Significance
-
-Include lag $\ell$ only if $|\hat{\psi}_{m,\ell}| > 2 / \sqrt{N_m}$.
-
-In all methods, $N_m$ is the number of historical observations for season $m$.
 
 ## 5. Fitting Procedure
 
@@ -396,14 +408,24 @@ synthesized and the fit is bit-identical to before.
 
 ## 6. Validation Invariants
 
-After fitting or loading pre-computed parameters, the following invariants must hold:
+Cobre enforces a small, well-defined set of invariants; they fall into three
+groups by where the check runs. Stability is a fitting-time guard rather than a
+post-hoc root test.
 
-1. **Positive residual variance**: $\sigma_m^2 > 0$ for all seasons. If violated, the AR model explains all variance — likely overfitting.
-2. **Stationarity**: Roots of $1 - \sum_\ell \psi_{m,\ell} z^\ell = 0$ lie outside the unit circle. Ensures the AR process is stable and does not diverge.
-3. **Correlation matrix positive definite**: $\mathbf{R}_m$ is invertible. Required for Yule-Walker solution to exist. If violated, the historical record may be too short for the requested AR order.
-4. **No systematic bias**: Residuals $\varepsilon_t$ have mean near zero. Indicates the model captures the mean structure correctly.
-5. **AR order derivation**: The number of coefficient rows per (hydro_id, stage_id) in `inflow_ar_coefficients.parquet` determines the AR order $p_m$. Lags must be contiguous: $\{1, 2, \ldots, p_m\}$.
-6. **Residual std ratio consistency**: The `residual_std_ratio` value must be identical across all lag rows sharing the same (hydro_id, stage_id) group, and must lie in $(0, 1]$.
+**Enforced when loading `inflow_ar_coefficients.parquet`:**
+
+1. **AR order derivation**: the number of coefficient rows per (hydro_id, stage_id) determines the AR order $p_m$, and the lags must be present and contiguous $\{1, 2, \ldots, p_m\}$.
+2. **Residual std ratio range**: each `residual_std_ratio` must be finite and lie in $(0, 1]$.
+3. **Residual std ratio consistency**: the value must be identical across all lag rows sharing the same (hydro_id, stage_id) group.
+
+**Enforced when validating the assembled model:**
+
+4. **Positive sample std** (error): a season with AR order $> 0$ must have $s_m > 0$ — a zero seasonal std cannot normalise the AR coefficients.
+5. **Low residual variance** (warning): $\texttt{residual\_std\_ratio}^2 < 0.01$ (the AR fit explains more than 99% of the season's variance) raises an advisory model-quality warning; it is not fatal.
+
+**Enforced during fitting, not as a post-hoc test:**
+
+6. **Stability**: rather than testing the roots of the AR polynomial, the fitter guards stability through the Maceira & Damázio contribution-based order reduction (section 4.1) — a negative lag-1 coefficient, a negative composed contribution, or a coefficient exceeding `max_coefficient_magnitude` reduces the season's order and refits. The periodic Yule-Walker solve additionally truncates the order when its correlation matrix is singular (section 5.4), so a rank-deficient system never yields coefficients.
 
 ## 7. PAR-to-LP Transformation
 

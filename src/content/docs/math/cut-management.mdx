@@ -230,7 +230,7 @@ Because each inner re-solve adds only a few rows from a retained basis, DCS and 
 
 ### 8.5 Seed window $k_2 = 0$
 
-`seed_window = 0` is valid and meaningful: the resident set is seeded only with cuts generated in the current iteration, with no history. This matches the NEWAVE `selcor.dat` behavior (zero-history seeding), and the lazy loop then grows the resident set from scratch each solve. A larger `seed_window` trades a slightly larger initial LP for fewer inner iterations.
+`seed_window = 0` is valid and meaningful: the resident set is seeded only with cuts generated in the current iteration, with no history (zero-history seeding), and the lazy loop then grows the resident set from scratch each solve. A larger `seed_window` trades a slightly larger initial LP for fewer inner iterations.
 
 ### 8.6 Determinism
 

@@ -92,7 +92,7 @@ The backward pass improves the value function approximation by generating new Be
 At each stage $t$, for each trial point $\hat{x}_{t-1}$ collected during the forward pass:
 
 1. Solve the stage $t$ LP for **every** scenario $\omega \in \Omega_t$ (branching), using the trial state $\hat{x}_{t-1}$ as incoming state
-2. From each LP solution, extract the optimal objective value $Q_t(\hat{x}_{t-1}, \omega)$ and the **reduced costs** of the pinned incoming-state columns (incoming storage and AR lags). These reduced costs give the cut coefficients directly — no combination with FPHA or generic constraint duals is needed. See [Cut Management](/math/cut-management)
+2. From each LP solution, extract the optimal objective value $Q_t(\hat{x}_{t-1}, \omega)$ and the **reduced costs** of the pinned incoming-state columns (incoming storage, AR lags, in-transit water buckets, and anticipated-thermal slots). These reduced costs give the cut coefficients directly — no combination with FPHA or generic constraint duals is needed. See [Cut Management](/math/cut-management)
 3. Compute per-scenario cut coefficients $(\alpha(\omega), \pi(\omega))$ from the duals and trial point
 4. Aggregate into a single cut via probability-weighted expectation — see [Cut Management](/math/cut-management)
 5. Add the aggregated cut to stage $t-1$'s cut pool
@@ -197,7 +197,7 @@ The SDDP iteration structure has specific properties that guide the parallelizat
 
 **LP rebuild cost**: Memory constraints prevent keeping all stage LPs with their full cut sets resident simultaneously. The solver must rebuild LPs and add cut constraints when transitioning between stages, which lies on the critical performance path. The design minimizes this rebuild cost through strategies such as cut preallocation, basis persistence, and incremental constraint updates.
 
-**Reduced-cost cut extraction**: Each state variable (incoming storage and inflow lag) is pinned by column bounds, and the reduced cost of that pinned column gives the cut coefficient directly — no preprocessing or dual combination is needed. FPHA hyperplane and generic constraint effects are captured automatically by the LP solver through the pinned column's reduced cost. See [Cut Management](/math/cut-management).
+**Reduced-cost cut extraction**: Each state variable (incoming storage, inflow lag, in-transit water bucket, or anticipated-thermal slot) is pinned by column bounds, and the reduced cost of that pinned column gives the cut coefficient directly — no preprocessing or dual combination is needed. FPHA hyperplane and generic constraint effects are captured automatically by the LP solver through the pinned column's reduced cost. See [Cut Management](/math/cut-management).
 
 For implementation, see the cobre developer-guide.
 
@@ -231,10 +231,19 @@ For SDDP to generate valid cuts, the subproblem must satisfy the **Markov proper
 
 **State variables in Cobre**:
 
-| Component      | Variable     | Count        | Description                      |
-| -------------- | ------------ | ------------ | -------------------------------- |
-| Hydro storage  | $v_h$        | $N_{hydro}$  | Reservoir volume at end of stage |
-| AR inflow lags | $a_{h,\ell}$ | $\sum_h P_h$ | Lagged inflows for AR(P) models  |
+| Component                 | Variable               | Count        | Description                                                                                         |
+| ------------------------- | ---------------------- | ------------ | --------------------------------------------------------------------------------------------------- |
+| Hydro storage             | $v_h$                  | $N_{hydro}$  | Reservoir volume at end of stage                                                                    |
+| AR inflow lags            | $a_{h,\ell}$           | $\sum_h P_h$ | Lagged inflows for AR($P$) models                                                                   |
+| In-transit water buckets  | $b_{i,d}$              | $B$          | Released water still in transit under travel-time delay — one bucket per receiving plant $i$ per maturity lag $d$ |
+| Anticipated-thermal slots | $y^{i}_{k}$            | $\sum_i K_i$ | Pending anticipated-thermal commitments awaiting delivery — one ring of $K_i$ slots per anticipated plant |
+
+The last two components are present only when the study declares them: water
+travel-time arcs introduce the in-transit buckets, and anticipated thermals
+introduce the ring slots. A study with neither reduces to the classical
+storage (+ AR-lag) state. All four components are genuine Markov state — each is
+pinned by column bounds on its incoming-state column, and the reduced cost of
+that column is its cut coefficient (section 3.2).
 
 ### 5.1 AR Lag State Expansion
 
@@ -247,6 +256,30 @@ $$
 where $\hat{a}_{h,\ell}$ is the lag $\ell$ inflow value passed from the previous stage. The reduced costs of these pinned columns ($\pi^{lag}_{h,\ell}$) contribute to cut coefficients, capturing the marginal value of inflow history — see [Cut Management](/math/cut-management).
 
 See [PAR Inflow Model](/math/par-inflow-model) for the complete autoregressive formulation and [LP Formulation](/math/lp-formulation) for how these constraints appear in the stage LP.
+
+### 5.2 Travel-Time and Anticipated-Thermal State Expansion
+
+Two further mechanisms expand the state vector beyond storage and AR lags, and
+both are carried as Markov state by the same column-bound pinning as the AR
+lags — their pinned columns' reduced costs enter the cut coefficients directly.
+
+**In-transit water buckets.** When a hydro's main cascade arc carries a
+`travel_time_hours`, released water reaches its downstream plant only after a
+delay. The volume in transit is tracked as augmented Benders state — one bucket
+slot per downstream plant per maturity lag — so that a stage's future cost
+depends only on the current in-transit volumes, not on the release path that
+produced them.
+
+**Anticipated-thermal slots.** An anticipated thermal commits generation $K_i$
+stages ahead of delivery. Each pending commitment occupies a slot in a per-plant
+ring of length $K_i$; the ring shifts one position per stage until the
+commitment matures at its delivery stage. The ring slots are Markov state so
+that the cut at each stage prices the cost of commitments already in flight.
+
+Both expansions are optional and instance-specific; see
+[System Elements](/math/system-elements) for the entity configuration and
+[LP Formulation](/math/lp-formulation) for the in-transit bucket rows (§5d) and
+anticipated-thermal delivery gating (§5c) in the stage LP.
 
 ## 6. Single-Cut Formulation
 
