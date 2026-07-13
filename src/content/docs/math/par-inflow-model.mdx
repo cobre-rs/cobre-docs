@@ -433,19 +433,20 @@ This section derives the explicit algebraic transformation from the canonical PA
 
 ### 7.1 Canonical Standardized Form
 
-The PAR(p) model (section 1) operates on deviations from the seasonal mean, scaled by the seasonal standard deviation. In fully standardized form:
+The PAR(p) model (section 1) operates on deviations from the seasonal mean, normalised by the **seasonal (marginal) standard deviation** $s_{m(t)}$ — the same basis the stored coefficients $\psi^*$ use, and the same normalisation as the reference formulation (standardise by the marginal std, not the innovation std). In this standardized form:
 
 $$
-\frac{a_{h,t} - \mu_{m(t)}}{\sigma_{m(t)}} = \sum_{\ell=1}^{p} \phi_{m(t),\ell} \frac{a_{h,t-\ell} - \mu_{m(t-\ell)}}{\sigma_{m(t-\ell)}} + \varepsilon_t
+\frac{a_{h,t} - \mu_{m(t)}}{s_{m(t)}} = \sum_{\ell=1}^{p} \psi^*_{m(t),\ell}\, \frac{a_{h,t-\ell} - \mu_{m(t-\ell)}}{s_{m(t-\ell)}} + r_{m(t)}\,\varepsilon_t
 $$
 
 where:
 
-- $\phi_{m(t),\ell}$: AR coefficients in **fully standardized** form (correlations between normalized deviations)
-- $\sigma_{m(t)}$: residual standard deviation for season $m(t)$ (derived at runtime — see section 3)
-- $\varepsilon_t \sim \mathcal{N}(0, 1)$: innovation noise
+- $\psi^*_{m(t),\ell}$: the stored AR coefficients, standardized by the seasonal std $s_m$ (the direct Yule-Walker output of section 5.4)
+- $s_{m(t)}$: the seasonal (marginal) standard deviation for season $m(t)$
+- $r_{m(t)} = \texttt{residual\_std\_ratio} = \sigma_{m(t)}/s_{m(t)} \in (0, 1]$: the standard deviation of the **standardized** innovation — equivalently $\sqrt{1 - \sum_\ell \psi^*_{m,\ell}\,\hat\rho_m(\ell)}$ (section 5.5)
+- $\varepsilon_t \sim \mathcal{N}(0, 1)$: unit-variance innovation noise
 
-The input files store $\psi^*_{m,\ell}$ (standardized by seasonal std $s_m$, not residual std $\sigma_m$). The next step converts these to original-unit $\psi_{m,\ell}$ for use in the LP.
+The innovation of the $s_m$-standardized process is **not** unit-variance: because that process has unit _marginal_ variance, its one-step innovation has standard deviation $r_{m(t)} \le 1$ — which is exactly why the residual std ratio appears here explicitly. Normalising by the seasonal std $s_m$ (as stored) is deliberately **not** the same as normalising by the innovation std $\sigma_m$: the two bases give coefficients differing by a factor $r_{m-\ell}/r_m$, and only the $s_m$-standardized coefficients are the stored $\psi^*$ (see the two-plane note in section 3). The next step converts $\psi^*_{m,\ell}$ to original-unit $\psi_{m,\ell}$ for use in the LP.
 
 ### 7.2 Coefficient Conversion
 
@@ -465,7 +466,7 @@ These conversions are performed once at LP construction time. They require only 
 
 ### 7.3 LP-Ready Form
 
-Multiplying both sides of the canonical form (section 7.1) by $\sigma_{m(t)}$ and rearranging yields the LP-ready equation:
+Multiplying both sides of the canonical form (section 7.1) by $s_{m(t)}$ and rearranging yields the LP-ready equation (the noise term becomes $s_{m(t)}\,r_{m(t)}\,\varepsilon_t = \sigma_{m(t)}\,\varepsilon_t$):
 
 $$
 a_{h,t} = \sum_{\ell=1}^{p} \psi_{m(t),\ell} \cdot a_{h,t-\ell} + \left[ \mu_{m(t)} - \sum_{\ell=1}^{p} \psi_{m(t),\ell} \cdot \mu_{m(t-\ell)} \right] + \sigma_{m(t)} \cdot \varepsilon_t
