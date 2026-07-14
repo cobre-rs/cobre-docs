@@ -10,9 +10,66 @@ in `inflow_seasonal_stats.parquet`) is the **stored sample standard
 deviation** of the historical series for a (hydro, season) — a fixed,
 on-disk number. `sigma_m`, the residual standard deviation that scales the
 stochastic innovation term, is never stored directly; it is **computed at
-runtime** from `std_m3s` and the stored `residual_std_ratio` column
-(methodology §3). Reading `std_m3s` as if it were `sigma_m` — or vice versa —
-silently rescales every noise draw.
+runtime** from `std_m3s` and the residual std ratio `r_m`, which Cobre always
+derives from the AR coefficients via the periodic-ACF closure rather than
+reading it from a stored column (methodology §3). Reading `std_m3s` as if it
+were `sigma_m` — or vice versa — silently rescales every noise draw.
+
+### Legacy `residual_std_ratio` values are silently corrected, not merged
+
+When a legacy `inflow_ar_coefficients.parquet` supplies its own
+`residual_std_ratio` alongside AR coefficients, Cobre does not average,
+validate-and-keep, or merge the stored value with the closure derivation — it
+replaces the stored value outright and emits one deprecation warning per file
+(see the Inputs & Outputs tab). Two worked corrections from Cobre's own test
+fixtures show the range of the resulting shift:
+
+- A directly-supplied AR(1) coefficient $\psi^* = 0.5$ (uniform order 1
+  across every season it uses) with a stored ratio of `0.85` — never fit
+  against $\psi^*$ — is corrected to the closure value
+  `0.866025403784439` ($\sqrt{1-0.5^2}$), a gap of about `1.6e-2`.
+- A directly-supplied AR(2) model (structurally uniform order across both
+  hydros, coefficients $\psi^* = [0.5, 0.3]$ and $[0.4, 0.2]$) with a stored
+  ratio of `1.0` for both hydros — likewise never fit against $\psi^*$ — is
+  corrected to `0.667618...` / `0.848528...`.
+
+Both corrections land on a **uniform**-order case, so the derived value is
+exact (not the fitted-mixed-order drift described below) — the correction
+size in each case reflects only how far the stored literal was from being
+consistent with $\psi^*$ in the first place, which is unbounded: a stored
+value can be arbitrarily inconsistent with its accompanying coefficients, so
+the shift is not confined to a small numeric band the way the fitted-drift
+class below is.
+
+### Golden-value drift for internally-fitted models
+
+A model **fitted internally** by Cobre (not a directly-supplied legacy file)
+can also see its derived `r_m` shift relative to what the pre-closure
+Yule-Walker computation would have produced, but only under one condition and
+by a much smaller margin: when per-season AR orders differ across the
+periodic cycle (a mixed-order fit), the closure-derived value differs from
+the old per-season Yule-Walker value by roughly `1e-4`, localized to the
+season(s) at the fit's maximum order. A **uniform**-order fit (every season
+sharing the same AR order) matches the old value to double precision
+(about `1e-12`) — the closure and the direct Yule-Walker computation are the
+same system in that case. This mixed-order gap is theoretical; no end-to-end
+test fixture currently exercises it (contrast the directly-supplied
+corrections above, which are demonstrated end-to-end).
+
+### Model-quality diagnostic: explained variance
+
+The low-residual-variance model-quality warning now reports an
+`explained_variance` field ($R^2 = 1 - r_m^2$) instead of the raw ratio,
+firing under the same numerical condition as before
+($R^2 > 0.99 \Leftrightarrow r_m^2 < 0.01$, methodology §6). It is a
+library-surface diagnostic type only: Cobre computes it internally and does
+not render it on the CLI or expose it through the python bindings. Keep this
+reframed $R^2$ distinct from `r_squared`, the *residual* (unexplained)
+fraction reported in the stationarity gate's own rejection message (see the
+Inputs & Outputs tab) — the two are inverse quantities describing different
+situations: `explained_variance` is a quality signal on an accepted model,
+while `r_squared` in a rejection message is the reason a model was rejected
+outright.
 
 ### Order-selection behavior
 

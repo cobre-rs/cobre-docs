@@ -11,7 +11,7 @@ and [Output Format](/reference/output-format/) pages).
 | ---- | ---- |
 | `scenarios/inflow_history.parquet` | Raw historical inflow observations per (hydro, date) — drives the estimation path (H) when present (see the Configure tab). |
 | `scenarios/inflow_seasonal_stats.parquet` | User-supplied or fitted seasonal statistics per (hydro, stage). The `std_m3s` column is the **stored sample standard deviation** of the historical series — not the residual standard deviation used for noise scaling (see Implementation notes). |
-| `scenarios/inflow_ar_coefficients.parquet` | User-supplied or fitted standardized AR coefficients and `residual_std_ratio`, one row per (hydro, stage, lag). The AR order is derived from the row count, not stored explicitly. |
+| `scenarios/inflow_ar_coefficients.parquet` | User-supplied or fitted standardized AR coefficients, one row per (hydro, stage, lag) — schema `[hydro_id, stage_id, lag, coefficient]`. The AR order is derived from the row count, not stored explicitly. A legacy `residual_std_ratio` column is tolerated on read and discarded (see "Legacy `residual_std_ratio` column" below). |
 | `scenarios/inflow_annual_component.parquet` | Optional user-supplied PAR(p)-A annual triple (coefficient, mean, std of the rolling 12-month average). Honored only on the pass-through paths — the estimation paths overwrite it with fitted values (see the Configure tab). |
 | `scenarios/correlation.json` | Named spatial-correlation profiles and optional stage schedule. Wins over estimated or identity correlation on every inflow-source path when present. |
 | `initial_conditions.json` (hydro `past_inflows` rows) | The AR-lag seed: past inflow values ordered most-recent-first, consumed by the opening study stages' lag terms (methodology §7.5). |
@@ -25,19 +25,28 @@ the Reference corpus.
 Cobre accepts fully user-supplied parameters — you may fit a PAR($p$) model with
 **any** method outside Cobre and hand it the two parquet files (the
 `UserProvidedNoHistory` and `UserProvidedAll` paths on the Configure tab).
-Cobre then skips fitting and only validates the inputs. The fields do **not**
+Cobre then skips fitting, validates the inputs, and derives the residual std
+ratio $r_m$ from your supplied $\psi^*$ (see "Legacy `residual_std_ratio`
+column" below). The fields do **not**
 encode Cobre's fitting method — they encode the [two-plane
 representation](/math/par-inflow-model) — so any fit maps onto them by the table
-below. Let $s_m$ be your series' seasonal sample std, $\sigma_m$ your model's
-innovation (residual) std, and $\psi_{m,\ell}$ your original-unit AR
-coefficients.
+below. Let $s_m$ be your series' seasonal sample std and $\psi_{m,\ell}$ your
+original-unit AR coefficients.
 
 | Column (file)                                   | Fill with                                  | Meaning                                                   |
 | ----------------------------------------------- | ------------------------------------------ | --------------------------------------------------------- |
 | `mean_m3s` (`inflow_seasonal_stats`)            | $\mu_m$                                     | Seasonal mean of the series (m³/s)                        |
 | `std_m3s` (`inflow_seasonal_stats`)             | $s_m$                                       | Seasonal **sample** std of the series (m³/s)              |
 | `coefficient` (`inflow_ar_coefficients`)        | $\psi^*_{m,\ell} = \psi_{m,\ell}\,s_{m-\ell}/s_m$ | AR coefficient **standardized by the seasonal std**       |
-| `residual_std_ratio` (`inflow_ar_coefficients`) | $\sigma_m / s_m$                            | Innovation std as a fraction of the seasonal std          |
+
+There is no column for your model's own innovation (residual) std $\sigma_m$:
+Cobre always **derives** $r_m = \sigma_m/s_m$ from the $\psi^*_{m,\ell}$ you
+supply, the same way it derives $r_m$ for an internally-fitted model (see
+[Deriving the residual std ratio](/math/par-inflow-model)). If your own fit's
+$\hat\sigma_m$ is not exactly consistent with your supplied $\psi^*$ under the
+periodic-ACF closure, Cobre's derived $\sigma_m$ differs from your original
+fit's — the closure re-derives the noise scale so the seasonal std $s_m$ you
+supply is honored exactly.
 
 Rules Cobre enforces (or that silently mis-scale the model if broken):
 
@@ -49,12 +58,38 @@ Rules Cobre enforces (or that silently mis-scale the model if broken):
 - **Use one consistent $s_m$.** The $s_m$ you divide by when standardizing must
   be exactly the `std_m3s` you store — Cobre reconstructs $\psi$ and $\sigma$
   from the stored `std_m3s`, so a mismatch is silent.
-- `residual_std_ratio` must be finite and in $(0, 1]$ (for a proper one-step fit
-  $\sigma_m \le s_m$ always), and **identical across all lag rows** of the same
-  (hydro, stage) group.
+- **Cobre hard-rejects a coefficient set that fails its stationarity gate.**
+  The gate runs the [periodic-ACF closure](/math/par-inflow-model) on your
+  supplied $\psi^*$ and rejects the whole load when the implied residual
+  variance is not strictly positive for any season, any implied
+  autocorrelation magnitude exceeds 1, or a conservative spectral-radius
+  estimate of the periodic monodromy reaches 1. The gate runs only on
+  directly-supplied coefficients — coefficients Cobre fits internally keep the
+  fitter's own fallbacks.
 - Lags must be contiguous $1, 2, \ldots, p$; the **AR order $p$ is implicit** in
   the row count (there is no order column). White noise = no coefficient rows
-  for that (hydro, stage), i.e. order 0 with an implied ratio of 1.
+  for that (hydro, stage), i.e. order 0, for which the closure gives $r_m = 1$.
+- **Resolvable season context is required whenever any AR order is $>0$.**
+  Every (hydro, stage) group with at least one coefficient row must resolve to
+  a season via `season_definitions` or a per-stage `season_id` (see
+  [Case Directory Format](/reference/case-directory-format/) and
+  [Running Cobre — configuration](/running/configuration/)) — this applies on
+  every load path, including a plain file-load with no fitting.
+
+#### Legacy `residual_std_ratio` column
+
+Cobre no longer reads a `residual_std_ratio` column from
+`inflow_ar_coefficients.parquet` — the value is always derived from the
+loaded $\psi^*$ (see [Deriving the residual std ratio](/math/par-inflow-model)).
+A file carrying the legacy column still loads: Cobre parses it, emits one
+deprecation warning per file, and discards the value — even when the stored
+value is inconsistent with the accompanying $\psi^*$. The output writer never
+emits the column; both the input schema and Cobre's own fitted output are
+`[hydro_id, stage_id, lag, coefficient]`.
+
+A stored value inconsistent with $\psi^*$ can differ substantially from what
+the closure derives — the deprecation warning is the only signal this
+happened; see Implementation notes for two worked corrections.
 
 ### Outputs
 

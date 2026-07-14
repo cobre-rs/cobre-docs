@@ -43,11 +43,12 @@ For each hydro $h$ and each season $m \in \{1, \ldots, M\}$ (e.g., $M = 12$ for 
 
 ## 3. Stored vs. Computed Quantities
 
-The data model stores **seasonal sample statistics** and **standardized AR coefficients** with an explicit residual fraction. The relationship between stored and computed quantities is:
+The data model stores **seasonal sample statistics** and **standardized AR coefficients**. The residual std ratio is not a third stored quantity — it is derived from the AR coefficients alone (see "Deriving the residual std ratio" below). The relationship between stored and derived quantities is:
 
-Stored vs. computed quantities — the files on disk hold the scale-invariant
-`ψ*` and `residual_std_ratio`; at runtime these are converted to original-unit
-`ψ` and `σ` using the seasonal stats, then consumed by the LP stage subproblem.
+Stored vs. derived quantities — the files on disk hold the scale-invariant
+`ψ*` alone; at runtime the residual std ratio is derived from `ψ*` by a
+periodic-ACF closure, then everything is converted to original-unit `ψ` and
+`σ` using the seasonal stats, and consumed by the LP stage subproblem.
 
 **Two planes.** Every PAR($p$) parameter sits on one of two planes, and the
 split is deliberate:
@@ -58,7 +59,8 @@ split is deliberate:
   the seasonal mean and the seasonal variability.
 - **Dynamics plane** — the standardized coefficients $\psi^*_{m,\ell}$ and the
   residual std ratio $r_m = \sigma_m/s_m$ (both dimensionless): the _shape_ of
-  the temporal dependence, independent of magnitude.
+  the temporal dependence, independent of magnitude. Only $\psi^*_{m,\ell}$ is
+  an independent parameter here — $r_m$ is pinned by $\psi^*_{m,\ell}$ itself.
 
 Runtime re-couples the two via $\psi_{m,\ell} = \psi^*_{m,\ell}\,s_m/s_{m-\ell}$
 and $\sigma_m = s_m\,r_m$, so re-conditioning the first plane rescales both the
@@ -80,20 +82,22 @@ storage: "Storage format — files on disk" {
   }
   arcoef: "inflow_ar_coefficients" {
     f1: "ψ*ₘ,ℓ  —  standardized AR coeff"
-    f2: "σₘ / sₘ  —  residual std ratio"
-    f3: "pₘ  —  AR order"
+    f2: "pₘ  —  AR order"
   }
 }
 
+closure: "Periodic-ACF closure\nderives rₘ from ψ* alone"
+
 runtime: "Runtime format — in-memory for LP" {
   psi: "Original-unit AR coeff:  ψₘ,ℓ = ψ*ₘ,ℓ · sₘ / sₘ₋ℓ"
-  sigma: "Original-unit residual std:  σₘ = sₘ · (σₘ / sₘ)"
+  sigma: "Original-unit residual std:  σₘ = sₘ · rₘ"
 }
 
 lp: "consumed by LP stage subproblem"
 
 storage.stats -> runtime.psi: "× sₘ / sₘ₋ℓ"
-storage.arcoef -> runtime.sigma: "× sₘ"
+storage.arcoef -> closure
+closure -> runtime.sigma: "rₘ, then × sₘ"
 runtime.psi -> lp
 runtime.sigma -> lp
 ```
@@ -107,7 +111,6 @@ These are provided in `inflow_seasonal_stats.parquet` and `inflow_ar_coefficient
 | Seasonal sample mean | `mean_m3s`           | `inflow_seasonal_stats`  | $\mu_m = \bar{a}_m$ | Mean of historical observations for season $m$                                  |
 | Seasonal sample std  | `std_m3s`            | `inflow_seasonal_stats`  | $s_m$               | Standard deviation of historical observations for season $m$                    |
 | AR coefficients      | `coefficient`        | `inflow_ar_coefficients` | $\psi^*_{m,\ell}$   | AR coefficient **standardized by seasonal std** — the direct Yule-Walker output |
-| Residual std ratio   | `residual_std_ratio` | `inflow_ar_coefficients` | $\sigma_m / s_m$    | Residual std as fraction of seasonal std, $\in (0, 1]$ — a pure model property  |
 
 The AR order $p_m$ is **not stored explicitly**. It is derived at runtime from the count of coefficient rows per (hydro_id, stage_id) group in `inflow_ar_coefficients.parquet`.
 
@@ -117,9 +120,31 @@ $$
 \psi_{m,\ell} = \psi^*_{m,\ell} \cdot \frac{s_m}{s_{m-\ell}}
 $$
 
+### Deriving the residual std ratio
+
+Unlike $\mu_m$, $s_m$, and $\psi^*_{m,\ell}$, the residual std ratio $r_m$ is not read from a file. It is pinned by $\psi^*$ itself under the model's unit-marginal-variance contract — every season's standardized process $(a_{h,t}-\mu_m)/s_m$ has unit variance — via a **periodic-ACF closure**.
+
+Extend the recursion that defines $\psi^*_{m,\ell}$ (section 5.4) to every lag $\ell \ge 1$, not just $\ell \le p_m$:
+
+$$
+\rho_m(\ell) = \sum_{j=1}^{p_m} \psi^*_{m,j}\, \rho_{(m-\min(j,\ell)) \bmod M}\bigl(|\ell - j|\bigr), \qquad \rho_{m'}(0) = 1 \text{ for every season } m'
+$$
+
+Solving this system jointly across every season $m = 0,\ldots,M-1$ and every lag $\ell = 1,\ldots,p_{\max}$ (where $p_{\max} = \max_m p_m$) yields the model's own **implied periodic autocorrelation function** $\rho_m(\ell)$ — the autocorrelations the process would have if $\psi^*$ described an exactly stationary periodic AR process. The residual std ratio follows from the same variance decomposition used in the fitting step (section 5.5):
+
+$$
+r_m^2 = 1 - \sum_{\ell=1}^{p_m} \psi^*_{m,\ell}\, \rho_m(\ell)
+$$
+
+A season with $p_m = 0$ contributes no terms to the sum, so $r_m = 1$ — a white-noise season has no residual-variance reduction.
+
+:::note[Why $r_m$ is derived, not stored]
+Under the unit-marginal-variance contract, $r_m$ is not a free parameter of the model — it is exactly the value that makes the seasonal marginal variance implied by $\psi^*$ equal $s_m^2$. Storing $r_m$ independently of $\psi^*$ would let the two drift out of consistency (e.g. a hand-supplied ratio that does not match the accompanying coefficients); deriving it instead guarantees the process's implied marginal std in every season equals the stored $s_m$ exactly, whatever $\psi^*$ is.
+:::
+
 ### Computed at runtime
 
-From the stored quantities, the LP requires two additional quantities computed once at initialization:
+From the stored quantities and the derived $r_m$, the LP requires two additional quantities computed once at initialization:
 
 **Original-unit AR coefficients** (for LP constraint matrix entries):
 
@@ -130,14 +155,10 @@ $$
 **Residual standard deviation** (for noise scaling):
 
 $$
-\sigma_m = s_m \cdot \texttt{residual\_std\_ratio}_m
+\sigma_m = s_m \cdot r_m
 $$
 
-No autocorrelation values are needed at runtime. All required quantities are derived solely from the stored seasonal stats and AR coefficient file.
-
-:::note[Why store `residual_std_ratio` rather than $\sigma_m$ directly?]
-The residual std decomposes as $\sigma_m = s_m \cdot \texttt{residual\_std\_ratio}_m$, where $s_m$ is a **conditioning** quantity (swappable for climate scenario studies) and the ratio is a **model dynamics** property (fixed per PAR fit). Storing $\sigma_m$ directly would bake in a specific $s_m$: when the user swaps seasonal stats for a different climate scenario, the stored $\sigma_m$ would be stale and noise scaling would be inconsistent with the new variability level. Storing the ratio preserves correct proportionality — if seasonal variability changes, noise scales proportionally.
-:::
+No further autocorrelation values are needed beyond the closure derivation above. All required quantities — $\psi_{m,\ell}$, $\sigma_m$, and the $r_m$ they depend on — are derived solely from the stored seasonal stats and AR coefficient file, with no historical data and no separate residual-ratio input.
 
 ### LP coefficients
 
@@ -250,31 +271,31 @@ where $\hat{s}_{m-\ell}$ is the standard deviation of season $m - \ell$ (cyclica
 
 For each season $m$, the PAR(p) coefficients $\psi_{m,1}^*, \ldots, \psi_{m,p}^*$ in standardized form are found by solving the **periodic Yule-Walker system**. Unlike the classical (stationary) Yule-Walker equations where all rows use the same reference season, the periodic variant shifts the reference season per row. This correctly accounts for the non-Toeplitz covariance structure of periodic autoregressive processes.
 
-**Matrix construction**: For row $i$ and column $j$ (0-indexed, $0 \leq i,j < p$), the reference season is shifted by row index:
+**Matrix construction**: Entry $(i, j)$ (0-indexed, $0 \leq i,j < p$) is the correlation between the lagged observations $\tilde{a}_{t-(i+1)}$ and $\tilde{a}_{t-(j+1)}$; its reference season is that of the **more recent** of the two lags:
 
 $$
-[\mathbf{R}_m]_{i,j} = \hat{\rho}_{(m-i) \bmod M}(|j - i|)
+[\mathbf{R}_m]_{i,j} = \hat{\rho}_{\left(m - 1 - \min(i,j)\right) \bmod M}\bigl(|j - i|\bigr)
 $$
 
-where $M$ is the number of seasons in the periodic cycle (e.g., 12 for monthly). The diagonal entries are always 1 (since $\hat{\rho}_{m'}(0) = 1$ for any season $m'$). The matrix is symmetric but **not Toeplitz** when $M > 1$, because each row references a different season for its autocorrelation values.
+where $M$ is the number of seasons in the periodic cycle (e.g., 12 for monthly). The diagonal entries are always 1 (since $\hat{\rho}_{m'}(0) = 1$ for any season $m'$). The matrix is symmetric but **not Toeplitz** when $M > 1$, because the reference season varies across the entries.
 
-**RHS construction**: Each RHS element also uses a shifted reference season:
+**RHS construction**: The RHS holds the correlations of the **target** $\tilde{a}_t$ (season $m$) with each lag:
 
 $$
-[\boldsymbol{r}_m]_i = \hat{\rho}_{(m-i) \bmod M}(p - i)
+[\boldsymbol{r}_m]_i = \hat{\rho}_{m}(i + 1)
 $$
 
-This comes from column $p$ of the extended $(p{+}1) \times (p{+}1)$ version of the periodic autocorrelation matrix.
+Equivalently: form the extended $(p{+}1) \times (p{+}1)$ correlation matrix of $(\tilde{a}_t, \tilde{a}_{t-1}, \ldots, \tilde{a}_{t-p})$; the system matrix is its lag block (rows/columns $1..p$) and the RHS is its first row (the target-lag correlations). Row $i$ of the system is the model's second-moment recursion at lag $i{+}1$.
 
 The full system is:
 
 $$
 \begin{pmatrix}
-1 & \hat{\rho}_{m}(1) & \hat{\rho}_{m}(2) & \cdots & \hat{\rho}_{m}(p{-}1) \\
-\hat{\rho}_{(m-1)}(1) & 1 & \hat{\rho}_{(m-1)}(1) & \cdots & \hat{\rho}_{(m-1)}(p{-}2) \\
-\hat{\rho}_{(m-2)}(2) & \hat{\rho}_{(m-2)}(1) & 1 & \cdots & \hat{\rho}_{(m-2)}(p{-}3) \\
+1 & \hat{\rho}_{(m-1)}(1) & \hat{\rho}_{(m-1)}(2) & \cdots & \hat{\rho}_{(m-1)}(p{-}1) \\
+\hat{\rho}_{(m-1)}(1) & 1 & \hat{\rho}_{(m-2)}(1) & \cdots & \hat{\rho}_{(m-2)}(p{-}2) \\
+\hat{\rho}_{(m-1)}(2) & \hat{\rho}_{(m-2)}(1) & 1 & \cdots & \hat{\rho}_{(m-3)}(p{-}3) \\
 \vdots & \vdots & \vdots & \ddots & \vdots \\
-\hat{\rho}_{(m-p+1)}(p{-}1) & \hat{\rho}_{(m-p+1)}(p{-}2) & \hat{\rho}_{(m-p+1)}(p{-}3) & \cdots & 1
+\hat{\rho}_{(m-1)}(p{-}1) & \hat{\rho}_{(m-2)}(p{-}2) & \hat{\rho}_{(m-3)}(p{-}3) & \cdots & 1
 \end{pmatrix}
 \begin{pmatrix}
 \psi_{m,1}^* \\
@@ -285,11 +306,11 @@ $$
 \end{pmatrix}
 =
 \begin{pmatrix}
-\hat{\rho}_{m}(p) \\
-\hat{\rho}_{(m-1)}(p{-}1) \\
-\hat{\rho}_{(m-2)}(p{-}2) \\
+\hat{\rho}_{m}(1) \\
+\hat{\rho}_{m}(2) \\
+\hat{\rho}_{m}(3) \\
 \vdots \\
-\hat{\rho}_{(m-p+1)}(1)
+\hat{\rho}_{m}(p)
 \end{pmatrix}
 $$
 
@@ -314,27 +335,29 @@ $$
 
 The system is solved via Gaussian elimination with partial pivoting (for small systems with $p \leq 10$, this is numerically adequate).
 
-### 5.5 Step 4 — Store Standardized Coefficients and Residual Fraction
+### 5.5 Step 4 — Store Standardized Coefficients
 
-The Yule-Walker solution $\psi_{m,\ell}^*$ is in standardized form — the direct output of step 3. It is stored as-is in `inflow_ar_coefficients.parquet`. No conversion to original units is performed.
+The Yule-Walker solution $\psi_{m,\ell}^*$ is in standardized form — the direct output of step 3. It is stored as-is in `inflow_ar_coefficients.parquet`. No conversion to original units is performed, and no other quantity is written alongside it: the residual std ratio is not a fitting output. It is derived from $\psi^*$ afterward, uniformly for every model regardless of its origin, by the periodic-ACF closure of section 3 — not computed here.
 
-Compute and store the residual std ratio:
+For a season whose AR order is shared by every season of the cycle, that closure value coincides exactly with this step's own Yule-Walker system:
 
 $$
-\widehat{\texttt{residual\_std\_ratio}}_m = \sqrt{1 - \boldsymbol{\psi}_m^{*\top} \boldsymbol{r}_m} = \sqrt{1 - \sum_{\ell=1}^{p} \psi_{m,\ell}^* \cdot \hat{\rho}_m(\ell)}
+r_m = \sqrt{1 - \boldsymbol{\psi}_m^{*\top} \boldsymbol{r}_m}
 $$
 
-Both $\psi^*_{m,\ell}$ (one row per lag) and $\widehat{\texttt{residual\_std\_ratio}}_m$ (repeated across all lag rows of the same (hydro, stage) group) are written to `inflow_ar_coefficients.parquet`.
+(using this section's $\boldsymbol{\psi}_m^*$ and the system's RHS vector $\boldsymbol{r}_m$ of section 5.4). When per-season orders differ across the cycle, the two need not agree: the closure solves for the model's implied ACF jointly across every season (section 3), not from this season's sample autocorrelations alone.
+
+Only $\psi^*_{m,\ell}$ (one row per lag) is written to `inflow_ar_coefficients.parquet`.
 
 ### 5.6 Step 5 — Residual Standard Deviation
 
-The residual standard deviation for season $m$ is recovered at runtime from the stored ratio (see section 3):
+The residual standard deviation for season $m$ is recovered at runtime from the closure-derived residual std ratio $r_m$ (see section 3):
 
 $$
-\hat{\sigma}_m = \hat{s}_m \cdot \widehat{\texttt{residual\_std\_ratio}}_m
+\hat{\sigma}_m = \hat{s}_m \cdot r_m
 $$
 
-For reference, the full expression in terms of fitting quantities is:
+For a season whose AR order is shared by every season of the cycle, section 5.5 showed this reduces to the fitting system's own closed-form expression:
 
 $$
 \hat{\sigma}_m = \hat{s}_m \sqrt{1 - \boldsymbol{r}_m^\top \mathbf{R}_m^{-1} \boldsymbol{r}_m}
@@ -415,17 +438,16 @@ post-hoc root test.
 **Enforced when loading `inflow_ar_coefficients.parquet`:**
 
 1. **AR order derivation**: the number of coefficient rows per (hydro_id, stage_id) determines the AR order $p_m$, and the lags must be present and contiguous $\{1, 2, \ldots, p_m\}$.
-2. **Residual std ratio range**: each `residual_std_ratio` must be finite and lie in $(0, 1]$.
-3. **Residual std ratio consistency**: the value must be identical across all lag rows sharing the same (hydro_id, stage_id) group.
+2. **Stationarity of directly-supplied coefficients**: when the AR coefficients for a (hydro, season) group are supplied directly rather than produced by the internal fitting procedure (section 5), the periodic-ACF closure (section 3) must accept them — every implied residual variance $r_m^2 = 1 - \sum_\ell \psi^*_{m,\ell}\,\rho_m(\ell)$ must be strictly positive, every implied autocorrelation must satisfy $|\rho_m(k)| \le 1$, and the **periodic monodromy** — the product, taken once around the full seasonal cycle, of each season's AR companion matrix — must have spectral radius strictly below 1. A set failing any condition is rejected outright. A model whose coefficients come from the internal fitting procedure is exempt from this check: its own order-reduction procedure (section 4.1) already guards stability during the fit.
 
 **Enforced when validating the assembled model:**
 
-4. **Positive sample std** (error): a season with AR order $> 0$ must have $s_m > 0$ — a zero seasonal std cannot normalise the AR coefficients.
-5. **Low residual variance** (warning): $\texttt{residual\_std\_ratio}^2 < 0.01$ (the AR fit explains more than 99% of the season's variance) raises an advisory model-quality warning; it is not fatal.
+3. **Positive sample std** (error): a season with AR order $> 0$ must have $s_m > 0$ — a zero seasonal std cannot normalise the AR coefficients.
+4. **Low residual variance** (warning): $r_m^2 < 0.01$ (the AR fit explains more than 99% of the season's variance) raises an advisory model-quality warning; it is not fatal.
 
 **Enforced during fitting, not as a post-hoc test:**
 
-6. **Stability**: rather than testing the roots of the AR polynomial, the fitter guards stability through the Maceira & Damázio contribution-based order reduction (section 4.1) — a negative lag-1 coefficient, a negative composed contribution, or a coefficient exceeding `max_coefficient_magnitude` reduces the season's order and refits. The periodic Yule-Walker solve additionally truncates the order when its correlation matrix is singular (section 5.4), so a rank-deficient system never yields coefficients.
+5. **Stability**: rather than testing the roots of the AR polynomial, the fitter guards stability through the Maceira & Damázio contribution-based order reduction (section 4.1) — a negative lag-1 coefficient, a negative composed contribution, or a coefficient exceeding `max_coefficient_magnitude` reduces the season's order and refits. The periodic Yule-Walker solve additionally truncates the order when its correlation matrix is singular (section 5.4), so a rank-deficient system never yields coefficients.
 
 ## 7. PAR-to-LP Transformation
 
@@ -443,7 +465,7 @@ where:
 
 - $\psi^*_{m(t),\ell}$: the stored AR coefficients, standardized by the seasonal std $s_m$ (the direct Yule-Walker output of section 5.4)
 - $s_{m(t)}$: the seasonal (marginal) standard deviation for season $m(t)$
-- $r_{m(t)} = \texttt{residual\_std\_ratio} = \sigma_{m(t)}/s_{m(t)} \in (0, 1]$: the standard deviation of the **standardized** innovation — equivalently $\sqrt{1 - \sum_\ell \psi^*_{m,\ell}\,\hat\rho_m(\ell)}$ (section 5.5)
+- $r_{m(t)} = \texttt{residual\_std\_ratio} = \sigma_{m(t)}/s_{m(t)} \in (0, 1]$: the standard deviation of the **standardized** innovation — the closure-derived value of section 3, $\sqrt{1 - \sum_\ell \psi^*_{m,\ell}\,\rho_{m(t)}(\ell)}$, with $\rho_{m(t)}$ the model's implied periodic ACF
 - $\varepsilon_t \sim \mathcal{N}(0, 1)$: unit-variance innovation noise
 
 The innovation of the $s_m$-standardized process is **not** unit-variance: because that process has unit _marginal_ variance, its one-step innovation has standard deviation $r_{m(t)} \le 1$ — which is exactly why the residual std ratio appears here explicitly. Normalising by the seasonal std $s_m$ (as stored) is deliberately **not** the same as normalising by the innovation std $\sigma_m$: the two bases give coefficients differing by a factor $r_{m-\ell}/r_m$, and only the $s_m$-standardized coefficients are the stored $\psi^*$ (see the two-plane note in section 3). The next step converts $\psi^*_{m,\ell}$ to original-unit $\psi_{m,\ell}$ for use in the LP.
@@ -456,13 +478,13 @@ $$
 \psi_{m,\ell} = \psi^*_{m,\ell} \cdot \frac{s_m}{s_{m-\ell}}
 $$
 
-The residual standard deviation is also derived at this preprocessing step:
+The residual standard deviation is also derived at this preprocessing step, from the closure-derived residual std ratio $r_m$ (section 3):
 
 $$
-\sigma_m = s_m \cdot \texttt{residual\_std\_ratio}_m
+\sigma_m = s_m \cdot r_m
 $$
 
-These conversions are performed once at LP construction time. They require only the seasonal stats ($s_m$) and the stored model quantities ($\psi^*_{m,\ell}$, $\texttt{residual\_std\_ratio}_m$) — no autocorrelation values, no historical data.
+These conversions are performed once at LP construction time. They require only the seasonal stats ($s_m$), the stored $\psi^*_{m,\ell}$, and the closure-derived $r_m$ — no historical data.
 
 ### 7.3 LP-Ready Form
 
@@ -515,7 +537,7 @@ $$
 where:
 
 - $b_{h,m(t)}$ is the deterministic base for (stage, hydro), precomputed once at LP construction (section 7.4)
-- $\sigma_{m(t)}$ is the noise scale for (stage, hydro), derived from stored ratio at initialization (section 7.2)
+- $\sigma_{m(t)}$ is the noise scale for (stage, hydro), derived from the closure-derived $r_m$ (section 3) at initialization (section 7.2)
 - $\varepsilon_t$ is the scenario noise draw for this (stage, hydro)
 
 The $\psi_{m(t),\ell}$ coefficients are written into the constraint matrix **once at LP construction time** as the coefficients on the lagged inflow variables; they are not recomputed per scenario.
@@ -528,7 +550,7 @@ No division, no mean subtraction, no repeated coefficient transformation — the
 | ------------------ | ------------------ | -------------------- | ----------------------------------------- | ---------------------------------------------------------------------- |
 | Lag coefficients   | $\psi_{m(t),\ell}$ | One per (hydro, lag) | Constraint matrix (AR dynamics row)       | Derived from stored $\psi^*$ and $s_m$ at initialization (section 7.2) |
 | Deterministic base | $b_{h,m(t)}$       | One per hydro        | AR dynamics constraint RHS (fixed term)   | Precomputed from $\mu$ and $\psi$                                      |
-| Noise scale        | $\sigma_{m(t)}$    | One per hydro        | AR dynamics constraint RHS (noise factor) | Derived from stored ratio and $s_m$ at initialization (section 7.2)    |
+| Noise scale        | $\sigma_{m(t)}$    | One per hydro        | AR dynamics constraint RHS (noise factor) | Derived from the closure-derived $r_m$ (section 3) and $s_m$ at initialization (section 7.2) |
 
 ## 8. Spatial Correlation Factorisation
 
@@ -690,6 +712,12 @@ The Maceira & Damázio iterative reduction of section 4.1 is applied across the 
 | Hydro with fewer than 13 observations on PAR(p)-A path               | Hard failure during fitting (no silent fallback to classical)                            |
 
 The two paths share the seasonal-stats producer of section 5.2; switching between them does not silently change $\hat{\mu}_m$ or $\hat{s}_m$. The PAR(p)-A path uses the same spatial-correlation factorisation as the classical path (section 8); the extension affects only the temporal model.
+
+### 9.8 Conditioning-Swap Exactness
+
+Section 3 shows that re-conditioning the seasonal stats ($\mu_m$, $s_m$) alone — leaving $\psi^*$ and the closure-derived $r_m$ untouched — rescales the classical dynamics while preserving the correlation structure exactly, for any per-season rescaling. The PAR(p)-A annual term does not share this property in general.
+
+Like $r_m$, the annual seasonal std $\sigma^A_m$ is a functional of the process's own second-moment structure — it is not an independent parameter of the annual term. Unlike $r_m$, it is carried as **stored conditioning data** (section 9.2) rather than re-derived from $\psi^*$ at load. The runtime annual coefficient $\hat\psi_m$ (section 9.4) is $\hat\psi_m = \psi \cdot s_m / \sigma^A_m$, so a conditioning swap preserves the annual term's contribution to the correlation structure only when $\sigma^A_m$ rescales by the same factor as $s_m$ in every season — a **uniform** rescaling $\tilde s_m = \lambda\, s_m$ for all $m$, giving $\tilde\sigma^A_m = \lambda\,\sigma^A_m$ and leaving $\hat\psi_m$ unchanged. A **season-varying** conditioning swap — rescaling $s_m$ by a different factor in different seasons — leaves $\sigma^A_m$ at its pre-swap value while $s_m$ moves, shifting $\hat\psi_m$ and perturbing the preserved correlation structure.
 
 ## Implementation in Cobre
 

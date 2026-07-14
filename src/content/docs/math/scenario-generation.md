@@ -24,21 +24,23 @@ on the hot path. Preprocessing also resolves all season-indexed quantities into
 stage-indexed arrays so that the forward and backward passes operate on a single
 flat structure per (stage, hydro) pair.
 
-**Why preprocessing separates stored from computed quantities.** The input files
+**Why preprocessing separates stored from derived quantities.** The input files
 store standardized AR coefficients ($\psi^*_{m,\ell}$, the direct Yule-Walker
-output) and `residual_std_ratio` ($\sigma_m / s_m$) — not original-unit
-coefficients and not $\sigma_m$ directly. Preprocessing converts these at
-startup: $\psi_{m,\ell} = \psi^*_{m,\ell} \cdot s_m / s_{m-\ell}$ and
-$\sigma_m = s_m \cdot \texttt{residual\_std\_ratio}_m$. This is the two-plane
+output) — not original-unit coefficients and not the residual std ratio $r_m$.
+Preprocessing derives $r_m$ from $\psi^*$ via the periodic-ACF closure (see the
+[PAR(p) model](/math/par-inflow-model), section 3), then converts everything to
+runtime form: $\psi_{m,\ell} = \psi^*_{m,\ell} \cdot s_m / s_{m-\ell}$ and
+$\sigma_m = s_m \cdot r_m$. This is the two-plane
 split of the [PAR(p) model](/math/par-inflow-model): the dimensionless
-**dynamics** ($\psi^*$, `residual_std_ratio`) stay fixed while the
+**dynamics** ($\psi^*$, and the $r_m$ it implies) stay fixed while the
 **conditioning** seasonal stats ($\mu_m$, $s_m$) carry the magnitude. Because
 the dynamics are stored standardized by $s_m$, re-conditioning the seasonal
 stats — e.g. a climate scenario that shifts both the seasonal mean and the
 seasonal variability — rescales the coefficients and the noise proportionally
-with no re-fit; only `inflow_seasonal_stats.parquet` changes, and the
-correlation structure is preserved. The preprocessing pipeline produces
-contiguous stage-indexed arrays ready for hot-path access.
+with no re-fit; only `inflow_seasonal_stats.parquet` changes, $r_m$ is
+unaffected (it is a function of $\psi^*$ alone), and the correlation structure
+is preserved. The preprocessing pipeline produces contiguous stage-indexed
+arrays ready for hot-path access.
 
 For the full PAR(p) model definition, parameter set, and fitting theory, see
 [PAR(p) Inflow Model](/math/par-inflow-model).
@@ -49,13 +51,14 @@ For the full PAR(p) model definition, parameter set, and fitting theory, see
 direction: down
 
 input: "Input files\ninflow_seasonal_stats · inflow_ar_coefficients\n(inflow_history — optional, for lag init)" {shape: parallelogram}
-s1: "1 · Load PAR parameters\nμ, s, ψ*, r = σ/s, AR order p  per (hydro, stage)"
-s2: "2 · Convert to original-unit coefficients\nψ = ψ* · sₘ / sₘ₋ℓ ;   σ = s · r"
-s3: "3 · Precompute deterministic components\nbase, coeff[ℓ], scale  per stage"
-s4: "4 · Initialize lag state from history\nlag_state[h][ℓ]  from inflow_history (when present)"
+s1: "1 · Load PAR parameters\nμ, s, ψ*, AR order p  per (hydro, stage)"
+s2: "2 · Derive r via the periodic-ACF closure\nr = √(1 − Σ ψ*·ρ), ρ the model's implied ACF"
+s3: "3 · Convert to original-unit coefficients\nψ = ψ* · sₘ / sₘ₋ℓ ;   σ = s · r"
+s4: "4 · Precompute deterministic components\nbase, coeff[ℓ], scale  per stage"
+s5: "5 · Initialize lag state from history\nlag_state[h][ℓ]  from inflow_history (when present)"
 output: "Output\nprecomputed PAR structure — contiguous arrays (hot-path)" {shape: parallelogram}
 
-input -> s1 -> s2 -> s3 -> s4 -> output
+input -> s1 -> s2 -> s3 -> s4 -> s5 -> output
 ```
 
 ### 1.3 PAR Model Fitting from Historical Data
@@ -81,16 +84,18 @@ The fitting process:
    correlation matrix is symmetric but **not** Toeplitz) via Gaussian
    elimination with partial pivoting
 6. **Store direct output** — Store the standardized coefficients
-   $\psi^*_{m,\ell}$ (direct Yule-Walker output) and the computed
-   `residual_std_ratio` in `inflow_ar_coefficients.parquet`; no conversion to
-   original units is performed at fit time (see section 1.1)
+   $\psi^*_{m,\ell}$ (direct Yule-Walker output) in
+   `inflow_ar_coefficients.parquet`; no conversion to original units is
+   performed at fit time, and the residual std ratio is not itself a fitting
+   output — it is derived from $\psi^*$ afterward via the closure (see
+   section 1.1 and the [PAR(p) model](/math/par-inflow-model), section 3)
 
 The fitted model output includes: seasonal means ($\mu_m$, $s_m$) stored in
 `inflow_seasonal_stats.parquet`, and standardized AR coefficients
-($\psi^*_{m,\ell}$) plus `residual_std_ratio` stored in
-`inflow_ar_coefficients.parquet`. AR order is implicit from the count of
-coefficient rows per (hydro, stage) group — it is not stored as a separate
-field.
+($\psi^*_{m,\ell}$) stored in `inflow_ar_coefficients.parquet`; the residual
+std ratio $r_m$ is derived from $\psi^*$ afterward and is not itself written
+to a file. AR order is implicit from the count of coefficient rows per (hydro,
+stage) group — it is not stored as a separate field.
 
 **Fitted model validation.** Two checks run on the fitted (or loaded)
 parameters:
@@ -98,7 +103,7 @@ parameters:
 | Check                 | Severity | Description                                                                                        |
 | --------------------- | -------- | -------------------------------------------------------------------------------------------------- |
 | Positive sample std   | Error    | A season with AR order $> 0$ must have $s_m > 0$ — a zero std cannot normalise the AR coefficients |
-| Low residual variance | Warning  | $\texttt{residual\_std\_ratio}^2 < 0.01$ — the AR fit explains more than 99% of the variance       |
+| Low residual variance | Warning  | $r_m^2 < 0.01$ — the AR fit explains more than 99% of the variance       |
 
 Model stability is **not** enforced by a post-hoc unit-root test; it is enforced
 during fitting by the Maceira & Damázio contribution-based order reduction (see
