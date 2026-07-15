@@ -1201,11 +1201,10 @@ PAR(p) model seasonal statistics for each (hydro plant, stage) pair.
 
 ### `scenarios/inflow_ar_coefficients.parquet`
 
-Autoregressive coefficients for the PAR(p) inflow model. A legacy
-`residual_std_ratio` column is tolerated on read (one deprecation warning per
-file, value discarded) and is never written — see [PAR(p) Inflow
-Model](/math/par-inflow-model) for how the residual std ratio is derived at
-load from the coefficients below.
+Autoregressive coefficients for the PAR(p) inflow model. The model's
+innovation scale is not an input: Cobre derives it at load from the
+coefficients below via the periodic-ACF closure — see
+[PAR(p) Inflow Model](/math/par-inflow-model).
 
 | Column        | Type   | Required | Description                                 |
 | ------------- | ------ | -------- | ------------------------------------------- |

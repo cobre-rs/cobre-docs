@@ -88,6 +88,10 @@ For a glossary of domain terms used throughout the book, see
   Foundational textbook for ARMA / autoregressive time-series modelling and the Yule-Walker estimation method that underlies the PAR(p) fitting procedure.
   _Background reference for [PAR Inflow Model](/math/par-inflow-model), [Scenario Generation](/math/scenario-generation)._
 
+- **Hipel, K.W. & McLeod, A.I.** (1994). _Time Series Modelling of Water Resources and Environmental Systems_. Elsevier, Amsterdam.
+  Chapter 14 is the canonical presentation of periodic models: the PAR model definition, the periodic autocovariance/ACF conventions (the more recent observation names the season), the periodic Yule-Walker equations, the lag-0 variance identity, the periodic PACF with its $\pm 1.96/\sqrt{N}$ significance band, and the periodic-stationarity condition. Cobre's fitting procedure is this formulation written in correlation form over the $s_m$-standardized series.
+  _Cited in [PAR Inflow Model](/math/par-inflow-model) §5.4._
+
 - **Maceira, M.E.P. & Damázio, J.M.** (2006). Use of the PAR(p) model in the stochastic dual dynamic programming optimization scheme used in the operation planning of the Brazilian hydropower system. _Probability in the Engineering and Informational Sciences_, 20(1), 143–156. [doi:10.1017/S0269964806060098](https://doi.org/10.1017/S0269964806060098)
   The periodic autoregressive PAR(p) model as fitted inside SDDP for the Brazilian system. Source of the population-divisor seasonal-statistics convention and the iterative AR-order-reduction procedure that keeps composed lag contributions non-negative.
   _Cited in [PAR Inflow Model](/math/par-inflow-model) §4.1, §5.2, §9.6._

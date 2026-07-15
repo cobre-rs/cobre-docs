@@ -26,7 +26,7 @@ flat structure per (stage, hydro) pair.
 
 **Why preprocessing separates stored from derived quantities.** The input files
 store standardized AR coefficients ($\psi^*_{m,\ell}$, the direct Yule-Walker
-output) — not original-unit coefficients and not the residual std ratio $r_m$.
+output) — not original-unit coefficients and not the innovation scale $r_m$.
 Preprocessing derives $r_m$ from $\psi^*$ via the periodic-ACF closure (see the
 [PAR(p) model](/math/par-inflow-model), section 3), then converts everything to
 runtime form: $\psi_{m,\ell} = \psi^*_{m,\ell} \cdot s_m / s_{m-\ell}$ and
@@ -86,15 +86,15 @@ The fitting process:
 6. **Store direct output** — Store the standardized coefficients
    $\psi^*_{m,\ell}$ (direct Yule-Walker output) in
    `inflow_ar_coefficients.parquet`; no conversion to original units is
-   performed at fit time, and the residual std ratio is not itself a fitting
+   performed at fit time, and the innovation scale is not itself a fitting
    output — it is derived from $\psi^*$ afterward via the closure (see
    section 1.1 and the [PAR(p) model](/math/par-inflow-model), section 3)
 
 The fitted model output includes: seasonal means ($\mu_m$, $s_m$) stored in
 `inflow_seasonal_stats.parquet`, and standardized AR coefficients
-($\psi^*_{m,\ell}$) stored in `inflow_ar_coefficients.parquet`; the residual
-std ratio $r_m$ is derived from $\psi^*$ afterward and is not itself written
-to a file. AR order is implicit from the count of coefficient rows per (hydro,
+($\psi^*_{m,\ell}$) stored in `inflow_ar_coefficients.parquet`; the innovation
+scale $r_m$ is derived from $\psi^*$ at load and is not itself written to a
+file. AR order is implicit from the count of coefficient rows per (hydro,
 stage) group — it is not stored as a separate field.
 
 **Fitted model validation.** Two checks run on the fitted (or loaded)
@@ -103,7 +103,7 @@ parameters:
 | Check                 | Severity | Description                                                                                        |
 | --------------------- | -------- | -------------------------------------------------------------------------------------------------- |
 | Positive sample std   | Error    | A season with AR order $> 0$ must have $s_m > 0$ — a zero std cannot normalise the AR coefficients |
-| Low residual variance | Warning  | $r_m^2 < 0.01$ — the AR fit explains more than 99% of the variance       |
+| Low residual variance | Warning  | $r_m^2 < 0.01$ — the AR fit explains more than 99% of the variance                                 |
 
 Model stability is **not** enforced by a post-hoc unit-root test; it is enforced
 during fitting by the Maceira & Damázio contribution-based order reduction (see

@@ -25,7 +25,7 @@ where:
 - $a_{h,t}$: Incremental inflow at stage $t$ (m³/s)
 - $\mu_{m(t)}$: Seasonal mean for season $m(t)$
 - $\psi_{m(t),\ell}$: Autoregressive coefficient for lag $\ell$ in season $m(t)$
-- $\sigma_{m(t)}$: Residual standard deviation for season $m(t)$ (**computed** at runtime — see section 3)
+- $\sigma_{m(t)}$: Innovation standard deviation for season $m(t)$ (**derived** at load — see section 3)
 - $\varepsilon_t \sim \mathcal{N}(0, 1)$: Innovation (standardized noise)
 - $m(t)$: Season index for stage $t$ (e.g., month 1–12)
 
@@ -35,20 +35,15 @@ The model order $p$ can vary by season and by hydro plant.
 
 For each hydro $h$ and each season $m \in \{1, \ldots, M\}$ (e.g., $M = 12$ for monthly, $M = 52$ for weekly), the complete PAR(p) model requires:
 
-| Parameter                   | Symbol                           | Description                 |
-| --------------------------- | -------------------------------- | --------------------------- |
-| Seasonal mean               | $\mu_m$                          | Mean inflow for season $m$  |
-| AR coefficients             | $\psi_{m,1}, \ldots, \psi_{m,p}$ | Autoregressive coefficients |
-| Residual standard deviation | $\sigma_m$                       | Scale of innovation term    |
+| Parameter                     | Symbol                           | Description                                              |
+| ----------------------------- | -------------------------------- | -------------------------------------------------------- |
+| Seasonal mean                 | $\mu_m$                          | Mean inflow for season $m$                               |
+| AR coefficients               | $\psi_{m,1}, \ldots, \psi_{m,p}$ | Autoregressive coefficients                              |
+| Innovation standard deviation | $\sigma_m$                       | Scale of the innovation term — derived, not independent (section 3) |
 
 ## 3. Stored vs. Computed Quantities
 
-The data model stores **seasonal sample statistics** and **standardized AR coefficients**. The residual std ratio is not a third stored quantity — it is derived from the AR coefficients alone (see "Deriving the residual std ratio" below). The relationship between stored and derived quantities is:
-
-Stored vs. derived quantities — the files on disk hold the scale-invariant
-`ψ*` alone; at runtime the residual std ratio is derived from `ψ*` by a
-periodic-ACF closure, then everything is converted to original-unit `ψ` and
-`σ` using the seasonal stats, and consumed by the LP stage subproblem.
+The data model stores **seasonal sample statistics** and **standardized AR coefficients** — nothing else. The innovation scale is not a third stored quantity: the coefficient file holds the scale-invariant $\psi^*$ alone; at load the dimensionless innovation scale $r_m$ is derived from $\psi^*$ by a periodic-ACF closure (see "Deriving the innovation scale" below), then everything is converted to original-unit $\psi$ and $\sigma$ using the seasonal stats and consumed by the LP stage subproblem.
 
 **Two planes.** Every PAR($p$) parameter sits on one of two planes, and the
 split is deliberate:
@@ -58,19 +53,18 @@ split is deliberate:
   A study may _re-condition_ these — e.g. a climate scenario that shifts both
   the seasonal mean and the seasonal variability.
 - **Dynamics plane** — the standardized coefficients $\psi^*_{m,\ell}$ and the
-  residual std ratio $r_m = \sigma_m/s_m$ (both dimensionless): the _shape_ of
-  the temporal dependence, independent of magnitude. Only $\psi^*_{m,\ell}$ is
-  an independent parameter here — $r_m$ is pinned by $\psi^*_{m,\ell}$ itself.
+  standardized innovation scale $r_m = \sigma_m/s_m$ (both dimensionless): the
+  _shape_ of the temporal dependence, independent of magnitude. Only
+  $\psi^*_{m,\ell}$ is an independent parameter here — $r_m$ is pinned by
+  $\psi^*_{m,\ell}$ itself.
 
 Runtime re-couples the two via $\psi_{m,\ell} = \psi^*_{m,\ell}\,s_m/s_{m-\ell}$
 and $\sigma_m = s_m\,r_m$, so re-conditioning the first plane rescales both the
-coefficients and the noise while preserving the correlation structure. Note the
-**standardization basis**: $\psi^*$ is the coefficient of the process normalised
-by the **seasonal std $s_m$**, not by the innovation std $\sigma_m$ — the two
-normalisations differ whenever $r_m$ varies across seasons, and only the
-$s_m$-normalised form re-couples against the conditioning plane. (This is the
-distinction an externally-fitted model must respect — see the software layer's
-Inputs & Outputs tab.)
+coefficients and the noise while preserving the correlation structure. The
+**standardization basis** is the seasonal std: $\psi^*$ is the coefficient of
+the process normalised by $s_m$ — the classical standardization of the periodic
+AR literature, and the same basis an externally-fitted model supplies (see the
+Inputs & Outputs tab).
 
 ```d2
 direction: down
@@ -90,7 +84,7 @@ closure: "Periodic-ACF closure\nderives rₘ from ψ* alone"
 
 runtime: "Runtime format — in-memory for LP" {
   psi: "Original-unit AR coeff:  ψₘ,ℓ = ψ*ₘ,ℓ · sₘ / sₘ₋ℓ"
-  sigma: "Original-unit residual std:  σₘ = sₘ · rₘ"
+  sigma: "Original-unit innovation std:  σₘ = sₘ · rₘ"
 }
 
 lp: "consumed by LP stage subproblem"
@@ -120,9 +114,9 @@ $$
 \psi_{m,\ell} = \psi^*_{m,\ell} \cdot \frac{s_m}{s_{m-\ell}}
 $$
 
-### Deriving the residual std ratio
+### Deriving the innovation scale
 
-Unlike $\mu_m$, $s_m$, and $\psi^*_{m,\ell}$, the residual std ratio $r_m$ is not read from a file. It is pinned by $\psi^*$ itself under the model's unit-marginal-variance contract — every season's standardized process $(a_{h,t}-\mu_m)/s_m$ has unit variance — via a **periodic-ACF closure**.
+Unlike $\mu_m$, $s_m$, and $\psi^*_{m,\ell}$, the innovation scale $r_m$ is not read from a file. It is pinned by $\psi^*$ itself under the model's unit-marginal-variance contract — every season's standardized process $(a_{h,t}-\mu_m)/s_m$ has unit variance — via a **periodic-ACF closure**.
 
 Extend the recursion that defines $\psi^*_{m,\ell}$ (section 5.4) to every lag $\ell \ge 1$, not just $\ell \le p_m$:
 
@@ -130,15 +124,15 @@ $$
 \rho_m(\ell) = \sum_{j=1}^{p_m} \psi^*_{m,j}\, \rho_{(m-\min(j,\ell)) \bmod M}\bigl(|\ell - j|\bigr), \qquad \rho_{m'}(0) = 1 \text{ for every season } m'
 $$
 
-Solving this system jointly across every season $m = 0,\ldots,M-1$ and every lag $\ell = 1,\ldots,p_{\max}$ (where $p_{\max} = \max_m p_m$) yields the model's own **implied periodic autocorrelation function** $\rho_m(\ell)$ — the autocorrelations the process would have if $\psi^*$ described an exactly stationary periodic AR process. The residual std ratio follows from the same variance decomposition used in the fitting step (section 5.5):
+Solving this system jointly across every season $m = 0,\ldots,M-1$ and every lag $\ell = 1,\ldots,p_{\max}$ (where $p_{\max} = \max_m p_m$) yields the model's own **implied periodic autocorrelation function** $\rho_m(\ell)$ — the autocorrelations the process would have if $\psi^*$ described an exactly stationary periodic AR process. The innovation scale follows from the same variance decomposition used in the fitting step (section 5.5):
 
 $$
 r_m^2 = 1 - \sum_{\ell=1}^{p_m} \psi^*_{m,\ell}\, \rho_m(\ell)
 $$
 
-A season with $p_m = 0$ contributes no terms to the sum, so $r_m = 1$ — a white-noise season has no residual-variance reduction.
+A season with $p_m = 0$ contributes no terms to the sum, so $r_m = 1$ — a white-noise season gets no variance reduction from an AR part it does not have.
 
-:::note[Why $r_m$ is derived, not stored]
+:::note[Why the innovation scale is derived, not stored]
 Under the unit-marginal-variance contract, $r_m$ is not a free parameter of the model — it is exactly the value that makes the seasonal marginal variance implied by $\psi^*$ equal $s_m^2$. Storing $r_m$ independently of $\psi^*$ would let the two drift out of consistency (e.g. a hand-supplied ratio that does not match the accompanying coefficients); deriving it instead guarantees the process's implied marginal std in every season equals the stored $s_m$ exactly, whatever $\psi^*$ is.
 :::
 
@@ -152,13 +146,13 @@ $$
 \psi_{m,\ell} = \psi^*_{m,\ell} \cdot \frac{s_m}{s_{m-\ell}}
 $$
 
-**Residual standard deviation** (for noise scaling):
+**Innovation standard deviation** (the noise scale):
 
 $$
 \sigma_m = s_m \cdot r_m
 $$
 
-No further autocorrelation values are needed beyond the closure derivation above. All required quantities — $\psi_{m,\ell}$, $\sigma_m$, and the $r_m$ they depend on — are derived solely from the stored seasonal stats and AR coefficient file, with no historical data and no separate residual-ratio input.
+No further autocorrelation values are needed beyond the closure derivation above. All required quantities — $\psi_{m,\ell}$, $\sigma_m$, and the $r_m$ they depend on — are derived solely from the stored seasonal stats and AR coefficient file, with no historical data and no separate noise-scale input.
 
 ### LP coefficients
 
@@ -215,7 +209,7 @@ For the PAR(p)-A path (section 9), two additional rules extend the PACF gate:
 
 For multi-resolution studies (monthly→quarterly aggregation), the same fitting procedure applies after duration-weighted aggregation; see [Multi-resolution studies](/math/multi-resolution-studies).
 
-This section documents the five-step procedure for fitting PAR(p) parameters from historical inflow data. The fitting is performed when the system derives parameters from `inflow_history.parquet`. When pre-computed parameters are provided directly in `inflow_seasonal_stats.parquet` and `inflow_ar_coefficients.parquet`, this procedure is not executed.
+This section documents the four-step procedure for fitting PAR(p) parameters from historical inflow data. The fitting is performed when the system derives parameters from `inflow_history.parquet`. When pre-computed parameters are provided directly in `inflow_seasonal_stats.parquet` and `inflow_ar_coefficients.parquet`, this procedure is not executed. The innovation scale is deliberately **not** part of the fitting: it is derived from the stored coefficients at load (section 3), identically for fitted and user-supplied models (section 5.6).
 
 ### 5.1 Notation
 
@@ -335,11 +329,15 @@ $$
 
 The system is solved via Gaussian elimination with partial pivoting (for small systems with $p \leq 10$, this is numerically adequate).
 
+:::note[Reference formulation]
+This is the classical periodic Yule-Walker system of the PAR literature (Hipel & McLeod, 1994, ch. 14), written in correlation form. The canonical presentation states it in autocovariances $\gamma$ with original-unit coefficients $\psi_{m,j}$; dividing each row $k$ of that system by $s_m\,s_{m-k}$ and substituting $\psi^*_{m,j} = \psi_{m,j}\,s_{m-j}/s_m$ yields exactly the matrix above. The lag-0 row of the same derivation — the variance identity $\gamma_0^{(m)} = \sum_j \psi_{m,j}\,\gamma_j^{(m)} + \sigma_m^2$ — divided by $s_m^2$ becomes the unit-variance decomposition $1 = \sum_j \psi^*_{m,j}\,\rho_m(j) + r_m^2$ that section 3's closure evaluates on the model's implied ACF.
+:::
+
 ### 5.5 Step 4 — Store Standardized Coefficients
 
-The Yule-Walker solution $\psi_{m,\ell}^*$ is in standardized form — the direct output of step 3. It is stored as-is in `inflow_ar_coefficients.parquet`. No conversion to original units is performed, and no other quantity is written alongside it: the residual std ratio is not a fitting output. It is derived from $\psi^*$ afterward, uniformly for every model regardless of its origin, by the periodic-ACF closure of section 3 — not computed here.
+The Yule-Walker solution $\psi_{m,\ell}^*$ is in standardized form — the direct output of step 3. It is stored as-is in `inflow_ar_coefficients.parquet`. No conversion to original units is performed, and no other quantity is written alongside it: the innovation scale is not a fitting output. It is derived from $\psi^*$ afterward, uniformly for every model regardless of its origin, by the periodic-ACF closure of section 3 — not computed here.
 
-For a season whose AR order is shared by every season of the cycle, that closure value coincides exactly with this step's own Yule-Walker system:
+When every season of the cycle shares the same AR order, that closure value coincides exactly with this step's own Yule-Walker system:
 
 $$
 r_m = \sqrt{1 - \boldsymbol{\psi}_m^{*\top} \boldsymbol{r}_m}
@@ -349,15 +347,15 @@ $$
 
 Only $\psi^*_{m,\ell}$ (one row per lag) is written to `inflow_ar_coefficients.parquet`.
 
-### 5.6 Step 5 — Residual Standard Deviation
+### 5.6 Innovation Scale — Derived at Load, Not Fitted
 
-The residual standard deviation for season $m$ is recovered at runtime from the closure-derived residual std ratio $r_m$ (see section 3):
+The innovation standard deviation for season $m$ is recovered at load from the closure-derived innovation scale $r_m$ (see section 3):
 
 $$
 \hat{\sigma}_m = \hat{s}_m \cdot r_m
 $$
 
-For a season whose AR order is shared by every season of the cycle, section 5.5 showed this reduces to the fitting system's own closed-form expression:
+When every season of the cycle shares the same AR order, section 5.5 showed this reduces to the fitting system's own closed-form expression:
 
 $$
 \hat{\sigma}_m = \hat{s}_m \sqrt{1 - \boldsymbol{r}_m^\top \mathbf{R}_m^{-1} \boldsymbol{r}_m}
@@ -378,7 +376,7 @@ Four classes are defined:
 
 The classifier runs in the priority order `Constant` → `ManyNegative` → `Saturated` → `Default`. Constancy takes precedence over negative-pathology detection, which in turn takes precedence over saturation.
 
-#### Why $\hat{s}_m = 0$ short-circuits the fit
+#### Why a zero seasonal std short-circuits the fit
 
 When the override sets $\hat{s}_m = 0$ for a season, every downstream fitter degenerates predictably:
 
@@ -438,12 +436,12 @@ post-hoc root test.
 **Enforced when loading `inflow_ar_coefficients.parquet`:**
 
 1. **AR order derivation**: the number of coefficient rows per (hydro_id, stage_id) determines the AR order $p_m$, and the lags must be present and contiguous $\{1, 2, \ldots, p_m\}$.
-2. **Stationarity of directly-supplied coefficients**: when the AR coefficients for a (hydro, season) group are supplied directly rather than produced by the internal fitting procedure (section 5), the periodic-ACF closure (section 3) must accept them — every implied residual variance $r_m^2 = 1 - \sum_\ell \psi^*_{m,\ell}\,\rho_m(\ell)$ must be strictly positive, every implied autocorrelation must satisfy $|\rho_m(k)| \le 1$, and the **periodic monodromy** — the product, taken once around the full seasonal cycle, of each season's AR companion matrix — must have spectral radius strictly below 1. A set failing any condition is rejected outright. A model whose coefficients come from the internal fitting procedure is exempt from this check: its own order-reduction procedure (section 4.1) already guards stability during the fit.
+2. **Stationarity of directly-supplied coefficients**: when the AR coefficients for a (hydro, season) group are supplied directly rather than produced by the internal fitting procedure (section 5), the periodic-ACF closure (section 3) must accept them — the closure system must be solvable (non-singular), every implied innovation variance $r_m^2 = 1 - \sum_\ell \psi^*_{m,\ell}\,\rho_m(\ell)$ must be strictly positive, every implied autocorrelation must satisfy $|\rho_m(k)| \le 1$, and the **periodic monodromy** — the product, taken once around the full seasonal cycle, of each season's AR companion matrix — must have spectral radius strictly below 1 (assessed via a conservative upper-bound estimate, so borderline sets are rejected rather than accepted). A set failing any condition is rejected outright. A model whose coefficients come from the internal fitting procedure is exempt from this check: its own order-reduction procedure (section 4.1) already guards stability during the fit.
 
 **Enforced when validating the assembled model:**
 
 3. **Positive sample std** (error): a season with AR order $> 0$ must have $s_m > 0$ — a zero seasonal std cannot normalise the AR coefficients.
-4. **Low residual variance** (warning): $r_m^2 < 0.01$ (the AR fit explains more than 99% of the season's variance) raises an advisory model-quality warning; it is not fatal.
+4. **High explained variance** (warning): $R^2 = 1 - r_m^2 > 0.99$ (the AR part explains more than 99% of the season's variance — a likely over-fit) raises an advisory model-quality warning; it is not fatal.
 
 **Enforced during fitting, not as a post-hoc test:**
 
@@ -465,10 +463,10 @@ where:
 
 - $\psi^*_{m(t),\ell}$: the stored AR coefficients, standardized by the seasonal std $s_m$ (the direct Yule-Walker output of section 5.4)
 - $s_{m(t)}$: the seasonal (marginal) standard deviation for season $m(t)$
-- $r_{m(t)} = \texttt{residual\_std\_ratio} = \sigma_{m(t)}/s_{m(t)} \in (0, 1]$: the standard deviation of the **standardized** innovation — the closure-derived value of section 3, $\sqrt{1 - \sum_\ell \psi^*_{m,\ell}\,\rho_{m(t)}(\ell)}$, with $\rho_{m(t)}$ the model's implied periodic ACF
+- $r_{m(t)} = \sigma_{m(t)}/s_{m(t)} \in (0, 1]$: the innovation standard deviation of the **standardized** process — the closure-derived innovation scale of section 3, $\sqrt{1 - \sum_\ell \psi^*_{m,\ell}\,\rho_{m(t)}(\ell)}$, with $\rho_{m(t)}$ the model's implied periodic ACF
 - $\varepsilon_t \sim \mathcal{N}(0, 1)$: unit-variance innovation noise
 
-The innovation of the $s_m$-standardized process is **not** unit-variance: because that process has unit _marginal_ variance, its one-step innovation has standard deviation $r_{m(t)} \le 1$ — which is exactly why the residual std ratio appears here explicitly. Normalising by the seasonal std $s_m$ (as stored) is deliberately **not** the same as normalising by the innovation std $\sigma_m$: the two bases give coefficients differing by a factor $r_{m-\ell}/r_m$, and only the $s_m$-standardized coefficients are the stored $\psi^*$ (see the two-plane note in section 3). The next step converts $\psi^*_{m,\ell}$ to original-unit $\psi_{m,\ell}$ for use in the LP.
+The innovation of the $s_m$-standardized process is **not** unit-variance: because that process has unit _marginal_ variance, its one-step innovation has standard deviation $r_{m(t)} \le 1$ — which is exactly why $r_{m(t)}$ appears here explicitly. The next step converts $\psi^*_{m,\ell}$ to original-unit $\psi_{m,\ell}$ for use in the LP.
 
 ### 7.2 Coefficient Conversion
 
@@ -478,7 +476,7 @@ $$
 \psi_{m,\ell} = \psi^*_{m,\ell} \cdot \frac{s_m}{s_{m-\ell}}
 $$
 
-The residual standard deviation is also derived at this preprocessing step, from the closure-derived residual std ratio $r_m$ (section 3):
+The innovation standard deviation is also derived at this preprocessing step, from the closure-derived innovation scale $r_m$ (section 3):
 
 $$
 \sigma_m = s_m \cdot r_m
@@ -500,7 +498,7 @@ This decomposes the inflow into three additive components:
 
 1. **Lag contribution**: $\displaystyle\sum_{\ell=1}^{p} \psi_{m(t),\ell} \cdot a_{h,t-\ell}$ — linear function of past inflows (state variables or known values)
 2. **Deterministic base**: $\displaystyle\mu_{m(t)} - \sum_{\ell=1}^{p} \psi_{m(t),\ell} \cdot \mu_{m(t-\ell)}$ — constant offset per (stage, hydro), precomputed once
-3. **Stochastic innovation**: $\sigma_{m(t)} \cdot \varepsilon_t$ — noise draw scaled by the seasonal residual standard deviation
+3. **Stochastic innovation**: $\sigma_{m(t)} \cdot \varepsilon_t$ — noise draw scaled by the seasonal innovation standard deviation
 
 ### 7.4 Deterministic Base
 
@@ -624,13 +622,13 @@ The PAR(p)-A model augments section 1 with the standardised deviation of $A_{h,t
 
 $$
 a_{h,t} \;=\; \mu_{m(t)} \;+\; \sum_{\ell=1}^{p} \psi_{m(t),\ell}\,(a_{h,t-\ell} - \mu_{m(t-\ell)})
-\;+\; \hat{\psi}_{m(t)}\,(A_{h,t-1} - \mu^A_{m(t)-1})
+\;+\; \hat{\psi}_{m(t)}\,(A_{h,t-1} - \mu^A_{m(t)})
 \;+\; \sigma_{m(t)} \cdot \varepsilon_t
 $$
 
 where:
 
-- $\mu^A_{m}$, $\sigma^A_{m}$: seasonal sample mean and **population-divisor** standard deviation of $A_{h, \cdot}$ at season $m$
+- $\mu^A_{m}$, $\sigma^A_{m}$: sample mean and **population-divisor** standard deviation of the season's own annual regressor — the values of $A_{h,t-1}$ over stages $t$ in season $m$, i.e. the rolling windows whose most recent observation falls in the preceding season (section 9.3)
 - $\hat{\psi}_{m(t)}$: original-unit annual coefficient at season $m(t)$ — derived at runtime from the standardised stored coefficient (section 9.4)
 - All other symbols carry their classical meaning from section 1
 
@@ -640,17 +638,17 @@ When the PAR(p)-A extension is inactive, the annual term is absent and the model
 
 For each (hydro, season) the PAR(p)-A path stores three additional quantities:
 
-| Quantity                        | Symbol       | Description                                                          |
-| ------------------------------- | ------------ | -------------------------------------------------------------------- |
-| Standardised annual coefficient | $\psi$       | Yule-Walker output for the annual term — dimensionless               |
-| Annual seasonal mean            | $\mu^A_m$    | Sample mean of $A_{h, \cdot}$ at season $m$ (m³/s)                   |
-| Annual seasonal std             | $\sigma^A_m$ | Population-divisor std of $A_{h, \cdot}$ at season $m$ (m³/s, $> 0$) |
+| Quantity                        | Symbol       | Description                                                                        |
+| ------------------------------- | ------------ | ----------------------------------------------------------------------------------- |
+| Standardised annual coefficient | $\psi$       | Yule-Walker output for the annual term — dimensionless                             |
+| Annual seasonal mean            | $\mu^A_m$    | Sample mean of season $m$'s annual regressor $A_{h,t-1}$ (m³/s)                    |
+| Annual seasonal std             | $\sigma^A_m$ | Population-divisor std of season $m$'s annual regressor $A_{h,t-1}$ (m³/s, $> 0$) |
 
 The standardised coefficient $\psi$ is the direct output of the extended periodic Yule-Walker system below (section 9.5). Storage of $\mu^A_m$ and $\sigma^A_m$ alongside the seasonal statistics of $a_{h, \cdot}$ enables the runtime unit conversion of section 9.4 without re-reading the historical record.
 
-### 9.3 Estimating $\mu^A_m$ and $\sigma^A_m$
+### 9.3 Estimating the Annual Seasonal Statistics
 
-Group rolling-window values $A_t = \frac{1}{12} \sum_{j=0}^{11} a_{h,\, t - 11 + j}$ by the season of their **PDF time-index** $t-1$ (the most recent observation contributing to the window). For each (hydro, season) bucket of values $\{A^{(i)}\}$:
+Form every rolling 12-month average $A_t = \frac{1}{12} \sum_{j=0}^{11} a_{h,\, t - 11 + j}$ the chronological history admits, and assign each window to the season **following** its most recent observation — the season whose stages use that window as their regressor $A_{h,t-1}$. The statistics stored for season $m$ therefore describe exactly the regressor that season's stages see. For each (hydro, season $m$) bucket of values $\{A^{(i)}\}$:
 
 $$
 \hat{\mu}^A_m \;=\; \frac{1}{N^A_m} \sum_{i} A^{(i)}
@@ -668,7 +666,7 @@ $$
 \hat{\psi}_{m} \;=\; \psi \cdot \frac{s_m}{\sigma^A_m}
 $$
 
-The conversion mirrors section 7.2 for the classical AR coefficients. The runtime annual term entering the LP RHS is then $\hat{\psi}_{m(t)} \cdot \bigl(A_{h,t-1} - \mu^A_{m(t)-1}\bigr)$, where the lagged rolling-window value $A_{h,t-1}$ is itself derived from the lag state variables already carried by the LP.
+The conversion mirrors section 7.2 for the classical AR coefficients. The annual term $\hat{\psi}_{m(t)} \cdot \bigl(A_{h,t-1} - \mu^A_{m(t)}\bigr)$ is then expanded through the window definition at LP construction: each of the 12 lag coefficients gains $\hat{\psi}_{m(t)}/12$ on top of its classical value, and the deterministic base absorbs the corresponding mean contribution through the lag-season means — the LP carries no separate annual variable, and the rolling-window value is realized entirely by the lag state variables it already carries.
 
 ### 9.5 Order Selection and Coefficient Estimation
 
@@ -696,7 +694,9 @@ $$
 = \boldsymbol{r}^{\,\text{ext}}_m
 $$
 
-where $\mathbf{R}^{\,\text{ext}}_m$ is the $(p+1) \times (p+1)$ partitioned covariance whose first $p$ rows replicate the classical periodic Yule-Walker rows (section 5.4) and whose last row adds the $Z \otimes A$ and $A \otimes A$ entries. The RHS $\boldsymbol{r}^{\,\text{ext}}_m$ appends the $A \otimes Z_{-1}$ target. The residual std ratio is recovered from the inner product of the solution and the RHS, exactly as in the classical case.
+where $\mathbf{R}^{\,\text{ext}}_m$ is the $(p+1) \times (p+1)$ partitioned covariance whose first $p$ rows replicate the classical periodic Yule-Walker rows (section 5.4) and whose last row adds the $Z \otimes A$ and $A \otimes A$ entries. The RHS $\boldsymbol{r}^{\,\text{ext}}_m$ appends the $A \otimes Z_{-1}$ target.
+
+As in the classical case, the innovation scale is not a fitting output. For a PAR(p)-A model the closure of section 3 runs on the **effective 12-lag system**: the annual regressor is a linear functional of the last 12 inflows, so expanding it per lag yields an effective periodic AR whose standardized lag-$\tau$ coefficient is the classical $\psi^*_{m,\tau}$ (zero beyond $p_m$) plus the annual contribution $\psi \cdot s_{m-\tau} / (12\,\sigma^A_m)$. The innovation scale $r_m$ derives from that effective system's implied ACF, and the runtime noise scale is $\sigma_m = s_m \cdot r_m$ exactly as in section 3.
 
 ### 9.6 Iterative Order Reduction
 
