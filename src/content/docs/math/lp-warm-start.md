@@ -124,8 +124,14 @@ generated it. To reconstruct a basis for the current LP:
   construction (each new cut adds exactly one row and one basic entry). When
   selection instead _drops_ a previously-basic cut, the reconstructed basis can
   carry an excess of basic rows; a final pass demotes the trailing excess of
-  basic cut rows to non-basic until the invariant holds. The obligation is
-  one-sided — reconstruction can only ever leave an excess, never a deficit.
+  basic cut rows to non-basic until the invariant holds. Under the
+  reconstruction's premises — a stored basis captured against the same LP
+  shape — the obligation is one-sided: reconstruction can only ever leave an
+  excess. A basic-count **deficit** therefore proves the stored basis was
+  captured against a differently-shaped LP; it is rejected with a named error
+  reporting the basic-count arithmetic, identically on either solver backend —
+  never repaired, since demotion cannot create the missing basics and
+  promotion would fabricate a basis the stored one never described.
 
 This single mechanism handles all three churn cases — drops, reorders, and
 additions — and serves both within-run reactivation and the cross-run

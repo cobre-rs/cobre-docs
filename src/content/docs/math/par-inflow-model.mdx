@@ -436,7 +436,7 @@ post-hoc root test.
 **Enforced when loading `inflow_ar_coefficients.parquet`:**
 
 1. **AR order derivation**: the number of coefficient rows per (hydro_id, stage_id) determines the AR order $p_m$, and the lags must be present and contiguous $\{1, 2, \ldots, p_m\}$.
-2. **Stationarity of directly-supplied coefficients**: when the AR coefficients for a (hydro, season) group are supplied directly rather than produced by the internal fitting procedure (section 5), the periodic-ACF closure (section 3) must accept them — the closure system must be solvable (non-singular), every implied innovation variance $r_m^2 = 1 - \sum_\ell \psi^*_{m,\ell}\,\rho_m(\ell)$ must be strictly positive, every implied autocorrelation must satisfy $|\rho_m(k)| \le 1$, and the **periodic monodromy** — the product, taken once around the full seasonal cycle, of each season's AR companion matrix — must have spectral radius strictly below 1 (assessed via a conservative upper-bound estimate, so borderline sets are rejected rather than accepted). A set failing any condition is rejected outright. A model whose coefficients come from the internal fitting procedure is exempt from this check: its own order-reduction procedure (section 4.1) already guards stability during the fit.
+2. **Stationarity of directly-supplied coefficients**: when the AR coefficients for a (hydro, season) group are supplied directly rather than produced by the internal fitting procedure (section 5), the periodic-ACF closure (section 3) must accept them — the closure system must be solvable (non-singular), every implied innovation variance $r_m^2 = 1 - \sum_\ell \psi^*_{m,\ell}\,\rho_m(\ell)$ must be strictly positive, every implied autocorrelation must satisfy $|\rho_m(k)| \le 1$, and the **periodic monodromy** — the product, taken once around the full seasonal cycle, of each season's AR companion matrix — must have spectral radius strictly below 1 (assessed via a conservative upper-bound estimate, so borderline sets are rejected rather than accepted). A set failing any condition is rejected outright. A model whose coefficients come from the internal fitting procedure is exempt from this gate: its own order-reduction procedure (section 4.1) already guards stability during the fit. Independent of origin, however, the closure derivation itself (section 3) is a final load-time guard: a singular closure system, or a non-finite derived $r_m$ — a negative implied residual variance $1 - \sum_\ell \psi^*_{m,\ell}\,\rho_m(\ell)$ from a degenerate near-unit-root fit — is a hard load error naming the hydro and season.
 
 **Enforced when validating the assembled model:**
 
@@ -591,7 +591,7 @@ Correlated noise is then generated as $C^{1/2} z$ where $z \sim \mathcal{N}(0, I
 
 The spectral form handles rank-deficient correlation matrices natively: eigenvectors corresponding to clipped (zero) eigenvalues contribute nothing to the factorisation, which is the correct behaviour for directions of zero variance. No prior filtering of degenerate hydro plants is needed.
 
-The clipping threshold acts as a single, transparent parameter controlling which near-zero eigenvalues are treated as structural zeros. The cross-entity correlation structure is preserved for all eigenvalues above the threshold.
+The clipping rule is fixed and transparent — exactly the strictly negative eigenvalues are set to zero, nothing else is altered. The cross-entity correlation structure is preserved exactly for all non-negative eigenvalues.
 
 ### 8.4 Trade-offs
 

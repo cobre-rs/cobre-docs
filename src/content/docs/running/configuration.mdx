@@ -568,13 +568,15 @@ stage with chronological blocks rather than four separate weekly SDDP stages.
 This provides weekly LP granularity while keeping one noise realization per
 month — consistent with the data resolution — and avoids the lag-accumulation
 complications that arise with multiple independent weekly stages. See
-Stochastic Modeling — Temporal Resolution and PAR for the full
-explanation and a `stages.json` example of the block pattern.
+[Block Formulation Variants](/math/block-formulations/) for the chronological
+formulation behind this pattern and
+[Case Directory Format](/reference/case-directory-format/) for the
+`stages.json` `block_mode` field.
 
 ### See Also (Temporal Resolution)
 
-- Stochastic Modeling — Multi-Resolution Studies — detailed mechanism descriptions including the noise group precomputation algorithm, observation aggregation internals, and lag ring buffer design
-- Stochastic Modeling — Temporal Resolution and PAR — the honest representation principle, the recommended weekly-block pattern, and validation rules 27-31
+- [Multi-Resolution Studies](/math/multi-resolution-studies/) — mixed-resolution mechanics: same-season noise groups, duration-weighted observation aggregation, and PAR fitting on aggregated statistics
+- [Weekly+Monthly Coupled Studies](/math/weekly-monthly-coupled-studies/) — the two-study coupling alternative when true weekly-resolution noise data exists
 
 ---
 
@@ -665,4 +667,4 @@ silently ignored. For the complete list of fields and their types, see the
 - [Case Directory Format](/reference/case-directory-format/) — full schema for all input files
 - [Running Studies](/running/running-studies/) — end-to-end workflow guide
 - [Error Codes](/reference/error-codes/) — validation errors including `SchemaError` for config fields
-- Stochastic Modeling — Temporal Resolution — how stage resolution affects PAR noise sharing and validation rules
+- [Multi-Resolution Studies](/math/multi-resolution-studies/) — how stage resolution affects PAR noise sharing (noise groups) and observation aggregation

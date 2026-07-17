@@ -56,8 +56,11 @@ aggregate expected cost are identical across runs.
 
 **Scenario-tree generation.** The opening tree is generated before training
 begins by deriving one seed per (opening index, stage) pair from the base seed.
-Because the derivation depends only on globally known constants, every MPI rank
-generates the same tree bit-identically. See [Scenario Generation](/math/scenario-generation)
+Because both the seed derivation and the noise-group assignment (consecutive
+stages sharing a `(season_id, year)` group reuse one draw) are pure functions
+of globally known inputs — the base seed and the stage calendar of the
+broadcast system — every MPI rank generates the same tree bit-identically. See
+[Scenario Generation](/math/scenario-generation)
 for the seed derivation procedure and opening-tree construction.
 
 **Out of scope.** Wall-clock time, peak memory, and compiler-optimisation-driven

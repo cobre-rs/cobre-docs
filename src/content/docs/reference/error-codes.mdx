@@ -161,10 +161,13 @@ but a hydro, thermal, or line still references its old ID.
 ### `ConstraintError`
 
 **When it occurs:** A catch-all for all validation diagnostics collected by
-`ValidationContext` across any validation layer, and for `SystemBuilder::build()`
-rejections. The `description` field contains every collected error message joined
-by newlines, each prefixed with its `[ErrorKind]`, source file, optional entity
-identifier, and message text.
+`ValidationContext` across any validation layer, for `SystemBuilder::build()`
+rejections, and for guards raised directly by loaders after assembly (for
+example, a non-finite closure-derived innovation scale — a non-stationary
+fitted inflow model — is rejected here naming the hydro and season). The
+`description` field contains every collected error message joined by newlines,
+each prefixed with its `[ErrorKind]`, source file, optional entity identifier,
+and message text.
 
 **Display format:**
 

@@ -109,8 +109,22 @@ Because the season index assignment of section 1 aligns quarterly stages with
 the same seasonal calendar as the corresponding monthly stages, the opening tree
 is coherent across the resolution boundary. A quarterly stage in the fourth
 quarter and the three monthly stages of that quarter draw noise with the same
-seasonal conditioning — the cross-resolution noise alignment is a structural
-consequence of season-index assignment, not a separate sampling rule.
+seasonal conditioning — that alignment is a structural consequence of
+season-index assignment.
+
+One sampling rule is specific to subdivided seasons: **noise groups**. Before
+the tree is drawn, stages are grouped by `(season_id, year)`, and consecutive
+stages falling in the same group — several fine-resolution stages inside one
+coarse season, such as weekly stages within a monthly season — receive one
+shared draw per opening: the group's first stage draws from its
+(opening index, stage) seed and each later stage in the group copies that
+stage's already-correlated noise. This prevents a season's stochastic
+innovation from being sampled anew for every stage the season happens to be
+subdivided into. A stage without a `season_id` forms its own group, and in a
+uniform single-resolution study every group is unique, so every stage draws
+independently. The group assignment is a pure function of the stage calendar,
+so it is identical on every MPI rank (see
+[Determinism Guarantees](/math/determinism-guarantees)).
 
 The backward pass iterates over the full opening tree without distinguishing
 stage resolution; cut aggregation proceeds as in a single-resolution study.

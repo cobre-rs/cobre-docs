@@ -85,7 +85,7 @@ the full convergence history. Its schema:
 | `time_backward_ms` | INT64   | Wall-clock time for the backward pass in milliseconds                                  |
 | `time_total_ms`    | INT64   | Total wall-clock time for the iteration in milliseconds                                |
 | `forward_passes`   | INT32   | Number of forward pass scenarios in this iteration                                     |
-| `lp_solves`        | INT64   | Cumulative LP solves up to this iteration                                              |
+| `lp_solves`        | INT64   | Total LP solves across all ranks in this iteration (forward + backward + bound)        |
 | `mean_rows_in_lp`  | FLOAT64 | Mean cuts loaded per LP solve this iteration under dynamic cut selection (0 otherwise) |
 
 ### Python (Polars)

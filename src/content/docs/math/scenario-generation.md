@@ -214,6 +214,15 @@ for $t < T$ and $N_T = K$.
    restarts and MPI configurations (see section 2.2)
 3. Correlation is applied per the active profile for each stage (see section
    2.4)
+4. Consecutive stages sharing a **noise group** — keyed by
+   `(season_id, year)`, as when several weekly stages fall inside one monthly
+   season — receive one shared noise draw per opening: the group's first stage
+   draws from its (opening_index, stage) seed and each later stage in the
+   group copies that stage's already-correlated noise. A stage without a
+   `season_id` gets its own group; in a uniform monthly study every group is
+   unique and every stage draws independently. See
+   [Multi-Resolution Studies](/math/multi-resolution-studies) for the
+   mechanism's role in mixed-resolution horizons.
 
 **Backward pass usage:** At each stage $t$, the backward pass iterates over
 **all** $N_t$ noise vectors, solving one subproblem per opening, then
@@ -233,10 +242,11 @@ a given stage are contiguous in memory, enabling linear access during the
 backward pass. The noise vector for a given (stage, opening_index) pair is
 read directly without iteration over the tree structure.
 
-The same tree is generated bit-identically on every MPI rank because seed
-derivation depends only on `(base_seed, opening_index, stage)` — globally
-known constants. For the determinism guarantees that follow from this
-property, see [Determinism Guarantees](/math/determinism-guarantees).
+The same tree is generated bit-identically on every MPI rank because both the
+per-`(opening_index, stage)` seed derivation and the noise-group assignment
+are pure functions of globally known inputs — the base seed and the stage
+calendar of the broadcast system. For the determinism guarantees that follow
+from this property, see [Determinism Guarantees](/math/determinism-guarantees).
 
 ### 2.3a Sampling Method and Opening Tree Generation
 

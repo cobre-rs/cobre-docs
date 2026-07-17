@@ -30,7 +30,7 @@ diverge from the code, the spec must be updated — not the other way around.
 
 ## Current State
 
-**Synced to: cobre v0.10.0 (2026-07-10).**
+**Synced to: cobre v0.11.1 (2026-07-17).**
 
 The corpus is a **unified two-layer reference**: the annotation-free **math
 layer** (formulation, algorithm, worked examples) interleaved per topic with a
@@ -153,8 +153,8 @@ When **updating the LP / SDDP / cut / warm-start cluster** (`lp-formulation.md`,
 `cut-management.mdx`, `sddp-algorithm.mdx`, `lp-warm-start.md`,
 `determinism-guarantees.md`):
 
-→ Verify column/row layout against `StateLayout` in
-`crates/cobre-sddp/src/lp/indexer/state_layout.rs` (the
+→ Verify column/row layout against `StateSpace` in
+`crates/cobre-sddp/src/lp/indexer/state_space.rs` (the
 `state_to_lp_incoming_column` resolver). LP construction lives in
 `crates/cobre-sddp/src/lp/builder/` (`columns.rs`, `rows.rs`, `entries.rs`,
 `template.rs`, `layout.rs`).
@@ -203,7 +203,7 @@ When **updating water travel time / cascade** (`lp-formulation.md §5d`,
 
 → A hydro's `travel_time_hours` on its **main cascade arc** delays release as
 **augmented Benders state** — in-transit buckets, one slot per downstream plant
-per maturity lag, pinned by column bounds like all state (`state_layout.rs`,
+per maturity lag, pinned by column bounds like all state (`state_space.rs`,
 shared `delivery_ring.rs`; declared arcs in `setup/bucket_topology.rs`).
 `InitialConditions.past_defluences` seeds stage-0 buckets; validation requires
 history ≥ the arc travel time. Output: `simulation/in_transit/`. Volume maturing
@@ -217,7 +217,10 @@ resolved on the stage calendar) — `AnticipatedConfig::{LeadStages,LeadTime}`
 (`entities/thermal.rs`). Every commitment is **bounded, costed, and
 commissioning-gated at its delivery stage** `t+K` (`columns.rs`,
 `lead_time/mod.rs`); a sub-stage lead → ordinary thermal; fan-out (>1 delivery) and
-lead>horizon are rejected at load.
+lead>horizon are rejected at load. The delivered commitment is
+reconciled against solver feasibility-tolerance drift at its delivery bound on
+every solve (`lp/builder/commitment_reconcile.rs`); genuine over-commitment →
+named error (thermal, stage, overshoot), never a bare infeasible LP.
 
 When **updating filling / commissioning** (`penalty-system.mdx`,
 `system-elements.mdx`, `lp-formulation.md`):

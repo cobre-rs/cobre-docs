@@ -1213,6 +1213,10 @@ coefficients below via the periodic-ACF closure — see
 | `lag`         | INT32  | Yes      | Lag index (1-based)                         |
 | `coefficient` | DOUBLE | Yes      | AR coefficient for this (hydro, stage, lag) |
 
+Columns beyond this schema are ignored — a file carrying an extra column (for
+example a stored innovation-scale ratio produced by another tool) loads with
+that column ignored outright; the derived value always wins.
+
 ---
 
 ### `scenarios/noise_openings.parquet`

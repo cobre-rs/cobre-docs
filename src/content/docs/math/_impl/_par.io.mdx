@@ -61,8 +61,10 @@ Rules Cobre enforces (or that silently mis-scale the model if broken):
   singular, the implied innovation variance is not strictly positive for any
   season, any implied autocorrelation magnitude exceeds 1, or a conservative
   spectral-radius estimate of the periodic monodromy reaches 1. The gate runs
-  only on directly-supplied coefficients — coefficients Cobre fits internally
-  keep the fitter's own fallbacks.
+  only on directly-supplied coefficients; internally-fitted coefficients are
+  guarded during the fit itself (order reduction) and, like every load path, by
+  the closure derivation's own backstop — a non-finite derived $r_m$ is a hard
+  load error naming the hydro and season.
 - Lags must be contiguous $1, 2, \ldots, p$; the **AR order $p$ is implicit** in
   the row count (there is no order column). White noise = no coefficient rows
   for that (hydro, stage), i.e. order 0, for which the closure gives $r_m = 1$.

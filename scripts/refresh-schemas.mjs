@@ -9,7 +9,7 @@
 //
 // Released-baseline rule (Epic 03 learnings, "Released-baseline discipline"):
 // content is read from an immutable git TAG via
-// `git -C <cobre> show <ref>:book/src/schemas/<name>`, NEVER the `cobre`
+// `git -C <cobre> show <ref>:<schemas-path>/<name>`, NEVER the `cobre`
 // working tree. The local `cobre` checkout may sit mid-feature-branch with
 // unreleased fields (verified: `buses.schema.json` on `feat/water-travel-time`
 // adds an `operational_start_date` property absent at the `v0.9.0` tag) — a
@@ -21,12 +21,14 @@
 //               Only used to resolve the git object database — the ref is read
 //               via plumbing (ls-tree/show), so cobre's CURRENTLY CHECKED OUT
 //               branch is irrelevant; only the tag's committed object matters.
-//     --ref     git ref/tag to vendor from (default: v0.9.0).
+//     --ref     git ref/tag to vendor from (default: v0.11.1).
 //     --check   verify-only: compare public/schemas/ against <ref>, write
 //               nothing; exit 1 listing every drifted/missing file, else exit 0.
 //
-// Discovery: `git -C <cobre> ls-tree --name-only <ref> book/src/schemas/` must
-// list exactly 18 entries — a guard against a wrong ref or a partial tree.
+// Discovery: the schemas tree lives at `schemas/` since the cobre mdBook
+// retirement (v0.11.0) and at `book/src/schemas/` on earlier tags — the first
+// candidate path with entries at <ref> wins, and it must list exactly 18
+// entries — a guard against a wrong ref or a partial tree.
 // `--check` mode is the advisory staleness check (the authoritative freshness
 // gate lives in `cobre`, ticket-016); default mode is the write path.
 //
@@ -40,8 +42,10 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 
 const EXPECTED_COUNT = 18;
-const DEFAULT_REF = "v0.9.0";
-const SCHEMAS_SUBPATH = "book/src/schemas";
+const DEFAULT_REF = "v0.11.1";
+// Ordered candidates for the schemas tree in cobre: `schemas/` from the mdBook
+// retirement (v0.11.0) onward, `book/src/schemas/` on earlier tags.
+const SCHEMAS_SUBPATHS = ["schemas", "book/src/schemas"];
 
 const publicSchemasDir = fileURLToPath(
   new URL("../public/schemas/", import.meta.url),
@@ -51,7 +55,7 @@ const publicSchemasDir = fileURLToPath(
 // Both are synchronous, touch no filesystem/subprocess, and are exercised
 // directly on inline fixtures by scripts/refresh-schemas.test.mjs.
 
-// Parse `git ls-tree --name-only <ref> book/src/schemas/` stdout into a sorted
+// Parse `git ls-tree --name-only <ref> <schemas-path>/` stdout into a sorted
 // array of basenames (e.g. "buses.schema.json"). Throws a named error if the
 // count is not exactly EXPECTED_COUNT — the guard against a wrong ref or a
 // partial tree (e.g. a shallow/incomplete fetch of the tag).
@@ -64,7 +68,7 @@ export function parseSchemaNames(lsTreeStdout) {
     .sort();
   if (names.length !== EXPECTED_COUNT) {
     throw new Error(
-      `refresh:schemas: expected ${EXPECTED_COUNT} schema files under ${SCHEMAS_SUBPATH}/, found ${names.length} — wrong ref, or a partial tree?`,
+      `refresh:schemas: expected ${EXPECTED_COUNT} schema files in the schemas tree, found ${names.length} — wrong ref, or a partial tree?`,
     );
   }
   return names;
@@ -85,25 +89,37 @@ export function assertWellFormed(name, text) {
 
 // --- Git plumbing (execFileSync with an ARGS ARRAY — never a shell string) --
 
+// Resolve which candidate schemas tree exists at <ref>, returning
+// { subpath, stdout } for the first candidate with entries. Throws a named
+// error if none has any.
 function gitLsTree(cobre, ref) {
-  try {
-    return execFileSync(
-      "git",
-      ["-C", cobre, "ls-tree", "--name-only", ref, `${SCHEMAS_SUBPATH}/`],
-      { encoding: "utf8" },
-    );
-  } catch (error) {
-    throw new Error(
-      `refresh:schemas: cannot list ${SCHEMAS_SUBPATH}/ at ${ref} from ${cobre} — is the tag fetched? (${error.message})`,
-    );
+  for (const subpath of SCHEMAS_SUBPATHS) {
+    let stdout;
+    try {
+      stdout = execFileSync(
+        "git",
+        ["-C", cobre, "ls-tree", "--name-only", ref, `${subpath}/`],
+        { encoding: "utf8" },
+      );
+    } catch (error) {
+      throw new Error(
+        `refresh:schemas: cannot list ${subpath}/ at ${ref} from ${cobre} — is the tag fetched? (${error.message})`,
+      );
+    }
+    if (stdout.trim().length > 0) {
+      return { subpath, stdout };
+    }
   }
+  throw new Error(
+    `refresh:schemas: no schemas tree at ${ref} (tried ${SCHEMAS_SUBPATHS.join(", ")}) — wrong ref?`,
+  );
 }
 
-function gitShow(cobre, ref, name) {
+function gitShow(cobre, ref, subpath, name) {
   try {
     return execFileSync(
       "git",
-      ["-C", cobre, "show", `${ref}:${SCHEMAS_SUBPATH}/${name}`],
+      ["-C", cobre, "show", `${ref}:${subpath}/${name}`],
       { encoding: "utf8" },
     );
   } catch (error) {
@@ -139,11 +155,12 @@ function parseArgs(argv) {
 function main() {
   const { cobre, ref, check } = parseArgs(process.argv.slice(2));
 
-  const names = parseSchemaNames(gitLsTree(cobre, ref));
+  const { subpath, stdout } = gitLsTree(cobre, ref);
+  const names = parseSchemaNames(stdout);
 
   const released = new Map();
   for (const name of names) {
-    const text = gitShow(cobre, ref, name);
+    const text = gitShow(cobre, ref, subpath, name);
     assertWellFormed(name, text);
     released.set(name, text);
   }

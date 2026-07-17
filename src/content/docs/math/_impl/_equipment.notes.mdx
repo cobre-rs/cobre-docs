@@ -55,6 +55,18 @@ thermal with this expression is a hard load-time error, and referencing an
 anticipated thermal's per-block generation with `thermal_generation(N)` is
 accepted but flagged, since it does not read the forward commitment.
 
+### Delivered commitments are reconciled against solver drift
+
+The commitment a delivery stage receives is the solver's computed value for a
+ring state column, so it is accurate only to the LP backend's feasibility
+tolerance rather than exact. The delivery-stage generation bound that the
+must-generate coupling pins it to is therefore reconciled against that
+sub-watt drift on every solve — a commitment arriving a hair outside its cap
+trains normally instead of surfacing as a spurious infeasible LP. A commitment
+genuinely beyond its cap is not absorbed: it is refused as a named error
+identifying the thermal, the stage, and the overshoot — never reported as a
+bare infeasibility.
+
 ### Must-run NCS and the double-discount trap
 
 The `allow_curtailment: false` flag pins an NCS generation column to the
