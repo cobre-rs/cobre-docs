@@ -1,19 +1,22 @@
 ---
 title: LP Warm-Start
-description: Per-stage basis caching and cut-aware basis reconstruction by slot identity — how Cobre reuses LP bases to accelerate backward-pass solves.
+description: Per-(scenario, stage) basis caching and cut-aware basis reconstruction by slot identity — how Cobre reuses LP bases to accelerate backward-pass solves.
 ---
 
 ## Purpose
 
 This chapter describes how Cobre reuses an LP basis to accelerate solves.
-Two related mechanisms are covered. The **backward-pass basis cache** carries
-an optimal basis between consecutive solves at the same stage during a run,
-where many similar LPs are solved in sequence and a valid prior basis is almost
-always available. **Cut-aware basis reconstruction by slot identity** maps a
-stored basis onto a cut pool that has churned through cut selection, and is
-also what lets a warm-start or resume run reconstruct the checkpoint basis from
-a saved policy. This chapter does not cover forward-pass basis behaviour beyond
-what these mechanisms require.
+Two related mechanisms are covered. The **per-(scenario, stage) basis cache**
+holds one captured basis per trial point per stage and supplies it as the warm
+start when that subproblem is solved again; because the backward pass resets and
+reloads each stage's frozen LP template per trial point rather than keeping a
+live LP resident, it is this cache — a data structure, not a persistent solver —
+that carries a good basis from one solve to the next. **Cut-aware basis
+reconstruction by slot identity** maps a stored basis onto a cut pool whose
+active set has churned through cut selection, which is what lets a reused basis —
+whether a within-run capture or the checkpoint basis a warm-start or resume run
+loads from a saved policy — align to the current LP. This chapter does not cover
+forward-pass basis behaviour beyond what these mechanisms require.
 
 ## 1. The Repeated-LP Problem
 
@@ -39,42 +42,60 @@ rebuilding feasibility from scratch. The benefit is proportional to how
 similar consecutive LPs are — and in the SDDP backward pass, consecutive
 solves at the same stage are very similar.
 
-## 2. Per-Stage Basis Cache
+## 2. Per-(Scenario, Stage) Basis Cache
 
-Cobre maintains one basis cache per stage. At the end of each backward-pass
-LP solve at stage $t$, the solver's optimal basis — the partition of variables
-and constraints into basic and non-basic — is saved into the stage-$t$ cache,
-replacing whatever was there before.
+Cobre maintains a basis cache keyed by `(scenario, stage)`, not one cache per
+stage. The store holds at most one captured basis for each trial point at each
+stage — the partition of variables and constraints into basic and non-basic —
+and workers read from and write to it by that key.
 
-At the start of the next solve at stage $t$, the cached basis is loaded and
-supplied to the LP solver as the starting point. The cache is seeded on the
-first solve of a fresh training run (which necessarily cold-starts), and is
-populated with a valid optimal basis from that point onward. A **warm-start or
-resume run is the exception**: it loads a saved policy whose stored LP bases
-seed the cache up front, so even the first training iteration warm-starts — by
-reconstructing the checkpoint basis (§4) — rather than cold-starting. The same
-checkpoint reconstruction also speeds up simulation-only (`cobre simulate`)
-runs.
+The backward pass does not continuously mutate a single resident LP per stage.
+Each backward work unit is a chain of one trial point's openings at a stage: it
+resets the solver's retained basis and factorization and reloads the stage's
+frozen LP template, then appends the iteration's new cuts. Warm-starting is then
+supplied at exactly one point in the chain — its **first-solved opening**, where
+the basis stored for that trial point's `(scenario, stage)` slot is loaded as
+the starting point. The remaining openings do not reload from the store; they
+warm-continue from the factorization the previous opening left in place, since
+within the chain only the noise-dependent bounds change while the LP structure
+is fixed.
 
-The cache is per-stage rather than per-opening. The backward pass solves
-multiple openings at each stage per trial point; the cache is updated at the
-end of each opening solve and used at the start of the next opening solve at
-the same stage. This means the warm-starting basis is always the most recent
-optimal basis from the same stage, not necessarily from the same opening or
-the same trial point.
+The cache is seeded on the first solve of a fresh training run, which
+necessarily cold-starts, and is populated with a valid optimal basis from that
+point onward. A **warm-start or resume run is the exception**: it loads a saved
+policy whose stored LP bases seed the cache up front, so even the first training
+iteration warm-starts — by reconstructing the checkpoint basis (§4) — rather
+than cold-starting. The same checkpoint reconstruction also speeds up
+simulation-only (`cobre simulate`) runs.
 
-The same cache carries across iterations. The basis saved at the end of
-iteration $k$'s backward pass at stage $t$ seeds the first opening of
-iteration $k+1$'s backward pass at stage $t$. The solver instance for each
-stage persists across the iteration loop rather than being recreated per
-solve; the basis persists with it.
+Because warm-starting is confined to the first-solved opening, the basis a
+solve begins from is a function of the order in which the trial point's openings
+are chained, not of opening index or trial-point order. That chaining order is
+fixed in advance rather than incidental: it determines which basis each solve
+begins from, and bit-identical reproducibility depends on its being predetermined
+and rank-invariant. It does not, however, affect the validity of any cut
+produced. Each opening's optimal value is fixed by its own realization and the
+trial state alone, and each opening's cut is recorded under that opening's own
+canonical identity rather than under its position in the chain, so every cut is a
+valid support of the value function wherever the chain happens to start it. The
+mechanism by which a pinned chain makes the terminating bases — and therefore,
+at a degenerate optimum, the cut coefficients — reproducible is set out in
+[Determinism Guarantees §3 (Methodology Mechanisms)](/math/determinism-guarantees#3-methodology-mechanisms).
+
+The store carries across iterations. The basis captured for a `(scenario, stage)`
+slot during one iteration seeds that same slot's first-solved opening in the
+next iteration's backward pass. Cross-iteration continuity is therefore carried
+by the cache: each work unit resets the solver's retained state and reloads the
+frozen template before solving, so it is the persisted `(scenario, stage)` basis
+— not a solver left running in place — that links one iteration's solves to the
+next.
 
 ## 3. Cache Invalidation
 
 The basis cache becomes invalid when the LP at stage $t$ changes in a way
 that is incompatible with the cached basis. The relevant change is cut-set
 growth: each iteration adds one new cut to every stage's LP. Cut growth is
-strictly append-only — Cobre never removes a cut from the LP within a
+strictly append-only — Cobre never removes an active cut from the LP within a
 training run (see [Cut Management](/math/cut-management) for the append-only
 monotonicity guarantee). A new cut adds one constraint row to the LP.
 
@@ -85,19 +106,26 @@ remains dual-feasible. If the new cut is violated at the cached basis point,
 the solver performs a bounded number of additional dual simplex pivots to
 restore feasibility, starting from the warm basis rather than from cold.
 
-The key observation is that cut growth is monotone: rows are only ever added,
-never removed or reordered. This means the structural relationship between
-consecutive LP instances is predictable — the new LP is a proper extension of
-the previous one — and warm starting from a prior basis is always at least as
-good as cold starting, never worse in terms of feasibility of the retained
-rows.
+When cut selection leaves the active set untouched, this growth is purely
+monotone: rows are only ever added, never removed or reordered. The structural
+relationship between consecutive LP instances is then predictable — the new LP
+is a proper extension of the previous one — and warm-starting from a prior basis
+is at least as good as cold-starting, never worse in the feasibility of the
+retained rows. Cut selection can break that pure-append case, which the next
+paragraph turns to.
 
-Cut deactivation — toggling a cut row's bound to a trivially-satisfied
-$\pm\infty$ sentinel during cut selection — is treated as a bound change on an
-existing row rather than a structural change to the constraint matrix. The
-cut's stable slot, and hence its row identity, is preserved. When a cut is
-later reactivated, its row's bound is restored and the solver resumes from the
-current cached basis with the reactivated constraint.
+Cut deactivation follows a different route on the backward-pass solve path. A
+deactivated cut is **excluded from the rebaked frozen template** rather than
+left in place with a relaxed bound: at the LP level its row is dropped, not
+merely slackened, so the active cut set can shrink and reorder from one
+iteration to the next, not only grow. The cut is not lost — its stable slot is
+retained in the append-only pool, and reactivation re-bakes the cut at that same
+slot. Because the active set can change this way, a stored basis cannot be
+replayed by row position; the slot-identity reconstruction of §4 reconciles it
+to the current active set, which is what keeps warm-starting valid across
+deactivation and reactivation. See [Cut Management](/math/cut-management) for the
+full deactivation mechanism, including the separate persistent-lower-bound-LP
+route that instead toggles a $\pm\infty$ sentinel.
 
 ## 4. Cut-Aware Basis Reconstruction by Slot Identity
 
@@ -144,45 +172,45 @@ its recent binding history. The resulting basis is fully determined by slot
 identity, with no activity-window heuristic in play.
 :::
 
-## 5. Solver State Retention
+## 5. What Persists Across Solves
 
-The LP warm-start mechanism rests on a deliberate policy: solver instances
-at each stage are not destroyed and recreated between solves. The solver
-retains all LP data — the constraint matrix, the objective, the variable
-bounds, and the current basis — across the full backward pass of an
-iteration and across successive iterations.
+Warm-starting does not rest on a resident per-stage solver that holds each
+stage's LP for the lifetime of the run. Each backward work unit resets the
+solver's retained state and reloads the stage's frozen LP template before
+solving, so what carries information from one solve to the next is not a live
+solver but two persistent data structures:
 
-This retention policy has a direct consequence for memory: each stage's
-solver instance holds the LP in full, including the complete cut set
-accumulated so far, for the lifetime of the training run. The memory cost of
-solver state grows with the number of cuts added and the size of the stage LP.
+- The **per-(scenario, stage) basis cache**, which stores one captured basis per
+  trial point per stage — the partition of the LP into basic and non-basic
+  variables and constraints. This is the quantity that enables warm-starting: it
+  is read when a subproblem is first solved and refreshed when a fresh optimal
+  basis is captured for that `(scenario, stage)` slot.
+- The **per-iteration frozen stage templates**, each of which bakes in the
+  currently-active cut set. A template is built once per iteration for a stage
+  and loaded into the solver afresh for every trial point that stage serves;
+  within a trial point's chain only the noise-dependent bounds then change.
 
-Two aspects of solver state are worth noting from a methodology perspective:
+Because the template is reloaded rather than mutated in place, LP structural
+state does not accrue silently inside a long-lived solver. Its size still grows
+over a run — each iteration's template bakes in more cuts than the last — so the
+memory devoted to the stage templates and to the basis cache grows with the
+accumulated cut set and the size of the stage LP.
 
-- **Basis state** is the information that directly enables warm-starting: the
-  partition of the LP into basic and non-basic variables and constraints.
-  Basis state is the quantity written to and read from the per-stage cache
-  on each solve.
-- **LP structural state** includes the constraint matrix, objective, and
-  bounds. Structural state persists across solves; new cuts are appended
-  incrementally rather than rebuilding the full LP from scratch each
-  iteration.
-
-The combination of persistent structural state and a warm basis means that
-the marginal cost of a backward-pass LP solve after the first iteration is
-dominated by the dual simplex work needed to restore optimality after
-incorporating the new cut, rather than by LP construction or Phase-I
-feasibility work.
+The combination of a reloaded template and a warm basis means that the marginal
+cost of a backward-pass LP solve after the first iteration is dominated by the
+dual simplex work needed to restore optimality once the reused basis has been
+reconciled to the current cut set (§4), rather than by Phase-I feasibility work
+from a cold start.
 
 ## 6. Trade-offs
 
-**Memory versus simplex savings.** Each stage's solver instance holds the
-full LP in memory for the duration of the training run. For a study with
-many stages and a large state-variable count, the total memory footprint of
-all solver instances can be significant. Cobre exposes configuration controls
-to limit per-stage memory budget; engaging these controls may cause the
-solver to evict cached basis state and cold-start certain solves, trading
-memory for increased simplex work.
+**Memory versus simplex savings.** The memory a warm-started run devotes to LP
+state grows over training, but not because a per-stage solver holds each LP for
+the run's lifetime — no such resident solver exists. The growth comes from two
+persistent structures: each stage's frozen template bakes in an ever-larger
+active cut set as iterations accumulate, and the `(scenario, stage)` basis cache
+stores one basis per trial point per stage. For a study with many stages and a
+large state-variable count, their combined footprint can be significant.
 
 **Warm-start benefit degrades with LP change magnitude.** The cached basis is
 most valuable when consecutive LP instances are nearly identical. Early in a
@@ -193,21 +221,20 @@ set has largely stabilized and new cuts make only incremental changes to the
 LP geometry.
 
 **Relationship to cut-aware reconstruction.** The basis cache and the
-reconstruction of §4 operate at different levels. The cache carries the full
-LP basis across consecutive solves at a stage; it answers "where should the
-solver start for the next complete solve at this stage?" Reconstruction answers
-the narrower question that arises when the cut set has changed between the
-stored basis and the current LP: "which stored row statuses still apply, and
-what status should rows new to this basis take?" The cache provides the
-starting point for retained rows; reconstruction fills in the status of cut
-rows that are new to the current basis — those whose slot was absent from the
-stored basis — defaulting them to BASIC.
+reconstruction of §4 answer different questions. The cache answers "which stored
+basis should seed this `(scenario, stage)` subproblem's first solve?" — supplying
+a basis captured for that same slot. Reconstruction answers the narrower question
+that arises because the active cut set baked into the current template may have
+churned since that basis was captured: "which stored row statuses still apply,
+and what status should cut rows new to this LP take?" The cache provides the
+starting point; reconstruction reconciles it to the current cut set by slot
+identity, defaulting cut rows with no stored slot to BASIC.
 
-**On/off control.** Basis caching can be disabled. With caching off, every
-backward-pass LP solve cold-starts. This is useful for diagnostic purposes
-— comparing cold-start and warm-start solve counts isolates the warm-start
-contribution to training-run performance — and for tight-memory environments
-where the memory cost of persistent solver state is unacceptable.
+**On/off control.** Warm-starting can be disabled, forcing every backward-pass
+LP solve to cold-start. This is useful for diagnostic purposes — comparing
+cold-start and warm-start solve counts isolates the warm-start contribution to
+training-run performance — and for tight-memory environments where retaining the
+basis cache is not worthwhile.
 
 ## Cross-References
 
@@ -217,5 +244,10 @@ where the memory cost of persistent solver state is unacceptable.
   determine how frequently the cut pool changes.
 - [SDDP Algorithm](/math/sddp-algorithm) — The iteration loop in which
   backward-pass basis caching occurs; forward and backward pass structure,
-  per-stage solve ordering, and the synchronization barriers that separate
-  stages.
+  how each stage's openings are visited, and the synchronization barriers
+  that separate stages.
+- [Determinism Guarantees](/math/determinism-guarantees) — The deterministic
+  pinning of the chain order described in
+  [Determinism Guarantees §3 (Methodology Mechanisms)](/math/determinism-guarantees#3-methodology-mechanisms),
+  which is what keeps warm-starting compatible with bit-identical
+  reproducibility across runs.

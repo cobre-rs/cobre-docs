@@ -37,7 +37,7 @@ This is a deliberate design decision with consequences across the formulation:
 
 3. **Block-varying bounds**: Absolute units make every variable bound depend on $\tau_k$ ($\bar{G} \cdot \tau_k$ instead of $\bar{G}$), complicating LP construction and making the LP structure vary with block configuration.
 
-The objective row does carry large coefficients — up to $\tau_k \times c^{def} \approx 730 \times 10{,}000 = 7.3 \times 10^6$ for deep deficit in monthly problems. Modern LP solvers handle objective scaling effectively through internal prescaling, and this is where the scaling challenge is most tractable.
+The objective row can carry large coefficients: the product of a long block duration and a steep deficit penalty dwarfs the coefficients of ordinary cost terms by several orders of magnitude. This conditioning is applied offline, before the solve, so the solver receives an already-conditioned matrix — see [LP scaling](/math/lp-formulation#12-lp-scaling) for the derivation.
 
 :::note[Output convention]
 All output reports and user-facing marginal costs must apply the $\div \tau_k$ conversion.

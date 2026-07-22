@@ -72,13 +72,59 @@ this guarantee. These are addressed in section 4.
 A set of coordinated design decisions makes the guarantee achievable across all
 three axes.
 
-**LP model reloaded per scenario and per trial point.** Each subproblem solve
-uses a freshly constructed LP model. No internal solver state — basis warmth
-aside, which is handled separately — carries over from one solve call to the
-next. The result of solving the subproblem for scenario $\omega$ at trial state
-$\hat{x}$ is therefore a function of those inputs alone and is independent of
-what order the solver was previously called in or on which rank the call was
-issued. The state vector's block ordering is itself canonical: storage, AR lags,
+**Reproducible solve inputs, including the starting basis.** The backward pass
+does not rebuild each subproblem from nothing, but neither does it hold a
+single resident LP per stage that it mutates continuously across an iteration's
+openings. Each backward work unit is a chain of one trial point's openings at a
+stage; it begins by resetting the solver's retained basis and factorization and
+reloading the stage's frozen LP template, then appends the cuts generated during
+the current iteration. Warm-starting enters at exactly one point in the chain:
+at its first-solved opening, the basis captured for that trial point's own
+`(scenario, stage)` slot — one capture per trial point per stage, not one shared
+per stage — is loaded as the starting point. The remaining openings in the chain
+warm-continue from the factorization the previous opening left in place,
+advancing along the pinned solve order, since only the noise-dependent bounds
+change from one opening to the next. See [LP Warm-Start](/math/lp-warm-start)
+for the basis-cache and reconstruction mechanism in full.
+
+Warm-starting is compatible with the guarantee, but for a more specific reason
+than "the answer does not depend on the basis". An LP's optimal _value_ is
+unique — fixed by its objective, constraints, and bounds alone, and no starting
+basis can change it. Its optimal _basis_ need not be. Where the optimum is
+degenerate, several distinct bases attain that same value, and the simplex
+halts at whichever one its pivot path reaches. Because a cut's coefficients are
+read from the reduced costs of the pinned incoming-state columns, they are
+properties of the terminating basis rather than of the optimal value: at a
+degenerate optimum the subproblem's marginal values form an interval, and a
+solve returns one endpoint of it.
+
+Every such choice yields an equally valid cut. Each reduced-cost vector
+obtained at an optimal basis is a subgradient of the subproblem's value
+function at the trial point, so the cut it induces supports that function from
+below everywhere and meets it exactly at the trial point. Aggregation inherits
+this: whichever bases the openings settle on, the aggregated cut evaluates at
+the trial point to the same probability-weighted optimal value. What differs
+between two admissible choices is the cut's slope away from the trial point —
+enough to change subsequent iterations bit for bit, not enough to affect a
+cut's validity or the algorithm's convergence.
+
+Bit-identity therefore requires that the sequence of bases be reproducible, and
+Cobre obtains this by making every input to a solve — the starting basis
+included — a function of globally known quantities rather than of scheduling.
+The order in which a trial point's openings are solved is a run-constant,
+rank-invariant permutation, fixed in advance from the openings' own identity and
+noise content and computed identically on every rank, independently of how work
+is partitioned. That order fixes the entire warm-start chain: which captured
+basis anchors the first-solved opening, and the sequence of retained
+factorizations the remaining openings continue from. Because the anchoring basis
+is keyed to the trial point's `(scenario, stage)` slot rather than to the worker
+that happens to execute it, repartitioning the same study over a different number
+of ranks or threads presents each solve with the same starting basis it would
+have seen under any other partition. The subproblem result for opening $\omega$
+at trial state $\hat{x}$ is reproducible, then, not because it is indifferent
+to solve history, but because that history is itself pinned.
+
+The state vector's block ordering is itself canonical: storage, AR lags,
 in-transit travel-time buckets, and anticipated-thermal slots each occupy a
 fixed range, so a cut's coefficient vector has an identical layout regardless of
 rank count or process topology. Within each block, entities are laid out in the
@@ -93,6 +139,28 @@ plant in the same canonical entity order every other state block uses, then
 ascending maturity lag — consistent with the storage and inflow-lag block
 orderings. See [LP Formulation](/math/lp-formulation) for the column and row
 layout that this construction produces.
+
+**Solve order pinned; completion order irrelevant.** Two orders matter in the
+backward pass, and Cobre pins each for a different reason. The first is the
+order in which a trial point's openings are solved. As the preceding mechanism
+established, that order fixes the warm-start chain and therefore, at a
+degenerate optimum, which terminating basis — and hence which of several equally
+valid subgradients — each solve returns; pinning it is what makes the resulting
+cut bit-identical across runs and topologies. It is a run-constant,
+rank-invariant permutation fixed in advance from opening identity alone, so it
+does not vary with worker assignment, rank count, or thread count. The second is the order in which
+per-opening results are combined. Here what is fixed is where each result
+lands: the dual values, intercept, and objective produced for opening $\omega$
+are stored under $\omega$'s own canonical identity, never under the position at
+which the solve happened to run. Aggregation reads those results back in
+canonical order over $\omega$, combining them as the probability-weighted
+average defined in [Cut Management](/math/cut-management) — because
+floating-point addition is not associative, a sum's computed value depends on
+the order its terms are added, which is exactly why that order is pinned to the
+canonical one rather than left to solve-completion order. Separating the two
+orders is what makes completion order immaterial: whichever opening finishes
+first, its result is filed under its own identity and summed in the canonical
+sequence.
 
 **Total ordering on floating-point comparisons.** In all sort and selection
 paths on the hot forward and backward pass loops, Cobre compares floating-point
@@ -201,7 +269,7 @@ chapter proves it can be exercised.
   order is deterministic across iterations and is a precondition for the
   bit-identical lower-bound sequence guarantee
 - [LP Formulation](/math/lp-formulation) — LP construction determinism; the
-  column and row ordering that the per-scenario reload mechanism preserves
+  column and row ordering that the canonical state-block layout preserves
 - [Reproducibility and Provenance](/math/reproducibility-and-provenance) — The
   companion chapter that records what enables independent verification of the
   determinism guarantee

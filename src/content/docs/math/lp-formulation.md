@@ -236,7 +236,7 @@ The incoming state is pinned by **column bounds**, not by an explicit equality _
 
 The variable $v^{in}_h$ then appears as an LP variable (not a constant) in all constraints that depend on incoming storage: the water balance (§4), the FPHA average storage computation (§6), and any generic constraints (§10) that reference incoming storage.
 
-**Cut coefficient**: the storage cut coefficient $\pi^v_h$ is the **reduced cost** of the pinned `storage_in` column (unscaled by its prescaler column factor — see §12 and [cut management](/math/cut-management)). No fixing-constraint dual is involved.
+**Cut coefficient**: the storage cut coefficient $\pi^v_h$ is the **reduced cost** of the pinned `storage_in` column (unscaled by its prescaler column factor — see §12 (LP Scaling) and [cut management](/math/cut-management)). No fixing-constraint dual is involved.
 
 **Why this design**: By LP duality, when a column is pinned at $\underline{x} = \bar{x}$ its reduced cost equals the sensitivity $\partial Q_t / \partial \hat{v}_h$ of the optimal value to the pinned bound — exactly the multiplier the equivalent equality row $v^{in}_h = \hat{v}_h$ would have carried (KKT parity). This sensitivity automatically accounts for all downstream effects through water balance, FPHA, and generic constraints, so a single reduced-cost value suffices — no combination of duals from multiple constraint types is needed. This is the same "fishing" technique used by SDDP.jl, realised through column bounds rather than a fixing row, and is analogous to how the AR lags (section 5a) are pinned for inflow history.
 
@@ -334,7 +334,7 @@ where:
 
 **Column count**: $N \times L$ pinned lag columns, where $N = |\mathcal{H}|$ is the number of operating hydros and $L$ is the system-wide maximum lag. All hydros store $L$ lags regardless of their individual AR order $P_h$; hydros with $P_h < L$ have zero-valued AR coefficients ($\psi_\ell = 0$ for $\ell > P_h$) in the dynamics equation, but their lag columns are still present and pinned. This uniform layout keeps the `inflow_lags` columns contiguous, so all lag cut coefficients are read in a single slice of the reduced-cost vector (section 4b). There is no corresponding lag-fixing row block.
 
-**Cut coefficient**: $\pi^{lag}_{h,\ell}$ (marginal value of inflow history at lag $\ell$ for hydro $h$) is the reduced cost of the pinned `inflow_lags` column, unscaled by its prescaler column factor (§12) — see [cut management](/math/cut-management).
+**Cut coefficient**: $\pi^{lag}_{h,\ell}$ (marginal value of inflow history at lag $\ell$ for hydro $h$) is the reduced cost of the pinned `inflow_lags` column, unscaled by its prescaler column factor (§12, LP Scaling) — see [cut management](/math/cut-management).
 
 ## 5b. Realized-Inflow Definition Constraints (z-inflow)
 
@@ -468,7 +468,7 @@ $$
 
 ### Cut coefficient
 
-Because the incoming bucket column is pinned at equal bounds, its reduced cost is the sensitivity $\partial Q_t / \partial \hat{b}_{i,d}$ of the optimal stage cost to the in-transit volume, unscaled by the column prescaler (§12):
+Because the incoming bucket column is pinned at equal bounds, its reduced cost is the sensitivity $\partial Q_t / \partial \hat{b}_{i,d}$ of the optimal stage cost to the in-transit volume, unscaled by the column prescaler (§12, LP Scaling):
 
 $$
 \pi^{b}_{i,d} = \bar{c}^{\,b}_{i,d} / d^{col}_{i,d}
@@ -663,9 +663,9 @@ For cut coefficient derivation, aggregation, and selection strategies, see [cut 
 
 The stage LP is numerically conditioned via a three-step scaling procedure applied once at template construction time. Scaling improves solver convergence by reducing the condition number of the constraint matrix without changing the optimization argmin.
 
-### 12.1 Cost Scaling (COST_SCALE_FACTOR)
+### 12.1 Cost Scaling
 
-All objective coefficients (except the future cost variable $\theta$) are divided by a constant factor $K = 1000$:
+All objective coefficients (except the future cost variable $\theta$) are divided by a fixed positive constant $K$, chosen once per study. $K$ scales the cost domain uniformly and leaves the constraint matrix and feasible region untouched, so the LP argmin is invariant to it and any two choices of $K$ agree in exact arithmetic:
 
 $$
 \tilde{c}_j = \frac{c_j}{K} \quad \text{for all } j \neq \theta
@@ -709,11 +709,11 @@ Column bounds and objective coefficients are not modified by row scaling.
 The combined scaling produces the standard $D_r \cdot A \cdot D_c$ form where $D_r$ and $D_c$ are diagonal scaling matrices.
 
 :::note[Dual unscaling]
-LP row duals are in the scaled problem's space. To recover original-unit duals: $\pi_i^{original} = \pi_i^{scaled} \cdot d_i^{row} \cdot K$. The per-column and per-row scale factors are stored in the stage LP template for use during dual extraction and cut coefficient computation.
+LP row duals are in the scaled problem's space. To recover original-unit duals: $\pi_i^{original} = \pi_i^{scaled} \cdot d_i^{row} \cdot K$. The per-column and per-row scale factors are stored in the stage LP template for use during dual extraction and cut coefficient computation. This recovery is exact when the solve applies no scaling beyond Cobre's own prescaling — the case by default; if the backend applies a further scaling of its own on top of the prescaled matrix, a second scaling factor enters that this identity does not account for.
 :::
 
 :::note[Reduced-cost unscaling for cut coefficients]
-State cut coefficients are read as the **reduced costs** of the pinned incoming-state columns (§4a), not as row duals. A reduced cost is reported in the scaled problem's space; the original-unit sensitivity is $\pi_j^{original} = (\bar{c}_j^{scaled} / d_j^{col}) \cdot K$ — divide by the column factor, then multiply by $K$. The **division** by $d_j^{col}$ (not multiplication) follows from the column transform $\tilde{x}_j = x_j / d_j^{col}$ of §12.2: the LP solver/backend differentiates the scaled objective with respect to $\tilde{x}_j$, so recovering $\partial Q / \partial x_j$ divides the column factor back out. Because Cobre prescales the matrix itself and the solver's internal simplex scaler is disabled, no second scaling is applied and this single unscaling is exact. (Cut coefficients are stored in scaled cost space — the $\bar{c}_j^{scaled}/d_j^{col}$ value — with $K$ applied only at the reporting boundary, as for all cost-domain quantities.)
+State cut coefficients are read as the **reduced costs** of the pinned incoming-state columns (§4a, Incoming-Storage Pinning), not as row duals. A reduced cost is reported in the scaled problem's space; the original-unit sensitivity is $\pi_j^{original} = (\bar{c}_j^{scaled} / d_j^{col}) \cdot K$ — divide by the column factor, then multiply by $K$. The **division** by $d_j^{col}$ (not multiplication) follows from the column transform $\tilde{x}_j = x_j / d_j^{col}$ of §12.2 (Column Scaling): the LP solver/backend differentiates the scaled objective with respect to $\tilde{x}_j$, so recovering $\partial Q / \partial x_j$ divides the column factor back out. When the solve applies no scaling beyond Cobre's own prescaling — the case by default — this single unscaling is exact; if the backend applies a further scaling of its own on top of the prescaled matrix, a second scaling factor enters that this identity does not account for, and the single unscaling no longer exactly recovers original units. (Cut coefficients are stored in scaled cost space — the $\bar{c}_j^{scaled}/d_j^{col}$ value — with $K$ applied only at the reporting boundary, as for all cost-domain quantities.)
 :::
 
 ## Cross-References

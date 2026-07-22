@@ -41,7 +41,7 @@ Cobre is operated through two equivalent interfaces:
 
 Every Cobre operation produces machine-parseable structured output (JSON or Parquet) alongside human-readable progress streams. Results are structured and self-describing: a completed training run writes the policy, the convergence record, and the output statistics to known paths under the case directory.
 
-Cobre policies are checkpointable; checkpoints persist the policy across restarts and are forward-compatible across releases. A training run interrupted at any iteration can be resumed from the last checkpoint without restarting from scratch.
+Cobre policies are checkpointable; checkpoints persist the policy across restarts. A training run interrupted at any iteration can be resumed from the last checkpoint without restarting from scratch.
 
 Cobre supports distributed execution with deterministic results across MPI rank and thread configurations. The same study runs on a laptop with a single process or on an HPC cluster with hundreds of ranks; the numerical results are bit-identical.
 
@@ -53,7 +53,7 @@ The following principles govern how Cobre is built and how this book describes i
 
 - **Reproducibility** — Every Cobre run can be re-derived by any party that holds the recorded inputs and provenance. Given the same inputs, the same random seed, and conforming hardware, the computed policy, the convergence record, and the simulation costs are numerically identical. See [Reproducibility and Provenance](/math/reproducibility-and-provenance) for the five categories of provenance that Cobre records and the bookkeeping that makes this commitment actionable.
 
-- **Determinism** — Cobre produces bit-identical results across MPI rank and thread configurations, hardware within IEEE 754 conformance, and re-runs with the same seed. This is an explicit methodology commitment, achieved through coordinated mechanisms in the algorithm design, not an incidental property of the implementation. See [Determinism Guarantees](/math/determinism-guarantees) for the full scope, the four coordinating mechanisms, and the out-of-scope statement.
+- **Determinism** — Cobre produces bit-identical results across MPI rank and thread configurations, hardware within IEEE 754 conformance, and re-runs with the same seed. This is an explicit methodology commitment, achieved through coordinated mechanisms in the algorithm design, not an incidental property of the implementation. See [Determinism Guarantees](/math/determinism-guarantees) for the full scope, the coordinating mechanisms, and the out-of-scope statement.
 
 - **Declaration order invariance** — Optimisation results are bit-for-bit identical regardless of the order in which entities are declared in input files; the algorithm depends only on entity IDs. Reordering hydro plants, thermal units, or transmission lines in the case configuration produces no change in the computed policy or bounds. This property is critical for programmatic workflows where input files are assembled by tools rather than edited by hand.
 
@@ -66,5 +66,5 @@ The following principles govern how Cobre is built and how this book describes i
 - [The SDDP Framework in One Page](/overview/sddp-framework-overview) — one-page algorithmic framing: forward simulation, backward cut generation, and convergence bounds
 - [How to Read This Book](/overview/how-to-read) — navigation guide for the book's chapter groups and reading paths for different audiences
 - [SDDP Algorithm](/math/sddp-algorithm) — full algorithmic treatment: stage LPs, cut generation, convergence theory
-- [Determinism Guarantees](/math/determinism-guarantees) — bit-identical result scope, four coordinating mechanisms, and out-of-scope statement
+- [Determinism Guarantees](/math/determinism-guarantees) — bit-identical result scope, coordinating mechanisms, and out-of-scope statement
 - [Reproducibility and Provenance](/math/reproducibility-and-provenance) — five provenance categories and bookkeeping commitment

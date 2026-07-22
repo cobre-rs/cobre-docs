@@ -326,7 +326,7 @@ $$
 \pi^v_h = \bar{c}^{in}_h / d^{col}_h
 $$
 
-The reduced cost is divided by the column's prescaler factor $d^{col}_h$ to recover the original-unit sensitivity (§12 of [LP Formulation](/math/lp-formulation)); no sign change is needed. By the LP envelope theorem, the reduced cost automatically captures all downstream effects — water balance, FPHA hyperplanes, and generic constraints — without manual combination of duals from multiple constraint types. See [Cut Management §2](/math/cut-management).
+The reduced cost is divided by the column's prescaler factor $d^{col}_h$ to recover the original-unit sensitivity (§12 (LP Scaling) of [LP Formulation](/math/lp-formulation)); no sign change is needed. By the LP envelope theorem, the reduced cost automatically captures all downstream effects — water balance, FPHA hyperplanes, and generic constraints — without manual combination of duals from multiple constraint types. See [Cut Management §2](/math/cut-management).
 
 #### AR Lag Reduced Cost ($\bar{c}^{lag}_{h,\ell}$)
 

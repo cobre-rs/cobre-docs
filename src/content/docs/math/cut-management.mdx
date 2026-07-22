@@ -43,7 +43,7 @@ Both storage and inflow lags use the same pattern: an incoming-state LP variable
 | Incoming storage (hydro $h$)   | $\bar{c}^{in}_h$         | $\pi^v_{t,h} = \bar{c}^{in}_h / d^{col}_h$                         | \$/hm³    |
 | AR lag (hydro $h$, lag $\ell$) | $\bar{c}^{lag}_{h,\ell}$ | $\pi^{lag}_{t,h,\ell} = \bar{c}^{lag}_{h,\ell} / d^{col}_{h,\ell}$ | \$/(m³/s) |
 
-where $d^{col}$ is the per-column prescaler factor that unscales the reduced cost; a further factor $K$ converts to original cost units at the reporting boundary (see [LP Formulation §12](/math/lp-formulation)). When anticipated thermals are present, each anticipated-state slot column contributes one coefficient by the same rule.
+where $d^{col}$ is the per-column prescaler factor that unscales the reduced cost; a further factor $K$ converts to original cost units at the reporting boundary (see [LP Formulation §12 (LP Scaling)](/math/lp-formulation#12-lp-scaling)). When anticipated thermals are present, each anticipated-state slot column contributes one coefficient by the same rule.
 
 The cut intercept ensures the cut passes through the trial point:
 
