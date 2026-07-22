@@ -1,0 +1,377 @@
+---
+title: HPC & Cluster Deployment
+description: Run Cobre across nodes with MPI — obtain or build the MPI-enabled binary, build MPICH from source, launch under SLURM, and deploy on AWS ParallelCluster.
+---
+
+This page is the end-to-end path for running Cobre on a multi-node cluster: how
+to get an MPI-enabled binary, how to build the MPICH your cluster loads at
+runtime, how to launch under SLURM, and a worked AWS ParallelCluster reference
+architecture.
+
+If you only run on a single machine you do **not** need any of this — use
+`--threads` (see [Running Studies](/running/running-studies/#multi-threading))
+and skip to [Next Steps](#see-also).
+
+---
+
+## When you need MPI
+
+Cobre parallelises on two levels, and they compose:
+
+- **MPI across ranks** — distributes the forward-pass scenario batch and the
+  backward-pass trial points across processes, typically one rank per node. This
+  is the only way to scale past a single machine.
+- **rayon threads within a rank** — solves LP subproblems concurrently inside
+  each rank. Controlled by `--threads`.
+
+The parallel model itself (work-stealing, the basis broadcast, the
+communication-free seed derivation) is documented in
+[Performance Accelerators §Parallel Execution](/running/performance/#parallel-execution).
+This page is the operational counterpart: how to build and launch it.
+
+A single `cobre run` uses the local (single-process) backend. Launching under an
+MPI launcher (`srun`, `mpiexec`, or `mpirun`) switches Cobre to the MPI backend.
+By default `--comm-backend auto` detects the launcher, so no flag is needed —
+see [Communication Backend](/running/running-studies/#communication-backend).
+
+:::note[MPI is a build-time feature]
+The MPI backend is compiled in via the `mpi` Cargo feature and is **off by
+default**. The standard `cobre` binary (from the [installer or crates.io](/getting-started/installation/))
+is single-process only; its `cobre version` banner reads `comm: local`. For
+multi-node runs you need the MPI-enabled binary described below, whose banner
+reads `comm: mpi`.
+:::
+
+---
+
+## Getting an MPI-enabled binary
+
+### Option 1 — Pre-built `cobre-mpi` archive (recommended)
+
+Each Cobre release attaches a separate MPI archive alongside the standard
+binaries, named:
+
+```
+cobre-mpi-<version>-<target>.tar.gz
+```
+
+Download it from the [GitHub Releases page](https://github.com/cobre-rs/cobre/releases/latest).
+The archive contains the binary (named `cobre-mpi` to distinguish it from the
+single-process `cobre` in the same release), the license/notice files, and a
+`README.txt` with the runtime notes summarised below.
+
+| Platform              | Target triple                 |
+| --------------------- | ----------------------------- |
+| Linux (x86-64)        | `x86_64-unknown-linux-gnu`    |
+| Linux (ARM64)         | `aarch64-unknown-linux-gnu`   |
+| macOS (Apple Silicon) | `aarch64-apple-darwin`        |
+
+Windows and Intel macOS have no pre-built MPI archive — build from source
+(Option 2) on those platforms.
+
+The Linux binaries are dynamically linked against `libmpi.so.12` (the MPICH 4.x
+ABI). They do **not** bundle an MPI runtime — you supply one at run time (see
+[Building MPICH from source](#building-mpich-from-source)). Any MPICH-ABI-compatible
+runtime works:
+
+- MPICH 4.0+ (recommended)
+- Intel MPI 2021+
+- MVAPICH2 3.0+
+
+:::caution[glibc / system compatibility]
+The pre-built binary is compiled in the release CI environment. Running it
+unchanged requires a runtime image whose system libraries (glibc and friends)
+are compatible with that build. This is the case on current mainstream Linux
+distributions and on an AWS ParallelCluster custom image tracking a recent
+Amazon Linux / Ubuntu base; on an older base, build from source instead.
+:::
+
+### Option 2 — Build from source with the `mpi` feature
+
+For a platform without a pre-built archive, or when you want to link against a
+specific MPI, build the CLI with the `mpi` feature:
+
+```bash
+# MPICH (mpicc) must be on PATH and discoverable via pkg-config first —
+# see "Building MPICH from source" below.
+cargo build --release --features mpi -p cobre-cli
+```
+
+The binary is written to `target/release/cobre`. The build reads the MPI
+headers and link flags through `pkg-config`, so ensure `PKG_CONFIG_PATH`
+includes your MPICH `lib/pkgconfig` directory.
+
+:::note[NUMA topology]
+Adding `--features numa` (which implies `mpi`) enables the ferrompi NUMA
+extension for NUMA-aware topology reporting. It is optional and off by default.
+:::
+
+---
+
+## Building MPICH from source
+
+On an HPC cluster you almost always build MPICH yourself so it links against the
+cluster's high-performance fabric and process manager, rather than a generic
+package. The recipe below is the one Cobre's production ParallelCluster uses; it
+is pinned to the same MPICH version the release binaries are compiled against.
+
+:::tip[Why a from-source runtime works with the pre-built binary]
+The pre-built `cobre-mpi` was **compiled** against a generic MPICH (device
+`ch3:nemesis`, headers only). At **run time** it loads a completely different
+MPICH — the fabric-optimised `ch4:ofi` build below — and this is fine because
+MPICH keeps a stable `libmpi.so.12` ABI regardless of the device layer. You
+compile once, generically; you run against whatever MPICH your cluster provides.
+:::
+
+```bash
+MPICH_VERSION=4.2.3
+
+wget "https://www.mpich.org/static/downloads/${MPICH_VERSION}/mpich-${MPICH_VERSION}.tar.gz"
+tar xzf "mpich-${MPICH_VERSION}.tar.gz"
+cd "mpich-${MPICH_VERSION}"
+
+./configure \
+    --prefix=/opt/mpich \
+    --with-device=ch4:ofi \
+    --with-libfabric=/opt/amazon/efa \
+    --with-pmi=pmix \
+    --with-pmix=/opt/pmix \
+    --with-slurm=/opt/slurm \
+    --with-pm=no
+
+make -j"$(nproc)"
+make install
+```
+
+Then make it discoverable for both compiling (`pkg-config`) and running
+(`LD_LIBRARY_PATH`):
+
+```bash
+export PATH=/opt/mpich/bin:$PATH
+export LD_LIBRARY_PATH=/opt/mpich/lib:${LD_LIBRARY_PATH:-}
+export PKG_CONFIG_PATH=/opt/mpich/lib/pkgconfig:${PKG_CONFIG_PATH:-}
+```
+
+What each flag does:
+
+| Flag                             | Purpose                                                                                          |
+| -------------------------------- | ------------------------------------------------------------------------------------------------ |
+| `--with-device=ch4:ofi`          | Use the modern CH4 device over an OpenFabrics Interfaces (libfabric) provider — the fabric path. |
+| `--with-libfabric=/opt/amazon/efa` | Link against the EFA installer's libfabric so the `ofi` netmod can select the EFA provider.     |
+| `--with-pmi=pmix` / `--with-pmix` | Build the PMIx client so `srun --mpi=pmix` can launch and wire up the ranks.                    |
+| `--with-slurm=/opt/slurm`        | Integrate with the cluster's SLURM installation.                                                 |
+| `--with-pm=no`                   | Build **no** internal process manager (no Hydra/`mpiexec`) — SLURM launches the ranks.           |
+
+:::caution[`--with-pm=no` means no `mpiexec`]
+With no process manager built in, this MPICH has no `mpiexec`/`mpirun` — launch
+is `srun`-only. If you also want `mpiexec` (e.g. for quick single-node smoke
+tests off SLURM), drop `--with-pm=no` to build Hydra as well.
+:::
+
+The paths above (`/opt/amazon/efa`, `/opt/pmix`, `/opt/slurm`) are the
+conventional locations for the EFA installer, PMIx, and SLURM on AWS
+ParallelCluster; adjust them to your environment.
+
+Optional build-time trims — Cobre uses no Fortran, C++, or MPI-IO bindings, so
+`--disable-fortran --disable-cxx --disable-romio --disable-doc` shorten the
+build without affecting Cobre.
+
+:::caution[Pin MPICH to a 4.2.x release]
+MPICH **4.3.0** introduced a PMI2 client regression that deadlocks multi-node
+`MPI_Init` (a multi-proxy KVS barrier hang). Stay on a 4.2.x release
+(4.2.3 is the tested pin) until this is resolved upstream. See
+[Troubleshooting](#troubleshooting).
+:::
+
+---
+
+## Running under SLURM
+
+On a SLURM cluster, `srun` is the launcher: it places the ranks, binds them to
+cores, and (via PMIx) initialises MPI. Because `--comm-backend` defaults to
+`auto`, Cobre detects the `srun` launch and selects the MPI backend
+automatically.
+
+### Hybrid MPI + threads
+
+Cobre uses MPI for inter-node communication and rayon threads for intra-node LP
+solves. The standard mapping is **one rank per node**, with each rank's thread
+pool sized to the cores allocated to it:
+
+```bash
+srun --mpi=pmix --nodes=4 --ntasks-per-node=1 --cpus-per-task=96 --exclusive \
+    ./cobre-mpi run /shared/cases/hydro_study --threads 96
+```
+
+Set `--threads` equal to `--cpus-per-task` so each rank's rayon pool fills its
+node. `--exclusive` gives each rank a whole node with no co-tenants competing
+for cores or memory bandwidth.
+
+### Batch script
+
+A production job wraps that launch in an `sbatch` script. This is the script
+Cobre's production cluster uses (generalise the node count, partition, and time
+limit for your workload):
+
+```bash
+#!/bin/bash
+#SBATCH --job-name=cobre-mpi
+#SBATCH --nodes=4
+#SBATCH --ntasks-per-node=1
+#SBATCH --cpus-per-task=96
+#SBATCH --exclusive
+#SBATCH --output=cobre_%j.out
+#SBATCH --error=cobre_%j.err
+#SBATCH --partition=cobre-hpc-queue
+#SBATCH --time=0-08:00:00
+
+export PATH=/opt/mpich/bin:$PATH
+export LD_LIBRARY_PATH=/opt/mpich/lib:${LD_LIBRARY_PATH:-}
+
+srun --mpi=pmix ./cobre-mpi run "$1" --threads "$SLURM_CPUS_PER_TASK"
+```
+
+Place it somewhere visible to every node (a shared filesystem or your home
+directory) and submit it with the case directory as its argument:
+
+```bash
+sbatch ~/assets/run-cobre.sh /shared/cases/hydro_study
+```
+
+### Key SLURM flags
+
+| Flag                         | Purpose                                                       |
+| ---------------------------- | ------------------------------------------------------------- |
+| `--mpi=pmix`                 | PMIx process startup (recommended; see the tip below)         |
+| `--mpi=pmi2`                 | Alternative PMI-2 startup                                     |
+| `--nodes=N`                  | Number of nodes                                               |
+| `--ntasks-per-node=N`        | MPI ranks per node (`1` for the one-rank-per-node mapping)    |
+| `--cpus-per-task=T`          | Cores per rank — pass the same value to `--threads`           |
+| `--exclusive`                | Give each rank a whole node                                   |
+| `--cpu-bind=cores`           | Pin each rank's threads to specific cores                     |
+| `--mem-bind=local`           | Allocate memory from the NUMA node closest to the bound cores |
+
+:::tip[Prefer `--mpi=pmix`]
+Match the launcher to how MPICH was built. The recommended
+`--with-pmi=pmix` build above pairs with `srun --mpi=pmix`, which also sidesteps
+a PMI2 incompatibility on SLURM 24.05 (see [Troubleshooting](#troubleshooting)).
+Check what your cluster offers with `srun --mpi=list`.
+:::
+
+---
+
+## AWS ParallelCluster reference architecture
+
+Cobre's production deployment runs on AWS ParallelCluster: a lightweight,
+always-on head node for submission plus one or more compute queues whose nodes
+are provisioned on demand and torn down when idle. Each queue is an independent
+SLURM partition that scales on its own.
+
+```d2
+direction: down
+
+head: "Head node · light, always-on\nsubmit + SLURM controller" {
+  shape: rectangle
+}
+
+fleet: "Compute queue (SLURM partition)\nN × compute nodes · scaled on demand\n1 rank × T threads per node" {
+  shape: rectangle
+  style.multiple: true
+}
+
+fsx: "FSx · shared filesystem\ncases · checkpoints · results" {
+  shape: cylinder
+}
+
+head -> fleet: "sbatch → srun (PMIx)"
+head -> fsx: "stage case"
+fleet -> fsx: "checkpoint + export"
+```
+
+The moving parts:
+
+- **Custom machine image (shared by head and compute nodes).** MPICH is built
+  from source into the image at `/opt/mpich`, using the
+  [`ch4:ofi` + EFA recipe](#building-mpich-from-source) above. Baking it into the
+  image means every dynamically-launched compute node already has the runtime —
+  no per-job install step.
+- **The binary.** The pre-built `cobre-mpi` archive is downloaded from the
+  release page to a shared, node-visible location (e.g. `~/assets/`). It is the
+  same binary produced by the release CI, and the custom image's system
+  libraries are kept compatible with that build.
+- **Interconnect (EFA).** Because MPICH is built `--with-libfabric=/opt/amazon/efa`
+  and `--with-device=ch4:ofi`, the OFI netmod selects the EFA provider on
+  EFA-enabled instances automatically. For fabric-level diagnostics or provider
+  overrides, consult the AWS EFA and libfabric documentation.
+- **Instances.** The compute queue in the example uses `c7a.48xlarge` nodes with
+  the one-rank-per-node × `--threads=$SLURM_CPUS_PER_TASK` mapping; smaller
+  compute-optimised instances work the same way.
+- **Storage (FSx).** The case directory, checkpoints, and exported results live
+  on the shared FSx filesystem. Cobre's per-solve hot path holds its working set
+  in memory (see
+  [Performance §Memory Efficiency](/running/performance/#memory-efficiency)); it
+  touches the shared filesystem heavily only at **checkpointing** and **result
+  export**, so FSx throughput is sized for those phases rather than the solve
+  loop.
+
+Submission is the same `sbatch ~/assets/run-cobre.sh <case-dir>` shown above:
+the head node queues the job, ParallelCluster powers up the compute nodes in the
+target partition, `srun --mpi=pmix` launches one rank per node, and the nodes
+scale back down when the queue drains.
+
+---
+
+## Troubleshooting
+
+**`error while loading shared libraries: libmpi.so.12`** — the MPI runtime is
+not on the loader path. Export `LD_LIBRARY_PATH=/opt/mpich/lib:$LD_LIBRARY_PATH`
+(or `module load mpich`) before launching, as the batch script does.
+
+**`comm: local` when you expected `comm: mpi`** — either the binary was built
+without the `mpi` feature (check `cobre version`), or the process was not
+launched under a recognised launcher. Force the backend with
+`--comm-backend mpi`; it fails with a clear message on a non-MPI binary rather
+than silently running single-process.
+
+**`srun --mpi=pmi2` fails with `pmijobid missing in fullinit command`** — an
+incompatibility between SLURM 24.05's PMI2 plugin and MPICH's PMI2 wire
+protocol. Use `--mpi=pmix` instead (the recommended build supports it). If only
+PMI2 is available and you built Hydra (i.e. not `--with-pm=no`), `mpiexec`
+bypasses PMI2 entirely.
+
+**Multi-node job hangs at `MPI_Init` on MPICH 4.3.x** — the 4.3.0 PMI2 client
+regression described above. Downgrade to MPICH 4.2.x.
+
+---
+
+## Verifying your setup
+
+Cobre's MPI results are **rank-count invariant**: for a given case, the
+classified output files are decoded-value bit-identical whether you run on one
+rank or many, and whether the ranks sit on one node or several. Only wall-clock
+timing columns and the per-rank/per-worker execution-topology tables legitimately
+differ. This means you can develop and validate on a single rank and scale out
+to the full fleet without changing results — the broader guarantee is documented
+in [Determinism Guarantees](/math/determinism-guarantees/).
+
+A quick two-rank smoke test in a one-node SLURM allocation:
+
+```bash
+srun --mpi=pmix --nodes=1 --ntasks=2 ./cobre-mpi run /shared/cases/hydro_study --threads 2
+```
+
+Confirm the banner reports the MPI backend:
+
+```bash
+./cobre-mpi version   # → comm: mpi
+```
+
+---
+
+## See Also
+
+- [Performance Accelerators](/running/performance/#parallel-execution) — the parallel-execution model MPI drives
+- [Running Studies](/running/running-studies/#communication-backend) — the `--comm-backend` flag and single-node threading
+- [CLI Reference](/reference/cli-reference/) — complete flag and subcommand reference
+- [Determinism Guarantees](/math/determinism-guarantees/) — why results are rank-count invariant
+- [Installation](/getting-started/installation/) — standard (single-process) install paths

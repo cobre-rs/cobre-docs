@@ -340,6 +340,7 @@ export default defineConfig({
             "running/running-studies",
             "running/policy-management",
             "running/performance",
+            "running/hpc-deployment",
             "running/case-conversion",
             "running/interpreting-results",
           ],
