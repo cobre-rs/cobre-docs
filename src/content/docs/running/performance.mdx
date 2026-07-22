@@ -130,14 +130,19 @@ After solving, duals are unscaled: `dual_original[i] = row_scale[i] * dual_scale
 
 ### Cost Scale Factor
 
-A constant `COST_SCALE_FACTOR = 1000` is applied to all objective
-coefficients to reduce the magnitude of objective coefficients, improving
-simplex numerical stability.
+The objective is divided by a cost-scale factor (default `1_000_000.0`,
+configurable as [`modeling.cost_scale_factor`](/running/configuration/#cost_scale_factor))
+to reduce the magnitude of objective coefficients, improving simplex
+numerical stability.
 
 Because the prescaler normalizes matrix entries toward 1.0, HiGHS's
 internal scaling (`simplex_scale_strategy`) is disabled (set to 0) in
 every solver profile — including the retry-escalation levels — to avoid
-double-scaling the already-conditioned matrix.
+double-scaling the already-conditioned matrix. This is overridable per
+phase via the solver-profile [`scale`](/running/configuration/) field:
+selecting `solver_scaling` re-enables solver-side (Curtis–Reid) scaling
+and forgoes the exact single-unscaling guarantee (see
+[LP Scaling §12.3 (Row Scaling)](/math/lp-formulation#123-row-scaling-geometric-mean)).
 
 The scaling diagnostics are written to `training/scaling_report.json`
 after template construction, documenting the coefficient range before
@@ -343,18 +348,64 @@ After the parallel region, staged rows are sorted by `trial_point_idx`
 and inserted into the FCF in deterministic order, guaranteeing bit-for-bit
 identical results regardless of thread count or completion order.
 
+#### Opening-Block Scheduling
+
+By default, the backward pass claims one whole trial point per work unit (see
+above). The `opening_block` scheduler shrinks the work unit to one
+`(trial point, opening block)` pair, giving the work-stealing counter more,
+finer-grained units to hand out. This improves load balance specifically when
+trial points solve in variable time: a worker that finishes a cheap trial
+point quickly can pick up a block from a still-running expensive one instead
+of idling until an entire trial point frees up.
+
+Within a stage, opening-blocks are claimed **hardest-first**: blocks are
+ranked by the previous iteration's mean simplex pivot cost per `(stage,
+block)`, descending, so the most expensive blocks are claimed early rather
+than left for whichever worker happens to reach them last. This claim order
+changes only which worker processes which block, and when — it is
+**result-neutral**: the produced cut set and the training lower bound are
+identical to canonical (whole-trial-point) claiming.
+
+See [`parallelism.backward_scheduler`](/running/configuration/#parallelism)
+for the config field that enables `opening_block` and sets its `block_size`.
+
+:::caution[Opening-block scheduling and Dynamic Cut Selection]
+The `opening_block` path depends on the frozen-LP backward setup, which is
+incompatible with [Dynamic Cut Selection (DCS)](#cut-management-pipeline)'s
+cut-free lazy core. When DCS is enabled
+(`cut_selection.selection.method = "dynamic"`), an active DCS iteration
+**always** falls back to per-trial-point scheduling — so from DCS's
+`start_iteration` (default `2`) onward, configuring `opening_block` has
+almost no effect. No warning or error is emitted.
+
+DCS is **opt-in**: row selection (including DCS) is disabled by default
+(`cut_selection.selection` absent from `config.json`). This fallback applies
+only once DCS has been explicitly enabled — the default configuration does
+not make `opening_block` a no-op.
+:::
+
 ### Per-Phase Solver Profiles
 
-Each algorithmic phase — forward sweep, backward sweep, and simulation — can
-be configured with a distinct `HighsProfile` that sets the LP solver's
-feasibility tolerances and per-attempt iteration caps. Tuning `BACKWARD_PROFILE`
-to tighter tolerances or stricter iteration caps can reduce backward-pass
-solve time variance, which in turn improves load balance across worker threads
-and shortens wall-clock training time. `FORWARD_PROFILE` and
-`SIMULATION_PROFILE` ship equal to `HighsProfile::default()`, while
-`BACKWARD_PROFILE` already overrides `simplex_price_strategy` to `2`
-(`RowHyperSparse`) to exploit sparsity on the backward LPs; all other backward
-fields match the default.
+Each algorithmic phase — forward sweep, backward sweep, and simulation — is
+configurable independently via the `training.solver.backward`,
+`training.solver.forward`, and `simulation.solver` overrides (see
+[`training.solver`](/running/configuration/#trainingsolver)), which set the LP
+solver's feasibility tolerances, per-attempt iteration caps, pricing
+strategy, and more.
+
+All three phases ship with an identical built-in profile, and that profile
+differs from the LP backend's own default only in the simplex pricing
+strategy — `row_hyper_sparse` instead of the backend's default `row` — to
+exploit the sparse cut-subgradient rows. An absent override therefore leaves
+a phase at this built-in profile, not the backend's default.
+
+Overriding the backward phase's profile via `training.solver.backward` with
+tighter feasibility tolerances or a stricter iteration cap can still reduce
+backward-pass solve-time variance, which in turn improves load balance
+across worker threads and shortens wall-clock training time.
+
+The `scale` override carries a single-unscaling-exactness trade-off; see
+[Cost Scale Factor](#cost-scale-factor) above.
 
 ### Forward Pass and Simulation
 

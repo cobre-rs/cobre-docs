@@ -13,6 +13,24 @@ reduced cost, unscaled). The cobre CHANGELOG's prose for this step says
 (`crates/cobre-sddp/src/training/backward/duals_extraction.rs`) divides. This
 tab — and the methodology body it supports — follows the code: **divide**.
 
+### Export writes canonical currency units
+
+Policy export multiplies every cut coefficient and intercept by the writing
+study's cost-scale factor, converting the in-memory scaled cost space into
+canonical currency units at rest
+(`crates/cobre-sddp/src/policy/policy_export.rs:238-266`,
+`scale_cut_records_for_export`: `intercept * cost_scale_factor`,
+`coefficients.iter().map(|c| c * cost_scale_factor)`). Every load path
+divides by the loading study's own factor
+(`crates/cobre-sddp/src/policy/policy_load.rs:64-108`,
+`rescale_cut_records_for_load`) to bring the values back into that study's
+scaled cost space. This is **orthogonal** to the `col_scale` reduced-cost
+unscaling above: `col_scale` is a per-column LP prescaler applied inside a
+single solve, while the cost-scale factor is the global objective scaling
+applied once per study. See [Policy Management — Cost-Scale
+Canonicalization](/running/policy-management/#cost-scale-canonicalization)
+for the full compatibility matrix.
+
 ### Append-only pool, deterministic slots
 
 Every cut ever generated is retained for the lifetime of the run at a stable

@@ -64,6 +64,48 @@ on the decision being made and the study's time horizon. As rough guidance:
    failed scenarios, the policy may be encountering numerically difficult
    stages.
 
+### Reading the `Time split` breakdown
+
+`cobre run` prints a live `Time split` block once training finishes,
+decomposing the total training wall time into three walls — `Forward`,
+`Backward`, and `Serial`. See the [`cobre run` Output format
+sample](/reference/cli-reference/#output-format) for the full block this
+section reads. Each phase wall (`Forward`/`Backward`) carries a
+`solve · wait` split; the `Serial` wall carries a
+`bound · selection [· allreduce · sync] · other` split.
+
+**Phase wall vs. worker wait.** A large `wait` relative to its phase wall —
+`forward_wait` or `backward_wait` — signals **load imbalance** across
+workers: some workers finish their share of trial points well before others
+and sit idle waiting for the phase to close. This is exactly what the
+`opening_block` backward scheduler ([Parallel
+Execution](/running/performance/#opening-block-scheduling)) exists to
+reduce, by shrinking the work unit from a whole trial point to a `(trial
+point, opening block)` pair so an idle worker can steal finer-grained work
+instead of waiting for an entire trial point to free up. Carry the DCS
+caveat when reading this: with Dynamic Cut Selection (DCS) active — active
+by default from its `start_iteration`, iteration 2 — the backward pass
+falls back to `trial_point` scheduling regardless of the `opening_block`
+setting, so `opening_block` does almost nothing from that iteration onward.
+DCS itself is opt-in (row selection is disabled unless explicitly
+configured), so this caveat only bites once DCS has been enabled.
+
+**Serial buckets bound achievable speedup.** `bound`, `selection`,
+`allreduce`, `sync`, and `other` do not shrink as you add ranks or threads —
+they are the run's Amdahl's-law serial fraction. `allreduce` and `sync`
+appear only on MPI runs (a single-process run never populates them); `other`
+absorbs rayon scheduling overhead plus any unaccounted residual. A `Serial`
+wall that stays large as parallelism grows means added ranks or threads will
+not help much further — check which serial bucket dominates before adding
+more workers.
+
+**`solve` vs. phase wall.** `solve` is the per-worker mean LP-solve wall for
+that phase. Comparing it to the phase wall shows how much of the phase is
+spent actually solving LPs versus coordination (scheduling, wait, merge): a
+`solve` close to the phase wall means the phase is solve-bound; a `solve`
+well below the phase wall means most of the wall is coordination overhead,
+including the `wait` bucket above.
+
 ---
 
 ## Reading Convergence History

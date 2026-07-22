@@ -41,7 +41,7 @@ Cobre is operated through two equivalent interfaces:
 
 Every Cobre operation produces machine-parseable structured output (JSON or Parquet) alongside human-readable progress streams. Results are structured and self-describing: a completed training run writes the policy, the convergence record, and the output statistics to known paths under the case directory.
 
-Cobre policies are checkpointable; checkpoints persist the policy across restarts. A training run interrupted at any iteration can be resumed from the last checkpoint without restarting from scratch.
+Cobre policies are [checkpointable](/running/policy-management/#cost-scale-canonicalization); checkpoints persist the policy across restarts. A training run interrupted at any iteration can be resumed from the last checkpoint without restarting from scratch.
 
 Cobre supports distributed execution with deterministic results across MPI rank and thread configurations. The same study runs on a laptop with a single process or on an HPC cluster with hundreds of ranks; the numerical results are bit-identical.
 

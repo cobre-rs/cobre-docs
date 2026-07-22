@@ -149,6 +149,10 @@ the result against previous evaluations.
 | `distance_tol` | float   | Normalized distance threshold between consecutive simulation results. |
 | `bound_tol`    | float   | Relative tolerance for bound stability.                               |
 
+:::note[Type-scoped fields]
+As with every JSON input, unknown keys are rejected — for stopping rules specifically, each rule object accepts only the fields belonging to its own `type`. Supplying a parameter that belongs to a different rule type (for example, `seconds` on an `iteration_limit` rule) is now a load-time error, not a silently ignored key. The same type-scoped strictness applies to `training.parallelism.backward_scheduler`.
+:::
+
 ### `stopping_mode`
 
 When multiple stopping rules are listed, `stopping_mode` controls how they
@@ -170,6 +174,62 @@ combine:
 }
 ```
 
+### `parallelism`
+
+Groups the result-preserving worker-scheduling knobs that shape how backward-pass work is distributed across workers, alongside the algorithm-semantics fields at the `training` root. This is a pure addition — no existing `training` field moved.
+
+`backward_scheduler` selects how backward-pass work units are claimed by workers. It is tagged on `method`; supplying a field that does not belong to the selected method is a load-time error (`deny_unknown_fields`), not a silently ignored key.
+
+- `"trial_point"` (default) — each parallel work unit is one whole trial point, matching the byte-neutral pre-v0.12.0 behavior.
+
+  ```json
+  { "method": "trial_point" }
+  ```
+
+- `"opening_block"` — each parallel work unit is one `(trial point, opening block)` pair, claimed dynamically off a shared counter.
+
+  | Field        | Type               | Default | Description                                                                                                                                                                                |
+  | ------------ | ------------------ | ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+  | `block_size` | integer or `null`  | `null`  | Openings per block. Absent resolves per stage to `⌈\|Ω_s\|/2⌉` (half the openings, rounded up); a set value is **silently** clamped to `min(\|Ω_s\|, block_size)` — no error, no warning. |
+
+  Two configurations are load-time errors, not silently accepted:
+
+  - `block_size` supplied under `"trial_point"` — rejected (`deny_unknown_fields`).
+  - `block_size: 0` — rejected (minimum `1`).
+
+Within a stage, opening-blocks are claimed **hardest-first**: blocks are ranked by the previous iteration's mean simplex-pivot cost per `(stage, block)`, descending (ties broken by ascending block index; the first iteration, and any block with no prior data, sort last). This claim order changes only which worker processes which block, and when — it is **result-neutral**: the produced cut set and the training lower bound are identical to canonical-order claiming.
+
+:::caution[Interaction with Dynamic Cut Selection]
+If [Dynamic Cut Selection](#cut_selection) is enabled (`cut_selection.selection.method = "dynamic"`), the `opening_block` scheduler falls back to per-trial-point scheduling from that method's `start_iteration` (default `2`) onward, so `opening_block` then has little effect from that point on. No warning is emitted. DCS is **not** the default — this caveat only applies when it is explicitly enabled. See [Performance Accelerators](/running/performance/) for the detailed tuning treatment of `opening_block`.
+:::
+
+Example — default (`trial_point`; no `parallelism` block needed):
+
+```json
+{
+  "training": {
+    "forward_passes": 50,
+    "stopping_rules": [{ "type": "iteration_limit", "limit": 100 }]
+  }
+}
+```
+
+Example — `opening_block` with an explicit `block_size`:
+
+```json
+{
+  "training": {
+    "forward_passes": 50,
+    "stopping_rules": [{ "type": "iteration_limit", "limit": 100 }],
+    "parallelism": {
+      "backward_scheduler": { "method": "opening_block", "block_size": 4 }
+    }
+  }
+}
+```
+
+For the backward pass this schedules work within, see [SDDP Algorithm §3.4 (Execution Model and Performance Considerations)](/math/sddp-algorithm#34-execution-model-and-performance-considerations).
+
 ---
 
 ## `simulation`
@@ -183,6 +243,12 @@ Controls the optional post-training simulation phase.
 
 When `simulation.enabled` is `false` or `num_scenarios` is `0`, the simulation
 phase is skipped entirely.
+
+`simulation.solver` (optional, default `null`) overrides the LP solver
+profile used during the simulation phase. It takes the identical
+`PhaseSolverProfileConfig` shape as `training.solver.backward` and
+`training.solver.forward` — see [`training.solver`](#trainingsolver) under
+Advanced Fields for the full field table, caveats, and validation ranges.
 
 Example:
 
@@ -240,9 +306,10 @@ Example — simulate with out-of-sample inflow while training uses in-sample:
 
 Controls physical modeling options.
 
-| Field                   | Type   | Default   | Description                                            |
-| ----------------------- | ------ | --------- | -------------------------------------------------------- |
-| `inflow_non_negativity` | object | see below | Strategy for handling negative PAR model inflow draws. |
+| Field                   | Type   | Default        | Description                                                                                                                       |
+| ----------------------- | ------ | -------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| `inflow_non_negativity` | object | see below      | Strategy for handling negative PAR model inflow draws.                                                                            |
+| `cost_scale_factor`     | number | `1_000_000.0`  | Divisor on every non-θ objective coefficient (objective conditioning; does not alter the model, unlike this section's other fields). See below. |
 
 ### `inflow_non_negativity`
 
@@ -270,6 +337,40 @@ Example:
   }
 }
 ```
+
+### `cost_scale_factor`
+
+Divisor applied to every non-θ objective coefficient at LP template build
+time; every cost-domain output (objective value, duals, cut coefficients) is
+multiplied back by the same factor at every reporting boundary. This is
+**objective conditioning, not a physical modeling choice** — unlike
+`inflow_non_negativity` above, results are identical in exact arithmetic;
+changing it never alters the model.
+
+Defaults to `1_000_000.0` when absent or `null` (byte-identical to the
+pre-v0.12.0 hard-coded behaviour). Must be finite and `> 0`; a value outside
+`[1.0, 1e12]` is **accepted but logs an advisory warning** -- it is not
+rejected.
+
+:::caution[The dual-tolerance trap]
+The effective dual tolerance in currency units is `dual_feasibility_tolerance
+× cost_scale_factor`. Raising `cost_scale_factor` without lowering
+`dual_feasibility_tolerance` proportionally loosens optimality in currency
+terms, even though the configured tolerance value itself is unchanged.
+:::
+
+Example:
+
+```json
+{
+  "modeling": {
+    "cost_scale_factor": 1000000.0
+  }
+}
+```
+
+For the methodology, see
+[LP Scaling §12.1 (Cost Scaling)](/math/lp-formulation#121-cost-scaling).
 
 ---
 
@@ -329,7 +430,7 @@ load error, and a misspelled method is rejected with the list of valid methods.
   candidate rows.
 
   | Field                 | Type    | Default | Description                                                                                                                                                                                                                                                                              |
-  | --------------------- | ------- | ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+  | --------------------- | ------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
   | `start_iteration`     | integer | `2`     | First 1-based iteration at which the lazy loop becomes active. Must be `>= 1`.                                                                                                                                                                                                           |
   | `seed_window`         | integer | `5`     | Number of most-recent iterations whose rows seed the initial resident set. `0` is valid (seeds only the current iteration).                                                                                                                                                              |
   | `candidate_recency`   | integer | `null`  | Only rows generated within the last `candidate_recency` iterations are scored. `null` (the default) is unbounded — every pool row is a candidate, which preserves exactness. `Some(n)` (must be `>= 1`) makes the loop deliberately inexact: rows older than the window are never added. |
@@ -650,15 +751,123 @@ These fields are deserialized from `config.json` when present but are intended
 for advanced use cases and may change between releases:
 
 | Section                          | Purpose                                                                                                  |
-| -------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| --------------------------------- | ---------------------------------------------------------------------------------------------------------- |
 | `upper_bound_evaluation`         | Inner approximation upper-bound evaluation settings                                                      |
-| `training.solver`                | LP solver options (see [Solver Safeguards](/running/performance/#solver-safeguards) for details) |
+| `training.solver`                | LP solver retry policy and optional per-phase profile overrides (`backward`, `forward`) — see [`training.solver`](#trainingsolver) below; for the performance-tuning treatment of the same profiles, see [Solver Safeguards](/running/performance/#solver-safeguards) |
 | `simulation.io_channel_capacity` | Async I/O channel buffer size for simulation output writing                                              |
 
 All fields have defaults and can be omitted. Every JSON input file rejects
 unknown keys, so misspelled fields raise a parse error rather than being
 silently ignored. For the complete list of fields and their types, see the
 `Config` struct in the [cobre-io API docs](https://docs.rs/cobre-io).
+
+### `training.solver`
+
+LP solver retry policy plus optional per-phase profile overrides.
+`retry_max_attempts` and `retry_time_budget_seconds` are pre-existing
+fields; `backward` and `forward` are new in v0.12.0.
+
+| Field                       | Type              | Default | Description                                                             |
+| ---------------------------- | ----------------- | ------- | --------------------------------------------------------------------------- |
+| `retry_max_attempts`        | integer           | `5`     | Maximum solver retry attempts before propagating a hard error.          |
+| `retry_time_budget_seconds` | float             | `30.0`  | Total time budget in seconds across all retry attempts for one solve.   |
+| `backward`                  | object or `null`  | `null`  | Per-phase LP solver profile override applied during the backward pass.  |
+| `forward`                   | object or `null`  | `null`  | Per-phase LP solver profile override applied during the forward pass.   |
+
+`simulation.solver` (see [`simulation`](#simulation-1) above) is a third,
+independent sibling that takes the identical shape — `training.solver.backward`,
+`training.solver.forward`, and `simulation.solver` all resolve against one
+shared `PhaseSolverProfileConfig`, documented once below.
+
+#### `PhaseSolverProfileConfig` fields
+
+Every field is optional and defaults to `null`. An absent field leaves the
+corresponding option at **the phase's built-in tuned profile** — not the
+underlying solver's own default profile; the two differ (for example, all
+three phase profiles set `price` to `"row_hyper_sparse"`, while HiGHS's own
+default pricing is `"row"`). A study with no solver-profile configuration at
+all (no `backward`, `forward`, or `simulation.solver`) resolves
+byte-identically to the prior, unconfigurable per-phase defaults. Resolution
+happens once at setup — before any LP template is built — and the result is
+broadcast identically to every rank.
+
+| Field | Type / values |
+| --- | --- |
+| `dual_edge_weight` | `"devex"` \| `"steepest_edge"` \| `"dantzig"` |
+| `scale` | `"off"` \| `"solver_scaling"` |
+| `price` | `"row"` \| `"row_hyper_sparse"` |
+| `presolve` | `"on"` \| `"off"` \| `"choose"` |
+| `primal_feasibility_tolerance` | number |
+| `dual_feasibility_tolerance` | number |
+| `simplex_update_limit` | uint32 |
+| `cost_perturbation` | number |
+| `refactor_error_tolerance` | number |
+| `factor_pivot_threshold` | number |
+| `use_warm_start` | boolean |
+| `steepest_edge_devex_fallback_threshold` | number |
+
+- `presolve` affects only a genuinely cold solve — a warm-started solve
+  skips presolve regardless of the setting.
+- `use_warm_start` is a **diagnostic** override, not an intended production
+  setting: setting it to `false` forces every solve in the phase cold.
+- `dual_edge_weight: "steepest_edge"` is a **request, not a guarantee** —
+  HiGHS silently falls back to Devex pricing once the dual steepest-edge
+  weight log-error exceeds `steepest_edge_devex_fallback_threshold`.
+
+:::caution[`scale: "solver_scaling"` compromises single-unscaling exactness]
+Setting `scale` to `"solver_scaling"` re-enables solver-side (Curtis–Reid)
+scaling on top of Cobre's own offline prescaler. Dual and cut-coefficient
+unscaling (see [LP Scaling §12.3 (Row Scaling)](/math/lp-formulation#123-row-scaling-geometric-mean))
+is exact only when the solve applies no scaling beyond that prescaler —
+enabling `solver_scaling` introduces a second scaling factor the
+single-unscaling identity does not account for. This is the authoritative
+documentation of the `scale`-field warning; the same caution appears in
+[Performance Accelerators](/running/performance/).
+:::
+
+#### Validation
+
+Seven fields are range-checked; a value outside its range is rejected at
+config-load time with an error naming the phase and the offending field:
+
+- `primal_feasibility_tolerance` — must be finite.
+- `dual_feasibility_tolerance` — must be finite and `>= 1e-10`.
+- `simplex_update_limit` — must be `<= 2147483647` (`i32::MAX`).
+- `cost_perturbation` — must be finite and `>= 0`.
+- `refactor_error_tolerance` — must be finite and `>= 0`.
+- `factor_pivot_threshold` — must be in `[8e-4, 0.5]`.
+- `steepest_edge_devex_fallback_threshold` — must be finite and `>= 1.0`.
+
+The closed enums (`dual_edge_weight`, `scale`, `price`, `presolve`) and
+`use_warm_start` are unconditionally valid — every variant is supported.
+
+#### CLP backend
+
+Per-phase solver-profile overrides are HiGHS-only. On the CLP backend, any
+field set under `backward`, `forward`, or `simulation.solver` is rejected at
+setup — deterministically, on every rank, before any LP template is built —
+with a named error identifying the phase and the field. An empty override
+block (for example `"solver": {}` or `"backward": {}`) and an absent block
+are both legal on CLP; only a field that is actually set triggers rejection.
+See [Installation — Choosing a Backend](/getting-started/installation) for
+backend selection and CLP's other limitations.
+
+Example — `training.solver.backward` with two overrides:
+
+```json
+{
+  "training": {
+    "solver": {
+      "retry_max_attempts": 5,
+      "retry_time_budget_seconds": 30.0,
+      "backward": {
+        "dual_edge_weight": "steepest_edge",
+        "factor_pivot_threshold": 0.05
+      }
+    }
+  }
+}
+```
 
 ---
 

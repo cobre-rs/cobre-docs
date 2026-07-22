@@ -25,7 +25,7 @@ detail.
 
 | Schema file | Input file | Description |
 | --- | --- | --- |
-| [`config.schema.json`](/schemas/config.schema.json) | `config.json` | Study configuration: training parameters, stopping rules, cut selection, simulation settings, and export flags |
+| [`config.schema.json`](/schemas/config.schema.json) | `config.json` | Study configuration: training parameters, stopping rules, cut selection, per-phase solver profiles, backward-scheduler parallelism, simulation settings, and export flags |
 | [`penalties.schema.json`](/schemas/penalties.schema.json) | `penalties.json` | Global penalty cost defaults for bus deficit, line exchange, hydro violations, and non-controllable source curtailment |
 | [`stages.schema.json`](/schemas/stages.schema.json) | `stages.json` | Temporal structure of the study: stage sequence, load blocks, and policy graph horizon |
 | [`buses.schema.json`](/schemas/buses.schema.json) | `system/buses.json` | Electrical bus registry: bus identifiers, names, and optional entity-level deficit cost tiers |
@@ -97,7 +97,8 @@ file pattern.
 :::note[Before the site is live]
 Until `docs.cobre-rs.dev` is serving this site, the identical schema
 content is also available straight from the tagged `cobre` repository, e.g.
-`https://raw.githubusercontent.com/cobre-rs/cobre/v0.10.0/book/src/schemas/config.schema.json`.
+`https://raw.githubusercontent.com/cobre-rs/cobre/v0.12.0/schemas/config.schema.json`.
+{/* external URL — check:links skips this; bump manually each release */}
 :::
 
 ## Provenance and refreshing
@@ -105,7 +106,7 @@ content is also available straight from the tagged `cobre` repository, e.g.
 These schemas are generated in the `cobre` repository from the `cobre-io`
 Rust types — the Rust types are the ground truth, and the schema files are
 their generated output, licensed Apache-2.0. This site vendors a committed
-copy (currently at the `v0.10.0` tag) under `public/schemas/` so the files
+copy (currently at the `v0.12.0` tag) under `public/schemas/` so the files
 have a stable URL to serve from and to link to.
 
 Do not hand-edit any vendored schema file. When `cobre` regenerates the
