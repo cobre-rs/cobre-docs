@@ -30,7 +30,7 @@ diverge from the code, the spec must be updated — not the other way around.
 
 ## Current State
 
-**Synced to: cobre v0.11.1 (2026-07-17).**
+**Synced to: cobre v0.12.0 (2026-07-22).**
 
 The corpus is a **unified two-layer reference**: the annotation-free **math
 layer** (formulation, algorithm, worked examples) interleaved per topic with a
@@ -178,10 +178,17 @@ policy is **portable across block modes and counts** — policy load validates o
 state dimension + the per-slot entity manifest, never `block_mode`
 (`policy_load.rs`).
 → **LP scaling**: Cobre applies its own offline geometric-mean row/col prescaler
-plus a cost-scale factor; the LP backend's internal simplex scaler is **disabled**
-(HiGHS: `simplex_scale_strategy = 0`). (Backend is selectable at build time —
-HiGHS default, CLP opt-in — a software-layer/devguide concern; keep the math
-backend-generic.)
+plus a configurable cost-scale factor (`modeling.cost_scale_factor`, default
+`1_000_000.0` = `DEFAULT_COST_SCALE_FACTOR` in `setup/params.rs`); the LP
+backend's internal simplex scaler is **disabled by default** (HiGHS:
+`simplex_scale_strategy = 0`, pinned on all three phase profiles in
+`solve/solver_phase.rs`). It is now **overridable per phase** via the solver
+profile's `scale` field (`off` | `solver_scaling`) on
+`training.solver.{backward,forward}` and `simulation.solver`; enabling
+`solver_scaling` applies a second scaling and **breaks** the single-unscaling
+exactness that `lp-formulation.md` §12.3 states as holding by default only.
+(Backend is selectable at build time — HiGHS default, CLP opt-in — a
+software-layer/devguide concern; keep the math backend-generic.)
 → **Cut pool**: append-only with stable, deterministic slot indices; deactivation
 toggles a cut row's RHS to a `±∞` sentinel (row never removed); only active cuts
 are baked into each iteration's template. Periodic-pruning methods

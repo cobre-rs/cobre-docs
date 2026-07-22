@@ -21,7 +21,7 @@
 //               Only used to resolve the git object database — the ref is read
 //               via plumbing (ls-tree/show), so cobre's CURRENTLY CHECKED OUT
 //               branch is irrelevant; only the tag's committed object matters.
-//     --ref     git ref/tag to vendor from (default: v0.11.1).
+//     --ref     git ref/tag to vendor from (default: v0.12.0).
 //     --check   verify-only: compare public/schemas/ against <ref>, write
 //               nothing; exit 1 listing every drifted/missing file, else exit 0.
 //
@@ -42,7 +42,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 
 const EXPECTED_COUNT = 18;
-const DEFAULT_REF = "v0.11.1";
+const DEFAULT_REF = "v0.12.0";
 // Ordered candidates for the schemas tree in cobre: `schemas/` from the mdBook
 // retirement (v0.11.0) onward, `book/src/schemas/` on earlier tags.
 const SCHEMAS_SUBPATHS = ["schemas", "book/src/schemas"];
