@@ -56,7 +56,15 @@ case root must contain all required files (see [Case Directory Format](/referenc
 **When it occurs:** A file is readable but its content is malformed — invalid
 JSON syntax, unexpected end of input, or an unreadable Parquet column header.
 Occurs in Layer 2 (schema) during initial deserialization before any
-field-level validation runs.
+field-level validation runs. Also returned for a `deny_unknown_fields`
+violation inside a tagged JSON union whose underlying `serde_json` message
+does not contain `unknown variant` or `missing field` — the only two
+substrings `parse_config` promotes to `SchemaError` — so the error falls
+through to `ParseError` instead. The primary case is `training.stopping_rules`:
+`StoppingRuleConfig` is `#[serde(tag = "type", deny_unknown_fields)]`, so a
+rule entry carrying a field that belongs to a *different* rule `type` (for
+example, `seconds` — a `time_limit` field — set on a `bound_stalling` rule)
+hard-fails at config load with an `unknown field` message.
 
 **Display format:**
 
@@ -77,9 +85,15 @@ parse error in {path}: {message}
 parse error in stages.json: expected `:` at line 5 column 12
 ```
 
+```
+parse error in config.json: unknown field `seconds`, expected `iterations` or `tolerance` at line N column M
+```
+
 **Resolution:** Open the file in a JSON validator or Parquet viewer. The message
 contains the location of the syntax error. For JSON files, a trailing comma,
-missing closing brace, or unquoted key are common causes.
+missing closing brace, or unquoted key are common causes. For an `unknown
+field` message inside a `stopping_rules` entry, remove the field that does not
+belong to that entry's `type`, or move it to an entry whose `type` declares it.
 
 ---
 
@@ -487,6 +501,74 @@ commitment itself should use `anticipated_decision(N)` instead. Emitted by Layer
 generation dispatched at the delivery stage, `thermal_generation(N)` is correct
 and the warning can be ignored. If you want to bound the advance commitment
 decision itself, replace `thermal_generation(N)` with `anticipated_decision(N)`.
+
+---
+
+## Solver profile validation (`SddpError`)
+
+Per-phase solver-profile overrides (`training.solver.backward`,
+`training.solver.forward`, `simulation.solver`) are validated against the
+compiled backend's support matrix in `StudySetup::from_broadcast_params`, at
+study setup and before any LP template is built, on every rank. A validation
+failure returns `SddpError::Validation` — every rejection documented below
+reuses this one error kind; there is no separate enum variant per rule.
+
+### CLP backend: every override is rejected
+
+**When it occurs:** cobre built with the `clp` feature (`--features clp`)
+rejects every solver-profile override field outright — CLP's own option
+surface has not been measured against these fields, so cobre refuses to
+silently apply a HiGHS-flavored value to it. An empty `"solver": {}` block and
+an absent `solver` block are both legal; only a field that is actually *set*
+triggers the error. When a profile sets more than one field, only the first
+field in declaration order is named, so fixing one field at a time surfaces
+one error per fix cycle rather than a combined report.
+
+**Example message:**
+
+```
+solver profile field "dual_edge_weight" for phase "backward" is unsupported on backend "clp": rejected until CLP is re-measured
+```
+
+For `primal_feasibility_tolerance`, the field token additionally carries the
+value that was set:
+
+```
+solver profile field "primal_feasibility_tolerance" (1e-7) for phase "forward" is unsupported on backend "clp": rejected until CLP is re-measured
+```
+
+`"<phase>"` is one of `forward`, `backward`, or `simulation`.
+
+**Resolution:** Remove the override field from `config.json` on a CLP-built
+binary, or switch to the default HiGHS backend if the override is required.
+
+### HiGHS backend: seven per-field range checks
+
+The default (`highs`) backend accepts every solver-profile field. The closed
+enums (`dual_edge_weight`, `scale`, `price`, `presolve`) and `use_warm_start`
+are unconditionally valid — every variant is already checked at deserialize
+time, so there is no separate runtime range check for them. The remaining
+seven numeric fields are range-checked at study setup; each failure names the
+field, the rejected value, and the phase (`forward` / `backward` /
+`simulation`) whose profile set it.
+
+| Field | Rule | Message |
+| --- | --- | --- |
+| `primal_feasibility_tolerance` | must be finite | `unsupported primal_feasibility_tolerance {value} for backend "highs" in phase "{phase}": value must be finite` |
+| `dual_feasibility_tolerance` | must be finite and `>= 0.0000000001` | `unsupported dual_feasibility_tolerance {value} for backend "highs" in phase "{phase}": value must be finite and >= 0.0000000001` |
+| `simplex_update_limit` | must be `<= 2147483647` | `unsupported simplex_update_limit {value} for backend "highs" in phase "{phase}": value must be <= 2147483647` |
+| `cost_perturbation` | must be finite and `>= 0` | `unsupported cost_perturbation {value} for backend "highs" in phase "{phase}": value must be finite and >= 0` |
+| `refactor_error_tolerance` | must be finite and `>= 0` | `unsupported refactor_error_tolerance {value} for backend "highs" in phase "{phase}": value must be finite and >= 0` |
+| `factor_pivot_threshold` | must be in `[0.0008, 0.5]` | `unsupported factor_pivot_threshold {value} for backend "highs" in phase "{phase}": value must be in [0.0008, 0.5]` |
+| `steepest_edge_devex_fallback_threshold` | must be finite and `>= 1.0` | `unsupported steepest_edge_devex_fallback_threshold {value} for backend "highs" in phase "{phase}": value must be finite and >= 1.0` |
+
+`0.0000000001` is the compiled `MIN_DUAL_FEASIBILITY_TOLERANCE` (`1e-10`,
+printed expanded rather than in scientific notation); `2147483647` is
+`i32::MAX`; `[0.0008, 0.5]` is HiGHS's own accepted pivot-threshold range.
+
+**Resolution:** Adjust the offending field to satisfy the rule in the table.
+`{phase}` in the message identifies which of `training.solver.backward`,
+`training.solver.forward`, or `simulation.solver` set the invalid value.
 
 ---
 

@@ -1,0 +1,65 @@
+Cobre's backward-pass work-scheduling knob lives entirely in `config.json`'s
+`training.parallelism` block — there is no per-case data file for it. This tab
+is the field-level configuration reference; the backward pass and execution
+model the scheduler distributes work within stay in the methodology sections
+above ([§3.2 Backward Pass](/math/sddp-algorithm#32-backward-pass),
+[§3.4 Execution Model and Performance Considerations](/math/sddp-algorithm#34-execution-model-and-performance-considerations)).
+
+### `training.parallelism` — Backward-Pass Scheduler Configuration
+
+`parallelism` groups result-preserving worker-scheduling knobs alongside the
+algorithm-semantics fields at the `training` root — a pure addition; no
+existing `training` field moved. Its sole member, `backward_scheduler`,
+selects how backward-pass work units are claimed by workers. It is tagged on
+`method`; supplying a field that does not belong to the selected method is a
+load-time error (`deny_unknown_fields`), not a silently ignored key.
+
+| `method`        | Default | Work unit                                                                          |
+| ---------------- | :-----: | ----------------------------------------------------------------------------------- |
+| `trial_point`    |   yes   | One whole trial point.                                                             |
+| `opening_block`  |   no    | One `(trial point, opening block)` pair, claimed dynamically off a shared counter. |
+
+```json
+{
+  "training": {
+    "parallelism": {
+      "backward_scheduler": { "method": "trial_point" }
+    }
+  }
+}
+```
+
+#### `opening_block`
+
+| Field        | Type               | Default | Description                                                                                                                                                                                |
+| ------------ | ------------------ | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `block_size` | integer or `null`  | `null`  | Openings per block. Absent resolves per stage to `⌈\|Ω_s\|/2⌉` (half the openings, rounded up); a set value is **silently** clamped to `min(\|Ω_s\|, block_size)` — no error, no warning. |
+
+```json
+{
+  "training": {
+    "parallelism": {
+      "backward_scheduler": { "method": "opening_block", "block_size": 4 }
+    }
+  }
+}
+```
+
+Two configurations are load-time errors, not silently accepted:
+
+- `block_size` supplied under `"trial_point"` — rejected (`deny_unknown_fields`).
+- `block_size: 0` — rejected (minimum `1`).
+
+Within a stage, opening-blocks are claimed **hardest-first**: blocks are
+ranked by the previous iteration's mean simplex-pivot cost per `(stage,
+block)`, descending. This claim order changes only which worker processes
+which block, and when — it is **result-neutral**: the produced cut set and
+the training lower bound are identical to canonical-order (whole-trial-point)
+claiming.
+
+If [Dynamic Cut Selection](/math/cut-management#8-dynamic-cut-selection) is
+enabled (`cut_selection.selection.method = "dynamic"` — not the default), the
+`opening_block` scheduler falls back to per-trial-point scheduling from that
+method's `start_iteration` onward, with no warning emitted. See
+[Performance Accelerators](/running/performance/) for the full tuning
+treatment and the fallback mechanism.

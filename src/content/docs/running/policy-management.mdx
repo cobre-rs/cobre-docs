@@ -150,6 +150,58 @@ in `"warm_start"` or `"resume"` mode.
 
 ---
 
+## Cost-Scale Canonicalization
+
+Cobre's objective cost-scale factor
+([`modeling.cost_scale_factor`](/running/configuration/#cost_scale_factor))
+is configurable per study. Cut coefficients and intercepts are computed in the
+solving study's internally scaled cost space, so policy export and load
+convert between that scaled space and a canonical, scale-independent
+representation at rest:
+
+- **Export** multiplies every cut coefficient and intercept by the
+  **writing** study's `cost_scale_factor`, so a persisted policy holds
+  canonical currency units — not the writer's internal scaled cost space.
+- **Every load path** — warm-start, resume, simulation-only, and boundary-cut
+  injection — divides by the **loading** study's own `cost_scale_factor`,
+  converting the canonical values back into that study's internal scaled
+  space.
+
+`policy/metadata.json` (see the field table in
+[Output Format](/reference/output-format/#policymetadatajson)) carries a
+`cost_scale_factor` provenance field recording the writing study's factor. A
+checkpoint whose `metadata.json` is missing this field is a legacy checkpoint,
+interpreted as scaled at `1_000_000.0`.
+
+### Compatibility matrix
+
+| Checkpoint | Loading factor | Behaviour |
+|---|---|---|
+| Marked (`cost_scale_factor` present) | any | divided by loading factor **unconditionally**, even when equal |
+| Unmarked (legacy) | `== 1e6` (default) | no-op — **bit-exact, no re-baseline** |
+| Unmarked (legacy) | `!= 1e6` | multiplied by `1e6 / loading_factor` |
+
+:::caution[Downgrading is unsafe]
+This compatibility contract is **one-directional**. A checkpoint written by
+this release must **not** be read by an earlier release: the earlier release
+has no concept of the `cost_scale_factor` provenance field, so it silently
+reinterprets the canonical at-rest values under the old scaled convention —
+no error, no warning, wrong numbers. A checkpoint written by an earlier
+release remains fully loadable by this one.
+
+[FlatBuffers Schema Versioning](/reference/flatbuffers-schema/#versioning-policy)
+reasons only about **wire** compatibility — whether a reader can parse the
+binary layout — not about the **value** semantics this contract governs.
+:::
+
+Loading a checkpoint written by this release's export path applies one extra
+floating-point division to every cut coefficient and intercept, moving each
+value by up to a few ULP. This is below solver tolerance and does not change
+training or simulation results — but a bit-exact hash computed over a
+policy-load path shifts once as a result.
+
+---
+
 ## Boundary Cuts
 
 Boundary cuts allow a Cobre study to load terminal-stage future cost function

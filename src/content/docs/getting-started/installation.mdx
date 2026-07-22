@@ -49,7 +49,7 @@ cobre version
 Expected output (exact versions and arch will vary):
 
 ```
-cobre   v0.9.1
+cobre   v0.12.0
 solver: HiGHS
 comm:   local
 zstd:   enabled
@@ -156,7 +156,7 @@ explicitly. The default build (no extra flags) uses HiGHS.
 The `cobre version` banner shows which backend is compiled in:
 
 ```
-cobre   v0.9.1
+cobre   v0.12.0
 solver: CLP 1.17.11
 comm:   local
 ...
@@ -176,6 +176,15 @@ different optimal vertices on degenerate problems, all of which are valid. No
 cross-backend numerical equality is guaranteed; each backend maintains its own
 parity baselines.
 
+This within-version guarantee has a cross-release counterpart: the backward
+pass's opening solve order can change between cobre releases (for example,
+relative to v0.11.1, which used a fixed sigma-weighted order). On a stage with
+**three or more openings**, a different opening order can settle on a different
+equally optimal vertex of a degenerate problem, all of which are valid, so
+training and simulation outputs on such a stage can shift across the release
+boundary. Stages with fewer than three openings have no order to change and
+stay byte-identical across releases.
+
 ### Migration note
 
 Existing builds are unaffected. The default backend is HiGHS, unchanged from
@@ -190,6 +199,11 @@ has been taken is unsupported and guarded against at runtime. This situation doe
 not arise on the production solve paths; it is relevant only to callers that
 construct solver instances directly and interleave `load_model` calls with
 hot-start operations.
+
+On a CLP build, every `training.solver`/`simulation.solver` override field is
+rejected at study setup — see
+[solver profile validation](/reference/error-codes/#solver-profile-validation-sddperror)
+for the full rejection rule and error messages.
 
 ---
 

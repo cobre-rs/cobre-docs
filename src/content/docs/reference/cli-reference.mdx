@@ -127,6 +127,40 @@ cobre --color always run /data/cases/hydro_study
 mpiexec -np 4 cobre run /data/cases/hydro_study
 ```
 
+### Output format
+
+`cobre run` prints this summary to stderr once the study finishes. It carries
+the same convergence, policy-rows, and LP-solve lines as the [`cobre
+summary`](#cobre-summary) reconstruction, plus a live-run-only `Time split`
+block that decomposes the total training wall time into `Forward` /
+`Backward` / `Serial` phases (see the arithmetic notes below).
+
+```
+Training complete in 4m 12s (42 iterations, converged at iter 38)
+  Lower bound:  4.85000e4 $/stage
+  Upper bound:  4.90000e4 +/- 2.50000e2 $/stage
+  Gap:          1.0%
+  Policy rows:  980000 active / 1250000 generated
+  LP solves:    84000 (81900 first-try, 2000 retried, 100 failed)
+  Avg iter:     6000ms
+  Time split:   Forward  2m 51s (68%)   solve 2m 40s · wait 14.0s (8% of phase)
+                Backward 1m 9s (27%)   solve 58.0s · wait 7.0s (10% of phase)
+                Serial   12.0s (5%)   bound 4.0s · selection 2.0s · allreduce 1.0s · sync 500ms · other 4.5s
+```
+
+The three walls in the `Time split` block sum to the total training time
+(`Serial = total − Forward − Backward`, clamped at zero). For `Forward`/
+`Backward`, `solve` is the per-worker mean LP-solve wall time for that phase
+(cumulative solve time across all workers divided by parallelism, capped at
+the phase wall); `wait` is that phase's worker wait from load imbalance,
+shown as a percentage of the phase wall. In the `Serial` line, `bound` is
+lower-bound evaluation time and `selection` is row-selection time;
+`allreduce` (MPI forward-bound synchronization) and `sync` (per-stage
+row-sync `allgatherv`) appear **only** on MPI runs, inserted only when
+nonzero; `other` absorbs rayon scheduling overhead plus any unaccounted
+residual. The whole `Time split` block is **omitted** when per-iteration
+phase-wall timing is unavailable — see [`cobre summary`](#cobre-summary) below.
+
 ### SLURM clusters
 
 On SLURM-managed clusters, launch Cobre with `srun` instead of `mpiexec`.
@@ -291,12 +325,19 @@ Training complete in 3m 42s (42 iterations, converged at iter 38)
   Lower bound:  4.85000e4 $/stage
   Upper bound:  4.90000e4 +/- 2.50000e2 $/stage
   Gap:          1.0%
-  Cuts:         980000 active / 1250000 generated
+  Policy rows:  980000 active / 1250000 generated
   LP solves:    84000
+  Avg iter:     5286ms
 
 Simulation complete in 0.0s (200 scenarios)
   Completed: 198  Failed: 2
 ```
+
+`cobre summary` reconstructs this summary from persisted files
+(`training/metadata.json` and `training/convergence.parquet`) and therefore
+omits the `Time split` block — per-iteration phase timing is not written to
+`metadata.json`. See [`cobre run`'s Output format section](#output-format)
+above for the block a live run prints.
 
 The simulation section is omitted when `simulation/metadata.json` is absent
 (e.g., when simulation was disabled in `config.json`).

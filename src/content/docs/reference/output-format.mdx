@@ -701,6 +701,7 @@ machine-readable by tooling that inspects policy files.
 | `warm_start_counts`    | integer[] | No       | Per-stage warm-start cut counts (one per stage, 0-based). Empty in old checkpoints; supersedes `warm_start_cuts` when non-empty. |
 | `rng_seed`             | integer   | No       | RNG seed used by the scenario sampler. Required for reproducibility.                                                             |
 | `total_visited_states` | integer   | No       | Total number of visited state vectors across all stages. `0` when `exports.states` is off.                                       |
+| `cost_scale_factor`    | number    | Yes      | Objective cost-scale factor the writing study resolved (`modeling.cost_scale_factor`). Marks the checkpoint's cut coefficients/intercepts as canonical currency units. `null`/absent in legacy checkpoints, interpreted as scaled at `1000000.0`. See [Cost-Scale Canonicalization](/running/policy-management/#cost-scale-canonicalization) for the compatibility matrix. |
 
 ---
 
