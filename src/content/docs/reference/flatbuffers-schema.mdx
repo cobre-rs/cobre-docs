@@ -151,10 +151,17 @@ without breaking older readers, **as long as** new fields are appended
 at the end with the next available `id`. This is the only schema
 change that does not require an output-format version bump:
 
-- **Adding a field at the next free id** → backward compatible.
-  Old readers see the field as absent and use the FlatBuffers default
-  (zero / empty vector). New readers see the value when the writer
-  was new enough to emit it.
+- **Adding a field at the next free id** → backward compatible **at the
+  wire level only**. Old readers see the field as absent and use the
+  FlatBuffers default (zero / empty vector). New readers see the value
+  when the writer was new enough to emit it. Wire compatibility does not
+  imply the *values* are safe to consume: a field can change what existing
+  fields mean (the `cost_scale_factor` provenance marker marks cut
+  coefficients as canonical currency units, which a reader that ignores it
+  silently misinterprets — no error, wrong numbers). Cross-release policy
+  compatibility is governed by the one-directional contract in
+  [Cost-Scale Canonicalization](/running/policy-management/#cost-scale-canonicalization),
+  not by this wire-level rule.
 - **Removing a field** → mark it `deprecated`, never reuse the id.
   See `Cut.domination_count` for a worked example.
 - **Changing a field's type** → breaking. Bumps the major output
