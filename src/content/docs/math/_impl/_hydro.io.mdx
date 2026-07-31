@@ -8,12 +8,13 @@ and [Output Format](/reference/output-format/) pages).
 
 | File | Role |
 | ---- | ---- |
-| `system/hydros.json` | Hydro plant registry — core fields, reservoir, outflow, generation model, and the advanced blocks (see the Configure tab). |
+| `system/hydros.json` | Hydro plant registry — core fields, reservoir, outflow, generation model, the required `unit_groups` bus partition, and the advanced blocks (see the Configure tab). |
 | `system/hydro_production_models.json` | Optional per-hydro production-model selection (`stage_ranges` / `seasonal`), FPHA fitting configuration, and plane reduction. |
 | `system/hydro_geometry.parquet` | Volume-Height-Area (VHA) curves — required for any hydro using computed FPHA or `linearized_head`, and for the evaporation area-volume conversion. |
 | `system/hydro_energy_productivity.parquet` | Per-`(hydro, stage)` equivalent-productivity overrides — the tabular authoring source for §5.1's resolution order, and the FPHA override path. |
 | `system/fpha_hyperplanes.parquet` | Pre-fitted FPHA hyperplane coefficients, read when a plant's `fpha_config.source` is `"precomputed"`. |
-| `initial_conditions.json` (hydro rows) | Per-hydro initial state: `storage` or `filling_storage` (exactly one), optional `past_inflows` for AR lag seeding, and optional `past_defluences` seeding the pre-study releases in transit on a declared travel-time arc. |
+| `constraints/hydro_unit_group_bounds.parquet` | Optional stage-varying, optionally per-block overrides of a unit group's four declared bounds (see the Configure tab). Rows are keyed by `(hydro_id, hydro_unit_group_id, stage_id, block_id?)`, where `hydro_unit_group_id` matches a group's own `id` in `hydros.json`; a group with no override row reads its declared value. |
+| `initial_conditions.json` (hydro rows) | Per-hydro initial state: `storage` or `filling_storage` (exactly one), and optional `past_defluences` seeding the pre-study releases in transit on a declared travel-time arc. AR-lag seeding for the PAR inflow model derives from `scenarios/inflow_history.parquet` and `recent_observations` instead — see the [PAR chapter's Inputs & Outputs tab](/math/par-inflow-model#implementation-in-cobre). |
 
 For the complete field-by-field schema of each file above, see the
 [Case Directory Format](/reference/case-directory-format/) reference page in
@@ -24,7 +25,8 @@ the Reference corpus.
 | File | Role |
 | ---- | ---- |
 | `output/hydro_models/fpha_hyperplanes.parquet` | Fitted hyperplane coefficients when `fpha_config.source` is `"computed"` — the same schema as the `system/fpha_hyperplanes.parquet` input, so it round-trips: copy it into `system/` and switch `source` to `"precomputed"` to reuse a prior fit without refitting. See Implementation notes for the round-trip workflow. |
-| Hydro generation and storage output columns | Per-(stage, block, hydro) dispatch results (turbined flow, spillage, generation, storage) written alongside every other entity's output rows. |
+| Hydro generation and storage output columns | Per-(stage, block, hydro) dispatch results (turbined flow, spillage, generation, storage) written alongside every other entity's output rows — the plant total, unchanged by bus-partitioning. |
+| `simulation/hydro_bus_generation/` | Per-(stage, block, hydro, bus) cell dispatch results — `turbined_m3s`, `generation_mw`, `generation_mwh`; `bus_id` always non-null. See Implementation notes for the exact-sum caveat on the `generation_mw` column. |
 | `simulation/in_transit/` | Per-(stage, downstream hydro, maturity lag) in-transit water volumes on declared travel-time arcs — five columns (`stage_id`, `hydro_id`, `lag`, `in_transit_volume_hm3`, `delayed_arrival_hm3`). Written only when a travel-time arc is declared; absent (byte-neutral) otherwise. |
 
 For the complete output schema (columns, types, file layout), see the

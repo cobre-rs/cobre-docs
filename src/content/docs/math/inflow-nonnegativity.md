@@ -9,13 +9,13 @@ This spec defines the four methods available for handling negative inflow realiz
 
 ## 1. Problem Statement
 
-The PAR(p) model can generate negative inflow realizations:
+The PAR(p) model's inflow equation can produce a negative realization:
 
 $$
 a_h = \underbrace{\mu_m - \sum_{\ell=1}^{p} \psi_\ell \mu_{m-\ell}}_{\text{deterministic base}} + \underbrace{\sum_{\ell=1}^{p} \psi_\ell \cdot \hat{a}_{h,\ell}}_{\text{lag contribution}} + \underbrace{\sigma_m \cdot \eta}_{\text{noise term}}
 $$
 
-When $\eta$ is sufficiently negative (e.g., $\eta < -2$), the total can become negative, which is physically impossible.
+When $\eta$ is sufficiently negative (e.g., $\eta < -2$), the total can become negative. That is not itself a physical impossibility: $a_h$ is _incremental_ inflow — a plant's natural flow minus its upstream plants' — so a genuinely negative value is real hydrology (a reach that loses water over the period), and the same $a_h < 0$ case arises whether the realization comes from PAR(p) noise or from replaying a negative window of historical/observed data directly (`inflow_history`/`recent_observations`; see [PAR(p) Inflow Model](/math/par-inflow-model)). What the methods below solve is the LP's water-balance consequence of $a_h < 0$: absorbing it without the other water-balance variables (storage, release, spillage — all bounded $\geq 0$) being driven infeasible.
 
 ## 2. Penalty Classification
 

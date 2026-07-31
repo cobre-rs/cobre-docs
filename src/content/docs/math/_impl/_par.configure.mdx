@@ -44,7 +44,7 @@ of seven estimation paths Cobre executes:
 
 | Symbol | File                                        | Role                                    |
 | :----: | ------------------------------------------- | ---------------------------------------- |
-| **H**  | `scenarios/inflow_history.parquet`          | Raw historical observations for fitting |
+| **H**  | `scenarios/inflow_history.parquet`          | Windowed historical observations for fitting |
 | **S**  | `scenarios/inflow_seasonal_stats.parquet`   | User-supplied seasonal mean/std         |
 | **R**  | `scenarios/inflow_ar_coefficients.parquet`  | User-supplied AR coefficients           |
 
@@ -81,21 +81,41 @@ alone cannot drive estimation.
 | Provide every parameter, including the PAR(p)-A annual term   | All three of H, S, R (and optionally the annual file)                | 7    |
 | Pin a custom spatial correlation on any path                  | Add `correlation.json`                                                | any  |
 
-### `scenarios/inflow_history.parquet` — Raw Historical Observations
+### `scenarios/inflow_history.parquet` — Windowed Historical Observations
 
-Required to drive any of the estimation paths (H = 1 above). One row per
-historical observation:
+Required to drive any of the estimation paths (H = 1 above), and — whenever
+present — the base layer the derived inflow-lag seed casts from (see "Lag and
+accumulator seeding" below). One row per historical observation window:
 
-| Column      | Type   | Required | Description |
-| ----------- | ------ | -------- | ----------- |
-| `hydro_id`  | INT32  | Yes      | Hydro plant identifier (matches `id` in `hydros.json`). |
-| `date`      | DATE   | Yes      | Observation date. |
-| `value_m3s` | DOUBLE | Yes      | Historical inflow observation (m³/s); must be finite. |
+| Column       | Type   | Required | Description |
+| ------------ | ------ | -------- | ----------- |
+| `hydro_id`   | INT32  | Yes      | Hydro plant identifier (matches `id` in `hydros.json`). |
+| `start_date` | DATE   | Yes      | Window start, inclusive. |
+| `end_date`   | DATE   | Yes      | Window end, exclusive; must be after `start_date`. |
+| `value_m3s`  | DOUBLE | Yes      | Mean inflow over the window (m³/s); must be finite. A negative value is accepted — the quantity is incremental inflow, so a negative window is real hydrology (see [Inflow Non-Negativity](/math/inflow-nonnegativity)). |
 
-Every hydro plant in `hydros.json` must have at least one observation in this
-file when estimation is active. When a season has fewer observations than
-`min_observations_per_season`, estimation still proceeds — see Implementation
-notes for the exact behavior.
+The legacy single-`date`-per-row layout is rejected outright — there is no
+inference or conversion path from it to the windowed form above. Windows for
+the same `hydro_id` must not overlap; adjacent windows (`start_date ==
+previous end_date`) are accepted.
+
+Every hydro plant in `hydros.json` must have at least one observation window
+in this file when estimation is active. When a season has fewer observations
+than `min_observations_per_season`, estimation still proceeds — see
+Implementation notes for the exact behavior.
+
+### Lag and accumulator seeding — `recent_observations`
+
+Independently of which estimation path (if any) `inflow_history.parquet`
+drives, its windowed record is the seed for the opening study stage's PAR lag
+slots and mid-period inflow accumulator. `initial_conditions.json`'s optional
+`recent_observations` array conditions that seed: entries carry the same
+`hydro_id` / `start_date` / `end_date` / `value_m3s` shape as
+`inflow_history.parquet` and shadow it **day-wise** wherever the two overlap
+(the two series are never blended). `value_m3s` accepts negative values in
+`recent_observations` too, for the same incremental-inflow reason. When
+neither file covers a given hydro's opening seasons, that hydro's lag slots
+and accumulator seed to zero.
 
 ### `scenarios/correlation.json` — Spatial Correlation Configuration
 

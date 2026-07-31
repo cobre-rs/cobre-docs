@@ -70,6 +70,9 @@ will not produce `simulation/pumping_stations/`.
     hydros/
       scenario_id=0000/data.parquet
       ...
+    hydro_bus_generation/
+      scenario_id=0000/data.parquet
+      ...
     thermals/
       scenario_id=0000/data.parquet
       ...
@@ -525,7 +528,8 @@ release (the version field tracks breaking changes).
     "3": "line",
     "4": "pumping_station",
     "5": "contract",
-    "7": "non_controllable"
+    "7": "non_controllable",
+    "8": "hydro_unit_group"
   },
   "bound_type": {
     "0": "storage_min",
@@ -544,18 +548,21 @@ release (the version field tracks breaking changes).
 
 #### `entities.csv`
 
-One row per entity across all entity types. Columns:
+One row per entity across all entity types, plus one row per hydro unit group
+(entity type code `8`). Columns:
 
 | Column             | Description                                                                                |
 | ------------------ | ------------------------------------------------------------------------------------------ |
 | `entity_type_code` | Integer entity type code (see `codes.json` `entity_type` mapping).                         |
-| `entity_id`        | Integer entity ID matching the `*_id` column in the corresponding simulation Parquet file. |
-| `name`             | Human-readable entity name from the case input files.                                      |
-| `bus_id`           | Integer bus ID to which this entity is connected. For buses, equals `entity_id`.           |
+| `entity_id`        | Integer entity ID matching the `*_id` column in the corresponding simulation Parquet file. For a hydro unit group row, this is the group's `id`, which is scoped to its plant, not global. |
+| `name`             | Human-readable entity name from the case input files. A hydro unit group row's name is `"{hydro_id}/{group_name}"`, plant-qualified since the group id alone is not globally unique.       |
+| `bus_id`           | Integer bus ID to which this entity is connected. For buses, equals `entity_id`. `-1` for a line (connects two buses) and for a hydro (the plant's unit groups own the bus association; a split plant has no single owning bus) — a hydro unit group row carries that group's own `bus_id` instead. |
 | `system_id`        | System partition index. Always `0` in the current release (single-system cases).           |
 
 Rows are ordered by `entity_type_code` ascending, then by `entity_id`
-ascending within each type.
+ascending within each type — except type code `8`: a group's `entity_id` is
+plant-scoped, so those rows order plant-major (canonical hydro order), then
+group-minor (each plant's own id-sorted `unit_groups` order).
 
 #### `variables.csv`
 
@@ -885,6 +892,44 @@ five energy columns (`equivalent_productivity_mw_per_m3s` through
 | `inflow_nonnegativity_slack_m3s`      | Float64 | No       | Inflow non-negativity slack in m³/s. Zero under normal operation.                                                                                                                                    |
 | `water_withdrawal_violation_pos_m3s`  | Float64 | No       | Water withdrawal over-target violation in m³/s. Zero when withdrawal is at or below target.                                                                                                          |
 | `water_withdrawal_violation_neg_m3s`  | Float64 | No       | Water withdrawal under-target violation in m³/s. Zero when withdrawal is at or above target.                                                                                                         |
+
+---
+
+### `simulation/hydro_bus_generation/`
+
+Hydro dispatch results at `(hydro, bus)` cell granularity — one cell per
+distinct bus among a plant's unit groups (see
+[`hydros[].unit_groups[]`](/reference/case-directory-format/#systemhydrosjson)
+in the Case Directory Format reference). One row per (stage, block, hydro,
+bus) quadruplet. 7 columns.
+
+`simulation/hydros/` above is unchanged and continues to report each plant's
+total: a plant split across several unit groups sharing one bus has no
+per-group quantity to report, since every split of that shared cell's flow
+across its same-bus groups is an equally optimal solution with no dual to
+distinguish them. This partition reports at the bus-cell granularity the LP
+itself solves.
+
+| Column           | Type    | Nullable | Description                                                                                                        |
+| ---------------- | ------- | -------- | ---------------------------------------------------------------------------------------------------------------------- |
+| `stage_id`       | Int32   | No       | Stage index (0-based).                                                                                              |
+| `block_id`       | Int32   | Yes      | Load block index. `null` for stage-level records.                                                                    |
+| `hydro_id`       | Int32   | No       | Hydro plant ID.                                                                                                      |
+| `bus_id`         | Int32   | No       | Bus ID for this cell. Always non-null.                                                                              |
+| `turbined_m3s`   | Float64 | No       | Turbined flow for this cell in m³/s.                                                                                 |
+| `generation_mw`  | Float64 | No       | Average power generation for this cell over the block in MW.                                                        |
+| `generation_mwh` | Float64 | No       | Total energy generated by this cell over the block in MWh (`generation_mw × block_duration_hours`).                 |
+
+A plant's cell rows sum bit-exactly to its `simulation/hydros/` row for
+`turbined_m3s`, on every production model. For `generation_mw`/`generation_mwh`
+the cell rows sum bit-exactly only for FPHA and single-cell plants. On a
+constant-productivity (`ConstantProductivity`/`LinearizedHead`) model a
+multi-cell plant's total is `(Σ_c q_c)·ρ` — its cells' turbined flow summed,
+then multiplied by the productivity once — while each cell row is `q_c·ρ`
+computed independently. The two are equal in exact arithmetic but, because
+floating-point multiplication does not distribute over addition bit-for-bit,
+the sum of a plant's cell rows can differ from its plant total by a
+rounding-scale amount.
 
 ---
 

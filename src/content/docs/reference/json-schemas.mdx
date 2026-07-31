@@ -1,6 +1,6 @@
 ---
 title: JSON Schemas
-description: The 18 vendored JSON Schema files describing every JSON input file in a Cobre case directory, plus editor `$schema` integration instructions.
+description: The 17 vendored JSON Schema files describing every JSON input file in a Cobre case directory, plus editor `$schema` integration instructions.
 ---
 
 The following JSON Schema files describe the structure of each JSON input
@@ -40,7 +40,6 @@ detail.
 | [`initial_conditions.schema.json`](/schemas/initial_conditions.schema.json) | `initial_conditions.json` | Initial reservoir storage, past inflows for PAR lag initialization |
 | [`correlation.schema.json`](/schemas/correlation.schema.json) | `scenarios/correlation.json` | Inter-site correlation matrix for scenario generation (supports inflow, load, and NCS entity types) |
 | [`generic_constraints.schema.json`](/schemas/generic_constraints.schema.json) | `constraints/generic_constraints.json` | User-defined linear constraints over LP variables with optional slack penalties |
-| [`exchange_factors.schema.json`](/schemas/exchange_factors.schema.json) | `constraints/exchange_factors.json` | Block-level line capacity multipliers for directional exchange limits |
 | [`load_factors.schema.json`](/schemas/load_factors.schema.json) | `scenarios/load_factors.json` | Block-level load scaling factors for bus-stage demand profiles |
 | [`non_controllable_factors.schema.json`](/schemas/non_controllable_factors.schema.json) | `scenarios/non_controllable_factors.json` | Block-level NCS availability scaling factors per source per stage per block |
 
@@ -97,7 +96,7 @@ file pattern.
 :::note[Before the site is live]
 Until `docs.cobre-rs.dev` is serving this site, the identical schema
 content is also available straight from the tagged `cobre` repository, e.g.
-`https://raw.githubusercontent.com/cobre-rs/cobre/v0.12.0/schemas/config.schema.json`.
+`https://raw.githubusercontent.com/cobre-rs/cobre/v0.13.0/schemas/config.schema.json`.
 {/* external URL — check:links skips this; bump manually each release */}
 :::
 
@@ -106,7 +105,7 @@ content is also available straight from the tagged `cobre` repository, e.g.
 These schemas are generated in the `cobre` repository from the `cobre-io`
 Rust types — the Rust types are the ground truth, and the schema files are
 their generated output, licensed Apache-2.0. This site vendors a committed
-copy (currently at the `v0.12.0` tag) under `public/schemas/` so the files
+copy (currently at the `v0.13.0` tag) under `public/schemas/` so the files
 have a stable URL to serve from and to link to.
 
 Do not hand-edit any vendored schema file. When `cobre` regenerates the

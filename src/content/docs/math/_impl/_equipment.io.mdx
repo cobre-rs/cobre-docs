@@ -13,10 +13,11 @@ corpus ([Case Directory Format](/reference/case-directory-format/) and
 | `system/energy_contracts.json` | Contract registry — direction, price, dispatch bounds, and commissioning window. |
 | `system/pumping_stations.json` | Pumping station registry — source/destination hydro, consumption rate, and flow bounds. |
 | `system/non_controllable_sources.json` | NCS registry — installed capacity, curtailment flag and cost override. |
-| `constraints/exchange_factors.json` | Optional per-stage capacity factors for transmission lines (methodology §2). |
+| `constraints/thermal_bounds.parquet` | Sparse per-(thermal, stage) overrides of `min_generation_mw`, `max_generation_mw`, and `cost_per_mwh`, with an optional per-block axis on the generation bounds only (see Configure tab). |
+| `constraints/pumping_bounds.parquet` | Sparse per-(station, stage) overrides of `min_m3s`/`max_m3s`, with an optional per-block axis (see Configure tab). |
 | `constraints/ncs_bounds.parquet` | Base available-generation values per NCS, combined with the scenario pipeline's stochastic factor to produce the realized stochastic availability (methodology §6). |
 | `scenarios/non_controllable_factors.json` / `scenarios/non_controllable_stats.parquet` | Deterministic block factors or stochastic availability statistics for NCS. |
-| `constraints/contract_bounds.parquet` | Sparse per-(contract, stage) overrides of `min_mw`, `max_mw`, and `price_per_mwh` (see Configure tab). |
+| `constraints/contract_bounds.parquet` | Sparse per-(contract, stage) overrides of `min_mw`, `max_mw`, and `price_per_mwh`, with an optional per-block axis on all three (see Configure tab). |
 | `initial_conditions.json` (`past_anticipated_commitments`) | Pre-horizon commitment seed for anticipated thermals (system elements §4). |
 | `constraints/generic_constraint_bounds.parquet` | Stage-varying bound rows for generic constraints, including any `anticipated_decision(N)` expression. |
 

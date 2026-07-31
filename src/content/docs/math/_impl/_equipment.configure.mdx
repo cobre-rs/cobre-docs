@@ -90,6 +90,15 @@ hard generation bounds from methodology §1.1 in every stage LP.
 | `min_mw` | number | Minimum electrical generation, in MW. A non-zero value is a must-run commitment: the solver must dispatch at least this much whenever the unit is in service (subject to the continuous-relaxation caveat in methodology §1.1). |
 | `max_mw` | number | Maximum electrical generation (installed capacity), in MW. |
 
+Stage-varying bounds are supplied via `constraints/thermal_bounds.parquet`,
+which accepts sparse `(thermal_id, stage_id)` rows carrying `min_generation_mw`
+and/or `max_generation_mw`, optionally narrowed to one block via an optional
+`block_id` column; absent rows fall back to the base entity values.
+`cost_per_mwh` has no per-block variant — a row combining a non-null
+`cost_per_mwh` with a non-null `block_id` is rejected at validation, and a
+`block_id` row on a thermal declaring `anticipated_config` is rejected
+outright, since the delivered commitment is bounded at a single stage.
+
 #### Anticipated Dispatch Configuration (`anticipated_config`)
 
 The optional `anticipated_config` block flags a thermal as anticipated,
@@ -227,6 +236,11 @@ from this entity file — see the Inputs & Outputs tab.
 | `consumption_mw_per_m3s`   | number  | Yes     | Power consumption rate, in MW per m³/s (methodology §4). |
 | `flow.min_m3s` / `flow.max_m3s` | number | Yes | Pumped-flow bounds, in m³/s (methodology §4). |
 
+Stage-varying bounds are supplied via `constraints/pumping_bounds.parquet`,
+which accepts sparse `(station_id, stage_id)` rows carrying `min_m3s` and/or
+`max_m3s`, optionally narrowed to one block via an optional `block_id`
+column; absent rows fall back to the base entity values.
+
 ### `system/energy_contracts.json` — Contract Registry
 
 ```json
@@ -269,5 +283,9 @@ from this entity file — see the Inputs & Outputs tab.
 Stage-varying bounds and price are supplied via
 `constraints/contract_bounds.parquet`, which accepts sparse
 `(contract_id, stage_id)` rows carrying any combination of `min_mw`,
-`max_mw`, and `price_per_mwh`; absent rows fall back to the base entity
-values.
+`max_mw`, and `price_per_mwh`, optionally narrowed to one block via an
+optional `block_id` column; absent rows fall back to the base entity values.
+Unlike thermal `cost_per_mwh`, contract `price_per_mwh` is block-eligible —
+a study's simulation cost path honors a per-block price override — because
+commitment is a stage-level decision for a thermal but a contract's price
+can legitimately vary within a stage.

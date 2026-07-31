@@ -69,8 +69,8 @@ $$
 0 \leq f^+_{l,k} \leq \bar{F}^+_l, \quad 0 \leq f^-_{l,k} \leq \bar{F}^-_l
 $$
 
-:::note[Stage-varying capacity]
-The capacity limits $\bar{F}^+_l$ and $\bar{F}^-_l$ may vary by stage through exchange factors defined in `constraints/exchange_factors.json`.
+:::note[Stage- and block-varying capacity]
+The capacity limits $\bar{F}^+_l$ and $\bar{F}^-_l$ may vary by stage and, optionally, by block through absolute-MW overrides on `constraints/line_bounds.parquet` (`direct_mw`/`reverse_mw`, with an optional `block_id`). A line with no override rows keeps its base capacity unchanged.
 :::
 
 **Load Balance Contribution:**
@@ -183,6 +183,8 @@ Hydro constraints are the most complex in the system. Rather than duplicating th
 
 - **Water balance, outflow, storage bounds, and soft constraints**: See [LP formulation](/math/lp-formulation) §4 (water balance), §6 (generation constraints), §7 (outflow constraints), §8 (variable bounds), §9 (constraint violation penalties).
 - **Production function models** (constant productivity, FPHA, linearized head): See [hydro production models](/math/hydro-production-models).
+
+A plant declares one or more **unit groups**, each on its own bus; groups sharing a bus form one **(hydro, bus) cell**, and turbined flow and generation are tracked per cell rather than per plant — storage, spillage, and diversion stay per plant. Turbined-flow and generation bounds (§8, §6 of [LP formulation](/math/lp-formulation)) compose per cell from the cell's member unit groups; a single-bus plant has exactly one cell and every formula reduces to the pre-partition, per-plant form.
 
 For hydro decision variables and physical meaning, see [system elements](/math/system-elements) §5.
 

@@ -14,7 +14,6 @@ single key `"hydros"` containing an array of plant objects:
     {
       "id": 1,
       "name": "UHE Tucuruí",
-      "bus_id": 0,
       "downstream_id": null,
       "operational_start_date": "1984-11-22",
       "entry_stage_id": null,
@@ -34,6 +33,17 @@ single key `"hydros"` containing an array of plant objects:
         "min_generation_mw": 0.0,
         "max_generation_mw": 8370.0
       },
+      "unit_groups": [
+        {
+          "id": 0,
+          "name": "UG1",
+          "bus_id": 0,
+          "min_turbined_m3s": 500.0,
+          "max_turbined_m3s": 22500.0,
+          "min_generation_mw": 0.0,
+          "max_generation_mw": 8370.0
+        }
+      ],
       "tailrace": {
         "type": "polynomial",
         "coefficients": [5.0, 0.001]
@@ -77,10 +87,11 @@ single key `"hydros"` containing an array of plant objects:
 }
 ```
 
-Only `id`, `name`, `bus_id`, `downstream_id`, `operational_start_date`,
-`reservoir`, `outflow`, and `generation` are required. All other top-level keys (`tailrace`,
-`hydraulic_losses`, `efficiency`, `evaporation`, `diversion`, `filling`,
-`penalties`) are optional and default to off when absent.
+Only `id`, `name`, `downstream_id`, `operational_start_date`, `reservoir`,
+`outflow`, `generation`, and `unit_groups` are required. All other top-level
+keys (`tailrace`, `hydraulic_losses`, `efficiency`, `evaporation`,
+`diversion`, `filling`, `penalties`) are optional and default to off when
+absent.
 
 #### Core Fields
 
@@ -88,7 +99,6 @@ Only `id`, `name`, `bus_id`, `downstream_id`, `operational_start_date`,
 | ---------------- | --------------- | -------- | ----------- |
 | `id`             | integer         | Yes      | Unique non-negative identifier. Must be unique across all hydro plants. Referenced by `initial_conditions.json` and by other plants via `downstream_id`. |
 | `name`           | string          | Yes      | Human-readable plant name. Used in output files, validation messages, and log output. |
-| `bus_id`         | integer         | Yes      | Identifier of the electrical bus to which this plant's generation is injected. Must match an `id` in `buses.json`. |
 | `downstream_id`  | integer or null | Yes      | Identifier of the plant that receives this plant's outflow. `null` means the plant is at the bottom of its cascade — outflow leaves the system. |
 | `operational_start_date` | string (ISO-8601 date) | Yes | Calendar date (`YYYY-MM-DD`) the plant enters the registry's operational history. Provenance and the canonical `(operational_start_date, id)` ordering key (see [Notation Conventions](/overview/notation-conventions)) — independent of `entry_stage_id`/`exit_stage_id` below, which alone gate commissioning. |
 | `entry_stage_id` | integer or null | No       | Stage index at which the plant enters service (inclusive). `null` means the plant is available from stage 0. |
@@ -168,6 +178,58 @@ For most initial studies, `constant_productivity` is the natural choice. The
 productivity coefficient encodes the plant's average efficiency and net head:
 for a plant with 80 m net head and 90% efficiency, the theoretical
 productivity is approximately `9.81 × 80 × 0.90 / 1000 ≈ 0.706` MW/(m³/s).
+
+#### Unit Groups (`unit_groups`)
+
+A plant's generation envelope is split into one or more turbine groups, each
+on its own bus. `unit_groups` is required — every hydro declares at least one
+group; an absent, `null`, or empty array is rejected at load. There is no
+top-level `hydro.bus_id`: a plant's bus association lives exclusively on its
+groups' `bus_id`.
+
+```json
+"unit_groups": [
+  {
+    "id": 0,
+    "name": "UG1",
+    "bus_id": 0,
+    "min_turbined_m3s": 500.0,
+    "max_turbined_m3s": 22500.0,
+    "min_generation_mw": 0.0,
+    "max_generation_mw": 8370.0
+  }
+]
+```
+
+| Field               | Type    | Description |
+| ------------------- | ------- | ----------- |
+| `id`                | integer | Group identifier, unique within the owning plant (not globally). |
+| `name`              | string  | Human-readable group name. |
+| `bus_id`            | integer | Bus to which this group's generation is injected. Must match an `id` in `buses.json`. |
+| `min_turbined_m3s`  | number  | Minimum turbined flow for this group [m³/s]. |
+| `max_turbined_m3s`  | number  | Maximum turbined flow for this group [m³/s]. |
+| `min_generation_mw` | number  | Minimum electrical generation for this group [MW]. |
+| `max_generation_mw` | number  | Maximum electrical generation for this group [MW]. |
+
+**Bus-partitioned dispatch.** A plant is partitioned into one **cell** per
+distinct `bus_id` among its groups: the LP carries one turbine column and one
+FPHA-generation column per cell, and each cell injects its generation at that
+cell's bus. A plant whose groups all share one bus collapses to a single
+cell — the same LP shape as a plant with no groups declared beyond the
+required one.
+
+Each group's own turbine bounds must be internally consistent
+(`min_turbined_m3s <= max_turbined_m3s`, and likewise for generation), and
+group `id`s are unique within the plant. Across the whole plant, the sum of
+every group's `max_turbined_m3s` (and, separately, `max_generation_mw`)
+cannot exceed the plant's own declared maximum from the `generation` block
+above — a plant's own value is the envelope, so groups cannot raise it — and
+the sum of every group's minima must be able to reach the plant's own
+declared minimum.
+
+Stage-varying, optionally per-block overrides of a group's four bounds are
+supplied by `constraints/hydro_unit_group_bounds.parquet` — see the Inputs &
+Outputs tab.
 
 #### Cascade Topology (`downstream_id`)
 
@@ -582,8 +644,10 @@ load-time error; supplying neither is also a load-time error.
 
 | Rule                            | Error Class          | Description |
 | -------------------------------- | --------------------- | ----------- |
-| Bus reference integrity          | Reference error       | Every `bus_id` must match an `id` in `buses.json`. |
+| Bus reference integrity          | Reference error       | Every `unit_groups[].bus_id` must match an `id` in `buses.json`. |
 | Downstream reference integrity   | Reference error       | Every non-null `downstream_id` must match an `id` in `hydros.json`. |
+| Unit group bound ordering         | Physical feasibility   | Each group's own `min_turbined_m3s` must be `<= max_turbined_m3s`, and `min_generation_mw` must be `<= max_generation_mw`. |
+| Unit group envelope               | Physical feasibility   | The sum of every group's `max_turbined_m3s` (and, separately, `max_generation_mw`) must not exceed the plant's own declared maximum; the sum of every group's minima must be able to reach the plant's own declared minimum. |
 | Cascade acyclicity                | Topology error         | The directed graph of `downstream_id` links must be acyclic. |
 | Storage bounds ordering           | Physical feasibility   | `min_storage_hm3` must be less than `max_storage_hm3`. |
 | Outflow bounds ordering           | Physical feasibility   | When `max_outflow_m3s` is present, it must be `>= min_outflow_m3s`. |

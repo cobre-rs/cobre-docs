@@ -170,6 +170,8 @@ $$
 g_{h,k} \leq \gamma_0^m + \gamma_v^m \cdot v_h^{avg} + \gamma_q^m \cdot q_{h,k} + \gamma_s^m \cdot s_{h,k}
 $$
 
+The plane is fitted once per plant (§2.1–§2.8); a plant split across buses evaluates it **per (hydro, bus) cell** at LP-integration time, apportioning its flow-independent terms by each cell's share of the plant's turbine capacity — see §2.9 for the exact per-cell form.
+
 **Physical interpretation of coefficients**:
 
 | Coefficient | Sign | Meaning                                           |
@@ -253,15 +255,25 @@ An optional post-fit step merges consecutive **near-parallel or near-coincident*
 
 ### 2.9 LP Integration
 
+A hydro plant is partitioned into one or more **(hydro, bus) cells** — one per distinct bus among its declared unit groups (see [system elements §5](/math/system-elements)) — and FPHA is evaluated **per cell**, not per plant: a plant's fitted hyperplane set (§2.1–§2.8) is fitted once per plant and consumed by every one of its cells, apportioned as described below. A single-cell plant's constraint is byte-identical to the pre-partition, per-plant form.
+
 #### Final FPHA Constraint
 
-For each hydro $h$ using FPHA, block $k$, and plane $m \in \mathcal{M}_h$:
+For each cell $(h, b)$ of a hydro $h$ using FPHA, block $k$, and plane $m \in \mathcal{M}_h$:
 
 $$
-g_{h,k} \leq \gamma_0^m + \gamma_v^m \cdot v_h^{avg} + \gamma_q^m \cdot q_{h,k} + \gamma_s^m \cdot s_{h,k}
+g_{h,b,k} \leq \sigma_{h,b} \big( \gamma_0^m + \gamma_v^m \cdot v_h^{avg} + \gamma_s^m \cdot s_{h,k} \big) + \gamma_q^m \cdot q_{h,b,k}
 $$
 
 The coefficients are already $\alpha_{FPHA}$-scaled — there is no separate pre-scaling step. These are **hard constraints** — no slack variables. Feasibility is ensured through the `turbined_cost` regularization mechanism (see section 2.10).
+
+$\sigma_{h,b}$ apportions the plane's **flow-independent** part — the intercept $\gamma_0^m$, the storage term, and the spillage term — by cell $(h,b)$'s share of the plant's declared turbine capacity:
+
+$$
+\sigma_{h,b} = \frac{\sum_{g \,\in\, (h,b)} \bar{Q}_g}{\sum_{g \,\in\, h} \bar{Q}_g}
+$$
+
+($0$ when the plant's declared total is $0$, never `NaN`), a study-time constant derived from each unit group's declared `max_turbined_m3s` — never recomputed per stage or block, and never re-derived from a resolved per-stage override, which would double-count an availability derate already enforced on the flow path by each cell's own column bounds. It satisfies $\sum_{b \in \mathcal{B}_h} \sigma_{h,b} = 1$, and a single-cell plant has $\sigma_{h,b} = 1$ exactly. The flow coefficient $\gamma_q^m$ stays on the cell's own $q_{h,b,k}$ **unscaled** — it is the only term homogeneous in the cell partition, which is what makes $\sum_{b} g_{h,b,k}$ at fixed $v^{avg}_h$, $s_{h,k}$, and $\sum_b q_{h,b,k}$ recover the plant-level bound this per-cell form replaces.
 
 #### Average Storage Computation
 
@@ -271,16 +283,16 @@ $$
 v^{avg}_h = \frac{v^{in}_h + v_h}{2}
 $$
 
-where $v^{in}_h$ is the incoming storage LP variable (pinned to $\hat{v}_h$ via column bounds — see [LP Formulation §4a](/math/lp-formulation)) and $v_h$ is end-of-stage storage. Both are LP variables, so $v^{in}_h$ appears in the FPHA constraint with coefficient $\gamma_v^m / 2$. The LP solver automatically accounts for this in the reduced cost of the pinned $v^{in}_h$ column.
+where $v^{in}_h$ is the incoming storage LP variable (pinned to $\hat{v}_h$ via column bounds — see [LP Formulation §4a](/math/lp-formulation)) and $v_h$ is end-of-stage storage — a single plant-level quantity shared by every cell, since storage is not partitioned. Both are LP variables, so $v^{in}_h$ appears in every cell's FPHA constraint with coefficient $\sigma_{h,b} \cdot \gamma_v^m / 2$. The LP solver automatically accounts for this in the reduced cost of the pinned $v^{in}_h$ column.
 
 #### Generation as Independent Variable
 
-When using FPHA, the generation variable $g_{h,k}$ is **not** directly computed from turbined flow. Instead:
+When using FPHA, the generation variable $g_{h,b,k}$ is **not** directly computed from turbined flow. Instead:
 
-1. Generation is a free LP variable bounded by $[0, \bar{G}_h]$ (user-defined bounds from `hydros.json`)
-2. FPHA constraints (one per plane $m$) provide upper bounds relating generation to storage, flow, and spillage
+1. Generation is a free LP variable per cell, bounded by $[0, \bar{G}_{h,b}]$, where $\bar{G}_{h,b}$ sums the cell's own unit groups' declared `max_generation_mw` and closes against the plant's own resolved maximum (see [LP Formulation §6](/math/lp-formulation))
+2. FPHA constraints (one per plane $m$, per cell) provide upper bounds relating generation to storage, flow, and spillage
 3. The optimizer maximizes generation subject to FPHA constraints
-4. At optimum, generation lies on one of the FPHA hyperplane facets
+4. At optimum, each cell's generation lies on one of its FPHA hyperplane facets
 
 **Key insight**: Because minimizing cost includes maximizing hydro generation (which has zero fuel cost), the optimizer naturally pushes generation to the FPHA surface boundary. The `turbined_cost` regularization (section 2.10) ensures the solution lies on the boundary rather than at an interior point.
 
@@ -302,7 +314,7 @@ For the full penalty taxonomy and priority ordering, see [Penalty System](/math/
 
 ### 2.11 Impact on Benders Cuts
 
-The FPHA formulation affects water value computation. Because the incoming storage variable $v^{in}_h$ appears in the FPHA constraint (via $v^{avg}_h = (v^{in}_h + v_h)/2$, section 2.9), the FPHA hyperplane duals contribute to the marginal value of incoming storage. However, the implementation does **not** require manually combining duals from the water balance and FPHA constraints. Instead, pinning $v^{in}_h$ to $\hat{v}_h$ by column bounds (see [LP Formulation §4a](/math/lp-formulation)) makes its reduced cost capture the total sensitivity $\partial Q_t / \partial \hat{v}_h$ automatically — the LP solver propagates the FPHA contribution through $v^{in}_h$.
+The FPHA formulation affects water value computation. Because the incoming storage variable $v^{in}_h$ appears in **every one of the plant's cells'** FPHA constraints (via $v^{avg}_h = (v^{in}_h + v_h)/2$, each apportioned by that cell's $\sigma_{h,b}$, section 2.9), the FPHA hyperplane duals of every cell contribute to the marginal value of incoming storage. However, the implementation does **not** require manually combining duals from the water balance and FPHA constraints. Instead, pinning $v^{in}_h$ to $\hat{v}_h$ by column bounds (see [LP Formulation §4a](/math/lp-formulation)) makes its reduced cost capture the total sensitivity $\partial Q_t / \partial \hat{v}_h$ automatically — the LP solver propagates every cell's FPHA contribution through the single shared $v^{in}_h$.
 
 The cut coefficient for storage is simply the reduced cost of the pinned $v^{in}_h$ column:
 
@@ -310,7 +322,7 @@ $$
 \pi^v_h = \bar{c}^{in}_h / d^{col}_h
 $$
 
-This dual implicitly includes the water balance contribution ($\pi^{wb}_h$), the FPHA contribution ($\frac{1}{2} \sum_m \pi_m^{fpha} \cdot \gamma_v^m$), and any generic constraint contributions — all resolved by the LP solver without explicit dual combination.
+This dual implicitly includes the water balance contribution ($\pi^{wb}_h$), the FPHA contribution summed over every cell of the plant ($\frac{1}{2} \sum_{b \in \mathcal{B}_h} \sigma_{h,b} \sum_m \pi_{h,b,m}^{fpha} \cdot \gamma_v^m$), and any generic constraint contributions — all resolved by the LP solver without explicit dual combination.
 
 For the complete cut coefficient computation, see [cut management](/math/cut-management).
 

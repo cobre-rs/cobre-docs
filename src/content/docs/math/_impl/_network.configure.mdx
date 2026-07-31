@@ -73,8 +73,15 @@ connects buses with one or more line entries:
 | `losses_percent`      | number          | No       | Transmission loss as a percentage of transmitted power. Defaults to `0.0` (lossless). Sets the transmission efficiency used in body §3 (`efficiency = 1 - losses_percent/100`). |
 | `exchange_cost`       | number or null  | No       | Entity-level override of the flow regularization cost. Falls back to the global `penalties.json` default — see the [Penalty System Configure tab](/math/penalty-system#implementation-in-cobre) for the full resolution cascade. |
 
-Per-stage refinements of both `capacity` bounds and `exchange_cost` are
-supplied by separate files — see the Inputs & Outputs tab.
+Stage-varying capacity is supplied via `constraints/line_bounds.parquet`,
+which accepts sparse `(line_id, stage_id)` rows carrying `direct_mw` and/or
+`reverse_mw`, optionally narrowed to one block via an optional `block_id`
+column; absent rows fall back to `capacity.direct_mw`/`capacity.reverse_mw`
+above. Values are absolute MW rather than a multiplier on the base capacity —
+a row may set `direct_mw = 0.0` to close a line in one direction for one
+block, which a strictly-positive multiplicative factor could never express.
+Per-stage refinement of `exchange_cost` is supplied by a separate file — see
+the Inputs & Outputs tab.
 
 ### Single-Bus vs Multi-Bus
 

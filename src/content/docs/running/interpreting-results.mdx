@@ -368,6 +368,31 @@ to expected future demand — the solver is conserving water for later stages.
 A water value near zero means the reservoir is abundant and water has little
 marginal value at that point in time.
 
+### (e) Per-bus dispatch for a hydro plant split across buses
+
+`simulation/hydros/` always reports one row per `(hydro_id, stage_id)` — the
+plant's total, regardless of how many `unit_groups` it declares or how many
+buses they span. For the split by bus, read `simulation/hydro_bus_generation/`,
+keyed by `(stage, block, hydro, bus)`:
+
+```python
+bus_gen = pl.read_parquet("results/simulation/hydro_bus_generation/")
+
+per_bus = (
+    bus_gen
+    .group_by(["hydro_id", "bus_id", "stage_id"])
+    .agg(pl.col("generation_mwh").mean().alias("mean_generation_mwh"))
+    .sort(["hydro_id", "bus_id", "stage_id"])
+)
+print(per_bus)
+```
+
+`turbined_m3s` rows sum bit-exactly to the plant's `simulation/hydros/` row on
+every production model. `generation_mw`/`generation_mwh` rows sum exactly only
+for FPHA or single-cell plants: splitting one shared cell's flow across its
+same-bus groups has no dual to determine an exact per-group split, so that
+split is not reported at all — only the per-bus total is.
+
 ---
 
 ## Using `cobre report`
@@ -438,8 +463,11 @@ Possible causes:
 - **Plant is more expensive than deficit.** Check the plant's cost against
   the bus deficit penalty. If the cost exceeds the penalty, deficit is
   cheaper and the solver avoids dispatching the plant.
-- **Bus connectivity.** Verify the plant's `bus_id` matches a bus that
-  actually has load. A plant connected to a zero-load bus will never be
+- **Bus connectivity.** Verify the plant is connected to a bus that actually
+  has load. For a thermal plant, non-controllable source, pumping station, or
+  energy contract, check the entity's top-level `bus_id`; a hydro plant has no
+  top-level `bus_id` — check the `bus_id` on each of its `unit_groups[]`
+  entries instead. A plant connected to a zero-load bus will never be
   dispatched.
 - **Hydro: reservoir constraints too tight.** If `min_storage_hm3` is close
   to the initial storage level, the solver cannot turbine water without

@@ -54,11 +54,11 @@ my_case/
 └── constraints/
     ├── thermal_bounds.parquet               # Stage-varying thermal bounds (optional)
     ├── hydro_bounds.parquet                 # Stage-varying hydro bounds (optional)
+    ├── hydro_unit_group_bounds.parquet      # Stage-varying hydro unit group bounds (optional)
     ├── line_bounds.parquet                  # Stage-varying line bounds (optional)
     ├── pumping_bounds.parquet               # Stage-varying pumping bounds (optional)
     ├── contract_bounds.parquet              # Stage-varying contract bounds (optional)
     ├── ncs_bounds.parquet                   # Stage-varying NCS available generation bounds (optional)
-    ├── exchange_factors.json                # Block exchange factors (optional)
     ├── generic_constraints.json             # User-defined LP constraints (optional)
     ├── generic_constraint_bounds.parquet    # Bounds for generic constraints (optional)
     ├── penalty_overrides_bus.parquet        # Stage-varying bus penalty overrides (optional)
@@ -102,11 +102,11 @@ my_case/
 | `scenarios/noise_openings.parquet`              | Parquet | No       | User-supplied backward-pass opening tree                                           |
 | `constraints/thermal_bounds.parquet`            | Parquet | No       | Stage-varying thermal generation bounds                                            |
 | `constraints/hydro_bounds.parquet`              | Parquet | No       | Stage-varying hydro operational bounds                                             |
+| `constraints/hydro_unit_group_bounds.parquet`   | Parquet | No       | Stage-varying, optionally per-block hydro unit group bounds                        |
 | `constraints/line_bounds.parquet`               | Parquet | No       | Stage-varying line flow capacity                                                   |
 | `constraints/pumping_bounds.parquet`            | Parquet | No       | Stage-varying pumping flow bounds                                                  |
 | `constraints/contract_bounds.parquet`           | Parquet | No       | Stage-varying contract power bounds                                                |
 | `constraints/ncs_bounds.parquet`                | Parquet | No       | Stage-varying NCS available generation bounds                                      |
-| `constraints/exchange_factors.json`             | JSON    | No       | Block exchange factors                                                             |
 | `constraints/generic_constraints.json`          | JSON    | No       | User-defined LP constraints                                                        |
 | `constraints/generic_constraint_bounds.parquet` | Parquet | No       | Generic constraint RHS bounds                                                      |
 | `constraints/penalty_overrides_bus.parquet`     | Parquet | No       | Stage-varying bus excess cost                                                      |
@@ -484,36 +484,24 @@ distinct season IDs.
 
 ### `initial_conditions.json`
 
-Initial reservoir storage, past inflow lags, and recent observations at the
-start of the study.
+Initial reservoir storage, pre-study releases already in transit on declared
+travel-time arcs, and recent observations at the start of the study.
 
 | Field                 | Required | Description                                                                                                       |
 | --------------------- | -------- | ----------------------------------------------------------------------------------------------------------------- |
 | `storage`             | Yes      | Array of `{ "hydro_id": integer, "value_hm3": number }` entries for operating hydros                              |
 | `filling_storage`     | Yes      | Array of `{ "hydro_id": integer, "value_hm3": number }` entries for filling hydros                                |
-| `past_inflows`        | No       | Array of `{ "hydro_id": integer, "values_m3s": [number], "season_ids": [integer] }` for PAR(p) lag initialization |
 | `past_defluences`     | No       | Array of windowed pre-study release records seeding the in-transit buckets of a declared travel-time arc (see below)  |
 | `recent_observations` | No       | Array of observed inflow entries for mid-season study starts (see below)                                          |
 
 Each `hydro_id` must be unique within its array and must not appear in both
 `storage` and `filling_storage`. All `value_hm3` values must be non-negative.
 
-**`past_inflows`** provides the most-recent inflow history for PAR(p) lag
-initialization. For each hydro, `values_m3s[0]` is the most recent past inflow
-(lag 1) and `values_m3s[p-1]` is the oldest (lag p). The array length must be at
-least the hydro's PAR order. Optional; defaults to an empty array when absent.
-
-Each `past_inflows` entry supports an optional `season_ids` field:
-
-| Field        | Type             | Description                                                                                                                                                                                                                            |
-| ------------ | ---------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `hydro_id`   | integer          | Hydro plant identifier                                                                                                                                                                                                                 |
-| `values_m3s` | array of number  | Past inflow values [m³/s], most recent first                                                                                                                                                                                           |
-| `season_ids` | array of integer | Optional. Season IDs corresponding to each lag entry. When present, length must equal `values_m3s.length`. Each value must reference a valid season ID from `season_definitions`. Absent from legacy JSON files (backward compatible). |
-
-When `season_ids` is present and a season ID is not defined in `season_definitions`, a
-`BusinessRuleViolation` is emitted during semantic validation (Rule 32) when the
-hydro has PAR order > 0 and a `SeasonMap` is available.
+Seeding the PAR lag chain and the mid-period accumulator does not read a
+positional lag array from this file — this file carries no `past_inflows`
+field, and one is rejected at load. The seed instead derives from
+`scenarios/inflow_history.parquet`'s windowed record, shadowed day-wise by
+`recent_observations` wherever the two overlap.
 
 **`past_defluences`** supplies the pre-study releases already in transit on a
 declared travel-time arc (`hydros[].travel_time_hours`), so the first stages'
@@ -530,9 +518,8 @@ downstream arc:
 
 The windows must cover the arc's in-transit span at study start —
 `[start_0 − travel_time, start_0)` — with no gap and none future-dated past the
-study start; otherwise the study is rejected. When `past_defluences` is absent
-but `past_inflows` is present, a proxy seed is derived from the inflow history
-with a logged caveat. Optional; defaults to an empty array when no arc needs
+study start; otherwise the study is rejected. There is no fallback for
+incomplete coverage. Optional; defaults to an empty array when no arc needs
 seeding.
 
 **`recent_observations`** provides observed inflow data for partial periods
@@ -548,8 +535,13 @@ for January 1--4). Each entry has:
 | `value_m3s`  | number  | Average inflow observed during the period, in m³/s               |
 
 Date ranges for the same hydro must not overlap; adjacent ranges
-(`start_date == previous end_date`) are accepted. Values must be finite and
-non-negative. Optional; defaults to an empty array when absent. Existing cases
+(`start_date == previous end_date`) are accepted. Values must be finite; a
+negative value is accepted — the quantity is incremental inflow (a plant's
+natural flow minus its upstream plants'), so a negative window is real
+hydrology, and the LP prices it through the inflow non-negativity slack.
+Semantic validation reports one warning per file naming the negative count
+and the most-negative value's hydro, so a genuinely sign-flipped series still
+stands out. Optional; defaults to an empty array when absent. Existing cases
 without this field are unaffected.
 
 Example:
@@ -558,7 +550,6 @@ Example:
 {
   "storage": [{ "hydro_id": 0, "value_hm3": 15000.0 }],
   "filling_storage": [],
-  "past_inflows": [{ "hydro_id": 0, "values_m3s": [600.0, 500.0] }],
   "recent_observations": [
     {
       "hydro_id": 0,
@@ -626,7 +617,7 @@ Key fields:
 | ------------------------------------------------- | -------- | ------------------------------------------------------------------------------------------------------------- |
 | `hydros[].id`                                     | Yes      | Plant identifier (integer, unique)                                                                            |
 | `hydros[].name`                                   | Yes      | Human-readable plant name                                                                                     |
-| `hydros[].bus_id`                                 | Yes      | Bus where generation is injected                                                                              |
+| `hydros[].unit_groups`                            | Yes      | Turbine groups partitioning the plant's generation envelope, each on its own bus (see below); an absent, `null`, or empty array is rejected |
 | `hydros[].downstream_id`                          | No       | Downstream plant ID in the cascade; `null` = tailwater                                                        |
 | `hydros[].travel_time_hours`                      | No       | Water travel time [hours] on the main cascade arc to `downstream_id`; `null` or `0.0` = instantaneous. When present and strictly positive, the release is delivered downstream after this delay and carried as in-transit Bellman state (see [System Elements §5](/math/system-elements) and [LP Formulation §5d](/math/lp-formulation)). Requires `initial_conditions.past_defluences` seeding. |
 | `hydros[].operational_start_date`                 | Yes      | Calendar date the plant enters the registry's operational history, ISO-8601 (`YYYY-MM-DD`). Provenance and the canonical `(operational_start_date, id)` ordering key (see [Notation Conventions](/overview/notation-conventions)) — independent of `entry_stage_id`/`exit_stage_id` below, which alone gate commissioning |
@@ -644,6 +635,37 @@ Key fields:
 | `hydros[].diversion`                              | No       | Diversion channel: `downstream_id` and `max_flow_m3s`                                                         |
 | `hydros[].filling`                                | No       | Filling config: `start_stage_id` and `filling_min_rate_m3s`                                                   |
 | `hydros[].penalties`                              | No       | Entity-level hydro penalty overrides (all fields optional, fall back to global)                               |
+
+**`hydros[].unit_groups[]`** replaces the plant-level `bus_id` field, which is
+removed — a deck still carrying it is rejected by this file's
+deny-unknown-fields contract. Every group carries its own bus, so one plant
+can inject generation onto several electrical buses:
+
+| Field               | Required | Description                                                                  |
+| ------------------- | -------- | ------------------------------------------------------------------------------ |
+| `id`                | Yes      | Group identifier: dense, 0-based, unique **within the plant** (not globally)   |
+| `name`              | Yes      | Human-readable group name                                                     |
+| `bus_id`            | Yes      | Bus where this group's generation is injected                                |
+| `min_turbined_m3s`  | Yes      | Minimum turbined flow for this group [m³/s]                                  |
+| `max_turbined_m3s`  | Yes      | Maximum turbined flow for this group [m³/s]                                  |
+| `min_generation_mw` | Yes      | Minimum generation for this group [MW]                                       |
+| `max_generation_mw` | Yes      | Maximum generation for this group [MW]                                       |
+
+The plant is partitioned into `(hydro, bus)` **cells** — one cell per distinct
+`bus_id` among its unit groups. The LP holds one turbine (turbined-flow)
+column and one FPHA generation column per cell, and each cell's generation
+injects at that cell's bus; two groups sharing a bus share that cell's
+columns, so their individual split is undetermined rather than unimplemented
+— every equally optimal split has no dual to distinguish it. A plant whose
+groups all declare the same `bus_id` collapses to a single cell, matching the
+pre-partition LP exactly (byte-identical).
+
+Stage-varying, optionally per-block overrides on a group's four declared
+bounds are supplied via
+[`constraints/hydro_unit_group_bounds.parquet`](#constraintshydro_unit_group_boundsparquet).
+Per-cell simulation output is
+[`simulation/hydro_bus_generation/`](/reference/output-format/#simulationhydro_bus_generation);
+`simulation/hydros/` continues to report each plant's total, unchanged.
 
 All fields within `hydros[].penalties` are optional. When a field is absent the
 global default from `penalties.json` is used. The following fields are supported:
@@ -1189,6 +1211,37 @@ See the Scalar Parameters guide for usage examples.
 
 ## `scenarios/` files (Parquet)
 
+### `scenarios/inflow_history.parquet`
+
+Historical inflow observation windows per hydro. Every row is a window, not a
+point-in-time reading: `[start_date, end_date)` bounds the period and
+`value_m3s` is the mean inflow observed over it. This is the windowed layout
+the loader accepts; a file still carrying the legacy single-`date`-per-row
+layout is rejected outright, with no inference or conversion path back to the
+windowed form.
+
+| Column       | Type   | Required | Description                         |
+| ------------ | ------ | -------- | ------------------------------------ |
+| `hydro_id`   | INT32  | Yes      | Hydro plant ID                       |
+| `start_date` | DATE   | Yes      | Window start, inclusive              |
+| `end_date`   | DATE   | Yes      | Window end, exclusive; after `start_date` |
+| `value_m3s`  | DOUBLE | Yes      | Mean inflow over the window (m³/s)   |
+
+Rows are sorted by `(hydro_id, start_date)` ascending. For a given `hydro_id`,
+windows must not overlap; adjacent windows (`start_date == previous end_date`)
+are accepted. `value_m3s` must be finite; a negative value is accepted — the
+quantity is incremental inflow (a plant's natural flow minus its upstream
+plants'), so a negative window is real hydrology, and the LP prices it through
+the inflow non-negativity slack. Semantic validation reports one warning per
+file naming the negative count and the most-negative value's hydro.
+
+These windows are the default-seeding record the PAR lag chain and the
+mid-period accumulator derive from, layered under `initial_conditions.json`'s
+`recent_observations` conditioning wherever the two cover the same date (see
+[`initial_conditions.json`](#initial_conditionsjson) above) — as well as the
+raw observations Cobre estimates `inflow_seasonal_stats`/`inflow_ar_coefficients`
+from when those files are absent.
+
 ### `scenarios/inflow_seasonal_stats.parquet`
 
 PAR(p) model seasonal statistics for each (hydro plant, stage) pair.
@@ -1389,14 +1442,20 @@ entity-level value unchanged.
 
 ### `constraints/thermal_bounds.parquet`
 
-Stage-varying generation bound overrides for thermal plants.
+Stage-varying generation and cost overrides for thermal plants.
 
-| Column              | Type   | Required | Description                      |
-| ------------------- | ------ | -------- | -------------------------------- |
-| `thermal_id`        | INT32  | Yes      | Thermal plant ID                 |
-| `stage_id`          | INT32  | Yes      | Stage ID                         |
-| `min_generation_mw` | DOUBLE | No       | Minimum generation override (MW) |
-| `max_generation_mw` | DOUBLE | No       | Maximum generation override (MW) |
+| Column              | Type             | Required | Description                                                                                                                                                       |
+| -------------------- | ---------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `thermal_id`        | INT32            | Yes      | Thermal plant ID                                                                                                                                                  |
+| `stage_id`          | INT32            | Yes      | Stage ID                                                                                                                                                           |
+| `min_generation_mw` | DOUBLE           | No       | Minimum generation override (MW)                                                                                                                                  |
+| `max_generation_mw` | DOUBLE           | No       | Maximum generation override (MW)                                                                                                                                  |
+| `cost_per_mwh`      | DOUBLE           | No       | Dispatch cost override (USD/MWh)                                                                                                                                  |
+| `block_id`          | INT32 (nullable) | No       | Zero-based block index within the stage, selecting one block's `min_generation_mw`/`max_generation_mw` override. `null` applies at the stage level. A non-null `cost_per_mwh` on the same row, or any `block_id` on a thermal declaring `anticipated_config`, is rejected at validation. |
+
+`cost_per_mwh` is deliberately **not** block-eligible, unlike
+`contract_bounds.price_per_mwh` below — commitment is a stage-level decision,
+so a per-block dispatch cost has nothing to attach to.
 
 ---
 
@@ -1419,19 +1478,53 @@ Stage-varying operational bound overrides for hydro plants.
 | `max_diversion_m3s`    | DOUBLE | No       | Maximum diversion flow (m³/s)        |
 | `filling_min_rate_m3s` | DOUBLE | No       | Filling minimum-rate override (m³/s) |
 | `water_withdrawal_m3s` | DOUBLE | No       | Water withdrawal (m³/s)              |
+| `block_id`             | INT32 (nullable) | No | Zero-based block index within the stage, selecting one block's turbined/outflow/generation/diversion override. `null` applies at the stage level. A non-null `min_storage_hm3`/`max_storage_hm3`/`filling_min_rate_m3s`/`water_withdrawal_m3s` value on the same row is rejected at validation — those four stay stage-level only, with no per-block variant. |
+
+---
+
+### `constraints/hydro_unit_group_bounds.parquet`
+
+Stage-varying, optionally per-block bound overrides for a hydro plant's
+declared unit groups (`hydros[].unit_groups[]`; see
+[`system/hydros.json`](#systemhydrosjson) above). A row overrides one of a
+group's four declared bounds for one `(hydro_id, hydro_unit_group_id,
+stage_id)`, optionally narrowed to a single block; a group with no override
+row reads its declared value. Group `id` is dense and 0-based within its
+plant, so `hydro_unit_group_id` addresses the group by that declared id.
+
+| Column               | Type             | Required | Description                                                                                                                                          |
+| --------------------- | ---------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `hydro_id`           | INT32            | Yes      | Hydro plant ID                                                                                                                                        |
+| `hydro_unit_group_id`| INT32            | Yes      | Unit group ID (`unit_groups[].id`), unique within the plant                                                                                          |
+| `stage_id`           | INT32            | Yes      | Stage ID                                                                                                                                              |
+| `min_turbined_m3s`   | DOUBLE           | No       | Minimum turbined flow override for this group (m³/s)                                                                                                 |
+| `max_turbined_m3s`   | DOUBLE           | No       | Maximum turbined flow override for this group (m³/s)                                                                                                 |
+| `min_generation_mw`  | DOUBLE           | No       | Minimum generation override for this group (MW)                                                                                                      |
+| `max_generation_mw`  | DOUBLE           | No       | Maximum generation override for this group (MW)                                                                                                      |
+| `block_id`           | INT32 (nullable) | No       | Zero-based block index within the stage, selecting one block's override. `null` applies at the stage level; all four bound columns are block-eligible. |
 
 ---
 
 ### `constraints/line_bounds.parquet`
 
-Stage-varying flow capacity overrides for transmission lines.
+Stage-varying, absolute-MW flow capacity overrides for transmission lines.
 
-| Column       | Type   | Required | Description                         |
-| ------------ | ------ | -------- | ----------------------------------- |
-| `line_id`    | INT32  | Yes      | Transmission line ID                |
-| `stage_id`   | INT32  | Yes      | Stage ID                            |
-| `direct_mw`  | DOUBLE | No       | Direct-flow capacity override (MW)  |
-| `reverse_mw` | DOUBLE | No       | Reverse-flow capacity override (MW) |
+| Column       | Type             | Required | Description                                                                                                                    |
+| ------------ | ---------------- | -------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| `line_id`    | INT32            | Yes      | Transmission line ID                                                                                                          |
+| `stage_id`   | INT32            | Yes      | Stage ID                                                                                                                       |
+| `direct_mw`  | DOUBLE           | No       | Direct-flow capacity override (MW)                                                                                            |
+| `reverse_mw` | DOUBLE           | No       | Reverse-flow capacity override (MW)                                                                                           |
+| `block_id`   | INT32 (nullable) | No       | Zero-based block index within the stage, selecting one block's `direct_mw`/`reverse_mw` override. `null` applies at the stage level. |
+
+Per-block line capacity is declared here directly, as absolute MW.
+`constraints/exchange_factors.json`, which scaled a stage-level capacity by a
+per-block factor, is removed; a study still carrying that file is rejected by
+name. The old factor form's effect on a given `(line, stage, block)` is
+reproduced by `direct_mw = base_capacity × direct_factor` (and the reverse
+equivalent). Absolute MW also expresses `direct_mw = 0.0` — a line fully
+closed in one block — which the previous factor, constrained strictly
+positive, could never represent.
 
 ---
 
@@ -1443,8 +1536,9 @@ Stage-varying flow bounds for pumping stations.
 | ------------ | ------ | -------- | --------------------------- |
 | `station_id` | INT32  | Yes      | Pumping station ID          |
 | `stage_id`   | INT32  | Yes      | Stage ID                    |
-| `min_m3s`    | DOUBLE | No       | Minimum pumping flow (m³/s) |
-| `max_m3s`    | DOUBLE | No       | Maximum pumping flow (m³/s) |
+| `min_m3s`    | DOUBLE           | No       | Minimum pumping flow (m³/s)                                                                                          |
+| `max_m3s`    | DOUBLE           | No       | Maximum pumping flow (m³/s)                                                                                          |
+| `block_id`   | INT32 (nullable) | No       | Zero-based block index within the stage, selecting one block's `min_m3s`/`max_m3s` override. `null` applies at the stage level. |
 
 ---
 
@@ -1452,13 +1546,18 @@ Stage-varying flow bounds for pumping stations.
 
 Stage-varying power and price overrides for energy contracts.
 
-| Column          | Type   | Required | Description              |
-| --------------- | ------ | -------- | ------------------------ |
-| `contract_id`   | INT32  | Yes      | Energy contract ID       |
-| `stage_id`      | INT32  | Yes      | Stage ID                 |
-| `min_mw`        | DOUBLE | No       | Minimum power (MW)       |
-| `max_mw`        | DOUBLE | No       | Maximum power (MW)       |
-| `price_per_mwh` | DOUBLE | No       | Price override (USD/MWh) |
+| Column          | Type             | Required | Description                                                                                                                     |
+| --------------- | ---------------- | -------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| `contract_id`   | INT32            | Yes      | Energy contract ID                                                                                                              |
+| `stage_id`      | INT32            | Yes      | Stage ID                                                                                                                         |
+| `min_mw`        | DOUBLE           | No       | Minimum power (MW)                                                                                                               |
+| `max_mw`        | DOUBLE           | No       | Maximum power (MW)                                                                                                               |
+| `price_per_mwh` | DOUBLE           | No       | Price override (USD/MWh)                                                                                                        |
+| `block_id`      | INT32 (nullable) | No       | Zero-based block index within the stage, selecting one block's `min_mw`/`max_mw`/`price_per_mwh` override. `null` applies at the stage level. |
+
+`price_per_mwh` is block-eligible — a study's simulation cost path honors a
+per-block contract price — deliberately asymmetric with
+`thermal_bounds.cost_per_mwh` above, which is not.
 
 ---
 
@@ -1482,54 +1581,72 @@ The per-block available generation bound in the LP is:
 
 ---
 
-### `constraints/exchange_factors.json`
+### `constraints/generic_constraints.json`
 
-Per-line, per-stage, per-block scaling factors for transmission line capacity
-bounds. When present, each factor multiplies the line's direct or reverse
-capacity for the specified block. This allows modeling of planned outages,
-seasonal de-rating, or time-of-day capacity constraints without replacing the
-base entity bounds.
+User-defined linear constraints, added to every stage's LP alongside the
+built-in constraint set. The file is optional; when absent, no generic
+constraints are added.
 
-When this file is absent, all exchange factors default to (1.0, 1.0). When a
-`(line_id, stage_id)` pair is absent, its factors default to (1.0, 1.0) for
-every block.
-
-**JSON structure:**
+**Top-level structure:**
 
 ```json
 {
-  "exchange_factors": [
+  "constraints": [
     {
-      "line_id": 0,
-      "stage_id": 0,
-      "block_factors": [
-        { "block_id": 0, "direct_factor": 0.9, "reverse_factor": 1.0 }
-      ]
+      "id": 1,
+      "name": "cap_ant_t1",
+      "expression": "anticipated_decision(2)",
+      "sense": "<=",
+      "slack": { "enabled": false }
     }
   ]
 }
 ```
 
-**Fields per entry:**
+**Per-entry fields:**
 
-| Field           | Type    | Description                                                          |
-| --------------- | ------- | -------------------------------------------------------------------- |
-| `line_id`       | integer | Line entity ID. Must refer to a line defined in `system/lines.json`. |
-| `stage_id`      | integer | Study stage index. Must be a valid stage ID from `stages.json`.      |
-| `block_factors` | array   | Array of `{ block_id, direct_factor, reverse_factor }` pairs.        |
+| Field         | Type            | Required | Description                                                                                   |
+| ------------- | --------------- | -------- | ------------------------------------------------------------------------------------------------ |
+| `id`          | integer         | Yes      | Constraint identifier. Must be unique within the file.                                          |
+| `name`        | string          | Yes      | Short name used in reports and log output.                                                      |
+| `expression`  | string          | Yes      | Expression string over variable references and constants (see below).                          |
+| `description` | string or null  | No       | Optional human-readable description.                                                            |
+| `sense`       | string          | Yes      | Comparison sense: `">="`, `"<="`, or `"=="`.                                                     |
+| `slack`       | object          | Yes      | Slack variable configuration: `enabled` (boolean) and `penalty` (number; required when `enabled` is `true`). |
 
-**`block_factors` entry fields:**
+**Variable references.** An `expression` is a linear combination of
+coefficient-scaled variable references, e.g.
+`"2.5 * thermal_generation(5) - hydro_generation(3)"`. A reference takes the
+form `var_name(entity_id[, block_id][, bus=bus_id])` — an optional positional
+block argument, then an optional named `bus=` selector, in that order.
 
-| Field            | Type    | Constraints                     | Description                                                        |
-| ---------------- | ------- | ------------------------------- | ------------------------------------------------------------------ |
-| `block_id`       | integer | Must be a valid block for stage | Zero-based block index within the stage.                           |
-| `direct_factor`  | number  | >= 0, finite                    | Multiplier for the direct-direction flow capacity (`direct_mw`).   |
-| `reverse_factor` | number  | >= 0, finite                    | Multiplier for the reverse-direction flow capacity (`reverse_mw`). |
+`hydro_turbined` and `hydro_generation` are the only two variables accepting
+the `bus=` selector, letting a constraint address one `(hydro, bus)` cell of a
+plant split across several unit groups (see
+[`hydros[].unit_groups[]`](#systemhydrosjson) above): `hydro_turbined(5,
+bus=2)` and `hydro_generation(5, bus=2)` resolve to the LP column for hydro
+5's cell on bus 2 — `2` must be a bus actually carried by one of hydro 5's
+unit groups, or the reference is rejected at load. Omitting `bus=` sums over
+the plant's cells, preserving the plant-level meaning every other variable
+carries; a plant with only one cell needs no selector. The positional block
+argument, when present, precedes the named selector:
+`hydro_turbined(5, 0, bus=2)` addresses block 0 of that cell.
 
-**Effect:** `col_upper_fwd = direct_mw * direct_factor`,
-`col_upper_rev = reverse_mw * reverse_factor`. A factor of 1.0 leaves the
-capacity unchanged. A factor of 0.0 fully blocks flow in that direction for
-the block.
+To constrain an anticipated thermal's commitment, use
+`anticipated_decision(N)` (stage-level scalar, no block index); see
+[`system/thermals.json`](#systemthermalsjson) above for `anticipated_config`.
+
+### `constraints/generic_constraint_bounds.parquet`
+
+Stage-varying, optionally per-block RHS bound overrides for generic
+constraints declared in `constraints/generic_constraints.json`.
+
+| Column          | Type             | Required | Description                                                                             |
+| --------------- | ---------------- | -------- | ------------------------------------------------------------------------------------------ |
+| `constraint_id` | INT32            | Yes      | Generic constraint ID                                                                    |
+| `stage_id`      | INT32            | Yes      | Stage ID                                                                                  |
+| `block_id`      | INT32 (nullable) | No       | Zero-based block index within the stage. `null` applies to all blocks of the given stage. |
+| `bound`         | DOUBLE           | Yes      | RHS value                                                                                 |
 
 ---
 
