@@ -314,16 +314,16 @@ dot-notation and zero-based array indices. Consult the
 **Default severity:** Error
 
 **What triggers it:** A cross-entity foreign-key reference points to an entity
-that does not exist in the expected registry. For example, a hydro plant's
-`bus_id` references a bus that is not in `system/buses.json`. Emitted by Layer
-3 (referential integrity).
+that does not exist in the expected registry. For example, one of a hydro
+plant's unit groups' `bus_id` references a bus that is not in
+`system/buses.json`. Emitted by Layer 3 (referential integrity).
 
 **Example message:** `Hydro 'FURNAS' references non-existent bus BUS_99 in bus registry`
 
 **Resolution:** Either add the referenced entity to its registry file, or
-correct the ID in the referencing file. Check all ID references: `hydros.bus_id`,
-`thermals.bus_id`, `lines.source_bus_id`, `lines.target_bus_id`,
-`hydros.downstream_id`.
+correct the ID in the referencing file. Check all ID references:
+`unit_groups[].bus_id`, `thermals.bus_id`, `lines.source_bus_id`,
+`lines.target_bus_id`, `hydros.downstream_id`.
 
 ---
 

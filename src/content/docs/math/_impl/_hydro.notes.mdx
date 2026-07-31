@@ -84,10 +84,8 @@ Load-time validation of a declared arc:
 - **History depth.** The `past_defluences` windows must cover the arc's
   in-transit span at study start — the interval `[start_0 − travel_time, start_0)`
   ending at the study start. A gap, or no windows at all, is a load-time error,
-  and no window may be future-dated past the study start.
-- **Proxy from `past_inflows`.** When a plant lacks the required
-  `past_defluences` history, Cobre derives a proxy seed from its `past_inflows`
-  and logs a caveat; when neither is available the study is rejected.
+  and no window may be future-dated past the study start — there is no proxy
+  or fallback seed from any other source.
 - **Downstream must be operating.** A release into a downstream plant that is
   still PreFilling/Filling, or before its commissioning entry stage, over the
   arrival window is rejected — the water would arrive at a reservoir not yet
@@ -98,6 +96,32 @@ Load-time validation of a declared arc:
 The horizon limitation (in-transit water maturing past the last stage is
 dropped, not credited to terminal storage) is covered in
 [LP formulation §5d](/math/lp-formulation).
+
+### Bus-partitioned hydro: cell collapse and the generation-sum caveat
+
+A plant's `unit_groups` partition it into one **cell** per distinct `bus_id`:
+the LP carries one turbine column and one FPHA-generation column per cell.
+When every group shares one bus, the plant collapses to a single cell — the
+same LP shape, byte-identical, as a plant declaring no groups beyond the
+required one. Same-bus groups sharing a cell's turbine and generation
+columns is exact for the box constraints (each group's own bounds fold
+independently before summing into the cell), because every group on a plant
+shares the same production model and productivity coefficients — there is no
+per-group productivity field.
+
+The `simulation/hydro_bus_generation/` output sums bit-exactly to the plant's
+own `turbined_m3s` on every model, since both are a plain sum of the same
+per-cell turbine columns. `generation_mw` sums exactly only for FPHA plants
+and single-cell plants: for `ConstantProductivity`/`LinearizedHead`, the
+plant-level row computes `(Σ_c turbined_c) × ρ` — sum the cells' turbined
+flow first, then multiply once — while each bus-cell row computes
+`turbined_c × ρ` independently. The two expressions are equal in exact
+arithmetic, but floating-point multiplication does not distribute over
+addition bit-for-bit, so the plant total need not equal the sum of the
+cell rows to the last bit once a plant spans more than one cell. FPHA
+plants are exempt because both the plant row and the cell rows sum the
+same underlying per-cell FPHA generation columns the same way; a
+single-cell plant is exempt because there is only one term either way.
 
 ### Round-trip parquet export
 

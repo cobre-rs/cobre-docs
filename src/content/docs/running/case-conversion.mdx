@@ -61,7 +61,7 @@ complete Cobre case directory. The mapping covers:
 | Solver parameters           | Config                   | `config.json`                           |
 | Reservoir bounds/overrides  | Per-stage hydro bounds   | `constraints/hydro_bounds.parquet`      |
 | Thermal maintenance windows | Per-stage thermal bounds | `constraints/thermal_bounds.parquet`    |
-| Transmission capacity       | Per-stage line bounds    | `constraints/line_bounds.parquet`       |
+| Transmission capacity       | Per-stage/per-block line bounds (`direct_mw`/`reverse_mw`) | `constraints/line_bounds.parquet` |
 | VminOP / electric / AGRINT  | Generic LP constraints   | `constraints/generic_constraints.json`  |
 
 ### Output Directory Structure
@@ -93,7 +93,6 @@ output/
     hydro_bounds.parquet
     thermal_bounds.parquet
     line_bounds.parquet
-    exchange_factors.json
 ```
 
 Not all files are always produced. Optional files (e.g., `hydro_production_models.json`,

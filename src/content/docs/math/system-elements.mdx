@@ -202,8 +202,8 @@ Each line connects exactly two buses:
 
 | Parameter     | Units  | Description                                                                |
 | ------------- | ------ | -------------------------------------------------------------------------- |
-| $\bar{F}^+_l$ | MW     | Capacity limit (direct direction); may vary by stage via exchange factors  |
-| $\bar{F}^-_l$ | MW     | Capacity limit (reverse direction); may vary by stage via exchange factors |
+| $\bar{F}^+_l$ | MW     | Capacity limit (direct direction); may vary by stage and, optionally, by block |
+| $\bar{F}^-_l$ | MW     | Capacity limit (reverse direction); may vary by stage and, optionally, by block |
 | $\eta_l$      | —      | Transmission efficiency: $\eta_l = 1 - \text{losses}/100$                  |
 | $c^{exch}_l$  | \$/MWh | Exchange cost (regularization)                                             |
 
@@ -351,6 +351,12 @@ Hydro plants are the central elements of the SDDP formulation because:
 
 A **hydro plant** converts the potential energy of stored water into electricity. Each plant has a reservoir (storage), turbines (conversion), and spillways (excess water release). Hydro plants are typically arranged in **cascades** where upstream releases become downstream inflows.
 
+### Unit Groups and Bus-Partitioned Cells
+
+A hydro plant's turbines are organized into one or more **unit groups**, each declaring its own bus connection and its own turbined-flow and generation bounds. Groups sharing a bus form one **(hydro, bus) cell**; a plant is partitioned into as many cells as it has distinct group buses, and every plant declares at least one group. Storage, spillage, diversion, and inflow remain single reservoir-level quantities tracked once per plant regardless of cell count — only turbined flow and generation are tracked **per cell**, and each cell injects its generation at its own bus rather than at a single plant-level bus.
+
+A plant whose groups all share one bus has exactly one cell and reduces to the single-bus model used throughout the rest of this chapter — the case for every plant in the system today except one. A plant whose groups span several buses has one turbined-flow variable and one generation variable per cell instead of per plant; see [LP formulation §3–§4](/math/lp-formulation) for how a cell's generation enters the bus load balance and a plant's cells sum into its water balance, and [LP formulation §6, §8](/math/lp-formulation) for how a cell's bounds compose from its member groups.
+
 ### Operating Status
 
 Cobre distinguishes two hydro plant subsets based on their operational state:
@@ -368,12 +374,12 @@ Most plants are in $\mathcal{H}^{op}$. Filling hydros have per-stage target-stor
 | ------------ | ----- | ---------------------------------------------------------------------- |
 | $v_h$        | hm³   | End-of-stage reservoir storage (**state variable**)                    |
 | $a_{h,\ell}$ | m³/s  | AR lag $\ell$ for inflow model (**state variable**, see note below)    |
-| $q_{h,k}$    | m³/s  | Turbined flow (through generators), block $k$                          |
+| $q_{h,b,k}$  | m³/s  | Turbined flow at cell $(h,b)$ (§ Unit Groups above), block $k$; the plant total $q_{h,k} = \sum_b q_{h,b,k}$ is what enters the water balance |
 | $s_{h,k}$    | m³/s  | Spillage (released without generation), block $k$                      |
 | $u_{h,k}$    | m³/s  | Diversion flow (bypassed to separate channel), block $k$               |
 | $e_{h,k}$    | m³/s  | Evaporation (see note below), block $k$                                |
 | $r_{h,k}$    | m³/s  | Water withdrawal (see note below), block $k$                           |
-| $g_{h,k}$    | MW    | Hydro generation, block $k$                                            |
+| $g_{h,b,k}$  | MW    | Hydro generation at cell $(h,b)$, block $k$; injects at bus $b$ (§ Unit Groups above) |
 | $o_{h,k}$    | m³/s  | Total outflow: $o_{h,k} = q_{h,k} + s_{h,k}$ (downstream channel flow) |
 
 **State variables** ($v_h$ and $a_{h,\ell}$) link stages through the Bellman recursion. The storage $v_h$ tracks reservoir volume and is a true decision variable within each stage (the optimizer chooses its end-of-stage value). The AR lags $a_{h,\ell}$ carry inflow history for the PAR(p) model: they are _state variables_ in the SDDP sense (passed between stages and subject to Benders cuts), but are **fixed at the beginning of each stage** to the realized inflow values — they are not free for the optimizer to choose. All other variables are **control variables** determined within each stage.
@@ -384,8 +390,8 @@ $e_{h,k}$ and $r_{h,k}$ are parameter-driven quantities computed from input data
 
 ### Connections to Other Elements
 
-- **Bus connection**: Each hydro plant connects to one bus for energy delivery
-- **Cascade topology**: Upstream plants' outflows ($q + s + u$) become downstream plants' inflows, either instantaneously or, on a declared main-cascade arc, delayed by a **water travel time** (see _Cascade Travel Time_ below)
+- **Bus connection**: Each of a plant's cells connects to its own bus for energy delivery; a single-cell plant connects to exactly one bus, as before (§ Unit Groups above)
+- **Cascade topology**: Upstream plants' outflows ($q + s + u$, with $q$ the plant's total turbined flow summed over its cells) become downstream plants' inflows, either instantaneously or, on a declared main-cascade arc, delayed by a **water travel time** (see _Cascade Travel Time_ below)
 - **Diversion targets**: Some plants can divert water to a separate downstream plant (not the immediate cascade successor), bounded by $\bar{U}_h$
 - **Pumping stations**: May receive pumped water (increasing storage) or supply water to pumps (decreasing storage)
 
@@ -394,9 +400,9 @@ $e_{h,k}$ and $r_{h,k}$ are parameter-driven quantities computed from input data
 | Parameter                                        | Units     | Description                                             |
 | ------------------------------------------------ | --------- | ------------------------------------------------------- |
 | $\bar{V}_h$, $\underline{V}_h$                   | hm³       | Storage bounds (useful volume)                          |
-| $\bar{Q}_h$, $\underline{Q}_h$                   | m³/s      | Turbined flow bounds (machine limits)                   |
+| $\bar{Q}_{h,b}$, $\underline{Q}_{h,b}$           | m³/s      | Turbined flow bounds (machine limits), composed per cell from its member unit groups' declared bounds — see [LP formulation §8](/math/lp-formulation) |
 | $\bar{O}_h$, $\underline{O}_h$                   | m³/s      | Outflow bounds (environmental flow, flood control)      |
-| $\bar{G}_h$, $\underline{G}_h$                   | MW        | Generation bounds (user-defined, not derived from flow) |
+| $\bar{G}_{h,b}$, $\underline{G}_{h,b}$           | MW        | Generation bounds (user-defined per unit group, not derived from flow), composed per cell the same way — see [LP formulation §6](/math/lp-formulation) |
 | $\bar{U}_h$                                      | m³/s      | Maximum diversion flow                                  |
 | $\rho_h$                                         | MW/(m³/s) | Productivity (constant model)                           |
 | $\gamma^m_0, \gamma^m_v, \gamma^m_q, \gamma^m_s$ | —         | FPHA hyperplane coefficients for plane $m$              |
@@ -439,14 +445,14 @@ Cobre carries the water in transit on such an arc as additional **in-transit sta
 
 Cobre supports three models for converting turbined flow to electrical generation, in increasing order of complexity:
 
-1. **Constant Productivity**: $g_{h,k} = \rho_h \cdot q_{h,k}$ — simple linear relationship with fixed $\rho_h$ [MW/(m³/s)], suitable for plants with stable head.
+1. **Constant Productivity**: $g_{h,b,k} = \rho_h \cdot q_{h,b,k}$ (per cell $(h,b)$) — simple linear relationship with fixed $\rho_h$ [MW/(m³/s)], suitable for plants with stable head.
 
 2. **Linearized Head** (**simulation-only**): Adjusts productivity based on head variation with storage level. Requires hydro geometry data (Volume-Height-Area curve). This model is excluded from training because the bilinear term ($q \times v^{avg}$) requires re-fixing $v^{avg}$ between iterations, changing the LP and breaking SDDP convergence guarantees. See [hydro production models §3](/math/hydro-production-models).
 
-3. **FPHA (Função de Produção Hidrelétrica Aproximada)**: Piecewise-linear approximation via hyperplanes that captures head variation with storage level and accounts for tailrace effects from spillage. Each plane $m$:
+3. **FPHA (Função de Produção Hidrelétrica Aproximada)**: Piecewise-linear approximation via hyperplanes that captures head variation with storage level and accounts for tailrace effects from spillage. Fitted once per plant and evaluated per cell $(h,b)$, apportioning the plane's flow-independent terms by the cell's share of the plant's turbine capacity (see [hydro production models §2.9](/math/hydro-production-models)). Each plane $m$:
 
 $$
-g_{h,k} \leq \gamma_0^m + \gamma_v^m \cdot v^{avg}_h + \gamma_q^m \cdot q_{h,k} + \gamma_s^m \cdot s_{h,k}
+g_{h,b,k} \leq \sigma_{h,b}\big(\gamma_0^m + \gamma_v^m \cdot v^{avg}_h + \gamma_s^m \cdot s_{h,k}\big) + \gamma_q^m \cdot q_{h,b,k}
 $$
 
 :::note[Training models]
@@ -464,10 +470,10 @@ Several hydro constraints are enforced as **soft constraints** with slack variab
 | Constraint                                     | Meaning                                       | Slack Variable        |
 | ---------------------------------------------- | --------------------------------------------- | --------------------- |
 | $v_h \geq \underline{V}_h$                     | Minimum storage (dead volume)                 | $\sigma^{v-}_{h}$     |
-| $q_{h,k} \geq \underline{Q}_h$                 | Minimum turbined flow (equipment limits)      | $\sigma^{q-}_{h,k}$   |
+| $q_{h,b,k} \geq \underline{Q}_{h,b}$ (per cell) | Minimum turbined flow (equipment limits)     | $\sigma^{q-}_{h,b,k}$ |
 | $o_{h,k} \geq \underline{O}_h$                 | Minimum outflow (environmental flow)          | $\sigma^{o-}_{h,k}$   |
 | $o_{h,k} \leq \bar{O}_h$                       | Maximum outflow (flood control)               | $\sigma^{o+}_{h,k}$   |
-| $g_{h,k} \geq \underline{G}_h$                 | Minimum generation (grid services)            | $\sigma^{g-}_{h,k}$   |
+| $g_{h,b,k} \geq \underline{G}_{h,b}$ (per cell) | Minimum generation (grid services)           | $\sigma^{g-}_{h,b,k}$ |
 | $e_{h,k}$ feasible                             | Evaporation within physical limits            | $\sigma^{e\pm}_{h,k}$ |
 | $r_{h,k}$ met                                  | Water withdrawal commitment                   | $\sigma^{r}_{h,k}$    |
 | $v_h \geq V^{\text{target}}_t$ (filling floor) | Per-stage filling target during commissioning | $\sigma^{fill}_{h}$   |
@@ -522,10 +528,10 @@ where $\text{net\_flows}_{h,k}$ includes all inflow and outflow terms listed abo
 
 **Outflow definition**: $o_{h,k} = q_{h,k} + s_{h,k}$
 
-**Generation constraint** (depends on production model):
+**Generation constraint** (depends on production model; evaluated per cell $(h,b)$ — see Unit Groups above):
 
-- Constant productivity: $g_{h,k} = \rho_h \cdot q_{h,k}$
-- FPHA: $g_{h,k} \leq \gamma_0^m + \gamma_v^m \cdot v_h^{avg} + \gamma_q^m \cdot q_{h,k} + \gamma_s^m \cdot s_{h,k}$ for each plane $m$
+- Constant productivity: $g_{h,b,k} = \rho_h \cdot q_{h,b,k}$
+- FPHA: $g_{h,b,k} \leq \sigma_{h,b}\big(\gamma_0^m + \gamma_v^m \cdot v_h^{avg} + \gamma_s^m \cdot s_{h,k}\big) + \gamma_q^m \cdot q_{h,b,k}$ for each plane $m$
 
 For the fully assembled constraints, see [LP formulation](/math/lp-formulation).
 

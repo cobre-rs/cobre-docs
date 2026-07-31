@@ -50,12 +50,12 @@ For the full PAR(p) model definition, parameter set, and fitting theory, see
 ```d2
 direction: down
 
-input: "Input files\ninflow_seasonal_stats · inflow_ar_coefficients\n(inflow_history — optional, for lag init)" {shape: parallelogram}
+input: "Input files\ninflow_seasonal_stats · inflow_ar_coefficients\n(windowed inflow_history + recent_observations — optional, for lag init)" {shape: parallelogram}
 s1: "1 · Load PAR parameters\nμ, s, ψ*, AR order p  per (hydro, stage)"
 s2: "2 · Derive r via the periodic-ACF closure\nr = √(1 − Σ ψ*·ρ), ρ the model's implied ACF"
 s3: "3 · Convert to original-unit coefficients\nψ = ψ* · sₘ / sₘ₋ℓ ;   σ = s · r"
 s4: "4 · Precompute deterministic components\nbase, coeff[ℓ], scale  per stage"
-s5: "5 · Initialize lag state from history\nlag_state[h][ℓ]  from inflow_history (when present)"
+s5: "5 · Initialize lag state from history\nlag_state[h][ℓ]  from inflow_history, shadowed by recent_observations"
 output: "Output\nprecomputed PAR structure — contiguous arrays (hot-path)" {shape: parallelogram}
 
 input -> s1 -> s2 -> s3 -> s4 -> s5 -> output
@@ -380,14 +380,16 @@ The forward pass deterministically follows historical data in order, cycling
 through available years when the number of forward passes exceeds the
 historical record.
 
-- **Noise source**: Historical values (mapped from `inflow_history.parquet` or
-  equivalent to stage structure)
+- **Noise source**: Historical values (mapped from the windowed
+  `inflow_history.parquet` record, or equivalent, to stage structure)
 - **Realization computation**: Historical values must be **inverted to noise
   terms** (epsilon) before use in the LP. The same noise inversion procedure
   applies (see section 4.3). The lag chain seeding the inversion is rooted at
-  `initial_conditions.past_inflows` and advanced by the per-stage transitions —
-  not at the year-preceding raw historical lags. The reason and consequences
-  are spelled out under "x₀ consistency under historical replay" below.
+  the derived inflow-lag seed — cast from `inflow_history`, shadowed day-wise
+  by `initial_conditions.json`'s `recent_observations` — and advanced by the
+  per-stage transitions, not at the year-preceding raw historical lags. The
+  reason and consequences are spelled out under "x₀ consistency under
+  historical replay" below.
 - **Backward pass interaction**: Same as External — the backward pass uses a
   PAR model fitted to the historical data.
 - **Use case**: Policy validation against observed conditions, historical
@@ -511,9 +513,11 @@ inversion to keep the implied noise consistent with the LP's AR row.
 The inversion proceeds **sequentially through stages** (each stage updates the
 lag buffer for the next):
 
-1. Initialise the lag buffer from `initial_conditions.past_inflows` (see "x₀
-   consistency under historical replay" below for the reason this is the only
-   admissible seed).
+1. Initialise the lag buffer from the derived inflow-lag seed — cast from the
+   windowed `scenarios/inflow_history.parquet` record, shadowed day-wise by
+   `initial_conditions.json`'s `recent_observations` wherever the two overlap
+   (see "x₀ consistency under historical replay" below for the reason this is
+   the only admissible seed).
 2. For each stage $t$: compute the deterministic PAR component, solve for
    $\eta_t$, update the lag buffer with $a_t^{\text{target}}$.
 3. Validate the inverted noise:
@@ -532,21 +536,21 @@ After inversion, a JSON validation report is emitted with noise statistics
 The historical and external schemes share the same SDDP forward pass: the
 sampler returns a standardised noise residual $\eta_t$ and the LP reconstructs
 the realised inflow from $\eta_t$ together with the lag state carried in the
-state vector. The lag state at stage 0 is taken uniformly from
-`initial_conditions.past_inflows` for every scenario, so all forward replays
-share a single hydrological starting tendency.
+state vector. The lag state at stage 0 is taken uniformly from the derived
+inflow-lag seed for every scenario, so all forward replays share a single
+hydrological starting tendency.
 
 For the implied $\eta_t$ on a historical window to reconstruct the raw
 historical observation exactly when the LP starts from the same $x_0$, the
-inversion lag chain must also be rooted at `past_inflows` — not at the
-year-preceding raw historical inflows of the window being replayed. If the
-inversion is seeded from the window-preceding lags while the LP starts from
-`past_inflows`, the two paths build their lag chains from different roots and
-produce a systematic per-stage offset of
+inversion lag chain must also be rooted at that same derived seed — not at
+the year-preceding raw historical inflows of the window being replayed. If
+the inversion is seeded from the window-preceding lags while the LP starts
+from the derived seed, the two paths build their lag chains from different
+roots and produce a systematic per-stage offset of
 
 $$
 z_h^{(t)} = a_t^{\text{target}} - a_t^{\text{reconstructed}}
-        = \sum_{\ell} \psi_{m,\ell} \cdot \bigl(\text{past\_inflows}_\ell - \text{window\_lag}_\ell\bigr)
+        = \sum_{\ell} \psi_{m,\ell} \cdot \bigl(\text{seed}_\ell - \text{window\_lag}_\ell\bigr)
 $$
 
 that propagates through every stage. This offset prevents exact replay of the
@@ -555,7 +559,7 @@ typically-negative gap between the forward upper bound and the lower bound
 that does not close with iteration count.
 
 To eliminate this gap, the inversion runs as a **rolling lag chain seeded
-from `past_inflows`** and advanced each period via the same
+from the derived seed** and advanced each period via the same
 `StageLagTransition` machinery the LP uses for multi-resolution studies
 (see [Multi-Resolution Studies](/math/multi-resolution-studies)). For uniform
 monthly studies the transitions are trivial — accumulate the current stage's
@@ -566,21 +570,22 @@ to the historical inversion.
 
 The cross-scheme implications are:
 
-- **Historical scheme.** Every scenario starts the forward LP from
-  `past_inflows`; the implied $\eta$ rebuilds the raw historical observation
-  to within floating-point precision at every stage; the LB and UB evaluate
+- **Historical scheme.** Every scenario starts the forward LP from the
+  derived seed; the implied $\eta$ rebuilds the raw historical observation to
+  within floating-point precision at every stage; the LB and UB evaluate
   $V_0$ at the same $x_0$.
 - **External scheme.** Same rolling-chain machinery — the supplied target
-  series is inverted relative to `past_inflows` (or the user-supplied initial
-  conditions for that class), preserving LB/UB consistency at $x_0$ across all
-  forward replays.
+  series is inverted relative to the derived seed for inflow (or the
+  user-supplied initial conditions for the load/NCS classes, which carry no
+  lag structure), preserving LB/UB consistency at $x_0$ across all forward
+  replays.
 - **InSample / OutOfSample.** Unaffected — these schemes do not invert noise
   from observed inflows; they sample $\eta_t$ from the PAR model directly.
 
-A `past_inflows_digest` (a 64-bit SipHash-1-3 fingerprint of every
-`past_inflows` value) is stored on the historical library and on the model
-provenance report so consumers can detect when a precomputed library has
-drifted out of sync with the `past_inflows` currently in use.
+A 64-bit SipHash-1-3 fingerprint of the derived seed
+(`historical_library_seed_digest` on the model provenance report) is stored
+alongside the historical scenario library so consumers can detect when a
+precomputed library has drifted out of sync with the seed currently in use.
 
 ### 4.4 External Scenarios in Simulation
 

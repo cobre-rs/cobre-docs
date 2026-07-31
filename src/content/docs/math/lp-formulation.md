@@ -47,10 +47,10 @@ These provide slack for physical or operational constraints that may be impossib
 | ------------------------ | ------------ | ----------- | -------------------------------------------------------- |
 | Storage below minimum    | $c^{sv-}_h$  | \$/hm³      | $v_h \geq \underline{V}_h$                               |
 | Filling target shortfall | $c^{fill}_h$ | \$/hm³      | $v_h \geq V^{\text{target}}_t$ (per-stage filling floor) |
-| Turbined flow minimum    | $c^{tv-}_h$  | \$/(m³/s·h) | $q_{h,k} \geq \underline{Q}_h$                           |
+| Turbined flow minimum    | $c^{tv-}_h$  | \$/(m³/s·h) | $q_{h,b,k} \geq \underline{Q}_{h,b}$ (per cell)          |
 | Outflow minimum          | $c^{ov-}_h$  | \$/(m³/s·h) | $o_{h,k} \geq \underline{O}_h$                           |
 | Outflow maximum          | $c^{ov+}_h$  | \$/(m³/s·h) | $o_{h,k} \leq \bar{O}_h$                                 |
-| Generation minimum       | $c^{gv-}_h$  | \$/MWh      | $g_{h,k} \geq \underline{G}_h$                           |
+| Generation minimum       | $c^{gv-}_h$  | \$/MWh      | $g_{h,b,k} \geq \underline{G}_{h,b}$ (per cell)          |
 | Evaporation violation    | $c^{ev}_h$   | \$/(m³/s·h) | Evaporation within physical limits                       |
 | Withdrawal violation     | $c^{wv}_h$   | \$/(m³/s·h) | Water withdrawal commitment (bidirectional: under/over)  |
 
@@ -151,10 +151,12 @@ Storage violation penalties ($\sigma^{v-}_h$, $\sigma^{fill}_h$) are **not** mul
 
 ## 3. Load Balance Constraint
 
+Each hydro plant $h$ is partitioned into one or more **(hydro, bus) cells** — one cell per distinct bus among the plant's declared unit groups (see [system elements §5](/math/system-elements)). $\mathcal{B}_h$ denotes the set of buses hosting one of $h$'s cells; $\mathcal{H}_b$ denotes the hydros with a cell at bus $b$ (i.e. $b \in \mathcal{B}_h$). $g_{h,b,k}$ is the generation of hydro $h$'s cell at bus $b$, block $k$ — the quantity that actually injects at $b$. A plant whose groups share a single bus has $|\mathcal{B}_h| = 1$, and $g_{h,b,k}$ collapses to the single-cell $g_{h,k}$ used everywhere else in this spec.
+
 For each bus $b \in \mathcal{B}$ and block $k \in \mathcal{K}$:
 
 $$
-\sum_{h \in \mathcal{H}_b} g_{h,k} + \sum_{j \in \mathcal{T}_b} \sum_s g_{j,k,s}
+\sum_{h \in \mathcal{H}_b} g_{h,b,k} + \sum_{j \in \mathcal{T}_b} \sum_s g_{j,k,s}
 + \sum_{r \in \mathcal{R}_b} g^{nc}_{r,k}
 + \sum_{c \in \mathcal{C}^{imp}_b} \chi_{c,k}
 $$
@@ -196,6 +198,7 @@ where:
 
 - $v^{in}_h$ = incoming storage LP variable, pinned to the previous stage's value via column bounds (§4a)
 - $b^{\mathrm{in}}_{h,1}$ = in-transit volume maturing at the current stage on a declared travel-time arc into $h$ (hm³), added directly as a stage-level inflow (already a volume, so it sits **outside** the $\zeta$ conversion). When a cascade arc carries a travel time, the upstream release is delayed through this term instead of entering the same-stage upstream inflow sum above; see §5d. Absent (zero) for instantaneous arcs
+- $q_{h,k} = \sum_{b \in \mathcal{B}_h} q_{h,b,k}$ = the plant's total turbined flow, summed over its (hydro, bus) cells (§3). Each cell's own column $q_{h,b,k}$ is bounded independently (§8) and, for an FPHA hydro, feeds that cell's own generation constraint (§6); storage, spillage, diversion, and inflow stay single per-plant quantities regardless of cell count. A single-cell plant has $q_{h,k} \equiv q_{h,b,k}$
 - $a_h$ = incremental inflow (from AR model, see [PAR(p) inflow model](/math/par-inflow-model)); equivalently $z_h$ from the z-inflow constraint (§5b)
 - $r_h$ = water withdrawal target (m³/s), a **signed fixed RHS parameter** from `water_withdrawal_m3s` (not a per-block LP decision variable). $r_h > 0$ schedules a consumptive removal; $r_h < 0$ schedules an inter-basin return/addition that adds water to the reservoir. The realized withdrawal removed from the reservoir is $R_h = r_h - \sigma^{w-}_h + \sigma^{w+}_h$; see §9 for the slack bounds that prevent the realized flow from flipping sign. Withdrawal is applied at the stage level, outside the per-block summation
 - $e_{h,k}$ = signed net evaporation flow (m³/s): positive values represent net evaporative loss subtracted from storage; negative values represent net rainfall input on the lake surface that adds to storage through the same coefficient (the leading $-$ sign on $e_{h,k}$ flips the contribution automatically — see [penalty system §5](/math/penalty-system))
@@ -284,7 +287,7 @@ The stage LP uses a fixed column and row layout that places state variables firs
 | `transit_buckets_in`  | $B$   | Incoming in-transit bucket volumes (auxiliary, pinned for §5d) — after storage_in |
 | `theta`               | $1$   | Future cost variable — last of the state prefix                                   |
 
-Equipment columns (turbine, spillage, diversion, thermal, anticipated-decision and anticipated-state-out, line flows, deficit, excess, slacks) follow immediately after `theta`. The `transit_buckets_out` block is an identity-resolved state carrier (like `storage`, and mirroring the anticipated-state-out carrier of §5c): it holds the volume still in transit on each cascade arc, defined by in-LP ring shift and deposit rows rather than pinned, and the `transit_buckets_in` block is the matching pinned incoming copy read for the delayed-arrival water-balance entry and the cut coefficient (§5d). Two auxiliary blocks are reserved for anticipated thermals: $A$ **anticipated-decision** columns $d^i_t$ carrying the commitment placed at this stage for delivery $K_i$ stages later, and $A$ **anticipated-state-out** columns $y^i_t$ used to decouple the post-shift state from the decision-write coefficient — see §5c.
+Equipment columns (turbine, spillage, diversion, thermal, anticipated-decision and anticipated-state-out, line flows, deficit, excess, slacks) follow immediately after `theta`. The `turbine` column family, and the FPHA `generation` column family, are indexed by **(hydro, bus) cell** rather than by plant — one column per cell (§3, §6) — while every other hydro equipment column (spillage, diversion) stays indexed by plant; a single-cell plant's layout is byte-identical to the pre-partition, per-plant form. The `transit_buckets_out` block is an identity-resolved state carrier (like `storage`, and mirroring the anticipated-state-out carrier of §5c): it holds the volume still in transit on each cascade arc, defined by in-LP ring shift and deposit rows rather than pinned, and the `transit_buckets_in` block is the matching pinned incoming copy read for the delayed-arrival water-balance entry and the cut coefficient (§5d). Two auxiliary blocks are reserved for anticipated thermals: $A$ **anticipated-decision** columns $d^i_t$ carrying the commitment placed at this stage for delivery $K_i$ stages later, and $A$ **anticipated-state-out** columns $y^i_t$ used to decouple the post-shift state from the decision-write coefficient — see §5c.
 
 The `z_inflow` region holds one free column per hydro representing the total realized inflow $z_h = a_h$ (m³/s) for each hydro at the current stage. These are auxiliary columns (zero objective cost, unbounded) whose primal values after solving give the realized inflow. They participate in the water balance (§4) and are defined by the z-inflow constraints (§5b).
 
@@ -484,27 +487,41 @@ In-transit volume that would mature **after the study's last stage is dropped** 
 
 Cobre supports two production models during training, in increasing order of complexity. A third model (linearized head) is available during simulation only — see [hydro production models §3](/math/hydro-production-models). The model can vary by stage or season per hydro.
 
-**Constant Productivity Model** (for each hydro $h \in \mathcal{H}^{const}$, block $k$):
+Both models are evaluated **per cell** $(h, b)$ (§3) rather than per plant; a single-cell plant's constraint is byte-identical to the pre-partition, per-plant form.
+
+**Constant Productivity Model** (for each cell $(h, b)$ of hydro $h \in \mathcal{H}^{const}$, block $k$):
 
 $$
-g_{h,k} = \rho_h \cdot q_{h,k}
+g_{h,b,k} = \rho_h \cdot q_{h,b,k}
 $$
 
-**FPHA Model** (for each plane $m \in \mathcal{M}_h$, hydro $h \in \mathcal{H}^{fpha}$, block $k$):
+Constant-productivity hydros carry no separate generation column: $g_{h,b,k}$ is this direct multiple of the cell's own turbined-flow column, so a cell's generation bound is enforced by folding it into that column's bound (§8) rather than by a bound on $g_{h,b,k}$ itself.
+
+**FPHA Model** (for each plane $m \in \mathcal{M}_h$, cell $(h, b)$ of hydro $h \in \mathcal{H}^{fpha}$, block $k$):
 
 $$
-g_{h,k} \leq \gamma^m_0 + \gamma^m_v \cdot v^{avg}_h + \gamma^m_q \cdot q_{h,k} + \gamma^m_s \cdot s_{h,k}
+g_{h,b,k} \leq \sigma_{h,b} \big( \gamma^m_0 + \gamma^m_v \cdot v^{avg}_h + \gamma^m_s \cdot s_{h,k} \big) + \gamma^m_q \cdot q_{h,b,k}
 $$
 
-where $v^{avg}_h = (v^{in}_h + v_h)/2$ is the average storage during the stage, with $v^{in}_h$ being the incoming storage LP variable (§4a) and $v_h$ the end-of-stage storage.
-
-**Generation Bounds** (per hydro $h$, block $k$):
+where $v^{avg}_h = (v^{in}_h + v_h)/2$ is the average storage during the stage, with $v^{in}_h$ being the incoming storage LP variable (§4a) and $v_h$ the end-of-stage storage — a single plant-level quantity shared by every cell, since storage is not partitioned. $\sigma_{h,b}$ is cell $(h,b)$'s **apportionment share** of plant $h$'s declared turbine capacity,
 
 $$
-\underline{G}_h - \sigma^{g-}_{h,k} \leq g_{h,k} \leq \bar{G}_h
+\sigma_{h,b} = \frac{\sum_{g \,\in\, (h,b)} \bar{Q}_g}{\sum_{g \,\in\, h} \bar{Q}_g}
 $$
 
-Generation bounds are user-defined (not derived from turbined flow). The lower bound is soft (with slack $\sigma^{g-}_{h,k}$); the upper bound is hard. See [system elements §5](/math/system-elements).
+(the ratio of the cell's own unit groups' declared `max_turbined_m3s` to the plant's total, $0$ when the plant's total is $0$), satisfying $\sum_{b \in \mathcal{B}_h} \sigma_{h,b} = 1$. Only the plane's flow-independent part — the intercept $\gamma^m_0$, the storage term, and the spillage term — is apportioned by $\sigma_{h,b}$; the flow coefficient $\gamma^m_q$ stays on the cell's own $q_{h,b,k}$ unscaled, because it alone is homogeneous in the cell partition (summing the per-cell rows at fixed $v^{avg}_h$, $s_{h,k}$, and $\sum_b q_{h,b,k}$ recovers the plant-level bound this replaces). A single-cell plant has $\sigma_{h,b} = 1$ exactly, reproducing the pre-partition row with no special case.
+
+**Generation Bounds** (per cell $(h, b)$, block $k$ — the FPHA generation column's own bound; a constant-productivity cell has no such column, so its generation cap is folded into the turbined-flow bound below instead):
+
+$$
+\underline{G}_{h,b} - \sigma^{g-}_{h,b,k} \leq g_{h,b,k} \leq \bar{G}_{h,b}
+$$
+
+$$
+\underline{G}_{h,b} = \sum_{g \,\in\, (h,b)} \underline{G}_g, \qquad \bar{G}_{h,b} = \min\!\Big( \sum_{g \,\in\, (h,b)} \bar{G}_g,\ \ \bar{G}_h \Big)
+$$
+
+Generation bounds are user-defined (declared per unit group, not derived from turbined flow). The lower bound is soft, with one slack $\sigma^{g-}_{h,b,k}$ **per cell** — priced at the plant's own penalty $c^{gv-}_h$ at full magnitude on every cell of a split plant, never divided by cell count; a constant-productivity cell's floor couples this same slack to $\rho_h \cdot q_{h,b,k}$ rather than to a generation column. The upper bound's plain sum over the cell's own unit groups closes against the plant's own resolved maximum $\bar{G}_h$ — a bounds override may never raise a cell above it. See [system elements §5](/math/system-elements).
 
 For details on the FPHA construction and production function model variants, see [hydro production models](/math/hydro-production-models).
 
@@ -552,13 +569,19 @@ $$
 
 The minimum end-of-stage storage $V^{\text{target}}_t$ ramps up at the configured accumulation rate `filling_min_rate_m3s` (= $\text{rate}_t$) and reaches the dead volume $\underline{V}_h$ at the last filling stage $L = \text{entry\_stage\_id} - 1$; $\zeta_t$ converts the rate over the stage duration into hm³. The slack $\sigma^{fill}_h$ is priced at $c^{fill}_h$, which is pinned **below deficit** (not the system maximum). This replaces the earlier single terminal constraint at `entry_stage_id - 1`. See [Penalty System §6](/math/penalty-system).
 
-### Turbined Flow Bounds (per hydro $h$, block $k$)
+### Turbined Flow Bounds (per cell $(h, b)$, block $k$)
 
 $$
-\underline{Q}_h - \sigma^{q-}_{h,k} \leq q_{h,k} \leq \bar{Q}_h
+\underline{Q}_{h,b} - \sigma^{q-}_{h,b,k} \leq q_{h,b,k} \leq \bar{Q}_{h,b}
 $$
 
-Lower bound is soft; upper bound is hard.
+The lower bound is soft, with one slack $\sigma^{q-}_{h,b,k}$ per cell, priced at the plant's own penalty $c^{tv-}_h$ at full magnitude on every cell — never divided by cell count; it is the plain sum of the cell's own unit groups' resolved minimum turbined flow, $\underline{Q}_{h,b} = \sum_{g \,\in\, (h,b)} \underline{Q}_g$. The upper bound is hard and closes against the plant's own resolved maximum, never raised above it:
+
+$$
+\bar{Q}_{h,b} = \min\!\left( \sum_{g \,\in\, (h,b)} \mathrm{fold}(g),\ \ \bar{Q}_h \right)
+$$
+
+where $\mathrm{fold}(g) = \bar{Q}_g$ for an FPHA hydro (turbined flow and generation are independent columns there) and $\mathrm{fold}(g) = \min(\bar{Q}_g,\ \bar{G}_g / \rho_h)$ for a constant-productivity hydro — each group's own flow cap and MW-implied flow cap must be folded **before** summing across the cell, since $\min$ does not distribute over a sum of groups that bind on different sides. This is the mechanism that enforces a constant-productivity cell's generation cap (§6): there is no separate generation column to bound directly.
 
 ### Diversion Flow Bounds (per hydro $h$, block $k$)
 
@@ -582,10 +605,12 @@ The per-block constraint violation penalties in the objective (referenced from �
 
 $$
 \sum_{k \in \mathcal{K}} \tau_k \sum_{h \in \mathcal{H}} \Big[
-  c^{tv-}_h \sigma^{q-}_{h,k} + c^{ov-}_h \sigma^{o-}_{h,k} + c^{ov+}_h \sigma^{o+}_{h,k} + c^{gv-}_h \sigma^{g-}_{h,k}
+  c^{tv-}_h \sum_{b \in \mathcal{B}_h} \sigma^{q-}_{h,b,k} + c^{ov-}_h \sigma^{o-}_{h,k} + c^{ov+}_h \sigma^{o+}_{h,k} + c^{gv-}_h \sum_{b \in \mathcal{B}_h} \sigma^{g-}_{h,b,k}
   + c^{ev+}_h \sigma^{e+}_{h,k} + c^{ev-}_h \sigma^{e-}_{h,k}
 \Big]
 $$
+
+The turbined- and generation-minimum slacks are **per cell** — each of a split plant's cells carries its own slack column and its own row, priced at the plant's penalty at full magnitude, never divided across cells. The outflow and evaporation slacks stay per-plant: outflow has no per-cell column to attribute a floor to.
 
 $$
 + \sum_{h \in \mathcal{H}} T \cdot c^{wv}_h (\sigma^{w-}_h + \sigma^{w+}_h)
@@ -623,6 +648,8 @@ where $x_e$ can reference any LP variable using expression syntax:
 
 - `hydro_storage(id)`, `hydro_turbined(id)`, `hydro_spillage(id)`
 - `thermal_generation(id)`, `bus_deficit(id)`, etc.
+
+`hydro_turbined` and `hydro_generation` additionally accept a named `bus=` argument selecting one **(hydro, bus) cell** of a plant split across several buses — e.g. `hydro_turbined(5, bus=2)` — resolving to that cell's own column; no other variable form accepts it. An optional positional block argument, when present, precedes the named argument: `f(id)`, `f(id, block)`, `f(id, bus=b)`, and `f(id, block, bus=b)` all parse. Omitting `bus=` on a plant with more than one cell addresses every one of its cells at once, matching the whole-entity reference every other variable form uses.
 
 The coefficients $\gamma_{g,e}$ and the RHS $b_g$ may be either literal numeric values or **named scalar parameters**. A scalar parameter resolves to a single number per stage and can carry one of four kinds:
 
