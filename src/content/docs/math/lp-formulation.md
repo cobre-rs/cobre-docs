@@ -373,7 +373,7 @@ $$
 \underline{x}^{\mathrm{a}}_{s, i, t} \;=\; \bar{x}^{\mathrm{a}}_{s, i, t} \;=\; \widehat{x}^{\mathrm{a}}_{s, i, t}
 $$
 
-The value $\widehat{x}^{\mathrm{a}}_{s, i, t}$ is the incoming state from the previous stage's ring-buffer shift (or, at $t = 0$, the seed `past_anticipated_commitments[i].values_mw[s]`). The slot is **pinned** by its column bounds alone; no decision-write coefficient appears anywhere on the slot column. The cut subgradient with respect to the incoming-state coordinate, $\partial Q_t / \partial \widehat{x}^{\mathrm{a}}_{s, i, t}$, is the **reduced cost** of the pinned slot column (§4a). Padding slots $s \geq K_i$ are pinned to zero by the same bounds; their reduced cost is zero because the slot carries no information.
+The value $\widehat{x}^{\mathrm{a}}_{s, i, t}$ is the incoming state from the previous stage's ring-buffer shift (or, at $t = 0$, the committed MW rate resolved **by date** from the pre-horizon commitment window covering delivery stage $s$ — an externally-decided rate held constant over that window, not a value read positionally from an array). The slot is **pinned** by its column bounds alone; no decision-write coefficient appears anywhere on the slot column. The cut subgradient with respect to the incoming-state coordinate, $\partial Q_t / \partial \widehat{x}^{\mathrm{a}}_{s, i, t}$, is the **reduced cost** of the pinned slot column (§4a). Padding slots $s \geq K_i$ are pinned to zero by the same bounds; their reduced cost is zero because the slot carries no information. These seed windows tile the plant's leading delivery stages exactly — a committed 0 MW is written explicitly for any stage with no scheduled commitment, never implied by omission — the LP-level statement of the coverage contract detailed at [System Elements §4](/math/system-elements#anticipated-thermal-plants) and the software layer.
 
 ### Fishing equality (one row per anticipated plant, every stage)
 
@@ -383,7 +383,7 @@ $$
 \sum_{b = 0}^{B - 1} h_b \cdot g_{i, b, t} \;-\; H_t \cdot x^{\mathrm{a}}_{0, i, t} \;=\; 0
 $$
 
-where $h_b$ is the block-$b$ duration and $H_t = \sum_b h_b$. The row is active at every study stage; at $t < K_i$ the slot-0 value comes from the seed `values_mw[t]` and the LP cannot freely choose the per-block generation. From $t \geq K_i$ onward, slot 0 carries a past LP decision delivered via the ring buffer.
+where $h_b$ is the block-$b$ duration and $H_t = \sum_b h_b$. The row is active at every study stage; at $t < K_i$ the slot-0 value comes from the seed rate for the window covering delivery stage $t$ and the LP cannot freely choose the per-block generation. From $t \geq K_i$ onward, slot 0 carries a past LP decision delivered via the ring buffer.
 
 ### State-out equality (one row per active plant)
 
@@ -481,7 +481,7 @@ Transit buckets are **always** included in the cut projection — never gated by
 
 ### Horizon limitation
 
-In-transit volume that would mature **after the study's last stage is dropped** — it is **not** credited to terminal storage. A release late in the horizon whose travel time carries it past the final stage $T$ leaves the modeled system without arriving. This is a deliberate methodology limitation: the deepest maturity lag active at stage $t$ is capped at $T - 1 - t$, so no bucket ever points beyond the horizon and the share is discarded rather than misdirected onto an earlier lag. Terminal-storage credit for still-in-transit water is deferred.
+In-transit volume that would mature **after the study's last stage** is dropped and not credited to terminal storage — but only **when no terminal boundary future-cost function is loaded**. Absent a boundary, a release late in the horizon whose travel time carries it past the final stage $T$ leaves the modeled system without arriving: the deepest maturity lag active at stage $t$ is capped at $T - 1 - t$, so no bucket ever points beyond the horizon and the share is discarded rather than misdirected onto an earlier lag. When a [terminal boundary](/math/post-study-boundary) is loaded instead, this cap is lifted: the terminal deep-lag in-transit slots are held live rather than capped away, carried into the terminal stage's incoming-state vector, and reach the boundary-priced cut-state projection. The still-in-transit water is valued at the boundary rather than discarded, priced through the same reduced-cost cut mechanism the buckets already use (see Cut coefficient, above) — transit buckets are always in the cut projection, so a held-live bucket needs no separate pricing path.
 
 ## 6. Hydro Generation Constraints
 

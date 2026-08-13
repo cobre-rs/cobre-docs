@@ -332,7 +332,11 @@ export default defineConfig({
         },
         {
           label: "Coupling & Boundary Conditions",
-          items: ["math/horizon-modes", "math/discount-rate"],
+          items: [
+            "math/horizon-modes",
+            "math/post-study-boundary",
+            "math/discount-rate",
+          ],
         },
         {
           label: "Running Cobre",

@@ -484,6 +484,210 @@ constraint violation: [BusinessRuleViolation] system/scalar_parameters.json: sys
 [Generic Constraints — the five parameter kinds](/reference/generic-constraints/)
 for the current file's schema.
 
+#### Future delivery on a non-anticipated thermal
+
+**When it occurs:** `initial_conditions.json`'s `future_anticipated_deliveries`
+entries declare an in-study decided delivery commitment for an anticipated
+thermal, keyed by `thermal_id`. Layer 5 (semantic validation) rejects any entry
+whose `thermal_id` does not resolve to a thermal with `anticipated_config:
+Some(_)` — either the thermal does not exist, or it exists but is not
+configured as anticipated. This is the delivery-side mirror of the same check
+performed on `past_anticipated_commitments`.
+
+**Fields:**
+
+| Field         | Type     | Description                                                                                                                                                                                                                     |
+| ------------- | -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `description` | `String` | Contains a `[BusinessRuleViolation] initial_conditions.json (thermal_id=<id>, delivery_start=<date>): Thermal <id>: referenced in future_anticipated_deliveries but is not an anticipated thermal (anticipated_config is None or thermal does not exist)` line |
+
+**Example:**
+
+```
+constraint violation: [BusinessRuleViolation] initial_conditions.json (thermal_id=12, delivery_start=2026-09-05): Thermal 12: referenced in future_anticipated_deliveries but is not an anticipated thermal (anticipated_config is None or thermal does not exist)
+```
+
+**Resolution:** Either set `anticipated_config` on thermal `<id>` in
+`system/thermals.json`, or remove/correct the `thermal_id` in the offending
+`future_anticipated_deliveries` entry. See
+[System Elements §4](/math/system-elements) for anticipated-thermal
+configuration and [Case Directory Format](/reference/case-directory-format/)
+for `initial_conditions.json`'s schema.
+
+#### Post-study boundary unanchored or malformed
+
+**When it occurs:** Layer 5 resolves every `future_anticipated_deliveries`
+window against `post_study_stages.json`, the post-horizon boundary calendar a
+delivery matures into. Several distinct failures are collected under this one
+check, in the order they are evaluated:
+
+- No `post_study_stages.json` at all, while `future_anticipated_deliveries` is
+  non-empty — every delivery is unanchored.
+- The post-study calendar's first stage does not start exactly at the study
+  horizon end.
+- The post-study stages are not date-contiguous (a gap or overlap between
+  consecutive stages).
+- A delivery window reaches outside the declared post-study horizon.
+- A delivery window is not covered exactly (coverage `1.0`) by the post-study
+  calendar — it does not align to whole post-study stage boundaries.
+- A delivery window spans more than one post-study stage (multi-stage delivery
+  is not supported).
+- No `thermal_bounds` cell exists for the `(thermal_id, post_study_stage_index)`
+  a delivery resolves into.
+- The delivery's committed `[min_mw, max_mw]` interval and the `thermal_bounds`
+  cell's capability `[min_mw, max_mw]` do not intersect.
+
+**Fields:**
+
+| Field         | Type     | Description                                                                                                        |
+| ------------- | -------- | ---------------------------------------------------------------------------------------------------------------------|
+| `description` | `String` | Contains one `[BusinessRuleViolation] post_study_stages.json (...): <message>` line per failure — see the messages below |
+
+**Example:**
+
+```
+constraint violation: [BusinessRuleViolation] post_study_stages.json (thermal_id=12, delivery_start=2026-09-05): Thermal 12: future_anticipated_deliveries window [2026-09-05, 2026-09-12) has no post_study_stages.json to resolve against; declare a post-study boundary calendar covering it.
+```
+
+```
+constraint violation: [BusinessRuleViolation] post_study_stages.json (stages[0].start_date): first post-study stage starts 2026-09-08 but the study horizon ends 2026-09-05; the post-study calendar must begin exactly at the study horizon end.
+```
+
+```
+constraint violation: [BusinessRuleViolation] post_study_stages.json (stages start_date=2026-10-01): post-study stages are not date-contiguous: the stage starting 2026-09-05 ends 2026-09-28 but the next stage starts 2026-10-01; each stage must end exactly where the next begins.
+```
+
+```
+constraint violation: [BusinessRuleViolation] post_study_stages.json (thermal_id=12, delivery_start=2026-10-01): Thermal 12: future_anticipated_deliveries window [2026-10-01, 2026-10-10) reaches outside the post-study horizon [2026-09-05, 2026-10-05); every delivery must fall within the declared post-study stages.
+```
+
+```
+constraint violation: [BusinessRuleViolation] post_study_stages.json (thermal_id=12, delivery_start=2026-09-10): Thermal 12: future_anticipated_deliveries window [2026-09-10, 2026-09-20) is not covered exactly (1.0) by the post-study stages; align the window to whole post-study stage boundaries.
+```
+
+```
+constraint violation: [BusinessRuleViolation] post_study_stages.json (thermal_id=12, delivery_start=2026-09-05): Thermal 12: future_anticipated_deliveries window [2026-09-05, 2026-11-05) spans 2 post-study stages; a delivery window must resolve to exactly one post-study stage (multi-stage delivery is not supported).
+```
+
+```
+constraint violation: [BusinessRuleViolation] post_study_stages.json (thermal_id=12, delivery_start=2026-09-05): Thermal 12: future_anticipated_deliveries window [2026-09-05, 2026-10-05) delivers into post-study stage index 0, but post_study_stages.json has no thermal_bounds entry for (thermal_id 12, post_study_stage_index 0).
+```
+
+```
+constraint violation: [BusinessRuleViolation] post_study_stages.json (thermal_id=12, delivery_start=2026-09-05): Thermal 12: future_anticipated_deliveries commitment interval [300.0, 350.0] and post-study stage index 0 capability [0.0, 250.0] do not intersect; the committed amount is unsatisfiable within capability.
+```
+
+**Resolution:** Declare `post_study_stages.json` whenever
+`future_anticipated_deliveries` is non-empty, with its first stage starting
+exactly at the study horizon end and every stage date-contiguous with the next.
+Align each delivery window to whole post-study stage boundaries and keep it
+within a single stage. Add a `thermal_bounds` cell for every
+`(thermal_id, post_study_stage_index)` a delivery resolves into, with a
+capability interval that intersects the delivery's committed interval. See
+[Post-Study Boundary](/math/post-study-boundary) for the boundary model and
+[Case Directory Format](/reference/case-directory-format/) for
+`post_study_stages.json`'s schema.
+
+#### Uncovered or over-covered `past_anticipated_commitments` window
+
+**When it occurs:** An anticipated thermal's `past_anticipated_commitments`
+windows must tile its leading `K` (calendar-derived) delivery stages exactly —
+every leading stage covered at fraction `1.0`, and no window reaching a stage
+at or beyond `K`. Layer 5 (semantic validation) reports a gap (an uncovered
+leading stage) and an over-reach (a window extending past the leading `K`
+stages) as separate diagnostics; either can fire independently.
+
+**Fields:**
+
+| Field         | Type     | Description                                                                                                                                  |
+| ------------- | -------- | -------------------------------------------------------------------------------------------------------------------------------------------------|
+| `description` | `String` | Contains a `[BusinessRuleViolation] initial_conditions.json (thermals[id=<id>].anticipated_config): <message>` line — see the messages below |
+
+**Example:**
+
+```
+constraint violation: [BusinessRuleViolation] initial_conditions.json (thermals[id=7].anticipated_config): Thermal 7: past_anticipated_commitments do not tile the leading 2 delivery stage(s) at coverage 1.0; study stage id(s) [0] are not covered exactly once. Write a commitment window (a committed 0 MW is explicit) for every leading delivery stage.
+```
+
+```
+constraint violation: [BusinessRuleViolation] initial_conditions.json (thermals[id=7].anticipated_config): Thermal 7: past_anticipated_commitments cover study stage id(s) [3] beyond the leading 2 calendar-derived delivery stage(s); commitment windows must not extend past the pre-study delivery horizon.
+```
+
+**Resolution:** Write a commitment window for every one of the plant's leading
+`K` delivery stages (a committed `0` MW is a legitimate, explicit window — not
+an omission), and do not extend any window past stage `K - 1`. `K` is
+calendar-derived from `anticipated_config` (`lead_stages`, or `lead_time`
+resolved on the stage calendar) — see
+[System Elements §4](/math/system-elements).
+
+**Note:** A deck whose `past_anticipated_commitments` entries still carry the
+retired `values_mw` array (rather than the current per-window `value_mw`
+scalar on a `{thermal_id, start_date, end_date, value_mw}` record) fails
+earlier, at initial deserialization: the record type is
+`#[serde(deny_unknown_fields)]`, so an unrecognized `values_mw` key is rejected
+as a top-level `ParseError` naming `initial_conditions.json` — it never reaches
+this `ConstraintError` check. Re-emit the commitment history as dated windows.
+
+#### Diversion floor without a declared channel
+
+**When it occurs:** `constraints/hydro_bounds.parquet` may override a hydro's
+`min_diversion_m3s` floor per `(hydro, stage)`. When the hydro declares no
+`diversion` channel, the bound resolver pins the diversion column to `[0, 0]`
+— a positive floor is then the infeasible interval `[min > 0, 0]`. Layer 5
+(semantic validation) rejects the override before it ever reaches the LP.
+
+**Fields:**
+
+| Field         | Type     | Description                                                                                                                                          |
+| ------------- | -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `description` | `String` | Contains a `[InvalidValue] constraints/hydro_bounds.parquet (Hydro <id>): Hydro <id>: hydro_bounds row at stage_id=<stage> sets min_diversion_m3s=<value>, but the hydro declares no diversion channel; diversion is pinned [0, 0] with no channel, making a positive floor infeasible` line |
+
+**Example:**
+
+```
+constraint violation: [InvalidValue] constraints/hydro_bounds.parquet (Hydro 3): Hydro 3: hydro_bounds row at stage_id=5 sets min_diversion_m3s=2.0, but the hydro declares no diversion channel; diversion is pinned [0, 0] with no channel, making a positive floor infeasible
+```
+
+**Resolution:** Either declare a `diversion` channel on the hydro in
+`system/hydros.json` (see [System Elements](/math/system-elements)), or remove
+the `min_diversion_m3s` override for that `(hydro, stage)` in
+`constraints/hydro_bounds.parquet`.
+
+#### Spillage-band inversion
+
+**When it occurs:** `constraints/hydro_bounds.parquet`'s row-level parser
+(`parse_hydro_bounds`) rejects a same-row `min_spillage_m3s > max_spillage_m3s`
+inversion, and separately rejects a negative `min_diversion_m3s`,
+`min_spillage_m3s`, or `max_spillage_m3s`. Called directly, this parser returns
+a top-level `LoadError::SchemaError` (`schema error in {path}, field {field}:
+{message}`, per the [`SchemaError`](#schemaerror) `LoadError` variant above).
+When the file is loaded as part of `load_case`, the same error is instead
+collected into the shared `ValidationContext` — `hydro_bounds.parquet` is an
+optional file whose Layer 2 failures are gathered rather than short-circuited
+— and surfaces here, in `ConstraintError`'s aggregate description, tagged
+`[SchemaViolation]` instead of the parser's own `SchemaError` label.
+
+**Fields:**
+
+| Field         | Type     | Description                                                                                                                       |
+| ------------- | -------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| `description` | `String` | Contains a `[SchemaViolation] constraints/hydro_bounds.parquet: field hydro_bounds[<i>].<column>: <message>` line — see below |
+
+**Example:**
+
+```
+constraint violation: [SchemaViolation] constraints/hydro_bounds.parquet: field hydro_bounds[0].max_spillage_m3s: max_spillage_m3s (5.0) must be >= min_spillage_m3s (10.0)
+```
+
+```
+constraint violation: [SchemaViolation] constraints/hydro_bounds.parquet: field hydro_bounds[0].min_diversion_m3s: value must be >= 0.0, got -5.0
+```
+
+**Resolution:** Correct the offending row so `min_spillage_m3s <=
+max_spillage_m3s`, and so `min_diversion_m3s`, `min_spillage_m3s`, and
+`max_spillage_m3s` are all non-negative. See
+[Case Directory Format](/reference/case-directory-format/) for
+`hydro_bounds.parquet`'s column reference.
+
 ---
 
 ### `PolicyIncompatible`
@@ -584,6 +788,11 @@ validation.
 dot-notation and zero-based array indices. Consult the
 [Case Directory Format](/reference/case-directory-format/) page for valid ranges and required fields.
 
+**See also:** a `constraints/hydro_bounds.parquet` spillage-band inversion or
+non-negativity rejection is collected under this kind when loaded via
+`load_case` — see
+[Spillage-band inversion](#spillage-band-inversion) under `ConstraintError`.
+
 ---
 
 ### `InvalidReference`
@@ -633,6 +842,11 @@ Emitted by Layer 2 (schema validation).
 **Resolution:** Correct the field value to be within the valid range. Consult
 the [Case Directory Format](/reference/case-directory-format/) page for documented constraints. For storage
 bounds, ensure `min <= max`. For opening counts, ensure `num_openings >= 1`.
+
+**See also:** a `min_diversion_m3s` floor on a hydro with no declared
+diversion channel is reported this way — see
+[Diversion floor without a declared channel](#diversion-floor-without-a-declared-channel)
+under `ConstraintError`.
 
 ---
 
@@ -687,6 +901,14 @@ stage count is inconsistent across files. Emitted by Layer 5 (semantic validatio
 was violated and which entities are involved. For penalty ordering, ensure that
 costs increase from lower-priority to higher-priority tiers. For stationarity,
 verify that the PAR model parameters satisfy the required statistical properties.
+
+**See also:** the post-study boundary / future-delivery cluster is also
+reported this way — see
+[Future delivery on a non-anticipated thermal](#future-delivery-on-a-non-anticipated-thermal),
+[Post-study boundary unanchored or malformed](#post-study-boundary-unanchored-or-malformed),
+and
+[Uncovered or over-covered past_anticipated_commitments window](#uncovered-or-over-covered-past_anticipated_commitments-window)
+under `ConstraintError`.
 
 ---
 

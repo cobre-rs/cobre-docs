@@ -93,9 +93,17 @@ Load-time validation of a declared arc:
 - **Zero travel time.** A zero (or absent) travel time is treated as undeclared
   — an instantaneous transfer, adding no bucket and requiring no seed.
 
-The horizon limitation (in-transit water maturing past the last stage is
-dropped, not credited to terminal storage) is covered in
-[LP formulation §5d](/math/lp-formulation).
+**Horizon limitation.** In-transit water that would mature after the study's
+last stage is dropped rather than credited to terminal storage — but only
+**when no terminal boundary future-cost function is loaded**. When a
+[terminal boundary](/math/post-study-boundary) is loaded instead, this drop is
+lifted: the terminal deep-lag in-transit slots are held live rather than
+capped away, carried into the terminal stage's incoming-state vector, and
+priced through the boundary via the same reduced-cost cut mechanism the
+buckets already use — the still-in-transit water is valued rather than
+discarded. See [LP formulation §5d](/math/lp-formulation) for the
+bucket-level mechanics and [Post-Study Boundary](/math/post-study-boundary)
+for the boundary formulation.
 
 ### Bus-partitioned hydro: cell collapse and the generation-sum caveat
 

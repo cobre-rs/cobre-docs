@@ -411,6 +411,32 @@ specific to the most general source:
 2. **Entity-level override** (the `penalties` block inside the plant's JSON object)
 3. **Global default** (the `hydro` section of `penalties.json`, which must always be present and complete)
 
+#### Stage-varying operational bounds (`constraints/hydro_bounds.parquet`)
+
+Beyond the entity-level diversion and spillage fields above,
+`constraints/hydro_bounds.parquet` carries optional, sparse stage-varying
+bound overrides for a hydro plant, optionally narrowed to one block via an
+optional `block_id` column (`null` applies at the stage level). Three of its
+columns are new:
+
+- `min_diversion_m3s` — a minimum diversion-flow floor (m³/s). This is a
+  **floor that requires a declared `diversion` channel** on the hydro (see
+  Diversion channel, above): with no channel declared, the diversion column
+  is pinned `[0, 0]`, so a positive floor is infeasible and is rejected at
+  load.
+- `min_spillage_m3s`, `max_spillage_m3s` — the spillage band (m³/s);
+  `min_spillage_m3s` must be `<= max_spillage_m3s`.
+
+All three are non-negative — a negative value is rejected at load, as is a
+spillage band with `min_spillage_m3s > max_spillage_m3s`. An absent row
+leaves that hydro's diversion floor and spillage band unset for the
+stage/block it would have covered (no floor; spillage bounded only by the
+plant's other outflow constraints). See
+[Case Directory Format → `constraints/hydro_bounds.parquet`](/reference/case-directory-format)
+for the complete column table, including the pre-existing turbined/storage/
+outflow/generation/diversion-maximum/filling/withdrawal override columns this
+file also carries.
+
 ### `system/hydro_production_models.json` — Production Model Selection
 
 This optional file maps each hydro plant to a production-model selection

@@ -24,6 +24,7 @@ my_case/
 ├── penalties.json                           # Global penalty defaults (required)
 ├── stages.json                              # Stage sequence and policy graph (required)
 ├── initial_conditions.json                  # Reservoir storage at study start (required)
+├── post_study_stages.json                   # Post-study boundary calendar + thermal bounds (optional)
 ├── system/
 │   ├── buses.json                           # Electrical buses (required)
 │   ├── lines.json                           # Transmission lines (required)
@@ -75,6 +76,7 @@ my_case/
 | `penalties.json`                                | JSON    | Yes      | Global penalty defaults                                                            |
 | `stages.json`                                   | JSON    | Yes      | Stage sequence and policy graph                                                    |
 | `initial_conditions.json`                       | JSON    | Yes      | Initial reservoir storage                                                          |
+| `post_study_stages.json`                        | JSON    | No       | Post-study boundary calendar and per-thermal delivery bounds                       |
 | `system/buses.json`                             | JSON    | Yes      | Electrical bus registry                                                            |
 | `system/lines.json`                             | JSON    | Yes      | Transmission line registry                                                         |
 | `system/hydros.json`                            | JSON    | Yes      | Hydro plant registry                                                               |
@@ -552,6 +554,8 @@ travel-time arcs, and recent observations at the start of the study.
 | `filling_storage`     | Yes      | Array of `{ "hydro_id": integer, "value_hm3": number }` entries for filling hydros                                |
 | `past_defluences`     | No       | Array of windowed pre-study release records seeding the in-transit buckets of a declared travel-time arc (see below)  |
 | `recent_observations` | No       | Array of observed inflow entries for mid-season study starts (see below)                                          |
+| `past_anticipated_commitments` | No | Array of windowed committed-MW records for anticipated thermals, pre-study (see below) |
+| `future_anticipated_deliveries` | No | Array of windowed delivery-bound records for anticipated thermals, post-horizon (see below) |
 
 Each `hydro_id` must be unique within its array and must not appear in both
 `storage` and `filling_storage`. All `value_hm3` values must be non-negative.
@@ -603,6 +607,82 @@ and the most-negative value's hydro, so a genuinely sign-flipped series still
 stands out. Optional; defaults to an empty array when absent. Existing cases
 without this field are unaffected.
 
+**`past_anticipated_commitments`** supplies the pre-study committed MW rate for
+an anticipated thermal plant — the left-boundary counterpart to
+`future_anticipated_deliveries` below. Each entry is a dated window carrying a
+constant rate:
+
+| Field        | Type    | Description                                                                          |
+| ------------ | ------- | ------------------------------------------------------------------------------------- |
+| `thermal_id` | integer | Anticipated thermal plant identifier; must reference a thermal declaring `anticipated_config` |
+| `start_date` | string  | Start of the commitment window (inclusive), ISO 8601 YYYY-MM-DD                       |
+| `end_date`   | string  | End of the commitment window (exclusive), ISO 8601 YYYY-MM-DD; must be after `start_date` |
+| `value_mw`   | number  | Committed MW rate held constant over the window; finite                               |
+
+A plant's windows must **tile its leading calendar-derived delivery stages
+exactly** — coverage `1.0`, no gap, no overlap, and none reaching past the
+plant's pre-study delivery horizon; a stretch with no scheduled commitment
+still needs an explicit `0.0`-rate window rather than a gap left to be
+inferred. Each `value_mw` must lie within the plant's `[min_generation_mw,
+max_generation_mw]` bounds and, if the plant declares a commissioning window,
+mature inside it. The values are **sunk cost**: they never enter the study
+objective. Windows for the same `thermal_id` must not overlap (adjacent
+ranges where `start_date == previous end_date` are accepted). Optional;
+defaults to an empty array when no anticipated thermals are present.
+
+**The old positional per-lead-slot MW-array shape is no longer accepted** —
+the file's `deny_unknown_fields` contract rejects a deck still carrying that
+legacy array field; each entry must be an explicit dated window instead. See
+[system elements §4](/math/system-elements#anticipated-thermal-plants) for
+the delivery-stage mechanics this tiles against.
+
+```json
+{
+  "past_anticipated_commitments": [
+    {
+      "thermal_id": 2,
+      "start_date": "2026-01-01",
+      "end_date": "2026-02-01",
+      "value_mw": 0.0
+    }
+  ]
+}
+```
+
+**`future_anticipated_deliveries`** declares in-study decided commitments for
+an anticipated thermal plant, delivered **after the study horizon** — the
+right-boundary counterpart to `past_anticipated_commitments` above:
+
+| Field            | Type    | Description                                                                             |
+| ---------------- | ------- | ----------------------------------------------------------------------------------------- |
+| `thermal_id`     | integer | Anticipated thermal plant identifier; must reference a thermal declaring `anticipated_config` |
+| `delivery_start` | string  | Start of the delivery window (inclusive), ISO 8601 YYYY-MM-DD                             |
+| `delivery_end`   | string  | End of the delivery window (exclusive), ISO 8601 YYYY-MM-DD; must be after `delivery_start` |
+| `min_mw`         | number  | Lower bound of the delivered MW rate over the window; finite                              |
+| `max_mw`         | number  | Upper bound of the delivered MW rate over the window; finite, `>= min_mw` (`min_mw == max_mw` pins a fixed commitment) |
+
+Windows for the same `thermal_id` must not overlap (adjacent ranges accepted).
+Each window must resolve into **exactly one** declared post-study stage in
+`post_study_stages.json` — see [`post_study_stages.json`](#post_study_stagesjson)
+below and [Post-Study Boundary](/math/post-study-boundary) for the boundary
+formulation. Optional; defaults to an empty array when absent. A non-empty
+`future_anticipated_deliveries` with no `post_study_stages.json` file present
+is rejected at load.
+
+```json
+{
+  "future_anticipated_deliveries": [
+    {
+      "thermal_id": 2,
+      "delivery_start": "2026-09-05",
+      "delivery_end": "2026-09-12",
+      "min_mw": 0.0,
+      "max_mw": 350.0
+    }
+  ]
+}
+```
+
 Example:
 
 ```json
@@ -625,6 +705,70 @@ Example:
   ]
 }
 ```
+
+---
+
+### `post_study_stages.json`
+
+The post-study boundary calendar: a sequence of post-horizon stages plus a
+per-`(thermal, post-study stage)` cost and delivery-bound table that
+`future_anticipated_deliveries` windows (declared in
+[`initial_conditions.json`](#initial_conditionsjson) above) resolve against by
+date. Optional and inert when absent; **required** once any
+`future_anticipated_deliveries` window is declared — a non-empty array with no
+`post_study_stages.json` file present is rejected at load. See
+[Post-Study Boundary](/math/post-study-boundary) for the boundary formulation
+this file feeds.
+
+**`stages[]`** — the post-horizon calendar:
+
+| Field            | Type   | Description                                                                                                             |
+| ---------------- | ------ | ------------------------------------------------------------------------------------------------------------------------- |
+| `start_date`     | string | Stage start date (inclusive), ISO 8601 YYYY-MM-DD                                                                       |
+| `duration_hours` | number | Stage duration in hours; finite and `> 0.0`. `end_date` is derived from `start_date + duration_hours`, never declared   |
+
+Stages are **date-contiguous** (each stage's implicit `end_date` equals the
+next stage's `start_date`) and the **first `start_date` must equal the study
+horizon end** — the date immediately after the last in-study stage. Post-study
+stages are **boundary-only**: they are never dispatched, never a study stage,
+and never carry Benders cuts — they exist solely to give
+`future_anticipated_deliveries` windows a calendar to resolve against. No two
+stages may share a `start_date`.
+
+**`thermal_bounds[]`** — per-`(thermal, post-study stage)` cost and delivery
+capability:
+
+| Field                    | Type    | Description                                                                        |
+| ------------------------ | ------- | ------------------------------------------------------------------------------------- |
+| `thermal_id`             | integer | Thermal plant identifier; must reference a thermal declaring `anticipated_config`     |
+| `post_study_stage_index` | integer | Zero-based index into `stages[]`; must be `< stages.len()`                            |
+| `cost_per_mwh`           | number  | Fuel cost (`$/MWh`) at this cell; finite                                               |
+| `min_mw`                 | number  | Lower bound of the delivered MW rate at this cell; finite                             |
+| `max_mw`                 | number  | Upper bound of the delivered MW rate at this cell; finite, `>= min_mw`                |
+
+No two rows may share a `(thermal_id, post_study_stage_index)` pair. Each
+[`future_anticipated_deliveries`](#initial_conditionsjson) window must resolve
+into exactly one declared post-study stage with a matching `thermal_bounds`
+row whose delivery capability intersects the commitment interval.
+
+```json
+{
+  "$schema": "https://docs.cobre-rs.dev/schemas/post_study_stages.schema.json",
+  "stages": [
+    { "start_date": "2026-11-01", "duration_hours": 720.0 },
+    { "start_date": "2026-12-01", "duration_hours": 744.0 }
+  ],
+  "thermal_bounds": [
+    { "thermal_id": 86, "post_study_stage_index": 0, "cost_per_mwh": 210.0, "min_mw": 0.0, "max_mw": 350.0 },
+    { "thermal_id": 86, "post_study_stage_index": 1, "cost_per_mwh": 220.0, "min_mw": 0.0, "max_mw": 300.0 }
+  ]
+}
+```
+
+The vendored JSON Schema is at
+[`/schemas/post_study_stages.schema.json`](/schemas/post_study_stages.schema.json) —
+see [JSON Schemas](/reference/json-schemas) for the full schema-to-file table
+(this file's row lives there).
 
 ---
 
@@ -1471,9 +1615,20 @@ Stage-varying operational bound overrides for hydro plants.
 | `min_generation_mw`    | DOUBLE | No       | Minimum generation (MW)              |
 | `max_generation_mw`    | DOUBLE | No       | Maximum generation (MW)              |
 | `max_diversion_m3s`    | DOUBLE | No       | Maximum diversion flow (m³/s)        |
+| `min_diversion_m3s`    | DOUBLE | No       | Minimum diversion flow (m³/s); requires a declared `diversion` channel |
+| `min_spillage_m3s`     | DOUBLE | No       | Minimum spillage flow (m³/s)         |
+| `max_spillage_m3s`     | DOUBLE | No       | Maximum spillage flow (m³/s); `>= min_spillage_m3s` |
 | `filling_min_rate_m3s` | DOUBLE | No       | Filling minimum-rate override (m³/s) |
 | `water_withdrawal_m3s` | DOUBLE | No       | Water withdrawal (m³/s)              |
-| `block_id`             | INT32 (nullable) | No | Zero-based block index within the stage, selecting one block's turbined/outflow/generation/diversion override. `null` applies at the stage level. A non-null `min_storage_hm3`/`max_storage_hm3`/`filling_min_rate_m3s`/`water_withdrawal_m3s` value on the same row is rejected at validation — those four stay stage-level only, with no per-block variant. |
+| `block_id`             | INT32 (nullable) | No | Zero-based block index within the stage, selecting one block's turbined/outflow/generation/diversion/spillage override. `null` applies at the stage level. A non-null `min_storage_hm3`/`max_storage_hm3`/`filling_min_rate_m3s`/`water_withdrawal_m3s` value on the same row is rejected at validation — those four stay stage-level only, with no per-block variant. |
+
+A `min_diversion_m3s` override on a hydro that declares no `diversion`
+channel is rejected at validation — with no channel, the diversion column is
+pinned `[0, 0]`, making a positive floor infeasible. `min_diversion_m3s`,
+`min_spillage_m3s`, and `max_spillage_m3s` must each be non-negative, and a
+row combining `min_spillage_m3s` and `max_spillage_m3s` with `min_spillage_m3s
+> max_spillage_m3s` is rejected. See [Error Codes](/reference/error-codes) for
+the full failure-mode catalog.
 
 ---
 

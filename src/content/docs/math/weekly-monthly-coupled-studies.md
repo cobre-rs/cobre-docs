@@ -57,7 +57,12 @@ reach the convergence threshold.
 
 For the full treatment of terminal boundary cuts, including the formal
 lower-bound and convexity conditions, see [SDDP Algorithm](/math/sddp-algorithm)
-§7 "Terminal Boundary Cuts".
+§7 "Terminal Boundary Cuts". This section covers only the storage-side import;
+the same boundary can also hold anticipated-commitment and in-transit-water
+state live past the horizon and reconcile a source delivery calendar onto the
+weekly run's own by a dated, hour-weighted fan-out — see
+[Post-Study Boundary](/math/post-study-boundary) for that delivery-side
+mechanism.
 
 ## 3. Initial Conditions from Recent Observations
 
