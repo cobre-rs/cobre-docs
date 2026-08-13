@@ -257,7 +257,7 @@ GitHub renders). Semantic node colours (hydro→Flow Blue, thermal→Spark Amber
 NCS→Patina, deficit→Signal Red, generic→copper) come from the `classes` vocabulary
 in diagram-authoring.md §4.2, not ad-hoc hex.
 
-**JSON schemas**: the 17 input schemas are generated in `cobre` from `cobre-io`
+**JSON schemas**: the 18 input schemas are generated in `cobre` from `cobre-io`
 types; this site **vendors** a committed copy (`public/schemas/`) refreshed by
 `npm run refresh:schemas --ref <tag>` (reads a git ref, never the cobre working
 tree). Refresh on each cobre release; the freshness gate stays in `cobre`.
