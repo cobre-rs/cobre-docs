@@ -283,9 +283,17 @@ This section owns the methodology of the per-iteration estimator; the scenario s
 
 ## 11 Cyclic Mode
 
-For cyclic policy graphs (see [Horizon Modes](/math/horizon-modes)), the inner approximation operates on the same seasonal cut-pool structure: vertices are organized by season $\tau$, not by absolute stage ID. The Lipschitz constant must account for the cumulative discount around the cycle, which bounds the geometric series of future contributions.
+:::caution[Status: Reserved — Not Yet Implemented]
+The cyclic policy-graph shape this section describes is **reserved**,
+independently of this chapter's own not-implemented status above: Cobre's
+policy graph is finite-horizon only, and supplying `cyclic` as the policy
+graph type is rejected at load with a named error. See
+[Horizon Modes](/math/horizon-modes) for the reserved cyclic target design.
+:::
 
-The convergence guarantee still holds: with $d_{cycle} < 1$, both the outer (cut) and inner (vertex) approximations converge to the true value function at the fixed point.
+For the reserved cyclic policy graphs design (see [Horizon Modes](/math/horizon-modes)), the inner approximation would operate on the same seasonal cut-pool structure: vertices organized by season $\tau$, not by absolute stage ID. The Lipschitz constant would need to account for the cumulative discount around the cycle, which bounds the geometric series of future contributions.
+
+The convergence guarantee would still hold: with $d_{cycle} < 1$, both the outer (cut) and inner (vertex) approximations would converge to the true value function at the fixed point.
 
 ## 12 References
 
@@ -298,7 +306,7 @@ The convergence guarantee still holds: with $d_{cycle} < 1$, both the outer (cut
 - [SDDP Algorithm](/math/sddp-algorithm) — Core algorithm providing the outer approximation (lower bound) that this spec complements
 - [Notation Conventions](/overview/notation-conventions) — Standard symbols for state variables, value functions, and cost-to-go
 - [Discount Rate](/math/discount-rate) — Discount factor $d$ used in vertex value computation (section 5) and Lipschitz accumulation (section 4)
-- [Horizon Modes](/math/horizon-modes) — Cyclic policy graphs and the season-indexed pool structure that the inner approximation mirrors
+- [Horizon Modes](/math/horizon-modes) — The reserved cyclic policy-graph target design and the season-indexed pool structure §11's reserved inner approximation would mirror
 - [Cut Management](/math/cut-management) — Outer approximation cuts that provide the lower bound counterpart
 - [Stopping Rules](/math/stopping-rules) — Convergence criteria that use the gap between inner and outer approximations; simulation-based stopping rule that consumes the per-iteration out-of-sample estimator (section 10.5)
 - [Risk Measures](/math/risk-measures) — CVaR objectives where deterministic upper bounds are essential; CVaR estimator validity under risk-averse policies (section 10.1)

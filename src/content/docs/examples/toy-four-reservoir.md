@@ -495,9 +495,10 @@ no transmission. It does not cover:
   raising cut intercepts and slopes in the dry direction. See
   [Risk Measures](/math/risk-measures).
 - **Cyclic policy graphs**: the four-stage horizon terminates without
-  a cut linking back to stage 1. Cyclic-mode SDDP uses periodic
-  policy graphs where the last stage's cuts feed into the first
-  stage. See [Horizon Modes](/math/horizon-modes).
+  a cut linking back to stage 1. Cyclic-mode SDDP — periodic policy
+  graphs where the last stage's cuts would feed into the first stage —
+  is a reserved target design; Cobre's policy graph loader accepts only
+  `finite_horizon` today. See [Horizon Modes](/math/horizon-modes).
 - **Multi-resolution coupling**: weekly intra-stage blocks embedded
   in a monthly horizon, with policy transfer between resolutions.
   See [Multi-Resolution Studies](/math/multi-resolution-studies).
@@ -513,4 +514,4 @@ no transmission. It does not cover:
 - [PAR Inflow Model](/math/par-inflow-model) — Inflow model definition; the $p = 0$ degenerate case (white noise) used here; spatial correlation factorisation for multivariate cases
 - [Cut Management](/math/cut-management) — Dual extraction, per-opening intercepts, single-cut aggregation; sign convention $\pi^v = \partial Q/\partial \hat v$
 - [Risk Measures](/math/risk-measures) — CVaR definition, EAVaR convex combination, risk-adjusted aggregation weights
-- [Horizon Modes](/math/horizon-modes) — Finite vs cyclic policy graphs and the season-indexed cut pool
+- [Horizon Modes](/math/horizon-modes) — Finite (supported) vs. reserved cyclic policy graphs and the season-indexed cut pool

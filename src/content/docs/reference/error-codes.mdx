@@ -625,14 +625,14 @@ non-negative value as long as each is unique within its registry file.
 
 **What triggers it:** A field value falls outside its valid range or violates a
 value constraint that is specific to the field's domain. Examples: a reservoir's
-`min_storage_hm3` exceeds `max_storage_hm3`, or a stage has `num_scenarios: 0`.
+`min_storage_hm3` exceeds `max_storage_hm3`, or a stage has `num_openings: 0`.
 Emitted by Layer 2 (schema validation).
 
 **Example message:** `min_storage_hm3 (8000.0) must be <= max_storage_hm3 (5000.0)`
 
 **Resolution:** Correct the field value to be within the valid range. Consult
 the [Case Directory Format](/reference/case-directory-format/) page for documented constraints. For storage
-bounds, ensure `min <= max`. For scenario counts, ensure `num_scenarios >= 1`.
+bounds, ensure `min <= max`. For opening counts, ensure `num_openings >= 1`.
 
 ---
 

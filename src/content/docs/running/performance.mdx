@@ -348,10 +348,10 @@ After the parallel region, staged rows are sorted by `trial_point_idx`
 and inserted into the FCF in deterministic order, guaranteeing bit-for-bit
 identical results regardless of thread count or completion order.
 
-#### Opening-Block Scheduling
+#### By-Node Scheduling
 
 By default, the backward pass claims one whole trial point per work unit (see
-above). The `opening_block` scheduler shrinks the work unit to one
+above). The `by_node` scheduler shrinks the work unit to one
 `(trial point, opening block)` pair, giving the work-stealing counter more,
 finer-grained units to hand out. This improves load balance specifically when
 trial points solve in variable time: a worker that finishes a cheap trial
@@ -367,21 +367,21 @@ changes only which worker processes which block, and when — it is
 identical to canonical (whole-trial-point) claiming.
 
 See [`parallelism.backward_scheduler`](/running/configuration/#parallelism)
-for the config field that enables `opening_block` and sets its `block_size`.
+for the config field that enables `by_node` and sets its `block_size`.
 
-:::caution[Opening-block scheduling and Dynamic Cut Selection]
-The `opening_block` path depends on the frozen-LP backward setup, which is
+:::caution[By-Node Scheduling and Dynamic Cut Selection]
+The `by_node` path depends on the frozen-LP backward setup, which is
 incompatible with [Dynamic Cut Selection (DCS)](#cut-management-pipeline)'s
 cut-free lazy core. When DCS is enabled
 (`cut_selection.selection.method = "dynamic"`), an active DCS iteration
-**always** falls back to per-trial-point scheduling — so from DCS's
-`start_iteration` (default `2`) onward, configuring `opening_block` has
+**always** falls back to `by_scenario` scheduling — so from DCS's
+`start_iteration` (default `2`) onward, configuring `by_node` has
 almost no effect. No warning or error is emitted.
 
 DCS is **opt-in**: row selection (including DCS) is disabled by default
 (`cut_selection.selection` absent from `config.json`). This fallback applies
 only once DCS has been explicitly enabled — the default configuration does
-not make `opening_block` a no-op.
+not make `by_node` a no-op.
 :::
 
 ### Per-Phase Solver Profiles

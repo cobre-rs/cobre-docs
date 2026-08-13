@@ -78,15 +78,15 @@ section reads. Each phase wall (`Forward`/`Backward`) carries a
 `forward_wait` or `backward_wait` — signals **load imbalance** across
 workers: some workers finish their share of trial points well before others
 and sit idle waiting for the phase to close. This is exactly what the
-`opening_block` backward scheduler ([Parallel
-Execution](/running/performance/#opening-block-scheduling)) exists to
+`by_node` backward scheduler ([Parallel
+Execution](/running/performance/#by-node-scheduling)) exists to
 reduce, by shrinking the work unit from a whole trial point to a `(trial
 point, opening block)` pair so an idle worker can steal finer-grained work
 instead of waiting for an entire trial point to free up. Carry the DCS
 caveat when reading this: with Dynamic Cut Selection (DCS) active — active
 by default from its `start_iteration`, iteration 2 — the backward pass
-falls back to `trial_point` scheduling regardless of the `opening_block`
-setting, so `opening_block` does almost nothing from that iteration onward.
+falls back to `by_scenario` scheduling regardless of the `by_node`
+setting, so `by_node` does almost nothing from that iteration onward.
 DCS itself is opt-in (row selection is disabled unless explicitly
 configured), so this caveat only bites once DCS has been enabled.
 

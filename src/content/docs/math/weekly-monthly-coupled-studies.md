@@ -186,4 +186,4 @@ conditions across study boundaries, see
 - [SDDP Algorithm](/math/sddp-algorithm) — Terminal boundary cut import (§7 "Terminal Boundary Cuts"); lower-bound monotonicity and the append-only property of the cut pool; the backward pass that generates corrective cuts after an import
 - [Scenario Generation](/math/scenario-generation) — Per-stage scenario counts; opening-tree construction; the independent scenario tree used by the weekly run
 - [Multi-Resolution Studies](/math/multi-resolution-studies) — The sibling chapter covering mixed-resolution stages within a single study; addresses duration-weighted aggregation rather than two-study coupling
-- [Horizon Modes](/math/horizon-modes) — Finite vs cyclic policy graphs; context for how terminal conditions are represented at study boundaries
+- [Horizon Modes](/math/horizon-modes) — Finite (supported) vs. reserved cyclic policy graphs; context for how terminal conditions are represented at study boundaries
