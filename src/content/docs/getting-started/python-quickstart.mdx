@@ -91,6 +91,211 @@ import polars as pl
 df = pl.from_arrow(convergence_table)
 ```
 
+## Policy Checkpoints
+
+A trained policy is a checkpoint of Benders cuts on disk (the on-disk
+`AffinePiece` layout is documented in the
+[FlatBuffers Policy Schema](/reference/flatbuffers-schema/)).
+`cobre.results.load_policy` reads a checkpoint into plain Python dicts, and
+`cobre.write_policy_checkpoint` writes one from dicts of the same shape — so a
+loaded checkpoint round-trips: load, edit, write. See
+[Policy Management](/running/policy-management/) for the cross-study
+boundary-cuts workflow this API supports.
+
+### Load a Policy (`load_policy`)
+
+```python
+cobre.results.load_policy(output_dir, policy_subdir="policy")
+```
+
+`output_dir` is the study's output directory; `load_policy` reads the
+checkpoint from `<output_dir>/<policy_subdir>` (`policy_subdir` defaults to
+`"policy"`). It returns a dict with three top-level keys:
+
+| Key           | Type         | Description                                                             |
+| ------------- | ------------ | ------------------------------------------------------------------------ |
+| `metadata`    | `dict`       | `format_version`, `cobre_version`, `created_at`, `num_stages`, `graph_manifest`, `producer` |
+| `stage_cuts`  | `list[dict]` | One entry per stage — see below                                        |
+| `stage_bases` | `list[dict]` | One entry per saved LP basis: `stage_id`, `iteration`, `column_status`, `row_status`, `num_cut_rows` |
+
+Each `stage_cuts` entry carries:
+
+| Key                | Type         | Description                                                    |
+| ------------------ | ------------ | ---------------------------------------------------------------- |
+| `stage_id`         | `int`        | Stage index                                                     |
+| `state_dimension`  | `int`        | Length every cut's `coefficients` must have                     |
+| `capacity`         | `int`        | Cut-pool slot capacity                                           |
+| `warm_start_count` | `int`        | Cuts loaded from a previous artifact at run start                |
+| `populated_count`  | `int`        | Number of populated cut slots                                    |
+| `entity_manifest`  | `list[dict]` | Per-slot entity markers — see below                              |
+| `cuts`             | `list[dict]` | Cut records — see below                                          |
+
+Each entry in `cuts` carries `cut_id`, `slot_index`, `iteration`,
+`forward_pass_index`, `intercept`, `coefficients`, and `is_active`. The
+Python dict key for a cut's id is `cut_id` (the FlatBuffers *wire* field is
+`piece_id`; `cut_id` is the record-level name used everywhere in this API).
+
+`entity_manifest` is new this release: a list of per-slot markers,
+`{entity_type, entity_id, subindex, was_active, delivery_date}`, that let an
+externally-authored boundary-cut checkpoint round-trip through
+`write_policy_checkpoint` without losing slot identity. Its delivery marker
+is `delivery_date` — a `YYYYMMDD` calendar date — which replaced the former
+`delivery_anchor` (a month-integer).
+
+### Write a Checkpoint (`write_policy_checkpoint`)
+
+```python
+write_policy_checkpoint(path, stage_cuts, metadata, stage_bases=None, stage_states=None)
+```
+
+`stage_cuts` and `metadata` mirror the `load_policy` shapes above, so a
+checkpoint loaded from disk round-trips through Python without reshaping.
+`write_policy_checkpoint` writes `metadata.json`, `cuts/`, `basis/`, and
+`states/` directly under `path` — pass a `policy/`-style directory as `path`,
+then load with `load_policy` on its *parent* directory (which joins
+`policy_subdir="policy"` onto it).
+
+The following example is copy-runnable and mirrors the shipped test fixture
+(`crates/cobre-python/tests/test_write_policy_checkpoint.py`): it authors a
+checkpoint from scratch, writes it, loads it back, appends a third cut, and
+writes the edited policy back to the same path.
+
+```python
+import tempfile
+
+import cobre
+import cobre.results
+
+parent = tempfile.mkdtemp()
+
+stage_cuts = [
+    {
+        "stage_id": 0,
+        "state_dimension": 3,
+        "capacity": 10,
+        "cuts": [
+            {
+                "cut_id": 1,
+                "slot_index": 0,
+                "iteration": 1,
+                "forward_pass_index": 0,
+                "intercept": 42.0,
+                "coefficients": [1.0, 2.0, 3.0],
+                "is_active": True,
+            },
+            {
+                "cut_id": 2,
+                "slot_index": 1,
+                "iteration": 1,
+                "forward_pass_index": 1,
+                "intercept": 10.5,
+                "coefficients": [0.5, -1.5, 2.5],
+                "is_active": True,
+            },
+        ],
+    }
+]
+
+metadata = {
+    "cobre_version": "0.13.0",
+    "created_at": "2026-07-30T00:00:00Z",
+    "num_stages": 1,
+    "producer": {
+        "completed_iterations": 5,
+        "final_lower_bound": 123.45,
+        "best_upper_bound": 130.0,
+        "max_iterations": 10,
+        "forward_passes": 4,
+        "warm_start_cuts": 0,
+        "warm_start_counts": [0],
+        "rng_seed": 42,
+        "total_visited_states": 0,
+        "training_block_mode": "parallel",
+        "training_block_mode_per_stage": [],
+        "cost_scale_factor": 2_500_000.0,
+    },
+}
+
+# Write to `<parent>/policy` — `load_policy` joins policy_subdir="policy" onto
+# the directory it is given, so it is loaded from `parent` below.
+cobre.write_policy_checkpoint(f"{parent}/policy", stage_cuts, metadata)
+
+loaded = cobre.results.load_policy(parent)
+assert loaded["metadata"]["format_version"] == 1
+assert loaded["stage_cuts"][0]["populated_count"] == 2
+
+# Edit: append a third cut. Its coefficients must match state_dimension (3).
+cuts = loaded["stage_cuts"][0]["cuts"]
+cuts.append(
+    {
+        "cut_id": 3,
+        "slot_index": 2,
+        "iteration": 2,
+        "forward_pass_index": 0,
+        "intercept": -5.0,
+        "coefficients": [4.0, -2.0, 0.0],
+        "is_active": True,
+    }
+)
+loaded["stage_cuts"][0]["populated_count"] = len(cuts)
+
+# Write back: same round-trip shape, one more cut than before.
+cobre.write_policy_checkpoint(
+    f"{parent}/policy", loaded["stage_cuts"], loaded["metadata"]
+)
+```
+
+### Input Validation
+
+`write_policy_checkpoint` raises `ValueError` on two malformed-input shapes,
+naming the offending stage and cut (or stage) in the message.
+
+A cut whose `coefficients` length disagrees with its stage's
+`state_dimension`:
+
+```python
+stage_cuts = [
+    {
+        "stage_id": 0,
+        "state_dimension": 3,
+        "capacity": 10,
+        "cuts": [
+            {
+                "cut_id": 1,
+                "slot_index": 0,
+                "iteration": 1,
+                "forward_pass_index": 0,
+                "intercept": 42.0,
+                "coefficients": [1.0, 2.0],  # length 2, but state_dimension=3
+                "is_active": True,
+            },
+        ],
+    }
+]
+
+cobre.write_policy_checkpoint("output/policy", stage_cuts, metadata)
+# ValueError: stage 0 cut 1: coefficients has 2 entries, expected state_dimension=3
+```
+
+A `stage_states` entry whose flat `data` length disagrees with
+`count * state_dimension`:
+
+```python
+stage_states = [
+    {
+        "stage_id": 0,
+        "state_dimension": 3,
+        "count": 2,
+        "data": [1.0, 2.0, 3.0],  # length 3, but count * state_dimension = 6
+    }
+]
+
+cobre.write_policy_checkpoint(
+    "output/policy", stage_cuts, metadata, stage_states=stage_states
+)
+# ValueError: stage 0: states data has 3 entries, expected count*state_dimension=6
+```
+
 ## Next Steps
 
 - See the case directory format for input file specifications.
