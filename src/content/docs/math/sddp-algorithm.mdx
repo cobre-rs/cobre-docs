@@ -57,7 +57,7 @@ direction: down
 
 fwd: "1. Forward pass\nsample M trajectories → trial points, UB" {shape: rectangle}
 bwd: "2. Backward pass\nevaluate N openings → 1 Benders cut / stage" {shape: rectangle}
-conv: "3. Converged?\ngap = (UB − LB) / max(1, |UB|) ≤ tol" {shape: diamond}
+conv: "3. Converged?\ngap = (UB − LB) / max(1, |LB|) ≤ tol" {shape: diamond}
 done: stopped {shape: oval}
 
 fwd -> bwd: trial points
@@ -175,7 +175,7 @@ where $Q_0^k(x_0, \omega)$ is the optimal objective of the stage-0 LP under open
 
 Under risk-neutral settings ($\rho_0 = \mathbb{E}$), this reduces to a simple average over all stage-0 opening objectives. Because cuts are added monotonically and never removed within a training run, this bound is non-decreasing across iterations — see [Cut Management](/math/cut-management) for the append-only guarantee.
 
-**Upper Bound**: Estimated via Monte Carlo simulation over the forward pass trajectories (see [Upper Bound Evaluation](/math/upper-bound-evaluation)):
+**Upper Bound**: Under a sampled forward pass, this is a **statistical** estimate — the sample mean over the forward pass trajectories; under an enumerated forward pass, it is the **exact** probability-weighted bound $\sum_\ell P(\ell)\, C(\ell)$ over every leaf path, with no sampling error (see [Upper Bound Evaluation](/math/upper-bound-evaluation)). The sampled-mean form:
 
 $$
 \bar{z}^k = \frac{1}{M} \sum_{m=1}^{M} \sum_{t=1}^{T} c_t^\top x_t^{(m)}
@@ -184,7 +184,7 @@ $$
 **Optimality Gap**:
 
 $$
-\text{gap}^k = \frac{\bar{z}^k - \underline{z}^k}{\max(1, |\bar{z}^k|)}
+\text{gap}^k = \frac{\bar{z}^k - \underline{z}^k}{\max(1, |\underline{z}^k|)}
 $$
 
 ### 3.4 Execution Model and Performance Considerations

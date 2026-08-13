@@ -157,30 +157,52 @@ Stop when the relative improvement in the lower bound falls below a threshold.
 | `iterations` | integer | Window size: the number of past iterations over which to compute the relative improvement.               |
 | `tolerance`  | float   | Relative improvement threshold. Training stops when the improvement over the window is below this value. |
 
-#### `simulation`
+#### `gap`
 
-Stop when both the lower bound and a Monte Carlo policy cost estimate have
-stabilized. Periodically runs a batch of forward simulations and compares
-the result against previous evaluations.
+Stop when the exact upper bound has closed to within tolerance of the lower
+bound. Requires an enumerated training forward pass, so the upper bound being
+compared is exact rather than a statistical estimate.
 
 ```json
-{
-  "type": "simulation",
-  "replications": 100,
-  "period": 10,
-  "bound_window": 5,
-  "distance_tol": 0.01,
-  "bound_tol": 0.0001
-}
+{ "type": "gap", "tolerance": 1000.0, "relative_tolerance": 0.01 }
 ```
 
-| Field          | Type    | Description                                                           |
-| -------------- | ------- | ----------------------------------------------------------------------- |
-| `replications` | integer | Number of Monte Carlo forward simulations per check.                  |
-| `period`       | integer | Iterations between simulation checks.                                 |
-| `bound_window` | integer | Number of past iterations for bound stability check.                  |
-| `distance_tol` | float   | Normalized distance threshold between consecutive simulation results. |
-| `bound_tol`    | float   | Relative tolerance for bound stability.                               |
+| Field                | Type  | Description                                                                                                                                        |
+| -------------------- | ----- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `tolerance`          | float | Optional. Absolute gap tolerance, in canonical R$.                                                                                                  |
+| `relative_tolerance` | float | Optional. Relative gap tolerance in **percent** — `0.01` means 0.01%, compared against `100 · gap / max(1, \|lower_bound\|)`.                       |
+
+At least one of `tolerance` / `relative_tolerance` must be present; a `gap`
+rule with neither field is a load-time error: "gap stopping rule requires at
+least one of tolerance / relative_tolerance to be present". When both are
+present, the two arms combine by **disjunction** — training stops as soon as
+either arm is satisfied, not both. The gap itself is
+`max(0, upper_bound − lower_bound)`.
+
+**Admissibility** — the `gap` rule is accepted only when both hold:
+
+- [`training.selection`](#trainingselection)`.method` is `"enumerated"` (the
+  forward pass exhaustively enumerates the scenario tree, so the upper bound
+  is exact rather than a sampled estimate).
+- Every stage uses the expectation risk measure (`stages.json`
+  `risk_measure: "expectation"`; a `cvar` measure with `lambda: 0` is
+  expectation-equivalent and also admissible).
+
+Under `sampled` selection, or an effectively risk-averse measure at any
+stage, the `gap` rule is rejected at load with a validation error — the
+exact-bound comparison it depends on is unavailable in those cases.
+
+:::caution[Migrating from the removed `simulation` stopping rule]
+The `simulation` stopping rule has been **removed**: a stopping rule with
+that `type` is now rejected at load as an unknown variant, not silently
+ignored. Replace it with `gap` (under enumerated selection) or
+`bound_stalling`.
+
+`relative_tolerance` is a **percent**, not a fraction: `0.01` means 0.01%.
+Carrying over an old fractional value unchanged is a 100× tighter reading
+than intended and will produce a far tighter — likely unreachable —
+stopping threshold.
+:::
 
 :::note[Type-scoped fields]
 As with every JSON input, unknown keys are rejected — for stopping rules specifically, each rule object accepts only the fields belonging to its own `type`. Supplying a parameter that belongs to a different rule type (for example, `seconds` on an `iteration_limit` rule) is now a load-time error, not a silently ignored key. The same type-scoped strictness applies to `training.selection`, `simulation.selection`, and `training.parallelism.backward_scheduler`.
@@ -822,7 +844,7 @@ fields; `backward` and `forward` are new in v0.12.0.
 | `backward`                  | object or `null`  | `null`  | Per-phase LP solver profile override applied during the backward pass.  |
 | `forward`                   | object or `null`  | `null`  | Per-phase LP solver profile override applied during the forward pass.   |
 
-`simulation.solver` (see [`simulation`](#simulation-1) above) is a third,
+`simulation.solver` (see [`simulation`](#simulation) above) is a third,
 independent sibling that takes the identical shape — `training.solver.backward`,
 `training.solver.forward`, and `simulation.solver` all resolve against one
 shared `PhaseSolverProfileConfig`, documented once below.

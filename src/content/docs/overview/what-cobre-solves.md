@@ -19,15 +19,15 @@ This is the founding problem of the Brazilian national power system operator and
 
 Cobre implements **Stochastic Dual Dynamic Programming (SDDP)**. SDDP solves the multi-stage problem by decomposing it into per-stage linear programmes that are linked through state variables (reservoir levels and inflow lags). Iterating forward and backward through the stage tree, the algorithm builds piecewise-linear approximations of the cost-to-go function at each stage. These approximations, called Benders cuts, carry future cost information from the last stage back to the first.
 
-The algorithm converges when the gap between a statistical lower bound and an upper bound falls below a chosen stopping criterion. See [The SDDP Framework in One Page](/overview/sddp-framework-overview) for the one-page framing, and [SDDP Algorithm](/math/sddp-algorithm) for the full algorithmic treatment.
+The algorithm converges when the gap between a lower bound and an upper bound falls below a chosen stopping criterion. See [The SDDP Framework in One Page](/overview/sddp-framework-overview) for the one-page framing, and [SDDP Algorithm](/math/sddp-algorithm) for the full algorithmic treatment.
 
 ## 3. Methodology Guarantees
 
 At convergence, Cobre provides three bounds on the optimal policy cost:
 
 1. **Lower bound** — the objective value of the stage-zero LP with the current cut approximation. This bound increases monotonically across iterations and converges to the true optimal value.
-2. **Statistical upper bound** — the sample average cost of forward simulations under the current policy, with a confidence interval. This bound decreases as the policy improves.
-3. **Statistical upper bound** — the sample-average cost of out-of-sample forward simulations, with a confidence interval, used for final convergence assessment.
+2. **Statistical upper bound** — the sample-average cost of forward simulations under the current policy, with a confidence interval. This bound carries genuine sampling error that narrows only as more scenarios are drawn.
+3. **Exact (deterministic) upper bound** — the probability-weighted expectation over an enumerated scenario tree, visiting every leaf path exactly once. It carries no sampling error.
 
 In addition, Cobre provides a **determinism guarantee**: given the same input data, results are identical regardless of the number of MPI ranks or threads used during execution. This guarantee is a property of the algorithm design, not an approximation.
 

@@ -252,7 +252,9 @@ Monte Carlo simulation cannot directly estimate the upper bound for CVaR problem
 1. CVaR is computed over the entire distribution, not sample averages
 2. The optimal $\eta$ (VaR threshold) changes with the policy
 
-For risk-averse problems, the inner approximation (SIDP) provides deterministic upper bounds that remain valid regardless of the risk measure. See [Upper Bound Evaluation §1](/math/upper-bound-evaluation) for the complete formulation.
+The exact deterministic upper bound and the `gap` stopping rule that compares it against the lower bound ([Stopping Rules §5](/math/stopping-rules)) are admissible only under the **expectation** risk measure: every stage must use expectation, or a CVaR measure with zero risk-aversion weight (expectation-equivalent). A CVaR measure with a positive risk-aversion weight $\lambda_t > 0$ at any stage is rejected at load with a named validation error rather than silently evaluating an unsound comparison — see [Upper Bound Evaluation §2](/math/upper-bound-evaluation) and [Stopping Rules §5](/math/stopping-rules) for the admissibility condition.
+
+For risk-averse problems, the inner approximation (SIDP) remains the route to a deterministic upper bound: it provides deterministic upper bounds that remain valid regardless of the risk measure. See [Upper Bound Evaluation §1](/math/upper-bound-evaluation) for the complete formulation.
 
 ## 10 Lower Bound Validity with Risk Measures
 
@@ -306,7 +308,7 @@ When risk measures are enabled, convergence reports should label the "lower boun
 - [Notation Conventions](/overview/notation-conventions) — Symbol definitions, dual variable notation, and sign conventions
 - [SDDP Algorithm](/math/sddp-algorithm) — Bellman recursion and forward/backward pass structure modified by risk measures
 - [Cut Management](/math/cut-management) — Dual extraction and cut coefficient computation; risk-averse aggregation replaces $p(\omega)$ with $\mu^*_\omega$ (§7)
-- [Stopping Rules](/math/stopping-rules) — Bound stalling recommended for risk-averse convergence monitoring; simulation-based stopping limitations
+- [Stopping Rules](/math/stopping-rules) — Bound stalling recommended for risk-averse convergence monitoring; the gap rule is rejected at load under a risk-averse (CVaR, positive weight) measure
 - [Discount Rate](/math/discount-rate) — Discount factor $d$ convention and discounted Bellman equation
 - [Horizon Modes](/math/horizon-modes) — Interaction of risk measures with the reserved cyclic policy-graph design
 - [Upper Bound Evaluation](/math/upper-bound-evaluation) — SIDP inner approximation for valid upper bounds with CVaR objectives
