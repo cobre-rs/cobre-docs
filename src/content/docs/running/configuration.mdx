@@ -13,7 +13,7 @@ case directory. This page documents every section and field.
 ```json
 {
   "training": {
-    "forward_passes": 50,
+    "selection": { "method": "sampled", "forward_passes": 50 },
     "stopping_rules": [{ "type": "iteration_limit", "limit": 100 }]
   }
 }
@@ -29,10 +29,43 @@ Controls the SDDP training phase.
 
 ### Mandatory Fields
 
-| Field            | Type    | Description                                                                                                                           |
-| ---------------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------- |
-| `forward_passes` | integer | Number of scenario trajectories per iteration. Larger values reduce variance in each iteration's cut but increase cost per iteration. |
-| `stopping_rules` | array   | At least one stopping rule (see below). The rule set must contain at least one `iteration_limit` rule.                                |
+| Field            | Type   | Description                                                                                                                                                                                            |
+| ---------------- | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `selection`      | object | Scenario-selection method for the training forward pass — `sampled{forward_passes}` or `enumerated{}` (see [`training.selection`](#trainingselection) below). No default: a missing `training.selection` is a hard load error. |
+| `stopping_rules` | array  | At least one stopping rule (see below). The rule set must contain at least one `iteration_limit` rule.                                                                                                |
+
+### `training.selection`
+
+Chooses how many trajectories the training forward pass runs per iteration,
+or whether it exhaustively enumerates the scenario openings instead of
+sampling. The object is internally tagged on `method`; each variant accepts
+only its own fields — pairing `forward_passes` with `"enumerated"` is a
+load-time error (`deny_unknown_fields`).
+
+| Field            | Type    | Required       | Description                                                                                                                                                            |
+| ---------------- | ------- | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `method`         | string  | Yes            | `"sampled"` or `"enumerated"`                                                                                                                                          |
+| `forward_passes` | integer | `sampled` only | Number of scenario trajectories per iteration. Larger values reduce variance in each iteration's cut but increase cost per iteration. Rejected under `"enumerated"`. |
+
+There is **no default** forward-pass count: an absent `training.selection` is
+a hard load error (`LoadError::SchemaError`, naming the field
+`training.selection`, message "a forward-pass count is required via
+training.selection"). The removed root-level `training.forward_passes` field
+from pre-v0.14.0 releases is rejected as an unknown field
+(`deny_unknown_fields`) rather than silently accepted.
+
+Example — sampled:
+
+```json
+{ "method": "sampled", "forward_passes": 50 }
+```
+
+Example — enumerated (the forward pass exhaustively walks the scenario
+openings instead of drawing a fixed count):
+
+```json
+{ "method": "enumerated" }
+```
 
 ### Optional Fields
 
@@ -68,7 +101,7 @@ Example — out-of-sample inflow with in-sample load and NCS:
 {
   "training": {
     "tree_seed": 42,
-    "forward_passes": 50,
+    "selection": { "method": "sampled", "forward_passes": 50 },
     "stopping_rules": [{ "type": "iteration_limit", "limit": 200 }],
     "scenario_source": {
       "seed": 99,
@@ -150,7 +183,7 @@ the result against previous evaluations.
 | `bound_tol`    | float   | Relative tolerance for bound stability.                               |
 
 :::note[Type-scoped fields]
-As with every JSON input, unknown keys are rejected — for stopping rules specifically, each rule object accepts only the fields belonging to its own `type`. Supplying a parameter that belongs to a different rule type (for example, `seconds` on an `iteration_limit` rule) is now a load-time error, not a silently ignored key. The same type-scoped strictness applies to `training.parallelism.backward_scheduler`.
+As with every JSON input, unknown keys are rejected — for stopping rules specifically, each rule object accepts only the fields belonging to its own `type`. Supplying a parameter that belongs to a different rule type (for example, `seconds` on an `iteration_limit` rule) is now a load-time error, not a silently ignored key. The same type-scoped strictness applies to `training.selection`, `simulation.selection`, and `training.parallelism.backward_scheduler`.
 :::
 
 ### `stopping_mode`
@@ -164,7 +197,7 @@ combine:
 ```json
 {
   "training": {
-    "forward_passes": 50,
+    "selection": { "method": "sampled", "forward_passes": 50 },
     "stopping_mode": "all",
     "stopping_rules": [
       { "type": "iteration_limit", "limit": 500 },
@@ -180,13 +213,13 @@ Groups the result-preserving worker-scheduling knobs that shape how backward-pas
 
 `backward_scheduler` selects how backward-pass work units are claimed by workers. It is tagged on `method`; supplying a field that does not belong to the selected method is a load-time error (`deny_unknown_fields`), not a silently ignored key.
 
-- `"trial_point"` (default) — each parallel work unit is one whole trial point, matching the byte-neutral pre-v0.12.0 behavior.
+- `"by_scenario"` (default) — each parallel work unit is one whole trial point, matching the byte-neutral pre-v0.12.0 behavior.
 
   ```json
-  { "method": "trial_point" }
+  { "method": "by_scenario" }
   ```
 
-- `"opening_block"` — each parallel work unit is one `(trial point, opening block)` pair, claimed dynamically off a shared counter.
+- `"by_node"` — each parallel work unit is one `(trial point, opening block)` pair, claimed dynamically off a shared counter.
 
   | Field        | Type               | Default | Description                                                                                                                                                                                |
   | ------------ | ------------------ | ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -194,35 +227,35 @@ Groups the result-preserving worker-scheduling knobs that shape how backward-pas
 
   Two configurations are load-time errors, not silently accepted:
 
-  - `block_size` supplied under `"trial_point"` — rejected (`deny_unknown_fields`).
+  - `block_size` supplied under `"by_scenario"` — rejected (`deny_unknown_fields`).
   - `block_size: 0` — rejected (minimum `1`).
 
 Within a stage, opening-blocks are claimed **hardest-first**: blocks are ranked by the previous iteration's mean simplex-pivot cost per `(stage, block)`, descending (ties broken by ascending block index; the first iteration, and any block with no prior data, sort last). This claim order changes only which worker processes which block, and when — it is **result-neutral**: the produced cut set and the training lower bound are identical to canonical-order claiming.
 
 :::caution[Interaction with Dynamic Cut Selection]
-If [Dynamic Cut Selection](#cut_selection) is enabled (`cut_selection.selection.method = "dynamic"`), the `opening_block` scheduler falls back to per-trial-point scheduling from that method's `start_iteration` (default `2`) onward, so `opening_block` then has little effect from that point on. No warning is emitted. DCS is **not** the default — this caveat only applies when it is explicitly enabled. See [Performance Accelerators](/running/performance/) for the detailed tuning treatment of `opening_block`.
+If [Dynamic Cut Selection](#cut_selection) is enabled (`cut_selection.selection.method = "dynamic"`), the `by_node` scheduler falls back to `by_scenario` scheduling from that method's `start_iteration` (default `2`) onward, so `by_node` then has little effect from that point on. No warning is emitted. DCS is **not** the default — this caveat only applies when it is explicitly enabled. See [Performance Accelerators](/running/performance/) for the detailed tuning treatment of `by_node`.
 :::
 
-Example — default (`trial_point`; no `parallelism` block needed):
+Example — default (`by_scenario`; no `parallelism` block needed):
 
 ```json
 {
   "training": {
-    "forward_passes": 50,
+    "selection": { "method": "sampled", "forward_passes": 50 },
     "stopping_rules": [{ "type": "iteration_limit", "limit": 100 }]
   }
 }
 ```
 
-Example — `opening_block` with an explicit `block_size`:
+Example — `by_node` with an explicit `block_size`:
 
 ```json
 {
   "training": {
-    "forward_passes": 50,
+    "selection": { "method": "sampled", "forward_passes": 50 },
     "stopping_rules": [{ "type": "iteration_limit", "limit": 100 }],
     "parallelism": {
-      "backward_scheduler": { "method": "opening_block", "block_size": 4 }
+      "backward_scheduler": { "method": "by_node", "block_size": 4 }
     }
   }
 }
@@ -236,13 +269,28 @@ For the backward pass this schedules work within, see [SDDP Algorithm §3.4 (Exe
 
 Controls the optional post-training simulation phase.
 
-| Field           | Type    | Default | Description                                                         |
-| --------------- | ------- | ------- | --------------------------------------------------------------------- |
-| `enabled`       | boolean | `false` | Enable the simulation phase after training.                         |
-| `num_scenarios` | integer | `2000`  | Number of independent Monte Carlo simulation scenarios to evaluate. |
+| Field       | Type    | Default | Description                                                                                                                                                                 |
+| ----------- | ------- | ------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `enabled`   | boolean | `false` | Enable the simulation phase after training.                                                                                                                                 |
+| `selection` | object  | `null`  | Scenario-selection method for the simulation phase — `sampled{num_scenarios}` or `enumerated{}` (see [`simulation.selection`](#simulationselection) below). Absent resolves to a sampled count of `2000`. |
 
-When `simulation.enabled` is `false` or `num_scenarios` is `0`, the simulation
-phase is skipped entirely.
+### `simulation.selection`
+
+Chooses how many trajectories the post-training simulation runs, or whether
+it exhaustively enumerates the scenario set instead of sampling. Internally
+tagged on `method`, mirroring [`training.selection`](#trainingselection)
+above. Unlike `training.selection`, this field is **optional**: an absent
+`simulation.selection` resolves to a sampled count of `2000` — the same
+default the removed flat `num_scenarios` field carried before this field
+existed.
+
+| Field           | Type    | Required          | Description                                                                                                       |
+| --------------- | ------- | ------------------ | --------------------------------------------------------------------------------------------------------------- |
+| `method`        | string  | Yes (if present)  | `"sampled"` or `"enumerated"`                                                                                     |
+| `num_scenarios` | integer | `sampled` only     | Number of independent Monte Carlo simulation scenarios to evaluate. Rejected under `"enumerated"`.               |
+
+When `simulation.enabled` is `false`, or the sampled `num_scenarios` count
+resolves to `0`, the simulation phase is skipped entirely.
 
 `simulation.solver` (optional, default `null`) overrides the LP solver
 profile used during the simulation phase. It takes the identical
@@ -256,7 +304,7 @@ Example:
 {
   "simulation": {
     "enabled": true,
-    "num_scenarios": 1000
+    "selection": { "method": "sampled", "num_scenarios": 1000 }
   }
 }
 ```
@@ -284,12 +332,12 @@ Example — simulate with out-of-sample inflow while training uses in-sample:
 ```json
 {
   "training": {
-    "forward_passes": 50,
+    "selection": { "method": "sampled", "forward_passes": 50 },
     "stopping_rules": [{ "type": "iteration_limit", "limit": 200 }]
   },
   "simulation": {
     "enabled": true,
-    "num_scenarios": 2000,
+    "selection": { "method": "sampled", "num_scenarios": 2000 },
     "scenario_source": {
       "seed": 77,
       "inflow": { "scheme": "out_of_sample" },
@@ -700,7 +748,7 @@ Controls which outputs are written to the results directory.
   "$schema": "https://docs.cobre-rs.dev/schemas/config.schema.json",
   "training": {
     "tree_seed": 42,
-    "forward_passes": 50,
+    "selection": { "method": "sampled", "forward_passes": 50 },
     "stopping_rules": [
       { "type": "iteration_limit", "limit": 200 },
       { "type": "bound_stalling", "iterations": 20, "tolerance": 0.0001 }
@@ -729,7 +777,7 @@ Controls which outputs are written to the results directory.
   },
   "simulation": {
     "enabled": true,
-    "num_scenarios": 2000
+    "selection": { "method": "sampled", "num_scenarios": 2000 }
   },
   "policy": {
     "path": "./policy",

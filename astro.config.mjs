@@ -310,6 +310,7 @@ export default defineConfig({
         {
           label: "Stochastic Modelling",
           items: [
+            "math/policy-graphs",
             "math/par-inflow-model",
             "math/multi-resolution-studies",
             "math/weekly-monthly-coupled-studies",

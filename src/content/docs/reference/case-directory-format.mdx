@@ -150,7 +150,7 @@ authored in `penalties.json::hydro.inflow_nonnegativity_cost`.
 
 | Field                      | Type            | Default                             | Description                                                                                                                |
 | -------------------------- | --------------- | ----------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
-| `training.forward_passes`  | integer         | **required**                        | Number of scenario trajectories per iteration (>= 1)                                                                       |
+| `training.selection`       | object          | **required**                        | Scenario-selection method — `sampled{forward_passes}` or `enumerated{}` (see below); a missing `training.selection` is a hard load error |
 | `training.stopping_rules`  | array           | **required**                        | At least one stopping rule entry; must include an `iteration_limit` rule                                                   |
 | `training.stopping_mode`   | string          | `"any"`                             | How multiple rules combine: `"any"` (stop when any triggers) or `"all"` (stop when all trigger)                            |
 | `training.enabled`         | boolean         | `true`                              | When `false`, skip training and proceed directly to simulation                                                             |
@@ -158,6 +158,21 @@ authored in `penalties.json::hydro.inflow_nonnegativity_cost`.
 | `training.scenario_source` | object or null  | `null`                              | Per-class sampling scheme for the training forward pass (see below)                                                        |
 | `training.parallelism`     | object or null  | `{backward_scheduler: trial_point}` | Backward-pass scheduler selection; see [Configuration](/running/configuration/#parallelism)                                |
 | `training.solver`          | object or null  | `null`                              | LP solver retry policy and optional per-phase solver profiles; see [Configuration](/running/configuration/#trainingsolver) |
+
+**`training.selection` sub-section:**
+
+Chooses how many trajectories the training forward pass runs per iteration, or
+whether it exhaustively enumerates the scenario openings instead of sampling. The
+object is internally tagged on `method`; each variant accepts only its own fields
+(pairing `forward_passes` with `"enumerated"` is a load-time error). There is no
+default forward-pass count — an absent `training.selection` is a hard load error,
+and the root-level `training.forward_passes` field from earlier releases is
+rejected as an unknown field.
+
+| Field                                | Type    | Required          | Description                                                                |
+| ------------------------------------- | ------- | ------------------ | ----------------------------------------------------------------------------- |
+| `training.selection.method`           | string  | Yes                | `"sampled"` or `"enumerated"`                                                  |
+| `training.selection.forward_passes`   | integer | `sampled` only     | Number of forward-pass trajectories per iteration (>= 1). Rejected under `"enumerated"` |
 
 **`training.scenario_source` sub-section:**
 
@@ -244,13 +259,27 @@ per-method field tables.
 | Field                                         | Type            | Default       | Description                                                                                            |
 | --------------------------------------------- | --------------- | ------------- | ------------------------------------------------------------------------------------------------------ |
 | `enabled`                                     | boolean         | `false`       | Enable post-training simulation                                                                        |
-| `num_scenarios`                               | integer         | `2000`        | Number of simulation scenarios                                                                         |
+| `simulation.selection`                        | object or null  | `null`        | Scenario-selection method — `sampled{num_scenarios}` or `enumerated{}` (see below); absent resolves to the default sampled count (`2000`) |
 | `io_channel_capacity`                         | integer         | `64`          | Channel capacity between simulation and I/O writer threads                                             |
 | `simulation.scenario_source`                  | object or null  | `null`        | Per-class sampling scheme for the simulation pass (see below)                                          |
 | `simulation.scenario_source.inflow.scheme`    | string          | `"in_sample"` | Inflow sampling scheme: `"in_sample"`, `"historical"`, `"external"`, or `"out_of_sample"`              |
 | `simulation.scenario_source.load.scheme`      | string          | `"in_sample"` | Load sampling scheme: `"in_sample"`, `"historical"`, `"external"`, or `"out_of_sample"`                |
 | `simulation.scenario_source.ncs.scheme`       | string          | `"in_sample"` | NCS sampling scheme: `"in_sample"`, `"historical"`, `"external"`, or `"out_of_sample"`                 |
 | `simulation.scenario_source.historical_years` | array or object | `null`        | Years eligible as inflow replay windows. List (`[2010, 2015]`) or range (`{"from": 2010, "to": 2023}`) |
+
+**`simulation.selection` sub-section:**
+
+Chooses how many trajectories the post-training simulation runs, or whether it
+exhaustively enumerates the scenario openings instead of sampling. Internally
+tagged on `method`, mirroring `training.selection` above. Unlike
+`training.selection`, this field is optional: an absent `simulation.selection`
+resolves to a sampled count of `2000` — the same default the flat `num_scenarios`
+field carried before this field existed.
+
+| Field                                  | Type    | Required          | Description                                                                    |
+| ---------------------------------------- | ------- | ------------------ | ----------------------------------------------------------------------------------- |
+| `simulation.selection.method`            | string  | Yes (if present)   | `"sampled"` or `"enumerated"`                                                        |
+| `simulation.selection.num_scenarios`     | integer | `sampled` only      | Number of simulation trajectories to draw (>= 0). Rejected under `"enumerated"`      |
 
 **`exports` section:**
 
@@ -265,7 +294,7 @@ per-method field tables.
 {
   "$schema": "https://docs.cobre-rs.dev/schemas/config.schema.json",
   "training": {
-    "forward_passes": 192,
+    "selection": { "method": "sampled", "forward_passes": 192 },
     "stopping_rules": [{ "type": "iteration_limit", "limit": 200 }]
   }
 }
@@ -344,12 +373,42 @@ and policy graph horizon type.
 
 **Top-level fields:**
 
-| Field                | Required | Description                                                                    |
-| -------------------- | -------- | ------------------------------------------------------------------------------ |
-| `policy_graph`       | Yes      | Horizon type (`"finite_horizon"`), annual discount rate, and stage transitions |
+| Field                | Required | Description                                                       |
+| -------------------- | -------- | ------------------------------------------------------------------- |
+| `policy_graph`       | Yes      | Horizon type, annual discount rate, and stage transitions/nodes (see below) |
 | `stages`             | Yes      | Array of study stage definitions                                               |
 | `season_definitions` | No       | Season labeling for seasonal model alignment                                   |
 | `pre_study_stages`   | No       | Pre-study stages for AR model warm-up (negative IDs)                           |
+
+**`policy_graph` sub-object:**
+
+| Field                  | Required | Description                                                                                                                                     |
+| ---------------------- | -------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `type`                 | Yes      | Horizon type. Only `"finite_horizon"` is supported; `"cyclic"` is **reserved** and rejected at load (no engine consumer today)                     |
+| `annual_discount_rate` | Yes      | Global annual discount rate (>= 0.0)                                                                                                                |
+| `nodes[]`              | No       | Policy-graph nodes (see below). Absent ⇒ the graph is a stage chain and `transitions[]` endpoints are read directly as stage ids                   |
+| `transitions[]`        | No       | Stage transitions (see below). Defaults to an empty array                                                                                           |
+
+A deck with no `nodes[]` is a stage chain byte-for-byte as before — existing
+`stages.json` files with only `policy_graph.transitions` need no migration.
+
+**`policy_graph.nodes[]` entry fields:**
+
+| Field         | Required | Description                                                                                                                                                                                                                                                    |
+| ------------- | -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `id`          | Yes      | Unique node id, referenced by `transitions[]` endpoints when `nodes[]` is declared                                                                                                                                                                                 |
+| `stage_id`    | Yes      | Declared study-stage id this node sits at; resolved against the study stages, never an array index                                                                                                                                                                 |
+| `scenario_id` | No       | Per-stage external-library realization column this node carries. Required at a stage carrying a slot-occupying external class, omitted where none. `scenario_id: k` is exactly the degenerate one-element weighted opening set `[{ "scenario_id": k, "probability": 1.0 }]` |
+| `label`       | No       | Optional human-readable label                                                                                                                                                                                                                                       |
+
+**`policy_graph.transitions[]` entry fields:**
+
+| Field                            | Required | Description                                                                                     |
+| --------------------------------- | -------- | --------------------------------------------------------------------------------------------------- |
+| `source_id`                       | Yes      | Source endpoint: a node id when `policy_graph.nodes[]` is non-empty, a stage id otherwise            |
+| `target_id`                       | Yes      | Target endpoint: a node id when `policy_graph.nodes[]` is non-empty, a stage id otherwise             |
+| `probability`                     | Yes      | Transition probability                                                                              |
+| `annual_discount_rate_override`   | No       | Optional per-transition discount rate override; absent uses `policy_graph.annual_discount_rate`     |
 
 :::caution[No top-level `scenario_source` in `stages.json`]
 Scenario sampling is configured per-pass in `config.json` —
@@ -367,7 +426,7 @@ Scenario sampling is configured per-pass in `config.json` —
 | `start_date`      | Yes      | ISO 8601 date (e.g., `"2024-01-01"`)                              |
 | `end_date`        | Yes      | ISO 8601 date; must be after `start_date`                         |
 | `blocks`          | Yes      | Array of load blocks (`id`, `name`, `hours`)                      |
-| `num_scenarios`   | Yes      | Number of forward-pass scenarios for this stage (>= 1)            |
+| `num_openings`    | Yes      | Number of within-node openings for this stage (>= 1); required on the plain stage-chain dialect (no `policy_graph.nodes[]`) and at a generated-openings stage under `nodes[]`, rejected at a stage that carries only external openings |
 | `season_id`       | No       | Reference to a season in `season_definitions`                     |
 | `block_mode`      | No       | Block execution mode: `"parallel"` (default) or `"chronological"` |
 | `state_variables` | No       | Cut dimension for this stage: `{ storage, inflow_lags }` booleans, defaulting to storage-only (`inflow_lags` off). Governs which state dimensions the stage's cuts project onto — distinct from what is reported; a disabled dimension is projected out of the cut, not zero-padded. Travel-time buckets and anticipated-thermal slots are always included. See [Cut Management](/math/cut-management). |

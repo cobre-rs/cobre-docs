@@ -129,9 +129,9 @@ The generation process:
    independent noise into correlated noise: $\eta = D \cdot z$. Negative
    eigenvalues are clipped to zero, yielding the nearest
    positive-semidefinite approximation. Spectral factorisation is the only
-   method Cobre implements — the `method` field in `correlation.json` is
-   `"spectral"` (see [PAR(p) Inflow Model](/math/par-inflow-model) section 8
-   for why the spectral square root is used in place of Cholesky).
+   method Cobre implements — the `method` field in `correlation.json` accepts
+   only `"spectral"` (see [PAR(p) Inflow Model](/math/par-inflow-model)
+   section 8 for the rationale).
 3. **Entity assignment** — Each entity in the group receives its own
    correlated noise value $\eta_i$ from the transformed vector.
 
@@ -188,20 +188,26 @@ for the corresponding tuple.
 
 ### 2.3 Opening Tree
 
-The backward pass in SDDP evaluates an aggregated cut by solving **all** $N_t$
-branchings at each stage $t$. These branchings must be identical across all
-iterations — the backward pass always "sees the same tree." Cobre fixes a set
-of branchings before training and visits all of them in every backward pass.
-This fixed set is the **opening tree**.
+The backward pass in SDDP evaluates an aggregated cut at a node by solving
+**all** of that node's openings — the within-node opening set $\Omega_n$
+defined in [Policy Graphs](/math/policy-graphs) section 2. These openings must
+be identical across all iterations — the backward pass always "sees the same
+tree" at every node. Cobre fixes each node's opening set before training and
+visits all of it in every backward pass. This fixed, per-node structure is the
+**opening tree**. On the implicit stage chain — one (unnamed) node per stage,
+the case the rest of this chapter documents — $\Omega_n$ collapses to the
+per-stage branching factor $N_t$ used below.
 
 The tree is **generated once before training begins** and remains fixed
-throughout. Generation produces $N_t$ noise vectors per stage; the backward
-pass iterates over them at every iteration of the algorithm.
+throughout. Generation produces $|\Omega_n|$ noise vectors for each node —
+$N_t$ per stage on the implicit chain; the backward pass iterates over them at
+every iteration of the algorithm.
 
-The per-stage branching factor $N_t$ is configured per study. Uniform
-branching ($N_t = N$ for all $t$) is the common case in standard SDDP, but
-per-stage variable branching is supported — this is required for complete tree
-mode (section 6.2), where the deterministic-trunk special case uses $N_t = 1$
+Each node's opening count $|\Omega_n|$ is configured per study — the
+per-stage branching factor $N_t$ on the implicit chain. Uniform branching
+($N_t = N$ for all $t$) is the common case in standard SDDP, but per-node
+variable counts are supported — this is required for complete tree mode
+(section 6.2), where the deterministic-trunk special case uses $N_t = 1$
 for $t < T$ and $N_T = K$.
 
 **Tree generation:**
@@ -224,23 +230,32 @@ for $t < T$ and $N_T = K$.
    [Multi-Resolution Studies](/math/multi-resolution-studies) for the
    mechanism's role in mixed-resolution horizons.
 
-**Backward pass usage:** At each stage $t$, the backward pass iterates over
-**all** $N_t$ noise vectors, solving one subproblem per opening, then
-aggregates the resulting cuts. Because the tree is fixed, every iteration
-produces cuts that refine the same set of future cost scenarios.
+Each node's opening set $\Omega_n$ is drawn from the tree generated for its
+stage — on the implicit chain this is the entire stage-$t$ set of $N_t$
+vectors produced above.
+
+**Backward pass usage:** At each node $n$, the backward pass iterates over
+**all** of $\Omega_n$ — $N_t$ noise vectors at stage $t$ on the implicit
+chain — solving one subproblem per opening, then aggregates the resulting
+cuts, composed across successor nodes per the between-node edge weights (see
+[Policy Graphs](/math/policy-graphs) section 2). Because the tree is fixed,
+every iteration produces cuts that refine the same set of future cost
+scenarios.
 
 **Forward pass usage (InSample only):** When the `InSample` sampling scheme is
-active (see section 3.2), the forward pass samples a random index
-$j \in \{0, \ldots, N_t - 1\}$ at each stage and uses the corresponding noise
-vector $\eta_{t,j}$ from the opening tree. Other sampling schemes (`External`,
-`Historical`) use entirely separate data sources and do not access the opening
-tree; the forward pass noise path is governed by the sampling scheme
-abstraction (section 3).
+active (see section 3.2), the forward pass samples a random opening
+$\omega \in \Omega_n$ at each node it visits — a random index
+$j \in \{0, \ldots, N_t - 1\}$ on the implicit chain — and uses its
+corresponding noise vector $\eta_{t,j}$ from the opening tree. Other sampling
+schemes (`External`, `Historical`) use entirely separate data sources and do
+not access the opening tree; the forward pass noise path is governed by the
+sampling scheme abstraction (section 3).
 
-The opening tree uses stage-major ordering so that all $N_t$ noise vectors for
-a given stage are contiguous in memory, enabling linear access during the
-backward pass. The noise vector for a given (stage, opening_index) pair is
-read directly without iteration over the tree structure.
+The opening tree uses stage-major ordering so that all of a stage's noise
+vectors — the set its node(s) draw $\Omega_n$ from — are contiguous in
+memory, enabling linear access during the backward pass. The noise vector for
+a given (stage, opening_index) pair is read directly without iteration over
+the tree structure.
 
 The same tree is generated bit-identically on every MPI rank because both the
 per-`(opening_index, stage)` seed derivation and the noise-group assignment
@@ -252,10 +267,11 @@ from this property, see [Determinism Guarantees](/math/determinism-guarantees).
 
 The `sampling_method` field on each stage in `stages.json` controls the
 algorithm used to generate the $N_t$ noise vectors for that stage's opening
-tree entries. This is **orthogonal** to the sampling scheme abstraction
-(section 3): `sampling_method` governs _how_ the opening tree is populated
-with noise vectors; the sampling scheme governs _which_ noise source the
-forward pass uses.
+tree entries — the set each stage's node(s) draw their $\Omega_n$ from. This
+is **orthogonal** to the sampling scheme abstraction (section 3):
+`sampling_method` governs _how_ the opening tree is populated with noise
+vectors; the sampling scheme governs _which_ noise source the forward pass
+uses.
 
 **SAA** (Sample Average Approximation) is the default `sampling_method`:
 uniform Monte Carlo random sampling from the deterministic-seeded RNG. Each
@@ -770,6 +786,7 @@ mapping, result aggregation) is not yet implemented.
 - [PAR(p) Inflow Model](/math/par-inflow-model) — Mathematical definition, parameter set, stored vs. computed quantities, fitting procedure, spectral factorisation rationale, validation invariants
 - [Inflow Non-Negativity](/math/inflow-nonnegativity) — Handling of negative inflow realizations from PAR sampling
 - [SDDP Algorithm](/math/sddp-algorithm) — Forward/backward pass structure, cut generation, convergence; references sampling scheme abstraction (sections 3.1–3.2)
+- [Policy Graphs](/math/policy-graphs) — The node/transition/pool structure the opening tree's per-node opening set $\Omega_n$ (section 2.3) is scoped to
 - [Cut Management](/math/cut-management) — Cut generation, storage, and selection; uses opening tree branchings as the backward pass input
 - [Multi-Resolution Studies](/math/multi-resolution-studies) — Multi-resolution modeling configurations; uses scenario generation with varied stage counts
 - [Weekly+Monthly Coupled Studies](/math/weekly-monthly-coupled-studies) — Coupled weekly/monthly study configurations; uses complete tree mode and the deterministic-trunk special case
