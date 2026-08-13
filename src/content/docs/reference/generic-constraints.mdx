@@ -1,0 +1,557 @@
+---
+title: Generic Constraints
+description: The generic-constraints authoring language -- file set, interval and shape derivation, the activation grid, the variable catalog, the `@name` grammar, and the resolved echo.
+---
+
+v0.14.0 turns generic constraints from a small per-file field table into a full
+**authoring language**: three input files, one output, and a grammar layer
+(named `@expressions`, inline relational RHS, interval bounds). This page is
+the authority for that language. For the per-file column tables, see
+[Case Directory Format](/reference/case-directory-format/); for the LP
+formulation these constraints desugar into, see
+[LP Formulation §10](/math/lp-formulation#10-generic-constraints).
+
+## Worked example: v0.13.0 → v0.14.0
+
+### Before (v0.13.0): a two-constraint band
+
+Every constraint carried one `sense` (`">="`, `"<="`, or `"=="`) and every
+bounds row carried one `bound` column. Expressing a two-sided band meant
+authoring the **same expression twice**, under two different constraint ids:
+
+```json
+{
+  "constraints": [
+    {
+      "id": 1,
+      "name": "southeast_hydro_floor",
+      "expression": "hydro_generation(10) + hydro_generation(11)",
+      "sense": ">=",
+      "slack": { "enabled": true, "penalty": 5000.0 }
+    },
+    {
+      "id": 2,
+      "name": "southeast_hydro_cap",
+      "expression": "hydro_generation(10) + hydro_generation(11)",
+      "sense": "<=",
+      "slack": { "enabled": true, "penalty": 5000.0 }
+    }
+  ]
+}
+```
+
+`generic_constraint_bounds.parquet` (v0.13.0 shape, one `bound` column):
+
+| constraint_id | stage_id | block_id | bound |
+| ------------- | -------- | -------- | ----- |
+| 1             | 0        | null     | 35.0  |
+| 2             | 0        | null     | 100.0 |
+
+Two constraint ids, two LP rows, two slack variables — for one logical band.
+
+### After (v0.14.0): one constraint, a derived band
+
+`sense` is gone. `generic_constraint_bounds.parquet` now carries nullable
+`bound_lower`/`bound_upper`, and the shape (`floor`/`cap`/`band`/`equality`) is
+**derived** from which of the two is present:
+
+```json
+{
+  "constraints": [
+    {
+      "id": 1,
+      "name": "southeast_hydro_band",
+      "expression": "hydro_generation(10) + hydro_generation(11)",
+      "slack": { "enabled": true, "penalty": 5000.0 }
+    }
+  ]
+}
+```
+
+| constraint_id | stage_id | block_id | bound_lower | bound_upper |
+| ------------- | -------- | -------- | ----------- | ----------- |
+| 1             | 0        | null     | 35.0        | 100.0       |
+
+One constraint id, one row, `bound_lower=35.0 != bound_upper=100.0` derives to
+`"band"`.
+
+### Further (v0.14.0): inline relational RHS + a named expression
+
+Instead of hard-coding `35.0`/`100.0` in the parquet, the cap can be authored
+inline against a named scalar parameter, and the repeated LHS declared once as
+a named expression:
+
+```json
+{
+  "expressions": [
+    {
+      "name": "southeast_hydro",
+      "expression": "hydro_generation(10) + hydro_generation(11)"
+    }
+  ],
+  "constraints": [
+    {
+      "id": 1,
+      "name": "southeast_hydro_cap",
+      "expression": "@southeast_hydro <= @demand_cap",
+      "slack": { "enabled": true, "penalty": 5000.0 }
+    }
+  ]
+}
+```
+
+with `@demand_cap` declared in `constraints/generic_parameters.json`. The
+bounds parquet still needs a row to **activate** constraint 1 at stage 0 — but
+with the inline `<=` supplying `bound_upper` entirely, that row's own endpoints
+can both be `null`:
+
+| constraint_id | stage_id | block_id | bound_lower | bound_upper |
+| ------------- | -------- | -------- | ----------- | ----------- |
+| 1             | 0        | null     | null        | null        |
+
+This is legal only because the constraint's own inline remainder fills
+`bound_upper` — see [the activation grid](#the-activation-grid) below.
+
+---
+
+## File set
+
+| File                                                | Role                                                                                                                                                                    |
+| ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `constraints/generic_constraints.json`               | Declares each constraint's `id`, `name`, `expression` (LHS, plus an optional inline relational operator), `description?`, and `slack` config; an optional top-level `expressions` array declares named linear expressions shared by every constraint. |
+| `constraints/generic_constraint_bounds.parquet`      | The **activation grid**: one row per `(constraint_id, stage_id[, block_id])` cell the constraint is active for, carrying the nullable `bound_lower`/`bound_upper` parquet base.                                                                        |
+| `constraints/generic_parameters.json`                | Declares named scalar parameters (top-level key `"scalar_parameters"`, unchanged across the rework) referenced by `@name` from constraint expressions, inline bound endpoints, and other named expressions.                                          |
+| `generic_constraints/resolved_echo.parquet` (output) | The fully-resolved, desugared form of every generic constraint the solver actually built — one row per `(constraint, stage, block, term)`. Written whenever the study has generic constraints; the directory is entirely absent otherwise.            |
+
+---
+
+## Interval and shape derivation
+
+`sense` no longer exists anywhere in the grammar. A bound's shape is derived
+purely from which of `bound_lower`/`bound_upper` are present, after the
+parquet base and any inline affine remainder (below) have been folded
+together:
+
+| `bound_lower` | `bound_upper` | Derived shape                               |
+| ------------- | ------------- | -------------------------------------------- |
+| present       | absent        | `floor`                                      |
+| absent        | present       | `cap`                                        |
+| present       | present, different | `band`                                 |
+| present       | present, bit-identical | `equality`                         |
+| absent        | absent        | rejected (see [the activation grid](#the-activation-grid)) |
+
+The equal-vs-different check is an exact `f64::to_bits()` comparison, never a
+tolerance — a very narrow but distinct band stays `band`, not `equality`.
+
+The parquet's numeric base and the constraint's inline affine remainder
+**compose additively** on the same endpoint rather than conflicting:
+`resolved = base + remainder` when both are present on that endpoint, or
+either alone when only one is (`fold_endpoint` in the LP builder). The fold
+runs per `(stage, block)`, since the remainder may itself resolve a
+stage/block-varying named parameter (a `per_stage_block` kind — see
+[`generic_parameters.json`](#generic_parametersjson-the-five-parameter-kinds)
+below).
+
+A load-time inversion check (`bound_upper < bound_lower`) only fires when both
+endpoints are **statically** resolvable — a constant-only remainder, or none
+at all. A remainder carrying a live `@param` term makes the endpoint
+stage-varying, so its inversion is left to LP infeasibility at solve time
+rather than a combinatorial pre-solve check across every stage and block.
+
+<div style="width:min(100%,560px)">
+
+```d2
+direction: down
+
+base: "parquet base\nbound_upper (nullable)" {shape: parallelogram}
+const_term: "affine remainder: constant\ninline \"<= 12.0\"" {shape: rectangle}
+param_term: "affine remainder: @name term\nresolved via generic_parameters.json" {shape: rectangle}
+
+fold: "fold_endpoint\nbase + remainder (additive)" {shape: rectangle}
+resolved: "resolved bound_upper\nLP row bound + resolved_echo" {shape: oval}
+
+base -> fold
+const_term -> fold
+param_term -> fold
+fold -> resolved
+```
+
+</div>
+
+---
+
+## The activation grid
+
+`generic_constraint_bounds.parquet` **is** the activation grid — there is no
+separate enable flag. A constraint is active at `(stage, block)` if and only
+if a row exists for it there.
+
+- **A reference with no rows is rejected.** A constraint whose only bound
+  endpoints come from an inline affine remainder, but which has zero rows in
+  the bounds parquet, fails referential validation: `InvalidReference`,
+  "declares a bound reference but has no activation rows in
+  generic_constraint_bounds.parquet: the reference would apply to nothing."
+  The parquet still decides *where* the constraint applies, even when it
+  supplies none of the bound *value*.
+- **A both-null row is legal only when a reference fills a side.** A row with
+  `bound_lower = null` and `bound_upper = null` is accepted when the
+  constraint's own `bound_lower_affine`/`bound_upper_affine` supplies at least
+  one endpoint — the row's only job is then to activate that cell; the value
+  comes entirely from the remainder (this is exactly the third worked example
+  above). A both-null row on a constraint with **no** affine remainder on
+  either side is `InvalidValue`: "has neither bound_lower nor bound_upper: at
+  least one endpoint is required."
+- **A degenerate equal band is accepted, an inverted one is not.**
+  `bound_upper == bound_lower` derives to `equality` and is fine;
+  `bound_upper < bound_lower` (checked only when both are statically
+  resolvable, per above) is `InvalidValue`: "an inverted interval is not
+  allowed."
+- **`block_id = null` applies to every block of the stage.** When the
+  constraint's expression — and any block-varying coefficient parameter on
+  it — is block-independent, this collapses to a **single** stage-level LP
+  row priced by the stage's total hours, rather than one row per block. A
+  `per_stage_block`-kind parameter anywhere in the constraint's affine
+  remainder suppresses that collapse even when the expression itself is
+  block-independent, since one collapsed row would otherwise resolve one
+  arbitrary block's bound value and silently lose the per-block variation.
+  Full row-materialization derivation:
+  [LP Formulation §10](/math/lp-formulation#10-generic-constraints).
+
+---
+
+## Variable catalog
+
+All 24 LP variable types are addressable from an `expression`. The reference
+grammar is `var_name(entity_id[, block_id][, bus=bus_id])` — an optional
+positional block argument, then an optional named `bus=` selector, in that
+order (`f(id)`, `f(id, block)`, `f(id, bus=b)`, `f(id, block, bus=b)` all
+parse).
+
+| Variable                        | Block arg | `bus=` | Notes                                                                    |
+| -------------------------------- | --------- | ------ | -------------------------------------------------------------------------- |
+| `hydro_storage(id)`              | No        | No     | Stage-level stock                                                        |
+| `hydro_withdrawal(id)`           | No        | No     | Stage-level                                                              |
+| `hydro_evaporation(id[, block])` | Yes       | No     | `None` = block 0 (parallel-mode stage evaporation); **rejected** with `None` in chronological mode with more than one block — a block must be named |
+| `hydro_inflow(id[, block])`      | Yes       | No     | `None` always expands to **one row per block** (upstream releases are per-block columns) — never collapses |
+| `hydro_storage_initial(id[, block])` | Yes (boundary) | No | `Some(k)` = incoming column of block `k`; `None` = stage-initial anchor S⁰ |
+| `hydro_storage_final(id[, block])`   | Yes (boundary) | No | `Some(k)` = outgoing column of block `k`; `None` = stage-final Sᴷ (equal to `hydro_storage`) |
+| `hydro_turbined(id[, block][, bus=])` | Yes    | Yes    | `bus=` selects one `(hydro, bus)` cell; omitted sums over the plant's cells |
+| `hydro_spillage(id[, block])`    | Yes       | No     |                                                                           |
+| `hydro_diversion(id[, block])`   | Yes       | No     |                                                                           |
+| `hydro_outflow(id[, block])`     | Yes       | No     | Derived alias for turbined + spillage, not an independent LP column      |
+| `hydro_generation(id[, block][, bus=])` | Yes  | Yes    | Same `bus=` semantics as `hydro_turbined`                               |
+| `thermal_generation(id[, block])` | Yes      | No     |                                                                           |
+| `line_direct(id[, block])`       | Yes       | No     | Forward flow only                                                        |
+| `line_reverse(id[, block])`      | Yes       | No     | Reverse flow only                                                        |
+| `line_exchange(id[, block])`     | Yes       | No     | Net flow (direct − reverse); also addressable by bus pair, below         |
+| `bus_deficit(id[, block])`       | Yes       | No     |                                                                           |
+| `bus_excess(id[, block])`        | Yes       | No     |                                                                           |
+| `pumping_flow(id[, block])`      | Yes       | No     |                                                                           |
+| `pumping_power(id[, block])`     | Yes       | No     |                                                                           |
+| `contract_import(id[, block])`   | Yes       | No     |                                                                           |
+| `contract_export(id[, block])`   | Yes       | No     |                                                                           |
+| `non_controllable_generation(id[, block])` | Yes | No   |                                                                           |
+| `non_controllable_curtailment(id[, block])` | Yes | No  |                                                                           |
+| `anticipated_decision(id)`       | **No** (rejected if given) | No | Stage-level scalar commitment column; no block index at all — use `anticipated_decision(N)` |
+
+Only `hydro_turbined` and `hydro_generation` accept `bus=`; any other
+variable rejects it as "does not accept a bus selector."
+
+### `line_exchange(source_bus=, target_bus=)`
+
+Besides the direct-id form (`line_exchange(id[, block])`), `line_exchange`
+alone also accepts an endpoint-bus-pair form **in place of** the positional
+line id:
+
+```
+line_exchange(source_bus=3, target_bus=7)
+```
+
+`source_bus=` and `target_bus=` may appear in either order, but both are
+required, and this form takes no block argument — it always resolves to
+`block_id: None`. Cobre resolves the `(source_bus, target_bus)` pair against a
+line-topology index built from every declared line's `(source_bus_id,
+target_bus_id)` pair and its reverse:
+
+- If the pair matches a line's **declared** direction, the term's orientation
+  is forward (scale `+1.0`).
+- If the pair is **reversed** relative to the line's declared direction, the
+  orientation folds `-1.0` into the term's scale — so an author never needs to
+  know which way a given line happened to be declared.
+
+The pair form desugars at parse time to exactly the same `LineExchange
+{ line_id }` term the direct-id form produces; there is no separate storage or
+downstream special-casing. If two *distinct* lines share the same unordered
+bus pair, the pair no longer identifies a single line and the reference is
+rejected at line-topology build time ("buses ... are connected by more than
+one line ... reference the intended line by its id, or sum the lines with a
+named expression").
+
+<div style="width:min(100%,560px)">
+
+```d2
+direction: down
+
+decl: "system/lines.json\nsource_bus_id, target_bus_id" {shape: parallelogram}
+idx: "line-topology index\n(source,target) and its reverse" {shape: rectangle}
+ref: "line_exchange(source_bus=3, target_bus=7)" {shape: rectangle}
+resolve: "resolve pair -> (line_id, orientation)" {shape: rectangle}
+term: "LineExchange { line_id }\nscale *= +-1.0" {shape: oval}
+
+decl -> idx
+idx -> resolve
+ref -> resolve
+resolve -> term
+```
+
+</div>
+
+---
+
+## The `@name` grammar
+
+Two authoring roles share **one namespace**: scalar parameters (declared in
+`constraints/generic_parameters.json`) and named expressions (declared in the
+constraints file's own top-level `expressions` array). Declaring the same name
+in both is rejected: "name ... is declared as both a scalar parameter and a
+named expression; the \"@name\" namespace is shared."
+
+**Disambiguation.** `@name` immediately followed by `* variable` is a
+scalar-parameter *coefficient*, resolved against `generic_parameters.json`. A
+bare `@name`, or `coefficient * @name` with no trailing variable, is a
+named-expression *reference*, resolved against `expressions`. `@param *
+@name` — stacking both roles in one term — is rejected outright: it has no
+flat linear-core representation.
+
+**Composition.** A named expression may reference another named expression;
+composition resolves transitively, with each reference's scale distributed
+into every substituted term:
+
+```json
+{
+  "expressions": [
+    { "name": "base", "expression": "hydro_generation(0)" },
+    { "name": "inner", "expression": "3.0 * @base" },
+    { "name": "outer", "expression": "@inner + hydro_generation(1)" }
+  ],
+  "constraints": [
+    { "id": 0, "name": "c0", "expression": "2.0 * @outer", "slack": { "enabled": false } }
+  ]
+}
+```
+
+`2.0 * @outer` inlines to `6.0 * hydro_generation(0) + 2.0 * hydro_generation(1)`.
+
+**Cycle detection.** Before any substitution runs, an iterative three-colour
+DFS walks the reference graph. A self-reference (`@e = @e`) is a cycle of
+length one; a longer cycle (`@a = @b`, `@b = @a`) is rejected with the full
+path in the message (`"a -> b -> a"`). The walk is iterative, never recursive
+over the chain, so a deep dependency chain cannot overflow the stack.
+
+**Term budget.** Substitution caps at 100,000 materialized terms per
+expansion — catching an exponential doubling chain (`@e_k = @e_{k-1} +
+@e_{k-1}`) fast, well before a 2⁶⁰-term vector would ever materialize.
+Declaring such an expression is not itself an error: an existence-only,
+non-expanding walk checks that every reference *resolves* at declaration
+time regardless of size; the term-budget cap only fires when something
+actually inlines it.
+
+**Grouping.** A parenthesized group scaled by a leading literal coefficient
+(`2.0 * (@fnese - hydro_generation(2))`) distributes that coefficient into
+every inner term at parse time — the same flat term list the hand-expanded
+form would produce, to arbitrary nesting depth. Only a *literal* coefficient
+may scale a group; `@param * (...)` is rejected for the same reason as
+`@param * @name`.
+
+<div style="width:min(100%,560px)">
+
+```d2
+direction: down
+
+a: "@a\n\"@b\"" {shape: rectangle}
+b: "@b\n\"@a\"" {shape: rectangle}
+a -> b
+b -> a
+
+detect: "detect_cycles()\nthree-colour DFS" {shape: diamond}
+inline: "inline()\nsubstitute terms" {shape: rectangle}
+rejected: "SchemaError\n\"a -> b -> a\"" {shape: oval}
+
+b -> detect
+detect -> inline: acyclic
+detect -> rejected: cycle found
+```
+
+</div>
+
+---
+
+## Inline relational RHS
+
+Grammar: `relation ::= side (('<=' | '>=' | '==') side)?`. An expression
+carries **at most one** top-level relational operator; a double range (`LI <=
+expr <= LS`) is explicitly unsupported — split into two constraints, or fold
+both endpoints through the bounds-parquet base directly.
+
+- **No operator**: `expression` is the flat one-sided LHS (the v0.13.0-minus-`sense`
+  shape); the interval comes entirely from the parquet base / affine-remainder
+  mechanism described above.
+- **One operator**: every RHS variable term moves onto the merged LHS,
+  sign-flipped; a same-variable, same-coefficient-kind pair (across either
+  side) merges by summing its effective contribution, and a merged literal
+  column that cancels to exactly `0.0` is dropped. Every non-variable term — a
+  literal constant, or an `@name` that resolves as a scalar parameter — folds
+  into the affine remainder the operator assigns: `<=` to the upper endpoint,
+  `>=` to the lower, `==` to both (an identical remainder on each side).
+
+A bound-position `@name` resolves as a scalar parameter **only when it is not
+a declared named expression**. When it *is* one, it still inlines into the
+merged LHS as variable terms rather than becoming part of the remainder:
+
+```json
+{
+  "expressions": [
+    { "name": "fnese", "expression": "hydro_generation(10) + hydro_generation(11)" }
+  ],
+  "constraints": [
+    { "id": 0, "name": "c0", "expression": "hydro_generation(0) >= @fnese", "slack": { "enabled": false } }
+  ]
+}
+```
+
+folds all three `hydro_generation` terms onto the merged LHS and assigns an
+**explicit zero-constant** lower bound — an all-variable RHS still supplies an
+affine bound, never "no bound."
+
+---
+
+## `generic_parameters.json`: the five parameter kinds
+
+The top-level JSON key remains `"scalar_parameters"` (an array), unchanged
+across the rework, even though the file itself now lives at
+`constraints/generic_parameters.json`.
+
+| `kind`            | Payload field                                        | Value semantics                                                              |
+| ------------------ | ------------------------------------------------------ | ------------------------------------------------------------------------------ |
+| `constant`         | `"value": <f64>`                                       | One value for every stage                                                    |
+| `per_stage`        | `"values": [[stage_id, value], ...]`                   | Explicit value per stage; `stage_id`s must be a contiguous range from `0`     |
+| `seasonal`         | `"values": [[season_id, value], ...]`                  | One value per season; stages inherit their season's value; `season_id`s must be unique |
+| `computed`         | `"computed_spec": { "tag": "<variant>", "hydro_id": <int> }` | Derived from hydro geometry/operational data at LP-build time (e.g. `equivalent_productivity`) |
+| `per_stage_block`  | `"block_values": [[stage_id, block_id, value], ...]`   | Explicit value per `(stage_id, block_id)` pair; each pair unique              |
+
+:::note[The vendored schema's `kind` description is stale]
+[`generic_parameters.schema.json`](/schemas/generic_parameters.schema.json)'s
+`kind` field description currently lists only `constant`/`per_stage`/`seasonal`/`computed`
+— an upstream documentation lag in the schema generator (issue tracked
+upstream), not a parser limitation. `per_stage_block` is fully implemented and
+validated by `cobre-io`; trust this page and the code over that description
+until the generator is fixed.
+:::
+
+`per_stage_block` is the mechanism that makes a generic-constraint bound (or
+coefficient) genuinely block-varying — and, per
+[the activation grid](#the-activation-grid) above, referencing one in an
+affine remainder suppresses the stage-level row collapse.
+
+---
+
+## Two-sided slack
+
+Slack config (`slack.enabled`/`slack.penalty`) is declared once per
+constraint and applies uniformly to every row the activation grid produces
+for it. How many LP columns that costs is a property of the **row's own**
+resolved endpoint pair, never a constraint-level label:
+
+| Row shape             | Slack columns                          |
+| ----------------------- | ----------------------------------------- |
+| Disabled                | Zero                                      |
+| One-sided (`floor`/`cap`) | One (`s⁺`)                              |
+| Two-sided (`band`/`equality`) | Two (`s⁺` then `s⁻`)                |
+
+A two-sided bound needs slack in both directions to relax either endpoint
+independently — one column cannot represent "went below the floor" and "went
+above the cap" at once.
+
+**Cost charges both.** Both columns are priced at `penalty * block_hours` in
+the objective (a stage-level row is priced by the stage's total block hours; a
+per-block row, by its own block's hours) — violating either direction costs
+the same per-unit penalty, and the LP can never let a `+5` on one side and a
+`-5` on the other net to a free violation.
+
+**The reported value nets them.** In the simulation violations output, a
+one-sided row reports the raw (non-negative) slack primal. A two-sided row
+instead reports the **signed net** `s⁺ − s⁻` (which may be negative) —
+deliberately different from the cost, which always sums `s⁺ + s⁻`. In
+practice both slacks are rarely simultaneously nonzero at an LP vertex, so the
+net is the more legible number for a results reader while the sum remains the
+correct charge.
+
+---
+
+## The resolved echo
+
+`generic_constraints/resolved_echo.parquet` is written to the training output
+tree whenever the study declares any generic constraints; for a study with
+none, the `generic_constraints/` directory does not exist at all.
+
+One row is emitted per **resolved LHS term** per active `(constraint, stage,
+block)` cell, in canonical `(constraint, stage, block, term)` order — declaration-order
+invariant, so the same case always echoes the same rows in the same order. A
+term-less (constant-only) constraint contributes a single placeholder row
+whose per-term columns are all null.
+
+| Column             | Type    | Description                                                                          |
+| -------------------- | --------- | ---------------------------------------------------------------------------------------- |
+| `stage_id`           | INT32     | Study stage id                                                                          |
+| `block_id`           | INT32, nullable | Null on a collapsed stage-level row                                              |
+| `constraint_id`      | INT32     | Generic constraint id                                                                   |
+| `constraint_name`    | UTF8      | Generic constraint name                                                                 |
+| `term_index`         | INT32, nullable | Position in the resolved LHS; null on the term-less placeholder row              |
+| `variable_kind`      | UTF8, nullable | `VariableRef` discriminant (e.g. `"thermal_generation"`); null on the placeholder |
+| `variable`           | UTF8, nullable | Rendered variable label (e.g. `"thermal[3]"`); null on the placeholder            |
+| `coefficient`        | DOUBLE, nullable | Fully resolved numeric coefficient (`resolve(coefficient, stage, block) * scale`); null on the placeholder |
+| `bound_lower`        | DOUBLE, nullable | Lower interval endpoint after folding; null when unbounded below                 |
+| `bound_upper`        | DOUBLE, nullable | Upper interval endpoint after folding; null when unbounded above                 |
+| `derived_shape`      | UTF8      | The same `floor`/`cap`/`band`/`equality` label as above — never an authored sense       |
+| `slack_enabled`      | BOOLEAN   | Whether the constraint carries a slack term                                             |
+| `slack_penalty`      | DOUBLE, nullable | Slack penalty; null when slack is disabled                                       |
+
+This is the fully **desugared** form: every named-expression reference is
+already inlined into flat terms, every inline relational RHS has already
+normalized into the `bound_lower`/`bound_upper` pair, and every `@name`
+coefficient or bound has already resolved to its numeric value at that
+`(stage, block)`. It is exactly what the solver saw — the tool for auditing an
+authored expression against the LP that was actually built.
+
+---
+
+## Authoring errors
+
+The failure modes below are the ones an author is most likely to hit while
+writing this grammar; see [Error Codes](/reference/error-codes/) for the
+exhaustive catalog and resolutions — it is not repeated here.
+
+| Situation                                                                    | Error                        |
+| ------------------------------------------------------------------------------ | ------------------------------- |
+| Unknown variable name, unknown `@parameter`, or a grammar violation           | `SchemaError` (parse-time)      |
+| Duplicate constraint `id`, duplicate parameter `id`/`name`, or a name colliding across the scalar-parameter/named-expression namespace | `SchemaError`  |
+| Reference cycle among named expressions                                      | `SchemaError` (see [`CycleDetected`](/reference/error-codes/#cycledetected)) |
+| Constraint declares a bound reference but has no activation rows             | [`InvalidReference`](/reference/error-codes/#invalidreference) |
+| A bounds row with neither endpoint, and no affine remainder to fill one      | [`InvalidValue`](/reference/error-codes/#invalidvalue) |
+| Inverted interval (`bound_upper < bound_lower`, both statically resolvable)  | [`InvalidValue`](/reference/error-codes/#invalidvalue) |
+| `block_id` out of range for the stage's block count                          | [`InvalidValue`](/reference/error-codes/#invalidvalue) |
+| Duplicate `(constraint_id, stage_id, block_id)` key in the bounds parquet     | [`DuplicateId`](/reference/error-codes/#duplicateid) |
+| Two distinct lines sharing one unordered bus pair, addressed via `line_exchange(source_bus=, target_bus=)` | `SchemaError` |
+
+---
+
+## See also
+
+- [LP Formulation §10](/math/lp-formulation#10-generic-constraints) — the math
+  formulation these constraints desugar into.
+- [Case Directory Format](/reference/case-directory-format/#constraintsgeneric_constraintsjson) —
+  per-file field tables for the three input files.
+- [Error Codes](/reference/error-codes/) — the exhaustive `LoadError`/`ErrorKind` catalog.
+- [JSON Schemas](/reference/json-schemas/) — vendored
+  [`generic_constraints.schema.json`](/schemas/generic_constraints.schema.json) and
+  [`generic_parameters.schema.json`](/schemas/generic_parameters.schema.json) for editor integration.

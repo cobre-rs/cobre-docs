@@ -36,8 +36,7 @@ my_case/
 │   ├── hydro_production_models.json         # FPHA production function configs (optional)
 │   ├── hydro_energy_productivity.parquet    # Per-plant, per-stage energy-conversion overrides (optional)
 │   ├── fpha_hyperplanes.parquet             # FPHA hyperplane coefficients (optional)
-│   ├── tailrace_curves.parquet              # Piecewise-quartic tailrace curves (optional)
-│   └── scalar_parameters.json              # Scalar parameters for constraint expressions (optional)
+│   └── tailrace_curves.parquet              # Piecewise-quartic tailrace curves (optional)
 ├── scenarios/
 │   ├── inflow_history.parquet               # Historical inflow series (optional)
 │   ├── inflow_seasonal_stats.parquet        # PAR model seasonal statistics (optional)
@@ -61,6 +60,7 @@ my_case/
     ├── ncs_bounds.parquet                   # Stage-varying NCS available generation bounds (optional)
     ├── generic_constraints.json             # User-defined LP constraints (optional)
     ├── generic_constraint_bounds.parquet    # Bounds for generic constraints (optional)
+    ├── generic_parameters.json              # Named parameters for constraint expressions (optional)
     ├── penalty_overrides_bus.parquet        # Stage-varying bus penalty overrides (optional)
     ├── penalty_overrides_line.parquet       # Stage-varying line penalty overrides (optional)
     ├── penalty_overrides_hydro.parquet      # Stage-varying hydro penalty overrides (optional)
@@ -87,13 +87,12 @@ my_case/
 | `system/fpha_hyperplanes.parquet`               | Parquet | No       | FPHA hyperplane coefficients                                                       |
 | `system/hydro_energy_productivity.parquet`      | Parquet | No       | Per-plant, per-stage energy-conversion overrides                                   |
 | `system/tailrace_curves.parquet`                | Parquet | No       | Piecewise-quartic tailrace curves with backwater families                          |
-| `system/scalar_parameters.json`                 | JSON    | No       | Scalar parameters for constraint expressions                                       |
 | `scenarios/inflow_history.parquet`              | Parquet | No       | Historical inflow time series                                                      |
 | `scenarios/inflow_seasonal_stats.parquet`       | Parquet | No       | PAR model seasonal statistics                                                      |
 | `scenarios/inflow_ar_coefficients.parquet`      | Parquet | No       | PAR autoregressive coefficients                                                    |
 | `scenarios/external_inflow_scenarios.parquet`   | Parquet | No       | External inflow scenario realizations (hydro_id, stage_id, scenario_id, value_m3s) |
 | `scenarios/external_load_scenarios.parquet`     | Parquet | No       | External load scenario realizations (bus_id, stage_id, scenario_id, value_mw)      |
-| `scenarios/external_ncs_scenarios.parquet`      | Parquet | No       | External NCS scenario realizations (ncs_id, stage_id, scenario_id, value)          |
+| `scenarios/external_ncs_scenarios.parquet`      | Parquet | No       | External NCS scenario realizations (ncs_id, stage_id, scenario_id, availability_factor) |
 | `scenarios/load_seasonal_stats.parquet`         | Parquet | No       | Load model seasonal statistics                                                     |
 | `scenarios/load_factors.json`                   | JSON    | No       | Load scaling factors per bus/stage                                                 |
 | `scenarios/non_controllable_factors.json`       | JSON    | No       | NCS block scaling factors per source/stage                                         |
@@ -109,6 +108,7 @@ my_case/
 | `constraints/ncs_bounds.parquet`                | Parquet | No       | Stage-varying NCS available generation bounds                                      |
 | `constraints/generic_constraints.json`          | JSON    | No       | User-defined LP constraints                                                        |
 | `constraints/generic_constraint_bounds.parquet` | Parquet | No       | Generic constraint RHS bounds                                                      |
+| `constraints/generic_parameters.json`           | JSON    | No       | Named parameters for constraint expressions                                        |
 | `constraints/penalty_overrides_bus.parquet`     | Parquet | No       | Stage-varying bus excess cost                                                      |
 | `constraints/penalty_overrides_line.parquet`    | Parquet | No       | Stage-varying line exchange cost                                                   |
 | `constraints/penalty_overrides_hydro.parquet`   | Parquet | No       | Stage-varying hydro penalty costs                                                  |
@@ -1145,70 +1145,6 @@ The quartic is evaluated as `coefficient_0 + coefficient_1*x + coefficient_2*x²
 
 ---
 
-### `system/scalar_parameters.json`
-
-Named scalar parameters that can be referenced from generic-constraint coefficient
-expressions using the `@name` sigil. The file is optional; when absent, no
-parameters are loaded and any `@name` token in a constraint expression causes a
-load error.
-
-**Top-level structure:**
-
-```json
-{
-  "$schema": "https://docs.cobre-rs.dev/schemas/scalar_parameters.schema.json",
-  "scalar_parameters": [
-    {
-      "id": 1,
-      "name": "rho_eq_h1",
-      "kind": "computed",
-      "computed_spec": { "tag": "equivalent_productivity", "hydro_id": 1 }
-    }
-  ]
-}
-```
-
-**Per-entry fields:**
-
-| Field           | Type    | Required | Description                                                               |
-| --------------- | ------- | -------- | ------------------------------------------------------------------------- |
-| `id`            | integer | Yes      | Unique parameter identifier (int32)                                       |
-| `name`          | string  | Yes      | Unique parameter name (non-empty, no leading/trailing whitespace)         |
-| `kind`          | string  | Yes      | One of `constant`, `per_stage`, `seasonal`, `computed`                    |
-| `value`         | number  | kind dep | Finite f64 value. Required for `constant`. Absent otherwise.              |
-| `values`        | array   | kind dep | Array of `[index, value]` pairs. Required for `per_stage` and `seasonal`. |
-| `computed_spec` | object  | kind dep | `{"tag": "<variant>", "hydro_id": <int>}`. Required for `computed`.       |
-
-**`computed_spec` tag values:**
-
-| `tag`                      | Description                             |
-| -------------------------- | --------------------------------------- |
-| `equivalent_productivity`  | Equivalent productivity ρ_eq            |
-| `accumulated_productivity` | Accumulated cascade productivity ρ_acum |
-| `reference_volume`         | Reference reservoir volume V_ref        |
-| `reference_turbine`        | Reference turbined flow Q_ref           |
-| `min_storage`              | Minimum operational storage V_min       |
-| `max_storage`              | Maximum operational storage V_max       |
-| `specific_productivity`    | Specific productivity ρ_esp             |
-
-**Validation:**
-
-- `id` values must be unique across all entries.
-- `name` values must be unique (case-sensitive), non-empty, and have no leading
-  or trailing whitespace.
-- `kind` must be exactly one of the four legal values.
-- For `per_stage`: `values` pairs must have contiguous `stage_id` keys starting
-  at 0; duplicates and gaps are rejected.
-- For `seasonal`: `season_id` keys within an entry must be unique; duplicates
-  are rejected.
-- For `computed`: `computed_spec` must be present with a valid `tag` and integer
-  `hydro_id`. The referenced hydro must exist in `hydros.json`.
-- Unknown JSON fields on any entry are rejected immediately.
-
-See the Scalar Parameters guide for usage examples.
-
----
-
 ## `scenarios/` files (Parquet)
 
 ### `scenarios/inflow_history.parquet`
@@ -1532,10 +1468,10 @@ positive, could never represent.
 
 Stage-varying flow bounds for pumping stations.
 
-| Column       | Type   | Required | Description                 |
-| ------------ | ------ | -------- | --------------------------- |
-| `station_id` | INT32  | Yes      | Pumping station ID          |
-| `stage_id`   | INT32  | Yes      | Stage ID                    |
+| Column               | Type   | Required | Description                 |
+| -------------------- | ------ | -------- | --------------------------- |
+| `pumping_station_id` | INT32  | Yes      | Pumping station ID          |
+| `stage_id`           | INT32  | Yes      | Stage ID                    |
 | `min_m3s`    | DOUBLE           | No       | Minimum pumping flow (m³/s)                                                                                          |
 | `max_m3s`    | DOUBLE           | No       | Maximum pumping flow (m³/s)                                                                                          |
 | `block_id`   | INT32 (nullable) | No       | Zero-based block index within the stage, selecting one block's `min_m3s`/`max_m3s` override. `null` applies at the stage level. |
@@ -1596,7 +1532,6 @@ constraints are added.
       "id": 1,
       "name": "cap_ant_t1",
       "expression": "anticipated_decision(2)",
-      "sense": "<=",
       "slack": { "enabled": false }
     }
   ]
@@ -1611,8 +1546,14 @@ constraints are added.
 | `name`        | string          | Yes      | Short name used in reports and log output.                                                      |
 | `expression`  | string          | Yes      | Expression string over variable references and constants (see below).                          |
 | `description` | string or null  | No       | Optional human-readable description.                                                            |
-| `sense`       | string          | Yes      | Comparison sense: `">="`, `"<="`, or `"=="`.                                                     |
 | `slack`       | object          | Yes      | Slack variable configuration: `enabled` (boolean) and `penalty` (number; required when `enabled` is `true`). |
+
+There is no `sense` field. A constraint's shape (`floor`/`cap`/`band`/`equality`)
+is derived from which of `bound_lower`/`bound_upper` are present on its
+activation-grid rows in `constraints/generic_constraint_bounds.parquet` below,
+not authored per-entry — see
+[Generic Constraints: Interval and shape derivation](/reference/generic-constraints/#interval-and-shape-derivation)
+for the full derivation and the optional inline relational-RHS shorthand.
 
 **Variable references.** An `expression` is a linear combination of
 coefficient-scaled variable references, e.g.
@@ -1639,14 +1580,104 @@ To constrain an anticipated thermal's commitment, use
 ### `constraints/generic_constraint_bounds.parquet`
 
 Stage-varying, optionally per-block RHS bound overrides for generic
-constraints declared in `constraints/generic_constraints.json`.
+constraints declared in `constraints/generic_constraints.json`. This table
+**is** the activation grid: a constraint is active at a given `(stage[,
+block])` if and only if a row exists for it here, regardless of whether that
+row supplies any bound value itself (an inline affine remainder can supply the
+value instead — see below).
 
 | Column          | Type             | Required | Description                                                                             |
 | --------------- | ---------------- | -------- | ------------------------------------------------------------------------------------------ |
 | `constraint_id` | INT32            | Yes      | Generic constraint ID                                                                    |
 | `stage_id`      | INT32            | Yes      | Stage ID                                                                                  |
 | `block_id`      | INT32 (nullable) | No       | Zero-based block index within the stage. `null` applies to all blocks of the given stage. |
-| `bound`         | DOUBLE           | Yes      | RHS value                                                                                 |
+| `bound_lower`   | DOUBLE (nullable) | No     | Lower interval endpoint. `null` when the constraint is unbounded below at this cell.      |
+| `bound_upper`   | DOUBLE (nullable) | No     | Upper interval endpoint. `null` when the constraint is unbounded above at this cell.       |
+
+The pair derives the constraint's shape: `bound_lower` alone is `floor`,
+`bound_upper` alone is `cap`, both present and different is `band`, both
+present and bit-identical is `equality`. A row with **both** endpoints `null`
+is rejected unless the constraint's own inline affine remainder (an inline
+`<=`/`>=`/`==` on the constraint's `expression`, or a `per_stage_block`
+`generic_parameters.json` reference) supplies at least one endpoint for that
+cell — the row still activates the cell, but contributes no value. A
+constraint with no rows at all here is rejected outright: the activation grid
+is mandatory even when every value comes from a remainder. See
+[Generic Constraints: The activation grid](/reference/generic-constraints/#the-activation-grid)
+for the full validation rules and worked examples.
+
+---
+
+### `constraints/generic_parameters.json`
+
+Named scalar parameters that can be referenced from generic-constraint coefficient
+expressions using the `@name` sigil. The file is optional; when absent, no
+parameters are loaded and any `@name` token in a constraint expression causes a
+load error.
+
+**Top-level structure:**
+
+```json
+{
+  "$schema": "https://docs.cobre-rs.dev/schemas/generic_parameters.schema.json",
+  "scalar_parameters": [
+    {
+      "id": 1,
+      "name": "rho_eq_h1",
+      "kind": "computed",
+      "computed_spec": { "tag": "equivalent_productivity", "hydro_id": 1 }
+    }
+  ]
+}
+```
+
+The top-level JSON key stays `"scalar_parameters"` — only the file's location
+and name changed.
+
+**Per-entry fields:**
+
+| Field           | Type    | Required | Description                                                                    |
+| --------------- | ------- | -------- | ------------------------------------------------------------------------------- |
+| `id`            | integer | Yes      | Unique parameter identifier (int32)                                            |
+| `name`          | string  | Yes      | Unique parameter name (non-empty, no leading/trailing whitespace)              |
+| `kind`          | string  | Yes      | One of `constant`, `per_stage`, `seasonal`, `computed`, `per_stage_block`      |
+| `value`         | number  | kind dep | Finite f64 value. Required for `constant`. Absent otherwise.                   |
+| `values`        | array   | kind dep | Array of `[index, value]` pairs. Required for `per_stage` and `seasonal`.       |
+| `computed_spec` | object  | kind dep | `{"tag": "<variant>", "hydro_id": <int>}`. Required for `computed`.            |
+| `block_values`  | array   | kind dep | Array of `[stage_id, block_id, value]` triples. Required for `per_stage_block`; each `(stage_id, block_id)` pair within an entry must be unique. |
+
+**`computed_spec` tag values:**
+
+| `tag`                      | Description                             |
+| -------------------------- | --------------------------------------- |
+| `equivalent_productivity`  | Equivalent productivity ρ_eq            |
+| `accumulated_productivity` | Accumulated cascade productivity ρ_acum |
+| `reference_volume`         | Reference reservoir volume V_ref        |
+| `reference_turbine`        | Reference turbined flow Q_ref           |
+| `min_storage`              | Minimum operational storage V_min       |
+| `max_storage`              | Maximum operational storage V_max       |
+| `specific_productivity`    | Specific productivity ρ_esp             |
+
+**Validation:**
+
+- `id` values must be unique across all entries.
+- `name` values must be unique (case-sensitive), non-empty, and have no leading
+  or trailing whitespace.
+- `kind` must be exactly one of the five legal values.
+- For `per_stage`: `values` pairs must have contiguous `stage_id` keys starting
+  at 0; duplicates and gaps are rejected.
+- For `seasonal`: `season_id` keys within an entry must be unique; duplicates
+  are rejected.
+- For `computed`: `computed_spec` must be present with a valid `tag` and integer
+  `hydro_id`. The referenced hydro must exist in `hydros.json`.
+- For `per_stage_block`: `block_values` must be present, and each
+  `(stage_id, block_id)` pair within an entry must be unique; duplicates are
+  rejected.
+- Unknown JSON fields on any entry are rejected immediately.
+
+See [Generic Constraints: the five parameter kinds](/reference/generic-constraints/#generic_parametersjson-the-five-parameter-kinds)
+for the authoring narrative, the `per_stage_block` worked example, and a note
+on the vendored schema's stale `kind` description.
 
 ---
 
@@ -1703,6 +1734,6 @@ overridden per stage for buses.
 
 | Column             | Type   | Required | Description                            |
 | ------------------ | ------ | -------- | -------------------------------------- |
-| `source_id`        | INT32  | Yes      | Non-controllable source ID             |
+| `ncs_id`           | INT32  | Yes      | Non-controllable source ID             |
 | `stage_id`         | INT32  | Yes      | Stage ID                               |
 | `curtailment_cost` | DOUBLE | No       | Curtailment penalty override (USD/MWh) |

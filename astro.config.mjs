@@ -353,6 +353,7 @@ export default defineConfig({
           label: "Reference",
           items: [
             "reference/case-directory-format",
+            "reference/generic-constraints",
             "reference/output-format",
             "reference/json-schemas",
             "reference/error-codes",

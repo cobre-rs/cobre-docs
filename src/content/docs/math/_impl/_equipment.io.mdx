@@ -19,7 +19,7 @@ corpus ([Case Directory Format](/reference/case-directory-format/) and
 | `scenarios/non_controllable_factors.json` / `scenarios/non_controllable_stats.parquet` | Deterministic block factors or stochastic availability statistics for NCS. |
 | `constraints/contract_bounds.parquet` | Sparse per-(contract, stage) overrides of `min_mw`, `max_mw`, and `price_per_mwh`, with an optional per-block axis on all three (see Configure tab). |
 | `initial_conditions.json` (`past_anticipated_commitments`) | Pre-horizon commitment seed for anticipated thermals (system elements §4). |
-| `constraints/generic_constraint_bounds.parquet` | Stage-varying bound rows for generic constraints, including any `anticipated_decision(N)` expression. |
+| `constraints/generic_constraint_bounds.parquet` | The two-sided interval (`bound_lower`/`bound_upper`) that also serves as the generic-constraint **activation grid** — one row per `(constraint_id, stage_id[, block_id])` cell, including any `anticipated_decision(N)` expression. |
 
 For the complete field-by-field schema of each file above, see the
 [Case Directory Format](/reference/case-directory-format/) reference page in
@@ -34,6 +34,7 @@ the Reference corpus.
 | `simulation/pumping_stations/` | Per-(stage, block, station) pumped-flow results and the associated `pumping_cost` (the power-consumption cost booked at the connected bus, not a station-level objective term — see the Implementation notes tab). |
 | `simulation/non_controllables/` | Per-(stage, block, source) `generation_mw`, `available_mw`, `curtailment_mw`, `curtailment_cost`. |
 | `simulation/costs/` | Per-(stage, block) cost breakdown; thermal fuel cost, contract cost, and curtailment cost each contribute their own column. |
+| `generic_constraints/resolved_echo.parquet` | The flat, desugared form of every generic constraint the solver actually built — written whenever the study has generic constraints. See [Generic Constraints](/reference/generic-constraints/) for the resolved-echo shape. |
 
 For the complete output schema (columns, types, file layout), see the
 [Output Format](/reference/output-format/) reference page in the Reference

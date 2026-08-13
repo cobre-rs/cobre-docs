@@ -149,13 +149,16 @@ stage:
     {
       "id": 1,
       "name": "cap_ant_t1",
-      "expression": "anticipated_decision(2)",
-      "sense": "<=",
+      "expression": "anticipated_decision(2) <= 400.0",
       "slack": { "enabled": false }
     }
   ]
 }
 ```
+
+See [Generic Constraints](/reference/generic-constraints/) for the full
+authoring language — named expressions, the activation grid, and two-sided
+slack.
 
 `anticipated_decision(N)` must reference a thermal carrying an
 `anticipated_config` block — referencing a non-anticipated thermal is a hard
@@ -237,7 +240,7 @@ from this entity file — see the Inputs & Outputs tab.
 | `flow.min_m3s` / `flow.max_m3s` | number | Yes | Pumped-flow bounds, in m³/s (methodology §4). |
 
 Stage-varying bounds are supplied via `constraints/pumping_bounds.parquet`,
-which accepts sparse `(station_id, stage_id)` rows carrying `min_m3s` and/or
+which accepts sparse `(pumping_station_id, stage_id)` rows carrying `min_m3s` and/or
 `max_m3s`, optionally narrowed to one block via an optional `block_id`
 column; absent rows fall back to the base entity values.
 

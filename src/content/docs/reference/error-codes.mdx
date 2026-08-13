@@ -95,6 +95,44 @@ missing closing brace, or unquoted key are common causes. For an `unknown
 field` message inside a `stopping_rules` entry, remove the field that does not
 belong to that entry's `type`, or move it to an entry whose `type` declares it.
 
+#### Unknown field in a generic-constraint entry
+
+**When it occurs:** `constraints/generic_constraints.json`'s per-constraint
+object is `#[serde(deny_unknown_fields)]` with exactly five known fields
+(`id`, `name`, `description`, `expression`, `slack`), and the whole file
+deserializes in a single `serde_json::from_str` call with no promotion step —
+unlike `config.json`'s `parse_config` (above), nothing here promotes an
+`unknown field` substring to `SchemaError`. Any unknown key therefore fails at
+deserialization and surfaces as `ParseError`, never `SchemaError`. Two v0.13.0
+spellings hit this deliberately, with no alias:
+
+- A constraint object still carrying the removed **`sense`** field
+  (`">="`/`"<="`/`"=="`) — a constraint's shape is now derived from which
+  endpoints its `generic_constraint_bounds.parquet` row supplies, never
+  authored on the constraint itself.
+- A constraint object still carrying the retired **`bound_upper_ref`** (or
+  `bound_lower_ref`) field — a symbolic RHS endpoint is now authored inline in
+  `expression` (e.g. `... <= @demanda`), not as a separate JSON key.
+
+**Fields:**
+
+| Field     | Type      | Description                                                                             |
+| --------- | --------- | ---------------------------------------------------------------------------------------- |
+| `path`    | `PathBuf` | Always `constraints/generic_constraints.json`                                            |
+| `message` | `String`  | The `serde_json` "unknown field" message, naming the offending key and the five accepted field names |
+
+**Example:**
+
+```
+parse error in constraints/generic_constraints.json: unknown field `sense`, expected one of `id`, `name`, `description`, `expression`, `slack`
+```
+
+**Resolution:** Remove the unknown field. For `sense`, drop it and let the
+bounds row's endpoints derive the shape. For `bound_upper_ref`/
+`bound_lower_ref`, move the reference inline into `expression`. See
+[Generic Constraints](/reference/generic-constraints/) for the current
+grammar and the v0.13.0 → v0.14.0 worked migration example.
+
 ---
 
 ### `SchemaError`
@@ -134,6 +172,155 @@ Check that required fields are present and that values fall within documented
 ranges. For `config.json`, `training.forward_passes` and
 `training.stopping_rules` are mandatory and have no defaults.
 
+#### Namespace collision between a scalar parameter and a named expression
+
+**When it occurs:** `constraints/generic_constraints.json`'s `expressions`
+array declares named linear expressions that share the `@name` reference
+namespace with `constraints/generic_parameters.json`'s scalar parameters. A
+named-expression entry whose `name` matches an already-loaded scalar
+parameter's `name` is rejected — a `@name` token must resolve unambiguously to
+exactly one kind of thing.
+
+**Fields:**
+
+| Field     | Type      | Description                                                       |
+| --------- | --------- | ------------------------------------------------------------------|
+| `path`    | `PathBuf` | Always `constraints/generic_constraints.json`                     |
+| `field`   | `String`  | `expressions[i].name` — the colliding entry's index                |
+| `message` | `String`  | `name "<name>" is declared as both a scalar parameter and a named expression; the "@name" namespace is shared` |
+
+**Example:**
+
+```
+schema error in constraints/generic_constraints.json, field expressions[2].name: name "demanda" is declared as both a scalar parameter and a named expression; the "@name" namespace is shared
+```
+
+**Resolution:** Rename the named expression (or the scalar parameter) so the
+two `@name` tables do not overlap. See
+[Generic Constraints](/reference/generic-constraints/) for the `@name`
+grammar shared between the two files.
+
+#### Named-expression reference cycle
+
+**When it occurs:** `expressions[]` entries reference each other by `@name`;
+a cycle in that reference graph (including a length-1 self-reference) is
+detected by an iterative three-colour DFS before any expression is inlined,
+so a cyclic declaration is rejected even if no constraint ever uses it.
+
+**Fields:**
+
+| Field     | Type      | Description                                                        |
+| --------- | --------- | -------------------------------------------------------------------|
+| `path`    | `PathBuf` | Always `constraints/generic_constraints.json`                      |
+| `field`   | `String`  | Always `expressions`                                                |
+| `message` | `String`  | `named-expression reference cycle detected: <a> -> <b> -> ... -> <a>` |
+
+**Example:**
+
+```
+schema error in constraints/generic_constraints.json, field expressions: named-expression reference cycle detected: fnese -> fnese_margin -> fnese
+```
+
+**Resolution:** Break the cycle — rewrite one of the named expressions in the
+reported chain so it no longer refers back to an ancestor. See
+[Generic Constraints](/reference/generic-constraints/) for the `@name`
+composition rules.
+
+#### Named-expression inlining term budget exceeded
+
+**When it occurs:** Inlining substitutes every `@name` reference with its
+referenced expression's terms. An acyclic but exponentially-expanding
+declaration — e.g. a doubling chain `@e_k = @e_{k-1} + @e_{k-1}` — is caught
+once the flattened term count would exceed a hard cap of 100,000 terms, far
+above any legitimately authored expression, aborting the blow-up before the
+full vector materializes. The cap applies only when a constraint (or another
+expression) actually references the runaway declaration — declaring it
+without referencing it is a cheap existence check, not an expansion.
+
+**Fields:**
+
+| Field     | Type      | Description                                                                     |
+| --------- | --------- | --------------------------------------------------------------------------------|
+| `path`    | `PathBuf` | Always `constraints/generic_constraints.json`                                   |
+| `field`   | `String`  | `constraints[i].expression` (or the referencing expression's own field)          |
+| `message` | `String`  | `named-expression reference "@<name>" expands to more than 100000 inlined terms; this indicates an exponential reference pattern (e.g. a doubling chain "@e = @prev + @prev")` |
+
+**Example:**
+
+```
+schema error in constraints/generic_constraints.json, field constraints[0].expression: named-expression reference "@e60" expands to more than 100000 inlined terms; this indicates an exponential reference pattern (e.g. a doubling chain "@e = @prev + @prev")
+```
+
+**Resolution:** Rewrite the named-expression chain to grow linearly rather
+than by repeated self-addition — e.g. accumulate into one running expression
+instead of doubling a reference at each step. See
+[Generic Constraints](/reference/generic-constraints/) for the `@name`
+composition rules.
+
+#### `@parameter` / `@name` reference misuse
+
+**When it occurs:** The expression grammar accepts at most one `@`-prefixed
+reference per term, and a parenthesized group takes only a literal
+coefficient. Four distinct authoring mistakes are rejected at the same parse
+site (`constraints[i].expression`, or `expressions[i].expression` for a named
+expression's own definition):
+
+| Mistake                                                        | Example message                                                                                          |
+| ---------------------------------------------------------------| -----------------------------------------------------------------------------------------------------------|
+| Two `@` references in one term (`@param * @name`, or two `@param`s) | `only one @parameter reference is allowed per term; found "@a" and "@b"`                              |
+| `@param` scaling a parenthesized group (`@param * (...)`)      | `parameter "@a" cannot scale a parenthesized group: a group takes only a literal coefficient, not "@a * (...)"` |
+| `@name` naming no loaded scalar parameter, in a coefficient position | `unknown parameter "@a": no definition with this name was loaded`                                  |
+| `@name` naming no declared expression, in a reference position | `undeclared named-expression reference "@a": no expression with this name was declared`                  |
+
+**Fields:**
+
+| Field     | Type      | Description                                                          |
+| --------- | --------- | -----------------------------------------------------------------------|
+| `path`    | `PathBuf` | Always `constraints/generic_constraints.json`                        |
+| `field`   | `String`  | `constraints[i].expression` or `expressions[i].expression`            |
+| `message` | `String`  | One of the four messages in the table above                          |
+
+**Resolution:** A term carries at most one `@` reference, and only a literal
+number may scale a `(...)` group. Check that a bound `@name` matches a
+parameter actually declared in `constraints/generic_parameters.json`, and
+that a reference `@name` matches an entry actually declared in this file's own
+`expressions` array. See [Generic Constraints](/reference/generic-constraints/)
+for the full grammar.
+
+#### Legacy Parquet column spellings rejected
+
+**When it occurs:** Three input columns were renamed in v0.14.0 with no
+alias; the legacy spelling is treated as a missing required column, exactly
+like any other absent required column.
+
+| File                                          | Required column      | Legacy spelling (rejected) |
+| ---------------------------------------------- | --------------------- | --------------------------- |
+| `scenarios/external_ncs_scenarios.parquet`     | `availability_factor` | `value`                     |
+| `constraints/penalty_overrides_ncs.parquet`    | `ncs_id`               | `source_id`                 |
+| `constraints/pumping_bounds.parquet`           | `pumping_station_id`  | `station_id`                |
+
+**Fields:**
+
+| Field     | Type      | Description                                            |
+| --------- | --------- | ---------------------------------------------------------|
+| `path`    | `PathBuf` | The parquet file listed above                           |
+| `field`   | `String`  | The required column name (not the legacy spelling)       |
+| `message` | `String`  | `missing required column "<name>"`                       |
+
+**Example:**
+
+```
+schema error in scenarios/external_ncs_scenarios.parquet, field availability_factor: missing required column "availability_factor"
+```
+
+**Resolution:** Rename the column in the Parquet file to the required
+spelling, keeping the data in the same cell — the schema and semantics are
+unchanged, only the name is. `pumping_station_id` and `ncs_id` are the same
+entity-id spellings a generic constraint's own `pumping_flow(id)` /
+`non_controllable_generation(id)` expression terms address — see
+[Generic Constraints — variable catalog](/reference/generic-constraints/)
+for the full addressing grammar.
+
 ---
 
 ### `CrossReferenceError`
@@ -169,6 +356,13 @@ non-existent BUS_99 in bus registry
 Either add the missing entity to its registry file, or correct the ID reference
 in `source_file`. Common causes: a bus was deleted from `system/buses.json`
 but a hydro, thermal, or line still references its old ID.
+
+**Generic-constraints note:** none of the v0.14.0 authoring failure modes
+surface as this variant. A generic constraint's own reference-integrity
+problems — for example a bound reference with no activation rows in
+`generic_constraint_bounds.parquet` — are collected by `ValidationContext` as
+an `InvalidReference` [`ErrorKind`](#invalidreference) and returned as
+`ConstraintError` below, not as a standalone `CrossReferenceError`.
 
 ---
 
@@ -206,6 +400,89 @@ constraint violation: [FileNotFound] system/hydros.json: required file 'system/h
 problem. Address them all and re-run. The `[ErrorKind]` prefix identifies the
 category of each problem; see the `ErrorKind` catalog below for resolution
 guidance per category.
+
+#### Generic-constraint bound reference with no activation rows
+
+**When it occurs:** `constraints/generic_constraint_bounds.parquet` is the
+**activation grid** for generic constraints — a constraint applies at
+`(stage, block)` if and only if a row exists for it there, independent of
+whether the row supplies a numeric endpoint or the endpoint comes entirely
+from the constraint's own inline affine remainder (an inline `<= @demanda`,
+say). A constraint whose only endpoints come from that affine remainder, but
+which has zero rows in the bounds parquet, is collected as `InvalidReference`
+— the reference would otherwise apply to nothing and be silently inert.
+
+**Fields:**
+
+| Field         | Type     | Description                                                                                          |
+| ------------- | -------- | -------------------------------------------------------------------------------------------------------|
+| `description` | `String` | Contains a `[InvalidReference] constraints/generic_constraints.json (GenericConstraint <id>): GenericConstraint <id> declares a bound reference but has no activation rows in generic_constraint_bounds.parquet: the reference would apply to nothing` line |
+
+**Example:**
+
+```
+constraint violation: [InvalidReference] constraints/generic_constraints.json (GenericConstraint 3): GenericConstraint 3 declares a bound reference but has no activation rows in generic_constraint_bounds.parquet: the reference would apply to nothing
+```
+
+**Resolution:** Add at least one row for the constraint's `id` to
+`generic_constraint_bounds.parquet` at every `(stage, block)` where it should
+apply — the row may leave both `bound_lower`/`bound_upper` null as long as the
+constraint's own affine remainder supplies the value; the row's job is then
+only to activate the cell. See
+[Generic Constraints — the activation grid](/reference/generic-constraints/)
+for the full model.
+
+#### Generic-constraint bounds row with neither endpoint and no affine remainder
+
+**When it occurs:** A `generic_constraint_bounds.parquet` row with
+`bound_lower = null` and `bound_upper = null` is legal only when the
+constraint's own `bound_lower_affine`/`bound_upper_affine` supplies at least
+one endpoint (the row then only activates the cell, per above). A both-null
+row on a constraint with **no** affine remainder on either side has no
+endpoint at all and is collected as `InvalidValue`.
+
+**Fields:**
+
+| Field         | Type     | Description                                                                                                              |
+| ------------- | -------- | ----------------------------------------------------------------------------------------------------------------------------|
+| `description` | `String` | Contains a `[InvalidValue] constraints/generic_constraint_bounds.parquet (GenericConstraintBoundsRow[<i>]): GenericConstraintBoundsRow[<i>] on constraint <id> has neither bound_lower nor bound_upper: at least one endpoint is required` line |
+
+**Example:**
+
+```
+constraint violation: [InvalidValue] constraints/generic_constraint_bounds.parquet (GenericConstraintBoundsRow[4]): GenericConstraintBoundsRow[4] on constraint 3 has neither bound_lower nor bound_upper: at least one endpoint is required
+```
+
+**Resolution:** Either supply `bound_lower` and/or `bound_upper` on the row,
+or add an inline relational operator (`<=`, `>=`, `==`) to the constraint's
+`expression` so an affine remainder fills the missing endpoint. See
+[Generic Constraints — the activation grid](/reference/generic-constraints/).
+
+#### Relocated `generic_parameters.json` path
+
+**When it occurs:** v0.14.0 moved the scalar-parameters input from
+`system/scalar_parameters.json` to `constraints/generic_parameters.json`,
+beside the generic constraints that reference its `@name` parameters — the
+file's contents and schema are unchanged, only its directory and filename
+changed. Layer 1 (structural validation) rejects the file's mere *presence*
+at the old path — it never parses the old-path file's contents, so a
+well-formed but misplaced file is still refused.
+
+**Fields:**
+
+| Field         | Type     | Description                                                                                                            |
+| ------------- | -------- | ---------------------------------------------------------------------------------------------------------------------------|
+| `description` | `String` | Contains a `[BusinessRuleViolation] system/scalar_parameters.json: system/scalar_parameters.json is no longer read; scalar parameters are now read from constraints/generic_parameters.json, beside the constraints that reference them by @name. Move the file (its contents are unchanged).` line |
+
+**Example:**
+
+```
+constraint violation: [BusinessRuleViolation] system/scalar_parameters.json: system/scalar_parameters.json is no longer read; scalar parameters are now read from constraints/generic_parameters.json, beside the constraints that reference them by @name. Move the file (its contents are unchanged).
+```
+
+**Resolution:** `mkdir -p <case>/constraints && git mv <case>/system/scalar_parameters.json <case>/constraints/generic_parameters.json` — the contents do not change. See
+[Generic Constraints — the five parameter kinds](/reference/generic-constraints/)
+for the current file's schema.
 
 ---
 

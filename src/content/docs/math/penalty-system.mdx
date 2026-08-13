@@ -195,7 +195,7 @@ This section enumerates all constraints in the LP that use slack variables, orga
 
 ### Generic Constraints
 
-User-defined generic constraints can optionally have slack variables with user-specified penalty costs. These are typically used for physical or operational directives from the system operator, and fall into the **constraint violation** category.
+User-defined generic constraints can optionally have slack variables with user-specified penalty costs. These are typically used for physical or operational directives from the system operator, and fall into the **constraint violation** category. A two-sided generic constraint (both a floor and a cap) carries two slack columns, one per endpoint; the reported violation is their signed net, and both are penalised.
 
 ### Non-Controllable Sources
 

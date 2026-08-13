@@ -638,10 +638,10 @@ For the full resolution semantics and all penalty value definitions, see [Penalt
 
 ## 10. Generic Constraints
 
-User-defined linear constraints (per constraint $g \in \mathcal{G}$):
+User-defined linear constraints (per constraint $g \in \mathcal{G}$) take a two-sided interval form:
 
 $$
-\sum_{e} \gamma_{g,e} \cdot x_e \quad \{\leq, =, \geq\} \quad b_g
+\ell_g \;\leq\; \sum_{e} \gamma_{g,e} \cdot x_e \;\leq\; u_g
 $$
 
 where $x_e$ can reference any LP variable using expression syntax:
@@ -651,20 +651,35 @@ where $x_e$ can reference any LP variable using expression syntax:
 
 `hydro_turbined` and `hydro_generation` additionally accept a named `bus=` argument selecting one **(hydro, bus) cell** of a plant split across several buses — e.g. `hydro_turbined(5, bus=2)` — resolving to that cell's own column; no other variable form accepts it. An optional positional block argument, when present, precedes the named argument: `f(id)`, `f(id, block)`, `f(id, bus=b)`, and `f(id, block, bus=b)` all parse. Omitting `bus=` on a plant with more than one cell addresses every one of its cells at once, matching the whole-entity reference every other variable form uses.
 
-The coefficients $\gamma_{g,e}$ and the RHS $b_g$ may be either literal numeric values or **named scalar parameters**. A scalar parameter resolves to a single number per stage and can carry one of four kinds:
+Either endpoint, $\ell_g$ or $u_g$, may be absent — never both — with an absent side read as the corresponding infinity. This single interval subsumes every shape a constraint can take: a present $\ell_g$ alone is a floor, a present $u_g$ alone is a cap, $\ell_g = u_g$ is an equality, and both present together bound a two-sided band. A constraint is no longer characterised by picking one relation out of a fixed set — its shape falls out of which endpoints happen to be present.
 
-| Kind        | Value semantics                                                                                           |
-| ----------- | --------------------------------------------------------------------------------------------------------- |
-| `constant`  | One value for every stage                                                                                 |
-| `per_stage` | Explicit value per stage                                                                                  |
-| `seasonal`  | One value per season; stages inherit the value from their season                                          |
-| `computed`  | Value derived from a small expression evaluated at LP-build time (e.g., a fraction of installed capacity) |
+### Coefficients and Endpoints
 
-Resolution happens once at LP-build time, so the LP coefficients are still numeric at solve time — the parameter mechanism does not introduce LP-variable coupling between constraints. Methodology relevance: it lets the corpus express ramping limits, capacity caps, and operator-imposed quotas that vary by stage or season without authoring a separate constraint per stage. Coefficient and RHS values can therefore be **stage-varying constants**, not just literal numbers.
+The coefficients $\gamma_{g,e}$ may be either literal numeric values or **named scalar parameters**, exactly as for any other coefficient in the LP.
 
-Generic constraints can have optional slack variables with configurable penalties.
+Each endpoint composes independently from up to two pieces, summed together: a numeric base that may itself vary by stage (and, for the finest-grained parameter kind below, by block within the stage), plus an optional affine remainder layered on top of it — a constant plus a weighted sum of named scalar parameters. An endpoint carrying neither piece is simply absent; a base alone, a remainder alone, or their sum are all valid, so a single endpoint can combine a scheduled floor or cap that already varies by stage with a further parameter-driven adjustment on top.
 
-**Row materialization**: a constraint bound declared with `block_id = None` over a **block-independent** expression — one whose every term references a stock variable (incoming storage $v^{in}_h$, outgoing storage $v_h$, evaporation outflow $e_{h,k}$ collapsed to its stage average, or an anticipated-thermal commitment) — is materialized as a **single stage-level row** priced by the total stage hours $T$, since per-block rows would be identical. A `block_id = None` bound on a block-level expression, or any `block_id = Some(k)` bound, still produces one row per relevant block. This is an LP row-count optimization that is cost- and parity-neutral.
+A named scalar parameter resolves to a single number per stage and can carry one of five kinds:
+
+| Kind               | Value semantics                                                                                                                                                        |
+| ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `constant`         | One value for every stage                                                                                                                                              |
+| `per_stage`        | Explicit value per stage                                                                                                                                               |
+| `seasonal`         | One value per season; stages inherit the value from their season                                                                                                       |
+| `computed`         | Value derived from a small expression evaluated at LP-build time (e.g., a fraction of installed capacity)                                                              |
+| Per-(stage, block) | Explicit value per stage **and** per block within that stage — the finest-grained schedule, letting a value vary across a stage's blocks, not just from stage to stage |
+
+Resolution happens once at LP-build time, so the LP coefficients and endpoints are still numeric at solve time — the parameter mechanism does not introduce LP-variable coupling between constraints. Methodology relevance: it lets the corpus express ramping limits, capacity caps, and operator-imposed quotas that vary by stage, season, or block without authoring a separate constraint per stage. Coefficient and endpoint values can therefore be **stage- and block-varying constants**, not just literal numbers.
+
+### Two-Sided Slack
+
+A constraint may optionally carry a slack, penalized per unit of violation, so the row relaxes at a cost instead of forcing infeasibility. A one-sided row — only $\ell_g$ or only $u_g$ present — carries a single slack column relaxing that one endpoint. A two-sided row — both $\ell_g$ and $u_g$ present — carries **two** independent slack columns, $\sigma^{gc+}_g$ relaxing the floor upward and $\sigma^{gc-}_g$ relaxing the cap downward: a single column cannot represent both "how far below the floor" and "how far above the cap" without conflating the two directions.
+
+The reported violation is the **signed net** $\sigma^{gc+}_g - \sigma^{gc-}_g$: positive when the row sits below its floor, negative when it sits above its cap, matching the sign of the underlying deviation rather than reading as an unsigned magnitude. The objective charges both columns, $\sigma^{gc+}_g + \sigma^{gc-}_g$, which coincides with the net's magnitude whenever only one direction is active — the case at any optimum, since paying for both directions on the same row at once is strictly dominated by paying for neither of the excess.
+
+**Row materialization**: a constraint bound declared with `block_id = None` over a **block-independent** expression — one whose every term references a stock variable (incoming storage $v^{in}_h$, outgoing storage $v_h$, evaporation outflow $e_{h,k}$ collapsed to its stage average, or an anticipated-thermal commitment) — is materialized as a **single stage-level row** priced by the total stage hours $T$, since per-block rows would be identical, **provided its endpoints are block-independent too**: an endpoint drawn from the per-(stage, block) parameter kind above varies within the stage, which forces the per-block row set even when the expression alone would otherwise qualify for the collapse. A `block_id = None` bound on a block-level expression, or any `block_id = Some(k)` bound, still produces one row per relevant block. This is an LP row-count optimization that is cost- and parity-neutral.
+
+See [Generic Constraints](/reference/generic-constraints) for the authoring grammar, the activation grid, and the per-file field tables this formulation implements.
 
 ## 11. Benders Cuts
 
