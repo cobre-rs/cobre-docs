@@ -191,9 +191,7 @@ function main() {
     process.exit(0);
   }
 
-  if (!existsSync(publicSchemasDir)) {
-    mkdirSync(publicSchemasDir, { recursive: true });
-  }
+  mkdirSync(publicSchemasDir, { recursive: true });
   for (const name of names) {
     writeFileSync(join(publicSchemasDir, name), released.get(name));
   }
