@@ -35,6 +35,7 @@ the Reference corpus.
 | `simulation/non_controllables/` | Per-(stage, block, source) `generation_mw`, `available_mw`, `curtailment_mw`, `curtailment_cost`. |
 | `simulation/costs/` | Per-(stage, block) cost breakdown; thermal fuel cost, contract cost, and curtailment cost each contribute their own column. |
 | `generic_constraints/resolved_echo.parquet` | The flat, desugared form of every generic constraint the solver actually built — written whenever the study has generic constraints. See [Generic Constraints](/reference/generic-constraints/) for the resolved-echo shape. |
+| `simulation/anticipated_lanes/` | Post-horizon commitment-lane results for anticipated thermals, keyed `(thermal_id, delivery_date)` — seven columns (`scenario_id`, `stage_id`, `node_id`, `thermal_id`, `delivery_date`, `deposited_decision_mw`, `carried_committed_mw`), Hive-partitioned by `scenario_id`. One row per declared window per terminal scenario; written only when a `future_anticipated_deliveries` window is declared. |
 
 For the complete output schema (columns, types, file layout), see the
 [Output Format](/reference/output-format/) reference page in the Reference

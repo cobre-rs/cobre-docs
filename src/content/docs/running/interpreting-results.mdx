@@ -117,8 +117,9 @@ the full convergence history. Its schema:
 | ------------------ | ------- | -------------------------------------------------------------------------------------- |
 | `iteration`        | INT32   | Iteration number (1-based)                                                             |
 | `lower_bound`      | FLOAT64 | Optimizer's proven lower bound on the expected cost                                    |
-| `upper_bound_mean` | FLOAT64 | Statistical upper bound estimate (mean over forward passes)                            |
-| `upper_bound_std`  | FLOAT64 | Standard deviation of the upper bound estimate                                         |
+| `upper_bound`      | FLOAT64 | Upper bound estimate — mean over forward passes for a statistical bound; the exact enumerated weighted bound otherwise |
+| `upper_bound_std`  | FLOAT64 | Standard deviation of the upper bound estimate. NULL on exact-bound rows (`upper_bound_kind` = `"exact"`) |
+| `upper_bound_kind` | STRING  | Bound kind for this row: `"exact"` (enumerated weighted bound) or `"statistical"` (sampled forward-pass mean) |
 | `gap_percent`      | FLOAT64 | Relative gap as a percentage (null when `lower_bound <= 0`)                            |
 | `cuts_added`       | INT32   | Cuts added to the pool in this iteration                                               |
 | `cuts_removed`     | INT32   | Cuts removed by the cut selection strategy                                             |
@@ -141,11 +142,14 @@ df = pl.read_parquet("results/training/convergence.parquet")
 # Plot convergence bounds over iterations
 plt.figure(figsize=(10, 4))
 plt.plot(df["iteration"], df["lower_bound"], label="Lower bound")
-plt.plot(df["iteration"], df["upper_bound_mean"], label="Upper bound (mean)")
+plt.plot(df["iteration"], df["upper_bound"], label="Upper bound (mean)")
+# upper_bound_std is NULL on exact-convergence rows (upper_bound_kind == "exact");
+# coalesce it to 0 so the band collapses onto the line instead of producing NaN.
+std = df["upper_bound_std"].fill_null(0.0)
 plt.fill_between(
     df["iteration"].to_list(),
-    (df["upper_bound_mean"] - df["upper_bound_std"]).to_list(),
-    (df["upper_bound_mean"] + df["upper_bound_std"]).to_list(),
+    (df["upper_bound"] - std).to_list(),
+    (df["upper_bound"] + std).to_list(),
     alpha=0.2,
     label="Upper bound ± 1 std",
 )
@@ -157,7 +161,7 @@ plt.show()
 
 # Check final gap
 final = df.filter(pl.col("iteration") == df["iteration"].max())
-print(final.select(["iteration", "lower_bound", "upper_bound_mean", "gap_percent"]))
+print(final.select(["iteration", "lower_bound", "upper_bound", "gap_percent"]))
 ```
 
 ### R
@@ -169,13 +173,15 @@ library(ggplot2)
 df <- read_parquet("results/training/convergence.parquet")
 
 # Plot convergence bounds
+# upper_bound_std is NULL on exact-convergence rows (upper_bound_kind == "exact");
+# coalesce it to 0 so the ribbon collapses onto the line instead of NA.
 ggplot(df, aes(x = iteration)) +
   geom_line(aes(y = lower_bound, color = "Lower bound")) +
-  geom_line(aes(y = upper_bound_mean, color = "Upper bound")) +
+  geom_line(aes(y = upper_bound, color = "Upper bound")) +
   geom_ribbon(
     aes(
-      ymin = upper_bound_mean - upper_bound_std,
-      ymax = upper_bound_mean + upper_bound_std
+      ymin = upper_bound - dplyr::coalesce(upper_bound_std, 0),
+      ymax = upper_bound + dplyr::coalesce(upper_bound_std, 0)
     ),
     alpha = 0.2
   ) +
@@ -187,13 +193,13 @@ ggplot(df, aes(x = iteration)) +
   theme_minimal()
 
 # Print final gap
-tail(df[, c("iteration", "lower_bound", "upper_bound_mean", "gap_percent")], 1)
+tail(df[, c("iteration", "lower_bound", "upper_bound", "gap_percent")], 1)
 ```
 
 **What to look for in the convergence plot:**
 
 - Both bounds should move toward each other over iterations. The lower bound
-  rises; the upper bound mean falls and its standard deviation narrows.
+  rises; the upper bound falls and its standard deviation narrows.
 - A lower bound that stays flat after the first few iterations suggests the
   backward pass cuts are not improving: check `cuts_added` to confirm cuts
   are being generated.
