@@ -15,6 +15,8 @@ This chapter gives a reader new to stochastic dynamic programming the minimum co
 
 Optimal dispatch over a multi-stage horizon cannot be solved by enumerating all scenarios: the number of scenario paths grows exponentially with the number of stages. SDDP avoids enumeration by exploiting the structure of the problem.
 
+The stages and scenario paths introduced here are the special case of a more general **policy graph** of nodes and transitions; see [Policy Graphs](/math/policy-graphs) for the general structure.
+
 At each stage, the future is summarised by a **cost-to-go function** $V_t$ — the minimum expected cost from that stage forward, as a function of the incoming state (reservoir levels, inflow lags). The dispatch problem obeys a stagewise (Bellman) recursion: the cost-to-go at stage $t$ is the expected cost of the best decision now plus the cost-to-go of the state that decision leaves behind:
 
 $$

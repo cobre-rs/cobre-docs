@@ -63,6 +63,7 @@ complete Cobre case directory. The mapping covers:
 | Thermal maintenance windows | Per-stage thermal bounds | `constraints/thermal_bounds.parquet`    |
 | Transmission capacity       | Per-stage/per-block line bounds (`direct_mw`/`reverse_mw`) | `constraints/line_bounds.parquet` |
 | VminOP / electric / AGRINT  | Generic LP constraints   | `constraints/generic_constraints.json`  |
+| VminOP storage coefficients | Named constraint parameters (`@rho_acum`) | `constraints/generic_parameters.json` |
 
 ### Output Directory Structure
 
@@ -89,6 +90,7 @@ output/
     non_controllable_factors.json
   constraints/
     generic_constraints.json
+    generic_parameters.json               (named @parameters, e.g. VminOP ρ_acum)
     generic_constraint_bounds.parquet
     hydro_bounds.parquet
     thermal_bounds.parquet
@@ -169,11 +171,19 @@ in `stages.json`. Three modes are supported:
 
 ### Generic Constraints
 
-Three types of user-defined constraints are converted and merged into a
-single `generic_constraints.json` file with sequential IDs:
+Three families of source constraints are converted into Cobre's
+generic-constraint authoring format: one definition per constraint in
+`generic_constraints.json` (a `name`, an `expression`, and an optional `slack`),
+merged with sequential integer IDs, and per-stage right-hand-side bounds in
+`generic_constraint_bounds.parquet`.
 
-- **VminOP** -- minimum stored energy constraints (weighted sum of storage
-  across a group of reservoirs).
+- **VminOP** -- minimum stored-energy constraints. Each is a weighted sum of the
+  participating reservoirs' end-of-stage storage, where the weight is that
+  reservoir's accumulated productivity, referenced as a named parameter
+  (`@rho_acum_h<id>`) declared in `constraints/generic_parameters.json` and
+  resolved by Cobre to its own ρ at solve time. This keeps the constraint's
+  coefficients aligned with the study's productivities rather than freezing a
+  converted value.
 - **Electric** -- operational constraints on hydro generation and line flows.
 - **AGRINT** -- group dispatch constraints for thermal and hydro plants.
 

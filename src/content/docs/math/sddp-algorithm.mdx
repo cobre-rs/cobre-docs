@@ -57,7 +57,7 @@ direction: down
 
 fwd: "1. Forward pass\nsample M trajectories → trial points, UB" {shape: rectangle}
 bwd: "2. Backward pass\nevaluate N openings → 1 Benders cut / stage" {shape: rectangle}
-conv: "3. Converged?\ngap = (UB − LB) / max(1, |UB|) ≤ tol" {shape: diamond}
+conv: "3. Converged?\ngap = (UB − LB) / max(1, |LB|) ≤ tol" {shape: diamond}
 done: stopped {shape: oval}
 
 fwd -> bwd: trial points
@@ -175,7 +175,7 @@ where $Q_0^k(x_0, \omega)$ is the optimal objective of the stage-0 LP under open
 
 Under risk-neutral settings ($\rho_0 = \mathbb{E}$), this reduces to a simple average over all stage-0 opening objectives. Because cuts are added monotonically and never removed within a training run, this bound is non-decreasing across iterations — see [Cut Management](/math/cut-management) for the append-only guarantee.
 
-**Upper Bound**: Estimated via Monte Carlo simulation over the forward pass trajectories (see [Upper Bound Evaluation](/math/upper-bound-evaluation)):
+**Upper Bound**: Under a sampled forward pass, this is a **statistical** estimate — the sample mean over the forward pass trajectories; under an enumerated forward pass, it is the **exact** probability-weighted bound $\sum_\ell P(\ell)\, C(\ell)$ over every leaf path, with no sampling error (see [Upper Bound Evaluation](/math/upper-bound-evaluation)). The sampled-mean form:
 
 $$
 \bar{z}^k = \frac{1}{M} \sum_{m=1}^{M} \sum_{t=1}^{T} c_t^\top x_t^{(m)}
@@ -184,7 +184,7 @@ $$
 **Optimality Gap**:
 
 $$
-\text{gap}^k = \frac{\bar{z}^k - \underline{z}^k}{\max(1, |\bar{z}^k|)}
+\text{gap}^k = \frac{\bar{z}^k - \underline{z}^k}{\max(1, |\underline{z}^k|)}
 $$
 
 ### 3.4 Execution Model and Performance Considerations
@@ -205,27 +205,9 @@ For implementation, see the cobre developer-guide.
 
 ## 4. Policy Graph Structure
 
-### 4.1 Finite Horizon (Acyclic Graph)
+The stage chain used throughout this spec — one node per stage $t \in \{1, \ldots, T\}$, connected by transitions with probability $p = 1$, terminating at $V_{T+1}(x) = 0$ — is the special case of a more general **policy graph**: a structure of nodes, probability-weighted transitions, and per-node future-cost pools. See [Policy Graphs](/math/policy-graphs) for the full node/transition/pool structure, the two probability axes (between-node edge weights versus within-node openings), the discount-separate convention, and the mapping onto the SDDP.jl family.
 
-The standard SDDP formulation uses an acyclic directed graph:
-
-- **Nodes**: Stages $t \in \{1, \ldots, T\}$
-- **Arcs**: Transitions with probabilities (deterministic in the standard formulation, $p = 1$)
-- **Terminal**: $V_{T+1}(x) = 0$ (no future cost beyond stage $T$)
-
-### 4.2 Cyclic Graph (Infinite Horizon)
-
-For long-term planning, Cobre supports **infinite periodic horizon** with cyclic graphs:
-
-- **Cycle**: Stage $T$ transitions back to stage $1$ (or a cycle start)
-- **Discount**: Cycle transitions require a discount factor $d < 1$ for convergence
-- **Cut sharing**: Cuts at equivalent cycle positions are shared
-
-:::note[Symbol note]
-All specs use $d$ for the discount factor. The deficit variable uses $\delta$ (lowercase delta), so there is no conflict.
-:::
-
-See [Discount Rate](/math/discount-rate) for the discounted Bellman equation and [Horizon Modes](/math/horizon-modes) for the complete cyclic formulation.
+Cobre's policy graph is **finite-horizon only**: an acyclic, leaf-terminated graph in which every trajectory starts at a root and reaches a leaf after a bounded number of stages. A **cyclic** graph shape — a later stage transitioning back to an earlier one, for infinite-periodic-horizon planning — is **reserved** and rejected at setup rather than a currently accepted mode. See [Horizon Modes](/math/horizon-modes) for the cyclic target design this reservation anticipates, and [Policy Graphs](/math/policy-graphs) for the complete list of structural limitations.
 
 ## 5. State Variables and the Markov Property
 
@@ -324,10 +306,11 @@ The methodology above defines the forward/backward pass structure and the execut
 
 - [Notation Conventions](/overview/notation-conventions) — All index sets, parameters, decision variables, and dual variable definitions
 - [LP Formulation](/math/lp-formulation) — Complete stage subproblem LP that the forward/backward passes solve
+- [Policy Graphs](/math/policy-graphs) — The node/transition/pool generalisation of the stage chain; two probability axes, discount-separate convention, and structural limitations (finite-horizon only, cyclic reserved)
 - [Cut Management](/math/cut-management) — Cut generation, aggregation, selection, validity conditions, and the append-only monotonicity guarantee
 - [PAR Inflow Model](/math/par-inflow-model) — Stochastic inflow model driving uncertainty in the forward pass
 - [Discount Rate](/math/discount-rate) — Discounted Bellman equation, stage-dependent rates, discount factor on θ
-- [Horizon Modes](/math/horizon-modes) — Finite vs cyclic policy graphs; cyclic-mode formal structure (season function, cycle convergence inequality, season-indexed cut pool, fixed-point Bellman operator)
+- [Horizon Modes](/math/horizon-modes) — The reserved cyclic policy-graph target design (season function, cycle convergence inequality, season-indexed cut pool, fixed-point Bellman operator) that the finite-horizon-only restriction in [Policy Graphs](/math/policy-graphs) anticipates
 - [Upper Bound Evaluation](/math/upper-bound-evaluation) — Upper bound estimation methods
 - [Stopping Rules](/math/stopping-rules) — Convergence criteria that terminate the iterative process
 - [Risk Measures](/math/risk-measures) — CVaR and risk-averse extensions to the Bellman recursion

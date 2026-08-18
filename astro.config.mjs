@@ -310,6 +310,7 @@ export default defineConfig({
         {
           label: "Stochastic Modelling",
           items: [
+            "math/policy-graphs",
             "math/par-inflow-model",
             "math/multi-resolution-studies",
             "math/weekly-monthly-coupled-studies",
@@ -331,7 +332,11 @@ export default defineConfig({
         },
         {
           label: "Coupling & Boundary Conditions",
-          items: ["math/horizon-modes", "math/discount-rate"],
+          items: [
+            "math/horizon-modes",
+            "math/post-study-boundary",
+            "math/discount-rate",
+          ],
         },
         {
           label: "Running Cobre",
@@ -353,6 +358,7 @@ export default defineConfig({
           label: "Reference",
           items: [
             "reference/case-directory-format",
+            "reference/generic-constraints",
             "reference/output-format",
             "reference/json-schemas",
             "reference/error-codes",

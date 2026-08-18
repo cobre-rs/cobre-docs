@@ -121,32 +121,75 @@ A written checkpoint has the following layout under `policy.path`:
 
 ```text
 policy/
-  metadata.json          -- run metadata and compatibility hashes (written last)
+  metadata.json          -- run metadata and a format_version marker (written last)
   cuts/
-    stage_000.bin        -- cut coefficients and intercepts for stage 0
-    stage_001.bin        -- cut coefficients and intercepts for stage 1
+    000.bin               -- cut coefficients and intercepts for pool 0
+    001.bin               -- cut coefficients and intercepts for pool 1
     ...
   basis/
-    stage_000.bin        -- LP basis for stage 0 (when store_basis is enabled)
-    stage_001.bin
+    000.bin               -- LP basis for stage 0 (when store_basis is enabled)
+    001.bin
     ...
   states/
-    stage_000.bin        -- visited states for dominated cut selection, stage 0
-    stage_001.bin
+    000.bin               -- visited states for dominated cut selection, stage 0
+    001.bin
     ...
 ```
+
+File names are zero-padded to three digits (`NNN.bin`). Under `cuts/`, the id
+is the **pool id**; under `basis/` and `states/`, the id is the **stage id**.
+The file name itself is not read for identity — each buffer carries its own
+id internally, and the reader derives pool/stage identity from the payload,
+never from the name.
 
 `metadata.json` is written **last**. Its presence signals that the checkpoint
 is complete and safe to load. An interrupted write leaves `metadata.json`
 absent; Cobre treats a directory without `metadata.json` as an incomplete
 checkpoint and refuses to load it.
 
+`metadata.json` also carries a required `format_version` marker, checked
+**first** — before any cut, basis, or state payload is parsed. See
+[Format Version and Migration](#format-version-and-migration) below.
+
 The `metadata.json` file records the number of completed iterations,
-lower-bound and upper-bound values, state dimension, number of stages,
-configuration and system hashes, forward
-passes per iteration, and the RNG seed. These fields allow Cobre to verify
-that a saved policy is compatible with the current system before loading it
-in `"warm_start"` or `"resume"` mode.
+lower-bound and upper-bound values, number of stages, forward passes per
+iteration, and the RNG seed — see
+[Output Format](/reference/output-format/#policymetadatajson) for the full
+field-by-field table. Compatibility with the current system is verified
+**structurally**, not by hash: Cobre checks the state dimension and the
+per-slot entity manifest carried inside each cuts payload against the
+current study, as described in [Warm Start](#warm-start) above and
+[Compatibility requirements](#compatibility-requirements) under Boundary
+Cuts below.
+
+---
+
+## Format Version and Migration
+
+`metadata.json`'s `format_version` marker is checked before any `.bin`
+payload is parsed. A checkpoint written by an earlier release carries
+neither this marker nor the `CBVF` payload identifier on its `.bin` files,
+and this release fails to load it with a named error reporting the expected
+`format_version` against the value found:
+
+```text
+unsupported value-function artifact format_version: expected 1, found 0 (a pre-marker or other-version artifact is not readable by this build)
+```
+
+There is **no converter**: a checkpoint written by an earlier release cannot
+be upgraded in place — retrain to produce a checkpoint this release can
+read.
+
+Every load path surfaces the same failure, tagged for its caller:
+
+- **Python** (`cobre.results.load_policy`, and `cobre.run.run` in
+  warm-start / resume mode) raises `cobre.errors.OutputError`.
+- **CLI** (`cobre run` in warm-start, resume, or simulation-only mode)
+  prints a message prefixed `failed to read policy checkpoint: …`.
+
+See
+[FlatBuffers Schema Versioning](/reference/flatbuffers-schema/#versioning-policy)
+for the wire-level mechanics behind this gate.
 
 ---
 
@@ -221,6 +264,35 @@ account for the long-term future cost of water.
 The imported boundary cuts are **not updated** by the SDDP training algorithm.
 They remain fixed throughout training and simulation, providing a floor on
 the terminal-stage future cost.
+
+### Authoring a checkpoint with `write_policy_checkpoint`
+
+Step 1 above assumes the outer-model checkpoint came from a full Cobre
+training run — but that is not the only way to produce one. The Python
+function `cobre.write_policy_checkpoint` authors a checkpoint directly from
+plain Python dicts and sequences, without running Cobre at all. This is the
+supported path for injecting a hand-built external boundary-cut future-cost
+function — for example, one derived analytically or produced by another
+tool — as a policy checkpoint Cobre can load.
+
+```python
+write_policy_checkpoint(path, stage_cuts, metadata, stage_bases=None, stage_states=None)
+```
+
+`stage_cuts` and `metadata` mirror the `"stage_cuts"` / `"metadata"` shapes
+that `cobre.results.load_policy` returns, so a checkpoint loaded from disk
+round-trips through Python (load, edit, write) without reshaping;
+`stage_bases` and `stage_states` default to empty when omitted. The function
+writes `metadata.json`, `cuts/`, `basis/`, and `states/` directly under
+`path` — the same [Checkpoint Directory Contents](#checkpoint-directory-contents)
+layout described above, so `path` should be a `policy/`-style directory, the
+same kind of path used by `policy.path` and `policy.boundary.path` elsewhere
+on this page. Before writing, it validates every cut's `coefficients` length
+against its stage's `state_dimension` and every state payload's length
+against `count * state_dimension`, raising `ValueError` on a mismatch.
+
+See [Python Quickstart](/getting-started/python-quickstart/) for a full
+runnable load → edit → write round trip.
 
 ### Configuration
 

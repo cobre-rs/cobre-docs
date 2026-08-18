@@ -411,7 +411,7 @@ the simulation-based upper-bound estimate $\bar{z}^k$ (the mean over
 many forward trajectories) converges. The relative gap
 
 $$
-\text{gap}^k = \frac{\bar{z}^k - \underline{z}^k}{\max(1, |\bar{z}^k|)}
+\text{gap}^k = \frac{\bar{z}^k - \underline{z}^k}{\max(1, |\underline{z}^k|)}
 $$
 
 narrows as cuts accumulate. For a problem of this size (one reservoir,

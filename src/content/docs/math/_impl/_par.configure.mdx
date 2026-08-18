@@ -163,7 +163,7 @@ correlation matrix, plus an optional stage-to-profile schedule:
 
 | Field       | Required | Description |
 | ----------- | -------- | ----------- |
-| `method`    | Yes      | Correlation decomposition method. `"spectral"` (eigendecomposition + clipped square root, methodology §8.2) is preferred; `"cholesky"` is also accepted for existing case files and is treated identically. |
+| `method`    | Yes      | Correlation decomposition method. Accepts only `"spectral"` (eigendecomposition + clipped square root, methodology §8.2); `"cholesky"` is rejected as an unknown method. |
 | `profiles`  | Yes      | Named profiles, each holding one or more `correlation_groups`. Must not be empty. |
 | `schedule`  | No       | Optional array of `{ stage_id, profile_name }` entries activating a named profile for a specific stage. Absent means the `"default"` profile (or the sole profile) applies to every stage. Every `profile_name` referenced must exist in `profiles`. |
 
