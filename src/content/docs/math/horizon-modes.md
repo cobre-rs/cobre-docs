@@ -12,19 +12,26 @@ repeated traversals. Because the topology applies uniformly to every stage, a
 single mode governs the entire run; the choice is declared in the case
 configuration via the policy graph type field.
 
-Cobre supports two modes: **Finite** (acyclic) and **Cyclic**
-(infinite-periodic). This chapter describes the methodology meaning of each
-mode, the guarantee it carries, and the trade-offs that guide the choice
-between them.
+Cobre's policy graph is **finite-horizon only**: the acyclic mode in
+section 1 is the one horizon mode the loader accepts. A **Cyclic**
+(infinite-periodic) mode — closing the stage graph into a cycle whose value
+functions stabilise across repeated traversals rather than terminating at a
+fixed stage — is a **reserved** target design: the policy graph type field's
+only accepted value is `finite_horizon`, and supplying `cyclic` is rejected
+at load with a named error rather than accepted as a mode a study can
+select. Sections 2 and 3 keep the cyclic methodology as a clearly marked
+reserved reference — the mathematics is complete and valid on its own terms,
+independent of current loader support, and documents the design the
+reservation anticipates.
 
-Section 2 introduces the cyclic mode at the idea / guarantee / knob /
-trade-off level; section 3 gives its formal mathematical structure (the
+Section 2 introduces the reserved cyclic mode at the idea / guarantee / knob
+/ trade-off level; section 3 gives its formal mathematical structure (the
 season function, the cycle convergence inequality, the season-indexed
-cut pool, and the fixed-point Bellman operator); section 4 covers
-forward-pass termination; section 5 covers mode selection. The
-mechanics of the per-transition discount factor and its role in the
-cycle convergence requirement belong to
-[Discount-Rate Handling](/math/discount-rate).
+cut pool, and the fixed-point Bellman operator); section 4 describes the
+forward-pass termination logic the reserved design anticipates; section 5
+compares the supported and reserved modes as a reference. The mechanics of
+the per-transition discount factor and its role in the cycle convergence
+requirement belong to [Discount-Rate Handling](/math/discount-rate).
 
 ## 1. Finite (Acyclic) Mode
 
@@ -56,6 +63,15 @@ is the better choice.
 
 ## 2. Cyclic (Infinite-Periodic) Mode
 
+:::caution[Status: Reserved — Not Yet Implemented]
+Cobre's policy graph is finite-horizon only (section 1). Supplying `cyclic`
+as the policy graph type is rejected at load with a named error rather than
+accepted as a mode a study can select today. This section and section 3
+document the cyclic target design as a reserved reference: the methodology
+is complete and valid on its own terms, independent of current loader
+support.
+:::
+
 **Idea.** The stage graph contains a back-edge that returns from the last stage
 of a cycle to the first stage of the next repetition, forming a closed loop.
 There is no terminal stage; instead, the policy is required to be self-consistent
@@ -71,11 +87,14 @@ this guarantee — the convergence inequality, the season function, the
 cut-sharing equation, and the fixed-point Bellman operator — is given in
 section 3.
 
-**Knob.** The case configuration declares the policy graph type as cyclic and
-supplies an annual discount rate. The discount rate, together with each
-transition's duration, determines the per-transition factor; the product of
-factors around one cycle must be strictly below one. See
-[Discount-Rate Handling](/math/discount-rate) for the conversion mechanics.
+**Knob.** In the reserved design, the case configuration would declare the
+policy graph type as cyclic and supply an annual discount rate; the discount
+rate, together with each transition's duration, determines the
+per-transition factor, and the product of factors around one cycle must be
+strictly below one (see [Discount-Rate Handling](/math/discount-rate) for
+the conversion mechanics). The policy graph type field's only currently
+accepted value is `finite_horizon` — supplying `cyclic` is rejected at load
+with a named error.
 
 **Trade-off.** Cyclic mode eliminates the end-of-world effect by representing
 the planning problem as an ongoing, perpetually recurring operation. It is the
@@ -84,9 +103,16 @@ would produce misleading near-terminal policies. The cost is additional
 complexity: the modeller must supply a discount rate, the algorithm must verify
 cycle convergence, and the forward pass requires explicit termination logic
 rather than a natural chain endpoint. Section 3 formalises the convergence
-requirement; section 4 describes the forward-pass termination rules.
+requirement; section 4 describes the forward-pass termination rules the
+reserved design anticipates.
 
 ## 3. Cyclic Mode — Mathematical Detail
+
+:::caution[Status: Reserved — Not Yet Implemented]
+The formal structure below is the reserved cyclic-mode target design
+introduced in section 2; Cobre's loader accepts only `finite_horizon`
+today. It is retained here as a complete, valid methodology reference.
+:::
 
 This section gives the formal structure that section 2 summarised in prose:
 the season function, the cycle convergence inequality, the season-indexed cut
@@ -184,32 +210,36 @@ cyclic-mode stopping criteria.
 ## 4. Forward-Pass Termination in Cyclic Mode
 
 In finite mode the forward pass ends when it reaches the terminal stage; no
-explicit stopping rule is needed. In cyclic mode there is no terminal stage, so
-the training loop applies two stopping conditions.
+explicit stopping rule is needed. The reserved cyclic design (sections 2–3)
+has no terminal stage, so its forward pass would apply two stopping
+conditions.
 
 **Condition 1 — Cumulative-discount tolerance.** As the forward pass traverses
 successive stages, a running product accumulates the per-transition discount
 factors. When this cumulative product falls below a configurable
 cumulative-discount tolerance, the remaining stages contribute so little to the
 total trajectory cost that continuing would not meaningfully affect the policy.
-The pass terminates at that point.
+The pass would terminate at that point.
 
 **Condition 2 — Maximum-stage safety bound.** A configurable maximum-stage
-safety bound prevents unbounded traversal in pathological cases where the
+safety bound would prevent unbounded traversal in pathological cases where the
 cumulative discount shrinks slowly — for example, when the cycle discount is
 valid but close to one. A typical bound corresponds to roughly twenty years of
 monthly stages. If the cumulative-discount condition has not triggered by the
-time the safety bound is reached, the pass terminates unconditionally.
+time the safety bound is reached, the pass would terminate unconditionally.
 
-The forward pass terminates when either condition is met, whichever comes first.
-The discount mechanics underlying the cumulative-discount condition — the formula
-relating the annual rate to the per-transition factor and the running product —
-are described in [Discount-Rate Handling](/math/discount-rate).
+The forward pass would terminate when either condition is met, whichever comes
+first. The discount mechanics underlying the cumulative-discount condition —
+the formula relating the annual rate to the per-transition factor and the
+running product — are described in [Discount-Rate Handling](/math/discount-rate).
 
 ## 5. Choosing Between Modes
 
-The choice between finite and cyclic mode is a modelling decision about what
-the study horizon represents.
+Finite mode (section 1) is the one mode Cobre's loader accepts today. The
+comparison below is kept as a modelling-decision reference between finite
+mode and the reserved cyclic design (sections 2–3) — the trade-offs a
+cyclic mode would offer once implemented, set against the finite mode
+available now.
 
 **Choose finite mode when:**
 
@@ -222,7 +252,7 @@ the study horizon represents.
   no discount rate, no cycle convergence check, and no forward-pass termination
   logic beyond reaching the last stage.
 
-**Choose cyclic mode when:**
+**The reserved cyclic design would be preferable when:**
 
 - The study represents an ongoing operation — long-term reservoir planning,
   multi-year dispatch, perpetual system operation — where imposing a terminal
@@ -231,12 +261,12 @@ the study horizon represents.
   value of future costs.
 - The cut pool compression offered by season-indexed pools is desirable:
   instead of accumulating T independent pools, only P pools (one per season)
-  are maintained regardless of how many cycle repetitions the forward pass
-  traverses.
+  would be maintained regardless of how many cycle repetitions the forward
+  pass traverses.
 
 **Summary of trade-offs:**
 
-| Property                    | Finite                          | Cyclic                              |
+| Property                    | Finite (supported)              | Cyclic (reserved)                   |
 | --------------------------- | ------------------------------- | ----------------------------------- |
 | Terminal condition          | V at T+1 = 0 (or imported cuts) | None; self-consistent across cycles |
 | End-of-world effect         | Present near terminal stage     | Absent                              |
@@ -247,7 +277,8 @@ the study horizon represents.
 
 The cut-generation mechanics that produce the cuts filling both pool
 organisations are covered in [Cut Management](/math/cut-management). The
-algorithm within which both modes operate is described in
+algorithm within which finite mode operates today, and within which the
+reserved cyclic design is specified to operate, is described in
 [SDDP Algorithm](/math/sddp-algorithm).
 
 ## 6. Reference
@@ -268,8 +299,8 @@ from this paper. The full bibliographic entry is in
 - [Cut Management](/math/cut-management) — Cut generation and aggregation
   mechanics that produce the cuts filling the per-stage or per-season pools.
 - [SDDP Algorithm](/math/sddp-algorithm) — The algorithm that the horizon mode
-  parameterises; finite and cyclic policy graph topologies; terminal boundary
-  cut mechanism.
+  parameterises; finite (supported) and cyclic (reserved) policy graph
+  topologies; terminal boundary cut mechanism.
 - [Stopping Rules](/math/stopping-rules) — Cyclic-mode stopping criteria,
   including the cycle convergence tolerance applied to seasonal lower
   bounds.

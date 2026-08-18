@@ -1,0 +1,124 @@
+---
+title: Policy Graphs
+description: The node/transition/pool generalisation of the stage chain — node and edge structure, the two probability axes, the discount-separate convention, the SDDP.jl mapping, structural limitations, and the enumerated-tree requirement.
+---
+
+## Purpose
+
+The stage index $t \in \{0, \ldots, T\}$ used throughout [SDDP Algorithm](/math/sddp-algorithm) is the special case of a more general structure: a **policy graph** of nodes and transitions, in which a stage may hold more than one node and a node may carry its own local realization. This chapter defines that structure — nodes, transitions, and future-cost pools; the two probability axes a policy graph carries; why discount is a stage-level, not an edge-level, quantity; how the structure maps onto the SDDP.jl family; its current structural limitations; and the additional restriction an exact (enumerated) backward/forward pass imposes that a sampled pass does not. It is the structural foundation the rest of the stochastic-modelling chapters build on.
+
+## 1. Nodes, Transitions, and Future-Cost Pools
+
+A **node** $n$ is the tuple `{id, stage_id, scenario_id?, label?}`: a unique identifier, the study stage $t(n)$ it sits at, an optional pointer into that stage's own realization column — present only where the node's stage carries an externally supplied scenario, absent otherwise, and always spelled **`scenario_id`** — and an optional human-readable label.
+
+A **transition** is the tuple `{source_id, target_id, probability}`: a directed edge from a node to a node exactly one stage later, weighted by a transition probability. Every edge advances the graph by exactly one stage — a policy graph has no same-stage or backward edges.
+
+The simplest policy graph is an **implicit stage chain**: no nodes are declared, every stage holds exactly one (unnamed) node, and each transition's endpoints are stage ids rather than node ids. This is the chain already described in [SDDP Algorithm §2](/math/sddp-algorithm) and is the graph every prior chapter assumes. Declaring nodes explicitly generalises the same structure: a stage may then hold several nodes, each with its own identity and (optionally) its own realization pointer.
+
+A node with no outgoing transition is a **leaf**; a node with no incoming transition is a **root**. Every non-leaf node owns its own future-cost (Benders cut) pool — the per-node generalisation of the per-stage cut pool described in [Cut Management](/math/cut-management). On the implicit stage chain, one node per stage collapses this back to exactly the per-stage pool already documented there. All leaf nodes across the whole graph share a single pool that never receives a cut, because a leaf's future cost is the shared terminal condition (§5).
+
+The **backward pass**, run node by node from the leaves toward the root, evaluates a node's own realization(s) and then aggregates its successors' future-cost contributions weighted by their transition probabilities to build that node's cut. The **forward pass** samples a single root→leaf trajectory — one node per stage along the path it visits — and makes decisions using each visited node's current cut approximation.
+
+```d2
+direction: down
+
+classes: {
+  n: {shape: circle; width: 46; height: 46}
+  leaf: {shape: oval; width: 64; height: 40}
+}
+
+topologies: "Policy-graph topologies" {
+  grid-columns: 1
+
+  chain: "Stage chain — one node per stage" {
+    direction: right
+    c0: "0" {class: n}
+    c1: "1" {class: n}
+    c2: "2" {class: leaf}
+    c0 -> c1: "1.0"
+    c1 -> c2: "1.0"
+  }
+
+  fan: "Terminal fan — tree, in-degree 1 throughout" {
+    direction: right
+    f0: "0" {class: n}
+    f1: "1a" {class: leaf}
+    f2: "1b" {class: leaf}
+    f3: "1c" {class: leaf}
+    f0 -> f1: "p₁"
+    f0 -> f2: "p₂"
+    f0 -> f3: "p₃"
+  }
+
+  hybrid: "Recombining hybrid — in-degree 2 at the join" {
+    direction: right
+    h0: "0" {class: n}
+    h1: "1a" {class: n}
+    h2: "1b" {class: n}
+    h3: "2" {class: leaf}
+    h0 -> h1: "p₁"
+    h0 -> h2: "p₂"
+    h1 -> h3: "q"
+    h2 -> h3: "1−q"
+  }
+}
+```
+
+Circles are pool-owning (non-leaf) nodes; ovals are leaves sharing the one terminal pool. All three panels are valid finite/acyclic policy graphs. The **stage chain** and the **terminal fan** are trees — every node has in-degree at most 1 — while the **recombining hybrid** joins two stage-1 nodes into a single stage-2 node, giving that node in-degree 2. §6 returns to why this distinction matters.
+
+## 2. Two Probability Axes
+
+A policy graph carries two probability structures that stay conceptually distinct:
+
+- **Between-node (edge) weights.** Each node's outgoing transition probabilities are declared, checked to sum to 1 within a numerical tolerance, and then normalised to sum to exactly 1 at load. This axis governs *which child node* a trajectory moves to.
+- **Within-node openings.** Independently of its outgoing edges, a node carries its own local set of openings $\Omega_n$ — the realizations $\omega \in \Omega_n$ its stage subproblem is evaluated under. This axis governs *which realization* is evaluated once the node itself has been reached; it is the same within-stage opening concept described for the chain in [SDDP Algorithm §3](/math/sddp-algorithm) and [Scenario Generation](/math/scenario-generation), now scoped per node rather than per stage.
+
+The backward pass composes both axes in order: at a node, aggregate over its own $\Omega_n$ first, then aggregate the resulting per-node values across successor nodes weighted by their transition probabilities. The two axes are never merged into one distribution — an edge weight says nothing about which opening was drawn, and an opening says nothing about which child is visited next.
+
+## 3. Discount Is Stage-Separate, Not Edge-Separate
+
+The discount factor $d_{t \to t+1}$ defined in [Discount Rate](/math/discount-rate) is a property of the **stage transition** $t \to t+1$, not of a policy-graph edge. It is baked once into the objective coefficients of the stage-$t$ template — the mechanism [LP Formulation](/math/lp-formulation) and [Discount Rate](/math/discount-rate) already describe for the stage chain.
+
+An explicit node graph keeps this stage-level convention: a discount override applies to a stage, and a transition between two declared nodes may not carry its own discount override. The reason is structural, not incidental — because the cumulative discount is folded into the stage template exactly once per stage, an edge-level (and therefore potentially per-node) override would force a separate template per node, which the single shared stage template does not support. A future-proof declaration point exists per transition precisely because the implicit stage chain has one transition per stage, so a per-edge spelling there is equivalent to a per-stage one; once a stage can hold several nodes, that equivalence breaks and only the per-stage declaration remains meaningful.
+
+## 4. Mapping onto the SDDP.jl Family
+
+The node/transition/pool structure above is the same abstraction the SDDP.jl family formalises as a **policy graph** (Dowson & Kapelevich, 2021): nodes each carry a local subproblem and their own cut pool, connected by probability-weighted arcs, with the backward pass aggregating successor pools into a parent's cut exactly as §1 describes. Cobre's graph is the finite, acyclic, leaf-terminated member of that family — every trajectory starts at a root and ends at a leaf after a bounded number of stages, with no cycle back to an earlier stage. §5 states the further restrictions Cobre currently imposes within that member.
+
+## 5. Known Limitations
+
+The policy graph as implemented today carries three structural limitations beyond the finite/acyclic/leaf-terminated shape itself:
+
+- **A single initial node.** A case supplies one initial-conditions record for the whole graph, so the incoming state that anchors the graph is shared by construction — the graph is anchored at one root even where the schema would structurally permit more than one node at stage 0.
+- **A single terminal value shared across leaves.** Every leaf, regardless of which node or path reaches it, resolves to the same shared terminal pool, which never receives a cut. This generalises the terminal condition $V_{T+1}(x) = 0$ from [SDDP Algorithm §2](/math/sddp-algorithm): there is one terminal future-cost value for the whole graph, not one per leaf.
+- **Finite-horizon only.** Only the acyclic, leaf-terminated graph shape is currently accepted; the cyclic (infinite periodic horizon) variant is reserved and rejected at setup. See [Horizon Modes](/math/horizon-modes) for the cyclic target design this reservation anticipates.
+
+## 6. The Enumerated-Tree Structural Requirement
+
+An **enumerated** (exact) backward/forward pass — as opposed to a sampled one — visits every node deterministically and reconstructs each node's incoming state along a single path from its parent. That reconstruction is only well-defined under two additional restrictions on the graph, beyond the finite/acyclic/leaf-terminated shape:
+
+1. **A singleton within-node opening set at every node** ($|\Omega_n| = 1$). An exact pass has not yet been extended to aggregate over more than one opening per node; a node with more than one opening must be expressed structurally instead, as distinct sibling nodes each carrying its own single opening.
+2. **In-degree 1 everywhere — a pure tree, no recombination.** A node reached from more than one predecessor (the *recombining hybrid* panel in §1) has more than one candidate incoming state. Reconstructing its state along only one parent's path would silently discard the trajectories that arrive through the other parent.
+
+Both restrictions exist for the same reason: an exact pass has no per-trajectory memory of how it reached a node, so a node's incoming state must be exactly and unambiguously the one path leading to it. A **sampled** pass carries its own incoming state along with each trajectory it evaluates, so it is not subject to either restriction — it evaluates a node's opening set by drawing from it rather than enumerating it, and it resolves a recombination join natively rather than reconstructing a single path.
+
+Because the enumerated count grows multiplicatively along every root→leaf path, the total number of leaves an enumerated pass would visit is checked against overflow before the pass runs; a graph whose exact enumeration would overflow is rejected at setup rather than silently truncated or wrapped.
+
+Of the three panels in §1: the **stage chain** and the **terminal fan** are pure trees and admit an exact pass (subject to the singleton-opening restriction at each node); the **recombining hybrid** is rejected for an exact pass at its in-degree-2 join and requires a sampled pass instead.
+
+## Cross-References
+
+- [SDDP Algorithm](/math/sddp-algorithm) — the forward/backward pass structure and terminal condition this chapter generalises to a graph
+- [Cut Management](/math/cut-management) — the append-only cut pool this chapter generalises from per-stage to per-node
+- [Discount Rate](/math/discount-rate) — the per-stage discount factor referenced in §3
+- [Scenario Generation](/math/scenario-generation) — the within-node opening set referenced in §2
+- [Horizon Modes](/math/horizon-modes) — the cyclic graph variant reserved in §5
+- [Case Directory Format](/reference/case-directory-format) — the `stages.json` field-level reference for the node/transition shape introduced conceptually in §1
+- [Running Cobre → Configuration](/running/configuration) — how a study selects an enumerated versus a sampled pass (§6)
+- [Glossary](/reference/glossary) — term definitions for node, transition, and policy graph
+
+## References
+
+> Dowson, O. & Kapelevich, L. (2021). SDDP.jl: A Julia Package for Stochastic Dual Dynamic Programming. _INFORMS Journal on Computing_, 33(1), 27–33. https://doi.org/10.1287/ijoc.2020.0987
+
+See the full [Bibliography](/reference/bibliography) for every source cited across the methodology.

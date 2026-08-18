@@ -43,24 +43,26 @@ will not produce `simulation/pumping_stations/`.
     cut_selection/
       iterations.parquet         (when cut_selection is enabled)
   policy/
-    cuts/
-      stage_000.bin
-      stage_001.bin
+    cuts/                            # pool-keyed
+      000.bin
+      001.bin
       ...
-      stage_NNN.bin
-    basis/
-      stage_000.bin
-      stage_001.bin
+      NNN.bin
+    basis/                           # stage-keyed
+      000.bin
+      001.bin
       ...
-      stage_NNN.bin
+      NNN.bin
     metadata.json
-    states/                         # when exports.states = true
-      stage_000.bin
-      stage_001.bin
+    states/                          # stage-keyed; when exports.states = true
+      000.bin
+      001.bin
       ...
-      stage_NNN.bin
+      NNN.bin
   simulation/
     metadata.json
+    paths.parquet
+    scenario_summary.parquet
     costs/
       scenario_id=0000/
         data.parquet
@@ -97,6 +99,12 @@ will not produce `simulation/pumping_stations/`.
     in_transit/                     # when a travel-time arc is declared
       scenario_id=0000/data.parquet
       ...
+    transit_seed/                   # when a travel-time arc is declared
+      scenario_id=0000/data.parquet
+      ...
+    anticipated_lanes/               # when a post-study delivery window is declared
+      scenario_id=0000/data.parquet
+      ...
     violations/
       generic/
         scenario_id=0000/data.parquet
@@ -104,6 +112,8 @@ will not produce `simulation/pumping_stations/`.
     solver/
       iterations.parquet
       retry_histogram.parquet
+  generic_constraints/               # when the study has generic constraints
+    resolved_echo.parquet
   hydro_models/
     fpha_hyperplanes.parquet         (when any hydro uses source: "computed")
     evaporation_models.parquet       (when any hydro has evaporation)
@@ -259,11 +269,12 @@ single file. Consumers should check `status` before interpreting other fields.
 
 **`bounds` fields:**
 
-| Field                   | Type   | Nullable | Description                                                                    |
-| ----------------------- | ------ | -------- | ------------------------------------------------------------------------------ |
-| `final_lower_bound`     | number | No       | Final lower bound on the objective at termination.                             |
-| `final_upper_bound`     | number | Yes      | Final upper bound estimate. `null` when upper-bound evaluation is disabled.    |
-| `final_upper_bound_std` | number | Yes      | Standard deviation of the final upper-bound estimate. `null` when unavailable. |
+| Field                    | Type   | Nullable | Description                                                                                                                                                              |
+| ------------------------ | ------ | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `final_lower_bound`      | number | No       | Final lower bound on the objective at termination.                                                                                                                       |
+| `final_upper_bound`      | number | Yes      | Final upper bound estimate. `null` when upper-bound evaluation is disabled.                                                                                              |
+| `final_upper_bound_std`  | number | Yes      | Standard deviation of the final upper-bound estimate. `null` when unavailable or the bound is exact.                                                                     |
+| `final_upper_bound_kind` | string | No       | Upper-bound regime: `"exact"` (enumerated forward pass) or `"statistical"` (sampled forward pass). Defaults to `"statistical"` when read from pre-exact-regime metadata. |
 
 **`solve_stats` fields:**
 
@@ -313,24 +324,25 @@ absent in such legacy metadata deserialises as `0.0`.
 
 ### `training/convergence.parquet`
 
-Per-iteration convergence log. One row per training iteration. 14 columns.
+Per-iteration convergence log. One row per training iteration. 15 columns.
 
-| Column             | Type    | Nullable | Description                                                                                                   |
-| ------------------ | ------- | -------- | ------------------------------------------------------------------------------------------------------------- |
-| `iteration`        | Int32   | No       | Training iteration number (1-based).                                                                          |
-| `lower_bound`      | Float64 | No       | Best proven lower bound on the minimum expected cost after this iteration.                                    |
-| `upper_bound_mean` | Float64 | No       | Mean upper bound estimate from the forward-pass scenarios in this iteration.                                  |
-| `upper_bound_std`  | Float64 | No       | Standard deviation of the upper bound estimate across forward-pass scenarios.                                 |
-| `gap_percent`      | Float64 | Yes      | Relative gap between lower and upper bounds as a percentage. `null` when the lower bound is zero or negative. |
-| `cuts_added`       | Int32   | No       | Number of new cuts added to the pool during this iteration's backward pass.                                   |
-| `cuts_removed`     | Int32   | No       | Number of cuts deactivated by the cut selection strategy in this iteration.                                   |
-| `cuts_active`      | Int64   | No       | Total number of active cuts across all stages at the end of this iteration.                                   |
-| `time_forward_ms`  | Int64   | No       | Wall-clock time spent in the forward pass, in milliseconds.                                                   |
-| `time_backward_ms` | Int64   | No       | Wall-clock time spent in the backward pass, in milliseconds.                                                  |
-| `time_total_ms`    | Int64   | No       | Total wall-clock time for this iteration, in milliseconds.                                                    |
-| `forward_passes`   | Int32   | No       | Number of forward-pass scenario trajectories evaluated in this iteration.                                     |
-| `lp_solves`        | Int64   | No       | Total number of LP solves across all stages and forward passes in this iteration.                             |
-| `mean_rows_in_lp`  | Float64 | No       | Mean number of active LP rows across all stage solves in this iteration.                                      |
+| Column             | Type    | Nullable | Description                                                                                                                                                                                   |
+| ------------------ | ------- | -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `iteration`        | Int32   | No       | Training iteration number (1-based).                                                                                                                                                          |
+| `lower_bound`      | Float64 | No       | Best proven lower bound on the minimum expected cost after this iteration.                                                                                                                    |
+| `upper_bound`      | Float64 | No       | Upper bound estimate for this iteration: the mean over forward-pass scenarios under a statistical (sampled) forward pass, or the exact enumerated-weighted value under an exact forward pass. |
+| `upper_bound_std`  | Float64 | Yes      | Standard deviation of the upper bound estimate across forward-pass scenarios. `null` on an exact-bound row (`upper_bound_kind` = `"exact"`), which carries no sampling variance.              |
+| `upper_bound_kind` | Utf8    | No       | `"exact"` when the enumerated weighted bound is in force for this iteration; `"statistical"` otherwise.                                                                                       |
+| `gap_percent`      | Float64 | Yes      | Relative gap between lower and upper bounds as a percentage. `null` when the lower bound is zero or negative.                                                                                 |
+| `cuts_added`       | Int32   | No       | Number of new cuts added to the pool during this iteration's backward pass.                                                                                                                   |
+| `cuts_removed`     | Int32   | No       | Number of cuts deactivated by the cut selection strategy in this iteration.                                                                                                                   |
+| `cuts_active`      | Int64   | No       | Total number of active cuts across all stages at the end of this iteration.                                                                                                                   |
+| `time_forward_ms`  | Int64   | No       | Wall-clock time spent in the forward pass, in milliseconds.                                                                                                                                   |
+| `time_backward_ms` | Int64   | No       | Wall-clock time spent in the backward pass, in milliseconds.                                                                                                                                  |
+| `time_total_ms`    | Int64   | No       | Total wall-clock time for this iteration, in milliseconds.                                                                                                                                    |
+| `forward_passes`   | Int32   | No       | Number of forward-pass scenario trajectories evaluated in this iteration.                                                                                                                     |
+| `lp_solves`        | Int64   | No       | Total number of LP solves across all stages and forward passes in this iteration.                                                                                                             |
+| `mean_rows_in_lp`  | Float64 | No       | Mean number of active LP rows across all stage solves in this iteration.                                                                                                                      |
 
 ---
 
@@ -404,18 +416,23 @@ Per-iteration, per-rank timing statistics for distributed runs. One row per
 
 Per-iteration, per-phase, per-stage, per-opening, per-worker LP solver
 statistics for diagnosing conditioning issues and retry behavior. One row per
-`(iteration, phase, stage, opening, rank, worker_id)` tuple on the backward
-phase (per-opening, per-worker); one row per `(iteration, phase, stage)` tuple
-on the forward, `lower_bound`, and `simulation` phases. 18 columns. Columns
-`opening`, `rank`, and `worker_id` are nullable Int32; all other columns are
-non-nullable.
+`(iteration, phase, stage_id, opening_index, rank, worker_id)` tuple on the
+backward phase (per-opening, per-worker); one row per `(iteration, phase,
+stage_id)` tuple on the forward, `lower_bound`, and `simulation` phases. A
+training row fills `iteration` and leaves `scenario_id` NULL; a simulation row
+fills `scenario_id` and leaves `iteration` NULL. `stage_id` is NULL on
+`lower_bound` rows (no stage); `opening_index`, `rank`, and `worker_id` are
+NULL wherever the row has no per-opening/per-rank/per-worker dimension. 19
+columns. `iteration`, `scenario_id`, `stage_id`, `opening_index`, `rank`, and
+`worker_id` are nullable Int32; all other columns are non-nullable.
 
 | Column                       | Type    | Nullable | Description                                                                                                          |
 | ---------------------------- | ------- | -------- | -------------------------------------------------------------------------------------------------------------------- |
-| `iteration`                  | UInt32  | No       | Training iteration (1-based) or simulation scenario id (0-based).                                                    |
+| `iteration`                  | Int32   | Yes      | Training iteration (1-based). NULL on a simulation row (`scenario_id` is filled instead).                            |
+| `scenario_id`                | Int32   | Yes      | Simulation scenario id (0-based). NULL on a training row (`iteration` is filled instead).                            |
 | `phase`                      | Utf8    | No       | `"forward"`, `"backward"`, `"lower_bound"`, or `"simulation"`.                                                       |
-| `stage`                      | Int32   | No       | Stage index (0-based).                                                                                               |
-| `opening`                    | Int32   | Yes      | Opening (noise realization) index within the stage for backward rows. NULL for forward, `lower_bound`, `simulation`. |
+| `stage_id`                   | Int32   | Yes      | Stage index (0-based). NULL on `lower_bound` rows.                                                                   |
+| `opening_index`              | Int32   | Yes      | Opening (noise realization) index within the stage for backward rows. NULL for forward, `lower_bound`, `simulation`. |
 | `rank`                       | Int32   | Yes      | MPI rank that produced this row. NULL for rank-aggregated rows.                                                      |
 | `worker_id`                  | Int32   | Yes      | Rayon worker index within the rank's pool. NULL for rows without a per-worker dimension.                             |
 | `lp_solves`                  | UInt32  | No       | Number of LP solves in this row's bucket.                                                                            |
@@ -434,51 +451,127 @@ non-nullable.
 ### `simulation/solver/iterations.parquet`
 
 Identical schema to [`training/solver/iterations.parquet`](#trainingsolveriterationsparquet).
-One row per `(scenario, phase, stage)` triple where `phase == "simulation"`.
+One row per `(scenario_id, phase, stage_id)` triple where `phase == "simulation"`.
 
 ### `training/solver/retry_histogram.parquet`
 
 Per-level retry success counts, normalized from the solver iterations
-table. One row per `(iteration, phase, stage, retry_level)` tuple where
-the count is positive (sparse encoding). 5 columns. All non-nullable.
+table. One row per `(iteration, phase, stage_id, retry_level)` tuple where
+the count is positive (sparse encoding). 5 columns. All non-nullable except
+`stage_id`.
 
-| Column        | Type   | Nullable | Description                                                                                                      |
-| ------------- | ------ | -------- | ---------------------------------------------------------------------------------------------------------------- |
-| `iteration`   | UInt32 | No       | Training iteration number (1-based).                                                                             |
-| `phase`       | Utf8   | No       | Algorithm phase: `"forward"`, `"backward"`, or `"lower_bound"`.                                                  |
-| `stage`       | Int32  | No       | Stage index (0-based).                                                                                           |
+| Column        | Type   | Nullable | Description                                                                                                                                         |
+| ------------- | ------ | -------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `iteration`   | UInt32 | No       | Training iteration number (1-based).                                                                                                                |
+| `phase`       | Utf8   | No       | Algorithm phase: `"forward"`, `"backward"`, or `"lower_bound"`.                                                                                     |
+| `stage_id`    | Int32  | Yes      | Stage index (0-based). NULL for the forward, `lower_bound`, and simulation rows that carry no per-stage attribution.                                |
 | `retry_level` | UInt32 | No       | Retry escalation level (0--11). See the [Solver Safeguards](/running/performance/#solver-safeguards) section of the Performance Accelerators guide. |
-| `count`       | UInt64 | No       | Number of LP solves recovered at this retry level.                                                               |
+| `count`       | UInt64 | No       | Number of LP solves recovered at this retry level.                                                                                                  |
 
 ### `training/scaling_report.json`
 
 LP prescaling diagnostics written once after stage template construction.
-Documents the coefficient range before and after column/row scaling for
-each stage. Useful for diagnosing numerical conditioning issues.
+Documents the coefficient ranges before and after column/row scaling for
+each stage, plus the applied scale-factor distributions. Useful for
+diagnosing numerical conditioning issues.
 
-The JSON is an array of per-stage objects, each containing:
+The JSON is a single top-level object:
 
-| Field                    | Type    | Description                                                   |
-| ------------------------ | ------- | ------------------------------------------------------------- |
-| `stage`                  | integer | Stage index (0-based).                                        |
-| `before.coefficient_min` | number  | Smallest absolute non-zero matrix coefficient before scaling. |
-| `before.coefficient_max` | number  | Largest absolute matrix coefficient before scaling.           |
-| `before.rhs_min`         | number  | Smallest absolute non-zero RHS value before scaling.          |
-| `before.rhs_max`         | number  | Largest absolute RHS value before scaling.                    |
-| `after.coefficient_min`  | number  | Smallest absolute non-zero coefficient after scaling.         |
-| `after.coefficient_max`  | number  | Largest absolute coefficient after scaling.                   |
-| `after.rhs_min`          | number  | Smallest absolute non-zero RHS value after scaling.           |
-| `after.rhs_max`          | number  | Largest absolute RHS value after scaling.                     |
+```json
+{
+  "cost_scale_factor": 1000000.0,
+  "stages": [
+    {
+      "stage_id": 0,
+      "dimensions": { "num_cols": 128, "num_rows": 96, "num_nz": 412 },
+      "pre_scaling": {
+        "matrix_coeff_range": [0.001, 5000.0],
+        "matrix_coeff_ratio": 5000000.0,
+        "objective_range": [1.0, 250000.0],
+        "objective_ratio": 250000.0
+      },
+      "post_scaling": {
+        "matrix_coeff_range": [0.5, 4.2],
+        "matrix_coeff_ratio": 8.4,
+        "objective_range": [0.8, 3.1],
+        "objective_ratio": 3.875
+      },
+      "col_scale": { "min": 0.02, "max": 48.0, "median": 1.0, "count": 128 },
+      "row_scale": { "min": 0.1, "max": 12.0, "median": 1.0, "count": 96 }
+    }
+  ],
+  "summary": {
+    "worst_pre_scaling_matrix_ratio": 5000000.0,
+    "worst_post_scaling_matrix_ratio": 8.4,
+    "improvement_factor": 595238.1,
+    "num_stages": 1
+  }
+}
+```
+
+**Top-level fields:**
+
+| Field               | Type   | Description                                                               |
+| ------------------- | ------ | -------------------------------------------------------------------------- |
+| `cost_scale_factor` | number | Cost scale factor applied to objective coefficients during template build. |
+| `stages`            | array  | One entry per stage. See "`stages[]` fields" below.                        |
+| `summary`           | object | Cross-stage summary. See "`summary` fields" below.                         |
+
+**`stages[]` fields:**
+
+| Field          | Type    | Description                                                                                       |
+| -------------- | ------- | --------------------------------------------------------------------------------------------------- |
+| `stage_id`     | integer | Stage index (0-based).                                                                              |
+| `dimensions`   | object  | LP dimensions for this stage's template. See "`dimensions` fields" below.                           |
+| `pre_scaling`  | object  | Coefficient ranges before column/row scaling. See "`pre_scaling` / `post_scaling` fields" below.    |
+| `post_scaling` | object  | Coefficient ranges after column/row (and cost) scaling. Same shape as `pre_scaling`.                 |
+| `col_scale`    | object  | Summary of the column scale-factor vector. See "`col_scale` / `row_scale` fields" below.            |
+| `row_scale`    | object  | Summary of the row scale-factor vector. Same shape as `col_scale`.                                   |
+
+**`dimensions` fields:**
+
+| Field      | Type    | Description                                          |
+| ---------- | ------- | ------------------------------------------------------ |
+| `num_cols` | integer | Number of columns (decision variables).                |
+| `num_rows` | integer | Number of structural rows (constraints).                |
+| `num_nz`   | integer | Number of nonzero entries in the constraint matrix.     |
+
+**`pre_scaling` / `post_scaling` fields:**
+
+| Field                | Type         | Description                                                                             |
+| -------------------- | ------------ | ------------------------------------------------------------------------------------------ |
+| `matrix_coeff_range` | number array | `[min, max]` absolute value over nonzero constraint-matrix entries.                        |
+| `matrix_coeff_ratio` | number       | Ratio of the largest to smallest absolute nonzero matrix coefficient (`max / min`).        |
+| `objective_range`    | number array | `[min, max]` absolute value over nonzero objective coefficients.                           |
+| `objective_ratio`    | number       | Ratio of the largest to smallest absolute nonzero objective coefficient (`max / min`).     |
+
+**`col_scale` / `row_scale` fields:**
+
+| Field    | Type    | Description                                                                      |
+| -------- | ------- | ----------------------------------------------------------------------------------- |
+| `min`    | number  | Minimum scale factor.                                                                |
+| `max`    | number  | Maximum scale factor.                                                                |
+| `median` | number  | Median scale factor.                                                                 |
+| `count`  | integer | Number of scale factors (`num_cols` for `col_scale`, `num_rows` for `row_scale`).     |
+
+**`summary` fields:**
+
+| Field                              | Type    | Description                                                        |
+| ---------------------------------- | ------- | ---------------------------------------------------------------------- |
+| `worst_pre_scaling_matrix_ratio`   | number  | Maximum pre-scaling matrix coefficient ratio across all stages.        |
+| `worst_post_scaling_matrix_ratio`  | number  | Maximum post-scaling matrix coefficient ratio across all stages.       |
+| `improvement_factor`               | number  | `worst_pre_scaling_matrix_ratio / worst_post_scaling_matrix_ratio`.     |
+| `num_stages`                       | integer | Number of stages.                                                       |
 
 ### `training/cut_selection/iterations.parquet`
 
-Per-stage cut selection statistics. One row per `(iteration, stage)` pair,
+Per-stage cut selection statistics. One row per `(iteration, stage_id)` pair,
 written only at iterations where selection ran. 10 columns.
 
 | Column                | Type    | Nullable | Description                                                                 |
 | --------------------- | ------- | -------- | --------------------------------------------------------------------------- |
 | `iteration`           | Int32   | No       | Training iteration number (1-based).                                        |
-| `stage`               | Int32   | No       | Stage index (0-based).                                                      |
+| `stage_id`            | Int32   | No       | Stage index (0-based).                                                      |
 | `cuts_populated`      | Int32   | No       | Total cut slots containing cuts (active + inactive).                        |
 | `cuts_active_before`  | Int32   | No       | Active cuts before this iteration's selection pipeline.                     |
 | `cuts_deactivated`    | Int32   | No       | Cuts deactivated by the strategy-based selection (Stage 1).                 |
@@ -606,11 +699,15 @@ recipes on dumping a `.bin` to JSON and on generating typed readers in
 Python, C++, TypeScript, and other languages with `flatc`.
 :::
 
-### `policy/cuts/stage_NNN.bin`
+### `policy/cuts/NNN.bin`
 
-FlatBuffers binary file encoding all cuts for a single stage. One file per
-stage; file names are zero-padded to three digits (e.g. `stage_000.bin`,
-`stage_012.bin`).
+FlatBuffers binary file encoding all cuts for a single pool. **Pool-keyed**:
+one file per pool (`cuts/<pool_id>.bin`), zero-padded to three digits (e.g.
+`000.bin`, `012.bin`); a pool shared by several leaf nodes appears once. On a
+plain stage chain, pool id equals stage index, so file names look the same as
+before — the general node -> pool mapping (for a branching policy graph) is
+resolved through the `graph_manifest` in
+[`policy/metadata.json`](#policymetadatajson), never trusted from the file name.
 
 The binary is not human-readable. The logical record structure for each cut
 contained in the file is:
@@ -622,10 +719,10 @@ contained in the file is:
 | `iteration`          | uint32    | Training iteration that generated this cut.                                                                                          |
 | `forward_pass_index` | uint32    | Forward pass index within the generating iteration.                                                                                  |
 | `intercept`          | float64   | Pre-computed cut intercept: `alpha - beta' * x_hat`, where `x_hat` is the state at the generating forward pass node.                 |
-| `coefficients`       | float64[] | Gradient coefficient vector. Length equals the state dimension — the number of entries in the embedded entity manifest below, also `state_dimension` in `policy/metadata.json`.                                           |
+| `coefficients`       | float64[] | Gradient coefficient vector. Length equals the state dimension — the number of entries in the embedded entity manifest below, also the pool's own `state_dimension` (per-pool, not a `policy/metadata.json` field). |
 | `is_active`          | bool      | Whether this cut is currently active in the LP. Inactive cuts are retained for potential reactivation by the cut selection strategy. |
 
-Each `stage_NNN.bin` also embeds a **per-slot entity manifest** — one entry per
+Each `NNN.bin` also embeds a **per-slot entity manifest** — one entry per
 state-vector dimension, in canonical cut-coefficient order — recording which
 entity each coefficient position belongs to. It is the self-describing
 replacement for the former `state_dictionary.json` sidecar, and it is what
@@ -633,27 +730,30 @@ policy-load validation checks (see [policy management](/running/policy-managemen
 a policy whose dimensions match the current study by count but bind to different
 entities is rejected.
 
-| Manifest field    | Type   | Description                                                                                                          |
-| ----------------- | ------ | -------------------------------------------------------------------------------------------------------------------- |
-| `entity_type`     | uint8  | State-dimension kind: `0` HydroStorage, `1` HydroInflowLag, `2` AnticipatedThermalState, `3` HydroTransitBucket.     |
-| `entity_id`       | int32  | Owning entity id — for a transit bucket, the downstream hydro.                                                        |
-| `subindex`        | uint32 | Secondary index within the entity: the inflow-lag order, anticipated-commitment ring slot, or transit maturity lag.  |
-| `was_active`      | bool   | Whether the owning entity was operationally active at this stage (excluded from the load-time identity check).       |
-| `delivery_anchor` | int32  | Calendar-anchor slot for delivery-timed dimensions; a sentinel value when not applicable.                            |
+| Manifest field  | Type   | Description                                                                                                          |
+| ---------------- | ------ | -------------------------------------------------------------------------------------------------------------------- |
+| `entity_type`   | uint8  | State-dimension kind: `0` HydroStorage, `1` HydroInflowLag, `2` AnticipatedThermalState, `3` HydroTransitBucket.     |
+| `entity_id`     | int32  | Owning entity id — for a transit bucket, the downstream hydro.                                                        |
+| `subindex`      | uint32 | Secondary index within the entity: the inflow-lag order, anticipated-commitment ring slot, or transit maturity lag.  |
+| `was_active`    | bool   | Whether the owning entity was operationally active at this stage (excluded from the load-time identity check).       |
+| `delivery_date` | int32  | Canonical absolute delivery/arrival calendar date for delivery-timed dimensions, encoded `YYYYMMDD` (`year*10000 + month*100 + day`); sentinel `i32::MIN` when the slot has no delivery semantics. |
 
 The encoding uses the FlatBuffers runtime builder API (little-endian, no
 reflection, no generated code). Field order in the binary matches the
 declaration order above.
 
-Legacy policy files that still contain the `CUT_FIELD_DOMINATION_COUNT`
-FlatBuffer slot deserialise via the `field_pos` graceful-absence pattern
-and the value is discarded; the field is not present in policy files written
-by the current release.
+Pre-0.14 policy checkpoints are rejected outright: the `format_version`
+marker is checked before any payload is decoded, so any pre-marker artifact
+fails with a named error rather than being read positionally. There is no
+converter — retrain from scratch, or resume from a checkpoint written by a
+0.14+ release.
 
-### `policy/basis/stage_NNN.bin`
+### `policy/basis/NNN.bin`
 
 FlatBuffers binary file encoding the LP simplex basis checkpoint for a single
-stage. One file per stage. Used to warm-start LP solves when resuming a study.
+stage. **Stage-keyed**: one file per stage (`basis/<stage_id>.bin`),
+zero-padded to three digits. Used to warm-start LP solves when resuming a
+study.
 
 The logical record structure is:
 
@@ -665,12 +765,13 @@ The logical record structure is:
 | `row_status`    | uint8[] | One status code per LP row (constraint). Encoding is HiGHS-specific.                                        |
 | `num_cut_rows`  | uint32  | Number of trailing rows in `row_status` that correspond to cut rows (as opposed to structural constraints). |
 
-### `policy/states/stage_NNN.bin`
+### `policy/states/NNN.bin`
 
 FlatBuffers binary file encoding the visited forward-pass trial points for a
-single stage. One file per stage. Present only when `exports.states` is `true`
+single stage. **Stage-keyed**: one file per stage (`states/<stage_id>.bin`),
+zero-padded to three digits. Present only when `exports.states` is `true`
 (default is `false`). The `states/` directory is omitted entirely when disabled.
-Like the cut files, each `stage_NNN.bin` embeds the per-slot entity manifest
+Like the cut files, each `NNN.bin` embeds the per-slot entity manifest
 describing its state dimensions.
 
 Trial points are the state vectors observed at each forward-pass scenario
@@ -679,36 +780,74 @@ selection method, but persisted to disk only when this export flag is set.
 Dominated cut selection uses these states at pruning time; for other methods
 they serve as a diagnostic and analysis artifact.
 
-| Field             | Type      | Description                                                                      |
-| ----------------- | --------- | -------------------------------------------------------------------------------- |
-| `stage_id`        | uint32    | Stage index (0-based).                                                           |
-| `state_dimension` | uint32    | Length of each state vector; equals the `state_dimension` in `policy/metadata.json`. |
-| `count`           | uint32    | Number of state vectors stored for this stage.                                   |
-| `data`            | float64[] | Flat array of `count * state_dimension` elements, row-major (one state per row). |
+| Field             | Type      | Description                                                                                                                                                                            |
+| ----------------- | --------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `stage_id`        | uint32    | Stage index (0-based).                                                                                                                                                                 |
+| `node_id`         | int32     | Policy-graph node identity — the declared node id on a branching graph. Sentinel `-1` when absent (a caller that never resolved one, or a pre-`id:5` checkpoint). Distinct from `stage_id` the moment a graph carries more than one node per stage. |
+| `state_dimension` | uint32    | Length of each state vector; equals the writing pool's own `state_dimension` (per-pool, not a `policy/metadata.json` field).                                                          |
+| `count`           | uint32    | Number of state vectors stored for this stage.                                                                                                                                          |
+| `data`            | float64[] | Flat array of `count * state_dimension` elements, row-major (one state per row).                                                                                                       |
 
 ### `policy/metadata.json`
 
 Small JSON file describing the checkpoint at a high level. Human-readable and
-machine-readable by tooling that inspects policy files.
+machine-readable by tooling that inspects policy files. Restructured in
+v0.14.0 around a neutral core (format/provenance/graph descriptors) plus a
+namespaced `producer` block for the training algorithm's own recorded state,
+so a reader that does not know the producer can still read the core from the
+core's own vocabulary.
 
-| Field                  | Type      | Nullable | Description                                                                                                                      |
-| ---------------------- | --------- | -------- | -------------------------------------------------------------------------------------------------------------------------------- |
-| `cobre_version`        | string    | No       | Version of the cobre binary that wrote this checkpoint.                                                                          |
-| `created_at`           | string    | No       | ISO 8601 timestamp when the checkpoint was written.                                                                              |
-| `completed_iterations` | integer   | No       | Number of training iterations completed at checkpoint time.                                                                      |
-| `final_lower_bound`    | number    | No       | Lower bound value after the final completed iteration.                                                                           |
-| `best_upper_bound`     | number    | Yes      | Best upper bound observed during training. `null` when upper bound evaluation was disabled.                                      |
-| `state_dimension`      | integer   | No       | Length of each cut's coefficient vector.                                                                                         |
-| `num_stages`           | integer   | No       | Number of stages. Must match the case configuration on resume.                                                                   |
-| `training_block_mode`  | string    | No       | Block mode the policy was trained under: `"parallel"` or `"chronological"`. Provenance only — policy load does not gate on it (cuts are block-mode-independent). |
-| `training_block_mode_per_stage` | string[] | Yes | Per-stage training block mode; present only when the mode varies across stages, `null`/absent when uniform.                    |
-| `max_iterations`       | integer   | No       | Maximum iterations configured for the run.                                                                                       |
-| `forward_passes`       | integer   | No       | Number of forward passes per iteration configured for the run.                                                                   |
-| `warm_start_cuts`      | integer   | No       | Number of cuts loaded from a previous policy at run start. `0` for fresh runs.                                                   |
-| `warm_start_counts`    | integer[] | No       | Per-stage warm-start cut counts (one per stage, 0-based). Empty in old checkpoints; supersedes `warm_start_cuts` when non-empty. |
-| `rng_seed`             | integer   | No       | RNG seed used by the scenario sampler. Required for reproducibility.                                                             |
-| `total_visited_states` | integer   | No       | Total number of visited state vectors across all stages. `0` when `exports.states` is off.                                       |
-| `cost_scale_factor`    | number    | Yes      | Objective cost-scale factor the writing study resolved (`modeling.cost_scale_factor`). Marks the checkpoint's cut coefficients/intercepts as canonical currency units. `null`/absent in legacy checkpoints, interpreted as scaled at `1000000.0`. See [Cost-Scale Canonicalization](/running/policy-management/#cost-scale-canonicalization) for the compatibility matrix. |
+**Top-level fields:**
+
+| Field            | Type    | Nullable | Description                                                                                                                             |
+| ----------------- | ------- | -------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| `format_version` | integer | No       | On-disk format version; must equal `1` on read. Absence (read as `0`, a pre-marker artifact) is rejected before any payload is parsed. |
+| `cobre_version`  | string  | No       | Version of the cobre binary that wrote this checkpoint.                                                                                 |
+| `created_at`     | string  | No       | ISO 8601 timestamp when the checkpoint was written.                                                                                     |
+| `num_stages`     | integer | No       | Number of stages the graph manifest spans. Must match the case configuration on resume.                                                 |
+| `graph_manifest` | object  | No       | Graph manifest: node list, edge list, node -> pool map, and pool-set size. Defaults to empty on a plain stage chain.                    |
+| `producer`       | object  | No       | Producer-namespaced metadata — the training algorithm's own recorded state. See below.                                                 |
+
+**`graph_manifest` fields:**
+
+| Field     | Type    | Nullable | Description                                                                                    |
+| ---------- | ------- | -------- | -------------------------------------------------------------------------------------------------- |
+| `n_pools` | integer | No       | Number of distinct pools (the pool-set size).                                                      |
+| `nodes[]` | array   | No       | Every node, in canonical order, each with its stage and pool. See `nodes[]` fields below.           |
+| `edges[]` | array   | No       | Every directed edge with its transition probability. See `edges[]` fields below.                    |
+
+`nodes[]` fields (one entry per policy-graph node):
+
+| Field      | Type    | Nullable | Description                                                                                                                       |
+| ----------- | ------- | -------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| `id`       | integer | No       | Declared node id.                                                                                                                 |
+| `stage_id` | integer | No       | Stage id this node sits at.                                                                                                       |
+| `pool_id`  | integer | No       | Pool whose payload holds this node's affine pieces (the node -> pool map: leaf nodes sharing a pool all name the same `pool_id`). |
+
+`edges[]` fields (one entry per directed policy-graph edge):
+
+| Field         | Type    | Nullable | Description                                   |
+| -------------- | ------- | -------- | -------------------------------------------------- |
+| `source_id`   | integer | No       | Source node id.                               |
+| `target_id`   | integer | No       | Target node id.                               |
+| `probability` | number  | No       | Transition probability `P(source -> target)`. |
+
+**`producer` fields:**
+
+| Field                            | Type      | Nullable | Description                                                                                                                            |
+| --------------------------------- | --------- | -------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| `completed_iterations`           | integer   | No       | Number of training iterations completed at checkpoint time.                                                                             |
+| `final_lower_bound`               | number    | No       | Lower bound value after the final completed iteration.                                                                                  |
+| `best_upper_bound`                | number    | Yes      | The final completed iteration's upper bound, if available — the last value, **not** a min-tracked/observed best. `null` when upper bound evaluation was disabled. |
+| `max_iterations`                  | integer   | No       | Maximum iterations configured for the run.                                                                                              |
+| `forward_passes`                  | integer   | No       | Number of forward passes per iteration configured for the run.                                                                          |
+| `warm_start_cuts`                 | integer   | No       | Number of cuts loaded from a previous policy at run start. `0` for fresh runs.                                                          |
+| `warm_start_counts[]`             | integer[] | No       | Per-pool warm-start cut counts, in pool-id order. Empty in old checkpoints; supersedes `warm_start_cuts` for per-pool accuracy when non-empty. |
+| `rng_seed`                        | integer   | No       | RNG seed used by the scenario sampler. Required for reproducibility.                                                                     |
+| `total_visited_states`            | integer   | No       | Total number of visited state vectors across all nodes. `0` when `exports.states` is off.                                                |
+| `training_block_mode`             | string    | No       | Block mode the artifact was trained under: the shared lowercase mode (`"parallel"`/`"chronological"`) when every stage agrees, else `"mixed"`. |
+| `training_block_mode_per_stage[]` | string[]  | No       | Per-study-stage training block modes, in study-stage order. Empty when uniform; populated only for mixed-mode studies.                  |
+| `cost_scale_factor`               | number    | Yes      | Objective cost-scale factor the writing study resolved (`modeling.cost_scale_factor`). Marks the checkpoint's cut coefficients/intercepts as canonical currency units. `null`/absent in legacy checkpoints, interpreted as scaled at `1000000.0`. See [Cost-Scale Canonicalization](/running/policy-management/#cost-scale-canonicalization) for the compatibility matrix. |
 
 ---
 
@@ -742,9 +881,7 @@ LP solver statistics, and distribution information.
   },
   "cost": {
     "mean_cost": 14532064.35,
-    "std_cost": 35658862.19,
-    "cvar": 143086183.17,
-    "cvar_alpha": 0.95
+    "std_cost": 35658862.19
   },
   "solve_stats": {
     "total_lp_solves": 400,
@@ -788,12 +925,10 @@ LP solver statistics, and distribution information.
 
 **`cost` fields** (omitted when cost was not persisted):
 
-| Field        | Type   | Nullable | Description                                                      |
-| ------------ | ------ | -------- | ---------------------------------------------------------------- |
-| `mean_cost`  | number | No       | Mean total cost across simulated scenarios.                      |
-| `std_cost`   | number | No       | Standard deviation of the total cost across simulated scenarios. |
-| `cvar`       | number | No       | Conditional Value-at-Risk at `cvar_alpha`.                       |
-| `cvar_alpha` | number | No       | Confidence level for the CVaR computation, in `(0, 1)`.          |
+| Field       | Type   | Nullable | Description                                                      |
+| ----------- | ------ | -------- | ---------------------------------------------------------------- |
+| `mean_cost` | number | No       | Mean total cost across simulated scenarios.                      |
+| `std_cost`  | number | No       | Standard deviation of the total cost across simulated scenarios. |
 
 **`solve_stats` fields:**
 
@@ -811,13 +946,58 @@ See the **`distribution` fields** table above.
 
 ---
 
+### Node Axis and Policy-Graph Outputs
+
+Every `simulation/` entity partition below shares a leading
+`(scenario_id, stage_id, node_id)` axis: `scenario_id` and `stage_id` are the
+familiar scenario and stage indices, and `node_id` is the **visited
+policy-graph node's declared id** for that `(scenario_id, stage_id)` pair. On
+a plain stage chain (the default, single-node-per-stage graph) `node_id`
+always equals `stage_id` — there is nothing else to distinguish. On a
+branching policy graph with more than one node per stage, `node_id`
+identifies which branch a scenario actually visited at that stage, and joins
+back to the node's `stage_id`/`pool_id` via the policy checkpoint's
+`graph_manifest` (see [`policy/metadata.json`](#policymetadatajson)).
+`scenario_id` duplicates the Hive partition directory
+(`scenario_id=NNNN/`) as an explicit in-file column, so a join on the axis is
+a join rather than a directory-name parse (see
+[Hive Partitioning](#hive-partitioning)).
+
+Two run-level, unpartitioned files complete this axis:
+
+### `simulation/paths.parquet`
+
+The per-scenario node-path trace: exactly the `(scenario_id, stage_id,
+node_id)` axis prefix, one row per stage visited by each scenario. 3 columns,
+all non-null. Joins to any entity file on `(scenario_id, stage_id)`.
+
+| Column        | Type  | Nullable | Description                                                       |
+| ------------- | ----- | -------- | ----------------------------------------------------------------- |
+| `scenario_id` | Int32 | No       | Scenario id (0-based).                                            |
+| `stage_id`    | Int32 | No       | Stage index (0-based).                                            |
+| `node_id`     | Int32 | No       | Visited policy-graph node id; equals `stage_id` on a stage chain. |
+
+### `simulation/scenario_summary.parquet`
+
+Run-level, per-scenario summary: one row per scenario. 3 columns.
+
+| Column                      | Type    | Nullable | Description                                                                                     |
+| --------------------------- | ------- | -------- | ----------------------------------------------------------------------------------------------- |
+| `scenario_id`               | Int32   | No       | Scenario id (0-based).                                                                          |
+| `probability`               | Float64 | Yes      | Per-scenario leaf-path weight under a declared census. `null` under sampled scenario selection. |
+| `discounted_immediate_cost` | Float64 | No       | Total discounted immediate cost for this scenario, summed across its visited path.              |
+
+---
+
 ### `simulation/costs/`
 
-Stage and block-level cost breakdown. One row per (stage, block) pair. 27 columns.
+Stage and block-level cost breakdown. One row per (stage, block) pair. 29 columns.
 
 | Column                         | Type    | Nullable | Description                                                                                                                  |
 | ------------------------------ | ------- | -------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| `scenario_id`                  | Int32   | No       | Scenario id (0-based). Duplicates the Hive partition directory (`scenario_id=NNNN/`) as an explicit in-file column.          |
 | `stage_id`                     | Int32   | No       | Stage index (0-based).                                                                                                       |
+| `node_id`                      | Int32   | No       | Visited policy-graph node id; equals `stage_id` on a stage chain.                                                            |
 | `block_id`                     | Int32   | Yes      | Load block index within the stage. `null` for stage-level (non-block) records.                                               |
 | `total_cost`                   | Float64 | No       | Total discounted cost for this stage/block (monetary units).                                                                 |
 | `immediate_cost`               | Float64 | No       | Immediate (undiscounted) cost for this stage/block.                                                                          |
@@ -849,7 +1029,7 @@ Stage and block-level cost breakdown. One row per (stage, block) pair. 27 column
 
 ### `simulation/hydros/`
 
-Hydro plant dispatch results. One row per (stage, block, hydro) triplet. 35 columns.
+Hydro plant dispatch results. One row per (stage, block, hydro) triplet. 37 columns.
 
 See the Energy Variables guide for an explanation of the
 five energy columns (`equivalent_productivity_mw_per_m3s` through
@@ -857,7 +1037,9 @@ five energy columns (`equivalent_productivity_mw_per_m3s` through
 
 | Column                                | Type    | Nullable | Description                                                                                                                                                                                          |
 | ------------------------------------- | ------- | -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `scenario_id`                         | Int32   | No       | Scenario id (0-based). Duplicates the Hive partition directory (`scenario_id=NNNN/`) as an explicit in-file column.                                                                                  |
 | `stage_id`                            | Int32   | No       | Stage index (0-based).                                                                                                                                                                               |
+| `node_id`                             | Int32   | No       | Visited policy-graph node id; equals `stage_id` on a stage chain.                                                                                                                                    |
 | `block_id`                            | Int32   | Yes      | Load block index. `null` for stage-level records.                                                                                                                                                    |
 | `hydro_id`                            | Int32   | No       | Hydro plant ID.                                                                                                                                                                                      |
 | `turbined_m3s`                        | Float64 | No       | Turbined flow in cubic metres per second (m³/s).                                                                                                                                                     |
@@ -901,7 +1083,7 @@ Hydro dispatch results at `(hydro, bus)` cell granularity — one cell per
 distinct bus among a plant's unit groups (see
 [`hydros[].unit_groups[]`](/reference/case-directory-format/#systemhydrosjson)
 in the Case Directory Format reference). One row per (stage, block, hydro,
-bus) quadruplet. 7 columns.
+bus) quadruplet. 9 columns.
 
 `simulation/hydros/` above is unchanged and continues to report each plant's
 total: a plant split across several unit groups sharing one bus has no
@@ -910,13 +1092,15 @@ across its same-bus groups is an equally optimal solution with no dual to
 distinguish them. This partition reports at the bus-cell granularity the LP
 itself solves.
 
-| Column           | Type    | Nullable | Description                                                                                                        |
-| ---------------- | ------- | -------- | ---------------------------------------------------------------------------------------------------------------------- |
+| Column           | Type    | Nullable | Description                                                                                                         |
+| ---------------- | ------- | -------- | ------------------------------------------------------------------------------------------------------------------- |
+| `scenario_id`    | Int32   | No       | Scenario id (0-based). Duplicates the Hive partition directory (`scenario_id=NNNN/`) as an explicit in-file column. |
 | `stage_id`       | Int32   | No       | Stage index (0-based).                                                                                              |
-| `block_id`       | Int32   | Yes      | Load block index. `null` for stage-level records.                                                                    |
-| `hydro_id`       | Int32   | No       | Hydro plant ID.                                                                                                      |
+| `node_id`        | Int32   | No       | Visited policy-graph node id; equals `stage_id` on a stage chain.                                                   |
+| `block_id`       | Int32   | Yes      | Load block index. `null` for stage-level records.                                                                   |
+| `hydro_id`       | Int32   | No       | Hydro plant ID.                                                                                                     |
 | `bus_id`         | Int32   | No       | Bus ID for this cell. Always non-null.                                                                              |
-| `turbined_m3s`   | Float64 | No       | Turbined flow for this cell in m³/s.                                                                                 |
+| `turbined_m3s`   | Float64 | No       | Turbined flow for this cell in m³/s.                                                                                |
 | `generation_mw`  | Float64 | No       | Average power generation for this cell over the block in MW.                                                        |
 | `generation_mwh` | Float64 | No       | Total energy generated by this cell over the block in MWh (`generation_mw × block_duration_hours`).                 |
 
@@ -935,87 +1119,97 @@ rounding-scale amount.
 
 ### `simulation/thermals/`
 
-Thermal unit dispatch results. One row per (stage, block, thermal) triplet. 10 columns.
+Thermal unit dispatch results. One row per (stage, block, thermal) triplet. 12 columns.
 
-| Column                     | Type    | Nullable | Description                                                                            |
-| -------------------------- | ------- | -------- | -------------------------------------------------------------------------------------- |
-| `stage_id`                 | Int32   | No       | Stage index (0-based).                                                                 |
-| `block_id`                 | Int32   | Yes      | Load block index. `null` for stage-level records.                                      |
-| `thermal_id`               | Int32   | No       | Thermal unit ID.                                                                       |
-| `generation_mw`            | Float64 | No       | Average power generation over the block in MW.                                         |
-| `generation_mwh`           | Float64 | No       | Total energy generated over the block in MWh.                                          |
-| `generation_cost`          | Float64 | No       | Monetary generation cost for this block.                                               |
-| `is_anticipated`           | Boolean | No       | `true` if this unit is configured for anticipated dispatch.                            |
-| `anticipated_committed_mw` | Float64 | Yes      | Committed capacity under anticipated dispatch in MW. `null` for non-anticipated units. |
-| `anticipated_decision_mw`  | Float64 | Yes      | Dispatch decision under anticipated dispatch in MW. `null` for non-anticipated units.  |
-| `operative_state_code`     | Int8    | No       | Operative state code (see `codes.json` `operative_state` mapping).                     |
+| Column                     | Type    | Nullable | Description                                                                                                         |
+| -------------------------- | ------- | -------- | ------------------------------------------------------------------------------------------------------------------- |
+| `scenario_id`              | Int32   | No       | Scenario id (0-based). Duplicates the Hive partition directory (`scenario_id=NNNN/`) as an explicit in-file column. |
+| `stage_id`                 | Int32   | No       | Stage index (0-based).                                                                                              |
+| `node_id`                  | Int32   | No       | Visited policy-graph node id; equals `stage_id` on a stage chain.                                                   |
+| `block_id`                 | Int32   | Yes      | Load block index. `null` for stage-level records.                                                                   |
+| `thermal_id`               | Int32   | No       | Thermal unit ID.                                                                                                    |
+| `generation_mw`            | Float64 | No       | Average power generation over the block in MW.                                                                      |
+| `generation_mwh`           | Float64 | No       | Total energy generated over the block in MWh.                                                                       |
+| `generation_cost`          | Float64 | No       | Monetary generation cost for this block.                                                                            |
+| `is_anticipated`           | Boolean | No       | `true` if this unit is configured for anticipated dispatch.                                                         |
+| `anticipated_committed_mw` | Float64 | Yes      | Committed capacity under anticipated dispatch in MW. `null` for non-anticipated units.                              |
+| `anticipated_decision_mw`  | Float64 | Yes      | Dispatch decision under anticipated dispatch in MW. `null` for non-anticipated units.                               |
+| `operative_state_code`     | Int8    | No       | Operative state code (see `codes.json` `operative_state` mapping).                                                  |
 
 ---
 
 ### `simulation/exchanges/`
 
-Transmission line flow results. One row per (stage, block, line) triplet. 11 columns.
+Transmission line flow results. One row per (stage, block, line) triplet. 13 columns.
 
-| Column                 | Type    | Nullable | Description                                                        |
-| ---------------------- | ------- | -------- | ------------------------------------------------------------------ |
-| `stage_id`             | Int32   | No       | Stage index (0-based).                                             |
-| `block_id`             | Int32   | Yes      | Load block index. `null` for stage-level records.                  |
-| `line_id`              | Int32   | No       | Transmission line ID.                                              |
-| `direct_flow_mw`       | Float64 | No       | Flow in the forward (direct) direction in MW.                      |
-| `reverse_flow_mw`      | Float64 | No       | Flow in the reverse direction in MW.                               |
-| `net_flow_mw`          | Float64 | No       | Net flow (direct minus reverse) in MW.                             |
-| `net_flow_mwh`         | Float64 | No       | Net energy flow over the block in MWh.                             |
-| `losses_mw`            | Float64 | No       | Transmission losses in MW.                                         |
-| `losses_mwh`           | Float64 | No       | Transmission losses in MWh over the block.                         |
-| `exchange_cost`        | Float64 | No       | Monetary cost attributed to this line's exchange.                  |
-| `operative_state_code` | Int8    | No       | Operative state code (see `codes.json` `operative_state` mapping). |
+| Column                 | Type    | Nullable | Description                                                                                                         |
+| ---------------------- | ------- | -------- | ------------------------------------------------------------------------------------------------------------------- |
+| `scenario_id`          | Int32   | No       | Scenario id (0-based). Duplicates the Hive partition directory (`scenario_id=NNNN/`) as an explicit in-file column. |
+| `stage_id`             | Int32   | No       | Stage index (0-based).                                                                                              |
+| `node_id`              | Int32   | No       | Visited policy-graph node id; equals `stage_id` on a stage chain.                                                   |
+| `block_id`             | Int32   | Yes      | Load block index. `null` for stage-level records.                                                                   |
+| `line_id`              | Int32   | No       | Transmission line ID.                                                                                               |
+| `direct_flow_mw`       | Float64 | No       | Flow in the forward (direct) direction in MW.                                                                       |
+| `reverse_flow_mw`      | Float64 | No       | Flow in the reverse direction in MW.                                                                                |
+| `net_flow_mw`          | Float64 | No       | Net flow (direct minus reverse) in MW.                                                                              |
+| `net_flow_mwh`         | Float64 | No       | Net energy flow over the block in MWh.                                                                              |
+| `losses_mw`            | Float64 | No       | Transmission losses in MW.                                                                                          |
+| `losses_mwh`           | Float64 | No       | Transmission losses in MWh over the block.                                                                          |
+| `exchange_cost`        | Float64 | No       | Monetary cost attributed to this line's exchange.                                                                   |
+| `operative_state_code` | Int8    | No       | Operative state code (see `codes.json` `operative_state` mapping).                                                  |
 
 ---
 
 ### `simulation/buses/`
 
-Bus load balance results. One row per (stage, block, bus) triplet. 10 columns.
+Bus load balance results. One row per (stage, block, bus) triplet. 12 columns.
 
-| Column        | Type    | Nullable | Description                                                                                         |
-| ------------- | ------- | -------- | --------------------------------------------------------------------------------------------------- |
-| `stage_id`    | Int32   | No       | Stage index (0-based).                                                                              |
-| `block_id`    | Int32   | Yes      | Load block index. `null` for stage-level records.                                                   |
-| `bus_id`      | Int32   | No       | Bus ID.                                                                                             |
-| `load_mw`     | Float64 | No       | Total load demand at this bus in MW.                                                                |
-| `load_mwh`    | Float64 | No       | Total load energy demand over the block in MWh.                                                     |
-| `deficit_mw`  | Float64 | No       | Unserved load (deficit) at this bus in MW. Zero under feasible dispatch.                            |
-| `deficit_mwh` | Float64 | No       | Unserved load energy over the block in MWh.                                                         |
-| `excess_mw`   | Float64 | No       | Excess generation at this bus in MW. Zero under feasible dispatch.                                  |
-| `excess_mwh`  | Float64 | No       | Excess generation energy over the block in MWh.                                                     |
-| `spot_price`  | Float64 | No       | Locational marginal price (shadow price of the power balance constraint) in monetary units per MWh. |
+| Column        | Type    | Nullable | Description                                                                                                         |
+| ------------- | ------- | -------- | ------------------------------------------------------------------------------------------------------------------- |
+| `scenario_id` | Int32   | No       | Scenario id (0-based). Duplicates the Hive partition directory (`scenario_id=NNNN/`) as an explicit in-file column. |
+| `stage_id`    | Int32   | No       | Stage index (0-based).                                                                                              |
+| `node_id`     | Int32   | No       | Visited policy-graph node id; equals `stage_id` on a stage chain.                                                   |
+| `block_id`    | Int32   | Yes      | Load block index. `null` for stage-level records.                                                                   |
+| `bus_id`      | Int32   | No       | Bus ID.                                                                                                             |
+| `load_mw`     | Float64 | No       | Total load demand at this bus in MW.                                                                                |
+| `load_mwh`    | Float64 | No       | Total load energy demand over the block in MWh.                                                                     |
+| `deficit_mw`  | Float64 | No       | Unserved load (deficit) at this bus in MW. Zero under feasible dispatch.                                            |
+| `deficit_mwh` | Float64 | No       | Unserved load energy over the block in MWh.                                                                         |
+| `excess_mw`   | Float64 | No       | Excess generation at this bus in MW. Zero under feasible dispatch.                                                  |
+| `excess_mwh`  | Float64 | No       | Excess generation energy over the block in MWh.                                                                     |
+| `spot_price`  | Float64 | No       | Locational marginal price (shadow price of the power balance constraint) in monetary units per MWh.                 |
 
 ---
 
 ### `simulation/pumping_stations/`
 
-Pumping station results. One row per (stage, block, pumping station) triplet. 9 columns.
+Pumping station results. One row per (stage, block, pumping station) triplet. 11 columns.
 
-| Column                   | Type    | Nullable | Description                                                        |
-| ------------------------ | ------- | -------- | ------------------------------------------------------------------ |
-| `stage_id`               | Int32   | No       | Stage index (0-based).                                             |
-| `block_id`               | Int32   | Yes      | Load block index. `null` for stage-level records.                  |
-| `pumping_station_id`     | Int32   | No       | Pumping station ID.                                                |
-| `pumped_flow_m3s`        | Float64 | No       | Pumped flow rate in m³/s.                                          |
-| `pumped_volume_hm3`      | Float64 | No       | Total pumped volume over the stage in hm³.                         |
-| `power_consumption_mw`   | Float64 | No       | Power consumed by the pumping station in MW.                       |
-| `energy_consumption_mwh` | Float64 | No       | Energy consumed over the block in MWh.                             |
-| `pumping_cost`           | Float64 | No       | Monetary cost of pumping energy.                                   |
-| `operative_state_code`   | Int8    | No       | Operative state code (see `codes.json` `operative_state` mapping). |
+| Column                   | Type    | Nullable | Description                                                                                                         |
+| ------------------------ | ------- | -------- | ------------------------------------------------------------------------------------------------------------------- |
+| `scenario_id`            | Int32   | No       | Scenario id (0-based). Duplicates the Hive partition directory (`scenario_id=NNNN/`) as an explicit in-file column. |
+| `stage_id`               | Int32   | No       | Stage index (0-based).                                                                                              |
+| `node_id`                | Int32   | No       | Visited policy-graph node id; equals `stage_id` on a stage chain.                                                   |
+| `block_id`               | Int32   | Yes      | Load block index. `null` for stage-level records.                                                                   |
+| `pumping_station_id`     | Int32   | No       | Pumping station ID.                                                                                                 |
+| `pumped_flow_m3s`        | Float64 | No       | Pumped flow rate in m³/s.                                                                                           |
+| `pumped_volume_hm3`      | Float64 | No       | Total pumped volume over the stage in hm³.                                                                          |
+| `power_consumption_mw`   | Float64 | No       | Power consumed by the pumping station in MW.                                                                        |
+| `energy_consumption_mwh` | Float64 | No       | Energy consumed over the block in MWh.                                                                              |
+| `pumping_cost`           | Float64 | No       | Monetary cost of pumping energy.                                                                                    |
+| `operative_state_code`   | Int8    | No       | Operative state code (see `codes.json` `operative_state` mapping).                                                  |
 
 ---
 
 ### `simulation/contracts/`
 
-Energy contract results. One row per (stage, block, contract) triplet. 8 columns.
+Energy contract results. One row per (stage, block, contract) triplet. 10 columns.
 
 | Column                 | Type    | Nullable | Description                                                                                                                                                             |
 | ---------------------- | ------- | -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `scenario_id`          | Int32   | No       | Scenario id (0-based). Duplicates the Hive partition directory (`scenario_id=NNNN/`) as an explicit in-file column.                                                     |
 | `stage_id`             | Int32   | No       | Stage index (0-based).                                                                                                                                                  |
+| `node_id`              | Int32   | No       | Visited policy-graph node id; equals `stage_id` on a stage chain.                                                                                                       |
 | `block_id`             | Int32   | Yes      | Load block index. `null` for stage-level records.                                                                                                                       |
 | `contract_id`          | Int32   | No       | Contract ID.                                                                                                                                                            |
 | `power_mw`             | Float64 | No       | Contracted power in MW, non-negative for both import and export contracts. Direction is carried by the contract type and the price sign, not by the sign of this value. |
@@ -1029,20 +1223,22 @@ Energy contract results. One row per (stage, block, contract) triplet. 8 columns
 ### `simulation/non_controllables/`
 
 Non-controllable source results (wind, solar, run-of-river hydro without
-storage, etc.). One row per (stage, block, non-controllable) triplet. 10 columns.
+storage, etc.). One row per (stage, block, non-controllable) triplet. 12 columns.
 
-| Column                 | Type    | Nullable | Description                                                                   |
-| ---------------------- | ------- | -------- | ----------------------------------------------------------------------------- |
-| `stage_id`             | Int32   | No       | Stage index (0-based).                                                        |
-| `block_id`             | Int32   | Yes      | Load block index. `null` for stage-level records.                             |
-| `non_controllable_id`  | Int32   | No       | Non-controllable source ID.                                                   |
-| `generation_mw`        | Float64 | No       | Actual generation dispatched in MW.                                           |
-| `generation_mwh`       | Float64 | No       | Actual energy generated over the block in MWh.                                |
-| `available_mw`         | Float64 | No       | Maximum available generation in MW (before curtailment).                      |
-| `curtailment_mw`       | Float64 | No       | Generation curtailed in MW. Zero when all available generation is dispatched. |
-| `curtailment_mwh`      | Float64 | No       | Curtailed energy over the block in MWh.                                       |
-| `curtailment_cost`     | Float64 | No       | Monetary cost attributed to curtailment.                                      |
-| `operative_state_code` | Int8    | No       | Operative state code (see `codes.json` `operative_state` mapping).            |
+| Column                 | Type    | Nullable | Description                                                                                                         |
+| ---------------------- | ------- | -------- | ------------------------------------------------------------------------------------------------------------------- |
+| `scenario_id`          | Int32   | No       | Scenario id (0-based). Duplicates the Hive partition directory (`scenario_id=NNNN/`) as an explicit in-file column. |
+| `stage_id`             | Int32   | No       | Stage index (0-based).                                                                                              |
+| `node_id`              | Int32   | No       | Visited policy-graph node id; equals `stage_id` on a stage chain.                                                   |
+| `block_id`             | Int32   | Yes      | Load block index. `null` for stage-level records.                                                                   |
+| `non_controllable_id`  | Int32   | No       | Non-controllable source ID.                                                                                         |
+| `generation_mw`        | Float64 | No       | Actual generation dispatched in MW.                                                                                 |
+| `generation_mwh`       | Float64 | No       | Actual energy generated over the block in MWh.                                                                      |
+| `available_mw`         | Float64 | No       | Maximum available generation in MW (before curtailment).                                                            |
+| `curtailment_mw`       | Float64 | No       | Generation curtailed in MW. Zero when all available generation is dispatched.                                       |
+| `curtailment_mwh`      | Float64 | No       | Curtailed energy over the block in MWh.                                                                             |
+| `curtailment_cost`     | Float64 | No       | Monetary cost attributed to curtailment.                                                                            |
+| `operative_state_code` | Int8    | No       | Operative state code (see `codes.json` `operative_state` mapping).                                                  |
 
 ---
 
@@ -1050,14 +1246,16 @@ storage, etc.). One row per (stage, block, non-controllable) triplet. 10 columns
 
 Autoregressive inflow lag state variables. One row per (stage, hydro, lag)
 triplet. No block dimension — inflow lags are stage-level state variables.
-4 columns. All columns are non-nullable.
+6 columns. All columns are non-nullable.
 
-| Column       | Type    | Nullable | Description                                                               |
-| ------------ | ------- | -------- | ------------------------------------------------------------------------- |
-| `stage_id`   | Int32   | No       | Stage index (0-based).                                                    |
-| `hydro_id`   | Int32   | No       | Hydro plant ID.                                                           |
-| `lag_index`  | Int32   | No       | Autoregressive lag order (1-based). Lag 1 is the previous stage's inflow. |
-| `inflow_m3s` | Float64 | No       | Inflow value for this lag in m³/s.                                        |
+| Column        | Type    | Nullable | Description                                                                                                         |
+| ------------- | ------- | -------- | ------------------------------------------------------------------------------------------------------------------- |
+| `scenario_id` | Int32   | No       | Scenario id (0-based). Duplicates the Hive partition directory (`scenario_id=NNNN/`) as an explicit in-file column. |
+| `stage_id`    | Int32   | No       | Stage index (0-based).                                                                                              |
+| `node_id`     | Int32   | No       | Visited policy-graph node id; equals `stage_id` on a stage chain.                                                   |
+| `hydro_id`    | Int32   | No       | Hydro plant ID.                                                                                                     |
+| `lag_index`   | Int32   | No       | Autoregressive lag order (1-based). Lag 1 is the previous stage's inflow.                                           |
+| `inflow_m3s`  | Float64 | No       | Inflow value for this lag in m³/s.                                                                                  |
 
 ---
 
@@ -1065,14 +1263,16 @@ triplet. No block dimension — inflow lags are stage-level state variables.
 
 Water travel-time in-transit volumes. One row per (stage, downstream hydro,
 maturity lag) triplet. No block dimension — in-transit buckets are stage-level
-state variables. 5 columns. All columns are non-nullable. The directory is
+state variables. 7 columns. All columns are non-nullable. The directory is
 present **only when the system declares a travel-time arc**
 (`travel_time_hours` present, strictly positive, with a `downstream_id`);
 byte-neutral otherwise.
 
-| Column                  | Type    | Nullable | Description                                                                                                          |
+| Column                  | Type    | Nullable | Description                                                                                                         |
 | ----------------------- | ------- | -------- | ------------------------------------------------------------------------------------------------------------------- |
+| `scenario_id`           | Int32   | No       | Scenario id (0-based). Duplicates the Hive partition directory (`scenario_id=NNNN/`) as an explicit in-file column. |
 | `stage_id`              | Int32   | No       | Stage index (0-based).                                                                                              |
+| `node_id`               | Int32   | No       | Visited policy-graph node id; equals `stage_id` on a stage chain.                                                   |
 | `hydro_id`              | Int32   | No       | Downstream (receiving) hydro plant ID the in-transit water is destined for.                                         |
 | `lag`                   | Int32   | No       | Maturity lag (1-based). Lag 1 matures into the receiving plant's reservoir at this stage; deeper lags arrive later. |
 | `in_transit_volume_hm3` | Float64 | No       | In-transit water volume carried at this (stage, plant, lag) bucket in hm³.                                          |
@@ -1080,18 +1280,61 @@ byte-neutral otherwise.
 
 ---
 
+### `simulation/transit_seed/`
+
+Rolling release-window seed recording each in-transit bucket's own upstream
+release history, for seeding a continuing (resumed) run's transit buckets
+across the boundary. Scenario-level — unlike every other simulation
+partition, a window's own `[start_date, end_date)` span anchors the row, not
+a stage/node index, so this schema carries `scenario_id` alone (no
+`stage_id`/`node_id`). 5 columns. All columns are non-nullable. Hive-partitioned
+by `scenario_id` (`transit_seed/scenario_id=NNNN/data.parquet`); written only
+when the system declares a travel-time arc.
+
+| Column        | Type    | Nullable | Description                                                                                                         |
+| ------------- | ------- | -------- | ------------------------------------------------------------------------------------------------------------------- |
+| `scenario_id` | Int32   | No       | Scenario id (0-based). Duplicates the Hive partition directory (`scenario_id=NNNN/`) as an explicit in-file column. |
+| `hydro_id`    | Int32   | No       | Upstream entity identifier whose release the window covers.                                                         |
+| `start_date`  | Date32  | No       | Start of the release window (inclusive).                                                                            |
+| `end_date`    | Date32  | No       | End of the release window (exclusive).                                                                              |
+| `value_m3s`   | Float64 | No       | Mean release rate over the window, in m³/s.                                                                         |
+
+### `simulation/anticipated_lanes/`
+
+Post-horizon commitment lane results, keyed `(thermal_id, delivery_date)` —
+distinct from the per-plant `anticipated_committed_mw`/`anticipated_decision_mw`
+columns on [`simulation/thermals/`](#simulationthermals). One row per declared
+window per terminal scenario. 7 columns. All columns are non-nullable.
+Hive-partitioned by `scenario_id`
+(`anticipated_lanes/scenario_id=NNNN/data.parquet`); written only when the
+system declares a `future_anticipated_deliveries` window.
+
+| Column                  | Type    | Nullable | Description                                                                                                         |
+| ----------------------- | ------- | -------- | ------------------------------------------------------------------------------------------------------------------- |
+| `scenario_id`           | Int32   | No       | Scenario id (0-based). Duplicates the Hive partition directory (`scenario_id=NNNN/`) as an explicit in-file column. |
+| `stage_id`              | Int32   | No       | Stage index (0-based) at which the lane's commitment was deposited.                                                 |
+| `node_id`               | Int32   | No       | Visited policy-graph node id; equals `stage_id` on a stage chain.                                                   |
+| `thermal_id`            | Int32   | No       | Anticipated thermal unit ID.                                                                                        |
+| `delivery_date`         | Int32   | No       | Calendar date the commitment delivers, encoded `YYYYMMDD` (`year*10000 + month*100 + day`).                         |
+| `deposited_decision_mw` | Float64 | No       | Dispatch decision deposited into this lane at `stage_id` for delivery at `delivery_date`, in MW.                    |
+| `carried_committed_mw`  | Float64 | No       | Committed capacity carried forward in this lane toward `delivery_date`, in MW.                                      |
+
+---
+
 ### `simulation/violations/generic/`
 
 Generic user-defined constraint violations. One row per (stage, block,
-constraint) triplet where a violation occurred. 5 columns.
+constraint) triplet where a violation occurred. 7 columns.
 
-| Column          | Type    | Nullable | Description                                                                    |
-| --------------- | ------- | -------- | ------------------------------------------------------------------------------ |
-| `stage_id`      | Int32   | No       | Stage index (0-based).                                                         |
-| `block_id`      | Int32   | Yes      | Load block index. `null` for stage-level constraints.                          |
-| `constraint_id` | Int32   | No       | Constraint ID as defined in the case input files.                              |
-| `slack_value`   | Float64 | No       | Violation magnitude in the constraint's natural unit. Zero means no violation. |
-| `slack_cost`    | Float64 | No       | Monetary cost attributed to this violation.                                    |
+| Column          | Type    | Nullable | Description                                                                                                                                                                     |
+| --------------- | ------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `scenario_id`   | Int32   | No       | Scenario id (0-based). Duplicates the Hive partition directory (`scenario_id=NNNN/`) as an explicit in-file column.                                                             |
+| `stage_id`      | Int32   | No       | Stage index (0-based).                                                                                                                                                          |
+| `node_id`       | Int32   | No       | Visited policy-graph node id; equals `stage_id` on a stage chain.                                                                                                               |
+| `block_id`      | Int32   | Yes      | Load block index. `null` for stage-level constraints.                                                                                                                           |
+| `constraint_id` | Int32   | No       | Constraint ID as defined in the case input files.                                                                                                                               |
+| `slack_value`   | Float64 | No       | Non-negative for a one-sided constraint. For a two-sided (range) constraint (both bounds finite), the signed net `s_plus - s_minus` — may be negative. Zero means no violation. |
+| `slack_cost`    | Float64 | No       | Monetary cost attributed to this violation.                                                                                                                                     |
 
 ---
 
@@ -1099,12 +1342,18 @@ constraint) triplet where a violation occurred. 5 columns.
 
 All simulation Parquet output uses Hive partitioning: results for each scenario
 are stored in a directory named `scenario_id=NNNN/` containing a single
-`data.parquet` file. The `scenario_id` column is encoded in the directory name,
-not as a column inside the Parquet file.
+`data.parquet` file. `scenario_id` is **both** the Hive partition directory
+**and** an explicit non-null `Int32` column inside every entity Parquet file
+(the leading column of the shared `(scenario_id, stage_id, node_id)` axis —
+see [Node Axis and Policy-Graph Outputs](#node-axis-and-policy-graph-outputs)).
+A three-way join across entity files, or a join against
+`simulation/paths.parquet` / `simulation/scenario_summary.parquet`, is
+therefore a join on ordinary columns rather than a directory-name parse.
 
 All major columnar data tools understand this layout and can read an entire
-`simulation/<entity>/` directory as a single table with an automatically
-inferred `scenario_id` column:
+`simulation/<entity>/` directory as a single table, either inferring
+`scenario_id` from the partition directory names or reading it directly from
+the in-file column — both agree by construction:
 
 ```python
 # Polars — reads all scenarios at once, infers scenario_id from directory names
@@ -1171,6 +1420,46 @@ cobre report results/ | jq '.training.convergence.termination_reason'
 status=$(cobre report results/ | jq -r '.status')
 [ "$status" = "complete" ] || exit 1
 ```
+
+---
+
+## Generic Constraints Output
+
+The `generic_constraints/` directory is written when the study declares any
+generic user-defined constraints (`crates/cobre-cli/src/commands/run/outputs.rs`).
+It sits at the top level of `<output_dir>/`, a peer of `training/` and
+`simulation/`, not nested under either. The directory is omitted entirely when
+the study has no generic constraints.
+
+### `generic_constraints/resolved_echo.parquet`
+
+The fully resolved echo of every generic constraint as the LP actually built
+it — one row per `(constraint, stage, block, term)`. Written once, not
+per-scenario (the resolution is deterministic given the case, independent of
+simulation outcome). 13 columns.
+
+`bound_lower`/`bound_upper` are the resolved interval endpoints (lower before
+upper), each `null` where unbounded on that side; `derived_shape` labels the
+shape those endpoints imply (e.g. a one-sided vs. range constraint). The
+per-term columns (`term_index`, `variable_kind`, `variable`, `coefficient`)
+are `null` on a term-less constraint's placeholder row, and `slack_penalty` is
+`null` when slack is disabled for the constraint.
+
+| Column            | Type    | Nullable | Description                                                                                          |
+| ----------------- | ------- | -------- | ---------------------------------------------------------------------------------------------------- |
+| `stage_id`        | Int32   | No       | Stage index (0-based).                                                                               |
+| `block_id`        | Int32   | Yes      | Load block index within the stage. `null` for stage-level (non-block) constraints.                   |
+| `constraint_id`   | Int32   | No       | Generic constraint ID as defined in the case input files.                                            |
+| `constraint_name` | Utf8    | No       | Human-readable constraint name from the case input files.                                            |
+| `term_index`      | Int32   | Yes      | Index of this term within the constraint's linear expression. `null` on a term-less placeholder row. |
+| `variable_kind`   | Utf8    | Yes      | Kind of decision variable this term references. `null` on a term-less placeholder row.               |
+| `variable`        | Utf8    | Yes      | Identity of the referenced variable within its kind. `null` on a term-less placeholder row.          |
+| `coefficient`     | Float64 | Yes      | Linear coefficient applied to this term. `null` on a term-less placeholder row.                      |
+| `bound_lower`     | Float64 | Yes      | Resolved lower bound of the constraint's interval. `null` when unbounded below.                      |
+| `bound_upper`     | Float64 | Yes      | Resolved upper bound of the constraint's interval. `null` when unbounded above.                      |
+| `derived_shape`   | Utf8    | No       | Shape implied by the resolved bounds (e.g. one-sided or range).                                      |
+| `slack_enabled`   | Boolean | No       | Whether a slack variable is enabled for this constraint.                                             |
+| `slack_penalty`   | Float64 | Yes      | Penalty cost per unit of slack. `null` when slack is disabled.                                       |
 
 ---
 

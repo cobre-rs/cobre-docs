@@ -1,6 +1,6 @@
 // Vendored JSON Schema refresh (ticket-014, strategy §6b).
 //
-// The 17 JSON Schema files under public/schemas/ describe every JSON input
+// The 18 JSON Schema files under public/schemas/ describe every JSON input
 // file in a Cobre case directory. They are GENERATED in the `cobre` repo from
 // `cobre-io` Rust types (code = ground truth) — cobre-docs vendors a committed
 // copy of that generated output for the reference/json-schemas index page and
@@ -21,13 +21,13 @@
 //               Only used to resolve the git object database — the ref is read
 //               via plumbing (ls-tree/show), so cobre's CURRENTLY CHECKED OUT
 //               branch is irrelevant; only the tag's committed object matters.
-//     --ref     git ref/tag to vendor from (default: v0.13.0).
+//     --ref     git ref/tag to vendor from (default: v0.14.0).
 //     --check   verify-only: compare public/schemas/ against <ref>, write
 //               nothing; exit 1 listing every drifted/missing file, else exit 0.
 //
 // Discovery: the schemas tree lives at `schemas/` since the cobre mdBook
 // retirement (v0.11.0) and at `book/src/schemas/` on earlier tags — the first
-// candidate path with entries at <ref> wins, and it must list exactly 17
+// candidate path with entries at <ref> wins, and it must list exactly 18
 // entries — a guard against a wrong ref or a partial tree.
 // `--check` mode is the advisory staleness check (the authoritative freshness
 // gate lives in `cobre`, ticket-016); default mode is the write path.
@@ -41,8 +41,8 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
-const EXPECTED_COUNT = 17;
-const DEFAULT_REF = "v0.13.0";
+const EXPECTED_COUNT = 18;
+const DEFAULT_REF = "v0.14.1";
 // Ordered candidates for the schemas tree in cobre: `schemas/` from the mdBook
 // retirement (v0.11.0) onward, `book/src/schemas/` on earlier tags.
 const SCHEMAS_SUBPATHS = ["schemas", "book/src/schemas"];
@@ -191,9 +191,7 @@ function main() {
     process.exit(0);
   }
 
-  if (!existsSync(publicSchemasDir)) {
-    mkdirSync(publicSchemasDir, { recursive: true });
-  }
+  mkdirSync(publicSchemasDir, { recursive: true });
   for (const name of names) {
     writeFileSync(join(publicSchemasDir, name), released.get(name));
   }

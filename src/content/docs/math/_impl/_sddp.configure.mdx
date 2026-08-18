@@ -16,20 +16,20 @@ load-time error (`deny_unknown_fields`), not a silently ignored key.
 
 | `method`        | Default | Work unit                                                                          |
 | ---------------- | :-----: | ----------------------------------------------------------------------------------- |
-| `trial_point`    |   yes   | One whole trial point.                                                             |
-| `opening_block`  |   no    | One `(trial point, opening block)` pair, claimed dynamically off a shared counter. |
+| `by_scenario`    |   yes   | One whole trial point.                                                             |
+| `by_node`        |   no    | One `(trial point, opening block)` pair, claimed dynamically off a shared counter. |
 
 ```json
 {
   "training": {
     "parallelism": {
-      "backward_scheduler": { "method": "trial_point" }
+      "backward_scheduler": { "method": "by_scenario" }
     }
   }
 }
 ```
 
-#### `opening_block`
+#### `by_node`
 
 | Field        | Type               | Default | Description                                                                                                                                                                                |
 | ------------ | ------------------ | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -39,7 +39,7 @@ load-time error (`deny_unknown_fields`), not a silently ignored key.
 {
   "training": {
     "parallelism": {
-      "backward_scheduler": { "method": "opening_block", "block_size": 4 }
+      "backward_scheduler": { "method": "by_node", "block_size": 4 }
     }
   }
 }
@@ -47,7 +47,7 @@ load-time error (`deny_unknown_fields`), not a silently ignored key.
 
 Two configurations are load-time errors, not silently accepted:
 
-- `block_size` supplied under `"trial_point"` — rejected (`deny_unknown_fields`).
+- `block_size` supplied under `"by_scenario"` — rejected (`deny_unknown_fields`).
 - `block_size: 0` — rejected (minimum `1`).
 
 Within a stage, opening-blocks are claimed **hardest-first**: blocks are
@@ -59,7 +59,7 @@ claiming.
 
 If [Dynamic Cut Selection](/math/cut-management#8-dynamic-cut-selection) is
 enabled (`cut_selection.selection.method = "dynamic"` — not the default), the
-`opening_block` scheduler falls back to per-trial-point scheduling from that
+`by_node` scheduler falls back to `by_scenario` scheduling from that
 method's `start_iteration` onward, with no warning emitted. See
 [Performance Accelerators](/running/performance/) for the full tuning
 treatment and the fallback mechanism.

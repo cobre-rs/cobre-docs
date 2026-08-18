@@ -7,7 +7,7 @@ description: Discounted Bellman equation, stage-dependent discount factors, the 
 
 This spec defines how discount rates are incorporated into the Cobre SDDP solver: the discounted Bellman equation, stage-dependent discount factors, effect on the future cost variable $\theta$, cumulative discounting, and the effect on lower/upper bound computation.
 
-For the cyclic-mode formulation (where discounting is required for convergence), see [Horizon Modes](/math/horizon-modes).
+For the reserved cyclic-mode formulation (where discounting would be required for convergence), see [Horizon Modes](/math/horizon-modes).
 
 For notation conventions (index sets, parameters, decision variables, dual variables), see [Notation Conventions](/overview/notation-conventions).
 
@@ -153,17 +153,26 @@ Both the lower bound $\underline{z}$ and upper bound $\bar{z}$ represent total e
 
 ## 9 Infinite Horizon Considerations
 
-For cyclic policy graphs (infinite periodic horizon), discounting is **required** for convergence. The cumulative discount around one full cycle must satisfy:
+:::caution[Status: Reserved — Not Yet Implemented]
+Cobre's policy graph is finite-horizon only. A cyclic (infinite-periodic)
+policy graph is a **reserved** target design — the policy graph type
+field's only accepted value is `finite_horizon`, and supplying `cyclic` is
+rejected at load with a named error. This section documents the
+discount-convergence requirement the reserved cyclic design anticipates;
+the mathematics is complete and valid on its own terms, independent of
+current loader support. See [Horizon Modes](/math/horizon-modes) for the
+complete reserved cyclic-mode formulation.
+:::
+
+In the reserved cyclic policy graph design (infinite periodic horizon), discounting would be **required** for convergence. The cumulative discount around one full cycle would have to satisfy:
 
 $$
 d_{cycle} = \prod_{t \in \text{cycle}} d_{t \to t+1} < 1
 $$
 
-This ensures the value function remains finite: $\lim_{n \to \infty} d_{cycle}^n \cdot V_t(x) = 0$.
+This would ensure the value function remains finite: $\lim_{n \to \infty} d_{cycle}^n \cdot V_t(x) = 0$. Any strictly positive per-cycle discount rate keeps $d_{cycle} < 1$, so the geometric series of future contributions would converge.
 
-**Typical setup**: An annual discount rate of 6% gives $d_{cycle} \approx 0.94$ per 12-month cycle.
-
-For the complete cyclic-mode formulation — including the season-indexed cut pool, the cut-sharing equation, and the cycle convergence criterion — see [Horizon Modes](/math/horizon-modes).
+For the complete reserved cyclic-mode formulation — including the season-indexed cut pool, the cut-sharing equation, and the cycle convergence criterion — see [Horizon Modes](/math/horizon-modes).
 
 ## Cross-References
 
@@ -171,5 +180,5 @@ For the complete cyclic-mode formulation — including the season-indexed cut po
 - [Cut Management](/math/cut-management) — Cut coefficients remain undiscounted; discount applied to $\theta$ in objective
 - [Stopping Rules](/math/stopping-rules) — Convergence criteria using discounted lower/upper bounds
 - [Upper Bound Evaluation](/math/upper-bound-evaluation) — Inner approximation uses discounted vertex values
-- [Horizon Modes](/math/horizon-modes) — Finite vs cyclic policy graphs; cyclic-mode formal structure (season function, cycle convergence inequality, season-indexed cut pool, fixed-point Bellman operator)
+- [Horizon Modes](/math/horizon-modes) — Finite (supported) vs. reserved cyclic policy graphs; the reserved cyclic-mode formal structure (season function, cycle convergence inequality, season-indexed cut pool, fixed-point Bellman operator)
 - [Notation Conventions](/overview/notation-conventions) — Index sets, parameters, decision variables, and dual variables used throughout

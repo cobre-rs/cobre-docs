@@ -95,6 +95,44 @@ missing closing brace, or unquoted key are common causes. For an `unknown
 field` message inside a `stopping_rules` entry, remove the field that does not
 belong to that entry's `type`, or move it to an entry whose `type` declares it.
 
+#### Unknown field in a generic-constraint entry
+
+**When it occurs:** `constraints/generic_constraints.json`'s per-constraint
+object is `#[serde(deny_unknown_fields)]` with exactly five known fields
+(`id`, `name`, `description`, `expression`, `slack`), and the whole file
+deserializes in a single `serde_json::from_str` call with no promotion step —
+unlike `config.json`'s `parse_config` (above), nothing here promotes an
+`unknown field` substring to `SchemaError`. Any unknown key therefore fails at
+deserialization and surfaces as `ParseError`, never `SchemaError`. Two v0.13.0
+spellings hit this deliberately, with no alias:
+
+- A constraint object still carrying the removed **`sense`** field
+  (`">="`/`"<="`/`"=="`) — a constraint's shape is now derived from which
+  endpoints its `generic_constraint_bounds.parquet` row supplies, never
+  authored on the constraint itself.
+- A constraint object still carrying the retired **`bound_upper_ref`** (or
+  `bound_lower_ref`) field — a symbolic RHS endpoint is now authored inline in
+  `expression` (e.g. `... <= @demanda`), not as a separate JSON key.
+
+**Fields:**
+
+| Field     | Type      | Description                                                                             |
+| --------- | --------- | ---------------------------------------------------------------------------------------- |
+| `path`    | `PathBuf` | Always `constraints/generic_constraints.json`                                            |
+| `message` | `String`  | The `serde_json` "unknown field" message, naming the offending key and the five accepted field names |
+
+**Example:**
+
+```
+parse error in constraints/generic_constraints.json: unknown field `sense`, expected one of `id`, `name`, `description`, `expression`, `slack`
+```
+
+**Resolution:** Remove the unknown field. For `sense`, drop it and let the
+bounds row's endpoints derive the shape. For `bound_upper_ref`/
+`bound_lower_ref`, move the reference inline into `expression`. See
+[Generic Constraints](/reference/generic-constraints/) for the current
+grammar and the v0.13.0 → v0.14.0 worked migration example.
+
 ---
 
 ### `SchemaError`
@@ -134,6 +172,155 @@ Check that required fields are present and that values fall within documented
 ranges. For `config.json`, `training.forward_passes` and
 `training.stopping_rules` are mandatory and have no defaults.
 
+#### Namespace collision between a scalar parameter and a named expression
+
+**When it occurs:** `constraints/generic_constraints.json`'s `expressions`
+array declares named linear expressions that share the `@name` reference
+namespace with `constraints/generic_parameters.json`'s scalar parameters. A
+named-expression entry whose `name` matches an already-loaded scalar
+parameter's `name` is rejected — a `@name` token must resolve unambiguously to
+exactly one kind of thing.
+
+**Fields:**
+
+| Field     | Type      | Description                                                       |
+| --------- | --------- | ------------------------------------------------------------------|
+| `path`    | `PathBuf` | Always `constraints/generic_constraints.json`                     |
+| `field`   | `String`  | `expressions[i].name` — the colliding entry's index                |
+| `message` | `String`  | `name "<name>" is declared as both a scalar parameter and a named expression; the "@name" namespace is shared` |
+
+**Example:**
+
+```
+schema error in constraints/generic_constraints.json, field expressions[2].name: name "demanda" is declared as both a scalar parameter and a named expression; the "@name" namespace is shared
+```
+
+**Resolution:** Rename the named expression (or the scalar parameter) so the
+two `@name` tables do not overlap. See
+[Generic Constraints](/reference/generic-constraints/) for the `@name`
+grammar shared between the two files.
+
+#### Named-expression reference cycle
+
+**When it occurs:** `expressions[]` entries reference each other by `@name`;
+a cycle in that reference graph (including a length-1 self-reference) is
+detected by an iterative three-colour DFS before any expression is inlined,
+so a cyclic declaration is rejected even if no constraint ever uses it.
+
+**Fields:**
+
+| Field     | Type      | Description                                                        |
+| --------- | --------- | -------------------------------------------------------------------|
+| `path`    | `PathBuf` | Always `constraints/generic_constraints.json`                      |
+| `field`   | `String`  | Always `expressions`                                                |
+| `message` | `String`  | `named-expression reference cycle detected: <a> -> <b> -> ... -> <a>` |
+
+**Example:**
+
+```
+schema error in constraints/generic_constraints.json, field expressions: named-expression reference cycle detected: fnese -> fnese_margin -> fnese
+```
+
+**Resolution:** Break the cycle — rewrite one of the named expressions in the
+reported chain so it no longer refers back to an ancestor. See
+[Generic Constraints](/reference/generic-constraints/) for the `@name`
+composition rules.
+
+#### Named-expression inlining term budget exceeded
+
+**When it occurs:** Inlining substitutes every `@name` reference with its
+referenced expression's terms. An acyclic but exponentially-expanding
+declaration — e.g. a doubling chain `@e_k = @e_{k-1} + @e_{k-1}` — is caught
+once the flattened term count would exceed a hard cap of 100,000 terms, far
+above any legitimately authored expression, aborting the blow-up before the
+full vector materializes. The cap applies only when a constraint (or another
+expression) actually references the runaway declaration — declaring it
+without referencing it is a cheap existence check, not an expansion.
+
+**Fields:**
+
+| Field     | Type      | Description                                                                     |
+| --------- | --------- | --------------------------------------------------------------------------------|
+| `path`    | `PathBuf` | Always `constraints/generic_constraints.json`                                   |
+| `field`   | `String`  | `constraints[i].expression` (or the referencing expression's own field)          |
+| `message` | `String`  | `named-expression reference "@<name>" expands to more than 100000 inlined terms; this indicates an exponential reference pattern (e.g. a doubling chain "@e = @prev + @prev")` |
+
+**Example:**
+
+```
+schema error in constraints/generic_constraints.json, field constraints[0].expression: named-expression reference "@e60" expands to more than 100000 inlined terms; this indicates an exponential reference pattern (e.g. a doubling chain "@e = @prev + @prev")
+```
+
+**Resolution:** Rewrite the named-expression chain to grow linearly rather
+than by repeated self-addition — e.g. accumulate into one running expression
+instead of doubling a reference at each step. See
+[Generic Constraints](/reference/generic-constraints/) for the `@name`
+composition rules.
+
+#### `@parameter` / `@name` reference misuse
+
+**When it occurs:** The expression grammar accepts at most one `@`-prefixed
+reference per term, and a parenthesized group takes only a literal
+coefficient. Four distinct authoring mistakes are rejected at the same parse
+site (`constraints[i].expression`, or `expressions[i].expression` for a named
+expression's own definition):
+
+| Mistake                                                        | Example message                                                                                          |
+| ---------------------------------------------------------------| -----------------------------------------------------------------------------------------------------------|
+| Two `@` references in one term (`@param * @name`, or two `@param`s) | `only one @parameter reference is allowed per term; found "@a" and "@b"`                              |
+| `@param` scaling a parenthesized group (`@param * (...)`)      | `parameter "@a" cannot scale a parenthesized group: a group takes only a literal coefficient, not "@a * (...)"` |
+| `@name` naming no loaded scalar parameter, in a coefficient position | `unknown parameter "@a": no definition with this name was loaded`                                  |
+| `@name` naming no declared expression, in a reference position | `undeclared named-expression reference "@a": no expression with this name was declared`                  |
+
+**Fields:**
+
+| Field     | Type      | Description                                                          |
+| --------- | --------- | -----------------------------------------------------------------------|
+| `path`    | `PathBuf` | Always `constraints/generic_constraints.json`                        |
+| `field`   | `String`  | `constraints[i].expression` or `expressions[i].expression`            |
+| `message` | `String`  | One of the four messages in the table above                          |
+
+**Resolution:** A term carries at most one `@` reference, and only a literal
+number may scale a `(...)` group. Check that a bound `@name` matches a
+parameter actually declared in `constraints/generic_parameters.json`, and
+that a reference `@name` matches an entry actually declared in this file's own
+`expressions` array. See [Generic Constraints](/reference/generic-constraints/)
+for the full grammar.
+
+#### Legacy Parquet column spellings rejected
+
+**When it occurs:** Three input columns were renamed in v0.14.0 with no
+alias; the legacy spelling is treated as a missing required column, exactly
+like any other absent required column.
+
+| File                                          | Required column      | Legacy spelling (rejected) |
+| ---------------------------------------------- | --------------------- | --------------------------- |
+| `scenarios/external_ncs_scenarios.parquet`     | `availability_factor` | `value`                     |
+| `constraints/penalty_overrides_ncs.parquet`    | `ncs_id`               | `source_id`                 |
+| `constraints/pumping_bounds.parquet`           | `pumping_station_id`  | `station_id`                |
+
+**Fields:**
+
+| Field     | Type      | Description                                            |
+| --------- | --------- | ---------------------------------------------------------|
+| `path`    | `PathBuf` | The parquet file listed above                           |
+| `field`   | `String`  | The required column name (not the legacy spelling)       |
+| `message` | `String`  | `missing required column "<name>"`                       |
+
+**Example:**
+
+```
+schema error in scenarios/external_ncs_scenarios.parquet, field availability_factor: missing required column "availability_factor"
+```
+
+**Resolution:** Rename the column in the Parquet file to the required
+spelling, keeping the data in the same cell — the schema and semantics are
+unchanged, only the name is. `pumping_station_id` and `ncs_id` are the same
+entity-id spellings a generic constraint's own `pumping_flow(id)` /
+`non_controllable_generation(id)` expression terms address — see
+[Generic Constraints — variable catalog](/reference/generic-constraints/)
+for the full addressing grammar.
+
 ---
 
 ### `CrossReferenceError`
@@ -169,6 +356,13 @@ non-existent BUS_99 in bus registry
 Either add the missing entity to its registry file, or correct the ID reference
 in `source_file`. Common causes: a bus was deleted from `system/buses.json`
 but a hydro, thermal, or line still references its old ID.
+
+**Generic-constraints note:** none of the v0.14.0 authoring failure modes
+surface as this variant. A generic constraint's own reference-integrity
+problems — for example a bound reference with no activation rows in
+`generic_constraint_bounds.parquet` — are collected by `ValidationContext` as
+an `InvalidReference` [`ErrorKind`](#invalidreference) and returned as
+`ConstraintError` below, not as a standalone `CrossReferenceError`.
 
 ---
 
@@ -206,6 +400,293 @@ constraint violation: [FileNotFound] system/hydros.json: required file 'system/h
 problem. Address them all and re-run. The `[ErrorKind]` prefix identifies the
 category of each problem; see the `ErrorKind` catalog below for resolution
 guidance per category.
+
+#### Generic-constraint bound reference with no activation rows
+
+**When it occurs:** `constraints/generic_constraint_bounds.parquet` is the
+**activation grid** for generic constraints — a constraint applies at
+`(stage, block)` if and only if a row exists for it there, independent of
+whether the row supplies a numeric endpoint or the endpoint comes entirely
+from the constraint's own inline affine remainder (an inline `<= @demanda`,
+say). A constraint whose only endpoints come from that affine remainder, but
+which has zero rows in the bounds parquet, is collected as `InvalidReference`
+— the reference would otherwise apply to nothing and be silently inert.
+
+**Fields:**
+
+| Field         | Type     | Description                                                                                          |
+| ------------- | -------- | -------------------------------------------------------------------------------------------------------|
+| `description` | `String` | Contains a `[InvalidReference] constraints/generic_constraints.json (GenericConstraint <id>): GenericConstraint <id> declares a bound reference but has no activation rows in generic_constraint_bounds.parquet: the reference would apply to nothing` line |
+
+**Example:**
+
+```
+constraint violation: [InvalidReference] constraints/generic_constraints.json (GenericConstraint 3): GenericConstraint 3 declares a bound reference but has no activation rows in generic_constraint_bounds.parquet: the reference would apply to nothing
+```
+
+**Resolution:** Add at least one row for the constraint's `id` to
+`generic_constraint_bounds.parquet` at every `(stage, block)` where it should
+apply — the row may leave both `bound_lower`/`bound_upper` null as long as the
+constraint's own affine remainder supplies the value; the row's job is then
+only to activate the cell. See
+[Generic Constraints — the activation grid](/reference/generic-constraints/)
+for the full model.
+
+#### Generic-constraint bounds row with neither endpoint and no affine remainder
+
+**When it occurs:** A `generic_constraint_bounds.parquet` row with
+`bound_lower = null` and `bound_upper = null` is legal only when the
+constraint's own `bound_lower_affine`/`bound_upper_affine` supplies at least
+one endpoint (the row then only activates the cell, per above). A both-null
+row on a constraint with **no** affine remainder on either side has no
+endpoint at all and is collected as `InvalidValue`.
+
+**Fields:**
+
+| Field         | Type     | Description                                                                                                              |
+| ------------- | -------- | ----------------------------------------------------------------------------------------------------------------------------|
+| `description` | `String` | Contains a `[InvalidValue] constraints/generic_constraint_bounds.parquet (GenericConstraintBoundsRow[<i>]): GenericConstraintBoundsRow[<i>] on constraint <id> has neither bound_lower nor bound_upper: at least one endpoint is required` line |
+
+**Example:**
+
+```
+constraint violation: [InvalidValue] constraints/generic_constraint_bounds.parquet (GenericConstraintBoundsRow[4]): GenericConstraintBoundsRow[4] on constraint 3 has neither bound_lower nor bound_upper: at least one endpoint is required
+```
+
+**Resolution:** Either supply `bound_lower` and/or `bound_upper` on the row,
+or add an inline relational operator (`<=`, `>=`, `==`) to the constraint's
+`expression` so an affine remainder fills the missing endpoint. See
+[Generic Constraints — the activation grid](/reference/generic-constraints/).
+
+#### Relocated `generic_parameters.json` path
+
+**When it occurs:** v0.14.0 moved the scalar-parameters input from
+`system/scalar_parameters.json` to `constraints/generic_parameters.json`,
+beside the generic constraints that reference its `@name` parameters — the
+file's contents and schema are unchanged, only its directory and filename
+changed. Layer 1 (structural validation) rejects the file's mere *presence*
+at the old path — it never parses the old-path file's contents, so a
+well-formed but misplaced file is still refused.
+
+**Fields:**
+
+| Field         | Type     | Description                                                                                                            |
+| ------------- | -------- | ---------------------------------------------------------------------------------------------------------------------------|
+| `description` | `String` | Contains a `[BusinessRuleViolation] system/scalar_parameters.json: system/scalar_parameters.json is no longer read; scalar parameters are now read from constraints/generic_parameters.json, beside the constraints that reference them by @name. Move the file (its contents are unchanged).` line |
+
+**Example:**
+
+```
+constraint violation: [BusinessRuleViolation] system/scalar_parameters.json: system/scalar_parameters.json is no longer read; scalar parameters are now read from constraints/generic_parameters.json, beside the constraints that reference them by @name. Move the file (its contents are unchanged).
+```
+
+**Resolution:** `mkdir -p <case>/constraints && git mv <case>/system/scalar_parameters.json <case>/constraints/generic_parameters.json` — the contents do not change. See
+[Generic Constraints — the five parameter kinds](/reference/generic-constraints/)
+for the current file's schema.
+
+#### Future delivery on a non-anticipated thermal
+
+**When it occurs:** `initial_conditions.json`'s `future_anticipated_deliveries`
+entries declare an in-study decided delivery commitment for an anticipated
+thermal, keyed by `thermal_id`. Layer 5 (semantic validation) rejects any entry
+whose `thermal_id` does not resolve to a thermal with `anticipated_config:
+Some(_)` — either the thermal does not exist, or it exists but is not
+configured as anticipated. This is the delivery-side mirror of the same check
+performed on `past_anticipated_commitments`.
+
+**Fields:**
+
+| Field         | Type     | Description                                                                                                                                                                                                                     |
+| ------------- | -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `description` | `String` | Contains a `[BusinessRuleViolation] initial_conditions.json (thermal_id=<id>, delivery_start=<date>): Thermal <id>: referenced in future_anticipated_deliveries but is not an anticipated thermal (anticipated_config is None or thermal does not exist)` line |
+
+**Example:**
+
+```
+constraint violation: [BusinessRuleViolation] initial_conditions.json (thermal_id=12, delivery_start=2026-09-05): Thermal 12: referenced in future_anticipated_deliveries but is not an anticipated thermal (anticipated_config is None or thermal does not exist)
+```
+
+**Resolution:** Either set `anticipated_config` on thermal `<id>` in
+`system/thermals.json`, or remove/correct the `thermal_id` in the offending
+`future_anticipated_deliveries` entry. See
+[System Elements §4](/math/system-elements) for anticipated-thermal
+configuration and [Case Directory Format](/reference/case-directory-format/)
+for `initial_conditions.json`'s schema.
+
+#### Post-study boundary unanchored or malformed
+
+**When it occurs:** Layer 5 resolves every `future_anticipated_deliveries`
+window against `post_study_stages.json`, the post-horizon boundary calendar a
+delivery matures into. Several distinct failures are collected under this one
+check, in the order they are evaluated:
+
+- No `post_study_stages.json` at all, while `future_anticipated_deliveries` is
+  non-empty — every delivery is unanchored.
+- The post-study calendar's first stage does not start exactly at the study
+  horizon end.
+- The post-study stages are not date-contiguous (a gap or overlap between
+  consecutive stages).
+- A delivery window reaches outside the declared post-study horizon.
+- A delivery window is not covered exactly (coverage `1.0`) by the post-study
+  calendar — it does not align to whole post-study stage boundaries.
+- A delivery window spans more than one post-study stage (multi-stage delivery
+  is not supported).
+- No `thermal_bounds` cell exists for the `(thermal_id, post_study_stage_index)`
+  a delivery resolves into.
+- The delivery's committed `[min_mw, max_mw]` interval and the `thermal_bounds`
+  cell's capability `[min_mw, max_mw]` do not intersect.
+
+**Fields:**
+
+| Field         | Type     | Description                                                                                                        |
+| ------------- | -------- | ---------------------------------------------------------------------------------------------------------------------|
+| `description` | `String` | Contains one `[BusinessRuleViolation] post_study_stages.json (...): <message>` line per failure — see the messages below |
+
+**Example:**
+
+```
+constraint violation: [BusinessRuleViolation] post_study_stages.json (thermal_id=12, delivery_start=2026-09-05): Thermal 12: future_anticipated_deliveries window [2026-09-05, 2026-09-12) has no post_study_stages.json to resolve against; declare a post-study boundary calendar covering it.
+```
+
+```
+constraint violation: [BusinessRuleViolation] post_study_stages.json (stages[0].start_date): first post-study stage starts 2026-09-08 but the study horizon ends 2026-09-05; the post-study calendar must begin exactly at the study horizon end.
+```
+
+```
+constraint violation: [BusinessRuleViolation] post_study_stages.json (stages start_date=2026-10-01): post-study stages are not date-contiguous: the stage starting 2026-09-05 ends 2026-09-28 but the next stage starts 2026-10-01; each stage must end exactly where the next begins.
+```
+
+```
+constraint violation: [BusinessRuleViolation] post_study_stages.json (thermal_id=12, delivery_start=2026-10-01): Thermal 12: future_anticipated_deliveries window [2026-10-01, 2026-10-10) reaches outside the post-study horizon [2026-09-05, 2026-10-05); every delivery must fall within the declared post-study stages.
+```
+
+```
+constraint violation: [BusinessRuleViolation] post_study_stages.json (thermal_id=12, delivery_start=2026-09-10): Thermal 12: future_anticipated_deliveries window [2026-09-10, 2026-09-20) is not covered exactly (1.0) by the post-study stages; align the window to whole post-study stage boundaries.
+```
+
+```
+constraint violation: [BusinessRuleViolation] post_study_stages.json (thermal_id=12, delivery_start=2026-09-05): Thermal 12: future_anticipated_deliveries window [2026-09-05, 2026-11-05) spans 2 post-study stages; a delivery window must resolve to exactly one post-study stage (multi-stage delivery is not supported).
+```
+
+```
+constraint violation: [BusinessRuleViolation] post_study_stages.json (thermal_id=12, delivery_start=2026-09-05): Thermal 12: future_anticipated_deliveries window [2026-09-05, 2026-10-05) delivers into post-study stage index 0, but post_study_stages.json has no thermal_bounds entry for (thermal_id 12, post_study_stage_index 0).
+```
+
+```
+constraint violation: [BusinessRuleViolation] post_study_stages.json (thermal_id=12, delivery_start=2026-09-05): Thermal 12: future_anticipated_deliveries commitment interval [300.0, 350.0] and post-study stage index 0 capability [0.0, 250.0] do not intersect; the committed amount is unsatisfiable within capability.
+```
+
+**Resolution:** Declare `post_study_stages.json` whenever
+`future_anticipated_deliveries` is non-empty, with its first stage starting
+exactly at the study horizon end and every stage date-contiguous with the next.
+Align each delivery window to whole post-study stage boundaries and keep it
+within a single stage. Add a `thermal_bounds` cell for every
+`(thermal_id, post_study_stage_index)` a delivery resolves into, with a
+capability interval that intersects the delivery's committed interval. See
+[Post-Study Boundary](/math/post-study-boundary) for the boundary model and
+[Case Directory Format](/reference/case-directory-format/) for
+`post_study_stages.json`'s schema.
+
+#### Uncovered or over-covered `past_anticipated_commitments` window
+
+**When it occurs:** An anticipated thermal's `past_anticipated_commitments`
+windows must tile its leading `K` (calendar-derived) delivery stages exactly —
+every leading stage covered at fraction `1.0`, and no window reaching a stage
+at or beyond `K`. Layer 5 (semantic validation) reports a gap (an uncovered
+leading stage) and an over-reach (a window extending past the leading `K`
+stages) as separate diagnostics; either can fire independently.
+
+**Fields:**
+
+| Field         | Type     | Description                                                                                                                                  |
+| ------------- | -------- | -------------------------------------------------------------------------------------------------------------------------------------------------|
+| `description` | `String` | Contains a `[BusinessRuleViolation] initial_conditions.json (thermals[id=<id>].anticipated_config): <message>` line — see the messages below |
+
+**Example:**
+
+```
+constraint violation: [BusinessRuleViolation] initial_conditions.json (thermals[id=7].anticipated_config): Thermal 7: past_anticipated_commitments do not tile the leading 2 delivery stage(s) at coverage 1.0; study stage id(s) [0] are not covered exactly once. Write a commitment window (a committed 0 MW is explicit) for every leading delivery stage.
+```
+
+```
+constraint violation: [BusinessRuleViolation] initial_conditions.json (thermals[id=7].anticipated_config): Thermal 7: past_anticipated_commitments cover study stage id(s) [3] beyond the leading 2 calendar-derived delivery stage(s); commitment windows must not extend past the pre-study delivery horizon.
+```
+
+**Resolution:** Write a commitment window for every one of the plant's leading
+`K` delivery stages (a committed `0` MW is a legitimate, explicit window — not
+an omission), and do not extend any window past stage `K - 1`. `K` is
+calendar-derived from `anticipated_config` (`lead_stages`, or `lead_time`
+resolved on the stage calendar) — see
+[System Elements §4](/math/system-elements).
+
+**Note:** A deck whose `past_anticipated_commitments` entries still carry the
+retired `values_mw` array (rather than the current per-window `value_mw`
+scalar on a `{thermal_id, start_date, end_date, value_mw}` record) fails
+earlier, at initial deserialization: the record type is
+`#[serde(deny_unknown_fields)]`, so an unrecognized `values_mw` key is rejected
+as a top-level `ParseError` naming `initial_conditions.json` — it never reaches
+this `ConstraintError` check. Re-emit the commitment history as dated windows.
+
+#### Diversion floor without a declared channel
+
+**When it occurs:** `constraints/hydro_bounds.parquet` may override a hydro's
+`min_diversion_m3s` floor per `(hydro, stage)`. When the hydro declares no
+`diversion` channel, the bound resolver pins the diversion column to `[0, 0]`
+— a positive floor is then the infeasible interval `[min > 0, 0]`. Layer 5
+(semantic validation) rejects the override before it ever reaches the LP.
+
+**Fields:**
+
+| Field         | Type     | Description                                                                                                                                          |
+| ------------- | -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `description` | `String` | Contains a `[InvalidValue] constraints/hydro_bounds.parquet (Hydro <id>): Hydro <id>: hydro_bounds row at stage_id=<stage> sets min_diversion_m3s=<value>, but the hydro declares no diversion channel; diversion is pinned [0, 0] with no channel, making a positive floor infeasible` line |
+
+**Example:**
+
+```
+constraint violation: [InvalidValue] constraints/hydro_bounds.parquet (Hydro 3): Hydro 3: hydro_bounds row at stage_id=5 sets min_diversion_m3s=2.0, but the hydro declares no diversion channel; diversion is pinned [0, 0] with no channel, making a positive floor infeasible
+```
+
+**Resolution:** Either declare a `diversion` channel on the hydro in
+`system/hydros.json` (see [System Elements](/math/system-elements)), or remove
+the `min_diversion_m3s` override for that `(hydro, stage)` in
+`constraints/hydro_bounds.parquet`.
+
+#### Spillage-band inversion
+
+**When it occurs:** `constraints/hydro_bounds.parquet`'s row-level parser
+(`parse_hydro_bounds`) rejects a same-row `min_spillage_m3s > max_spillage_m3s`
+inversion, and separately rejects a negative `min_diversion_m3s`,
+`min_spillage_m3s`, or `max_spillage_m3s`. Called directly, this parser returns
+a top-level `LoadError::SchemaError` (`schema error in {path}, field {field}:
+{message}`, per the [`SchemaError`](#schemaerror) `LoadError` variant above).
+When the file is loaded as part of `load_case`, the same error is instead
+collected into the shared `ValidationContext` — `hydro_bounds.parquet` is an
+optional file whose Layer 2 failures are gathered rather than short-circuited
+— and surfaces here, in `ConstraintError`'s aggregate description, tagged
+`[SchemaViolation]` instead of the parser's own `SchemaError` label.
+
+**Fields:**
+
+| Field         | Type     | Description                                                                                                                       |
+| ------------- | -------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| `description` | `String` | Contains a `[SchemaViolation] constraints/hydro_bounds.parquet: field hydro_bounds[<i>].<column>: <message>` line — see below |
+
+**Example:**
+
+```
+constraint violation: [SchemaViolation] constraints/hydro_bounds.parquet: field hydro_bounds[0].max_spillage_m3s: max_spillage_m3s (5.0) must be >= min_spillage_m3s (10.0)
+```
+
+```
+constraint violation: [SchemaViolation] constraints/hydro_bounds.parquet: field hydro_bounds[0].min_diversion_m3s: value must be >= 0.0, got -5.0
+```
+
+**Resolution:** Correct the offending row so `min_spillage_m3s <=
+max_spillage_m3s`, and so `min_diversion_m3s`, `min_spillage_m3s`, and
+`max_spillage_m3s` are all non-negative. See
+[Case Directory Format](/reference/case-directory-format/) for
+`hydro_bounds.parquet`'s column reference.
 
 ---
 
@@ -307,6 +788,11 @@ validation.
 dot-notation and zero-based array indices. Consult the
 [Case Directory Format](/reference/case-directory-format/) page for valid ranges and required fields.
 
+**See also:** a `constraints/hydro_bounds.parquet` spillage-band inversion or
+non-negativity rejection is collected under this kind when loaded via
+`load_case` — see
+[Spillage-band inversion](#spillage-band-inversion) under `ConstraintError`.
+
 ---
 
 ### `InvalidReference`
@@ -348,14 +834,19 @@ non-negative value as long as each is unique within its registry file.
 
 **What triggers it:** A field value falls outside its valid range or violates a
 value constraint that is specific to the field's domain. Examples: a reservoir's
-`min_storage_hm3` exceeds `max_storage_hm3`, or a stage has `num_scenarios: 0`.
+`min_storage_hm3` exceeds `max_storage_hm3`, or a stage has `num_openings: 0`.
 Emitted by Layer 2 (schema validation).
 
 **Example message:** `min_storage_hm3 (8000.0) must be <= max_storage_hm3 (5000.0)`
 
 **Resolution:** Correct the field value to be within the valid range. Consult
 the [Case Directory Format](/reference/case-directory-format/) page for documented constraints. For storage
-bounds, ensure `min <= max`. For scenario counts, ensure `num_scenarios >= 1`.
+bounds, ensure `min <= max`. For opening counts, ensure `num_openings >= 1`.
+
+**See also:** a `min_diversion_m3s` floor on a hydro with no declared
+diversion channel is reported this way — see
+[Diversion floor without a declared channel](#diversion-floor-without-a-declared-channel)
+under `ConstraintError`.
 
 ---
 
@@ -410,6 +901,14 @@ stage count is inconsistent across files. Emitted by Layer 5 (semantic validatio
 was violated and which entities are involved. For penalty ordering, ensure that
 costs increase from lower-priority to higher-priority tiers. For stationarity,
 verify that the PAR model parameters satisfy the required statistical properties.
+
+**See also:** the post-study boundary / future-delivery cluster is also
+reported this way — see
+[Future delivery on a non-anticipated thermal](#future-delivery-on-a-non-anticipated-thermal),
+[Post-study boundary unanchored or malformed](#post-study-boundary-unanchored-or-malformed),
+and
+[Uncovered or over-covered past_anticipated_commitments window](#uncovered-or-over-covered-past_anticipated_commitments-window)
+under `ConstraintError`.
 
 ---
 

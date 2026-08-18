@@ -1,6 +1,6 @@
 ---
 title: JSON Schemas
-description: The 17 vendored JSON Schema files describing every JSON input file in a Cobre case directory, plus editor `$schema` integration instructions.
+description: The 18 vendored JSON Schema files describing every JSON input file in a Cobre case directory, plus editor `$schema` integration instructions.
 ---
 
 The following JSON Schema files describe the structure of each JSON input
@@ -36,12 +36,13 @@ detail.
 | [`non_controllable_sources.schema.json`](/schemas/non_controllable_sources.schema.json) | `system/non_controllable_sources.json` | Intermittent (non-dispatchable) generation source registry (optional entities) |
 | [`pumping_stations.schema.json`](/schemas/pumping_stations.schema.json) | `system/pumping_stations.json` | Pumping station registry (optional entities) |
 | [`production_models.schema.json`](/schemas/production_models.schema.json) | `system/hydro_production_models.json` | Production model selection, FPHA hyperplane config, and per-stage productivity overrides (optional) |
-| [`scalar_parameters.schema.json`](/schemas/scalar_parameters.schema.json) | `system/scalar_parameters.json` | Named scalar study parameters (single-valued numeric settings) |
+| [`generic_parameters.schema.json`](/schemas/generic_parameters.schema.json) | `constraints/generic_parameters.json` | Named study parameters — constant, per-stage, seasonal, computed, or per-(stage,block) values referenced by name from generic constraints |
 | [`initial_conditions.schema.json`](/schemas/initial_conditions.schema.json) | `initial_conditions.json` | Initial reservoir storage, past inflows for PAR lag initialization |
 | [`correlation.schema.json`](/schemas/correlation.schema.json) | `scenarios/correlation.json` | Inter-site correlation matrix for scenario generation (supports inflow, load, and NCS entity types) |
-| [`generic_constraints.schema.json`](/schemas/generic_constraints.schema.json) | `constraints/generic_constraints.json` | User-defined linear constraints over LP variables with optional slack penalties |
+| [`generic_constraints.schema.json`](/schemas/generic_constraints.schema.json) | `constraints/generic_constraints.json` | User-defined linear constraints authored via named expressions and interval bounds over LP variables, with optional slack penalties |
 | [`load_factors.schema.json`](/schemas/load_factors.schema.json) | `scenarios/load_factors.json` | Block-level load scaling factors for bus-stage demand profiles |
 | [`non_controllable_factors.schema.json`](/schemas/non_controllable_factors.schema.json) | `scenarios/non_controllable_factors.json` | Block-level NCS availability scaling factors per source per stage per block |
+| [`post_study_stages.schema.json`](/schemas/post_study_stages.schema.json) | `post_study_stages.json` | Post-study boundary stages plus per-(thermal, post-study-stage) cost and min/max generation bounds |
 
 ## Using schemas in your editor
 
@@ -96,7 +97,7 @@ file pattern.
 :::note[Before the site is live]
 Until `docs.cobre-rs.dev` is serving this site, the identical schema
 content is also available straight from the tagged `cobre` repository, e.g.
-`https://raw.githubusercontent.com/cobre-rs/cobre/v0.13.0/schemas/config.schema.json`.
+`https://raw.githubusercontent.com/cobre-rs/cobre/v0.14.1/schemas/config.schema.json`.
 {/* external URL — check:links skips this; bump manually each release */}
 :::
 
@@ -105,7 +106,7 @@ content is also available straight from the tagged `cobre` repository, e.g.
 These schemas are generated in the `cobre` repository from the `cobre-io`
 Rust types — the Rust types are the ground truth, and the schema files are
 their generated output, licensed Apache-2.0. This site vendors a committed
-copy (currently at the `v0.13.0` tag) under `public/schemas/` so the files
+copy (currently at the `v0.14.1` tag) under `public/schemas/` so the files
 have a stable URL to serve from and to link to.
 
 Do not hand-edit any vendored schema file. When `cobre` regenerates the

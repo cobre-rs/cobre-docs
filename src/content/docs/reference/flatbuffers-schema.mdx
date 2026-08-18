@@ -10,17 +10,24 @@ external consumers (Python, C++, TypeScript, Java, Go, …) can use the
 canonical schema file shipped with the source tree to generate a typed
 reader in any language `flatc` supports.
 
-| File path                     | Root table                                        |
-| ----------------------------- | ------------------------------------------------- |
-| `policy/cuts/stage_NNN.bin`   | `StageCuts`                                       |
-| `policy/basis/stage_NNN.bin`  | `StageBasis`                                      |
-| `policy/states/stage_NNN.bin` | `StageStates` (only when `exports.states = true`) |
+| File path               | Root table                                        |
+| ----------------------- | -------------------------------------------------- |
+| `policy/cuts/NNN.bin`   | `StageCuts`                                        |
+| `policy/basis/NNN.bin`  | `StageBasis`                                       |
+| `policy/states/NNN.bin` | `StageStates` (only when `exports.states = true`)  |
+
+`NNN` is a three-digit, zero-padded id: the **pool id** for `cuts/`, the
+**stage id** for `basis/` and `states/`. The reader derives identity from
+inside each buffer, never from the file name.
 
 The schema lives at
 [`crates/cobre-io/schemas/policy.fbs`](https://github.com/cobre-rs/cobre/blob/main/crates/cobre-io/schemas/policy.fbs)
-under namespace `Cobre.IO.Policy`. It has no `file_identifier` and no
-`root_type` — pass `--root-type` to `flatc` to select the entry point
-for each file.
+under namespace `Cobre.IO.Policy`. It declares `file_identifier "CBVF"`
+and `file_extension "bin"`, but still no `root_type` — `--root-type` is
+still required per file to select the entry point for `flatc`. The reader
+rejects any buffer whose leading identifier is not `CBVF`, so a buffer
+written by an earlier release (which carries no identifier at all) is
+refused before decoding, not silently misparsed.
 
 ## Quick start: dumping a `.bin` to JSON
 
@@ -29,15 +36,18 @@ when given the schema. This is the closest thing to a human-readable
 view of a policy checkpoint:
 
 ```bash
-flatc -t --strict-json --raw-binary \
+flatc -t --strict-json \
     --root-type StageCuts \
     crates/cobre-io/schemas/policy.fbs \
-    -- output/policy/cuts/stage_000.bin
-# writes stage_000.json next to the .bin
+    -- output/policy/cuts/000.bin
+# writes 000.json next to the .bin
 ```
 
 For the basis or states files, swap the `--root-type` argument for
-`StageBasis` or `StageStates`.
+`StageBasis` or `StageStates`. `--raw-binary` is only needed to force
+`flatc` to read a buffer written by an earlier release, which carries no
+`CBVF` identifier — a current buffer is self-describing and `flatc -t`
+verifies the identifier on its own.
 
 ## Generating a typed reader
 
@@ -48,20 +58,20 @@ languages. Pick the one matching your toolchain.
 
 ```bash
 flatc --python crates/cobre-io/schemas/policy.fbs
-# emits Cobre/IO/Policy/{Cut,StageCuts,StageBasis,StageStates}.py
+# emits Cobre/IO/Policy/{AffinePiece,EntitySlot,EntityType,StageCuts,StageBasis,StageStates}.py
 ```
 
 ```python
 from Cobre.IO.Policy.StageCuts import StageCuts
 
-with open("output/policy/cuts/stage_000.bin", "rb") as f:
+with open("output/policy/cuts/000.bin", "rb") as f:
     buf = bytearray(f.read())
 
 cuts = StageCuts.GetRootAs(buf, 0)
 print("stage_id =", cuts.StageId())
 for i in range(cuts.CutsLength()):
-    cut = cuts.Cuts(i)
-    print(cut.CutId(), cut.Intercept(), [cut.Coefficients(j) for j in range(cut.CoefficientsLength())])
+    piece = cuts.Cuts(i)
+    print(piece.PieceId(), piece.Intercept(), [piece.Coefficients(j) for j in range(piece.CoefficientsLength())])
 ```
 
 :::tip[Python bindings]
@@ -95,20 +105,33 @@ itself — every field carries an inline doc comment. The
 [Output Format](/reference/output-format/) page has a tabular summary suitable
 for reading on the web.
 
-### Reserved slot: `Cut.domination_count`
+### Reserved slots: `AffinePiece.reserved_7` and `EntitySlot.delivery_anchor`
 
-Field id 4 of the `Cut` table (`domination_count`) is marked
-`deprecated` and is preserved in the schema only so that:
+This release renamed the `Cut` table to `AffinePiece` and, in the same
+breaking change, reclaimed one field id and permanently burned two others:
 
-1. The vtable slot number is permanently burned and cannot be reused
-   by a future field.
-2. Legacy policy files that still contain it continue to deserialise via
-   FlatBuffers' graceful-absence rule — the slot is read, ignored, and
-   discarded.
+- **`AffinePiece.intercept` (id 4)** now occupies the slot formerly held by
+  the pre-`v0.5.0` `domination_count` field. This id reclaim is the
+  exceptional case in this page's [versioning policy](#versioning-policy) —
+  ordinarily a burned id is never reused.
+- **`AffinePiece.reserved_7` (id 7)** is marked `deprecated`. It held a
+  former always-empty vector field, deleted in this release. The vtable
+  slot number is permanently burned so no future field can reuse it.
+- **`EntitySlot.delivery_anchor` (id 4)** is marked `deprecated`. It held a
+  former month-integer anchor (`year * 12 + (month - 1)`), replaced by
+  **`EntitySlot.delivery_date` (id 5)** — a `YYYYMMDD` calendar date
+  (`year * 10000 + month * 100 + day`), with sentinel `-2147483648`
+  (`i32::MIN`) when the slot has no delivery semantics.
 
-Generated readers emit no accessor for it; generated writers cannot
-emit it. The Cobre runtime's own writer never sets it in policy files
-written by the current release.
+Unlike an ordinary appended field, none of this is wire-backward-compatible:
+a checkpoint written by an earlier release used field id 4 on `AffinePiece`
+for `domination_count`, not `intercept`, so it is **rejected outright** on
+load rather than read with graceful-absence defaults — see
+[Versioning policy](#versioning-policy) below.
+
+Generated readers emit no accessor for either `deprecated` field; generated
+writers cannot emit them. The Cobre runtime's own writer never sets them in
+policy files written by the current release.
 
 ## How drift is prevented
 
@@ -146,10 +169,22 @@ the schema file.
 
 ## Versioning policy
 
+This format carries a hard version gate on top of the field-level rules
+below. `policy/metadata.json` carries a required `format_version` marker,
+checked **before any `.bin` payload is parsed**, and every `.bin` payload
+carries the `CBVF` `file_identifier` described above. A checkpoint written
+by an earlier release has neither, and fails to load with a named error
+reporting the expected `format_version` against the value found —
+surfaced as `cobre.errors.OutputError` in Python, and as a CLI message
+prefixed `failed to read policy checkpoint: …`. There is **no conversion
+path**: the only remedy for a checkpoint written by an earlier release is
+to retrain.
+
 FlatBuffers' graceful-absence rule lets us add new fields to any table
 without breaking older readers, **as long as** new fields are appended
 at the end with the next available `id`. This is the only schema
-change that does not require an output-format version bump:
+change that does not require an output-format version bump — the
+`format_version` gate above governs everything else:
 
 - **Adding a field at the next free id** → backward compatible **at the
   wire level only**. Old readers see the field as absent and use the
@@ -162,8 +197,12 @@ change that does not require an output-format version bump:
   compatibility is governed by the one-directional contract in
   [Cost-Scale Canonicalization](/running/policy-management/#cost-scale-canonicalization),
   not by this wire-level rule.
-- **Removing a field** → mark it `deprecated`, never reuse the id.
-  See `Cut.domination_count` for a worked example.
+- **Removing a field** → mark it `deprecated`, never reuse the id. See
+  `AffinePiece.reserved_7` and `EntitySlot.delivery_anchor` for worked
+  examples. `AffinePiece.intercept` reclaiming id 4 from the former
+  `domination_count` field is the one exception this page documents — a
+  sanctioned part of this release's breaking format change, not a
+  precedent for reusing a burned id under the ordinary rule.
 - **Changing a field's type** → breaking. Bumps the major output
   format version.
 - **Renaming a field** → breaking for `flatc`-generated code (the

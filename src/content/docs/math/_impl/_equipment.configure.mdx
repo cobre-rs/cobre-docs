@@ -117,24 +117,73 @@ attaching the per-plant lead described in [system elements §4](/math/system-ele
 | `lead_stages`     | integer | Number of stages of dispatch anticipation, calendar-free. A value of `2` means the commitment for stage `t` must be decided at stage `t - 2`. Must be `>= 1`. |
 | `lead_time_hours` | number  | Physical anticipation lead in hours, resolved against the stage calendar to an integer stage lead by end-anchoring on the cumulative stage-hour boundaries. A lead shorter than the decision stage's own duration resolves to zero stages, and the plant then dispatches as an ordinary thermal. |
 
-Supplying both keys, or neither, is a load error. A lead that exceeds the study horizon — a commitment that could never deliver within it — is rejected at load, as is a physical lead coarse enough that a single decision stage would anchor more than one delivery stage (per-delivery-stage output for that case is not yet supported).
+Supplying both keys, or neither, is a load error. A `lead_stages` value exceeding the study's stage count is rejected at load unconditionally — a stage-count lead is calendar-free, so it has no delivery stage, in-horizon or beyond, to anchor to. A `lead_time_hours` value exceeding the summed study horizon is rejected at load too, **unless** the thermal also carries a `future_anticipated_deliveries` window (see below): that thermal's commitment is decided in-study but legitimately delivered past the horizon, resolved end-anchored against the delivery window's own end rather than against the study horizon. Also rejected in either form: a physical lead coarse enough that a single decision stage would anchor more than one delivery stage (per-delivery-stage output for that case is not yet supported).
 
-An anticipated plant also requires a matching entry in
-`initial_conditions.json`'s `past_anticipated_commitments`, seeding the
-pre-horizon ring-buffer slots described in system elements §4 ("Pre-horizon
-seed"):
+An anticipated plant also requires seed entries in
+`initial_conditions.json`'s `past_anticipated_commitments`, priming the
+pre-horizon ring-buffer slots described in [system elements §4](/math/system-elements#anticipated-thermal-plants)
+("Pre-horizon seed"). Each entry is a **dated, delivery-anchored window** — a
+committed MW rate held constant over `[start_date, end_date)` — rather than
+the old positional array:
 
 ```json
 {
   "past_anticipated_commitments": [
-    { "thermal_id": 2, "values_mw": [0.0, 0.0] }
+    { "thermal_id": 2, "start_date": "2025-11-01", "end_date": "2025-12-01", "value_mw": 0.0 }
   ]
 }
 ```
 
-`values_mw` must have exactly as many entries as the resolved integer lead —
-`lead_stages`, or the stage lead that `lead_time_hours` resolves to — ordered
-oldest-to-most-recent.
+| Field        | Type                    | Description |
+| ------------ | ----------------------- | ----------- |
+| `thermal_id` | integer                 | Identifier of an anticipated thermal (must carry `anticipated_config`). |
+| `start_date` | string (ISO-8601 date)  | Start of the commitment window (inclusive). |
+| `end_date`   | string (ISO-8601 date)  | End of the commitment window (**exclusive**); must be after `start_date`. |
+| `value_mw`   | number                  | Committed MW rate held constant over the window. |
+
+A plant's windows must **tile its leading calendar-derived delivery stages
+exactly** — coverage `1.0`, no gap, no overlap, and none reaching past the
+plant's pre-study delivery horizon; a stretch with no scheduled commitment
+still needs an explicit `0.0`-rate window rather than a gap left to be
+inferred. Each `value_mw` must lie within the plant's `[min_mw, max_mw]`
+generation bounds and, if the plant declares a commissioning window, a
+non-zero rate must mature inside it. The values are **sunk cost**: they seed
+the fishing constraint at the pre-horizon stages but never enter the study
+objective. **The old positional per-lead-slot MW-array field is no longer
+accepted** — the file's `deny_unknown_fields` contract rejects a deck still
+carrying it.
+
+#### `future_anticipated_deliveries`
+
+An anticipated thermal may also carry **in-study decided commitments
+delivered after the study horizon** — the right-boundary counterpart to
+`past_anticipated_commitments` above (see [Post-Study Boundary](/math/post-study-boundary)).
+Each entry is a dated `[delivery_start, delivery_end)` window bounding the
+delivered MW rate, declared in `initial_conditions.json`'s
+`future_anticipated_deliveries`:
+
+```json
+{
+  "future_anticipated_deliveries": [
+    { "thermal_id": 2, "delivery_start": "2027-01-01", "delivery_end": "2027-02-01", "min_mw": 0.0, "max_mw": 350.0 }
+  ]
+}
+```
+
+| Field            | Type                    | Description |
+| ---------------- | ----------------------- | ----------- |
+| `thermal_id`     | integer                 | Identifier of an anticipated thermal — referencing a thermal with no `anticipated_config` is a hard load error. |
+| `delivery_start` | string (ISO-8601 date)  | Start of the delivery window (inclusive). |
+| `delivery_end`   | string (ISO-8601 date)  | End of the delivery window (**exclusive**); must be after `delivery_start`. |
+| `min_mw`         | number                  | Lower bound of the delivered MW rate over the window. |
+| `max_mw`         | number                  | Upper bound of the delivered MW rate over the window; must be `>= min_mw`. `min_mw == max_mw` pins a fixed commitment. |
+
+Priced against the boundary's terminal future-cost function rather than the
+in-study objective, each window must be covered exactly by a declared
+post-study stage: the study needs a `post_study_stages.json` to resolve
+delivery dates against — see [Case Directory Format](/reference/case-directory-format)
+for the file's shape. Optional; defaults to empty — a study with no
+post-horizon deliveries declares nothing here.
 
 #### Constraining Commitments via Generic Constraints
 
@@ -149,13 +198,16 @@ stage:
     {
       "id": 1,
       "name": "cap_ant_t1",
-      "expression": "anticipated_decision(2)",
-      "sense": "<=",
+      "expression": "anticipated_decision(2) <= 400.0",
       "slack": { "enabled": false }
     }
   ]
 }
 ```
+
+See [Generic Constraints](/reference/generic-constraints/) for the full
+authoring language — named expressions, the activation grid, and two-sided
+slack.
 
 `anticipated_decision(N)` must reference a thermal carrying an
 `anticipated_config` block — referencing a non-anticipated thermal is a hard
@@ -171,7 +223,9 @@ per-block delivered generation, not the forward commitment.
 | Non-negative cost            | Schema error          | `cost_per_mwh` must be non-negative. |
 | Generation bounds ordering   | Physical feasibility  | `min_mw` must be `<= max_mw`. |
 | Anticipated lead validity    | Physical feasibility  | When `anticipated_config` is present, `lead_stages` must be `>= 1` and must not exceed the study's stage count. |
-| Commitment history bijection | Reference error       | Every anticipated thermal must have exactly one `past_anticipated_commitments` entry, with a `values_mw` array of exactly `lead_stages` entries. |
+| Commitment-window tiling     | Reference error       | Every anticipated thermal's `past_anticipated_commitments` windows must tile its leading calendar-derived delivery stages exactly (coverage `1.0`, no gap, no overlap, none past the pre-study delivery horizon). |
+| Future-delivery thermal reference | Reference error   | Every `future_anticipated_deliveries` entry's `thermal_id` must reference an anticipated thermal. |
+| Post-study delivery coverage | Reference error       | Every `future_anticipated_deliveries` window must be covered exactly by a declared post-study stage — the study needs a `post_study_stages.json` to resolve delivery dates against. See [Error Codes](/reference/error-codes) for the exact failure modes. |
 
 ### `system/non_controllable_sources.json` — NCS Registry
 
@@ -237,7 +291,7 @@ from this entity file — see the Inputs & Outputs tab.
 | `flow.min_m3s` / `flow.max_m3s` | number | Yes | Pumped-flow bounds, in m³/s (methodology §4). |
 
 Stage-varying bounds are supplied via `constraints/pumping_bounds.parquet`,
-which accepts sparse `(station_id, stage_id)` rows carrying `min_m3s` and/or
+which accepts sparse `(pumping_station_id, stage_id)` rows carrying `min_m3s` and/or
 `max_m3s`, optionally narrowed to one block via an optional `block_id`
 column; absent rows fall back to the base entity values.
 

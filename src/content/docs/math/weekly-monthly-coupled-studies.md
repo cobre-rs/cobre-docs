@@ -57,7 +57,12 @@ reach the convergence threshold.
 
 For the full treatment of terminal boundary cuts, including the formal
 lower-bound and convexity conditions, see [SDDP Algorithm](/math/sddp-algorithm)
-§7 "Terminal Boundary Cuts".
+§7 "Terminal Boundary Cuts". This section covers only the storage-side import;
+the same boundary can also hold anticipated-commitment and in-transit-water
+state live past the horizon and reconcile a source delivery calendar onto the
+weekly run's own by a dated, hour-weighted fan-out — see
+[Post-Study Boundary](/math/post-study-boundary) for that delivery-side
+mechanism.
 
 ## 3. Initial Conditions from Recent Observations
 
@@ -186,4 +191,4 @@ conditions across study boundaries, see
 - [SDDP Algorithm](/math/sddp-algorithm) — Terminal boundary cut import (§7 "Terminal Boundary Cuts"); lower-bound monotonicity and the append-only property of the cut pool; the backward pass that generates corrective cuts after an import
 - [Scenario Generation](/math/scenario-generation) — Per-stage scenario counts; opening-tree construction; the independent scenario tree used by the weekly run
 - [Multi-Resolution Studies](/math/multi-resolution-studies) — The sibling chapter covering mixed-resolution stages within a single study; addresses duration-weighted aggregation rather than two-study coupling
-- [Horizon Modes](/math/horizon-modes) — Finite vs cyclic policy graphs; context for how terminal conditions are represented at study boundaries
+- [Horizon Modes](/math/horizon-modes) — Finite (supported) vs. reserved cyclic policy graphs; context for how terminal conditions are represented at study boundaries

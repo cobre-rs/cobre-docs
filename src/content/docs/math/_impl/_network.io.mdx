@@ -31,6 +31,11 @@ the Reference corpus.
 | `simulation/buses/`      | Per-(stage, block, bus) load balance results: `load_mw`, `deficit_mw`, `excess_mw` (and their `_mwh` energy equivalents), and `spot_price` — the load-balance dual. |
 | `simulation/exchanges/`  | Per-(stage, block, line) flow results: `direct_flow_mw`, `reverse_flow_mw`, `net_flow_mw` (and `_mwh`), transmission `losses_mw`/`losses_mwh`, and the monetary `exchange_cost` attributed to that line's flow. |
 
+A generic constraint can address this same net line flow by bus pair —
+`line_exchange(source_bus=X, target_bus=Y)` folds the orientation sign into
+the term — see [Generic Constraints](/reference/generic-constraints/) for
+the full addressing form.
+
 For the complete output schema (columns, types, file layout), see the
 [Output Format](/reference/output-format/) reference page in the Reference
 corpus.

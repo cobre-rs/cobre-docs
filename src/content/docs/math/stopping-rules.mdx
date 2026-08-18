@@ -1,13 +1,13 @@
 ---
 title: Stopping Rules
-description: Available stopping rules for the Cobre SDDP solver — iteration limits, time limits, bound stalling, simulation-based stopping, graceful shutdown, and how rules combine.
+description: Available stopping rules for the Cobre SDDP solver — iteration limits, time limits, bound stalling, gap-based stopping, graceful shutdown, and how rules combine.
 ---
 
 import ConvergencePlot from "../../../components/ConvergencePlot.astro";
 
 ## Purpose
 
-This spec defines the available stopping rules for the Cobre SDDP solver, their configuration, and how they combine. It covers iteration limits, time limits, bound stalling, and the recommended simulation-based stopping criterion.
+This spec defines the available stopping rules for the Cobre SDDP solver, their configuration, and how they combine. It covers iteration limits, time limits, bound stalling, and the recommended gap-based stopping criterion.
 
 ## 1 Available Stopping Rules
 
@@ -83,70 +83,49 @@ $$
 Under risk-averse formulations (e.g., CVaR), the lower bound $\underline{z}^k$ may not be a valid bound in the classical sense. Bound stalling still detects convergence of the outer approximation, but the gap interpretation changes. See [Risk Measures](/math/risk-measures) for details.
 :::
 
-## 5 Simulation-Based Stopping (Recommended)
-
-:::caution[Partial Implementation]
-The current implementation computes distance against a zero baseline rather than consecutive snapshots; the `bound_tol` and `bound_window` parameters are parsed but not yet applied to the pre-check.
-:::
+## 5 Gap-Based Stopping (Recommended)
 
 <ConvergencePlot />
 
-_Bound evolution across iterations $k$: the lower bound $\underline{z}^k$ rises monotonically (the append-only cut pool), while the Monte-Carlo upper bound $\bar{z}^k$ descends with a 95% confidence band that tightens as sampling accumulates. The simulation-based rule fires once the gap $(\bar{z}^k - \underline{z}^k)/\max(1,|\bar{z}^k|)$ closes below tolerance and the policy stabilises._
+_Bound evolution across iterations $k$: the lower bound $\underline{z}^k$ rises monotonically (the append-only cut pool), while the upper bound $\bar{z}^k$ descends toward it. A confidence band around the descending series applies only when the upper bound is a statistical estimate — it tightens as sampling accumulates; the exact upper bound the gap rule compares against carries no such band._
+
+The gap rule terminates training once the exact upper bound has closed on the lower bound.
+
+**Configuration**:
 
 ```json
-{
-  "type": "simulation",
-  "replications": 100,
-  "period": 20,
-  "bound_window": 5,
-  "distance_tol": 0.01,
-  "bound_tol": 0.0001
-}
+{ "type": "gap", "tolerance": 1.0, "relative_tolerance": 0.1 }
 ```
 
-| Parameter      | Description                                                              |
-| -------------- | ------------------------------------------------------------------------ |
-| `replications` | Number of Monte Carlo forward simulations to run                         |
-| `period`       | Check every this many iterations                                         |
-| `bound_window` | Number of past iterations over which to measure bound stability          |
-| `distance_tol` | Threshold for normalized distance between consecutive simulation results |
-| `bound_tol`    | Relative tolerance for bound stability check                             |
+**Evaluation**:
 
-**Algorithm**:
+The gap is the clamped distance between the exact upper bound $\bar{z}$ and the lower bound $\underline{z}$:
 
-1. **Check bound stability first**:
+$$
+\text{gap} = \max(0,\; \bar{z} - \underline{z})
+$$
 
-   $$
-   \text{Bound stable} \iff \left| \underline{z}^k - \underline{z}^{k - w} \right| < \text{bound\_tol} \times \max(1, |\underline{z}^k|)
-   $$
+In exact arithmetic the exact upper bound satisfies $\bar{z} \geq \underline{z}$; the clamp only absorbs floating-point noise once the gap has closed to (numerically) zero.
 
-   where $w$ is the `bound_window` parameter.
+**Stopping condition** — two arms combined by disjunction (either is sufficient):
 
-2. **If bound is stable**, run `replications` Monte Carlo simulations using the current policy. Compute per-stage total costs $c_t^{new}$ and compare to the previous simulation's costs $c_t^{old}$:
+$$
+\text{STOP} \iff \text{gap} \leq \text{tolerance} \quad\text{or}\quad 100 \cdot \text{gap} / \max(1, |\underline{z}|) \leq \text{relative tolerance}
+$$
 
-   $$
-   d = \sqrt{\sum_{t} \left( \frac{c_t^{new} - c_t^{old}}{\max(1, |c_t^{old}|)} \right)^2}
-   $$
+The absolute arm compares the gap directly against `tolerance`, in the objective's own units. The relative arm normalizes the gap by the **lower** bound, $\max(1, |\underline{z}|)$ — floored so the ratio stays bounded when the lower bound is near zero — **never** by the upper bound; this is the same denominator the per-iteration reported gap uses, so the two never disagree on what "relative gap" means. Either bound may be configured alone; when both are configured, training stops as soon as either arm is satisfied.
 
-   The comparison metric is the mean per-stage cost across replications. Future extensions may compare other quantities (e.g., state variable trajectories or decision variable distributions).
+**Admissibility**: the comparison above is only valid when the upper bound it uses is the *exact* bound, not a statistical estimate. Both of the following must hold:
 
-3. **Stopping condition**:
-   $$
-   \text{STOP} \iff \text{Bound stable} \land d < \text{distance\_tol}
-   $$
+- The forward pass [enumerates the scenario tree](/math/policy-graphs) exhaustively rather than sampling it, so the upper bound is exact — carrying no sampling error — rather than a sampled approximation.
+- The risk measure is **uniform across all stages**: either expectation at every stage, or one CVaR measure (the same risk-aversion weight and tail level) at every stage. Under expectation the exact bound is the probability-weighted cost $\sum_{\ell} P(\ell)\, C(\ell)$ over every scenario $\ell$; under a uniform CVaR it is the nested, time-consistent risk bound over the same enumerated tree ([Upper Bound Evaluation §2](/math/upper-bound-evaluation)). A **stage-varying** measure — a risk-aversion weight or tail level that differs across stages — is not admissible, because no single measure then aggregates the tree.
 
-**Interpretation**: Both the outer approximation (bound) and the policy (simulated costs) have stabilized.
+Under a sampled forward pass, or a stage-varying measure, the exact-bound comparison the rule depends on is unavailable, and the gap rule is rejected at setup with a named validation error rather than silently evaluating against an unsound comparison.
 
-**Why recommended**: Combines a theoretical convergence indicator (bound) with practical policy quality (simulation), avoiding premature termination from statistical noise.
+**Why recommended**: unlike bound stalling (a proxy for convergence) or the iteration and time limits (safety bounds unrelated to convergence), a closed gap is a direct optimality certificate under the exact-bound regime the rule requires — an enumerated forward pass with a risk measure held uniform across stages.
 
-:::note[Risk-averse note]
-For risk-averse problems, the bound stability check monitors convergence of the risk-adjusted outer approximation. The simulation comparison remains valid since it measures policy stability directly, independent of bound interpretation. See [Risk Measures](/math/risk-measures).
-:::
-
-:::caution[Partial Implementation]
-The current implementation is a stub that compares simulation costs against a **zero baseline** rather than consecutive simulation snapshots. Specifically, when `simulation_costs` are available, the distance is computed as $d = \sqrt{\sum_t (c_t / \max(1, |c_t|))^2}$ against zero, which is conservative: it never triggers on the first evaluation and only triggers when per-stage costs are themselves near zero. The planned full version will store the previous simulation's cost vector and compute the distance between consecutive snapshots as described above ($c_t^{new}$ vs $c_t^{old}$). The convergence monitor is responsible for managing the two-snapshot comparison externally.
-
-Additionally, the **bound stability pre-check** (Phase 1) is not yet implemented: the `bound_tol` and `bound_window` parameters are parsed from configuration but currently discarded -- the rule skips directly to the simulation distance comparison. Until Phase 1 is implemented, the rule may evaluate simulations even when the bound is still actively improving, which is conservative (wastes simulation time) but not incorrect.
+:::caution[Known discrepancy: convergence flag]
+A closed exact gap **is** a genuine optimality certificate — the deterministic upper bound has met the lower bound, so the policy already realizes that bound. The machine-readable convergence indicator, however, is set only when training stops via the bound-stalling rule; a run that terminates via the gap rule reports that indicator unset even though the exact gap has closed. This is a known discrepancy between the indicator and the underlying optimality guarantee, tracked as an upstream defect in the training-output layer rather than a limitation of the gap rule itself.
 :::
 
 ## 6 Graceful Shutdown
@@ -193,20 +172,13 @@ All rules must trigger simultaneously.
 {
   "stopping_rules": [
     { "type": "iteration_limit", "limit": 500 },
-    {
-      "type": "simulation",
-      "replications": 100,
-      "period": 20,
-      "bound_window": 5,
-      "distance_tol": 0.01,
-      "bound_tol": 0.0001
-    }
+    { "type": "gap", "tolerance": 1.0, "relative_tolerance": 0.1 }
   ],
   "stopping_mode": "any"
 }
 ```
 
-This runs until simulation-based convergence OR 500 iterations, whichever comes first.
+This runs until the gap closes OR 500 iterations, whichever comes first.
 
 Graceful shutdown is independent of the `stopping_mode` combination logic — it terminates
 the training loop regardless of whether any or all of the configured rules have triggered.
@@ -220,8 +192,8 @@ When any stopping rule triggers, the output includes:
 | `stopping_rule`   | Which rule triggered                                                       |
 | `final_iteration` | Iteration count at termination                                             |
 | `lower_bound`     | Final deterministic lower bound                                            |
-| `upper_bound`     | Final simulated upper bound (if available)                                 |
-| `gap`             | Optimality gap: $(\bar{z} - \underline{z}) / \max(1, \lvert\bar{z}\rvert)$ |
+| `upper_bound`     | Final upper bound (statistical or exact)                                   |
+| `gap`             | Optimality gap: $(\bar{z} - \underline{z}) / \max(1, \lvert\underline{z}\rvert)$ |
 
 The `stopping_rule` field carries the rule that triggered, including `"graceful_shutdown"`
 when an external signal terminated the run.
@@ -231,6 +203,6 @@ when an external signal terminated the run.
 - [Notation Conventions](/overview/notation-conventions) — Symbol definitions for bounds and statistical quantities
 - [SDDP Algorithm](/math/sddp-algorithm) — Main iteration loop that evaluates stopping rules
 - [Cut Management](/math/cut-management) — Cut generation and selection that affect convergence speed
-- [Upper Bound Evaluation](/math/upper-bound-evaluation) — Monte Carlo simulation for upper bound estimation, used by simulation-based stopping
+- [Upper Bound Evaluation](/math/upper-bound-evaluation) — The exact (deterministic) and statistical upper-bound estimators; the exact bound is what the gap rule compares against
 - [Risk Measures](/math/risk-measures) — Risk-averse formulations that affect bound interpretation
 - [Reproducibility and Provenance](/math/reproducibility-and-provenance) — Provenance commitment that the graceful-shutdown guarantee is a special case of

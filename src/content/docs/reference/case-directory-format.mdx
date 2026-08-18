@@ -24,6 +24,7 @@ my_case/
 ├── penalties.json                           # Global penalty defaults (required)
 ├── stages.json                              # Stage sequence and policy graph (required)
 ├── initial_conditions.json                  # Reservoir storage at study start (required)
+├── post_study_stages.json                   # Post-study boundary calendar + thermal bounds (optional)
 ├── system/
 │   ├── buses.json                           # Electrical buses (required)
 │   ├── lines.json                           # Transmission lines (required)
@@ -36,8 +37,7 @@ my_case/
 │   ├── hydro_production_models.json         # FPHA production function configs (optional)
 │   ├── hydro_energy_productivity.parquet    # Per-plant, per-stage energy-conversion overrides (optional)
 │   ├── fpha_hyperplanes.parquet             # FPHA hyperplane coefficients (optional)
-│   ├── tailrace_curves.parquet              # Piecewise-quartic tailrace curves (optional)
-│   └── scalar_parameters.json              # Scalar parameters for constraint expressions (optional)
+│   └── tailrace_curves.parquet              # Piecewise-quartic tailrace curves (optional)
 ├── scenarios/
 │   ├── inflow_history.parquet               # Historical inflow series (optional)
 │   ├── inflow_seasonal_stats.parquet        # PAR model seasonal statistics (optional)
@@ -61,6 +61,7 @@ my_case/
     ├── ncs_bounds.parquet                   # Stage-varying NCS available generation bounds (optional)
     ├── generic_constraints.json             # User-defined LP constraints (optional)
     ├── generic_constraint_bounds.parquet    # Bounds for generic constraints (optional)
+    ├── generic_parameters.json              # Named parameters for constraint expressions (optional)
     ├── penalty_overrides_bus.parquet        # Stage-varying bus penalty overrides (optional)
     ├── penalty_overrides_line.parquet       # Stage-varying line penalty overrides (optional)
     ├── penalty_overrides_hydro.parquet      # Stage-varying hydro penalty overrides (optional)
@@ -75,6 +76,7 @@ my_case/
 | `penalties.json`                                | JSON    | Yes      | Global penalty defaults                                                            |
 | `stages.json`                                   | JSON    | Yes      | Stage sequence and policy graph                                                    |
 | `initial_conditions.json`                       | JSON    | Yes      | Initial reservoir storage                                                          |
+| `post_study_stages.json`                        | JSON    | No       | Post-study boundary calendar and per-thermal delivery bounds                       |
 | `system/buses.json`                             | JSON    | Yes      | Electrical bus registry                                                            |
 | `system/lines.json`                             | JSON    | Yes      | Transmission line registry                                                         |
 | `system/hydros.json`                            | JSON    | Yes      | Hydro plant registry                                                               |
@@ -87,13 +89,12 @@ my_case/
 | `system/fpha_hyperplanes.parquet`               | Parquet | No       | FPHA hyperplane coefficients                                                       |
 | `system/hydro_energy_productivity.parquet`      | Parquet | No       | Per-plant, per-stage energy-conversion overrides                                   |
 | `system/tailrace_curves.parquet`                | Parquet | No       | Piecewise-quartic tailrace curves with backwater families                          |
-| `system/scalar_parameters.json`                 | JSON    | No       | Scalar parameters for constraint expressions                                       |
 | `scenarios/inflow_history.parquet`              | Parquet | No       | Historical inflow time series                                                      |
 | `scenarios/inflow_seasonal_stats.parquet`       | Parquet | No       | PAR model seasonal statistics                                                      |
 | `scenarios/inflow_ar_coefficients.parquet`      | Parquet | No       | PAR autoregressive coefficients                                                    |
 | `scenarios/external_inflow_scenarios.parquet`   | Parquet | No       | External inflow scenario realizations (hydro_id, stage_id, scenario_id, value_m3s) |
 | `scenarios/external_load_scenarios.parquet`     | Parquet | No       | External load scenario realizations (bus_id, stage_id, scenario_id, value_mw)      |
-| `scenarios/external_ncs_scenarios.parquet`      | Parquet | No       | External NCS scenario realizations (ncs_id, stage_id, scenario_id, value)          |
+| `scenarios/external_ncs_scenarios.parquet`      | Parquet | No       | External NCS scenario realizations (ncs_id, stage_id, scenario_id, availability_factor) |
 | `scenarios/load_seasonal_stats.parquet`         | Parquet | No       | Load model seasonal statistics                                                     |
 | `scenarios/load_factors.json`                   | JSON    | No       | Load scaling factors per bus/stage                                                 |
 | `scenarios/non_controllable_factors.json`       | JSON    | No       | NCS block scaling factors per source/stage                                         |
@@ -109,6 +110,7 @@ my_case/
 | `constraints/ncs_bounds.parquet`                | Parquet | No       | Stage-varying NCS available generation bounds                                      |
 | `constraints/generic_constraints.json`          | JSON    | No       | User-defined LP constraints                                                        |
 | `constraints/generic_constraint_bounds.parquet` | Parquet | No       | Generic constraint RHS bounds                                                      |
+| `constraints/generic_parameters.json`           | JSON    | No       | Named parameters for constraint expressions                                        |
 | `constraints/penalty_overrides_bus.parquet`     | Parquet | No       | Stage-varying bus excess cost                                                      |
 | `constraints/penalty_overrides_line.parquet`    | Parquet | No       | Stage-varying line exchange cost                                                   |
 | `constraints/penalty_overrides_hydro.parquet`   | Parquet | No       | Stage-varying hydro penalty costs                                                  |
@@ -150,7 +152,7 @@ authored in `penalties.json::hydro.inflow_nonnegativity_cost`.
 
 | Field                      | Type            | Default                             | Description                                                                                                                |
 | -------------------------- | --------------- | ----------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
-| `training.forward_passes`  | integer         | **required**                        | Number of scenario trajectories per iteration (>= 1)                                                                       |
+| `training.selection`       | object          | **required**                        | Scenario-selection method — `sampled{forward_passes}` or `enumerated{}` (see below); a missing `training.selection` is a hard load error |
 | `training.stopping_rules`  | array           | **required**                        | At least one stopping rule entry; must include an `iteration_limit` rule                                                   |
 | `training.stopping_mode`   | string          | `"any"`                             | How multiple rules combine: `"any"` (stop when any triggers) or `"all"` (stop when all trigger)                            |
 | `training.enabled`         | boolean         | `true`                              | When `false`, skip training and proceed directly to simulation                                                             |
@@ -158,6 +160,21 @@ authored in `penalties.json::hydro.inflow_nonnegativity_cost`.
 | `training.scenario_source` | object or null  | `null`                              | Per-class sampling scheme for the training forward pass (see below)                                                        |
 | `training.parallelism`     | object or null  | `{backward_scheduler: trial_point}` | Backward-pass scheduler selection; see [Configuration](/running/configuration/#parallelism)                                |
 | `training.solver`          | object or null  | `null`                              | LP solver retry policy and optional per-phase solver profiles; see [Configuration](/running/configuration/#trainingsolver) |
+
+**`training.selection` sub-section:**
+
+Chooses how many trajectories the training forward pass runs per iteration, or
+whether it exhaustively enumerates the scenario openings instead of sampling. The
+object is internally tagged on `method`; each variant accepts only its own fields
+(pairing `forward_passes` with `"enumerated"` is a load-time error). There is no
+default forward-pass count — an absent `training.selection` is a hard load error,
+and the root-level `training.forward_passes` field from earlier releases is
+rejected as an unknown field.
+
+| Field                                | Type    | Required          | Description                                                                |
+| ------------------------------------- | ------- | ------------------ | ----------------------------------------------------------------------------- |
+| `training.selection.method`           | string  | Yes                | `"sampled"` or `"enumerated"`                                                  |
+| `training.selection.forward_passes`   | integer | `sampled` only     | Number of forward-pass trajectories per iteration (>= 1). Rejected under `"enumerated"` |
 
 **`training.scenario_source` sub-section:**
 
@@ -244,13 +261,27 @@ per-method field tables.
 | Field                                         | Type            | Default       | Description                                                                                            |
 | --------------------------------------------- | --------------- | ------------- | ------------------------------------------------------------------------------------------------------ |
 | `enabled`                                     | boolean         | `false`       | Enable post-training simulation                                                                        |
-| `num_scenarios`                               | integer         | `2000`        | Number of simulation scenarios                                                                         |
+| `simulation.selection`                        | object or null  | `null`        | Scenario-selection method — `sampled{num_scenarios}` or `enumerated{}` (see below); absent resolves to the default sampled count (`2000`) |
 | `io_channel_capacity`                         | integer         | `64`          | Channel capacity between simulation and I/O writer threads                                             |
 | `simulation.scenario_source`                  | object or null  | `null`        | Per-class sampling scheme for the simulation pass (see below)                                          |
 | `simulation.scenario_source.inflow.scheme`    | string          | `"in_sample"` | Inflow sampling scheme: `"in_sample"`, `"historical"`, `"external"`, or `"out_of_sample"`              |
 | `simulation.scenario_source.load.scheme`      | string          | `"in_sample"` | Load sampling scheme: `"in_sample"`, `"historical"`, `"external"`, or `"out_of_sample"`                |
 | `simulation.scenario_source.ncs.scheme`       | string          | `"in_sample"` | NCS sampling scheme: `"in_sample"`, `"historical"`, `"external"`, or `"out_of_sample"`                 |
 | `simulation.scenario_source.historical_years` | array or object | `null`        | Years eligible as inflow replay windows. List (`[2010, 2015]`) or range (`{"from": 2010, "to": 2023}`) |
+
+**`simulation.selection` sub-section:**
+
+Chooses how many trajectories the post-training simulation runs, or whether it
+exhaustively enumerates the scenario openings instead of sampling. Internally
+tagged on `method`, mirroring `training.selection` above. Unlike
+`training.selection`, this field is optional: an absent `simulation.selection`
+resolves to a sampled count of `2000` — the same default the flat `num_scenarios`
+field carried before this field existed.
+
+| Field                                  | Type    | Required          | Description                                                                    |
+| ---------------------------------------- | ------- | ------------------ | ----------------------------------------------------------------------------------- |
+| `simulation.selection.method`            | string  | Yes (if present)   | `"sampled"` or `"enumerated"`                                                        |
+| `simulation.selection.num_scenarios`     | integer | `sampled` only      | Number of simulation trajectories to draw (>= 0). Rejected under `"enumerated"`      |
 
 **`exports` section:**
 
@@ -265,7 +296,7 @@ per-method field tables.
 {
   "$schema": "https://docs.cobre-rs.dev/schemas/config.schema.json",
   "training": {
-    "forward_passes": 192,
+    "selection": { "method": "sampled", "forward_passes": 192 },
     "stopping_rules": [{ "type": "iteration_limit", "limit": 200 }]
   }
 }
@@ -344,12 +375,42 @@ and policy graph horizon type.
 
 **Top-level fields:**
 
-| Field                | Required | Description                                                                    |
-| -------------------- | -------- | ------------------------------------------------------------------------------ |
-| `policy_graph`       | Yes      | Horizon type (`"finite_horizon"`), annual discount rate, and stage transitions |
+| Field                | Required | Description                                                       |
+| -------------------- | -------- | ------------------------------------------------------------------- |
+| `policy_graph`       | Yes      | Horizon type, annual discount rate, and stage transitions/nodes (see below) |
 | `stages`             | Yes      | Array of study stage definitions                                               |
 | `season_definitions` | No       | Season labeling for seasonal model alignment                                   |
 | `pre_study_stages`   | No       | Pre-study stages for AR model warm-up (negative IDs)                           |
+
+**`policy_graph` sub-object:**
+
+| Field                  | Required | Description                                                                                                                                     |
+| ---------------------- | -------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `type`                 | Yes      | Horizon type. Only `"finite_horizon"` is supported; `"cyclic"` is **reserved** and rejected at load (no engine consumer today)                     |
+| `annual_discount_rate` | Yes      | Global annual discount rate (>= 0.0)                                                                                                                |
+| `nodes[]`              | No       | Policy-graph nodes (see below). Absent ⇒ the graph is a stage chain and `transitions[]` endpoints are read directly as stage ids                   |
+| `transitions[]`        | No       | Stage transitions (see below). Defaults to an empty array                                                                                           |
+
+A deck with no `nodes[]` is a stage chain byte-for-byte as before — existing
+`stages.json` files with only `policy_graph.transitions` need no migration.
+
+**`policy_graph.nodes[]` entry fields:**
+
+| Field         | Required | Description                                                                                                                                                                                                                                                    |
+| ------------- | -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `id`          | Yes      | Unique node id, referenced by `transitions[]` endpoints when `nodes[]` is declared                                                                                                                                                                                 |
+| `stage_id`    | Yes      | Declared study-stage id this node sits at; resolved against the study stages, never an array index                                                                                                                                                                 |
+| `scenario_id` | No       | Per-stage external-library realization column this node carries. Required at a stage carrying a slot-occupying external class, omitted where none. `scenario_id: k` is exactly the degenerate one-element weighted opening set `[{ "scenario_id": k, "probability": 1.0 }]` |
+| `label`       | No       | Optional human-readable label                                                                                                                                                                                                                                       |
+
+**`policy_graph.transitions[]` entry fields:**
+
+| Field                            | Required | Description                                                                                     |
+| --------------------------------- | -------- | --------------------------------------------------------------------------------------------------- |
+| `source_id`                       | Yes      | Source endpoint: a node id when `policy_graph.nodes[]` is non-empty, a stage id otherwise            |
+| `target_id`                       | Yes      | Target endpoint: a node id when `policy_graph.nodes[]` is non-empty, a stage id otherwise             |
+| `probability`                     | Yes      | Transition probability                                                                              |
+| `annual_discount_rate_override`   | No       | Optional per-transition discount rate override; absent uses `policy_graph.annual_discount_rate`     |
 
 :::caution[No top-level `scenario_source` in `stages.json`]
 Scenario sampling is configured per-pass in `config.json` —
@@ -367,7 +428,7 @@ Scenario sampling is configured per-pass in `config.json` —
 | `start_date`      | Yes      | ISO 8601 date (e.g., `"2024-01-01"`)                              |
 | `end_date`        | Yes      | ISO 8601 date; must be after `start_date`                         |
 | `blocks`          | Yes      | Array of load blocks (`id`, `name`, `hours`)                      |
-| `num_scenarios`   | Yes      | Number of forward-pass scenarios for this stage (>= 1)            |
+| `num_openings`    | Yes      | Number of within-node openings for this stage (>= 1); required on the plain stage-chain dialect (no `policy_graph.nodes[]`) and at a generated-openings stage under `nodes[]`, rejected at a stage that carries only external openings |
 | `season_id`       | No       | Reference to a season in `season_definitions`                     |
 | `block_mode`      | No       | Block execution mode: `"parallel"` (default) or `"chronological"` |
 | `state_variables` | No       | Cut dimension for this stage: `{ storage, inflow_lags }` booleans, defaulting to storage-only (`inflow_lags` off). Governs which state dimensions the stage's cuts project onto — distinct from what is reported; a disabled dimension is projected out of the cut, not zero-padded. Travel-time buckets and anticipated-thermal slots are always included. See [Cut Management](/math/cut-management). |
@@ -493,6 +554,8 @@ travel-time arcs, and recent observations at the start of the study.
 | `filling_storage`     | Yes      | Array of `{ "hydro_id": integer, "value_hm3": number }` entries for filling hydros                                |
 | `past_defluences`     | No       | Array of windowed pre-study release records seeding the in-transit buckets of a declared travel-time arc (see below)  |
 | `recent_observations` | No       | Array of observed inflow entries for mid-season study starts (see below)                                          |
+| `past_anticipated_commitments` | No | Array of windowed committed-MW records for anticipated thermals, pre-study (see below) |
+| `future_anticipated_deliveries` | No | Array of windowed delivery-bound records for anticipated thermals, post-horizon (see below) |
 
 Each `hydro_id` must be unique within its array and must not appear in both
 `storage` and `filling_storage`. All `value_hm3` values must be non-negative.
@@ -544,6 +607,82 @@ and the most-negative value's hydro, so a genuinely sign-flipped series still
 stands out. Optional; defaults to an empty array when absent. Existing cases
 without this field are unaffected.
 
+**`past_anticipated_commitments`** supplies the pre-study committed MW rate for
+an anticipated thermal plant — the left-boundary counterpart to
+`future_anticipated_deliveries` below. Each entry is a dated window carrying a
+constant rate:
+
+| Field        | Type    | Description                                                                          |
+| ------------ | ------- | ------------------------------------------------------------------------------------- |
+| `thermal_id` | integer | Anticipated thermal plant identifier; must reference a thermal declaring `anticipated_config` |
+| `start_date` | string  | Start of the commitment window (inclusive), ISO 8601 YYYY-MM-DD                       |
+| `end_date`   | string  | End of the commitment window (exclusive), ISO 8601 YYYY-MM-DD; must be after `start_date` |
+| `value_mw`   | number  | Committed MW rate held constant over the window; finite                               |
+
+A plant's windows must **tile its leading calendar-derived delivery stages
+exactly** — coverage `1.0`, no gap, no overlap, and none reaching past the
+plant's pre-study delivery horizon; a stretch with no scheduled commitment
+still needs an explicit `0.0`-rate window rather than a gap left to be
+inferred. Each `value_mw` must lie within the plant's `[min_generation_mw,
+max_generation_mw]` bounds and, if the plant declares a commissioning window,
+mature inside it. The values are **sunk cost**: they never enter the study
+objective. Windows for the same `thermal_id` must not overlap (adjacent
+ranges where `start_date == previous end_date` are accepted). Optional;
+defaults to an empty array when no anticipated thermals are present.
+
+**The old positional per-lead-slot MW-array shape is no longer accepted** —
+the file's `deny_unknown_fields` contract rejects a deck still carrying that
+legacy array field; each entry must be an explicit dated window instead. See
+[system elements §4](/math/system-elements#anticipated-thermal-plants) for
+the delivery-stage mechanics this tiles against.
+
+```json
+{
+  "past_anticipated_commitments": [
+    {
+      "thermal_id": 2,
+      "start_date": "2026-01-01",
+      "end_date": "2026-02-01",
+      "value_mw": 0.0
+    }
+  ]
+}
+```
+
+**`future_anticipated_deliveries`** declares in-study decided commitments for
+an anticipated thermal plant, delivered **after the study horizon** — the
+right-boundary counterpart to `past_anticipated_commitments` above:
+
+| Field            | Type    | Description                                                                             |
+| ---------------- | ------- | ----------------------------------------------------------------------------------------- |
+| `thermal_id`     | integer | Anticipated thermal plant identifier; must reference a thermal declaring `anticipated_config` |
+| `delivery_start` | string  | Start of the delivery window (inclusive), ISO 8601 YYYY-MM-DD                             |
+| `delivery_end`   | string  | End of the delivery window (exclusive), ISO 8601 YYYY-MM-DD; must be after `delivery_start` |
+| `min_mw`         | number  | Lower bound of the delivered MW rate over the window; finite                              |
+| `max_mw`         | number  | Upper bound of the delivered MW rate over the window; finite, `>= min_mw` (`min_mw == max_mw` pins a fixed commitment) |
+
+Windows for the same `thermal_id` must not overlap (adjacent ranges accepted).
+Each window must resolve into **exactly one** declared post-study stage in
+`post_study_stages.json` — see [`post_study_stages.json`](#post_study_stagesjson)
+below and [Post-Study Boundary](/math/post-study-boundary) for the boundary
+formulation. Optional; defaults to an empty array when absent. A non-empty
+`future_anticipated_deliveries` with no `post_study_stages.json` file present
+is rejected at load.
+
+```json
+{
+  "future_anticipated_deliveries": [
+    {
+      "thermal_id": 2,
+      "delivery_start": "2026-09-05",
+      "delivery_end": "2026-09-12",
+      "min_mw": 0.0,
+      "max_mw": 350.0
+    }
+  ]
+}
+```
+
 Example:
 
 ```json
@@ -566,6 +705,70 @@ Example:
   ]
 }
 ```
+
+---
+
+### `post_study_stages.json`
+
+The post-study boundary calendar: a sequence of post-horizon stages plus a
+per-`(thermal, post-study stage)` cost and delivery-bound table that
+`future_anticipated_deliveries` windows (declared in
+[`initial_conditions.json`](#initial_conditionsjson) above) resolve against by
+date. Optional and inert when absent; **required** once any
+`future_anticipated_deliveries` window is declared — a non-empty array with no
+`post_study_stages.json` file present is rejected at load. See
+[Post-Study Boundary](/math/post-study-boundary) for the boundary formulation
+this file feeds.
+
+**`stages[]`** — the post-horizon calendar:
+
+| Field            | Type   | Description                                                                                                             |
+| ---------------- | ------ | ------------------------------------------------------------------------------------------------------------------------- |
+| `start_date`     | string | Stage start date (inclusive), ISO 8601 YYYY-MM-DD                                                                       |
+| `duration_hours` | number | Stage duration in hours; finite and `> 0.0`. `end_date` is derived from `start_date + duration_hours`, never declared   |
+
+Stages are **date-contiguous** (each stage's implicit `end_date` equals the
+next stage's `start_date`) and the **first `start_date` must equal the study
+horizon end** — the date immediately after the last in-study stage. Post-study
+stages are **boundary-only**: they are never dispatched, never a study stage,
+and never carry Benders cuts — they exist solely to give
+`future_anticipated_deliveries` windows a calendar to resolve against. No two
+stages may share a `start_date`.
+
+**`thermal_bounds[]`** — per-`(thermal, post-study stage)` cost and delivery
+capability:
+
+| Field                    | Type    | Description                                                                        |
+| ------------------------ | ------- | ------------------------------------------------------------------------------------- |
+| `thermal_id`             | integer | Thermal plant identifier; must reference a thermal declaring `anticipated_config`     |
+| `post_study_stage_index` | integer | Zero-based index into `stages[]`; must be `< stages.len()`                            |
+| `cost_per_mwh`           | number  | Fuel cost (`$/MWh`) at this cell; finite                                               |
+| `min_mw`                 | number  | Lower bound of the delivered MW rate at this cell; finite                             |
+| `max_mw`                 | number  | Upper bound of the delivered MW rate at this cell; finite, `>= min_mw`                |
+
+No two rows may share a `(thermal_id, post_study_stage_index)` pair. Each
+[`future_anticipated_deliveries`](#initial_conditionsjson) window must resolve
+into exactly one declared post-study stage with a matching `thermal_bounds`
+row whose delivery capability intersects the commitment interval.
+
+```json
+{
+  "$schema": "https://docs.cobre-rs.dev/schemas/post_study_stages.schema.json",
+  "stages": [
+    { "start_date": "2026-11-01", "duration_hours": 720.0 },
+    { "start_date": "2026-12-01", "duration_hours": 744.0 }
+  ],
+  "thermal_bounds": [
+    { "thermal_id": 86, "post_study_stage_index": 0, "cost_per_mwh": 210.0, "min_mw": 0.0, "max_mw": 350.0 },
+    { "thermal_id": 86, "post_study_stage_index": 1, "cost_per_mwh": 220.0, "min_mw": 0.0, "max_mw": 300.0 }
+  ]
+}
+```
+
+The vendored JSON Schema is at
+[`/schemas/post_study_stages.schema.json`](/schemas/post_study_stages.schema.json) —
+see [JSON Schemas](/reference/json-schemas) for the full schema-to-file table
+(this file's row lives there).
 
 ---
 
@@ -1145,70 +1348,6 @@ The quartic is evaluated as `coefficient_0 + coefficient_1*x + coefficient_2*x²
 
 ---
 
-### `system/scalar_parameters.json`
-
-Named scalar parameters that can be referenced from generic-constraint coefficient
-expressions using the `@name` sigil. The file is optional; when absent, no
-parameters are loaded and any `@name` token in a constraint expression causes a
-load error.
-
-**Top-level structure:**
-
-```json
-{
-  "$schema": "https://docs.cobre-rs.dev/schemas/scalar_parameters.schema.json",
-  "scalar_parameters": [
-    {
-      "id": 1,
-      "name": "rho_eq_h1",
-      "kind": "computed",
-      "computed_spec": { "tag": "equivalent_productivity", "hydro_id": 1 }
-    }
-  ]
-}
-```
-
-**Per-entry fields:**
-
-| Field           | Type    | Required | Description                                                               |
-| --------------- | ------- | -------- | ------------------------------------------------------------------------- |
-| `id`            | integer | Yes      | Unique parameter identifier (int32)                                       |
-| `name`          | string  | Yes      | Unique parameter name (non-empty, no leading/trailing whitespace)         |
-| `kind`          | string  | Yes      | One of `constant`, `per_stage`, `seasonal`, `computed`                    |
-| `value`         | number  | kind dep | Finite f64 value. Required for `constant`. Absent otherwise.              |
-| `values`        | array   | kind dep | Array of `[index, value]` pairs. Required for `per_stage` and `seasonal`. |
-| `computed_spec` | object  | kind dep | `{"tag": "<variant>", "hydro_id": <int>}`. Required for `computed`.       |
-
-**`computed_spec` tag values:**
-
-| `tag`                      | Description                             |
-| -------------------------- | --------------------------------------- |
-| `equivalent_productivity`  | Equivalent productivity ρ_eq            |
-| `accumulated_productivity` | Accumulated cascade productivity ρ_acum |
-| `reference_volume`         | Reference reservoir volume V_ref        |
-| `reference_turbine`        | Reference turbined flow Q_ref           |
-| `min_storage`              | Minimum operational storage V_min       |
-| `max_storage`              | Maximum operational storage V_max       |
-| `specific_productivity`    | Specific productivity ρ_esp             |
-
-**Validation:**
-
-- `id` values must be unique across all entries.
-- `name` values must be unique (case-sensitive), non-empty, and have no leading
-  or trailing whitespace.
-- `kind` must be exactly one of the four legal values.
-- For `per_stage`: `values` pairs must have contiguous `stage_id` keys starting
-  at 0; duplicates and gaps are rejected.
-- For `seasonal`: `season_id` keys within an entry must be unique; duplicates
-  are rejected.
-- For `computed`: `computed_spec` must be present with a valid `tag` and integer
-  `hydro_id`. The referenced hydro must exist in `hydros.json`.
-- Unknown JSON fields on any entry are rejected immediately.
-
-See the Scalar Parameters guide for usage examples.
-
----
-
 ## `scenarios/` files (Parquet)
 
 ### `scenarios/inflow_history.parquet`
@@ -1476,9 +1615,20 @@ Stage-varying operational bound overrides for hydro plants.
 | `min_generation_mw`    | DOUBLE | No       | Minimum generation (MW)              |
 | `max_generation_mw`    | DOUBLE | No       | Maximum generation (MW)              |
 | `max_diversion_m3s`    | DOUBLE | No       | Maximum diversion flow (m³/s)        |
+| `min_diversion_m3s`    | DOUBLE | No       | Minimum diversion flow (m³/s); requires a declared `diversion` channel |
+| `min_spillage_m3s`     | DOUBLE | No       | Minimum spillage flow (m³/s)         |
+| `max_spillage_m3s`     | DOUBLE | No       | Maximum spillage flow (m³/s); `>= min_spillage_m3s` |
 | `filling_min_rate_m3s` | DOUBLE | No       | Filling minimum-rate override (m³/s) |
 | `water_withdrawal_m3s` | DOUBLE | No       | Water withdrawal (m³/s)              |
-| `block_id`             | INT32 (nullable) | No | Zero-based block index within the stage, selecting one block's turbined/outflow/generation/diversion override. `null` applies at the stage level. A non-null `min_storage_hm3`/`max_storage_hm3`/`filling_min_rate_m3s`/`water_withdrawal_m3s` value on the same row is rejected at validation — those four stay stage-level only, with no per-block variant. |
+| `block_id`             | INT32 (nullable) | No | Zero-based block index within the stage, selecting one block's turbined/outflow/generation/diversion/spillage override. `null` applies at the stage level. A non-null `min_storage_hm3`/`max_storage_hm3`/`filling_min_rate_m3s`/`water_withdrawal_m3s` value on the same row is rejected at validation — those four stay stage-level only, with no per-block variant. |
+
+A `min_diversion_m3s` override on a hydro that declares no `diversion`
+channel is rejected at validation — with no channel, the diversion column is
+pinned `[0, 0]`, making a positive floor infeasible. `min_diversion_m3s`,
+`min_spillage_m3s`, and `max_spillage_m3s` must each be non-negative, and a
+row combining `min_spillage_m3s` and `max_spillage_m3s` with `min_spillage_m3s
+> max_spillage_m3s` is rejected. See [Error Codes](/reference/error-codes) for
+the full failure-mode catalog.
 
 ---
 
@@ -1532,10 +1682,10 @@ positive, could never represent.
 
 Stage-varying flow bounds for pumping stations.
 
-| Column       | Type   | Required | Description                 |
-| ------------ | ------ | -------- | --------------------------- |
-| `station_id` | INT32  | Yes      | Pumping station ID          |
-| `stage_id`   | INT32  | Yes      | Stage ID                    |
+| Column               | Type   | Required | Description                 |
+| -------------------- | ------ | -------- | --------------------------- |
+| `pumping_station_id` | INT32  | Yes      | Pumping station ID          |
+| `stage_id`           | INT32  | Yes      | Stage ID                    |
 | `min_m3s`    | DOUBLE           | No       | Minimum pumping flow (m³/s)                                                                                          |
 | `max_m3s`    | DOUBLE           | No       | Maximum pumping flow (m³/s)                                                                                          |
 | `block_id`   | INT32 (nullable) | No       | Zero-based block index within the stage, selecting one block's `min_m3s`/`max_m3s` override. `null` applies at the stage level. |
@@ -1596,7 +1746,6 @@ constraints are added.
       "id": 1,
       "name": "cap_ant_t1",
       "expression": "anticipated_decision(2)",
-      "sense": "<=",
       "slack": { "enabled": false }
     }
   ]
@@ -1611,8 +1760,14 @@ constraints are added.
 | `name`        | string          | Yes      | Short name used in reports and log output.                                                      |
 | `expression`  | string          | Yes      | Expression string over variable references and constants (see below).                          |
 | `description` | string or null  | No       | Optional human-readable description.                                                            |
-| `sense`       | string          | Yes      | Comparison sense: `">="`, `"<="`, or `"=="`.                                                     |
 | `slack`       | object          | Yes      | Slack variable configuration: `enabled` (boolean) and `penalty` (number; required when `enabled` is `true`). |
+
+There is no `sense` field. A constraint's shape (`floor`/`cap`/`band`/`equality`)
+is derived from which of `bound_lower`/`bound_upper` are present on its
+activation-grid rows in `constraints/generic_constraint_bounds.parquet` below,
+not authored per-entry — see
+[Generic Constraints: Interval and shape derivation](/reference/generic-constraints/#interval-and-shape-derivation)
+for the full derivation and the optional inline relational-RHS shorthand.
 
 **Variable references.** An `expression` is a linear combination of
 coefficient-scaled variable references, e.g.
@@ -1639,14 +1794,104 @@ To constrain an anticipated thermal's commitment, use
 ### `constraints/generic_constraint_bounds.parquet`
 
 Stage-varying, optionally per-block RHS bound overrides for generic
-constraints declared in `constraints/generic_constraints.json`.
+constraints declared in `constraints/generic_constraints.json`. This table
+**is** the activation grid: a constraint is active at a given `(stage[,
+block])` if and only if a row exists for it here, regardless of whether that
+row supplies any bound value itself (an inline affine remainder can supply the
+value instead — see below).
 
 | Column          | Type             | Required | Description                                                                             |
 | --------------- | ---------------- | -------- | ------------------------------------------------------------------------------------------ |
 | `constraint_id` | INT32            | Yes      | Generic constraint ID                                                                    |
 | `stage_id`      | INT32            | Yes      | Stage ID                                                                                  |
 | `block_id`      | INT32 (nullable) | No       | Zero-based block index within the stage. `null` applies to all blocks of the given stage. |
-| `bound`         | DOUBLE           | Yes      | RHS value                                                                                 |
+| `bound_lower`   | DOUBLE (nullable) | No     | Lower interval endpoint. `null` when the constraint is unbounded below at this cell.      |
+| `bound_upper`   | DOUBLE (nullable) | No     | Upper interval endpoint. `null` when the constraint is unbounded above at this cell.       |
+
+The pair derives the constraint's shape: `bound_lower` alone is `floor`,
+`bound_upper` alone is `cap`, both present and different is `band`, both
+present and bit-identical is `equality`. A row with **both** endpoints `null`
+is rejected unless the constraint's own inline affine remainder (an inline
+`<=`/`>=`/`==` on the constraint's `expression`, or a `per_stage_block`
+`generic_parameters.json` reference) supplies at least one endpoint for that
+cell — the row still activates the cell, but contributes no value. A
+constraint with no rows at all here is rejected outright: the activation grid
+is mandatory even when every value comes from a remainder. See
+[Generic Constraints: The activation grid](/reference/generic-constraints/#the-activation-grid)
+for the full validation rules and worked examples.
+
+---
+
+### `constraints/generic_parameters.json`
+
+Named scalar parameters that can be referenced from generic-constraint coefficient
+expressions using the `@name` sigil. The file is optional; when absent, no
+parameters are loaded and any `@name` token in a constraint expression causes a
+load error.
+
+**Top-level structure:**
+
+```json
+{
+  "$schema": "https://docs.cobre-rs.dev/schemas/generic_parameters.schema.json",
+  "scalar_parameters": [
+    {
+      "id": 1,
+      "name": "rho_eq_h1",
+      "kind": "computed",
+      "computed_spec": { "tag": "equivalent_productivity", "hydro_id": 1 }
+    }
+  ]
+}
+```
+
+The top-level JSON key stays `"scalar_parameters"` — only the file's location
+and name changed.
+
+**Per-entry fields:**
+
+| Field           | Type    | Required | Description                                                                    |
+| --------------- | ------- | -------- | ------------------------------------------------------------------------------- |
+| `id`            | integer | Yes      | Unique parameter identifier (int32)                                            |
+| `name`          | string  | Yes      | Unique parameter name (non-empty, no leading/trailing whitespace)              |
+| `kind`          | string  | Yes      | One of `constant`, `per_stage`, `seasonal`, `computed`, `per_stage_block`      |
+| `value`         | number  | kind dep | Finite f64 value. Required for `constant`. Absent otherwise.                   |
+| `values`        | array   | kind dep | Array of `[index, value]` pairs. Required for `per_stage` and `seasonal`.       |
+| `computed_spec` | object  | kind dep | `{"tag": "<variant>", "hydro_id": <int>}`. Required for `computed`.            |
+| `block_values`  | array   | kind dep | Array of `[stage_id, block_id, value]` triples. Required for `per_stage_block`; each `(stage_id, block_id)` pair within an entry must be unique. |
+
+**`computed_spec` tag values:**
+
+| `tag`                      | Description                             |
+| -------------------------- | --------------------------------------- |
+| `equivalent_productivity`  | Equivalent productivity ρ_eq            |
+| `accumulated_productivity` | Accumulated cascade productivity ρ_acum |
+| `reference_volume`         | Reference reservoir volume V_ref        |
+| `reference_turbine`        | Reference turbined flow Q_ref           |
+| `min_storage`              | Minimum operational storage V_min       |
+| `max_storage`              | Maximum operational storage V_max       |
+| `specific_productivity`    | Specific productivity ρ_esp             |
+
+**Validation:**
+
+- `id` values must be unique across all entries.
+- `name` values must be unique (case-sensitive), non-empty, and have no leading
+  or trailing whitespace.
+- `kind` must be exactly one of the five legal values.
+- For `per_stage`: `values` pairs must have contiguous `stage_id` keys starting
+  at 0; duplicates and gaps are rejected.
+- For `seasonal`: `season_id` keys within an entry must be unique; duplicates
+  are rejected.
+- For `computed`: `computed_spec` must be present with a valid `tag` and integer
+  `hydro_id`. The referenced hydro must exist in `hydros.json`.
+- For `per_stage_block`: `block_values` must be present, and each
+  `(stage_id, block_id)` pair within an entry must be unique; duplicates are
+  rejected.
+- Unknown JSON fields on any entry are rejected immediately.
+
+See [Generic Constraints: the five parameter kinds](/reference/generic-constraints/#generic_parametersjson-the-five-parameter-kinds)
+for the authoring narrative, the `per_stage_block` worked example, and a note
+on the vendored schema's stale `kind` description.
 
 ---
 
@@ -1703,6 +1948,6 @@ overridden per stage for buses.
 
 | Column             | Type   | Required | Description                            |
 | ------------------ | ------ | -------- | -------------------------------------- |
-| `source_id`        | INT32  | Yes      | Non-controllable source ID             |
+| `ncs_id`           | INT32  | Yes      | Non-controllable source ID             |
 | `stage_id`         | INT32  | Yes      | Stage ID                               |
 | `curtailment_cost` | DOUBLE | No       | Curtailment penalty override (USD/MWh) |
