@@ -42,7 +42,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 
 const EXPECTED_COUNT = 18;
-const DEFAULT_REF = "v0.14.0";
+const DEFAULT_REF = "v0.14.1";
 // Ordered candidates for the schemas tree in cobre: `schemas/` from the mdBook
 // retirement (v0.11.0) onward, `book/src/schemas/` on earlier tags.
 const SCHEMAS_SUBPATHS = ["schemas", "book/src/schemas"];

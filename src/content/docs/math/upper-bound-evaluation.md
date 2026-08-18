@@ -31,7 +31,7 @@ Cobre computes this per-iteration upper bound via one of two forward-pass mechan
 A third mechanism — a vertex-based concave inner approximation of the cost-to-go function (**SIDP**) — is a **reserved, not-yet-implemented** target design, described in sections 3–8 (with its computational overhead in section 10). Once built, it would evaluate the upper bound independently of the forward pass's sampling mode.
 
 :::note[Risk-averse objectives]
-Both implemented mechanisms above are defined for the **expectation** objective: the exact bound sums cost weighted by leaf-path probability, and the statistical estimator's confidence interval assumes an unbiased sample mean of the risk-neutral expected cost. Neither is a valid upper bound on a risk-averse measure such as CVaR — see [Risk Measures](/math/risk-measures). The reserved inner approximation (sections 3–8) is designed to remain valid under any risk measure once implemented.
+The **statistical** Monte-Carlo estimator is defined for the **expectation** objective only: its confidence interval assumes an unbiased sample mean of the risk-neutral expected cost, and it is not a valid upper bound on a risk-averse measure. The **exact** enumerated bound extends to a risk-averse measure when that measure is a CVaR applied **uniformly at every stage**: because the enumeration visits every node, the bound is then evaluated as a nested, time-consistent risk recursion over the scenario tree (section 2.1) rather than a probability-weighted leaf sum, and it stays exact. A **stage-varying** measure is outside both exact forms — see [Risk Measures](/math/risk-measures). The reserved inner approximation (sections 3–8) is designed to remain valid under any risk measure and any forward sampling mode once implemented.
 :::
 
 This chapter also describes a distinct, later-phase estimator: the post-training out-of-sample **simulation** procedure (section 11), which reruns the trained policy on scenarios independent of the training tree, in a **sampled** and a **census** variant. That estimator is a diagnostic on the finished policy — it is not part of the per-iteration training loop the mechanisms above feed, and it is not consumed by any stopping rule.
@@ -52,11 +52,39 @@ $$
 
 Because the enumeration is exhaustive rather than sampled, $\bar{z}_{\text{exact}}$ is the exact expectation of total cost under the current policy — not an estimate of it. Its standard deviation and 95% confidence-interval half-width are consequently **identically zero**: a deduplicated enumeration carries no sampling distribution to estimate a spread over.
 
-$\bar{z}_{\text{exact}}$ is defined for the **expectation** objective; see [Risk Measures](/math/risk-measures) for why a risk-averse measure changes this.
+The bound $\bar{z}_{\text{exact}} = \sum_{\ell} P(\ell)\, C(\ell)$ above is the exact upper bound under an **expectation** objective. Under a CVaR measure held uniform across every stage, the same exhaustive enumeration yields an exact bound of a different shape — a nested risk recursion — developed in section 2.1; see [Risk Measures](/math/risk-measures) for the risk-measure background.
 
 Contrast with the statistical mechanism (section 1): a sampled forward pass computes the same weighted-sum _form_ — sample weight $1/N$ per scenario — but that sum is a Monte Carlo estimator of the expectation, carrying genuine sampling error. Only the enumerated forward pass's weights (the true leaf-path probabilities) make the sum exact rather than an estimate.
 
 This is the **training-phase**, per-iteration mechanism: it is evaluated once per training iteration and feeds the gap computation (section 9). It is distinct from the post-training out-of-sample simulation's census variant (section 11.4), which computes the same probability-weighted-sum form over an independently drawn simulation population, evaluated once after training completes.
+
+### 2.1 Nested Risk-Adjusted Exact Bound (uniform CVaR)
+
+When every stage applies the **same** CVaR measure $\rho = (1-\lambda)\,\mathbb{E} + \lambda\,\mathrm{CVaR}_\alpha$, the probability-weighted path sum of section 2 is no longer the quantity the policy optimizes. SDDP minimizes a **nested**, time-consistent risk functional,
+
+$$
+\rho\big[\,c_1 + \rho[\,c_2 + \cdots + \rho[\,c_T\,]\,]\,\big],
+$$
+
+in which the measure is applied stage by stage, not once to whole-path totals. The exact upper bound must be evaluated in that same nested form. Over the enumerated scenario tree, let node $n$ carry immediate cost $c(n)$ at stage $\mathrm{stage}(n)$, with children $\mathrm{ch}(n)$ reached under conditional probabilities $q_{n \to n'}$. Define, from the leaves up,
+
+$$
+\tilde{V}(n) = d_{1 \to \mathrm{stage}(n)}\, c(n) \;+\; \rho_{\,n' \in \mathrm{ch}(n)}\!\big[\,\tilde{V}(n')\,\big],
+\qquad
+\tilde{V}(\ell) = d_{1 \to T}\, c(\ell)\ \ \text{at a leaf},
+$$
+
+where $\rho_{\,n' \in \mathrm{ch}(n)}[\cdot]$ applies the stage measure to the children's values weighted by $q_{n \to n'}$ — the same risk aggregation the [cut construction](/math/cut-management) applies in the backward pass. The exact upper bound is the value at the root:
+
+$$
+\bar{z}_{\text{exact}} = \tilde{V}(\text{root}).
+$$
+
+It is exact for the same reason the expectation form is — the recursion visits every node of the deduplicated enumeration exactly once, so it carries no sampling distribution, and its standard deviation and confidence-interval half-width are identically zero.
+
+**Why the nested form, not the path-total form.** Applying $\rho$ once to the distribution of whole-path totals $C(\ell)$ — an end-of-horizon form — is _not_ a valid upper bound on the nested objective. The nested functional dominates the end-of-horizon one, $\rho_{\text{nested}} \ge \rho_{\text{end-of-horizon}}$, so the path-total quantity can fall **below** the risk-averse [lower bound](/math/risk-measures). Fed to the [gap rule](/math/stopping-rules), it would then produce a persistent negative gap that halts training at a spurious lower/upper crossover before the policy has converged. The nested $\tilde{V}(\text{root})$ instead satisfies $\tilde{V}(\text{root}) \ge V^\star \ge \underline{z}$ at every iteration, so the gap stays non-negative and closes only at true convergence.
+
+Under expectation — or a CVaR with $\lambda = 0$, which is expectation-equivalent — the measure is linear, the nesting telescopes, and $\tilde{V}(\text{root})$ collapses exactly to the probability-weighted path sum $\sum_{\ell} P(\ell)\, C(\ell)$ of section 2; the two forms coincide.
 
 ## 3 Vertex-Based Inner Approximation
 

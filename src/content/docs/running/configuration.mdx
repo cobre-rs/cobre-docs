@@ -184,13 +184,17 @@ either arm is satisfied, not both. The gap itself is
 - [`training.selection`](#trainingselection)`.method` is `"enumerated"` (the
   forward pass exhaustively enumerates the scenario tree, so the upper bound
   is exact rather than a sampled estimate).
-- Every stage uses the expectation risk measure (`stages.json`
-  `risk_measure: "expectation"`; a `cvar` measure with `lambda: 0` is
-  expectation-equivalent and also admissible).
+- The risk measure is **uniform across every stage**: either
+  `risk_measure: "expectation"` at every stage, or the same `cvar` measure
+  (identical `lambda` and `alpha`) at every stage in `stages.json` (a `cvar`
+  with `lambda: 0` is expectation-equivalent). Under a uniform `cvar` the
+  exact upper bound is computed as a nested, time-consistent risk recursion
+  over the enumerated tree, so it still brackets the risk-averse lower bound.
 
-Under `sampled` selection, or an effectively risk-averse measure at any
-stage, the `gap` rule is rejected at load with a validation error — the
-exact-bound comparison it depends on is unavailable in those cases.
+Under `sampled` selection, or a **stage-varying** measure (the risk measure
+differs across stages), the `gap` rule is rejected at load with a validation
+error — the exact-bound comparison it depends on is unavailable in those
+cases.
 
 :::caution[Migrating from the removed `simulation` stopping rule]
 The `simulation` stopping rule has been **removed**: a stopping rule with

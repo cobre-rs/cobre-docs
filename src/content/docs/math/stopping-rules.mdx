@@ -117,12 +117,12 @@ The absolute arm compares the gap directly against `tolerance`, in the objective
 
 **Admissibility**: the comparison above is only valid when the upper bound it uses is the *exact* bound, not a statistical estimate. Both of the following must hold:
 
-- The forward pass [enumerates the scenario tree](/math/policy-graphs) exhaustively rather than sampling it, so the upper bound is the exact $\sum_{\ell} P(\ell)\, C(\ell)$ over every scenario $\ell$, not a sampled approximation of it.
-- Every stage uses the **expectation** risk measure. A CVaR measure with a zero risk-aversion weight is expectation-equivalent and remains admissible; a CVaR measure with a positive risk-aversion weight at any stage does not.
+- The forward pass [enumerates the scenario tree](/math/policy-graphs) exhaustively rather than sampling it, so the upper bound is exact — carrying no sampling error — rather than a sampled approximation.
+- The risk measure is **uniform across all stages**: either expectation at every stage, or one CVaR measure (the same risk-aversion weight and tail level) at every stage. Under expectation the exact bound is the probability-weighted cost $\sum_{\ell} P(\ell)\, C(\ell)$ over every scenario $\ell$; under a uniform CVaR it is the nested, time-consistent risk bound over the same enumerated tree ([Upper Bound Evaluation §2](/math/upper-bound-evaluation)). A **stage-varying** measure — a risk-aversion weight or tail level that differs across stages — is not admissible, because no single measure then aggregates the tree.
 
-Under a sampled forward pass, or an effectively risk-averse measure at any stage, the exact-bound comparison the rule depends on is unavailable, and the gap rule is rejected at setup with a named validation error rather than silently evaluating against an unsound comparison.
+Under a sampled forward pass, or a stage-varying measure, the exact-bound comparison the rule depends on is unavailable, and the gap rule is rejected at setup with a named validation error rather than silently evaluating against an unsound comparison.
 
-**Why recommended**: unlike bound stalling (a proxy for convergence) or the iteration and time limits (safety bounds unrelated to convergence), a closed gap is a direct optimality certificate under the exact-bound, expectation-only regime the rule requires.
+**Why recommended**: unlike bound stalling (a proxy for convergence) or the iteration and time limits (safety bounds unrelated to convergence), a closed gap is a direct optimality certificate under the exact-bound regime the rule requires — an enumerated forward pass with a risk measure held uniform across stages.
 
 :::caution[Known discrepancy: convergence flag]
 A closed exact gap **is** a genuine optimality certificate — the deterministic upper bound has met the lower bound, so the policy already realizes that bound. The machine-readable convergence indicator, however, is set only when training stops via the bound-stalling rule; a run that terminates via the gap rule reports that indicator unset even though the exact gap has closed. This is a known discrepancy between the indicator and the underlying optimality guarantee, tracked as an upstream defect in the training-output layer rather than a limitation of the gap rule itself.
