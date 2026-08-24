@@ -139,7 +139,7 @@ There is **no** `block_mode`, block-count, or block-duration check anywhere in p
 
 ### 4.3 Training provenance
 
-For traceability, `policy/metadata.json` records the mode the policy was trained under in `training_block_mode` (and `training_block_mode_per_stage` when it varies across stages). This is provenance only — it does not gate loading.
+For traceability, the block mode a policy was trained under is recorded as provenance in its checkpoint (per stage when it varies across stages). This is descriptive only — it does not gate loading, and a policy stays portable across block modes and counts.
 
 ## 5. Note on Fine-Grained Temporal Resolution
 

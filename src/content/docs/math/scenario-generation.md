@@ -459,9 +459,13 @@ scheme. When `simulation.scenario_source` is absent, it falls back to
 
 ### 4.1 External Scenario Sources
 
-Cobre supports external (deterministic) scenarios as an alternative forward
-pass noise source. External scenarios can drive the forward pass in **both
-training and simulation**.
+Cobre supports external scenarios — a set of pre-generated realizations, one
+per scenario index — as an alternative forward-pass noise source. External
+scenarios can drive the forward pass in **both training and simulation**. A
+class's realized statistics (its mean and standard deviation) are derived from
+the external samples **themselves**, not from the seasonal-statistics files —
+including the degenerate deterministic case, a constant column with standard
+deviation zero (see §4.4).
 
 | Use Case           | Description                                |
 | ------------------ | ------------------------------------------ |
@@ -486,8 +490,15 @@ The lifecycle is:
 
 1. **PAR fitting** — Fit a PAR model to the external scenario data (or
    historical inflow data), treating the external values as a synthetic
-   history. The fitting follows the same procedure as section 1.3: seasonal
-   statistics and AR coefficients are estimated from the external data.
+   history. The class's **mean and standard deviation are estimated from the
+   external samples themselves** (a reduction over the file's own cells) — the
+   same moments the forward-pass standardization uses, so the two never
+   disagree about whether a series is deterministic. An inflow class with a
+   genuine autoregressive model (order $> 0$) keeps its declared AR
+   coefficients; only its seasonal moments, and the whole model of an order-0
+   inflow / load / NCS class, are sample-derived. Because the moments come from
+   the samples, no separate seasonal-statistics file is consulted under this
+   scheme.
 2. **Opening tree generation** — Generate the fixed opening tree (section 2.3)
    using noise from the fitted PAR model. The branchings reflect the
    distributional characteristics of the external scenarios.
@@ -546,6 +557,25 @@ lag buffer for the next):
 
 After inversion, a JSON validation report is emitted with noise statistics
 (mean, std, min, max, extreme count), warnings, and an overall status.
+
+### 4.4 Deterministic (σ = 0) External Columns
+
+A class's external column may be **constant** — every realization identical,
+standard deviation zero. Because the class statistics are derived from the
+samples themselves (§4.1), Cobre reads that as a genuinely deterministic series
+rather than a malformed one, and **accepts** it for load, for non-controllable
+sources, and for an inflow with an **order-0** model (no autoregressive lag and
+no annual component): the deterministic base is exactly that constant value.
+
+A constant column is **rejected** only for an inflow whose model is
+autoregressive of order $> 0$. A single deterministic value cannot stand in for
+such a model: it would have to equal the model's own stage-by-stage
+deterministic PAR output — which depends on the evolving lag state and is not
+reconstructed from a flat column — so the load fails, naming the class, stage,
+and entity. This is distinct from the §4.3 inversion anchor check: it is a
+load-time admissibility rule on the column, not a per-stage residual test. (The
+concrete rejection message is a software-layer concern — see
+[Error Codes](/reference/error-codes).)
 
 #### x₀ consistency under historical replay
 

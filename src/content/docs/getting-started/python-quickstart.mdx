@@ -145,12 +145,17 @@ is `delivery_date` — a `YYYYMMDD` calendar date — which replaced the former
 ### Write a Checkpoint (`write_policy_checkpoint`)
 
 ```python
-write_policy_checkpoint(path, stage_cuts, metadata, stage_bases=None, stage_states=None)
+write_policy_checkpoint(path, stage_cuts, metadata, stage_bases=None, stage_states=None, inflow_lag_depth=None)
 ```
 
-`stage_cuts` and `metadata` mirror the `load_policy` shapes above, so a
-checkpoint loaded from disk round-trips through Python without reshaping.
-`write_policy_checkpoint` writes `metadata.json`, `cuts/`, `basis/`, and
+`stage_cuts` and `metadata` mirror the `load_policy` shapes above (the dict
+shape is unchanged from earlier releases), so a checkpoint loaded from disk
+round-trips through Python without reshaping. `inflow_lag_depth`, when set to
+`N > 0`, reserves `N` canonical `HydroInflowLag` state slots per storage hydro
+and places each cut's `inflow_lag_coefficients` at their `(hydro, depth)`
+positions (for authoring a boundary policy of a case with no autoregressive
+inflow model); absent or `0` it is byte-identical.
+`write_policy_checkpoint` writes `manifest.bin`, `cuts/`, `basis/`, and
 `states/` directly under `path` — pass a `policy/`-style directory as `path`,
 then load with `load_policy` on its *parent* directory (which joins
 `policy_subdir="policy"` onto it).

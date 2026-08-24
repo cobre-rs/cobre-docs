@@ -127,6 +127,18 @@ compose without double-counting the same delivered energy — the same
 discipline the in-study fishing and objective machinery already applies to
 delivery inside the horizon.
 
+A commitment the plant decided **before the study** whose delivery also falls
+past the horizon is priced differently again. It is not a decision the study
+makes — the quantity is fixed exogenously, already committed — so it carries
+neither a decision column nor a coordinate of $\beta$. Its cost is a **sunk
+cost**, folded once, at load, as a constant into the intercept $\alpha$ of every
+boundary cut whose delivery date it covers. Moving only the intercept and never
+a coefficient, it shifts the terminal future-cost floor by a fixed amount
+without changing how any live state is priced — the accounting a commitment
+already paid for before the study demands. Such a pre-decided post-horizon
+commitment is reported at its real delivery date rather than left implicit in
+the shifted intercept.
+
 ## 4. Calendar Reconciliation (Fan-Out)
 
 An upstream run's terminal state is expressed on its own calendar, which need
@@ -142,15 +154,30 @@ the source never priced, is renormalized over only the span the source
 actually covers, so the fanned-out coefficient never overstates or
 understates the value the source expresses.
 
+The source and the current study need not even model the **same set of state
+coordinates**. A source trained without in-transit buckets, or with monthly
+anticipated slots where the current study carries weekly ones, presents a
+terminal state of a different shape. Reconciliation therefore matches each
+target coordinate to the source **by entity identity and delivery date**, never
+by position in the state vector: a storage coordinate binds to the same
+reservoir, an anticipated slot to the same plant-and-delivery-date, an
+in-transit bucket to the same arc-and-maturity. A source coordinate the current
+study does not model has nowhere to land and is **dropped** — counted, per
+family, in the reconciliation summary below rather than silently discarded —
+and the load still succeeds. A differing state dimension is thus no longer a
+rejection; only a coordinate the current study models but the source cannot
+identify is defaulted rather than sourced.
+
 The fan-out is produced once, at load, and its result is summarized rather
 than left implicit: a **per-family reconciliation summary** reports, for
 storage, for inflow lags, for in-transit buckets, and for anticipated
 commitments, how many target coordinates were copied identically, how many
-were fanned out across more than one source month, and how many had no
-corresponding source information and were defaulted rather than guessed. The
+were fanned out across more than one source month, how many had no
+corresponding source information and were defaulted rather than guessed, and
+how many source coordinates the current study does not model and dropped. The
 summary is a load-time diagnostic, not a state variable — it exists so an
-inconsistency between the source and current calendars is visible rather than
-silently absorbed.
+inconsistency between the source and current state or calendars is visible
+rather than silently absorbed.
 
 The reconciliation source is required to resolve to a **single leaf pool**:
 the upstream run's terminal state must trace back to exactly one unambiguous

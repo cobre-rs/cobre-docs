@@ -554,8 +554,7 @@ travel-time arcs, and recent observations at the start of the study.
 | `filling_storage`     | Yes      | Array of `{ "hydro_id": integer, "value_hm3": number }` entries for filling hydros                                |
 | `past_defluences`     | No       | Array of windowed pre-study release records seeding the in-transit buckets of a declared travel-time arc (see below)  |
 | `recent_observations` | No       | Array of observed inflow entries for mid-season study starts (see below)                                          |
-| `past_anticipated_commitments` | No | Array of windowed committed-MW records for anticipated thermals, pre-study (see below) |
-| `future_anticipated_deliveries` | No | Array of windowed delivery-bound records for anticipated thermals, post-horizon (see below) |
+| `past_anticipated_commitments` | No | Array of windowed committed-MW records for anticipated thermals — the plant's pre-study decisions, whether they deliver in-study or past the horizon (see below) |
 
 Each `hydro_id` must be unique within its array and must not appear in both
 `storage` and `filling_storage`. All `value_hm3` values must be non-negative.
@@ -607,10 +606,12 @@ and the most-negative value's hydro, so a genuinely sign-flipped series still
 stands out. Optional; defaults to an empty array when absent. Existing cases
 without this field are unaffected.
 
-**`past_anticipated_commitments`** supplies the pre-study committed MW rate for
-an anticipated thermal plant — the left-boundary counterpart to
-`future_anticipated_deliveries` below. Each entry is a dated window carrying a
-constant rate:
+**`past_anticipated_commitments`** supplies the externally-decided committed MW
+rate for an anticipated thermal plant — every delivery the plant **decided
+before the study begins**, whether that delivery matures inside the horizon
+(the classic pre-horizon ring seed) or past it (the DECOMP _já-comandada_ case,
+a commitment already commanded before the study whose delivery lands beyond the
+last stage). Each entry is a dated window carrying a constant rate:
 
 | Field        | Type    | Description                                                                          |
 | ------------ | ------- | ------------------------------------------------------------------------------------- |
@@ -619,16 +620,23 @@ constant rate:
 | `end_date`   | string  | End of the commitment window (exclusive), ISO 8601 YYYY-MM-DD; must be after `start_date` |
 | `value_mw`   | number  | Committed MW rate held constant over the window; finite                               |
 
-A plant's windows must **tile its leading calendar-derived delivery stages
-exactly** — coverage `1.0`, no gap, no overlap, and none reaching past the
-plant's pre-study delivery horizon; a stretch with no scheduled commitment
-still needs an explicit `0.0`-rate window rather than a gap left to be
-inferred. Each `value_mw` must lie within the plant's `[min_generation_mw,
-max_generation_mw]` bounds and, if the plant declares a commissioning window,
-mature inside it. The values are **sunk cost**: they never enter the study
-objective. Windows for the same `thermal_id` must not overlap (adjacent
-ranges where `start_date == previous end_date` are accepted). Optional;
-defaults to an empty array when no anticipated thermals are present.
+A plant's windows must **tile every delivery stage the plant decided before
+the study, exactly** — coverage `1.0`, no gap, no overlap. Those stages may
+fall on **either side** of the horizon: the leading calendar-derived delivery
+stages inside the study, and any post-horizon stages of a _já-comandada_
+delivery. A window may **never** cover a stage the study itself decides, and a
+single window may not straddle the horizon end — split it into an in-study
+window ending at the horizon and a post-study window starting there. A stretch
+with no scheduled commitment still needs an explicit `0.0`-rate window rather
+than a gap left to be inferred. Each `value_mw` must lie within the plant's
+`[min_generation_mw, max_generation_mw]` bounds and, if the plant declares a
+commissioning window, mature inside it. The values are **sunk cost**: they
+never enter the study objective — a post-horizon window is priced against the
+terminal boundary by a constant fold into the future-cost cut intercepts, and
+echoed at its real delivery date in `anticipated/fixed_deliveries.parquet`.
+Windows for the same `thermal_id` must not overlap (adjacent ranges where
+`start_date == previous end_date` are accepted). Optional; defaults to an empty
+array when no anticipated thermals are present.
 
 **The old positional per-lead-slot MW-array shape is no longer accepted** —
 the file's `deny_unknown_fields` contract rejects a deck still carrying that
@@ -649,39 +657,19 @@ the delivery-stage mechanics this tiles against.
 }
 ```
 
-**`future_anticipated_deliveries`** declares in-study decided commitments for
-an anticipated thermal plant, delivered **after the study horizon** — the
-right-boundary counterpart to `past_anticipated_commitments` above:
-
-| Field            | Type    | Description                                                                             |
-| ---------------- | ------- | ----------------------------------------------------------------------------------------- |
-| `thermal_id`     | integer | Anticipated thermal plant identifier; must reference a thermal declaring `anticipated_config` |
-| `delivery_start` | string  | Start of the delivery window (inclusive), ISO 8601 YYYY-MM-DD                             |
-| `delivery_end`   | string  | End of the delivery window (exclusive), ISO 8601 YYYY-MM-DD; must be after `delivery_start` |
-| `min_mw`         | number  | Lower bound of the delivered MW rate over the window; finite                              |
-| `max_mw`         | number  | Upper bound of the delivered MW rate over the window; finite, `>= min_mw` (`min_mw == max_mw` pins a fixed commitment) |
-
-Windows for the same `thermal_id` must not overlap (adjacent ranges accepted).
-Each window must resolve into **exactly one** declared post-study stage in
-`post_study_stages.json` — see [`post_study_stages.json`](#post_study_stagesjson)
-below and [Post-Study Boundary](/math/post-study-boundary) for the boundary
-formulation. Optional; defaults to an empty array when absent. A non-empty
-`future_anticipated_deliveries` with no `post_study_stages.json` file present
-is rejected at load.
-
-```json
-{
-  "future_anticipated_deliveries": [
-    {
-      "thermal_id": 2,
-      "delivery_start": "2026-09-05",
-      "delivery_end": "2026-09-12",
-      "min_mw": 0.0,
-      "max_mw": 350.0
-    }
-  ]
-}
-```
+:::note[Post-horizon deliveries have two declaration surfaces]
+A commitment **decided in-study** whose delivery matures after the horizon is
+no longer declared here. It is bounded and costed **solely** by a
+`thermal_bounds[]` cell in [`post_study_stages.json`](#post_study_stagesjson)
+below — the study itself decides the MW, so only its price and capability
+need declaring. The removed `future_anticipated_deliveries[]` field carried
+that role; an `initial_conditions.json` still declaring it is rejected by the
+file's deny-unknown-fields contract. A commitment **decided before the study**
+that delivers post-horizon (_já-comandada_) is instead a
+`past_anticipated_commitments` window extending past the horizon end (above).
+See [Post-Study Boundary](/math/post-study-boundary) for the boundary
+formulation both feed.
+:::
 
 Example:
 
@@ -711,12 +699,13 @@ Example:
 ### `post_study_stages.json`
 
 The post-study boundary calendar: a sequence of post-horizon stages plus a
-per-`(thermal, post-study stage)` cost and delivery-bound table that
-`future_anticipated_deliveries` windows (declared in
-[`initial_conditions.json`](#initial_conditionsjson) above) resolve against by
-date. Optional and inert when absent; **required** once any
-`future_anticipated_deliveries` window is declared — a non-empty array with no
-`post_study_stages.json` file present is rejected at load. See
+per-`(thermal, post-study stage)` cost and delivery-bound table. Its
+`thermal_bounds[]` table is the **sole surface** for declaring the bound and
+cost of a commitment an anticipated thermal decides **in-study** but delivers
+after the horizon (the boundary prices it on the extended calendar). Optional
+and inert when absent; **required** once any anticipated thermal's lead reaches
+a post-study stage — a missing cell for a reached stage is rejected at load,
+naming the plant and the post-study stage index. See
 [Post-Study Boundary](/math/post-study-boundary) for the boundary formulation
 this file feeds.
 
@@ -731,9 +720,9 @@ Stages are **date-contiguous** (each stage's implicit `end_date` equals the
 next stage's `start_date`) and the **first `start_date` must equal the study
 horizon end** — the date immediately after the last in-study stage. Post-study
 stages are **boundary-only**: they are never dispatched, never a study stage,
-and never carry Benders cuts — they exist solely to give
-`future_anticipated_deliveries` windows a calendar to resolve against. No two
-stages may share a `start_date`.
+and never carry Benders cuts — they exist solely to give a post-horizon
+delivery a calendar position to be priced against. No two stages may share a
+`start_date`.
 
 **`thermal_bounds[]`** — per-`(thermal, post-study stage)` cost and delivery
 capability:
@@ -746,10 +735,11 @@ capability:
 | `min_mw`                 | number  | Lower bound of the delivered MW rate at this cell; finite                             |
 | `max_mw`                 | number  | Upper bound of the delivered MW rate at this cell; finite, `>= min_mw`                |
 
-No two rows may share a `(thermal_id, post_study_stage_index)` pair. Each
-[`future_anticipated_deliveries`](#initial_conditionsjson) window must resolve
-into exactly one declared post-study stage with a matching `thermal_bounds`
-row whose delivery capability intersects the commitment interval.
+No two rows may share a `(thermal_id, post_study_stage_index)` pair. Every
+post-study stage an anticipated thermal's lead reaches must carry a matching
+`thermal_bounds` row: the delivered commitment is bounded by that cell's
+`[min_mw, max_mw]` and priced at its `cost_per_mwh` against the extended
+horizon.
 
 ```json
 {
@@ -1383,7 +1373,10 @@ from when those files are absent.
 
 ### `scenarios/inflow_seasonal_stats.parquet`
 
-PAR(p) model seasonal statistics for each (hydro plant, stage) pair.
+PAR(p) model seasonal statistics for each (hydro plant, stage) pair. Not
+consulted for a class sampled under the `external` scheme — there the mean and
+standard deviation are derived from the external scenario file itself, so this
+file (and its load/NCS counterparts) is optional when every class is external.
 
 | Column     | Type   | Required | Description                                                 |
 | ---------- | ------ | -------- | ----------------------------------------------------------- |

@@ -95,6 +95,14 @@ pre-generated opening tree).
 
 Valid values for `"scheme"`: `"in_sample"`, `"out_of_sample"`, `"historical"`, `"external"`.
 
+Under the `"external"` scheme a class's mean and standard deviation are derived
+from its external scenario file itself, so that class's seasonal-statistics
+input (`scenarios/inflow_seasonal_stats.parquet`, `load_seasonal_stats.parquet`,
+or `non_controllable_stats.parquet`) is **optional** — it is not consulted when
+the class is external everywhere. A constant (σ = 0) external column is accepted
+for load, NCS, and an order-0 inflow model; for an autoregressive inflow model
+of order `> 0` it is rejected (see [Error Codes](/reference/error-codes)).
+
 Example — out-of-sample inflow with in-sample load and NCS:
 
 ```json

@@ -43,6 +43,7 @@ will not produce `simulation/pumping_stations/`.
     cut_selection/
       iterations.parquet         (when cut_selection is enabled)
   policy/
+    manifest.bin                     # study-global; FlatBuffers, written last
     cuts/                            # pool-keyed
       000.bin
       001.bin
@@ -53,7 +54,6 @@ will not produce `simulation/pumping_stations/`.
       001.bin
       ...
       NNN.bin
-    metadata.json
     states/                          # stage-keyed; when exports.states = true
       000.bin
       001.bin
@@ -102,7 +102,7 @@ will not produce `simulation/pumping_stations/`.
     transit_seed/                   # when a travel-time arc is declared
       scenario_id=0000/data.parquet
       ...
-    anticipated_lanes/               # when a post-study delivery window is declared
+    anticipated_lanes/               # when the study declares post_study_stages
       scenario_id=0000/data.parquet
       ...
     violations/
@@ -112,6 +112,8 @@ will not produce `simulation/pumping_stations/`.
     solver/
       iterations.parquet
       retry_histogram.parquet
+  anticipated/                       # when a pre-study-decided post-horizon commitment exists
+    fixed_deliveries.parquet
   generic_constraints/               # when the study has generic constraints
     resolved_echo.parquet
   hydro_models/
@@ -707,7 +709,13 @@ one file per pool (`cuts/<pool_id>.bin`), zero-padded to three digits (e.g.
 plain stage chain, pool id equals stage index, so file names look the same as
 before — the general node -> pool mapping (for a branching policy graph) is
 resolved through the `graph_manifest` in
-[`policy/metadata.json`](#policymetadatajson), never trusted from the file name.
+[`policy/manifest.bin`](#policymanifestbin), never trusted from the file name.
+
+Each `cuts/<pool>.bin` is **self-describing**: alongside its cuts it carries its
+own `state_dimension`, its own `cost_scale_factor` (the authoritative load-time
+scale for this pool — see [Cost-Scale Canonicalization](/running/policy-management/#cost-scale-canonicalization)),
+and its own graph identity (node and graph-stage ids), so no field of the
+study-global manifest is needed to interpret a pool's coefficients.
 
 The binary is not human-readable. The logical record structure for each cut
 contained in the file is:
@@ -719,7 +727,7 @@ contained in the file is:
 | `iteration`          | uint32    | Training iteration that generated this cut.                                                                                          |
 | `forward_pass_index` | uint32    | Forward pass index within the generating iteration.                                                                                  |
 | `intercept`          | float64   | Pre-computed cut intercept: `alpha - beta' * x_hat`, where `x_hat` is the state at the generating forward pass node.                 |
-| `coefficients`       | float64[] | Gradient coefficient vector. Length equals the state dimension — the number of entries in the embedded entity manifest below, also the pool's own `state_dimension` (per-pool, not a `policy/metadata.json` field). |
+| `coefficients`       | float64[] | Gradient coefficient vector. Length equals the state dimension — the number of entries in the embedded entity manifest below, also the pool's own `state_dimension` (per-pool, not a `policy/manifest.bin` field). |
 | `is_active`          | bool      | Whether this cut is currently active in the LP. Inactive cuts are retained for potential reactivation by the cut selection strategy. |
 
 Each `NNN.bin` also embeds a **per-slot entity manifest** — one entry per
@@ -742,11 +750,13 @@ The encoding uses the FlatBuffers runtime builder API (little-endian, no
 reflection, no generated code). Field order in the binary matches the
 declaration order above.
 
-Pre-0.14 policy checkpoints are rejected outright: the `format_version`
-marker is checked before any payload is decoded, so any pre-marker artifact
-fails with a named error rather than being read positionally. There is no
-converter — retrain from scratch, or resume from a checkpoint written by a
-0.14+ release.
+Policy checkpoints written by an earlier release are rejected outright: the
+`format_version` marker in `policy/manifest.bin` is read before any payload is
+decoded, and a checkpoint with no `manifest.bin` (every pre-0.15 checkpoint,
+whose study-global metadata lived in a now-removed `policy/metadata.json`) fails
+with a named error rather than being read positionally. There is no converter —
+retrain from scratch, re-export, or resume from a checkpoint written by this
+release.
 
 ### `policy/basis/NNN.bin`
 
@@ -784,24 +794,30 @@ they serve as a diagnostic and analysis artifact.
 | ----------------- | --------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `stage_id`        | uint32    | Stage index (0-based).                                                                                                                                                                 |
 | `node_id`         | int32     | Policy-graph node identity — the declared node id on a branching graph. Sentinel `-1` when absent (a caller that never resolved one, or a pre-`id:5` checkpoint). Distinct from `stage_id` the moment a graph carries more than one node per stage. |
-| `state_dimension` | uint32    | Length of each state vector; equals the writing pool's own `state_dimension` (per-pool, not a `policy/metadata.json` field).                                                          |
+| `state_dimension` | uint32    | Length of each state vector; equals the writing pool's own `state_dimension` (per-pool, not a `policy/manifest.bin` field).                                                          |
 | `count`           | uint32    | Number of state vectors stored for this stage.                                                                                                                                          |
 | `data`            | float64[] | Flat array of `count * state_dimension` elements, row-major (one state per row).                                                                                                       |
 
-### `policy/metadata.json`
+### `policy/manifest.bin`
 
-Small JSON file describing the checkpoint at a high level. Human-readable and
-machine-readable by tooling that inspects policy files. Restructured in
-v0.14.0 around a neutral core (format/provenance/graph descriptors) plus a
-namespaced `producer` block for the training algorithm's own recorded state,
-so a reader that does not know the producer can still read the core from the
-core's own vocabulary.
+The study-global checkpoint manifest: a FlatBuffers root (the
+`CheckpointManifest` table, `file_identifier "CBVF"`) describing the checkpoint
+at a high level, written **last** as the commit signal and read **first** behind
+the `format_version` gate. It replaces the hand-editable `policy/metadata.json`
+of earlier releases; every study-global fact a load needs — the study graph, the
+stage count, and the producer provenance — lives here. Structured around a
+neutral core (format/provenance/graph descriptors) plus a namespaced `producer`
+block for the training algorithm's own recorded state, so a reader that does not
+know the producer can still read the core from the core's own vocabulary. The
+Python bindings read and write it as a dict of the shape below (see
+[`load_policy`](/getting-started/python-quickstart/)); the field names are the
+dict keys.
 
 **Top-level fields:**
 
 | Field            | Type    | Nullable | Description                                                                                                                             |
 | ----------------- | ------- | -------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
-| `format_version` | integer | No       | On-disk format version; must equal `1` on read. Absence (read as `0`, a pre-marker artifact) is rejected before any payload is parsed. |
+| `format_version` | integer | No       | On-disk format version; must equal `1` on read. A checkpoint from an earlier release has no `manifest.bin` at all and is rejected at the first read, before any payload is parsed. |
 | `cobre_version`  | string  | No       | Version of the cobre binary that wrote this checkpoint.                                                                                 |
 | `created_at`     | string  | No       | ISO 8601 timestamp when the checkpoint was written.                                                                                     |
 | `num_stages`     | integer | No       | Number of stages the graph manifest spans. Must match the case configuration on resume.                                                 |
@@ -847,7 +863,7 @@ core's own vocabulary.
 | `total_visited_states`            | integer   | No       | Total number of visited state vectors across all nodes. `0` when `exports.states` is off.                                                |
 | `training_block_mode`             | string    | No       | Block mode the artifact was trained under: the shared lowercase mode (`"parallel"`/`"chronological"`) when every stage agrees, else `"mixed"`. |
 | `training_block_mode_per_stage[]` | string[]  | No       | Per-study-stage training block modes, in study-stage order. Empty when uniform; populated only for mixed-mode studies.                  |
-| `cost_scale_factor`               | number    | Yes      | Objective cost-scale factor the writing study resolved (`modeling.cost_scale_factor`). Marks the checkpoint's cut coefficients/intercepts as canonical currency units. `null`/absent in legacy checkpoints, interpreted as scaled at `1000000.0`. See [Cost-Scale Canonicalization](/running/policy-management/#cost-scale-canonicalization) for the compatibility matrix. |
+| `cost_scale_factor`               | number    | Yes      | Objective cost-scale factor the writing study resolved (`modeling.cost_scale_factor`), recorded here as study-global provenance. The authoritative load-time value is carried **per pool** in each `cuts/<pool>.bin` (see the cuts payload above), which marks that pool's cut coefficients/intercepts as canonical currency units; every load path requires it, and a resolved pool missing it is rejected ("predates self-describing cuts … re-export"). See [Cost-Scale Canonicalization](/running/policy-management/#cost-scale-canonicalization) for the details. |
 
 ---
 
@@ -957,7 +973,7 @@ always equals `stage_id` — there is nothing else to distinguish. On a
 branching policy graph with more than one node per stage, `node_id`
 identifies which branch a scenario actually visited at that stage, and joins
 back to the node's `stage_id`/`pool_id` via the policy checkpoint's
-`graph_manifest` (see [`policy/metadata.json`](#policymetadatajson)).
+`graph_manifest` (see [`policy/manifest.bin`](#policymanifestbin)).
 `scenario_id` duplicates the Hive partition directory
 (`scenario_id=NNNN/`) as an explicit in-file column, so a join on the axis is
 a join rather than a directory-name parse (see
@@ -1307,7 +1323,7 @@ columns on [`simulation/thermals/`](#simulationthermals). One row per declared
 window per terminal scenario. 7 columns. All columns are non-nullable.
 Hive-partitioned by `scenario_id`
 (`anticipated_lanes/scenario_id=NNNN/data.parquet`); written only when the
-system declares a `future_anticipated_deliveries` window.
+study declares `post_study_stages`.
 
 | Column                  | Type    | Nullable | Description                                                                                                         |
 | ----------------------- | ------- | -------- | ------------------------------------------------------------------------------------------------------------------- |
@@ -1318,6 +1334,29 @@ system declares a `future_anticipated_deliveries` window.
 | `delivery_date`         | Int32   | No       | Calendar date the commitment delivers, encoded `YYYYMMDD` (`year*10000 + month*100 + day`).                         |
 | `deposited_decision_mw` | Float64 | No       | Dispatch decision deposited into this lane at `stage_id` for delivery at `delivery_date`, in MW.                    |
 | `carried_committed_mw`  | Float64 | No       | Committed capacity carried forward in this lane toward `delivery_date`, in MW.                                      |
+
+---
+
+### `anticipated/fixed_deliveries.parquet`
+
+Run-level echo of every **pre-study-decided** commitment that delivers past the
+study horizon — the DECOMP _já-comandada_ deliveries, declared as
+`past_anticipated_commitments` windows extending past the horizon end. Unlike
+`simulation/anticipated_lanes/`, this file is **not** under `simulation/`, is
+**unpartitioned**, and carries no scenario, stage, or node axis: each row is a
+resolved input, scenario- and stage-independent. One row per fixed post-horizon
+window. 4 columns. All columns are non-nullable. Written by both the CLI and
+the Python bindings; written only when at least one such window exists — an
+empty set writes no file and no `anticipated/` directory. There is no cost
+column: the fuel is a sunk cost, folded into the terminal boundary cut
+intercepts rather than booked in the study objective.
+
+| Column       | Type    | Nullable | Description                                                          |
+| ------------ | ------- | -------- | -------------------------------------------------------------------- |
+| `thermal_id` | Int32   | No       | Anticipated thermal unit ID.                                         |
+| `start_date` | Date32  | No       | First delivery date of the fixed window.                            |
+| `end_date`   | Date32  | No       | Last delivery date of the fixed window.                             |
+| `value_mw`   | Float64 | No       | Committed delivery held constant over the window, in MW.            |
 
 ---
 

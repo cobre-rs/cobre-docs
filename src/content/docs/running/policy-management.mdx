@@ -121,9 +121,12 @@ A written checkpoint has the following layout under `policy.path`:
 
 ```text
 policy/
-  metadata.json          -- run metadata and a format_version marker (written last)
+  manifest.bin           -- study-global manifest: study graph, stage count,
+                            provenance + a format_version marker (FlatBuffers,
+                            written last as the commit signal)
   cuts/
-    000.bin               -- cut coefficients and intercepts for pool 0
+    000.bin               -- cut coefficients and intercepts for pool 0 (each
+                            self-describing its own cost-scale and graph identity)
     001.bin               -- cut coefficients and intercepts for pool 1
     ...
   basis/
@@ -142,19 +145,22 @@ The file name itself is not read for identity — each buffer carries its own
 id internally, and the reader derives pool/stage identity from the payload,
 never from the name.
 
-`metadata.json` is written **last**. Its presence signals that the checkpoint
-is complete and safe to load. An interrupted write leaves `metadata.json`
-absent; Cobre treats a directory without `metadata.json` as an incomplete
+`manifest.bin` is written **last**. Its presence signals that the checkpoint
+is complete and safe to load. An interrupted write leaves `manifest.bin`
+absent; Cobre treats a directory without `manifest.bin` as an incomplete
 checkpoint and refuses to load it.
 
-`metadata.json` also carries a required `format_version` marker, checked
-**first** — before any cut, basis, or state payload is parsed. See
-[Format Version and Migration](#format-version-and-migration) below.
+`manifest.bin` is a FlatBuffers root (the `CheckpointManifest` table) read
+**first** — its `format_version` marker is checked before any cut, basis, or
+state payload is parsed. See
+[Format Version and Migration](#format-version-and-migration) below. The
+hand-editable `policy/metadata.json` of earlier releases is gone; every
+study-global fact now lives in this binary manifest.
 
-The `metadata.json` file records the number of completed iterations,
-lower-bound and upper-bound values, number of stages, forward passes per
-iteration, and the RNG seed — see
-[Output Format](/reference/output-format/#policymetadatajson) for the full
+`manifest.bin` records the study graph, the number of stages, and the producer
+provenance (completed iterations, lower- and upper-bound values, forward passes
+per iteration, and the RNG seed) — see
+[Output Format](/reference/output-format/#policymanifestbin) for the full
 field-by-field table. Compatibility with the current system is verified
 **structurally**, not by hash: Cobre checks the state dimension and the
 per-slot entity manifest carried inside each cuts payload against the
@@ -166,19 +172,37 @@ Cuts below.
 
 ## Format Version and Migration
 
-`metadata.json`'s `format_version` marker is checked before any `.bin`
-payload is parsed. A checkpoint written by an earlier release carries
-neither this marker nor the `CBVF` payload identifier on its `.bin` files,
-and this release fails to load it with a named error reporting the expected
-`format_version` against the value found:
+`manifest.bin` is read first, before any `.bin` payload is parsed, and its
+`CheckpointManifest` carries a `format_version` marker. A checkpoint written by
+an earlier release has **no `manifest.bin` at all** — its study-global metadata
+lived in a `policy/metadata.json` this release no longer reads — so it is
+rejected at that first read as a missing file (an `IoError`), the clean-break
+signal that this is a pre-`manifest.bin` artifact:
 
 ```text
-unsupported value-function artifact format_version: expected 1, found 0 (a pre-marker or other-version artifact is not readable by this build)
+failed to read policy checkpoint: <path>/policy/manifest.bin: No such file or directory
 ```
 
-There is **no converter**: a checkpoint written by an earlier release cannot
-be upgraded in place — retrain to produce a checkpoint this release can
-read.
+A `manifest.bin` that is present but stamped with a different version fails the
+gate instead, reporting the expected `format_version` against the value found
+(`FORMAT_VERSION` is `1`):
+
+```text
+unsupported checkpoint manifest format_version 2; expected 1
+```
+
+A checkpoint that clears the manifest but predates the self-describing cuts is
+caught one step later, when a resolved `cuts/<pool>.bin` carries no
+`cost_scale_factor`:
+
+```text
+policy checkpoint predates self-describing cuts (its resolved cuts/<pool>.bin carries no cost_scale_factor); re-export it with a current Cobre
+```
+
+There is **no converter**: every policy checkpoint written by an earlier
+release must be **re-exported or retrained** — warm-start, resume,
+simulation-only, and terminal boundary injection alike are rejected by name,
+with no in-place upgrade.
 
 Every load path surfaces the same failure, tagged for its caller:
 
@@ -210,27 +234,44 @@ representation at rest:
   converting the canonical values back into that study's internal scaled
   space.
 
-`policy/metadata.json` (see the field table in
-[Output Format](/reference/output-format/#policymetadatajson)) carries a
-`cost_scale_factor` provenance field recording the writing study's factor. A
-checkpoint whose `metadata.json` is missing this field is a legacy checkpoint,
-interpreted as scaled at `1_000_000.0`.
+Each `cuts/<pool>.bin` (see the field table in
+[Output Format](/reference/output-format/#policymanifestbin)) carries its **own**
+`cost_scale_factor` provenance field recording the writing study's factor — the
+checkpoint is self-describing per pool, no longer dependent on a single
+study-global field. Every load path — warm-start, resume, simulation-only, and
+boundary-cut injection — **requires** each resolved pool to carry it: a pool
+whose `cost_scale_factor` reads absent is rejected with
+
+```text
+policy checkpoint predates self-describing cuts (its resolved cuts/<pool>.bin carries no cost_scale_factor); re-export it with a current Cobre
+```
+
+(The `1_000_000.0` legacy-scale fallback for an absent factor survives only as
+an internal library seam for a direct API caller; none of Cobre's own load
+front ends reach it.)
 
 ### Compatibility matrix
+
+Every real load path holds a marked pool to the first row; the unmarked rows are
+the internal-seam behaviour only, never reached by Cobre's own front ends (which
+reject an unmarked pool, per above).
 
 | Checkpoint | Loading factor | Behaviour |
 |---|---|---|
 | Marked (`cost_scale_factor` present) | any | divided by loading factor **unconditionally**, even when equal |
-| Unmarked (legacy) | `== 1e6` (default) | no-op — **bit-exact, no re-baseline** |
-| Unmarked (legacy) | `!= 1e6` | multiplied by `1e6 / loading_factor` |
+| Unmarked (internal seam only) | `== 1e6` (default) | no-op — **bit-exact, no re-baseline** |
+| Unmarked (internal seam only) | `!= 1e6` | multiplied by `1e6 / loading_factor` |
 
 :::caution[Downgrading is unsafe]
 This compatibility contract is **one-directional**. A checkpoint written by
 this release must **not** be read by an earlier release: the earlier release
-has no concept of the `cost_scale_factor` provenance field, so it silently
-reinterprets the canonical at-rest values under the old scaled convention —
-no error, no warning, wrong numbers. A checkpoint written by an earlier
-release remains fully loadable by this one.
+has no concept of the self-describing `cost_scale_factor` provenance field, so
+it silently reinterprets the canonical at-rest values under the old scaled
+convention — no error, no warning, wrong numbers. In the other direction a
+checkpoint written by an earlier release does not load at all — it lacks the
+`manifest.bin` this release reads first (see
+[Format Version and Migration](#format-version-and-migration)) — and must be
+re-exported or retrained.
 
 [FlatBuffers Schema Versioning](/reference/flatbuffers-schema/#versioning-policy)
 reasons only about **wire** compatibility — whether a reader can parse the
@@ -276,14 +317,20 @@ function — for example, one derived analytically or produced by another
 tool — as a policy checkpoint Cobre can load.
 
 ```python
-write_policy_checkpoint(path, stage_cuts, metadata, stage_bases=None, stage_states=None)
+write_policy_checkpoint(path, stage_cuts, metadata, stage_bases=None, stage_states=None, inflow_lag_depth=None)
 ```
 
 `stage_cuts` and `metadata` mirror the `"stage_cuts"` / `"metadata"` shapes
-that `cobre.results.load_policy` returns, so a checkpoint loaded from disk
-round-trips through Python (load, edit, write) without reshaping;
-`stage_bases` and `stage_states` default to empty when omitted. The function
-writes `metadata.json`, `cuts/`, `basis/`, and `states/` directly under
+that `cobre.results.load_policy` returns (the dict shape is unchanged from
+earlier releases), so a checkpoint loaded from disk round-trips through Python
+(load, edit, write) without reshaping; `stage_bases` and `stage_states` default
+to empty when omitted. `inflow_lag_depth`, when set to `N > 0`, has Cobre
+reserve `N` canonical `HydroInflowLag` state slots per storage hydro in every
+stage's manifest and place each cut's `inflow_lag_coefficients` at their
+`(hydro, depth)` positions, so a boundary policy authored for a case with no
+autoregressive inflow model can still carry an inflow-lag-coupled terminal
+cost-to-go; absent or `0`, the written checkpoint is byte-identical. The
+function writes `manifest.bin`, `cuts/`, `basis/`, and `states/` directly under
 `path` — the same [Checkpoint Directory Contents](#checkpoint-directory-contents)
 layout described above, so `path` should be a `policy/`-style directory, the
 same kind of path used by `policy.path` and `policy.boundary.path` elsewhere
@@ -319,13 +366,21 @@ When `boundary` is absent or `null`, no boundary cuts are loaded (the default).
 
 ### Compatibility requirements
 
-The source checkpoint must have the same state dimension (number of hydro
-plants and maximum PAR order) as the current study, and its per-slot entity
-manifest must bind each dimension to the same entity. Cobre validates this on
-every policy load — the check cannot be disabled. If the state dimension or the
-entity identity of any slot does not match, loading fails with a descriptive
-error; a policy that matches by dimension count but attaches its coordinates to
-different entities is likewise rejected.
+Unlike warm-start and resume — which require the saved policy's state dimension
+and per-slot entity layout to match the current study **exactly** (see
+[Warm Start](#warm-start), a check that cannot be disabled) — **boundary
+injection tolerates a source of a different state shape.** The source's terminal
+state is reconciled onto the current study's own state per slot **by entity
+identity and delivery date**, not by position: a source trained with a different
+set of state coordinates — no in-transit buckets, or monthly anticipated slots
+feeding a differently-shaped study — still injects, each source coefficient
+binding to the current study's slot for the same entity. A source coordinate
+that couples a state slot the current study does not model cannot be carried; it
+is reported in a **per-family reconciliation summary** and dropped, and the load
+still **succeeds** — where earlier releases rejected the load outright on the
+state-dimension check. See
+[Post-Study Boundary §4](/math/post-study-boundary) for the reconciliation
+mechanism.
 
 ### Production coupling workflow
 

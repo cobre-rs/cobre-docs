@@ -12,13 +12,18 @@ reader in any language `flatc` supports.
 
 | File path               | Root table                                        |
 | ----------------------- | -------------------------------------------------- |
+| `policy/manifest.bin`   | `CheckpointManifest` (study-global; written last, read first) |
 | `policy/cuts/NNN.bin`   | `StageCuts`                                        |
 | `policy/basis/NNN.bin`  | `StageBasis`                                       |
 | `policy/states/NNN.bin` | `StageStates` (only when `exports.states = true`)  |
 
 `NNN` is a three-digit, zero-padded id: the **pool id** for `cuts/`, the
-**stage id** for `basis/` and `states/`. The reader derives identity from
-inside each buffer, never from the file name.
+**stage id** for `basis/` and `states/`. `manifest.bin` is a single
+study-global file with no id. The reader derives identity from inside each
+buffer, never from the file name. The `CheckpointManifest` root carries the
+study graph (`nodes`/`edges`), the stage count, the producer provenance, and
+the `format_version` marker; it replaces the hand-editable `policy/metadata.json`
+of earlier releases.
 
 The schema lives at
 [`crates/cobre-io/schemas/policy.fbs`](https://github.com/cobre-rs/cobre/blob/main/crates/cobre-io/schemas/policy.fbs)
@@ -170,15 +175,17 @@ the schema file.
 ## Versioning policy
 
 This format carries a hard version gate on top of the field-level rules
-below. `policy/metadata.json` carries a required `format_version` marker,
-checked **before any `.bin` payload is parsed**, and every `.bin` payload
-carries the `CBVF` `file_identifier` described above. A checkpoint written
-by an earlier release has neither, and fails to load with a named error
-reporting the expected `format_version` against the value found —
-surfaced as `cobre.errors.OutputError` in Python, and as a CLI message
-prefixed `failed to read policy checkpoint: …`. There is **no conversion
-path**: the only remedy for a checkpoint written by an earlier release is
-to retrain.
+below. `policy/manifest.bin`'s `CheckpointManifest` carries a required
+`format_version` marker, read **first** — before any `.bin` payload is
+parsed — and every `.bin` payload (the manifest included) carries the `CBVF`
+`file_identifier` described above. A checkpoint written by an earlier release
+has no `manifest.bin` at all, so it is rejected at that first read as a missing
+file — surfaced as `cobre.errors.OutputError` in Python, and as a CLI message
+prefixed `failed to read policy checkpoint: …`. A `manifest.bin` present but
+stamped with a different `format_version` fails the version gate instead
+(`FORMAT_VERSION` is `1`). Either way there is **no conversion path**: the only
+remedy for a checkpoint written by an earlier release is to re-export or
+retrain.
 
 FlatBuffers' graceful-absence rule lets us add new fields to any table
 without breaking older readers, **as long as** new fields are appended

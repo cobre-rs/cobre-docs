@@ -30,7 +30,7 @@ diverge from the code, the spec must be updated — not the other way around.
 
 ## Current State
 
-**Synced to: cobre v0.14.1 (2026-08-18).**
+**Synced to: cobre v0.15.0 (2026-08-24).**
 
 The corpus is a **unified two-layer reference**: the annotation-free **math
 layer** (formulation, algorithm, worked examples) interleaved per topic with a
@@ -194,6 +194,17 @@ toggles a cut row's RHS to a `±∞` sentinel (row never removed); only active c
 are baked into each iteration's template. Periodic-pruning methods
 (`level1`/`lml1`/`domination`) deactivate; **DCS** keeps the pool whole and loads
 a bounded resident subset per solve (`crates/cobre-sddp/src/cut/dcs.rs`).
+→ **Checkpoint format (self-describing, v0.15.0)**: `policy/manifest.bin` (a
+`FlatBuffers` `CheckpointManifest` root: study graph, stage count, producer
+provenance + `format_version`) is written LAST as the commit signal and read
+FIRST behind the version gate; it replaces the removed hand-editable
+`policy/metadata.json`. Each `cuts/<pool>.bin` self-describes its own
+`cost_scale_factor` + graph identity. Every earlier-release checkpoint is
+rejected (no in-place upgrade — re-export/retrain). Boundary injection now
+reconciles a differing-state-shape source per slot by ENTITY IDENTITY + delivery
+date (per-family drop summary, load succeeds); warm-start/resume still require an
+exact state-dimension match (`crates/cobre-io/src/output/policy/`,
+`crates/cobre-sddp/src/policy/reconcile.rs`).
 
 When **updating hydro production / FPHA** (`hydro-production-models.mdx`):
 
@@ -223,8 +234,14 @@ When **updating anticipated thermals** (`lp-formulation.md §5c`,
 resolved on the stage calendar) — `AnticipatedConfig::{LeadStages,LeadTime}`
 (`entities/thermal.rs`). Every commitment is **bounded, costed, and
 commissioning-gated at its delivery stage** `t+K` (`columns.rs`,
-`lead_time/mod.rs`); a sub-stage lead → ordinary thermal; fan-out (>1 delivery) and
-lead>horizon are rejected at load. The delivered commitment is
+`lead_time/mod.rs`); a sub-stage lead → ordinary thermal; fan-out (>1 delivery) is rejected at load;
+a lead reaching past the horizon is accepted only when it reaches a declared
+`post_study_stages.json` post-study stage — the sole surface for an in-study-decided
+post-horizon delivery, priced against the terminal boundary — else rejected
+(`validation/semantic/thermal.rs`). Pre-study-decided deliveries past the horizon
+(DECOMP já-comandada) ride `initial_conditions.json` `past_anticipated_commitments`
+windows extending past `T`, a sunk cost folded into the boundary cut intercepts
+(`future_anticipated_deliveries` is removed). The delivered commitment is
 reconciled against solver feasibility-tolerance drift at its delivery bound on
 every solve (`lp/builder/commitment_reconcile.rs`); genuine over-commitment →
 named error (thermal, stage, overshoot), never a bare infeasible LP.

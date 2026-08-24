@@ -321,6 +321,37 @@ entity-id spellings a generic constraint's own `pumping_flow(id)` /
 [Generic Constraints — variable catalog](/reference/generic-constraints/)
 for the full addressing grammar.
 
+#### Deterministic external inflow column under an autoregressive model
+
+**When it occurs:** Under the `external` inflow sampling scheme, a class's mean
+and standard deviation are derived from its external scenario file itself. A
+constant (σ = 0) column is accepted for load, NCS, and an order-0 inflow model,
+but **rejected** for an inflow whose model is autoregressive of order `> 0`: a
+single deterministic value cannot stand in for such a model, since it would have
+to equal that model's own stage-by-stage deterministic PAR output, which the
+loader does not reconstruct from a flat column. (Earlier releases reported this
+as "requires a positive standard deviation"; the message now states the real
+reason.)
+
+**Fields:**
+
+| Field         | Type     | Description                                                                                              |
+| ------------- | -------- | ---------------------------------------------------------------------------------------------------------- |
+| `description` | `String` | Contains a `[BusinessRuleViolation] <external inflow file> (inflow entity <e> stage <stage_id>): <message>` line |
+
+**Example:**
+
+```
+constraint violation: [BusinessRuleViolation] scenarios/external_inflow_scenarios.parquet (inflow entity 7 stage 3): inflow external library at stage 3, entity 7: every scenario value is constant (σ = 0), but this hydro's inflow follows an autoregressive model of order > 0; a deterministic value here would have to equal that model's own deterministic PAR output at every stage, which this loader does not compute upstream
+```
+
+**Resolution:** Give the external column genuine stage-to-stage variation, or
+drop the plant's autoregressive inflow model to order 0 (no lag coefficient, no
+annual component) if its inflow really is deterministic. See
+[Scenario Generation §4.4](/math/scenario-generation) for the accept/reject
+rule and [`scenario_source`](/running/configuration/#scenario_source) for the
+scheme configuration.
+
 ---
 
 ### `CrossReferenceError`
@@ -484,57 +515,60 @@ constraint violation: [BusinessRuleViolation] system/scalar_parameters.json: sys
 [Generic Constraints — the five parameter kinds](/reference/generic-constraints/)
 for the current file's schema.
 
-#### Future delivery on a non-anticipated thermal
+#### Commitment on a non-anticipated thermal
 
-**When it occurs:** `initial_conditions.json`'s `future_anticipated_deliveries`
-entries declare an in-study decided delivery commitment for an anticipated
-thermal, keyed by `thermal_id`. Layer 5 (semantic validation) rejects any entry
-whose `thermal_id` does not resolve to a thermal with `anticipated_config:
-Some(_)` — either the thermal does not exist, or it exists but is not
-configured as anticipated. This is the delivery-side mirror of the same check
-performed on `past_anticipated_commitments`.
+**When it occurs:** `initial_conditions.json`'s `past_anticipated_commitments`
+entries declare an externally-decided commitment for an anticipated thermal,
+keyed by `thermal_id`. Layer 5 (semantic validation) rejects any entry whose
+`thermal_id` does not resolve to a thermal with `anticipated_config: Some(_)` —
+either the thermal does not exist, or it exists but is not configured as
+anticipated. (In earlier releases the same check also ran on a separate
+`future_anticipated_deliveries` field, now removed — post-horizon
+in-study-decided deliveries are declared in `post_study_stages.json` instead.)
 
 **Fields:**
 
 | Field         | Type     | Description                                                                                                                                                                                                                     |
 | ------------- | -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `description` | `String` | Contains a `[BusinessRuleViolation] initial_conditions.json (thermal_id=<id>, delivery_start=<date>): Thermal <id>: referenced in future_anticipated_deliveries but is not an anticipated thermal (anticipated_config is None or thermal does not exist)` line |
+| `description` | `String` | Contains a `[BusinessRuleViolation] initial_conditions.json (initial_conditions.past_anticipated_commitments[thermal_id=<id>]): Thermal <id>: referenced in past_anticipated_commitments but is not an anticipated thermal (anticipated_config is None or thermal does not exist)` line |
 
 **Example:**
 
 ```
-constraint violation: [BusinessRuleViolation] initial_conditions.json (thermal_id=12, delivery_start=2026-09-05): Thermal 12: referenced in future_anticipated_deliveries but is not an anticipated thermal (anticipated_config is None or thermal does not exist)
+constraint violation: [BusinessRuleViolation] initial_conditions.json (initial_conditions.past_anticipated_commitments[thermal_id=12]): Thermal 12: referenced in past_anticipated_commitments but is not an anticipated thermal (anticipated_config is None or thermal does not exist)
 ```
 
 **Resolution:** Either set `anticipated_config` on thermal `<id>` in
 `system/thermals.json`, or remove/correct the `thermal_id` in the offending
-`future_anticipated_deliveries` entry. See
+`past_anticipated_commitments` entry. See
 [System Elements §4](/math/system-elements) for anticipated-thermal
 configuration and [Case Directory Format](/reference/case-directory-format/)
 for `initial_conditions.json`'s schema.
 
 #### Post-study boundary unanchored or malformed
 
-**When it occurs:** Layer 5 resolves every `future_anticipated_deliveries`
-window against `post_study_stages.json`, the post-horizon boundary calendar a
-delivery matures into. Several distinct failures are collected under this one
-check, in the order they are evaluated:
+**When it occurs:** Layer 5 validates `post_study_stages.json` — the
+post-horizon boundary calendar — and the anticipated-thermal deliveries that
+resolve onto it. Several distinct failures are collected under this one check.
+(A plant whose lead reaches past the horizon while **no** post-study stage
+exists is caught earlier, at anticipated-thermal validation, with a
+`system/thermals.json … the plant can never deliver within the study horizon`
+message — see below.) The post-study failures, keyed to
+`post_study_stages.json`:
 
-- No `post_study_stages.json` at all, while `future_anticipated_deliveries` is
-  non-empty — every delivery is unanchored.
 - The post-study calendar's first stage does not start exactly at the study
   horizon end.
 - The post-study stages are not date-contiguous (a gap or overlap between
   consecutive stages).
-- A delivery window reaches outside the declared post-study horizon.
-- A delivery window is not covered exactly (coverage `1.0`) by the post-study
-  calendar — it does not align to whole post-study stage boundaries.
-- A delivery window spans more than one post-study stage (multi-stage delivery
-  is not supported).
-- No `thermal_bounds` cell exists for the `(thermal_id, post_study_stage_index)`
-  a delivery resolves into.
-- The delivery's committed `[min_mw, max_mw]` interval and the `thermal_bounds`
-  cell's capability `[min_mw, max_mw]` do not intersect.
+- A post-study stage's `duration_hours` rounds to a non-positive whole-day span.
+- **Rule 1** — a plant's lead reaches a post-study stage with no
+  `thermal_bounds` cell for its `(thermal_id, post_study_stage_index)`.
+- **V2** — a plant's pre-study-decided (_já-comandada_) commitments do not tile
+  the post-study stages they cover at coverage `1.0`.
+- **V3** — a commitment window covers a post-study stage the study itself
+  decides (`carried`), or one past the plant's decision reach.
+- **V5** — a non-zero fixed commitment covers a post-study stage outside the
+  plant's commissioning window.
 
 **Fields:**
 
@@ -542,11 +576,7 @@ check, in the order they are evaluated:
 | ------------- | -------- | ---------------------------------------------------------------------------------------------------------------------|
 | `description` | `String` | Contains one `[BusinessRuleViolation] post_study_stages.json (...): <message>` line per failure — see the messages below |
 
-**Example:**
-
-```
-constraint violation: [BusinessRuleViolation] post_study_stages.json (thermal_id=12, delivery_start=2026-09-05): Thermal 12: future_anticipated_deliveries window [2026-09-05, 2026-09-12) has no post_study_stages.json to resolve against; declare a post-study boundary calendar covering it.
-```
+**Examples:**
 
 ```
 constraint violation: [BusinessRuleViolation] post_study_stages.json (stages[0].start_date): first post-study stage starts 2026-09-08 but the study horizon ends 2026-09-05; the post-study calendar must begin exactly at the study horizon end.
@@ -557,32 +587,32 @@ constraint violation: [BusinessRuleViolation] post_study_stages.json (stages sta
 ```
 
 ```
-constraint violation: [BusinessRuleViolation] post_study_stages.json (thermal_id=12, delivery_start=2026-10-01): Thermal 12: future_anticipated_deliveries window [2026-10-01, 2026-10-10) reaches outside the post-study horizon [2026-09-05, 2026-10-05); every delivery must fall within the declared post-study stages.
+constraint violation: [BusinessRuleViolation] post_study_stages.json (thermals[id=12].anticipated_config): Thermal 12: anticipated lead reaches post-study stage index 0, but post_study_stages.json has no thermal_bounds entry for (thermal_id 12, post_study_stage_index 0).
 ```
 
 ```
-constraint violation: [BusinessRuleViolation] post_study_stages.json (thermal_id=12, delivery_start=2026-09-10): Thermal 12: future_anticipated_deliveries window [2026-09-10, 2026-09-20) is not covered exactly (1.0) by the post-study stages; align the window to whole post-study stage boundaries.
+constraint violation: [BusinessRuleViolation] post_study_stages.json (thermals[id=12].anticipated_config): Thermal 12: past_anticipated_commitments do not tile post-study stage index(es) [0] at coverage 1.0; declare the fixed commitment for each (a committed 0 MW is explicit).
 ```
 
 ```
-constraint violation: [BusinessRuleViolation] post_study_stages.json (thermal_id=12, delivery_start=2026-09-05): Thermal 12: future_anticipated_deliveries window [2026-09-05, 2026-11-05) spans 2 post-study stages; a delivery window must resolve to exactly one post-study stage (multi-stage delivery is not supported).
+constraint violation: [BusinessRuleViolation] post_study_stages.json (thermals[id=12].anticipated_config): Thermal 12: past_anticipated_commitments cover post-study stage index(es) [1], which the study itself decides; a declared fixed value there contradicts the study's own decision. Remove the window, or lengthen anticipated_config's lead so the delivery becomes pre-study-decided.
 ```
 
 ```
-constraint violation: [BusinessRuleViolation] post_study_stages.json (thermal_id=12, delivery_start=2026-09-05): Thermal 12: future_anticipated_deliveries window [2026-09-05, 2026-10-05) delivers into post-study stage index 0, but post_study_stages.json has no thermal_bounds entry for (thermal_id 12, post_study_stage_index 0).
+constraint violation: [BusinessRuleViolation] post_study_stages.json (thermals[id=12].anticipated_config): Thermal 12: past_anticipated_commitments cover post-study stage index(es) [2], which are past the plant's decision reach and cannot be represented. Remove the window, or shorten anticipated_config's lead so the delivery falls inside the reach.
 ```
 
 ```
-constraint violation: [BusinessRuleViolation] post_study_stages.json (thermal_id=12, delivery_start=2026-09-05): Thermal 12: future_anticipated_deliveries commitment interval [300.0, 350.0] and post-study stage index 0 capability [0.0, 250.0] do not intersect; the committed amount is unsatisfiable within capability.
+constraint violation: [BusinessRuleViolation] post_study_stages.json (thermals[id=12].anticipated_config): Thermal 12: past_anticipated_commitments window [2026-10-01, 2026-11-01) value_mw = 120 covers post-study stage index 0, which is outside the plant's commissioning window [entry=Some(0), exit=Some(6)); the plant is not in service for this stage and the fixed commitment cannot be delivered. Declare a zero commitment at this stage, or widen the commissioning window.
 ```
 
-**Resolution:** Declare `post_study_stages.json` whenever
-`future_anticipated_deliveries` is non-empty, with its first stage starting
+**Resolution:** Declare `post_study_stages.json` with its first stage starting
 exactly at the study horizon end and every stage date-contiguous with the next.
-Align each delivery window to whole post-study stage boundaries and keep it
-within a single stage. Add a `thermal_bounds` cell for every
-`(thermal_id, post_study_stage_index)` a delivery resolves into, with a
-capability interval that intersects the delivery's committed interval. See
+Add a `thermal_bounds` cell for every `(thermal_id, post_study_stage_index)` a
+plant's in-study-decided lead reaches. Tile every post-study stage a
+_já-comandada_ `past_anticipated_commitments` window covers at coverage `1.0`,
+never covering a stage the study decides or one past the plant's reach, and
+keep a non-zero fixed commitment inside the plant's commissioning window. See
 [Post-Study Boundary](/math/post-study-boundary) for the boundary model and
 [Case Directory Format](/reference/case-directory-format/) for
 `post_study_stages.json`'s schema.
@@ -590,11 +620,15 @@ capability interval that intersects the delivery's committed interval. See
 #### Uncovered or over-covered `past_anticipated_commitments` window
 
 **When it occurs:** An anticipated thermal's `past_anticipated_commitments`
-windows must tile its leading `K` (calendar-derived) delivery stages exactly —
-every leading stage covered at fraction `1.0`, and no window reaching a stage
-at or beyond `K`. Layer 5 (semantic validation) reports a gap (an uncovered
-leading stage) and an over-reach (a window extending past the leading `K`
-stages) as separate diagnostics; either can fire independently.
+windows must tile its leading `K` (calendar-derived) **in-study** delivery
+stages exactly — every leading stage covered at fraction `1.0`, and never a
+stage the study itself decides (at or beyond `K`, in-study). Layer 5 (semantic
+validation) reports a gap (an uncovered leading stage), an over-reach (a window
+covering a study-decided stage), and a horizon-straddle (a single window
+crossing the horizon end) as separate diagnostics; each can fire independently.
+A window may legitimately extend **past** the horizon (the _já-comandada_ case)
+— that post-study coverage is validated separately, under
+[Post-study boundary](#post-study-boundary-unanchored-or-malformed) above.
 
 **Fields:**
 
@@ -602,19 +636,24 @@ stages) as separate diagnostics; either can fire independently.
 | ------------- | -------- | -------------------------------------------------------------------------------------------------------------------------------------------------|
 | `description` | `String` | Contains a `[BusinessRuleViolation] initial_conditions.json (thermals[id=<id>].anticipated_config): <message>` line — see the messages below |
 
-**Example:**
+**Examples:**
 
 ```
 constraint violation: [BusinessRuleViolation] initial_conditions.json (thermals[id=7].anticipated_config): Thermal 7: past_anticipated_commitments do not tile the leading 2 delivery stage(s) at coverage 1.0; study stage id(s) [0] are not covered exactly once. Write a commitment window (a committed 0 MW is explicit) for every leading delivery stage.
 ```
 
 ```
-constraint violation: [BusinessRuleViolation] initial_conditions.json (thermals[id=7].anticipated_config): Thermal 7: past_anticipated_commitments cover study stage id(s) [3] beyond the leading 2 calendar-derived delivery stage(s); commitment windows must not extend past the pre-study delivery horizon.
+constraint violation: [BusinessRuleViolation] initial_conditions.json (thermals[id=7].anticipated_config): Thermal 7: past_anticipated_commitments cover study stage id(s) [3] beyond the leading 2 calendar-derived delivery stage(s); a commitment window may not cover a study stage the study itself decides. Shorten the plant's anticipated_config lead so its window stays within the leading 2 delivery stage(s).
+```
+
+```
+constraint violation: [BusinessRuleViolation] initial_conditions.json (thermals[id=7].anticipated_config): Thermal 7: past_anticipated_commitments window [2026-08-15, 2026-09-15) straddles the study horizon end (2026-09-01); a single window may not cover both in-study and post-study delivery. Declare two windows split at the horizon instead: one ending at 2026-09-01 for the in-study coverage, one starting at 2026-09-01 for the post-study coverage.
 ```
 
 **Resolution:** Write a commitment window for every one of the plant's leading
-`K` delivery stages (a committed `0` MW is a legitimate, explicit window — not
-an omission), and do not extend any window past stage `K - 1`. `K` is
+`K` in-study delivery stages (a committed `0` MW is a legitimate, explicit
+window — not an omission), never covering a stage the study itself decides, and
+split any window at the horizon end rather than straddling it. `K` is
 calendar-derived from `anticipated_config` (`lead_stages`, or `lead_time`
 resolved on the stage calendar) — see
 [System Elements §4](/math/system-elements).
@@ -902,9 +941,9 @@ was violated and which entities are involved. For penalty ordering, ensure that
 costs increase from lower-priority to higher-priority tiers. For stationarity,
 verify that the PAR model parameters satisfy the required statistical properties.
 
-**See also:** the post-study boundary / future-delivery cluster is also
+**See also:** the anticipated-thermal / post-study boundary cluster is also
 reported this way — see
-[Future delivery on a non-anticipated thermal](#future-delivery-on-a-non-anticipated-thermal),
+[Commitment on a non-anticipated thermal](#commitment-on-a-non-anticipated-thermal),
 [Post-study boundary unanchored or malformed](#post-study-boundary-unanchored-or-malformed),
 and
 [Uncovered or over-covered past_anticipated_commitments window](#uncovered-or-over-covered-past_anticipated_commitments-window)
