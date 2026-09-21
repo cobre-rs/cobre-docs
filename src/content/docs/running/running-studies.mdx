@@ -93,19 +93,28 @@ After all stages complete, a run summary is printed to stderr with:
 
 ## Checking Results
 
-Use `cobre report` to inspect the results:
+Alongside the result tables, `cobre run` writes a machine-readable record of
+the run: `training/metadata.json` always, and `simulation/metadata.json` when
+simulation ran. Query them directly with `jq`:
 
 ```bash
-cobre report /path/to/my_study/output
+jq '{status, bounds}' /path/to/my_study/output/training/metadata.json
 ```
 
-Reads manifest files and prints JSON to stdout (suitable for piping to `jq`):
+`status` is `"complete"` or `"partial"`, and `bounds` carries the final lower
+and upper bounds. The convergence gap sits under `convergence`:
 
 ```bash
-cobre report /path/to/my_study/output | jq '.training.convergence.final_gap_percent'
+jq '.convergence.final_gap_percent' /path/to/my_study/output/training/metadata.json
 ```
 
-Exits with code 0 on success or 2 if the results directory does not exist.
+From Python, `cobre.results.load_results("/path/to/my_study/output")` returns
+both metadata files as dicts, and `cobre.results.load_convergence` /
+`cobre.results.load_simulation` load the Parquet tables. See
+[Interpreting Results](/running/interpreting-results/) for reading the
+convergence trajectory and simulation outputs, and
+[Output Format](/reference/output-format/#metadata-files) for every metadata
+field.
 
 ---
 

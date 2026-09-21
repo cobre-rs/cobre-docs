@@ -102,8 +102,18 @@ headers and link flags through `pkg-config`, so ensure `PKG_CONFIG_PATH`
 includes your MPICH `lib/pkgconfig` directory.
 
 :::note[NUMA topology]
-Adding `--features numa` (which implies `mpi`) enables the ferrompi NUMA
-extension for NUMA-aware topology reporting. It is optional and off by default.
+`cobre-cli` has no `numa` feature of its own; the ferrompi NUMA extension is a
+feature of the `cobre-comm` crate (`numa = ["mpi", "ferrompi/numa"]`). Enable it
+through the dependency:
+
+```bash
+cargo build --release --features mpi,cobre-comm/numa -p cobre-cli
+```
+
+With it on, the topology also carries the SLURM job metadata (job ID, node
+list, CPUs per task): the post-run summary prints a `SLURM:` line and
+`distribution.slurm_job_id` in `training/metadata.json` /
+`simulation/metadata.json` is populated. It is optional and off by default.
 :::
 
 ---

@@ -199,14 +199,6 @@ prior releases. The CLP backend is strictly opt-in: users who do not pass
 `--no-default-features --features clp` continue to build and run against HiGHS
 exactly as before.
 
-### Known limitation
-
-Re-loading a fresh model into a CLP solver instance after a hot-start snapshot
-has been taken is unsupported and guarded against at runtime. This situation does
-not arise on the production solve paths; it is relevant only to callers that
-construct solver instances directly and interleave `load_model` calls with
-hot-start operations.
-
 On a CLP build, every `training.solver`/`simulation.solver` override field is
 rejected at study setup — see
 [solver profile validation](/reference/error-codes/#solver-profile-validation-sddperror)

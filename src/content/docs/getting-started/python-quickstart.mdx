@@ -55,7 +55,7 @@ result = cobre.run.run(
     "path/to/case",
     output_dir="path/to/output",   # default: case_dir/output
     threads=4,                      # default: 1
-    skip_simulation=True,           # default: False
+    config_overrides={"simulation": {"enabled": False}},  # default: None
 )
 ```
 

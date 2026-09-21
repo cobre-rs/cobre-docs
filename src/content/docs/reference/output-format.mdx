@@ -1447,18 +1447,21 @@ The `status` field is always the first indicator to check:
 | `"complete"` | The run finished normally. All output files are present.               |
 | `"partial"`  | Not all scenarios completed without error. (Simulation metadata only.) |
 
-`cobre report` reads both metadata files and prints a combined JSON summary to
-stdout. Use it in CI pipelines or shell scripts to inspect outcomes without
-parsing JSON directly:
+Both files are plain JSON, so `jq` reads them directly. Use it in CI pipelines
+or shell scripts to inspect outcomes without writing a data-loading script:
 
 ```bash
-# Extract the termination reason
-cobre report results/ | jq '.training.convergence.termination_reason'
+# Extract the training termination reason
+jq -r '.convergence.termination_reason' results/training/metadata.json
 
-# Fail a CI job if the run did not complete
-status=$(cobre report results/ | jq -r '.status')
-[ "$status" = "complete" ] || exit 1
+# Fail a CI job unless both phases completed
+[ "$(jq -r '.status' results/training/metadata.json)" = "complete" ] || exit 1
+[ "$(jq -r '.status' results/simulation/metadata.json)" = "complete" ] || exit 1
 ```
+
+From Python, `cobre.results.load_results(output_dir)` returns both metadata
+documents in one dict, together with a per-phase `complete` flag — see the
+[Python Quickstart](/getting-started/python-quickstart/).
 
 ---
 

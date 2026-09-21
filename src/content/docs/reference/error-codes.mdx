@@ -141,7 +141,8 @@ grammar and the v0.13.0 → v0.14.0 worked migration example.
 constraint: a required field is missing, a value is outside its valid range, or
 an enum discriminator names an unknown variant. Occurs in Layer 2
 (schema) during post-deserialization validation. Also returned by `parse_config`
-when `training.forward_passes` or `training.stopping_rules` is absent.
+when `training.selection` (which carries the forward-pass count) or
+`training.stopping_rules` is absent.
 
 **Display format:**
 
@@ -160,7 +161,7 @@ schema error in {path}, field {field}: {message}
 **Example:**
 
 ```
-schema error in config.json, field training.forward_passes: required field is missing
+schema error in config.json, field training.selection: a forward-pass count is required via training.selection
 ```
 
 ```
@@ -169,8 +170,10 @@ schema error in system/buses.json, field buses[1].id: duplicate id 5 in buses ar
 
 **Resolution:** The `field` value identifies the exact location of the problem.
 Check that required fields are present and that values fall within documented
-ranges. For `config.json`, `training.forward_passes` and
-`training.stopping_rules` are mandatory and have no defaults.
+ranges. For `config.json`, `training.selection` (for example
+`{ "method": "sampled", "forward_passes": 192 }`) and `training.stopping_rules`
+are mandatory and have no defaults; a root-level `training.forward_passes` key
+is rejected as an unknown field.
 
 #### Namespace collision between a scalar parameter and a named expression
 
@@ -351,49 +354,6 @@ annual component) if its inflow really is deterministic. See
 [Scenario Generation §4.4](/math/scenario-generation) for the accept/reject
 rule and [`scenario_source`](/running/configuration/#scenario_source) for the
 scheme configuration.
-
----
-
-### `CrossReferenceError`
-
-**When it occurs:** An entity ID field references an entity that does not exist
-in the expected registry. Occurs in Layer 3 (referential integrity). All broken
-references across all entity types are collected before returning.
-
-**Display format:**
-
-```
-cross-reference error: {source_entity} in {source_file} references
-non-existent {target_entity} in {target_collection}
-```
-
-**Fields:**
-
-| Field               | Type      | Description                                                                            |
-| ------------------- | --------- | -------------------------------------------------------------------------------------- |
-| `source_file`       | `PathBuf` | Path to the file that contains the dangling reference                                  |
-| `source_entity`     | `String`  | String identifier of the entity that holds the broken reference (e.g., `"Hydro 'H1'"`) |
-| `target_collection` | `String`  | Name of the registry that was expected to contain the target (e.g., `"bus registry"`)  |
-| `target_entity`     | `String`  | String identifier of the entity that could not be found (e.g., `"BUS_99"`)             |
-
-**Example:**
-
-```
-cross-reference error: Hydro 'FURNAS' in system/hydros.json references
-non-existent BUS_99 in bus registry
-```
-
-**Resolution:** The `target_entity` does not exist in the `target_collection`.
-Either add the missing entity to its registry file, or correct the ID reference
-in `source_file`. Common causes: a bus was deleted from `system/buses.json`
-but a hydro, thermal, or line still references its old ID.
-
-**Generic-constraints note:** none of the v0.14.0 authoring failure modes
-surface as this variant. A generic constraint's own reference-integrity
-problems — for example a bound reference with no activation rows in
-`generic_constraint_bounds.parquet` — are collected by `ValidationContext` as
-an `InvalidReference` [`ErrorKind`](#invalidreference) and returned as
-`ConstraintError` below, not as a standalone `CrossReferenceError`.
 
 ---
 

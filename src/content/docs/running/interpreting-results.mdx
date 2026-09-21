@@ -19,8 +19,9 @@ common problems from the output data.
 
 ### Reading the gap from `training/metadata.json`
 
-The manifest is the first place to check after any run. The key fields for
-convergence assessment are:
+`training/metadata.json` is the first file to check after any run — it is the
+JSON run summary, not to be confused with the binary `policy/manifest.bin`
+checkpoint header. The key fields for convergence assessment are:
 
 ```json
 {
@@ -398,29 +399,6 @@ every production model. `generation_mw`/`generation_mwh` rows sum exactly only
 for FPHA or single-cell plants: splitting one shared cell's flow across its
 same-bus groups has no dual to determine an exact per-group split, so that
 split is not reported at all — only the per-bus total is.
-
----
-
-## Using `cobre report`
-
-`cobre report` provides a quick machine-readable summary without loading any
-Parquet files:
-
-```bash
-cobre report results/
-```
-
-Use it in scripts or CI pipelines to extract a specific metric without
-writing a data loading script:
-
-```bash
-# Check the final gap in a CI pipeline
-gap=$(cobre report results/ | jq '.training.convergence.final_gap_percent')
-echo "Final gap: ${gap}%"
-```
-
-For all available `cobre report` fields and flags, see
-[CLI Reference](/reference/cli-reference/#cobre-report).
 
 ---
 
