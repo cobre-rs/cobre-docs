@@ -110,10 +110,10 @@ itself — every field carries an inline doc comment. The
 [Output Format](/reference/output-format/) page has a tabular summary suitable
 for reading on the web.
 
-### Reserved slots: `AffinePiece.reserved_7` and `EntitySlot.delivery_anchor`
+### Reserved slots
 
 This release renamed the `Cut` table to `AffinePiece` and, in the same
-breaking change, reclaimed one field id and permanently burned two others:
+breaking change, reclaimed one field id and permanently burned three others:
 
 - **`AffinePiece.intercept` (id 4)** now occupies the slot formerly held by
   the pre-`v0.5.0` `domination_count` field. This id reclaim is the
@@ -123,10 +123,17 @@ breaking change, reclaimed one field id and permanently burned two others:
   former always-empty vector field, deleted in this release. The vtable
   slot number is permanently burned so no future field can reuse it.
 - **`EntitySlot.delivery_anchor` (id 4)** is marked `deprecated`. It held a
-  former month-integer anchor (`year * 12 + (month - 1)`), replaced by
-  **`EntitySlot.delivery_date` (id 5)** — a `YYYYMMDD` calendar date
-  (`year * 10000 + month * 100 + day`), with sentinel `-2147483648`
-  (`i32::MIN`) when the slot has no delivery semantics.
+  former month-integer anchor (`year * 12 + (month - 1)`).
+- **`EntitySlot.delivery_date` (id 5)** is **also** marked `deprecated`. It held
+  a former single `YYYYMMDD` calendar date, replaced by a per-family triple:
+  **`reference_date` (id 6)** — the reference past-stage `start_date`
+  (`YYYYMMDD`) of a `HydroInflowLag` slot; **`interval_start` (id 7)** /
+  **`interval_end` (id 8)** — the half-open forward-family window (a
+  `HydroTransitBucket` arrival window or an `AnticipatedThermalState` delivery
+  window). Each date field reads sentinel `-2147483648` (`i32::MIN`) where a
+  slot's family carries no such date. The burn rule is **per-table**:
+  `EntitySlot`'s id 7 (`interval_start`) is a **live** field, distinct from the
+  burned `AffinePiece.reserved_7` (also id 7).
 
 Unlike an ordinary appended field, none of this is wire-backward-compatible:
 a checkpoint written by an earlier release used field id 4 on `AffinePiece`
@@ -183,7 +190,7 @@ has no `manifest.bin` at all, so it is rejected at that first read as a missing
 file — surfaced as `cobre.errors.OutputError` in Python, and as a CLI message
 prefixed `failed to read policy checkpoint: …`. A `manifest.bin` present but
 stamped with a different `format_version` fails the version gate instead
-(`FORMAT_VERSION` is `1`). Either way there is **no conversion path**: the only
+(`FORMAT_VERSION` is `2`). Either way there is **no conversion path**: the only
 remedy for a checkpoint written by an earlier release is to re-export or
 retrain.
 
@@ -205,8 +212,9 @@ change that does not require an output-format version bump — the
   [Cost-Scale Canonicalization](/running/policy-management/#cost-scale-canonicalization),
   not by this wire-level rule.
 - **Removing a field** → mark it `deprecated`, never reuse the id. See
-  `AffinePiece.reserved_7` and `EntitySlot.delivery_anchor` for worked
-  examples. `AffinePiece.intercept` reclaiming id 4 from the former
+  `AffinePiece.reserved_7`, `EntitySlot.delivery_anchor`, and
+  `EntitySlot.delivery_date` for worked examples. `AffinePiece.intercept`
+  reclaiming id 4 from the former
   `domination_count` field is the one exception this page documents — a
   sanctioned part of this release's breaking format change, not a
   precedent for reusing a burned id under the ordinary rule.

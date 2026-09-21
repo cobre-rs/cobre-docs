@@ -114,7 +114,7 @@ checkpoint from `<output_dir>/<policy_subdir>` (`policy_subdir` defaults to
 
 | Key           | Type         | Description                                                             |
 | ------------- | ------------ | ------------------------------------------------------------------------ |
-| `metadata`    | `dict`       | `format_version`, `cobre_version`, `created_at`, `num_stages`, `graph_manifest`, `producer` |
+| `metadata`    | `dict`       | `format_version`, `cobre_version`, `created_at`, `num_stages`, `graph_manifest`, `season_manifest`, `producer` |
 | `stage_cuts`  | `list[dict]` | One entry per stage — see below                                        |
 | `stage_bases` | `list[dict]` | One entry per saved LP basis: `stage_id`, `iteration`, `column_status`, `row_status`, `num_cut_rows` |
 
@@ -136,11 +136,14 @@ Python dict key for a cut's id is `cut_id` (the FlatBuffers *wire* field is
 `piece_id`; `cut_id` is the record-level name used everywhere in this API).
 
 `entity_manifest` is new this release: a list of per-slot markers,
-`{entity_type, entity_id, subindex, was_active, delivery_date}`, that let an
-externally-authored boundary-cut checkpoint round-trip through
-`write_policy_checkpoint` without losing slot identity. Its delivery marker
-is `delivery_date` — a `YYYYMMDD` calendar date — which replaced the former
-`delivery_anchor` (a month-integer).
+`{entity_type, entity_id, subindex, was_active, reference_date, interval_start, interval_end}`,
+that let an externally-authored boundary-cut checkpoint round-trip through
+`write_policy_checkpoint` without losing slot identity. Which date marker a slot
+carries follows from its family: a `HydroInflowLag` slot carries `reference_date`
+(its reference past-stage `start_date`, encoded `YYYYMMDD`); the forward families
+(`HydroTransitBucket`, `AnticipatedThermalState`) carry the half-open
+`interval_start`/`interval_end` window (both encoded `YYYYMMDD`); every other slot reads the `i32::MIN`
+sentinel (`-2147483648`) in all three fields.
 
 ### Write a Checkpoint (`write_policy_checkpoint`)
 
@@ -148,9 +151,11 @@ is `delivery_date` — a `YYYYMMDD` calendar date — which replaced the former
 write_policy_checkpoint(path, stage_cuts, metadata, stage_bases=None, stage_states=None, inflow_lag_depth=None)
 ```
 
-`stage_cuts` and `metadata` mirror the `load_policy` shapes above (the dict
-shape is unchanged from earlier releases), so a checkpoint loaded from disk
-round-trips through Python without reshaping. `inflow_lag_depth`, when set to
+`stage_cuts` and `metadata` mirror the `load_policy` shapes above, so a checkpoint
+loaded from disk round-trips through Python without reshaping — with one caveat:
+`active_cut_indices` is written by `write_policy_checkpoint` but not returned by
+`load_policy`, so a load → write cycle resets it, and cut activity round-trips
+through each cut's `is_active` flag instead. `inflow_lag_depth`, when set to
 `N > 0`, reserves `N` canonical `HydroInflowLag` state slots per storage hydro
 and places each cut's `inflow_lag_coefficients` at their `(hydro, depth)`
 positions (for authoring a boundary policy of a case with no autoregressive
@@ -226,7 +231,7 @@ metadata = {
 cobre.write_policy_checkpoint(f"{parent}/policy", stage_cuts, metadata)
 
 loaded = cobre.results.load_policy(parent)
-assert loaded["metadata"]["format_version"] == 1
+assert loaded["metadata"]["format_version"] == 2
 assert loaded["stage_cuts"][0]["populated_count"] == 2
 
 # Edit: append a third cut. Its coefficients must match state_dimension (3).

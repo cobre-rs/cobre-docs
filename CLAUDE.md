@@ -201,8 +201,9 @@ FIRST behind the version gate; it replaces the removed hand-editable
 `policy/metadata.json`. Each `cuts/<pool>.bin` self-describes its own
 `cost_scale_factor` + graph identity. Every earlier-release checkpoint is
 rejected (no in-place upgrade — re-export/retrain). Boundary injection now
-reconciles a differing-state-shape source per slot by ENTITY IDENTITY + delivery
-date (per-family drop summary, load succeeds); warm-start/resume still require an
+reconciles a differing-state-shape source per slot by
+ENTITY IDENTITY + per-family slot dates (per-family drop summary, load
+succeeds); warm-start/resume still require an
 exact state-dimension match (`crates/cobre-io/src/output/policy/`,
 `crates/cobre-sddp/src/policy/reconcile.rs`).
 

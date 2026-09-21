@@ -185,10 +185,10 @@ failed to read policy checkpoint: <path>/policy/manifest.bin: No such file or di
 
 A `manifest.bin` that is present but stamped with a different version fails the
 gate instead, reporting the expected `format_version` against the value found
-(`FORMAT_VERSION` is `1`):
+(`FORMAT_VERSION` is `2`):
 
 ```text
-unsupported checkpoint manifest format_version 2; expected 1
+unsupported checkpoint manifest format_version 1; expected 2; re-export it with a current Cobre
 ```
 
 A checkpoint that clears the manifest but predates the self-describing cuts is
@@ -324,9 +324,8 @@ write_policy_checkpoint(path, stage_cuts, metadata, stage_bases=None, stage_stat
 ```
 
 `stage_cuts` and `metadata` mirror the `"stage_cuts"` / `"metadata"` shapes
-that `cobre.results.load_policy` returns (the dict shape is unchanged from
-earlier releases), so a checkpoint loaded from disk round-trips through Python
-(load, edit, write) without reshaping; `stage_bases` and `stage_states` default
+that `cobre.results.load_policy` returns, so a checkpoint loaded from disk
+round-trips through Python (load, edit, write) without reshaping; `stage_bases` and `stage_states` default
 to empty when omitted. `inflow_lag_depth`, when set to `N > 0`, has Cobre
 reserve `N` canonical `HydroInflowLag` state slots per storage hydro in every
 stage's manifest and place each cut's `inflow_lag_coefficients` at their
@@ -382,7 +381,8 @@ and per-slot entity layout to match the current study **exactly** (see
 [Warm Start](#warm-start), a check that cannot be disabled) — **boundary
 injection tolerates a source of a different state shape.** The source's terminal
 state is reconciled onto the current study's own state per slot **by entity
-identity and delivery date**, not by position: a source trained with a different
+identity and its per-family slot dates** (the inflow-lag `reference_date`, the
+forward-family `interval_start`/`interval_end`), not by position: a source trained with a different
 set of state coordinates — no in-transit buckets, or monthly anticipated slots
 feeding a differently-shaped study — still injects, each source coefficient
 binding to the current study's slot for the same entity. A source coordinate
@@ -394,7 +394,7 @@ on the state-dimension check. See
 mechanism.
 
 That leniency is the default reconcile path, but the load still enforces hard
-requirements. Two classes of check are **independent of `strict`**.
+requirements. Three classes of check are **independent of `strict`**.
 
 **Date-selection rejects.** Before any coefficient is reconciled, Cobre resolves
 the source to exactly one pool priced at the study's terminal boundary date.
@@ -408,6 +408,33 @@ Four conditions abort the load with a named error:
   `boundary policy at {path}: more than one pool is priced at the study's boundary date {date} (pools {pools}); boundary injection requires a unique priced source`.
 - **Shared-node source** — the resolved pool is not a single-node terminal pool:
   `boundary policy at {path}: a boundary source must be a single-node terminal pool; the resolved pool is shared by multiple nodes`.
+
+**Season / PAR-order rejects.** When the loading study models a seasonal or
+per-hydro autoregressive (PAR) inflow process, the boundary source's season
+descriptor (`season_manifest`) must agree with the study's. This check is
+**always-on** — it is **not** gated by `strict`, and fires whenever the loading
+study declares a season cycle (a study modelling no seasonal/PAR inflow skips it
+entirely). It runs ahead of the subset checks below, and aborts the load with a
+named `SddpError::Validation` on the boundary-load path — distinct from the
+version-gate failure in [Format Version and Migration](#format-version-and-migration)
+above. A boundary source is rejected when its `season_manifest`:
+
+- **is absent** — the source predates the season descriptor:
+  `boundary policy checkpoint at {path} predates the season descriptor (its manifest carries no season cycle or PAR orders); re-export it with a current Cobre`.
+- **disagrees on the season cycle** —
+  `boundary policy at {path}: season cycle mismatch (study is {monthly|weekly|custom}, source is {…})`.
+- **disagrees on the season count** —
+  `boundary policy at {path}: season count mismatch (study has {n} seasons, source has {n})`.
+- **omits a hydro the study models** —
+  `boundary policy at {path}: hydro {id} has a modeled inflow season/PAR-order entry in the current study but none in the boundary source (the boundary was fitted on a different set of inflow processes)`.
+- **disagrees on a hydro's PAR-order count** —
+  `boundary policy at {path}: hydro {id} carries {n} PAR orders in the current study but {n} in the boundary source`.
+- **disagrees on a per-season PAR-order value** (naming the hydro and the first
+  differing season) —
+  `boundary policy at {path}: hydro {id} PAR order mismatch at season {season} (study has order {n}, source has order {n})`.
+
+The `season_manifest` field shape is documented in
+[Output Format](/reference/output-format/#policymanifestbin).
 
 **Subset rejects.** If the source prices _less_ than this study needs, the load
 is rejected regardless of `strict`:
