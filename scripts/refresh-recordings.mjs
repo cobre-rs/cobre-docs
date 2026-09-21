@@ -25,7 +25,8 @@
 //     --cobre   path to a cobre checkout (default: $COBRE_REPO or ~/git/cobre).
 //               Only used to resolve the git object database — the ref is read
 //               via plumbing, so cobre's checked-out branch is irrelevant.
-//     --ref     git ref/tag to vendor from (default: v0.10.0).
+//     --ref     git ref/tag to vendor from (default: DEFAULT_COBRE_REF, see
+//               scripts/cobre-ref.mjs).
 //     --check   verify-only: byte-compare public/ copies against <ref>, write
 //               nothing; exit 1 listing every drifted/missing file, else exit 0.
 
@@ -34,8 +35,8 @@ import { readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { homedir } from "node:os";
 import { join, dirname } from "node:path";
+import { DEFAULT_COBRE_REF } from "./cobre-ref.mjs";
 
-const DEFAULT_REF = "v0.10.0";
 const RECORDINGS_SUBPATH = "recordings";
 
 // The single source of truth for which GIFs ship and where. `src` is the
@@ -139,7 +140,7 @@ function gitShowBinary(cobre, ref, src) {
 
 function parseArgs(argv) {
   let cobre = process.env.COBRE_REPO ?? join(homedir(), "git", "cobre");
-  let ref = DEFAULT_REF;
+  let ref = DEFAULT_COBRE_REF;
   let check = false;
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];

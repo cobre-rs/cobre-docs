@@ -80,6 +80,19 @@ const OR_MORE = /\b\d[\d,]*\s+or\s+more\b/i;
 const COMMON_IN_PRACTICE = /\bcommon in practice\b/i;
 const ON_A_MODERN = /\bon a (?:modern|typical|standard|decent|recent)\b/i;
 
+// A monetary-rate INSTANCE MAGNITUDE: a numeric magnitude (optionally a range,
+// separated by an en/em dash or one-two ASCII hyphens — the corpus uses both
+// "1,000–10,000" and "0.001--100" forms, and optionally an open-ended "+"
+// suffix like "5,000+") immediately followed by a currency-rate unit token
+// (\$/MWh, \$/MW, \$/unit, and the R$/USD currency variants). Requires
+// number-then-unit ADJACENCY (only optional whitespace, and the optional "+",
+// between them) so it does not fire on a bare unit label with no leading
+// number, nor on an unrelated number that merely precedes a KaTeX math span
+// ending in a literal "$" (e.g. "$1000$ \$/MWh over 5 stages" — the KaTeX
+// closing delimiter breaks the required "<num> <unit>" adjacency).
+const INSTANCE_MAGNITUDE =
+  /(?:R\$|US\$|USD|\$)?\s*\d[\d.,]*(?:\s*(?:–|—|-{1,2})\s*\d[\d.,]*)?\+?\s*\\?\$\s*\/\s*(?:MWh|MW|unit)\b/i;
+
 // A number found shortly after a hedge word, capturing the word right before it.
 const HEDGE_NUM = /([A-Za-z][\w-]*\s+)?(~?\d[\d.,]*\S*)/;
 
@@ -228,6 +241,15 @@ export function detectVoiceViolations(text, zone) {
       const hit = typicalNumberHit(prose);
       if (hit !== null) {
         violations.push({ lineno, rule: "unpinned-number", text: hit });
+      }
+
+      const magnitude = INSTANCE_MAGNITUDE.exec(prose);
+      if (magnitude) {
+        violations.push({
+          lineno,
+          rule: "instance-magnitude",
+          text: magnitude[0].trim(),
+        });
       }
     }
   }

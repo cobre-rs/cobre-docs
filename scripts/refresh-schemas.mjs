@@ -21,7 +21,8 @@
 //               Only used to resolve the git object database — the ref is read
 //               via plumbing (ls-tree/show), so cobre's CURRENTLY CHECKED OUT
 //               branch is irrelevant; only the tag's committed object matters.
-//     --ref     git ref/tag to vendor from (default: v0.14.0).
+//     --ref     git ref/tag to vendor from (default: DEFAULT_COBRE_REF, see
+//               scripts/cobre-ref.mjs).
 //     --check   verify-only: compare public/schemas/ against <ref>, write
 //               nothing; exit 1 listing every drifted/missing file, else exit 0.
 //
@@ -40,9 +41,9 @@ import { readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { DEFAULT_COBRE_REF } from "./cobre-ref.mjs";
 
 const EXPECTED_COUNT = 18;
-const DEFAULT_REF = "v0.14.1";
 // Ordered candidates for the schemas tree in cobre: `schemas/` from the mdBook
 // retirement (v0.11.0) onward, `book/src/schemas/` on earlier tags.
 const SCHEMAS_SUBPATHS = ["schemas", "book/src/schemas"];
@@ -133,7 +134,7 @@ function gitShow(cobre, ref, subpath, name) {
 
 function parseArgs(argv) {
   let cobre = process.env.COBRE_REPO ?? join(homedir(), "git", "cobre");
-  let ref = DEFAULT_REF;
+  let ref = DEFAULT_COBRE_REF;
   let check = false;
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];

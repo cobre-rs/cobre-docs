@@ -95,3 +95,28 @@ test("the 'on a modern' unpinned-number form is flagged in strict zone", () => {
   const v = detectVoiceViolations("This solves quickly on a modern workstation.", ZONE_STRICT);
   assert.ok(v.some((x) => x.rule === "unpinned-number"));
 });
+
+test("flags a monetary-rate instance magnitude in the STRICT zone", () => {
+  const v = detectVoiceViolations("| 1,000–10,000 \\$/MWh |", ZONE_STRICT);
+  assert.equal(v.filter((x) => x.rule === "instance-magnitude").length, 1);
+});
+
+test("does NOT flag the same instance magnitude in the LENIENT zone", () => {
+  const v = detectVoiceViolations("| 1,000–10,000 \\$/MWh |", ZONE_LENIENT);
+  assert.deepEqual(v, []);
+});
+
+test("does NOT flag a bare unit label with no leading number in strict zone", () => {
+  const v = detectVoiceViolations("| \\$/MWh |", ZONE_STRICT);
+  assert.deepEqual(v, []);
+});
+
+test("flags an open-ended magnitude ('5,000+') in the STRICT zone", () => {
+  const v = detectVoiceViolations("| 5,000+ \\$/unit |", ZONE_STRICT);
+  assert.equal(v.filter((x) => x.rule === "instance-magnitude").length, 1);
+});
+
+test("does NOT flag the same open-ended magnitude in the LENIENT zone", () => {
+  const v = detectVoiceViolations("| 5,000+ \\$/unit |", ZONE_LENIENT);
+  assert.deepEqual(v, []);
+});

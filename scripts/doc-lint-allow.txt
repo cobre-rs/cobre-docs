@@ -14,9 +14,10 @@
 # that fires on that exact path:line (the rule-id column is documentation,
 # not a filter — see scripts/doc-lint-allowlist.mjs).
 #
-# ── STATE: EMPTY ─────────────────────────────────────────────────────────────
-# ticket-028 burned the grandfather set down to zero: the three categories of
-# pre-existing hit were resolved at the source rather than tolerated —
+# ── HISTORY: burned down to empty by ticket-028, reopened by ticket-001 ─────
+# ticket-028 first burned the grandfather set down to zero: the three
+# categories of pre-existing hit were resolved at the source rather than
+# tolerated —
 #   • Category 1 (cobre-version-annotation narration) — the offending prose was
 #     rewritten in present tense with no version reference.
 #   • Category 2 (unpinned "typical" instance magnitudes) — the hedged numbers
@@ -30,6 +31,29 @@
 #     "migration" pattern) is now excluded structurally by the self-reference
 #     guard in check-doc-version.mjs, not grandfathered here.
 #
+# ticket-001 (Epic 01 batch 0, RI-5/ADR-006) then added the `instance-magnitude`
+# rule to check-doc-voice.mjs, closing the table-cell scanning gap: a bare
+# monetary-rate magnitude (e.g. a "Typical Range" column cell) carries no hedge
+# word, so the older unpinned-number check never saw it. The 14 hits below are
+# ALL pre-existing SYS-03 magnitudes in math/penalty-system.mdx; ticket-008
+# (Epic 02) scrubs that content per the Math-Layer Authoring Standards and
+# burns this set back down to zero.
+#
 # The gate remains active: any genuinely NEW hit must be fixed at the source, or
 # marked with an inline `<!-- doc-voice-ok: reason -->` for a real exception, or
 # (for a hit under editorial review) added below with a rationale.
+
+math/penalty-system.mdx:38  instance-magnitude  # pre-existing SYS-03 Typical-Range magnitude; burned down by ticket-008
+math/penalty-system.mdx:39  instance-magnitude  # pre-existing SYS-03 Typical-Range magnitude; burned down by ticket-008
+math/penalty-system.mdx:44  instance-magnitude  # pre-existing SYS-03 Typical-Range magnitude; burned down by ticket-008
+math/penalty-system.mdx:55  instance-magnitude  # pre-existing SYS-03 Typical-Range magnitude; burned down by ticket-008
+math/penalty-system.mdx:56  instance-magnitude  # pre-existing SYS-03 Typical-Range magnitude; burned down by ticket-008
+math/penalty-system.mdx:57  instance-magnitude  # pre-existing SYS-03 Typical-Range magnitude; burned down by ticket-008
+math/penalty-system.mdx:58  instance-magnitude  # pre-existing SYS-03 Typical-Range magnitude; burned down by ticket-008
+math/penalty-system.mdx:59  instance-magnitude  # pre-existing SYS-03 Typical-Range magnitude; burned down by ticket-008
+math/penalty-system.mdx:60  instance-magnitude  # pre-existing SYS-03 Typical-Range magnitude; burned down by ticket-008
+math/penalty-system.mdx:71  instance-magnitude  # pre-existing SYS-03 Typical-Range magnitude; burned down by ticket-008
+math/penalty-system.mdx:72  instance-magnitude  # pre-existing SYS-03 Typical-Range magnitude; burned down by ticket-008
+math/penalty-system.mdx:73  instance-magnitude  # pre-existing SYS-03 Typical-Range magnitude; burned down by ticket-008
+math/penalty-system.mdx:74  instance-magnitude  # pre-existing SYS-03 Typical-Range magnitude; burned down by ticket-008
+math/penalty-system.mdx:75  instance-magnitude  # pre-existing SYS-03 Typical-Range magnitude; burned down by ticket-008
