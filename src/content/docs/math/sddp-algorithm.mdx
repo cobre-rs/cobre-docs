@@ -57,7 +57,7 @@ direction: down
 
 fwd: "1. Forward pass\nsample M trajectories → trial points, UB" {shape: rectangle}
 bwd: "2. Backward pass\nevaluate N openings → 1 Benders cut / stage" {shape: rectangle}
-conv: "3. Converged?\ngap = (UB − LB) / max(1, |LB|) ≤ tol" {shape: diamond}
+conv: "3. Converged?\ngap = max(0, UB − LB) / max(1, |LB|) ≤ tol" {shape: diamond}
 done: stopped {shape: oval}
 
 fwd -> bwd: trial points
@@ -165,15 +165,15 @@ forward -> backward: "each visited trial point x̂"
 
 ### 3.3 Convergence Monitoring
 
-**Lower Bound**: The risk-adjusted lower bound is computed by solving the stage-0 LP for every opening in the stage-0 scenario set, collecting the per-opening objectives, and aggregating them through the stage-0 risk measure:
+**Lower Bound**: The risk-adjusted lower bound is computed by solving the stage-1 LP for every opening in the stage-1 scenario set, collecting the per-opening objectives, and aggregating them through the stage-1 risk measure (see [Stage Indexing](/overview/notation-conventions#stage-indexing) for the 1-based convention used throughout this spec):
 
 $$
-\underline{z}^k = \rho_0 \Big[ Q_0^k(x_0, \omega) \;\Big|\; \omega \in \Omega_0 \Big]
+\underline{z}^k = \rho_1 \Big[ Q_1^k(x_0, \omega) \;\Big|\; \omega \in \Omega_1 \Big]
 $$
 
-where $Q_0^k(x_0, \omega)$ is the optimal objective of the stage-0 LP under opening $\omega$ with the current cut approximation at iteration $k$, $x_0$ is the known initial state, and $\rho_0$ is the stage-0 risk measure (expected value under risk-neutral, or CVaR under risk-averse). The per-opening probabilities are uniform: $p(\omega) = 1 / |\Omega_0|$.
+where $Q_1^k(x_0, \omega)$ is the optimal objective of the stage-1 LP under opening $\omega$ with the current cut approximation at iteration $k$, $x_0$ is the known initial state, and $\rho_1$ is the stage-1 risk measure (expected value under risk-neutral, or CVaR under risk-averse). The per-opening probabilities are uniform: $p(\omega) = 1 / |\Omega_1|$.
 
-Under risk-neutral settings ($\rho_0 = \mathbb{E}$), this reduces to a simple average over all stage-0 opening objectives. Because cuts are added monotonically and never removed within a training run, this bound is non-decreasing across iterations — see [Cut Management](/math/cut-management) for the append-only guarantee.
+Under risk-neutral settings ($\rho_1 = \mathbb{E}$), this reduces to a simple average over all stage-1 opening objectives. Because cuts are added monotonically and never removed within a training run, this bound is non-decreasing across iterations — see [Cut Management](/math/cut-management) for the append-only guarantee.
 
 **Upper Bound**: Under a sampled forward pass, this is a **statistical** estimate — the sample mean over the forward pass trajectories; under an enumerated forward pass, it is the **exact** probability-weighted bound $\sum_\ell P(\ell)\, C(\ell)$ over every leaf path, with no sampling error (see [Upper Bound Evaluation](/math/upper-bound-evaluation)). The sampled-mean form:
 
@@ -181,11 +181,13 @@ $$
 \bar{z}^k = \frac{1}{M} \sum_{m=1}^{M} \sum_{t=1}^{T} c_t^\top x_t^{(m)}
 $$
 
-**Optimality Gap**:
+**Optimality Gap**: the difference between the two bounds, clamped to stay non-negative under sampling or floating-point noise:
 
 $$
-\text{gap}^k = \frac{\bar{z}^k - \underline{z}^k}{\max(1, |\underline{z}^k|)}
+\text{gap}^k = \frac{\max\bigl(0,\; \bar{z}^k - \underline{z}^k\bigr)}{\max(1, |\underline{z}^k|)}
 $$
+
+See [Upper Bound Evaluation](/math/upper-bound-evaluation), section 9, for the exact-mechanism gap this overview simplifies, and [Stopping Rules](/math/stopping-rules), section 5, for how the gap-based stopping rule consumes it.
 
 ### 3.4 Execution Model and Performance Considerations
 

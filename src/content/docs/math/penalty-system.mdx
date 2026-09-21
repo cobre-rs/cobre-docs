@@ -33,32 +33,32 @@ Penalties serve three distinct purposes in the LP formulation. Understanding the
 
 These penalties ensure that the SDDP algorithm has relatively complete recourse — every subproblem must be feasible regardless of the scenario realization. Without these slacks, the LP would be infeasible when generation cannot meet demand or when excess uncontrollable generation cannot be absorbed.
 
-| Penalty            | Units  | Applied To                | Purpose                         | Typical Range       |
-| ------------------ | ------ | ------------------------- | ------------------------------- | ------------------- |
-| `deficit_segments` | \$/MWh | Unmet load per bus        | Piecewise cost of load shedding | 1,000–10,000 \$/MWh |
-| `excess_cost`      | \$/MWh | Excess generation per bus | Absorb uncontrollable surplus   | 0.001–100 \$/MWh    |
+| Penalty            | Units  | Applied To                | Purpose                         |
+| ------------------ | ------ | ------------------------- | ------------------------------- |
+| `deficit_segments` | \$/MWh | Unmet load per bus        | Piecewise cost of load shedding |
+| `excess_cost`      | \$/MWh | Excess generation per bus | Absorb uncontrollable surplus   |
 
 Deficit and excess are conceptually slack variables on the load balance constraint, but they have special names because of their importance in the hydrothermal dispatch application. Deficit represents the value of lost load; excess is a regularization-level cost to eliminate spurious slack generation.
 
 :::note[Note on `excess_cost` range]
-The wide typical range (0.001--100 \$/MWh) reflects two distinct use cases. At the low end (0.001--0.1), the cost acts as a pure regularization term that breaks solver degeneracy without distorting the policy. At the high end (1--100), the cost serves a policy-shaping role, actively discouraging excess generation to keep dispatch solutions physically realistic. The global default example (`"excess_cost": 100.0`) uses the upper end of this range.
+The cost spans a wide range because it serves two distinct use cases. At the low end, it acts as a pure regularization term that breaks solver degeneracy without distorting the policy. At the high end, it serves a policy-shaping role, actively discouraging excess generation to keep dispatch solutions physically realistic. See the Configure tab below for the concrete case-level default.
 :::
 
 ### Category 2: Constraint Violation Penalties (Policy Shaping)
 
 These penalties provide slack for physical or operational constraints that may be impossible to satisfy under extreme conditions (e.g., drought, environmental directives from the system operator). Their cost must be high enough to affect the value function in earlier stages, signaling that the system should avoid states that lead to these violations.
 
-| Penalty                           | Units       | Applied To                     | Purpose                                            | Typical Range       |
-| --------------------------------- | ----------- | ------------------------------ | -------------------------------------------------- | ------------------- |
-| `storage_violation_below_cost`    | \$/hm3      | Storage < min (dead volume)    | Reservoir below dead volume — near-physical limit  | above `deficit`     |
-| `filling_target_violation_cost`   | \$/hm3      | Per-stage filling floor missed | Commissioning fill schedule — below `deficit`      | below `deficit`     |
-| `turbined_violation_below_cost`   | \$/(m3/s·h) | Turbined flow < min            | Equipment limits / ecological flow                 | 500–1,000 \$/unit   |
-| `outflow_violation_below_cost`    | \$/(m3/s·h) | Outflow < min                  | Environmental minimum flow (operator/regulatory)   | 500–1,000 \$/unit   |
-| `outflow_violation_above_cost`    | \$/(m3/s·h) | Outflow > max                  | Downstream flooding prevention                     | 500–1,000 \$/unit   |
-| `generation_violation_below_cost` | \$/MWh      | Generation < min               | Contractual or environmental minimum generation    | 1,000–2,000 \$/unit |
-| `evaporation_violation_cost`      | \$/(m3/s·h) | Evaporation constraint         | Physical constraint (bidirectional, see Section 5) | 5,000+ \$/unit      |
-| `water_withdrawal_violation_cost` | \$/(m3/s·h) | Unmet water withdrawal         | Human consumption / irrigation commitments         | 1,000–5,000 \$/unit |
-| `generic_violation_cost`          | varies      | Generic constraint violations  | User-defined physical or operational constraints   | User-defined        |
+| Penalty                           | Units       | Applied To                     | Purpose                                            |
+| --------------------------------- | ----------- | ------------------------------ | -------------------------------------------------- |
+| `storage_violation_below_cost`    | \$/hm3      | Storage < min (dead volume)    | Reservoir below dead volume — near-physical limit  |
+| `filling_target_violation_cost`   | \$/hm3      | Per-stage filling floor missed | Commissioning fill schedule — below `deficit`      |
+| `turbined_violation_below_cost`   | \$/(m3/s·h) | Turbined flow < min            | Equipment limits / ecological flow                 |
+| `outflow_violation_below_cost`    | \$/(m3/s·h) | Outflow < min                  | Environmental minimum flow (operator/regulatory)   |
+| `outflow_violation_above_cost`    | \$/(m3/s·h) | Outflow > max                  | Downstream flooding prevention                     |
+| `generation_violation_below_cost` | \$/MWh      | Generation < min               | Contractual or environmental minimum generation    |
+| `evaporation_violation_cost`      | \$/(m3/s·h) | Evaporation constraint         | Physical constraint (bidirectional, see Section 5) |
+| `water_withdrawal_violation_cost` | \$/(m3/s·h) | Unmet water withdrawal         | Human consumption / irrigation commitments         |
+| `generic_violation_cost`          | varies      | Generic constraint violations  | User-defined physical or operational constraints   |
 
 These penalties create an artificial cost in the objective function that propagates backward through the value function, telling earlier stages to store more water (or dispatch differently) to avoid reaching states where violations are necessary.
 
@@ -66,13 +66,13 @@ These penalties create an artificial cost in the objective function that propaga
 
 These are small costs inserted into the objective function to guide the solver toward physically preferred solutions when the LP would otherwise be indifferent. They do not represent real costs and should be orders of magnitude smaller than any economic cost to avoid distorting the optimal policy.
 
-| Penalty            | Units       | Applied To                     | Purpose                                                                                                | Typical Range      |
-| ------------------ | ----------- | ------------------------------ | ------------------------------------------------------------------------------------------------------ | ------------------ |
-| `spillage_cost`    | \$/(m3/s·h) | Water spilled                  | Prefer turbining over spilling when solver is indifferent                                              | 0.001–0.01 \$/unit |
-| `turbined_cost`    | \$/(m3/s·h) | Turbined flow (every hydro)    | Prevent interior FPHA solutions; must be > `spillage_cost` per plant (see below)                       | 0.01–0.1 \$/unit   |
-| `diversion_cost`   | \$/(m3/s·h) | Water diverted                 | Prefer main channel flow; higher than spillage (water leaves cascade)                                  | 0.01–0.1 \$/unit   |
-| `curtailment_cost` | \$/MWh      | Curtailed non-controllable gen | Prioritize using available non-controllable generation over curtailing it                              | 0.001–0.01 \$/unit |
-| `exchange_cost`    | \$/MWh      | Power flow on lines            | Prefer local supply; avoid unnecessary inter-bus power flows                                           | 0.01–1.0 \$/unit   |
+| Penalty            | Units       | Applied To                     | Purpose                                                                                                |
+| ------------------ | ----------- | ------------------------------ | ------------------------------------------------------------------------------------------------------ |
+| `spillage_cost`    | \$/(m3/s·h) | Water spilled                  | Prefer turbining over spilling when solver is indifferent                                              |
+| `turbined_cost`    | \$/(m3/s·h) | Turbined flow (every hydro)    | Prevent interior FPHA solutions; must be > `spillage_cost` per plant (see below)                       |
+| `diversion_cost`   | \$/(m3/s·h) | Water diverted                 | Prefer main channel flow; higher than spillage (water leaves cascade)                                  |
+| `curtailment_cost` | \$/MWh      | Curtailed non-controllable gen | Prioritize using available non-controllable generation over curtailing it                              |
+| `exchange_cost`    | \$/MWh      | Power flow on lines            | Prefer local supply; avoid unnecessary inter-bus power flows                                           |
 
 ### Penalty Priority Ordering
 

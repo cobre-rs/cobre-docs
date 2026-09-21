@@ -3,10 +3,10 @@ title: Hydro Production Function Models
 description: Constant productivity, FPHA (piecewise-linear convex hull fit), and linearized head models for hydro generation constraints — with fitting pipeline, LP integration, and energy-conversion scalars.
 ---
 
-import { Tabs, TabItem } from '@astrojs/starlight/components';
-import { Content as HydroConfigure } from './_impl/_hydro.configure.mdx';
-import { Content as HydroIO } from './_impl/_hydro.io.mdx';
-import { Content as HydroNotes } from './_impl/_hydro.notes.mdx';
+import { Tabs, TabItem } from "@astrojs/starlight/components";
+import { Content as HydroConfigure } from "./_impl/_hydro.configure.mdx";
+import { Content as HydroIO } from "./_impl/_hydro.io.mdx";
+import { Content as HydroNotes } from "./_impl/_hydro.notes.mdx";
 
 ## Purpose
 
@@ -196,13 +196,13 @@ The fitter evaluates the exact production function $\phi = \rho_{esp} \cdot q \c
 
 Each cloud point is capped at the plant's installed capacity $\bar{G}_h$. Spillage is not a cloud dimension — it is fixed at zero throughout.
 
-**Run-of-river plants**: when the plant has a single fitting volume ($v_{min} \approx v_{max}$), two volume samples ~1% of useful storage apart are synthesized to keep the 3-D hull non-degenerate. The resulting $\gamma_V$ residual is then **snapped to exactly 0**, enforcing the correct run-of-river semantics ($\gamma_V = 0$).
+**Run-of-river plants**: when the plant has a single fitting volume ($v_{min} \approx v_{max}$), two volume samples ~1% of useful storage apart are synthesized to keep the 3-D hull non-degenerate. The resulting $\gamma_v$ residual is then **snapped to exactly 0**, enforcing the correct run-of-river semantics ($\gamma_v = 0$).
 
 **Determinism**: the cloud points and the hull output are canonically sorted, so the fitted hyperplanes are bit-identical regardless of input ordering and MPI rank count.
 
 #### 2.6.2 Convex Hull
 
-The 3-D convex hull of the $(V, Q, \text{generation})$ cloud is computed via the qhull library. The **upper-envelope facets** — those whose outward normal has a positive generation component — are selected. Each is read as $\text{generation} = \gamma_0 + \gamma_V V + \gamma_Q Q$. The result is a **concave outer approximation** (the smallest concave function lying above $\phi$); non-concave regions of $\phi$ fall inside the hull and their facets drop out. Near-parallel coplanar facets arising from hull triangulation are deduplicated by exact coefficient comparison.
+The 3-D convex hull of the $(V, Q, \text{generation})$ cloud is computed via the qhull library. The **upper-envelope facets** — those whose outward normal has a positive generation component — are selected. Each is read as $\text{generation} = \gamma_0 + \gamma_v V + \gamma_q Q$. The result is a **concave outer approximation** (the smallest concave function lying above $\phi$); non-concave regions of $\phi$ fall inside the hull and their facets drop out. Near-parallel coplanar facets arising from hull triangulation are deduplicated by exact coefficient comparison.
 
 #### 2.6.3 Least-Squares $\alpha_{FPHA}$ Correction
 
@@ -214,11 +214,11 @@ $$
 
 Key properties:
 
-- The regression uses the **pointwise minimum** over the raw hull planes as $FPHA_0(V_i, Q_j)$, because the LP applies planes as $g \le \gamma_0^m + \gamma_V^m V + \gamma_Q^m Q$ for every $m$, so the binding cap is the minimum, not the maximum.
+- The regression uses the **pointwise minimum** over the raw hull planes as $FPHA_0(V_i, Q_j)$, because the LP applies planes as $g \le \gamma_0^m + \gamma_v^m V + \gamma_q^m Q$ for every $m$, so the binding cap is the minimum, not the maximum.
 - The regression is over the spill$=0$ grid only — adding a spillage axis would pull $\alpha_{FPHA}$ toward the larger-deviation spill region and degrade the no-spill operating region.
-- $\alpha_{FPHA}$ scales the **whole affine function** ($\gamma_0, \gamma_V, \gamma_Q$ alike), not just the intercept. This is why $\alpha_{FPHA} \ne \kappa$ (the old intercept-only shrink).
+- $\alpha_{FPHA}$ scales the **whole affine function** ($\gamma_0, \gamma_v, \gamma_q$ alike), not just the intercept. This is why $\alpha_{FPHA} \ne \kappa$ (the old intercept-only shrink).
 - $\alpha_{FPHA}$ may be **greater or less than 1** (an MSE balance, not a one-sided shrink). Validation requires $\alpha_{FPHA} > 0$. A degenerate denominator (all-zero production) yields the neutral $\alpha_{FPHA} = 1$.
-- Validation also requires $\gamma_V \ge 0$, $\gamma_Q \ge 0$, $\gamma_S \le 0$.
+- Validation also requires $\gamma_v \ge 0$, $\gamma_q \ge 0$, $\gamma_s \le 0$.
 
 :::note[Notation note]
 $\alpha_{FPHA}$ is written with a subscript throughout this chapter to distinguish it from the Benders cut intercept $\alpha$ (see [cut management](/math/cut-management)).
@@ -230,7 +230,7 @@ $\alpha_{FPHA}$ is written with a subscript throughout this chapter to distingui
 
 ### 2.7 Lateral-Flow Secant
 
-Spillage raises the tailrace level, lowering net head and generation. The $\gamma_S$ coefficient for each plane is fit by a **per-plane 1-D ordinary-least-squares secant** of generation vs lateral flow (in the current default: own spillage $s$) over **9 evenly-spaced samples** of $q_{lat} \in [0, S_{max}]$, evaluated at the plane's representative (active-maximum) operating point:
+Spillage raises the tailrace level, lowering net head and generation. The $\gamma_s$ coefficient for each plane is fit by a **per-plane 1-D ordinary-least-squares secant** of generation vs lateral flow (in the current default: own spillage $s$) over **9 evenly-spaced samples** of $q_{lat} \in [0, S_{max}]$, evaluated at the plane's representative (active-maximum) operating point:
 
 $$
 S_{max} = \begin{cases}2 \cdot \text{MLT} & \text{if MLT} > 0 \\ 2 \cdot q_{max} & \text{if MLT} = 0\end{cases}
@@ -238,7 +238,7 @@ $$
 
 where MLT is the long-term mean inflow (m³/s). The **representative operating point** for each plane is the spill$=0$ grid point where that plane is the active (tightest) upper bound and attains the largest generation — the operating region the plane actually governs. The secant samples the **uncapped** production function $\phi$ (not clipped at installed capacity $\bar{G}_h$), so the spillage sensitivity is read from the raw head curve and is not flattened wherever the capacity ceiling binds — unlike the cloud and the $\alpha_{FPHA}$ regression (§2.6), which both use the capacity-capped output.
 
-**Sign**: $\gamma_S \le 0$ (more lateral flow raises the tailrace, reduces generation). Near-zero slopes $|\gamma_S| < 10^{-10}$ of either sign are **snapped to exactly 0** to protect LP column scaling from near-zero structural coefficients.
+**Sign**: $\gamma_s \le 0$ (more lateral flow raises the tailrace, reduces generation). Near-zero slopes $|\gamma_s| < 10^{-10}$ of either sign are **snapped to exactly 0** to protect LP column scaling from near-zero structural coefficients.
 
 **Default lateral axis**: own spillage ($q_{lat} = s$). The more general $Q_{jus}$ composition (upstream defluences, post-incremental inflows with participation factors) is a deferred future extension.
 
@@ -249,7 +249,7 @@ An optional post-fit step merges consecutive **near-parallel or near-coincident*
 - **Angle** (`method: angle`, tolerance in degrees): merge consecutive pairs whose normal-vector angle $\theta = \arccos(\mathbf{n}_1 \cdot \mathbf{n}_2 / \|\mathbf{n}_1\|\|\mathbf{n}_2\|)$ satisfies $\theta < \varepsilon$ (strict). Fully deterministic from coefficients.
 - **Distance** (`method: distance`, tolerance in percent + sample count): merge consecutive pairs whose normalised mean-squared generation difference $\delta = \text{EQM}/\bar{G}_h^2 < \varepsilon/100$. Uses a deterministically-seeded PRNG (seeded from stable plant/stage/plane-pair identity, never from wall clock or MPI rank), so results are bit-identical across input ordering and rank count.
 
-**Origin-plane invariant**: the plane through the origin ($\gamma_0 \approx 0 \wedge \gamma_V \approx 0$, generating zero power at zero turbining) is **never merged**. This guarantees the zero-generation floor.
+**Origin-plane invariant**: the plane through the origin ($\gamma_0 \approx 0 \wedge \gamma_v \approx 0$, generating zero power at zero turbining) is **never merged**. This guarantees the zero-generation floor.
 
 **Off by default**: no reduction is applied unless an `fpha_plane_reduction` block is present in the production-models config.
 
@@ -526,9 +526,15 @@ For FPHA hydros, the production-models input does not accept a productivity scal
 The methodology above defines the hydro production models; the tabs below cover how Cobre's software surface configures, feeds, and reports on them.
 
 <Tabs>
-  <TabItem label="Configure"><HydroConfigure /></TabItem>
-  <TabItem label="Inputs & Outputs"><HydroIO /></TabItem>
-  <TabItem label="Implementation notes"><HydroNotes /></TabItem>
+  <TabItem label="Configure">
+    <HydroConfigure />
+  </TabItem>
+  <TabItem label="Inputs & Outputs">
+    <HydroIO />
+  </TabItem>
+  <TabItem label="Implementation notes">
+    <HydroNotes />
+  </TabItem>
 </Tabs>
 
 ## Cross-References

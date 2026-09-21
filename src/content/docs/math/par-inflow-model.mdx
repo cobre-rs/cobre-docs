@@ -24,9 +24,9 @@ where:
 
 - $a_{h,t}$: Incremental inflow at stage $t$ (m³/s)
 - $\mu_{m(t)}$: Seasonal mean for season $m(t)$
-- $\psi_{m(t),\ell}$: Autoregressive coefficient for lag $\ell$ in season $m(t)$
+- [$\psi_{m(t),\ell}$](/overview/notation-conventions#35-inflow-model-parameters): Autoregressive coefficient for lag $\ell$ in season $m(t)$
 - $\sigma_{m(t)}$: Innovation standard deviation for season $m(t)$ (**derived** at load — see section 3)
-- $\varepsilon_t \sim \mathcal{N}(0, 1)$: Innovation (standardized noise)
+- [$\varepsilon_t$](/overview/notation-conventions#35-inflow-model-parameters) $\sim \mathcal{N}(0, 1)$: Innovation (standardized noise)
 - $m(t)$: Season index for stage $t$ (e.g., month 1–12)
 
 The model order $p$ can vary by season and by hydro plant.
@@ -161,10 +161,10 @@ The stored standardized coefficients $\psi^*_{m,\ell}$ are converted to original
 $$
 a_h = \underbrace{\left( \mu_m - \sum_{\ell=1}^{p} \psi_{m,\ell} \mu_{m-\ell} \right)}_{\text{deterministic base}}
 + \underbrace{\sum_{\ell=1}^{p} \psi_{m,\ell} \cdot a_{h,\ell}}_{\text{lag contribution}}
-+ \underbrace{\sigma_m \cdot \eta_t}_{\text{stochastic innovation}}
++ \underbrace{\sigma_m \cdot \varepsilon_t}_{\text{stochastic innovation}}
 $$
 
-where $a_{h,\ell}$ are state variables (lagged inflows) and $\eta_t$ is the sampled noise realization.
+where $a_{h,\ell}$ are state variables (lagged inflows) and $\varepsilon_t$ is the sampled noise realization.
 
 Whether the lagged inflows enter the Benders **cuts** is a separate, per-stage choice from whether they drive this inflow equation. A stage's `state_variables` selection defaults to storage-only, so by default a PAR($p$) study's cuts span storage alone — the inflow-lag dimensions are projected out, not zero-padded. Enabling `inflow_lags` on a stage restores the full storage-plus-lag cut; disabling it on **every** stage while fitting a PAR($p > 0$) model raises a model-quality warning, since the fitted inflow memory then never reaches any cut. The storage-only projection is the mechanism by which a PAR($p$) study can be coupled to a storage-only downstream boundary. See [cut management](/math/cut-management).
 

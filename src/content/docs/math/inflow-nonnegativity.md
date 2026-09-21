@@ -9,20 +9,20 @@ This spec defines the four methods available for handling negative inflow realiz
 
 ## 1. Problem Statement
 
-The PAR(p) model's inflow equation can produce a negative realization:
+The PAR(p) model's inflow equation — using the AR coefficient [$\psi_{m,\ell}$](/overview/notation-conventions#35-inflow-model-parameters) — can produce a negative realization:
 
 $$
-a_h = \underbrace{\mu_m - \sum_{\ell=1}^{p} \psi_\ell \mu_{m-\ell}}_{\text{deterministic base}} + \underbrace{\sum_{\ell=1}^{p} \psi_\ell \cdot \hat{a}_{h,\ell}}_{\text{lag contribution}} + \underbrace{\sigma_m \cdot \eta}_{\text{noise term}}
+a_h = \underbrace{\mu_m - \sum_{\ell=1}^{p} \psi_{m,\ell} \mu_{m-\ell}}_{\text{deterministic base}} + \underbrace{\sum_{\ell=1}^{p} \psi_{m,\ell} \cdot \hat{a}_{h,\ell}}_{\text{lag contribution}} + \underbrace{\sigma_m \cdot \varepsilon}_{\text{noise term}}
 $$
 
-When $\eta$ is sufficiently negative (e.g., $\eta < -2$), the total can become negative. That is not itself a physical impossibility: $a_h$ is _incremental_ inflow — a plant's natural flow minus its upstream plants' — so a genuinely negative value is real hydrology (a reach that loses water over the period), and the same $a_h < 0$ case arises whether the realization comes from PAR(p) noise or from replaying a negative window of historical/observed data directly (`inflow_history`/`recent_observations`; see [PAR(p) Inflow Model](/math/par-inflow-model)). What the methods below solve is the LP's water-balance consequence of $a_h < 0$: absorbing it without the other water-balance variables (storage, release, spillage — all bounded $\geq 0$) being driven infeasible.
+When the [innovation](/overview/notation-conventions#35-inflow-model-parameters) $\varepsilon$ is sufficiently negative (e.g., $\varepsilon < -2$), the total can become negative. That is not itself a physical impossibility: $a_h$ is _incremental_ inflow — a plant's natural flow minus its upstream plants' — so a genuinely negative value is real hydrology (a reach that loses water over the period), and the same $a_h < 0$ case arises whether the realization comes from PAR(p) noise or from replaying a negative window of historical/observed data directly (`inflow_history`/`recent_observations`; see [PAR(p) Inflow Model](/math/par-inflow-model)). What the methods below solve is the LP's water-balance consequence of $a_h < 0$: absorbing it without the other water-balance variables (storage, release, spillage — all bounded $\geq 0$) being driven infeasible.
 
 ## 2. Penalty Classification
 
 The inflow non-negativity penalty $c^{inf}$ is a **Category 2 constraint violation penalty** — it provides slack for a physical constraint (non-negative inflow) that may be impossible to satisfy under extreme noise realizations. Its position in the penalty hierarchy (see [LP Formulation](/math/lp-formulation)):
 
 $$
-c^{tv-}, c^{ov\pm}, c^{gv-}, c^{ev}, c^{wv}, c^{inf} > c^{th}, c^{ctr}
+c^{tv-}, c^{ov\pm}, c^{gv-}, c^{ev\pm}, c^{wv\pm}, c^{inf} > c^{th}, c^{ctr}
 $$
 
 Since inflow $a_h$ is defined per stage (not per block), the inflow non-negativity penalty appears **outside** the block summation in the objective, alongside storage violation penalties:
@@ -44,7 +44,7 @@ where $T = \sum_k \tau_k$ is the total stage duration in hours. The product $\si
 **LP Formulation**: Standard AR constraint (unchanged):
 
 $$
-a_h = \text{deterministic\_base} + \sum_{\ell=1}^{p} \psi_\ell \cdot a_{h,\ell} + \sigma_m \cdot \eta
+a_h = \text{deterministic\_base} + \sum_{\ell=1}^{p} \psi_{m,\ell} \cdot a_{h,\ell} + \sigma_m \cdot \varepsilon
 $$
 
 **Implications**:
@@ -78,7 +78,7 @@ The penalty cost $c^{inf}$ is authored separately in the penalties file under th
 **Modified AR Constraint**:
 
 $$
-a_h + \sigma^{inf}_h = \text{deterministic\_base} + \sum_{\ell=1}^{p} \psi_\ell \cdot a_{h,\ell} + \sigma_m \cdot \eta
+a_h + \sigma^{inf}_h = \text{deterministic\_base} + \sum_{\ell=1}^{p} \psi_{m,\ell} \cdot a_{h,\ell} + \sigma_m \cdot \varepsilon
 $$
 
 **Interpretation**: When the AR model produces negative $a_h$, the slack $\sigma^{inf}_h$ absorbs the violation, making the effective inflow:
@@ -117,7 +117,7 @@ where $c^{inf}$ is the penalty cost (default: 1000 \$/(m³/s·h)) and $T = \sum_
 **Scenario Generation**:
 
 $$
-a_h = \max\left(0, \text{deterministic\_base} + \sum_{\ell=1}^{p} \psi_\ell \cdot \hat{a}_{h,\ell} + \sigma_m \cdot \eta\right)
+a_h = \max\left(0, \text{deterministic\_base} + \sum_{\ell=1}^{p} \psi_{m,\ell} \cdot \hat{a}_{h,\ell} + \sigma_m \cdot \varepsilon\right)
 $$
 
 **LP Formulation**: Standard AR constraint with the already-truncated $a_h$ value:
@@ -160,7 +160,7 @@ This is the production method Cobre uses for inflow non-negativity. The two prec
 The PAR(p) noise is clamped outside the LP before the scenario is patched in, exactly as in the `truncation` method:
 
 $$
-a_h = \max\left(0, \text{deterministic\_base} + \sum_{\ell=1}^{p} \psi_\ell \cdot \hat{a}_{h,\ell} + \sigma_m \cdot \eta\right)
+a_h = \max\left(0, \text{deterministic\_base} + \sum_{\ell=1}^{p} \psi_{m,\ell} \cdot \hat{a}_{h,\ell} + \sigma_m \cdot \varepsilon\right)
 $$
 
 Inside the LP, penalty slack columns $\sigma^{inf}_h$ are added to the water-balance constraint, exactly as in the `penalty` method:
@@ -174,7 +174,7 @@ Inside the LP, penalty slack columns $\sigma^{inf}_h$ are added to the water-bal
 **Modified AR Constraint** (inside LP, using the clamped $a_h$):
 
 $$
-a_h + \sigma^{inf}_h = \text{deterministic\_base} + \sum_{\ell=1}^{p} \psi_\ell \cdot a_{h,\ell} + \sigma_m \cdot \eta
+a_h + \sigma^{inf}_h = \text{deterministic\_base} + \sum_{\ell=1}^{p} \psi_{m,\ell} \cdot a_{h,\ell} + \sigma_m \cdot \varepsilon
 $$
 
 **Objective Function Addition** (outside block summation):
@@ -206,15 +206,15 @@ The literature formulates the same problem using a dimensionless noise-adjustmen
 **Part A — Modified noise term**:
 
 $$
-\eta_h^{adj} = \eta_h + \xi_h
+\varepsilon_h^{adj} = \varepsilon_h + \xi_h
 $$
 
-where $\eta_h$ is the original (possibly very negative) noise realization.
+where $\varepsilon_h$ is the original (possibly very negative) noise realization.
 
 **Part B — Inflow with adjusted noise**:
 
 $$
-a_h = \text{deterministic\_base} + \sum_{\ell=1}^{p} \psi_\ell \cdot a_{h,\ell} + \sigma_m \cdot \eta_h^{adj}
+a_h = \text{deterministic\_base} + \sum_{\ell=1}^{p} \psi_{m,\ell} \cdot a_{h,\ell} + \sigma_m \cdot \varepsilon_h^{adj}
 $$
 
 **Non-negativity constraint**:
@@ -226,7 +226,7 @@ $$
 **Interpretation**: The optimizer chooses $\xi_h$ to be the minimum adjustment needed to make $a_h \geq 0$:
 
 $$
-\xi_h = \max\left(0, -\eta_h - \frac{\text{deterministic\_base} + \sum_\ell \psi_\ell \cdot \hat{a}_{h,\ell}}{\sigma_m}\right)
+\xi_h = \max\left(0, -\varepsilon_h - \frac{\text{deterministic\_base} + \sum_\ell \psi_{m,\ell} \cdot \hat{a}_{h,\ell}}{\sigma_m}\right)
 $$
 
 **Objective Function Addition** (outside block summation):
@@ -257,4 +257,4 @@ The penalty is proportional to $\sigma_m \cdot \xi_h$, which is the actual inflo
 - [LP Formulation](/math/lp-formulation) — Objective function structure and penalty taxonomy where $c^{inf}$ is a Category 2 constraint violation penalty
 - [PAR Inflow Model](/math/par-inflow-model) — Defines the PAR(p) model that produces the inflow realizations handled here
 - [Penalty System](/math/penalty-system) — Penalty hierarchy and cascade resolution
-- [Scenario Generation](/math/scenario-generation) — The noise term $\eta$ in the inflow equation comes from the fixed opening tree (pre-generated noise vectors), not from per-iteration random sampling
+- [Scenario Generation](/math/scenario-generation) — The noise term $\varepsilon$ in the inflow equation comes from the fixed opening tree (pre-generated noise vectors), not from per-iteration random sampling
