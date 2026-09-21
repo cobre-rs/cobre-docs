@@ -299,8 +299,11 @@ account for the long-term future cost of water.
 
 1. **Run a monthly study** and produce a policy checkpoint (the "outer" model).
 2. **Run a weekly+monthly study** with `policy.boundary` pointing to the
-   monthly checkpoint. Cobre loads cuts from the specified stage and injects
-   them into the terminal stage's row pool as fixed boundary conditions.
+   monthly checkpoint. Cobre selects the source pool priced at the coupled
+   study's **terminal boundary date** — the last non-negative stage's
+   `end_date` — and injects its cuts into the terminal stage's row pool as
+   fixed boundary conditions. There is no stage-index knob: the pool is chosen
+   by matching that date against each source pool's own priced-state date.
 
 The imported boundary cuts are **not updated** by the SDDP training algorithm.
 They remain fixed throughout training and simulation, providing a floor on
@@ -351,16 +354,24 @@ Add a `boundary` object to the `policy` section of `config.json`:
     "mode": "fresh",
     "boundary": {
       "path": "../monthly_study/policy",
-      "source_stage": 2
+      "strict": false
     }
   }
 }
 ```
 
-| Field          | Type    | Description                                                     |
-| -------------- | ------- | --------------------------------------------------------------- |
-| `path`         | string  | Path to the source Cobre policy checkpoint directory.           |
-| `source_stage` | integer | 0-based stage index in the source checkpoint to load cuts from. |
+| Field    | Type    | Default | Description                                                                                                                                                                                            |
+| -------- | ------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `path`   | string  | —       | Path to the source Cobre policy checkpoint directory.                                                                                                                                                  |
+| `strict` | boolean | `false` | Governs a **superset** source (one pricing an entity or commitment this study does not model). `false` drops the surplus, records it in the reconciliation report, and loads; `true` rejects the load. |
+
+There is **no stage-index knob**: the source pool is selected automatically by
+the coupled study's terminal boundary date (see [How it works](#how-it-works)
+above), so the configuration never names a stage. A source that prices
+_more_ than this study models — an extra reservoir, or an anticipated commitment
+or in-transit bucket for an entity the study does not carry — is reconciled
+according to `strict`: dropped-and-reported by default, or rejected under
+`strict: true`.
 
 When `boundary` is absent or `null`, no boundary cuts are loaded (the default).
 
@@ -377,10 +388,56 @@ feeding a differently-shaped study — still injects, each source coefficient
 binding to the current study's slot for the same entity. A source coordinate
 that couples a state slot the current study does not model cannot be carried; it
 is reported in a **per-family reconciliation summary** and dropped, and the load
-still **succeeds** — where earlier releases rejected the load outright on the
-state-dimension check. See
+still **succeeds** by default — where earlier releases rejected the load outright
+on the state-dimension check. See
 [Post-Study Boundary §4](/math/post-study-boundary) for the reconciliation
 mechanism.
+
+That leniency is the default reconcile path, but the load still enforces hard
+requirements. Two classes of check are **independent of `strict`**.
+
+**Date-selection rejects.** Before any coefficient is reconciled, Cobre resolves
+the source to exactly one pool priced at the study's terminal boundary date.
+Four conditions abort the load with a named error:
+
+- **Undated source** — no pool in the source checkpoint records a priced-state
+  date: `boundary policy checkpoint at {path} carries no priced_state_date on any pool (a pool written before priced dates were recorded); re-export it with a current Cobre`.
+- **No pool at the date** — no source pool is priced at the boundary date:
+  `boundary policy at {path}: no pool is priced at the study's boundary date {date} (available: {dates})`.
+- **More than one pool at the date** — the source is ambiguous:
+  `boundary policy at {path}: more than one pool is priced at the study's boundary date {date} (pools {pools}); boundary injection requires a unique priced source`.
+- **Shared-node source** — the resolved pool is not a single-node terminal pool:
+  `boundary policy at {path}: a boundary source must be a single-node terminal pool; the resolved pool is shared by multiple nodes`.
+
+**Subset rejects.** If the source prices _less_ than this study needs, the load
+is rejected regardless of `strict`:
+
+- **Missing storage** — the source does not price a hydro the study models:
+  `boundary policy does not price {names}; it was trained on a different set of plants`.
+- **Missing inflow-lag** — the source has no inflow-lag coefficient at a depth
+  the study needs: `boundary policy has no inflow-lag coefficient for {names}: the boundary is lag-depth-incompatible with the current study`.
+
+**Superset behavior (`strict`).** When the source prices _more_ than the study
+models, the surplus source slots are dropped during reconciliation either way.
+With `strict: false` (the default) the drop is recorded in the reconciliation
+report and the load proceeds; with `strict: true` the same condition rejects the
+load: `boundary policy at {path} is a superset: {summary}; see the reconciliation report or set policy.boundary.strict = false`, where `{summary}` names every
+dropping family and its count. `strict` governs **only** this superset case — it
+does not relax the subset rejects or loosen the four date-selection rejects.
+
+**Where the reconciliation report appears.** Whether the load proceeds or is
+rejected under `strict`, the per-family reconciliation is surfaced on three
+paths:
+
+- **`cobre run`** prints a post-run **Boundary policy** block to stderr —
+  `Cuts loaded: N (priced at {date})`, `Source: {path}`, and a `Reconciliation:`
+  line `N copied, N fanned out, N defaulted to 0.0, N dropped`.
+- **`cobre validate --json`** emits a boundary object with `configured`,
+  `boundary_date`, and `report` fields carrying the full per-family report
+  (worked example under [Configuration → boundary](/running/configuration/#boundary)).
+- **`cobre validate`** (human mode) prints `boundary policy priced at {date}`
+  followed by the one-line summary
+  `boundary reconciliation: N copied, N fanned out, N defaulted to 0.0, N source slots dropped`.
 
 ### Production coupling workflow
 
@@ -389,10 +446,10 @@ The typical production coupling pipeline uses boundary cuts as follows:
 ```d2
 direction: down
 
-monthly: "Monthly study — 12 stages\npolicy checkpoint: cuts for stages 0–11" {shape: rectangle}
+monthly: "Monthly study\npolicy checkpoint: cut pools priced by date" {shape: rectangle}
 coupled: "Weekly+monthly coupled study\n(W1 · W2 · W3 · W4 · M2)" {shape: rectangle}
 
-monthly -> coupled: "policy.boundary.path = ../monthly/policy\nsource_stage = 2  (March cuts → terminal FCF)"
+monthly -> coupled: "policy.boundary.path = ../monthly/policy\nsource pool priced at the coupled study's terminal date → terminal FCF"
 ```
 
 The coupled study's terminal stage (M2) receives the monthly model's March
@@ -410,8 +467,7 @@ Boundary cuts and warm-start are independent features. You can combine them:
     "mode": "warm_start",
     "path": "./policy",
     "boundary": {
-      "path": "../monthly/policy",
-      "source_stage": 2
+      "path": "../monthly/policy"
     }
   }
 }

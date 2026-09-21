@@ -360,7 +360,12 @@ Cobre's MPI results are **rank-count invariant**: for a given case, the
 classified output files are decoded-value bit-identical whether you run on one
 rank or many, and whether the ranks sit on one node or several. Only wall-clock
 timing columns and the per-rank/per-worker execution-topology tables legitimately
-differ. This means you can develop and validate on a single rank and scale out
+differ. The invariance holds for `policy.boundary` runs too: an imported terminal
+boundary policy is reconciled onto the study's own state once and the reconciled
+boundary pool is applied on every rank, so a boundary-coupled run is rank-count
+invariant like any other — see
+[Compatibility requirements](/running/policy-management/#compatibility-requirements)
+for how that boundary pool is reconciled. This means you can develop and validate on a single rank and scale out
 to the full fleet without changing results — the broader guarantee is documented
 in [Determinism Guarantees](/math/determinism-guarantees/).
 

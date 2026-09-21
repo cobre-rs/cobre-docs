@@ -164,9 +164,13 @@ reservoir, an anticipated slot to the same plant-and-delivery-date, an
 in-transit bucket to the same arc-and-maturity. A source coordinate the current
 study does not model has nowhere to land and is **dropped** — counted, per
 family, in the reconciliation summary below rather than silently discarded —
-and the load still succeeds. A differing state dimension is thus no longer a
-rejection; only a coordinate the current study models but the source cannot
-identify is defaulted rather than sourced.
+and the load still succeeds **by default**. A differing state dimension is thus
+not a rejection by default; only a coordinate the current study models but the
+source cannot identify is defaulted rather than sourced. A stricter admission is
+available that instead **rejects** a superset source — one pricing state the
+current study does not model — rather than dropping and reporting it; see
+[Compatibility requirements](/running/policy-management/#compatibility-requirements)
+for how the software layer requires it.
 
 The fan-out is produced once, at load, and its result is summarized rather
 than left implicit: a **per-family reconciliation summary** reports, for

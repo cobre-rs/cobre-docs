@@ -633,12 +633,18 @@ This enables Cobre-to-Cobre model coupling: a monthly study produces a
 policy checkpoint, and a weekly+monthly coupled study loads that checkpoint's
 cuts as its terminal-stage future cost function.
 
-| Field          | Type    | Description                                                     |
-| -------------- | ------- | ----------------------------------------------------------------- |
-| `path`         | string  | Path to the source policy checkpoint directory.                 |
-| `source_stage` | integer | 0-based stage index in the source checkpoint to load cuts from. |
+The source pool is selected automatically by the current study's **terminal
+boundary date** (the last non-negative stage's `end_date`) — there is no
+stage-index knob. `strict` governs a source that prices _more_ than this study
+models.
 
-Example — load stage 2's cuts from a monthly policy as terminal boundary:
+| Field    | Type    | Default | Description                                                                                                                                                        |
+| -------- | ------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `path`   | string  | —       | Path to the source policy checkpoint directory.                                                                                                                    |
+| `strict` | boolean | `false` | Reject the load when the source prices an entity or commitment this study does not model. `false` drops the surplus (recorded in the reconciliation report) and loads. |
+
+Example — load a monthly policy as the terminal boundary (the source pool priced
+at the study's terminal date is selected automatically):
 
 ```json
 {
@@ -646,14 +652,45 @@ Example — load stage 2's cuts from a monthly policy as terminal boundary:
     "mode": "fresh",
     "boundary": {
       "path": "../monthly_study/policy",
-      "source_stage": 2
+      "strict": false
     }
   }
 }
 ```
 
+Running `cobre validate --json` on a case that configures a boundary emits the
+selected date and the per-family reconciliation report as one object — the
+success shape carries `configured`, `boundary_date`, and `report`:
+
+```json
+{
+  "configured": true,
+  "boundary_date": "2027-12-01",
+  "report": {
+    "reconciled": true,
+    "storage": { "copy": 44, "fan_out": 0, "straddling": 0, "default_zero": 0, "dropped_source": 0 },
+    "inflow_lag": { "copy": 44, "fan_out": 0, "straddling": 0, "default_zero": 0, "dropped_source": 0 },
+    "transit_bucket": { "copy": 6, "fan_out": 0, "straddling": 0, "default_zero": 0, "dropped_source": 0 },
+    "anticipated": { "copy": 3, "fan_out": 0, "straddling": 0, "default_zero": 0, "dropped_source": 1 },
+    "anticipated_coverage": { "source_interval_count": 4 },
+    "other_identity": { "copy": 0, "fan_out": 0, "straddling": 0, "default_zero": 0, "dropped_source": 0 },
+    "dropped_source_slots": [
+      { "family": "anticipated", "entity_id": 17, "subindex": 0, "interval": ["2028-01-01", "2028-02-01"], "reference_date": null }
+    ],
+    "straddling_slots": []
+  }
+}
+```
+
+Here one anticipated-commitment slot the source priced (plant `17`, delivering
+in January 2028) is not modelled by this study, so it is dropped and counted
+under `anticipated.dropped_source`; with `strict: true` that same drop would
+reject the load instead.
+
 See [Policy Management — Boundary Cuts](/running/policy-management/#boundary-cuts)
-for a full explanation of the coupling workflow.
+for a full explanation of the coupling workflow, and
+[Compatibility requirements](/running/policy-management/#compatibility-requirements)
+for the date-selection and subset rejects.
 
 ---
 

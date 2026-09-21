@@ -189,6 +189,21 @@ message ordering. See [Scenario Generation](/math/scenario-generation) for
 the hash input encoding and the little-endian byte layout that ensures
 cross-platform stability.
 
+**Rank-invariant terminal-boundary injection.** When a study seeds its terminal
+cost-to-go from an imported boundary policy, the imported cut set is reconciled
+onto the study's own terminal state **once** — the dated, hour-weighted fan-out
+and per-family reconciliation described in
+[Post-Study Boundary §4](/math/post-study-boundary) — and the single reconciled
+result is injected identically at the terminal stage on **every** rank. That
+reconciliation is a pure function of globally known inputs: the imported source
+policy, together with the current study's own stage calendar and state layout —
+quantities every rank already holds. It therefore does not depend on the number
+of ranks, on how work is partitioned, or on which rank reads the source policy.
+Every rank injects the same terminal cut set, so the seeded outer approximation,
+and every lower bound and cut derived from it, is identical across topologies —
+the same rank-count invariance already established for internally generated cuts,
+trial points, and simulation costs.
+
 **Order-independent parallel cut selection.** Cut selection evaluates every cut
 at every visited trial point and decides survival per cut. The trial points are
 partitioned into fixed-size blocks processed in parallel; each block produces a
