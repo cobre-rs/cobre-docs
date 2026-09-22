@@ -1,152 +1,63 @@
 ---
 title: Performance Accelerators
-description: The performance optimizations built into Cobre's SDDP solver — LP setup, solver safeguards, scaling, cut management, basis warm-start, and parallel execution.
+description: The performance behaviours of Cobre's SDDP solver that a user configures or observes — solver safeguards, LP scaling, cut management, and parallel execution.
 ---
 
-This chapter documents the performance optimization techniques built into
-Cobre's SDDP solver. Each accelerator addresses a specific cost driver in
-the training loop and is active by default unless noted otherwise.
-Understanding them helps users interpret timing statistics, configure cut
-management strategies, and diagnose performance regressions.
-
----
-
-## LP Setup Optimizations
-
-Each SDDP iteration requires solving hundreds to thousands of LP
-subproblems. Minimizing per-solve overhead is critical.
-
-### Model Persistence
-
-The structural LP for each stage (the constraint matrix, variable bounds,
-and objective coefficients) is assembled once at initialization into a
-`StageTemplate`. During the training loop, the solver loads the template
-once per `(worker, stage)` pair and then only patches the scenario-dependent
-row bounds for each forward-pass scenario. This avoids rebuilding the
-entire LP from scratch at every scenario evaluation.
-
-The simulation pipeline uses the same pattern: a **stage-major loop** loads
-the LP once per `(worker, stage)` and then iterates over scenarios, patching
-bounds only. This reduces LP assembly overhead from `O(scenarios x stages)`
-to `O(workers x stages)`.
-
-### Incremental Cut Injection
-
-Benders cuts are appended to the persistent lower-bound LP via `add_rows`
-without rebuilding the structural model. A `CutRowMap` provides O(1)
-slot-to-row lookup so the incremental append skips cuts that are already
-present.
-
-The LB LP is strictly append-only: rows generated during training are
-appended and never removed, which keeps the lower bound monotonically
-non-decreasing across iterations. Row selection in the shared row pool
-still affects the forward and backward passes — pool-deactivated rows
-remain as LP rows in the LB solver but are not re-evaluated, so they
-contribute only their binding value at the trial point.
-
-### PatchBuffer Pre-Allocation
-
-The `PatchBuffer` holds three parallel arrays (`indices`, `lower`, `upper`)
-consumed by the solver's `set_row_bounds` call. It is sized once at
-construction for the maximum number of patches across all stages:
-
-| Category | Range                      | Content                                                 |
-| -------- | -------------------------- | ------------------------------------------------------- |
-| 1        | `[0, N)`                   | Storage-fixing: equality constraint at incoming storage |
-| 2        | `[N, N*(1+L))`             | Lag-fixing: equality constraint at AR lagged inflows    |
-| 3        | `[N*(1+L), N*(2+L))`       | Noise-fixing: equality constraint at scenario noise     |
-| 4        | `[N*(2+L), N*(2+L) + M*B)` | Load balance: stochastic load demand per bus per block  |
-| 5        | `[N*(2+L) + M*B, ...)`     | z-inflow RHS: inflow variable bounds                    |
-
-Where N = hydro plants, L = max PAR order, M = stochastic load buses,
-B = max blocks per stage. The buffer is reused across all iterations and
-scenarios with zero hot-path allocation.
+This chapter documents the performance behaviours of Cobre's SDDP solver that a
+user configures or observes: what to tune and what to read back from the output.
+Each accelerator addresses a specific cost driver in the training loop and is
+active by default unless noted otherwise. Understanding them helps users
+interpret timing statistics, configure cut management strategies, and diagnose
+performance regressions. The crate-internal data structures and allocation
+discipline that back these behaviours are documented in the cobre developer
+surface — see [See Also](#see-also).
 
 ---
 
 ## Solver Safeguards
 
-When HiGHS returns a non-terminal error (`SOLVE_ERROR` or `UNKNOWN`),
-the solver automatically escalates through a **12-level retry sequence**
-organized in two phases, with per-level and overall wall-clock budgets.
-The caller never sees intermediate failures — only the final
-`Ok(solution)` or `Err(SolverError)`.
+When HiGHS returns a non-terminal error, the solver automatically escalates
+through a bounded retry sequence rather than surfacing the failure. The caller
+never sees intermediate failures — only the final solution or a single
+classified solver error. Escalation is capped by a built-in per-attempt iteration
+limit and per-level and overall wall-clock budgets, so a pathological solve
+cannot stall the run indefinitely.
 
-### Phase 1 (levels 0--4): Cumulative Sequence
-
-Each level stacks on top of the previous:
-
-| Level | Action                                |
-| ----- | ------------------------------------- |
-| 0     | Clear cached basis and factorization  |
-| 1     | Enable presolve                       |
-| 2     | Switch to dual simplex                |
-| 3     | Relax feasibility tolerances (1e-6)   |
-| 4     | Switch to interior point method (IPM) |
-
-### Phase 2 (levels 5--11): Extended Strategies
-
-Each level starts from restored defaults with presolve and iteration
-limits, then applies level-specific options:
-
-| Level | Action                                                        |
-| ----- | ------------------------------------------------------------- |
-| 5     | Scale strategy 3                                              |
-| 6     | Primal simplex + scale strategy 4                             |
-| 7     | Scale strategy 3 + relaxed tolerances                         |
-| 8     | Objective scale (-10)                                         |
-| 9     | Primal simplex + objective scale (-10) + bound scale (-5)     |
-| 10    | Objective scale (-13) + bound scale (-8) + relaxed tolerances |
-| 11    | IPM + objective/bound scaling + relaxed tolerances            |
-
-**Budgets:** 15 seconds per level in Phase 1, 30 seconds per level in
-Phase 2, 120 seconds overall. Iteration limits are set to
-`max(100_000, 50 x num_cols)` for simplex and 10,000 for IPM.
-
-Default solver settings are restored unconditionally after the retry loop,
-regardless of outcome. The per-level retry histogram is recorded in
-`SolverStatistics.retry_level_histogram` and written to
-`training/solver/retry_histogram.parquet` for post-run analysis.
+How far escalation went on a given solve is recorded in the `retry_level`
+output column (values `0`–`11`) and written to
+`training/solver/retry_histogram.parquet` for post-run analysis; a solve that
+never retries stays at level 0. The escalation strategy itself — which options
+each level applies — is a solver-internal detail documented in the
+[`cobre-solver` README](https://github.com/cobre-rs/cobre/blob/main/crates/cobre-solver/README.md).
 
 ---
 
 ## LP Scaling
 
-Before each stage's LP template is built, a prescaler normalizes the
-constraint matrix coefficients toward 1.0, improving numerical conditioning
-and reducing the need for HiGHS's internal scaling.
-
-### Column Scaling
-
-For each column j, the scale factor is
-`1 / sqrt(max|A_ij| * min|A_ij|)` over non-zero entries. The matrix
-values, objective coefficients, and column bounds are scaled in-place.
-After solving, primal values are unscaled: `x_original[j] = col_scale[j] * x_scaled[j]`.
-
-### Row Scaling
-
-Applied after column scaling with the same geometric-mean formula per row.
-After solving, duals are unscaled: `dual_original[i] = row_scale[i] * dual_scaled[i]`.
+Before each stage's LP template is built, Cobre applies its own geometric-mean
+row/column prescaler that normalizes the constraint-matrix coefficients toward
+1.0, improving numerical conditioning. The prescaling mechanism and its
+exact-unscaling guarantee are documented in the math layer under
+[LP Scaling](/math/lp-formulation#12-lp-scaling).
 
 ### Cost Scale Factor
 
 The objective is divided by a cost-scale factor (default `1_000_000.0`,
 configurable as [`modeling.cost_scale_factor`](/running/configuration/#cost_scale_factor))
-to reduce the magnitude of objective coefficients, improving simplex
-numerical stability.
+to reduce the magnitude of objective coefficients, improving simplex numerical
+stability.
 
-Because the prescaler normalizes matrix entries toward 1.0, HiGHS's
-internal scaling (`simplex_scale_strategy`) is disabled (set to 0) in
-every solver profile — including the retry-escalation levels — to avoid
-double-scaling the already-conditioned matrix. This is overridable per
-phase via the solver-profile [`scale`](/running/configuration/) field:
-selecting `solver_scaling` re-enables solver-side (Curtis–Reid) scaling
-and forgoes the exact single-unscaling guarantee (see
-[LP Scaling §12.3 (Row Scaling)](/math/lp-formulation#123-row-scaling-geometric-mean)).
+Because the prescaler already conditions the matrix, HiGHS's internal scaling
+(`simplex_scale_strategy`) is disabled by default in every solver profile. It is
+overridable per phase via the solver profile's `scale` field: selecting
+`solver_scaling` re-enables solver-side scaling and forgoes the exact
+single-unscaling guarantee. See
+[`PhaseSolverProfileConfig`](/running/configuration/#phasesolverprofileconfig-fields)
+for the field and its trade-off.
 
-The scaling diagnostics are written to `training/scaling_report.json`
-after template construction, documenting the coefficient range before
-and after scaling for each stage.
+The scaling diagnostics are written to `training/scaling_report.json` after
+template construction, documenting the coefficient range before and after
+scaling for each stage.
 
 ---
 
@@ -183,26 +94,21 @@ Four strategies are available, configured via
 `level1`, `lml1`, and `domination` respect `check_frequency`: selection runs
 only at iterations that are multiples of `check_frequency`. Stage 0 is
 always exempt (its rows drive the lower bound and are never backward-pass
-successors). Selection runs in parallel across stages via `rayon`.
+successors).
 
-`level1`, `lml1`, and `domination` share a single value-evaluation kernel
-that performs `O(|populated cuts| x |visited states|)` work per stage per
-check. Every populated cut is evaluated at every visited forward-pass
-state (including cuts currently flagged inactive, which means a previously
-deactivated cut can be reactivated when it later achieves the maximum at
-some state). The visited-states archive is collected during training for
-these three variants. The `tie_tolerance` parameter (default `1e-10`) on
-`level1` and `lml1` controls how closely a cut must approach the per-state
-maximum to be retained; `domination` uses the `domination_tolerance` field
-for the same purpose.
+These three strategies evaluate every populated cut at every visited
+forward-pass state — including cuts currently flagged inactive, so a previously
+deactivated cut can be reactivated when it later achieves the maximum at some
+state. The `tie_tolerance` parameter (default `1e-10`) on `level1` and `lml1`
+controls how closely a cut must approach the per-state maximum to be retained;
+`domination` uses the `domination_tolerance` field for the same purpose.
 
 `dynamic` (Dynamic Cut Selection, DCS) operates differently: it is a
 per-solve lazy selection loop that adds cuts on demand rather than
-deactivating from a full pool scan. It never invokes the value-evaluation
-kernel and does not respect `check_frequency`. The initial active set is
-seeded from the `seed_window` most recent iterations. See
-[`cut_selection`](/running/configuration/#cut_selection) for the full parameter
-reference.
+deactivating from a full pool scan. It does not respect `check_frequency`, and
+its initial active set is seeded from the `seed_window` most recent iterations.
+See [`cut_selection`](/running/configuration/#cut_selection) for the full
+parameter reference.
 
 ### Stage 2: Budget Enforcement
 
@@ -258,95 +164,19 @@ The row management pipeline writes per-stage statistics to
 
 ---
 
-## Basis Warm-Start
-
-Reusing the LP simplex basis from the previous solve reduces the number of
-simplex pivots needed for subsequent solves.
-
-### BasisStore
-
-The `BasisStore` holds one `Basis` per `(scenario, stage)` pair in a flat
-array indexed as `bases[scenario * num_stages + stage]`. Before the parallel
-forward pass, the store is split into disjoint per-worker sub-views
-(`split_workers_mut`) so no synchronization is needed during writes.
-
-The `Basis` struct stores solver-native `i32` status codes directly,
-enabling zero-copy warm-starts via `memcpy` — no per-element enum
-translation is needed.
-
-### Simulation Basis Broadcast
-
-When running with MPI, rank 0's scenario-0 basis is broadcast to all
-ranks before the simulation phase. This ensures all ranks warm-start
-simulation from the same LP vertex, regardless of rank count.
-
-### Basis Reconstruction
-
-Each stored warm-start basis is wrapped in a
-`CapturedBasis { basis, base_row_count, cut_row_slots, state_at_capture }`
-struct that records the LP row count and the ordered list of row-pool
-slot indices at capture time, alongside the state vector at which the
-basis was captured. The `reconstruct_basis` function in
-`cobre-sddp::basis_reconstruct` is the sole entry point for applying a
-stored basis across row-set churn on the forward pass, backward pass,
-and simulation pipeline.
-
-When a stored basis is applied to an LP whose appended rows have changed,
-`reconstruct_basis` walks the current LP's appended rows, looks each slot
-up in an O(1) scratch map built from `cut_row_slots`, and classifies
-each row into one of two paths:
-
-- **Preserved** (slot present in the stored basis): the original status
-  is copied verbatim.
-- **New** (slot not present — a row added since capture): the row is
-  unconditionally assigned `NONBASIC_LOWER` (tight guess).
-
-Each `NONBASIC_LOWER` classification on a new row requires a
-compensating demotion on a preserved row to keep HiGHS's
-column-basic + row-basic invariant. The stalest preserved-`LOWER`
-candidate is promoted, ranked lexicographically by insertion order.
-When new-`LOWER` classifications outnumber preserved-`LOWER`
-candidates, a tail fallback flips the most recent new-`LOWER` rows
-back to `BASIC` until the invariant holds.
-
-Reconstruction is always active when a stored basis exists — there is
-no configuration flag to enable or disable it.
-
-The in-memory `SolverStatistics::basis_reconstructions` counter tracks how
-often `reconstruct_basis` was invoked with a non-empty stored basis.
-
-### Backward-Pass Basis Cache
-
-During training, rank 0's ω=0 backward-pass worker captures a fresh
-basis for every stage into a per-iteration backward cache. At end of
-iteration the cache is broadcast to all ranks, and on the next
-iteration's backward pass every rank's ω=0 solve warm-starts from the
-cached basis instead of falling back to the forward-pass `BasisStore`.
-The first iteration has no backward cache yet, so it uses the forward
-cache exclusively.
-
-The backward cache matters because rows added earlier in the current
-iteration's backward walk are **new** relative to the previous
-iteration's stored basis — so the classifier fires frequently on
-backward solves, while the forward pass sees mostly preserved slots
-and the classifier rarely runs. A warm-start at ω=0 also cascades
-through the remaining openings (ω=1..`n_openings`-1) via HiGHS's
-retained factorization, amplifying the per-solve impact.
-
----
-
 ## Parallel Execution
 
-### Backward Pass Work-Stealing
+### Backward-Pass Scheduling
 
-The backward pass parallelizes the inner trial-point loop using atomic
-counter work-stealing: each worker claims the next available trial-point
-index via `AtomicUsize::fetch_add(1, Relaxed)`. This keeps all threads
-busy even when trial points solve in variable time.
-
-After the parallel region, staged rows are sorted by `trial_point_idx`
-and inserted into the FCF in deterministic order, guaranteeing bit-for-bit
-identical results regardless of thread count or completion order.
+By default (`by_scenario`), each parallel backward-pass work unit is one whole
+trial point. The optional `by_node` scheduler uses finer
+`(trial point, opening block)` work units for better load balance when trial
+points solve in variable time. Either way the produced cut set and lower bound
+are independent of worker and thread count. See
+[`parallelism.backward_scheduler`](/running/configuration/#parallelism) for the
+configuration, and the
+[`cobre-sddp` README](https://github.com/cobre-rs/cobre/blob/main/crates/cobre-sddp/README.md)
+for the scheduler and inter-rank communication internals.
 
 #### By-Node Scheduling
 
@@ -386,98 +216,31 @@ not make `by_node` a no-op.
 
 ### Per-Phase Solver Profiles
 
-Each algorithmic phase — forward sweep, backward sweep, and simulation — is
-configurable independently via the `training.solver.backward`,
-`training.solver.forward`, and `simulation.solver` overrides (see
-[`training.solver`](/running/configuration/#trainingsolver)), which set the LP
-solver's feasibility tolerances, per-attempt iteration caps, pricing
-strategy, and more.
+Each algorithmic phase — forward sweep, backward sweep, and simulation — can
+override the built-in solver profile (feasibility tolerances, per-attempt
+iteration caps, pricing strategy, the `scale` field, and more) via
+`training.solver.backward`, `training.solver.forward`, and `simulation.solver`.
+See [`PhaseSolverProfileConfig`](/running/configuration/#phasesolverprofileconfig-fields)
+for the full field list, the built-in profile each phase starts from, and the
+single-unscaling trade-off carried by `scale`.
 
-All three phases ship with an identical built-in profile, and that profile
-differs from the LP backend's own default only in the simplex pricing
-strategy — `row_hyper_sparse` instead of the backend's default `row` — to
-exploit the sparse cut-subgradient rows. An absent override therefore leaves
-a phase at this built-in profile, not the backend's default.
-
-Overriding the backward phase's profile via `training.solver.backward` with
-tighter feasibility tolerances or a stricter iteration cap can still reduce
-backward-pass solve-time variance, which in turn improves load balance
-across worker threads and shortens wall-clock training time.
-
-The `scale` override carries a single-unscaling-exactness trade-off; see
-[Cost Scale Factor](#cost-scale-factor) above.
+Overriding the backward phase with tighter feasibility tolerances or a stricter
+iteration cap can reduce backward-pass solve-time variance, which improves load
+balance across worker threads and shortens wall-clock training time.
 
 ### Forward Pass and Simulation
 
-Scenarios are statically partitioned across solver workspace instances
-(not rayon's default work-stealing), making the scenario-to-worker
-assignment deterministic. Within each scenario, the LP is loaded once
-per stage and only row bounds are patched per scenario.
+Forward-pass and simulation scenarios are statically partitioned across solver
+workspaces, so the scenario-to-worker assignment is deterministic. Within each
+scenario the stage LP is loaded once and only its row bounds are patched per
+scenario.
 
 ### Lower Bound Evaluation
 
-The lower bound evaluation (solving a stage-0 LP for every opening in the
-tree) runs as a single-threaded serial loop on rank 0. Each opening patches
+The lower-bound evaluation (solving a stage-0 LP for every opening in the tree)
+runs as a single-threaded serial loop on rank 0. Each opening patches
 correctness-critical per-opening state (e.g. NCS column bounds) on a shared
-solver, so the openings cannot be split across workers without fragmenting
-those sequential steps; the step is therefore not parallelized.
-
-### Communication-Free Seed Derivation
-
-Forward pass noise is generated without inter-rank communication. Each
-rank independently derives its noise seed from
-`(base_seed, iteration, scenario, stage)` using deterministic SipHash-1-3
-seed derivation. The opening tree is pre-generated once before training
-and shared read-only.
-
----
-
-## Memory Efficiency
-
-### Pre-Allocation Discipline
-
-The forward, backward, and simulation per-solve hot paths make no heap
-allocations inside the iteration loop; all workspace buffers are allocated
-once before the loop. (The periodic cut-selection pass is the one documented
-exception — its rayon fold/reduce kernel allocates per-leaf scratch.) The
-pre-allocated buffers are:
-
-| Buffer                                 | Size                                                        |
-| -------------------------------------- | ----------------------------------------------------------- |
-| `TrajectoryRecord` flat vec            | `forward_passes x num_stages` records                       |
-| `PatchBuffer`                          | `N*(2+L) + M*max_blocks` entries                            |
-| `ExchangeBuffers` (state allgatherv)   | `local_count x num_ranks x n_state` floats                  |
-| `CutSyncBuffers` (row-sync allgatherv) | `max_cuts_per_rank x num_ranks x cut_wire_size` bytes       |
-| `ScratchBuffers` per worker            | noise, inflow, lag matrix, PAR, eta, load, z-inflow buffers |
-| `Basis` per worker                     | pre-allocated with `template_rows + max_cut_rows` entries   |
-
-### CutPool Flat Coefficient Storage
-
-Row coefficients are stored as a single contiguous `Vec<f64>` of size
-`capacity x state_dimension` rather than a `Vec<Vec<f64>>`. This provides
-cache-friendly sequential access during batch iteration (row evaluation,
-dominance checks) and eliminates per-row heap allocation.
-
-### Lazy FCF Growth
-
-The `CutPool` grows its coefficient storage on demand using a doubling
-strategy (minimum 16 slots) rather than pre-allocating to the theoretical
-maximum capacity. This prevents memory exhaustion on pathological parameter
-combinations (e.g., 1000 iterations x 1000 forward passes x 50 states x
-120 stages would require 48 GB with eager pre-allocation).
-
-### O(1) Active Row Count
-
-`CutPool` maintains a `cached_active_count` that is updated incrementally
-on each activation/deactivation, making `active_count()` O(1) instead of
-requiring a scan of the entire pool.
-
-### Compile-Time Solver Dispatch
-
-`SolverInterface` is resolved as a generic type parameter at compile time,
-not as `Box<dyn SolverInterface>`. All solver calls monomorphize to direct
-function calls with no virtual dispatch overhead — critical when tens of
-millions of LP solves occur per training run.
+solver in sequence, so the step is not parallelized.
 
 ---
 
@@ -485,5 +248,6 @@ millions of LP solves occur per training run.
 
 - [Configuration](/running/configuration/#cut_selection) — row-selection and row management configuration
 - [Output Format](/reference/output-format/) — timing, solver statistics, and row-selection output schemas
-- cobre-solver — solver interface and retry escalation details (cobre developer guide)
-- cobre-sddp — training loop architecture and data structures (cobre developer guide)
+- [cobre-solver](https://github.com/cobre-rs/cobre/blob/main/crates/cobre-solver/README.md) — solver interface and retry-escalation internals (cobre developer guide)
+- [cobre-sddp](https://github.com/cobre-rs/cobre/blob/main/crates/cobre-sddp/README.md) — training-loop architecture, scheduling, and data structures (cobre developer guide)
+- [ARCHITECTURE.md](https://github.com/cobre-rs/cobre/blob/main/ARCHITECTURE.md) — cobre crate topology and dependency graph (cobre developer guide)

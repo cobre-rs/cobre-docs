@@ -56,8 +56,11 @@ run.
 ```
 
 Use `"resume"` after an interrupted training run (power loss, job timeout, or
-manual cancellation) to continue exactly where training stopped. Requires that
-checkpointing was enabled in the interrupted run.
+manual cancellation) to continue exactly where training stopped. Cobre always
+writes a single policy checkpoint at the **end** of training, so resume
+does **not** require any `checkpointing` config to have been set — resume reads
+the terminal checkpoint's `completed_iterations` and continues from there
+(warning if it already reached `max_iterations`).
 
 ---
 
@@ -86,6 +89,13 @@ scenarios.
 The `policy.checkpointing` section controls periodic checkpointing during
 training. All fields are optional; omitting a field leaves the solver default
 in effect.
+
+:::note[Periodic checkpointing not yet consumed]
+These `checkpointing` keys are accepted and validated, but the current Cobre binary
+does not perform **periodic** (mid-training) checkpointing — there is no consumer
+for the block. The terminal end-of-training checkpoint (`manifest.bin` + `cuts/`,
+and LP bases) is written unconditionally. These pages follow the binary.
+:::
 
 | Field                 | Type            | Description                                                                                                      |
 | --------------------- | --------------- | ---------------------------------------------------------------------------------------------------------------- |
@@ -130,7 +140,7 @@ policy/
     001.bin               -- cut coefficients and intercepts for pool 1
     ...
   basis/
-    000.bin               -- LP basis for stage 0 (when store_basis is enabled)
+    000.bin               -- LP basis for stage 0 (bases are written with the terminal checkpoint; store_basis is currently inert)
     001.bin
     ...
   states/
@@ -206,10 +216,13 @@ with no in-place upgrade.
 
 Every load path surfaces the same failure, tagged for its caller:
 
-- **Python** (`cobre.results.load_policy`, and `cobre.run.run` in
-  warm-start / resume mode) raises `cobre.errors.OutputError`.
-- **CLI** (`cobre run` in warm-start, resume, or simulation-only mode)
-  prints a message prefixed `failed to read policy checkpoint: …`.
+- **`cobre.results.load_policy` / `Study.load_policy`**: a missing output directory or `manifest.bin` raises builtin `FileNotFoundError`; a checkpoint-version mismatch raises `cobre.errors.OutputError`.
+- **`cobre.run.run` / `Study.train` in warm-start or resume mode**: a failure reading the policy checkpoint surfaces as `cobre.errors.SolverError` (the run path wraps the read error before classification). See the note below.
+- **CLI** (`cobre run` in warm-start, resume, or simulation-only mode) prints a message prefixed `failed to read policy checkpoint: …`.
+
+:::note[Checkpoint-read error class differs by entry point]
+The same underlying checkpoint-read failure is reported with different exception classes depending on the entry point: `load_policy` raises `OutputError` (or a builtin `FileNotFoundError` when the file is absent), whereas `run` / `Study` in warm-start or resume mode raise `SolverError`. Catch `cobre.errors.CobreError` (the common base) if you need to handle both paths uniformly. These pages follow the binary.
+:::
 
 See
 [FlatBuffers Schema Versioning](/reference/flatbuffers-schema/#versioning-policy)

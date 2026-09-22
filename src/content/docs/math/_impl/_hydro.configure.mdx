@@ -173,7 +173,7 @@ production function.
 | --------------------- | ------------------------- | -------------------------------------- | ----------- |
 | Constant productivity | `"constant_productivity"` | Training + simulation                  | `power = productivity * turbined_flow`. Independent of reservoir head. Productivity is supplied per stage range or season in `system/hydro_production_models.json`. |
 | FPHA                  | `"fpha"`                  | Training + simulation                  | Piecewise-linear envelope of the nonlinear production function. Head-dependent. Configured via `hydro_production_models.json` — see below. |
-| Linearized head       | `"linearized_head"`       | **Simulation-only**                    | Head-dependent productivity linearized around a reference volume. Rejected if selected during training — see methodology §3.1 for why the bilinear term breaks the fixed-LP-structure requirement SDDP depends on. |
+| Linearized head       | `"linearized_head"`       | Both phases                            | Reserved model name; the current engine resolves it to the same constant-productivity source as `constant_productivity` (see methodology §3). Requires the plant's productivity input. |
 
 For most initial studies, `constant_productivity` is the natural choice. The
 productivity coefficient encodes the plant's average efficiency and net head:
@@ -552,10 +552,12 @@ for the full fitting-pipeline summary and methodology §2.6–§2.7 for the
 derivation.
 
 This source requires `tailrace`, `hydraulic_losses`, and `efficiency` models
-in `hydros.json`, plus at least 1 row in `system/hydro_geometry.parquet` for
-the plant (a single row is valid for run-of-river plants; `linearized_head`
-still needs at least 2 rows because it fits a head slope in volume — that
-constraint does not apply to FPHA).
+in `hydros.json`, plus geometry rows in `system/hydro_geometry.parquet` for the
+plant. An FPHA-configured plant needs at least 1 row — a single row is valid for
+run-of-river plants (a constant forebay, so `gamma_v = 0`). A plant configured
+with `linearized_head` needs at least 2 rows; that higher minimum is a load-time
+validation rule keyed on the configured model name, not a runtime head fit —
+`linearized_head` resolves to constant productivity (methodology §3).
 
 ```json
 "fpha_config": {
@@ -577,6 +579,13 @@ All fields except `source` are optional:
 | `spillage_discretization_points` | 5       | Validated (must be `>= 2`) but does **not** add a spillage axis to the fitting grid — the cloud and the `alpha_FPHA` regression fix spillage at `0`, and the lateral-flow secant sweeps its own sample range independently (§2.7). The field is retained for input round-tripping. |
 | `max_planes_per_hydro`           | 10      | Accepted and validated (`>= 1`) but does not currently trim the plane set — the hull fitter emits exactly the upper-envelope facets. |
 | `fitting_window`                 | null    | Optional volume range for fitting; absent uses the full operating range `[min_storage_hm3, max_storage_hm3]`. |
+
+:::note[Round-trip-only]
+`spillage_discretization_points` is accepted and validated, but the current Cobre
+FPHA fit is a convex hull of the (volume, turbined) cloud at zero spillage — it
+has no spillage axis. The value is retained for input round-tripping and does not
+change the fitted production planes. These pages follow the binary.
+:::
 
 `fitting_window` restricts which portion of the operating range builds the
 grid — useful when the plant rarely operates near one extreme:

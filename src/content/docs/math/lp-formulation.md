@@ -164,7 +164,7 @@ $$
 $$
 
 $$
-+ \sum_{l: \text{target}=b} \eta_l f^+_{l,k} + \sum_{l: \text{source}=b} \eta_l f^-_{l,k}
++ \sum_{l: \text{target}=b} f^+_{l,k} + \sum_{l: \text{source}=b} f^-_{l,k}
 $$
 
 $$
@@ -487,7 +487,7 @@ In-transit volume that would mature **after the study's last stage** is dropped 
 
 ## 6. Hydro Generation Constraints
 
-Cobre supports two production models during training, in increasing order of complexity. A third model (linearized head) is available during simulation only — see [hydro production models §3](/math/hydro-production-models). The model can vary by stage or season per hydro.
+Cobre supports two production models, in increasing order of complexity. A third model name, linearized head, is a reserved alias that resolves to constant productivity in every phase — see [hydro production models §3](/math/hydro-production-models). The model can vary by stage or season per hydro.
 
 Both models are evaluated **per cell** $(h, b)$ (§3) rather than per plant; a single-cell plant's constraint is byte-identical to the pre-partition, per-plant form.
 
@@ -699,7 +699,7 @@ where:
 
 When anticipated thermals are present, the cut carries one additional coefficient per anticipated-state slot (§5c), read from the same reduced-cost mechanism. When travel-time arcs are present, it likewise carries one coefficient per in-transit bucket dimension (§5d); unlike the storage and lag coefficients, the bucket coefficients are always part of the cut projection.
 
-Cuts live in an **append-only pool** at stable slot indices: every cut ever generated is retained for the lifetime of the run, and only the active subset is baked into each iteration's stage template. Deactivation toggles a cut row's bound to a trivially-satisfied $\pm\infty$ sentinel rather than removing the row, so slot indices stay stable and reactivation is exact. See [cut management](/math/cut-management).
+Cuts live in an **append-only pool** at stable slot indices: every cut ever generated is retained for the lifetime of the run, and only the active subset is baked into each iteration's stage template. Deactivation **excludes** a cut from each iteration's stage-template rebake rather than mutating any row; the persistent lower-bound LP is append-only (its rows are never removed, so the lower bound stays monotone). Slot indices stay stable, so reactivation — re-baking the cut into the template at the same slot — is exact. See [cut management](/math/cut-management).
 
 For cut coefficient derivation, aggregation, and selection strategies, see [cut management](/math/cut-management).
 

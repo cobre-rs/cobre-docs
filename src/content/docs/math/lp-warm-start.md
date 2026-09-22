@@ -125,7 +125,8 @@ replayed by row position; the slot-identity reconstruction of §4 reconciles it
 to the current active set, which is what keeps warm-starting valid across
 deactivation and reactivation. See [Cut Management](/math/cut-management) for the
 full deactivation mechanism, including the separate persistent-lower-bound-LP
-route that instead toggles a $\pm\infty$ sentinel.
+route, which is **append-only** — its cut rows are never removed, so
+deactivation changes nothing there and the lower bound stays monotone.
 
 ## 4. Cut-Aware Basis Reconstruction by Slot Identity
 

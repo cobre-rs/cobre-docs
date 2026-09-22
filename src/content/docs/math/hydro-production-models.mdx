@@ -10,7 +10,7 @@ import { Content as HydroNotes } from "./_impl/_hydro.notes.mdx";
 
 ## Purpose
 
-This spec defines the hydro generation constraint models supported by Cobre, which relate turbined flow and reservoir storage to electrical output. Two models are available during training (policy construction): constant productivity and FPHA. A third model — linearized head — is available only during simulation (policy evaluation) as a higher-fidelity enhancement. The choice among training models trades off accuracy vs. computational cost, and can vary by stage per hydro.
+This spec defines the hydro generation constraint models supported by Cobre, which relate turbined flow and reservoir storage to electrical output. Two production functions shape dispatch: constant productivity and FPHA. A third model name — linearized head — is a reserved alias for constant productivity (see §3). The choice between constant productivity and FPHA trades off accuracy vs. computational cost, and can vary by stage per hydro.
 
 All decision variables use **rate units** (MW, m³/s) — see the Variable Units Convention in [system elements](/math/system-elements). For variable definitions see [notation conventions](/overview/notation-conventions); for LP integration see [LP formulation](/math/lp-formulation); for hydro element descriptions see [system elements](/math/system-elements).
 
@@ -308,7 +308,7 @@ This cost must satisfy $c^{t}_h > c^{spill}_h$ for each plant. The rule serves t
 
 For hydros using the **FPHA** production model, the regularization keeps the solver on the FPHA surface boundary rather than at an interior point: without it, the optimizer could find degenerate solutions where turbined flow and spillage are both artificially high (with net generation unchanged), because the FPHA surface has a flat region where increasing $q$ and $s$ simultaneously can maintain the same $g$. The penalty making every unit of turbined flow carry a small additional cost collapses the degenerate interior region.
 
-For hydros using **constant productivity**, the same regularization is applied uniformly so that the LP tie-breaks `(turbined, spillage)` decompositions deterministically. Applying it to constant-productivity plants — not to FPHA plants alone — keeps every turbine column priced, so the dispatch stays well-determined even on cases that mix the two production models. Plants using `linearized_head` (simulation-only, see section 3) are not subject to this regularization during training because training uses only `constant_productivity` and `fpha`; during simulation, the cost is irrelevant because no policy is being constructed.
+For hydros using **constant productivity**, the same regularization is applied uniformly so that the LP tie-breaks `(turbined, spillage)` decompositions deterministically. Applying it to constant-productivity plants — not to FPHA plants alone — keeps every turbine column priced, so the dispatch stays well-determined even on cases that mix the two production models.
 
 For the full penalty taxonomy and priority ordering, see [Penalty System](/math/penalty-system).
 
@@ -338,51 +338,17 @@ When a hydro transitions between production models across stages:
 
 **Recommendation**: When using stage-dependent FPHA configuration, ensure the FPHA at stage $t$ is at least as conservative as stage $t+1$ for cut validity.
 
-## 3. Linearized Head Model (Simulation-Only Enhancement)
+## 3. Linearized Head Model (Reserved — Resolves to Constant Productivity)
 
-:::caution[Phase restriction]
-This model is available **only during simulation** (policy evaluation). It must NOT be used during training (policy construction). During training, only `constant_productivity` and `fpha` are valid production models. See the rationale below.
-:::
+`linearized_head` is a **reserved production-model name**: it is equivalent to `constant_productivity` (§1) in every phase — training (backward and forward passes) and simulation alike — and selecting it applies no head correction and imposes no phase restriction.
 
-An intermediate model between constant productivity and full FPHA that captures first-order head variation with storage:
-
-$$
-g_{h,k} = \rho_{ref} \cdot q_{h,k} \cdot \left( k_0 + k_V \cdot v_h^{avg} \right)
-$$
-
-where:
-
-- $k_0, k_V$ are linearization coefficients derived from $h_{fore}(v)$
-- $k_0 = 1 - k_V \cdot V_{ref}$ (normalization at reference volume)
-- $k_V = \frac{1}{H_{ref}} \cdot \frac{dh_{fore}}{dV}\bigg|_{V_{ref}}$
-
-### 3.1 Why Simulation-Only
-
-The product $q_{h,k} \cdot v_h^{avg}$ is a **bilinear term** — both $q$ and $v^{avg}$ are LP variables. To maintain LP linearity, the standard approach fixes $v^{avg}$ from the previous SDDP iteration (or from a reference volume on the first iteration), converting the constraint to a linear equality. However, this means the **LP constraint coefficients change between iterations**: the effective productivity $\rho_{ref} \cdot (k_0 + k_V \cdot v^{avg}_{fixed})$ is different after each forward pass updates the storage trajectory.
-
-This violates a foundational assumption of SDDP: **each stage must have a fixed LP structure** across all iterations. Benders cuts generated under one linearization point encode dual information about a specific LP. When the LP changes (because $v^{avg}_{fixed}$ changed), previously generated cuts are not guaranteed to be valid — they may cut off the true optimal solution or produce inconsistent value function approximations. This breaks the convergence guarantees of the algorithm.
-
-**During simulation**, linearized head is safe because simulation executes a single forward pass through the policy — there are no cuts being accumulated, no convergence to verify. The model provides a higher-fidelity generation estimate than constant productivity without the preprocessing cost of fitting FPHA hyperplanes.
-
-### 3.2 Simulation Use Case
-
-The linearized head model fills a practical gap in the simulation step:
-
-- **More accurate than constant productivity**: Captures how reservoir level affects generation — important for plants with significant head variation that are modeled with `constant_productivity` during training for computational reasons
-- **Cheaper than FPHA**: Requires only the Volume-Height-Area curve (`hydro_geometry.parquet`), no hyperplane fitting
-- **Single constraint**: One equality constraint per hydro per block, compared to $M$ inequality constraints for FPHA
-
-Typical use: plants where full FPHA accuracy is justified for near-term training stages but far-future stages use `constant_productivity` during training, then `linearized_head` during simulation for improved analytics.
-
-### 3.3 Data Requirements
-
-`productivity_mw_per_m3s` from `hydros.json` plus `hydro_geometry.parquet` for the Volume-Height-Area curve.
+Selecting `linearized_head` therefore yields dispatch identical to `constant_productivity`: generation is $g_{h,k} = \rho_{h,t} \cdot q_{h,k}$ with the plant's per-(hydro, stage) productivity (§5.1). It still requires the plant's productivity input.
 
 ## 4. Model Selection Guidelines
 
 ### Training (Policy Construction)
 
-Only `constant_productivity` and `fpha` are valid during training. The linearized head model is excluded because it changes the LP between iterations (see section 3.1).
+The substantive choice during training is between `constant_productivity` and `fpha` — `linearized_head` resolves to constant productivity (§3) and behaves identically to `constant_productivity`. That choice trades accuracy against computational cost:
 
 | Scenario                       | Recommended Model     | Rationale                          |
 | ------------------------------ | --------------------- | ---------------------------------- |
@@ -395,14 +361,14 @@ Only `constant_productivity` and `fpha` are valid during training. The linearize
 
 ### Simulation (Policy Evaluation)
 
-All three models are available during simulation. The linearized head model is particularly useful as a simulation-only upgrade for plants that used `constant_productivity` during training:
+During simulation, `constant_productivity` and `fpha` behave as they do in training, and `linearized_head` resolves to constant productivity (§3):
 
-| Scenario                                                 | Recommended Model     | Rationale                                  |
-| -------------------------------------------------------- | --------------------- | ------------------------------------------ |
-| Plants trained with FPHA                                 | FPHA                  | Consistency with training model            |
-| Plants trained with constant, low head variation         | Constant productivity | No benefit from head correction            |
-| Plants trained with constant, significant head variation | Linearized head       | Better analytics without FPHA fitting cost |
-| Post-optimization validation                             | Compare all models    | Verify approximation quality               |
+| Scenario                                                 | Recommended Model                   | Rationale                                                                                                |
+| -------------------------------------------------------- | ----------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| Plants trained with FPHA                                 | FPHA                                | Consistency with training model                                                                          |
+| Plants trained with constant, low head variation         | Constant productivity               | No benefit from head correction                                                                          |
+| Plants selecting `linearized_head`                       | Constant productivity (equivalent)  | `linearized_head` resolves to the same constant-productivity source (§3); no head correction is applied  |
+| Post-optimization validation                             | Compare all models                  | Verify approximation quality                                                                             |
 
 The production model may vary by stage or by season per hydro, configured via the `stage_ranges` and `seasonal` selection modes in `hydro_production_models.json`.
 
@@ -498,7 +464,7 @@ These quantities do not enter the LP — they are accounting outputs derived fro
 
 ### 5.4 Why a Scalar Reduction Exists at All
 
-The full FPHA production function (section 2) is multi-dimensional and concave; constant productivity is a scalar but per-plant; linearized head is bilinear in $(q, v^{avg})$. None of these can be summed across a cascade or scaled by inflow without a reference operating point. The energy-conversion scalars resolve this: each model is reduced to one number per (hydro, stage), at one operating point, and that number is what the cascade-summation, ENA, and EARM formulas above can consume uniformly. The LP continues to enforce the full production model — the scalar reduction is for accounting, not for dispatch.
+The full FPHA production function (section 2) is multi-dimensional and concave; constant productivity is a scalar but per-plant. Neither can be summed across a cascade or scaled by inflow without a reference operating point. The energy-conversion scalars resolve this: each model is reduced to one number per (hydro, stage), at one operating point, and that number is what the cascade-summation, ENA, and EARM formulas above can consume uniformly. The LP continues to enforce the full production model — the scalar reduction is for accounting, not for dispatch.
 
 ## 6. Data Requirements Summary
 

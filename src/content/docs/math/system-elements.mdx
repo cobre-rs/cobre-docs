@@ -83,7 +83,7 @@ gen_h -> bus1: "q → g"
 gen_t -> bus1: "g"
 gen_v -> bus2: "gⁿᶜ"
 
-bus1 <-> bus2: "line flow  f±  (η losses)"
+bus1 <-> bus2: "line flow  f±"
 
 bus1 -> demand1: "d"
 bus2 -> demand2: "d"
@@ -178,7 +178,7 @@ For the assembled constraint, see [LP formulation](/math/lp-formulation).
 
 ### Physical Meaning
 
-A **transmission line** represents the interconnection between two buses, allowing power transfer subject to capacity limits and transmission losses. Lines are bidirectional.
+A **transmission line** represents the interconnection between two buses, allowing power transfer subject to capacity limits. Lines are bidirectional and **lossless in the dispatch LP** — transmission losses are computed and reported as an output quantity, not modeled as a reduction of delivered power (see the Configure/I·O tabs).
 
 ### Decision Variables
 
@@ -195,8 +195,8 @@ Cobre uses two non-negative variables ($f^+$, $f^-$) rather than a single signed
 
 Each line connects exactly two buses:
 
-- **Source bus**: Exports $f^+_{l,k}$, receives $\eta_l \cdot f^-_{l,k}$
-- **Target bus**: Receives $\eta_l \cdot f^+_{l,k}$, exports $f^-_{l,k}$
+- **Source bus**: Exports $f^+_{l,k}$, receives $f^-_{l,k}$
+- **Target bus**: Receives $f^+_{l,k}$, exports $f^-_{l,k}$
 
 ### Key Parameters
 
@@ -204,7 +204,6 @@ Each line connects exactly two buses:
 | ------------- | ------ | -------------------------------------------------------------------------- |
 | $\bar{F}^+_l$ | MW     | Capacity limit (direct direction); may vary by stage and, optionally, by block |
 | $\bar{F}^-_l$ | MW     | Capacity limit (reverse direction); may vary by stage and, optionally, by block |
-| $\eta_l$      | —      | Transmission efficiency: $\eta_l = 1 - \text{losses}/100$                  |
 | $c^{exch}_l$  | \$/MWh | Exchange cost (regularization)                                             |
 
 ### Role in Objective Function
@@ -223,7 +222,7 @@ $$
 0 \leq f^+_{l,k} \leq \bar{F}^+_l, \quad 0 \leq f^-_{l,k} \leq \bar{F}^-_l
 $$
 
-**Load balance contribution** at source bus: $-f^+_{l,k} + \eta_l \cdot f^-_{l,k}$
+**Load balance contribution** at source bus: $-f^+_{l,k} + f^-_{l,k}$
 
 For detailed constraints, see [equipment formulations](/math/equipment-formulations).
 
@@ -276,7 +275,7 @@ For detailed constraints, see [equipment formulations](/math/equipment-formulati
 
 ### Anticipated Thermal Plants
 
-A thermal plant may be flagged as **anticipated** by attaching a per-plant lead $K \geq 1$. The physical motivation is fuel-ordering lead time: LNG (originally _Gás Natural Liquefeito_) terminals, long-haul coal contracts and similar arrangements require the committed dispatch quantity to be locked $K$ stages before the energy is physically delivered. Anticipated thermals therefore split the per-stage thermal decision into two coupled variables — the **commitment**, made at the decision stage $t$, and the **delivered generation**, which is forced to match the matured commitment at the delivery stage $t + K$.
+A thermal plant may be flagged as **anticipated** by attaching a per-plant lead $K \geq 1$. The physical motivation is fuel-ordering lead time: LNG terminals, long-haul coal contracts and similar arrangements require the committed dispatch quantity to be locked $K$ stages before the energy is physically delivered. Anticipated thermals therefore split the per-stage thermal decision into two coupled variables — the **commitment**, made at the decision stage $t$, and the **delivered generation**, which is forced to match the matured commitment at the delivery stage $t + K$.
 
 The lead resolves to an integer plant-specific parameter $K_i \geq 1$, supplied in one of two mutually exclusive forms: a **stage count** (`lead_stages`, calendar-free) or a **physical duration** (`lead_time_hours`, resolved against the stage calendar by end-anchoring the lead on the cumulative stage-hour boundaries). A plant with $K_i = 1$ commits one stage ahead; a plant with $K_i = 3$ commits three stages ahead. A physical lead shorter than the decision stage's own duration resolves to $K_i = 0$, and the plant then dispatches as an ordinary thermal. Plants without the anticipation flag use the standard thermal model from the preceding subsections.
 
@@ -447,11 +446,11 @@ Cobre carries the water in transit on such an arc as additional **in-transit sta
 
 ### Production Function (Water to Power)
 
-Cobre supports three models for converting turbined flow to electrical generation, in increasing order of complexity:
+Cobre supports three production-model names for converting turbined flow to electrical generation:
 
 1. **Constant Productivity**: $g_{h,b,k} = \rho_h \cdot q_{h,b,k}$ (per cell $(h,b)$) — simple linear relationship with fixed $\rho_h$ [MW/(m³/s)], suitable for plants with stable head.
 
-2. **Linearized Head** (**simulation-only**): Adjusts productivity based on head variation with storage level. Requires hydro geometry data (Volume-Height-Area curve). This model is excluded from training because the bilinear term ($q \times v^{avg}$) requires re-fixing $v^{avg}$ between iterations, changing the LP and breaking SDDP convergence guarantees. See [hydro production models §3](/math/hydro-production-models).
+2. **Linearized Head** (reserved alias): A reserved model name that resolves to **constant productivity** in every phase — training and simulation alike. No distinct head-dependent model is applied; requesting it yields the constant-productivity model above. See [hydro production models §3](/math/hydro-production-models).
 
 3. **FPHA (Função de Produção Hidrelétrica Aproximada)**: Piecewise-linear approximation via hyperplanes that captures head variation with storage level and accounts for tailrace effects from spillage. Fitted once per plant and evaluated per cell $(h,b)$, apportioning the plane's flow-independent terms by the cell's share of the plant's turbine capacity (see [hydro production models §2.9](/math/hydro-production-models)). Each plane $m$:
 
@@ -460,7 +459,7 @@ g_{h,b,k} \leq \sigma_{h,b}\big(\gamma_0^m + \gamma_v^m \cdot v^{avg}_h + \gamma
 $$
 
 :::note[Training models]
-Only `constant_productivity` and `fpha` are valid during training (policy construction). The linearized head model is available during simulation (policy evaluation) only.
+All three model names are accepted for both training (policy construction) and simulation (policy evaluation). A `linearized_head` request resolves to the constant-productivity model in every phase — no production model is restricted to a single phase.
 :::
 
 The production model can vary by stage or season per hydro.

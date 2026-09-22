@@ -24,9 +24,11 @@ Cobre parallelises on two levels, and they compose:
 - **rayon threads within a rank** — solves LP subproblems concurrently inside
   each rank. Controlled by `--threads`.
 
-The parallel model itself (work-stealing, the basis broadcast, the
-communication-free seed derivation) is documented in
-[Performance Accelerators §Parallel Execution](/running/performance/#parallel-execution).
+The parallel model — how backward-pass work is scheduled across workers
+(`by_node` / `by_scenario`) — is summarised in
+[Performance Accelerators §Parallel Execution](/running/performance/#parallel-execution);
+the scheduler and communication internals live in the
+[`cobre-sddp` README](https://github.com/cobre-rs/cobre/blob/main/crates/cobre-sddp/README.md).
 This page is the operational counterpart: how to build and launch it.
 
 A single `cobre run` uses the local (single-process) backend. Launching under an
@@ -318,8 +320,8 @@ The moving parts:
   compute-optimised instances work the same way.
 - **Storage (FSx).** The case directory, checkpoints, and exported results live
   on the shared FSx filesystem. Cobre's per-solve hot path holds its working set
-  in memory (see
-  [Performance §Memory Efficiency](/running/performance/#memory-efficiency)); it
+  in memory (its allocation discipline is documented in the
+  [`cobre-sddp` README](https://github.com/cobre-rs/cobre/blob/main/crates/cobre-sddp/README.md)); it
   touches the shared filesystem heavily only at **checkpointing** and **result
   export**, so FSx throughput is sized for those phases rather than the solve
   loop.

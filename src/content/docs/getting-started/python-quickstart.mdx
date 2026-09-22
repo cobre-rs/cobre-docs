@@ -37,7 +37,7 @@ following keys:
 | `simulation`    | `dict` or `None`  | Simulation summary (if enabled)                 |
 | `stochastic`    | `dict` or `None`  | Stochastic preprocessing summary                |
 | `hydro_models`  | `dict` or `None`  | Hydro model summary                             |
-| `provenance`    | `dict`            | Build version and environment metadata          |
+| `provenance`    | `ProvenanceReport` or `None` | Build version and environment metadata (a `ProvenanceReport` typed dict, or `None` when provenance was not captured) |
 
 ```python
 print(f"Converged: {result['converged']}")
@@ -54,10 +54,48 @@ print(f"Output dir: {result['output_dir']}")
 result = cobre.run.run(
     "path/to/case",
     output_dir="path/to/output",   # default: case_dir/output
-    threads=4,                      # default: 1
+    threads=4,                      # default: None → 1 worker
     config_overrides={"simulation": {"enabled": False}},  # default: None
 )
 ```
+
+- **`output_dir`**: where to write results (default: `case_dir/output`).
+- **`threads`**: worker count for the internal pool. Default `None` ⇒ **1 worker**. `0` is **rejected** (`ValueError: threads must be >= 1 when given`); a value `≥ 1` sets the worker count.
+- **`config_overrides`**: a dict merged into `config.json`. Both nested `{"simulation": {"enabled": False}}` and flat dotted `{"training.tree_seed": 7}` shapes are deep-merged into the configuration.
+
+## Validate a Case
+
+Before running a study, validate the case directory to check for errors:
+
+```python
+import cobre.io
+
+report = cobre.io.validate("path/to/case")
+# Returns: {"valid": bool, "errors": [...], "warnings": [...]}
+
+if not report["valid"]:
+    for e in report["errors"]:
+        print(f"{e['kind']}: {e['message']}")
+```
+
+`Study(...).validate()` returns the same-shaped dict.
+
+## Error Handling
+
+Cobre defines a typed exception hierarchy under `cobre.errors`. All exceptions inherit from `CobreError` (the common base) and also from the matching builtin (`ValueError`, `OSError`, or `RuntimeError`), so existing `except OSError` handlers keep catching while new code can catch the typed class.
+
+| Exception                  | Inherits                        | Description                                                                                         |
+| -------------------------- | ------------------------------- | --------------------------------------------------------------------------------------------------- |
+| `CobreError`               | `Exception`                     | Base class for every Cobre exception                                                                |
+| `ValidationError`          | `CobreError`, `ValueError`      | Case data or configuration failed validation                                                        |
+| `PolicyIncompatibleError`  | `CobreError`, `ValueError`      | A warm-start policy is incompatible with the current system                                         |
+| `CaseIoError`              | `CobreError`, `OSError`         | A filesystem read or write failure while loading or writing a case                                  |
+| `OutputError`              | `CobreError`, `OSError`         | An output serialization, schema, or manifest failure while writing results                          |
+| `SolverError`              | `CobreError`, `RuntimeError`    | A training or solver failure. For an infeasible subproblem, the `.stage`, `.iteration`, and `.scenario` attributes are the integer coordinates; otherwise they are `None` |
+| `SimulationError`          | `CobreError`, `RuntimeError`    | A simulation-phase failure                                                                          |
+| `InternalError`            | `CobreError`, `RuntimeError`    | An internal software or environment fault                                                           |
+
+See [Error Codes](/reference/error-codes/) for the full catalogue of error conditions.
 
 ## Read Output with Polars
 

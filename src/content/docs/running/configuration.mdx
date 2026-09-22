@@ -620,13 +620,22 @@ Controls policy persistence (checkpoint saving and warm-start loading).
 
 ### `checkpointing`
 
-| Field                 | Type    | Default | Description                                     |
-| --------------------- | ------- | ------- | ------------------------------------------------- |
-| `enabled`             | boolean | `false` | Enable periodic checkpointing during training.  |
-| `initial_iteration`   | integer | `null`  | First iteration to write a checkpoint.          |
-| `interval_iterations` | integer | `null`  | Iterations between checkpoints.                 |
-| `store_basis`         | boolean | `false` | Include LP basis in checkpoints for warm-start. |
-| `compress`            | boolean | `false` | Compress checkpoint files.                      |
+:::note[Accepted but not yet consumed]
+The `checkpointing` block (`enabled`, `initial_iteration`, `interval_iterations`,
+`store_basis`, `compress`) is accepted and validated, but the current Cobre binary
+has no consumer for it — **periodic** checkpointing is not performed. A single
+policy checkpoint is always written at the **end** of training regardless of these
+keys (see [Policy Management — Resume](/running/policy-management/#resume)). These
+pages follow the binary.
+:::
+
+| Field                 | Type    | Default | Description                                                         |
+| --------------------- | ------- | ------- | ------------------------------------------------------------------- |
+| `enabled`             | boolean | `false` | Accepted; currently inert — no periodic checkpointing is performed. |
+| `initial_iteration`   | integer | `null`  | First iteration to write a checkpoint.                              |
+| `interval_iterations` | integer | `null`  | Iterations between checkpoints.                                     |
+| `store_basis`         | boolean | `false` | Accepted; currently inert — basis output is not gated by this key.  |
+| `compress`            | boolean | `false` | Compress checkpoint files.                                          |
 
 ### `boundary`
 
@@ -878,7 +887,7 @@ for advanced use cases and may change between releases:
 
 | Section                          | Purpose                                                                                                  |
 | --------------------------------- | ---------------------------------------------------------------------------------------------------------- |
-| `upper_bound_evaluation`         | Inner approximation upper-bound evaluation settings                                                      |
+| `upper_bound_evaluation`         | Inner approximation upper-bound evaluation settings. Accepted and validated, but currently inert — the engine evaluates the upper bound with its built-in defaults and does not consult this block. |
 | `training.solver`                | LP solver retry policy and optional per-phase profile overrides (`backward`, `forward`) — see [`training.solver`](#trainingsolver) below; for the performance-tuning treatment of the same profiles, see [Solver Safeguards](/running/performance/#solver-safeguards) |
 | `simulation.io_channel_capacity` | Async I/O channel buffer size for simulation output writing                                              |
 
@@ -892,6 +901,13 @@ silently ignored. For the complete list of fields and their types, see the
 LP solver retry policy plus optional per-phase profile overrides.
 `retry_max_attempts` and `retry_time_budget_seconds` are pre-existing
 fields; `backward` and `forward` are new in v0.12.0.
+
+:::note[Retry knobs accepted but not yet consumed]
+`retry_max_attempts` and `retry_time_budget_seconds` are accepted and validated
+but currently inert — the solve path does not retry on these settings. The rows
+below and the example JSON remain valid input and round-trip unchanged. The
+per-phase `backward` / `forward` profile overrides are consumed as documented.
+:::
 
 | Field                       | Type              | Default | Description                                                             |
 | ---------------------------- | ----------------- | ------- | --------------------------------------------------------------------------- |

@@ -190,10 +190,17 @@ exactness that `lp-formulation.md` §12.3 states as holding by default only.
 (Backend is selectable at build time — HiGHS default, CLP opt-in — a
 software-layer/devguide concern; keep the math backend-generic.)
 → **Cut pool**: append-only with stable, deterministic slot indices; deactivation
-toggles a cut row's RHS to a `±∞` sentinel (row never removed); only active cuts
-are baked into each iteration's template. Periodic-pruning methods
-(`level1`/`lml1`/`domination`) deactivate; **DCS** keeps the pool whole and loads
-a bounded resident subset per solve (`crates/cobre-sddp/src/cut/dcs.rs`).
+is a **pool boolean flag** (`active: Vec<bool>`, `CutPool::set_active`) that
+mutates no LP row, RHS, or bound. A deactivated cut keeps its slot but is
+**excluded from each iteration's rebaked stage template**
+(`build_cut_row_batch_into` bakes only `active_cuts`); the persistent lower-bound
+LP is append-only (rows never removed, bound stays monotone). The only
+`f64::INFINITY` in a cut row is the normal upper bound of the one-sided `≥`
+Benders cut (`cut/row.rs`), present on every active row — **not** a deactivation
+sentinel. Periodic-pruning methods (`level1`/`lml1`/`domination`) deactivate;
+**DCS** keeps the pool whole and loads a bounded resident subset per solve
+(`crates/cobre-sddp/src/cut/dcs.rs`), and is inadmissible under enumerated
+forward traversal.
 → **Checkpoint format (self-describing, v0.15.0)**: `policy/manifest.bin` (a
 `FlatBuffers` `CheckpointManifest` root: study graph, stage count, producer
 provenance + `format_version`) is written LAST as the commit signal and read

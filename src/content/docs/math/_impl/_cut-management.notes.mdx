@@ -18,11 +18,11 @@ tab — and the methodology body it supports — follows the code: **divide**.
 Policy export multiplies every cut coefficient and intercept by the writing
 study's cost-scale factor, converting the in-memory scaled cost space into
 canonical currency units at rest
-(`crates/cobre-sddp/src/policy/policy_export.rs:238-266`,
+(`crates/cobre-sddp/src/policy/policy_export.rs`,
 `scale_cut_records_for_export`: `intercept * cost_scale_factor`,
 `coefficients.iter().map(|c| c * cost_scale_factor)`). Every load path
 divides by the loading study's own factor
-(`crates/cobre-sddp/src/policy/policy_load.rs:64-108`,
+(`crates/cobre-sddp/src/policy/policy_load.rs`,
 `rescale_cut_records_for_load`) to bring the values back into that study's
 scaled cost space. This is **orthogonal** to the `col_scale` reduced-cost
 unscaling above: `col_scale` is a per-column LP prescaler applied inside a
@@ -39,7 +39,7 @@ generated it (methodology §5). The pool is never compacted, and nothing is
 ever deleted from it; "deactivation" always means something narrower than
 removal (below).
 
-### Deactivation is a bound sentinel, never a row removal
+### Deactivation excludes a cut from the template; the LB LP is append-only
 
 Cobre's row-management pipeline touches two different LPs, and "deactivating"
 a cut means something slightly different in each:
@@ -49,16 +49,18 @@ a cut means something slightly different in each:
   from that iteration's template rebake. Only active cuts are encoded as LP
   rows on each forward/backward solve; there is no row to toggle because the
   row was never emitted.
-- In the **persistent lower-bound LP** — where cut rows are never
-  structurally removed, so the training lower bound stays monotone — the same
-  deactivation instead toggles the cut row's bound to a trivially-satisfied
-  ±∞ sentinel. The row stays in place; it simply stops constraining the
-  solve.
+- In the **persistent lower-bound LP** the pool is **append-only**: only
+  active cuts are ever appended (`append_new_cuts_to_lp` skips cuts already in
+  the `CutRowMap`), and appended rows are **never removed**, so the training
+  lower bound stays monotone and every appended row keeps constraining.
+  Deactivation touches no row here; it only changes which cuts the
+  forward/backward template rebake encodes. The lone `f64::INFINITY` on a cut
+  row is the ordinary upper bound of the one-sided `≥` cut, present on every
+  active row — not a deactivation sentinel.
 
 Both routes preserve the slot index, which is what makes reactivation exact:
-a cut that a later selection pass restores is re-baked into the template (or
-has its bound restored), at the same slot, with the same coefficients it was
-generated with.
+a cut that a later selection pass restores is re-baked into the template, at
+the same slot, with the same coefficients it was generated with.
 
 ### Two-stage pipeline, run every iteration
 
@@ -69,8 +71,13 @@ synchronization, in two stages:
    `check_frequency`; runs only at iterations that are a multiple of it.
    Stage 0 is always exempt from this pass, because stage 0's rows drive the
    lower bound directly and are never a backward-pass successor. Selection
-   runs in parallel across stages. `dynamic` (DCS) never runs this stage at
-   all — it has no `check_frequency` gating and never deactivates pool cuts.
+   runs **sequentially across stages** (`training/session/mod.rs:1091-1097` —
+   the m-block kernel already saturates the cores via its inner parallelism);
+   within a stage, the value-evaluation kernel parallelises over
+   `M_BLOCK`-sized trial-point blocks via `rayon`
+   (`cut/cut_selection.rs:52-56`, `:363-366`). `dynamic` (DCS) never runs this
+   stage at all — it has no `check_frequency` gating and never deactivates
+   pool cuts.
 2. **Budget enforcement** (`max_active_per_stage`) — runs **every** iteration,
    regardless of `check_frequency`, as a hard-cap safety net on top of
    whatever Stage 1 (or DCS) leaves active.
