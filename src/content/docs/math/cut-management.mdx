@@ -51,7 +51,7 @@ $$
 \alpha_t = Q_t(\hat{x}_{t-1}, \omega_t) - \sum_{h \in \mathcal{H}} \pi^v_{t,h} \cdot \hat{v}_h - \sum_{h \in \mathcal{H}} \sum_{\ell=1}^{P_h} \pi^{lag}_{t,h,\ell} \cdot \hat{a}_{h,\ell}
 $$
 
-where $Q_t(\hat{x}_{t-1}, \omega_t)$ is the optimal objective value of the stage $t$ subproblem.
+where $Q_t(\hat{x}_{t-1}, \omega_t)$ is the optimal objective value of the stage $t$ subproblem. The trial state $\hat{x}_{t-1}$ this intercept is anchored at is the canonicalized (read-back-clamped) outgoing state of the previous stage's forward solve — its LP primal projected onto its admissible bounds — so the pinned incoming-state columns and the intercept share one in-box anchor (see [SDDP Algorithm §3.1](/math/sddp-algorithm#31-forward-pass)).
 
 **Sign convention**: By the LP envelope theorem, $\partial Q_t / \partial \hat{x}_j = \pi_j$, the sensitivity of the optimal value to the pinned incoming state. For a column pinned at $\underline{x}_j = \bar{x}_j = \hat{x}_j$, that sensitivity is exactly the column's reduced cost — equal, by KKT parity, to the multiplier the former equality row $x^{in}_j = \hat{x}_j$ would have carried — so the cut coefficient is taken directly from the reduced cost with no sign flip (after the per-column unscaling above). The reduced cost automatically captures all downstream effects: for storage, this includes contributions from the water balance, FPHA hyperplanes, and any generic constraints that reference the incoming storage variable $v^{in}_h$ (see [LP Formulation](/math/lp-formulation)).
 

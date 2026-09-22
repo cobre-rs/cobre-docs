@@ -74,7 +74,7 @@ For each of $M$ independent scenario trajectories:
 
 1. Start from the known initial state $x_0$ (initial storage volumes and inflow history)
 2. At each stage $t = 1, \ldots, T$, sample a scenario realization $\omega_t$ from the stage's scenario set, then solve the stage LP using the incoming state $\hat{x}_{t-1}$ and the sampled scenario. The LP includes all current Benders cuts as constraints on the future cost variable $\theta$
-3. Record the optimal state $\hat{x}_t$ (end-of-stage storage volumes and updated AR lags) as the trial point for stage $t$
+3. Record the optimal state $\hat{x}_t$ (end-of-stage storage volumes and updated AR lags), **canonicalized onto its admissible bounds** (see below), as the trial point for stage $t$
 4. Pass $\hat{x}_t$ as the incoming state to stage $t+1$
 
 :::note[Scenario sampling]
@@ -86,6 +86,8 @@ The forward pass produces: (a) trial points $\{\hat{x}_t\}$ at each stage for ea
 **Parallelization**: Forward trajectories are independent — Cobre distributes $M$ trajectories across MPI ranks, with threads solving individual stage LPs within each rank.
 
 **Warm-starting**: The forward pass LP solution at stage $t$ provides a near-optimal basis for the backward pass solves at the same stage, significantly reducing solve times.
+
+**State canonicalization**: The recorded outgoing state $\hat{x}_t$ is not the raw LP primal but its projection onto the resolved admissible bounds. Each bounded coordinate — end-of-stage storage, in-transit water volume, and any anticipated-thermal commitment hold — is clamped into its resolved interval, while the unbounded inflow (AR) lags pass through unchanged. The projection is the identity for an in-box optimum, so a solve whose state stays within bounds is unaffected by it. It is applied **once**, at read-back, and every consumer reads that one canonical vector: the forward trajectory, the backward-pass trial state $\hat{x}_{t-1}$, and the cut intercept anchored at it (see [Cut Management](/math/cut-management)). This is what makes $\hat{x}_t$ a well-defined function of the stage's optimal value and its resolved bounds — independent of which degenerate optimal vertex the solve terminated at or of round-off. See [Determinism Guarantees](/math/determinism-guarantees#3-methodology-mechanisms).
 
 ### 3.2 Backward Pass
 
@@ -310,6 +312,7 @@ The methodology above defines the forward/backward pass structure and the execut
 - [LP Formulation](/math/lp-formulation) — Complete stage subproblem LP that the forward/backward passes solve
 - [Policy Graphs](/math/policy-graphs) — The node/transition/pool generalisation of the stage chain; two probability axes, discount-separate convention, and structural limitations (finite-horizon only, cyclic reserved)
 - [Cut Management](/math/cut-management) — Cut generation, aggregation, selection, validity conditions, and the append-only monotonicity guarantee
+- [Determinism Guarantees](/math/determinism-guarantees) — Read-back canonicalization of the trial-point values onto admissible bounds, and the reproducibility mechanisms (canonical state-block ordering, pinned solve order) it rests on
 - [PAR Inflow Model](/math/par-inflow-model) — Stochastic inflow model driving uncertainty in the forward pass
 - [Discount Rate](/math/discount-rate) — Discounted Bellman equation, stage-dependent rates, discount factor on θ
 - [Horizon Modes](/math/horizon-modes) — The reserved cyclic policy-graph target design (season function, cycle convergence inequality, season-indexed cut pool, fixed-point Bellman operator) that the finite-horizon-only restriction in [Policy Graphs](/math/policy-graphs) anticipates

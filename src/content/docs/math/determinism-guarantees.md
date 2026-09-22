@@ -140,6 +140,21 @@ ascending maturity lag — consistent with the storage and inflow-lag block
 orderings. See [LP Formulation](/math/lp-formulation) for the column and row
 layout that this construction produces.
 
+**Trial-point values canonicalized onto bounds.** Canonical layout is only half
+of what makes a trial point reproducible; its values are pinned too. The
+outgoing state a forward solve records is not the raw LP primal but its
+projection onto the resolved admissible bounds — each bounded coordinate
+(storage, in-transit volume, anticipated-thermal commitment hold) clamped into
+its interval, the unbounded inflow lags passed through unchanged; the projection
+is the identity for an in-box optimum. Because a bound-pinned coordinate can
+settle a hair outside its interval on a degenerate or numerically drifting
+solve, this read-back projection is what makes the trial point $\hat{x}$ a
+function of the stage's optimal value and its resolved bounds — not of the
+terminating vertex or of round-off — the same property the reduced-cost cut
+reading relies on. It is applied once, at read-back, and read by every consumer.
+See [SDDP Algorithm §3.1](/math/sddp-algorithm#31-forward-pass) for the
+projection stated in full.
+
 **Solve order pinned; completion order irrelevant.** Two orders matter in the
 backward pass, and Cobre pins each for a different reason. The first is the
 order in which a trial point's openings are solved. As the preceding mechanism

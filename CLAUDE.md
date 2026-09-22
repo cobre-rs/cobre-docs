@@ -242,10 +242,15 @@ post-horizon delivery, priced against the terminal boundary — else rejected
 (`validation/semantic/thermal.rs`). Pre-study-decided deliveries past the horizon
 (DECOMP já-comandada) ride `initial_conditions.json` `past_anticipated_commitments`
 windows extending past `T`, a sunk cost folded into the boundary cut intercepts
-(`future_anticipated_deliveries` is removed). The delivered commitment is
-reconciled against solver feasibility-tolerance drift at its delivery bound on
-every solve (`lp/builder/commitment_reconcile.rs`); genuine over-commitment →
-named error (thermal, stage, overshoot), never a bare infeasible LP.
+(`future_anticipated_deliveries` is removed). Sub-tolerance drift at a delivery
+bound is absorbed by the read-back state canonicalization that clamps the outgoing
+state onto its resolved box (`solve/stage_solve.rs` `assemble_outgoing_state`), not
+by a per-solve reconcile pass; genuine over-commitment — a
+`past_anticipated_commitments` `value_mw` outside the plant's
+`[min_generation_mw, max_generation_mw]` — is rejected at case load as a named
+`BusinessRuleViolation` (`validation/semantic/thermal.rs`
+`check_committed_value_bounds`, naming the thermal, its window, the value, and the
+bounds), never mid-solve and never a bare infeasible LP.
 
 When **updating filling / commissioning** (`penalty-system.mdx`,
 `system-elements.mdx`, `lp-formulation.md`):
