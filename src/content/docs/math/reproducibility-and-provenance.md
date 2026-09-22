@@ -31,11 +31,11 @@ metadata, and platform-specific padding may legitimately vary across runs on
 different machines or library versions. The commitment is about numerical
 content: the values of the computed quantities.
 
-Provenance is recorded in two user-facing output files, `metadata.json` and
-`stochastic_provenance.json`. These are the artefacts a study author shares
-when reporting results or handing a run to an auditor. This chapter is concerned
-with the five categories of information they capture and why each category is
-necessary.
+Provenance is recorded in the study's user-facing output artefacts — the
+artefacts a study author shares when reporting results or handing a run to an
+auditor. This chapter is concerned with the five categories of information they
+capture and why each category is necessary. The concrete files that carry each
+category are a software-layer concern.
 
 For implementation, see the cobre developer-guide.
 

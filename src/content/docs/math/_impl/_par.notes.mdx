@@ -28,18 +28,11 @@ implied ACF jointly across all seasons, which is what makes the generated
 seasonal marginal std match `std_m3s` exactly. When every season shares the
 same order, the two coincide to double precision.
 
-### Model-quality diagnostic: explained variance
+### Residual-variance rejection (`r_squared`)
 
-The model-quality warning for a near-deterministic season reports an
-`explained_variance` field ($R^2 = 1 - r_m^2$), firing when
-$R^2 > 0.99$ (methodology §6). It is a library-surface diagnostic type only:
-Cobre computes it internally and does not render it on the CLI or expose it
-through the python bindings. Keep this $R^2$ distinct from `r_squared`, the
-*unexplained* variance reported in the stationarity gate's rejection message —
-the two are complementary quantities describing different situations:
-`explained_variance` is a quality signal on an accepted model, while
-`r_squared` in a rejection message is the reason a model was rejected
-outright.
+Closure computes each hydro/season coefficient of determination $r_m^2 = 1 - \sum_\ell \psi^*_{m,\ell}\rho_m(\ell)$ (methodology §3) and treats it as a hard admissibility test, not a quality score. A near-deterministic or unit-root fit drives the residual variance $1 - r_m^2$ to or below a numerical floor; when that happens closure **rejects the case** with a load-time error naming the offending hydro and season and reporting the computed `r_squared`. This is the residual-variance backstop of §6 point 2 — a hard load-time rejection, not a score on an accepted model.
+
+Cobre surfaces `r_squared` only inside this rejection message: there is no separate CLI field or python attribute for it, and no standalone variance signal on an accepted fit.
 
 ### Order-selection behavior
 
@@ -49,17 +42,15 @@ whenever Cobre estimates from `inflow_history.parquet`. Two runtime details
 sit alongside that rule but are not part of the derivation:
 
 - **`min_observations_per_season` is a warning, not a load-time error.** When
-  a (hydro, season) group has fewer historical observations than the
-  configured value (default 30), Cobre logs a model-quality warning naming
-  the plant and season and proceeds with the fit anyway. The threshold is a
-  quality signal, not a hard gate.
-- **`max_coefficient_magnitude` is an independent safety net.** When set and
-  any fitted coefficient for a (hydro, season) exceeds the threshold in
-  magnitude, Cobre clears that group's coefficients entirely (order reset to
-  0, for which the closure then derives `r_m = 1` — pure white noise). This
-  runs as a separate pass from the Maceira & Damázio contribution-chain
-  reduction (methodology §4.1) — a coefficient can trigger this magnitude
-  cutoff even when its composed contribution is non-negative.
+  a (hydro, season) group has fewer **fully-covered stage occurrences of that
+  season** than the configured value (default 30) — occurrences whose
+  historical window is only partially covered are excluded from the count —
+  Cobre logs a warning naming the plant and season and proceeds with the fit
+  anyway.
+- **Automatic order reduction is logged per season in `fitting_report.json`** (`contribution_reductions[].reason`), with three distinct reasons:
+  - `magnitude_bound` — a prepass check: if any fitted coefficient exceeds `max_coefficient_magnitude` in absolute value, the season is reset to white noise (order 0, $r_m = 1$), independently of the contribution check.
+  - `phi1_negative` — a prepass check: if the first PACF coefficient is negative, the season is likewise reset to white noise (order 0).
+  - `negative_contribution` — the iterative Maceira–Damázio contribution check (methodology §4.1): the season's order is reduced to the largest still-valid order and refit (clearing to order 0 only if it decrements all the way down).
 
 ### History classification runs before any order selection
 

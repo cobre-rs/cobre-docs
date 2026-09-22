@@ -184,6 +184,28 @@ the input replaces `iteration` and `scenario` with a single `opening_index`:
 base seed (8 bytes), opening index (4 bytes), stage (4 bytes) — 16 bytes
 total.
 
+**Input encoding (batch samplers at a stage).** Some noise methods draw all of
+a stage's openings together as one coordinated block rather than opening by
+opening (for example Latin-hypercube or quasi-Monte-Carlo sampling). These
+derive a single per-stage seed from base seed (8 bytes) and stage (4 bytes) —
+12 bytes total — so the whole stage's opening batch shares one reproducible
+stream.
+
+**Input encoding (noise groups).** When stages are bucketed into noise groups —
+for example, weekly stages that share a single month's PAR innovation within a
+(season, year) bucket — the per-stage identifier in the forward-pass encoding is
+replaced by the group identifier, so every stage in a group derives the same
+noise draw. This grouped encoding carries a distinguishing leading tag byte so
+it can never collide with the plain forward-pass encoding, even at equal width.
+
+**Input encoding (per stochastic class).** Each stochastic entity class sampled
+out of sample — inflow, load, and non-controllable-source availability — folds
+its class identifier into the forward seed behind its own leading tag byte. The
+classes therefore draw independent noise streams even at an identical
+`(iteration, scenario, stage)` coordinate: the streams are independent precisely
+because their seeds differ here. Any spatial coupling within a class is imposed
+afterwards, by the correlation step — not by the seed.
+
 **Output.** The derived seed is a 64-bit hash value used to initialize a
 pseudo-random number generator, which then produces the noise vector $\varepsilon$
 for the corresponding tuple.
@@ -550,15 +572,10 @@ lag buffer for the next):
 2. For each stage $t$: compute the deterministic PAR component, solve for
    $\varepsilon_t$, update the lag buffer with $a_t^{\text{target}}$.
 3. Validate the inverted noise:
-   - **Warning** if $|\varepsilon_t| > 4.0$ (extreme noise suggests the external
-     scenario deviates significantly from the PAR model)
    - **Error** if $\sigma_m \approx 0$ but the residual
      $a_t^{\text{target}} - \text{deterministic component}$ exceeds a
      tolerance (the PAR model says this series is deterministic, but the
      external scenario disagrees)
-
-After inversion, a JSON validation report is emitted with noise statistics
-(mean, std, min, max, extreme count), warnings, and an overall status.
 
 ### 4.4 Deterministic (σ = 0) External Columns
 

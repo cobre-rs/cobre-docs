@@ -1,6 +1,6 @@
 ---
 title: Inflow Non-Negativity Solution Methods
-description: Four methods for handling negative PAR(p) inflow realizations — none, penalty, truncation, and the production truncation_with_penalty hybrid — with LP formulations and trade-offs.
+description: Four methods for handling negative PAR(p) inflow realizations — none, penalty, truncation, and the truncation_with_penalty hybrid — with LP formulations and trade-offs.
 ---
 
 ## Purpose
@@ -35,12 +35,6 @@ where $T = \sum_k \tau_k$ is the total stage duration in hours. The product $\si
 
 ## 3. Method: `none`
 
-**Configuration**:
-
-```json
-{ "modeling": { "inflow_non_negativity": { "method": "none" } } }
-```
-
 **LP Formulation**: Standard AR constraint (unchanged):
 
 $$
@@ -51,23 +45,8 @@ $$
 
 - LP may become **infeasible** when $a_h < 0$ causes water balance violation
 - Useful only for debugging or when the AR model guarantees positive outputs
-- **Not recommended for production**
 
 ## 4. Method: `penalty`
-
-**Configuration**:
-
-```json
-{
-  "modeling": {
-    "inflow_non_negativity": {
-      "method": "penalty"
-    }
-  }
-}
-```
-
-The penalty cost $c^{inf}$ is authored separately in the penalties file under the hydro section, not inside this block.
 
 **Additional Variables**:
 
@@ -93,7 +72,7 @@ $$
 + \sum_{h \in \mathcal{H}} c^{inf} \cdot \sigma^{inf}_h \cdot T
 $$
 
-where $c^{inf}$ is the penalty cost (default: 1000 \$/(m³/s·h)) and $T = \sum_k \tau_k$ is the total stage duration in hours.
+where $c^{inf}$ is the penalty cost and $T = \sum_k \tau_k$ is the total stage duration in hours.
 
 **Advantages**:
 
@@ -107,12 +86,6 @@ where $c^{inf}$ is the penalty cost (default: 1000 \$/(m³/s·h)) and $T = \sum_
 - Slightly affects marginal water values
 
 ## 5. Method: `truncation`
-
-**Configuration**:
-
-```json
-{ "modeling": { "inflow_non_negativity": { "method": "truncation" } } }
-```
 
 **Scenario Generation**:
 
@@ -137,25 +110,11 @@ $$
 - **Breaks AR dynamics**: When truncation occurs, temporal correlation is disrupted
 - May affect long-term storage dynamics
 
-## 6. Method: `truncation_with_penalty` — Production Design
+## 6. Method: `truncation_with_penalty` — Hybrid Design
 
-**Configuration**:
+The two preceding methods each handle one side of the problem well but leave the other unaddressed: pure truncation keeps the LP lean but biases the inflow distribution upward; pure penalty preserves distribution fidelity but relies entirely on LP slack to absorb every negative excursion. The hybrid combines both mechanisms to cover the full range of noise excursions efficiently.
 
-```json
-{
-  "modeling": {
-    "inflow_non_negativity": {
-      "method": "truncation_with_penalty"
-    }
-  }
-}
-```
-
-The slack-column penalty cost $c^{inf}$ is sourced from the penalties file under the hydro section (same key as for the pure-`penalty` method).
-
-This is the production method Cobre uses for inflow non-negativity. The two preceding methods each handle one side of the problem well but leave the other unaddressed: pure truncation keeps the LP lean but biases the inflow distribution upward; pure penalty preserves distribution fidelity but relies entirely on LP slack to absorb every negative excursion. The hybrid combines both mechanisms to cover the full range of noise excursions efficiently.
-
-### 6.1 Production formulation: clamp outside the LP, slack inside the LP
+### 6.1 Formulation: clamp outside the LP, slack inside the LP
 
 The PAR(p) noise is clamped outside the LP before the scenario is patched in, exactly as in the `truncation` method:
 
@@ -237,16 +196,16 @@ $$
 
 The penalty is proportional to $\sigma_m \cdot \xi_h$, which is the actual inflow adjustment in m³/s. Note that $\sigma_m$ varies by season, so the effective penalty for a given noise adjustment $\xi_h$ is larger in high-variability seasons and smaller in low-variability seasons. This is by design — a given noise adjustment represents a larger physical inflow correction when $\sigma_m$ is large.
 
-**Equivalence with the production formulation**: The $\xi_h$ reference design and the production clamp-plus-slack formulation are economically equivalent when both use the same penalty cost $c^{inf}$. In both cases the objective penalty equals $c^{inf}$ multiplied by the physical inflow correction in m³/s·h. The production formulation reuses the existing truncation and penalty mechanisms without introducing a separate noise-adjustment constraint inside the LP, which simplifies the solver's constraint matrix.
+**Equivalence with the clamp-plus-slack formulation**: The $\xi_h$ reference design and the clamp-plus-slack formulation are economically equivalent when both use the same penalty cost $c^{inf}$. In both cases the objective penalty equals $c^{inf}$ multiplied by the physical inflow correction in m³/s·h. The clamp-plus-slack formulation reuses the existing truncation and penalty mechanisms without introducing a separate noise-adjustment constraint inside the LP, which simplifies the solver's constraint matrix.
 
 ## 7. Comparison Summary
 
-| Method                    | LP Size    | Bias    | AR Preservation | Feasibility | Recommendation |
-| ------------------------- | ---------- | ------- | --------------- | ----------- | -------------- |
-| `none`                    | Base       | None    | Full            | May fail    | Debugging only |
-| `penalty`                 | +vars/cons | Minimal | Full            | Guaranteed  | Alternative    |
-| `truncation`              | Base       | Upward  | Partial         | Guaranteed  | Quick studies  |
-| `truncation_with_penalty` | +vars/cons | Minimal | Full            | Guaranteed  | **Production** |
+| Method                    | LP Size    | Bias    | AR Preservation | Feasibility |
+| ------------------------- | ---------- | ------- | --------------- | ----------- |
+| `none`                    | Base       | None    | Full            | May fail    |
+| `penalty`                 | +vars/cons | Minimal | Full            | Guaranteed  |
+| `truncation`              | Base       | Upward  | Partial         | Guaranteed  |
+| `truncation_with_penalty` | +vars/cons | Minimal | Full            | Guaranteed  |
 
 ## 8. Reference
 
@@ -258,3 +217,4 @@ The penalty is proportional to $\sigma_m \cdot \xi_h$, which is the actual inflo
 - [PAR Inflow Model](/math/par-inflow-model) — Defines the PAR(p) model that produces the inflow realizations handled here
 - [Penalty System](/math/penalty-system) — Penalty hierarchy and cascade resolution
 - [Scenario Generation](/math/scenario-generation) — The noise term $\varepsilon$ in the inflow equation comes from the fixed opening tree (pre-generated noise vectors), not from per-iteration random sampling
+- [Configuring inflow non-negativity](/running/configuration#inflow_non_negativity) — the software-layer setting that selects which of these four methods a study uses and where the penalty cost $c^{inf}$ is authored

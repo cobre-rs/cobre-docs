@@ -124,13 +124,13 @@ will not produce `simulation/pumping_stations/`.
     fpha_hyperplanes.parquet         (when any hydro uses source: "computed")
     evaporation_models.parquet       (when any hydro has evaporation)
     fpha_deviation_points.parquet    (when exports.fpha_deviation_points = true)
-  stochastic/
+  stochastic/                        # only when exports.stochastic = true (off by default)
     inflow_seasonal_stats.parquet    (when estimation was performed)
     inflow_ar_coefficients.parquet   (when estimation was performed)
     inflow_annual_component.parquet  (when estimation was performed)
-    correlation.json                 (always)
+    correlation.json                 (always, when exported)
     fitting_report.json              (when estimation was performed)
-    noise_openings.parquet           (always)
+    noise_openings.parquet           (always, when exported)
     load_seasonal_stats.parquet      (when load buses exist)
 ```
 

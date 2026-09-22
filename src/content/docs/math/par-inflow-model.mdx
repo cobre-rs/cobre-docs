@@ -441,11 +441,10 @@ post-hoc root test.
 **Enforced when validating the assembled model:**
 
 3. **Positive sample std** (error): a season with AR order $> 0$ must have $s_m > 0$ — a zero seasonal std cannot normalise the AR coefficients.
-4. **High explained variance** (warning): $R^2 = 1 - r_m^2 > 0.99$ (the AR part explains more than 99% of the season's variance — a likely over-fit) raises an advisory model-quality warning; it is not fatal.
 
 **Enforced during fitting, not as a post-hoc test:**
 
-5. **Stability**: rather than testing the roots of the AR polynomial, the fitter guards stability through the Maceira & Damázio contribution-based order reduction (section 4.1) — a negative lag-1 coefficient, a negative composed contribution, or a coefficient exceeding `max_coefficient_magnitude` reduces the season's order and refits. The periodic Yule-Walker solve additionally truncates the order when its correlation matrix is singular (section 5.4), so a rank-deficient system never yields coefficients.
+4. **Stability**: rather than testing the roots of the AR polynomial, the fitter guards stability through the Maceira & Damázio contribution-based order reduction (section 4.1) — a negative lag-1 coefficient, a negative composed contribution, or a coefficient exceeding `max_coefficient_magnitude` reduces the season's order and refits. The periodic Yule-Walker solve additionally truncates the order when its correlation matrix is singular (section 5.4), so a rank-deficient system never yields coefficients.
 
 ## 7. PAR-to-LP Transformation
 
