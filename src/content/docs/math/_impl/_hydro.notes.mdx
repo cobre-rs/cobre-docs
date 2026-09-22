@@ -36,8 +36,7 @@ relative mean-absolute deviation. When it exceeds 5%, a warning is logged
 naming the plant and stage:
 
 ```
-Warning: hydro 'UHE Example' stage 3 FPHA fit deviation = 6.2 % (> 5 %).
-Consider increasing discretization points or narrowing the fitting window.
+FPHA fit for hydro UHE Example (stage 3) deviates 6.2% from the exact production function (mean |Δ| 4.1 MW, max 9.7 MW); the convex-hull approximation is poor here — typically a strongly non-concave production surface that no single α correction can track
 ```
 
 The warning is informational — the run continues with the fitted planes. A
@@ -53,16 +52,30 @@ rank count. The `fpha_plane_reduction` distance method's sampled draws are
 seeded from stable plant/stage/plane-pair identity — never wall clock or MPI
 rank — so its merges are equally reproducible.
 
-### Evaporation: disabled with a warning, not a hard error
+### Evaporation: disabled on zero area, rejected on missing geometry
 
-A hydro that declares `evaporation.coefficients_mm` but has **no usable
-area-volume curve** — no rows in `system/hydro_geometry.parquet`, or every
-`area_km2` value is zero — does not fail to load. Evaporation is instead
-**disabled** (zero flux) for that hydro, with a warning naming the plant,
-because a zero surface area yields zero evaporative flux regardless of the
-authored coefficients. Non-finite coefficients and a stage with no
-`season_id` (which evaporation needs to select a calendar month) remain hard
-load-time errors — only the missing-area case is downgraded to a warning. See
+A hydro that declares `evaporation.coefficients_mm` needs an area-volume
+curve — the rows in `system/hydro_geometry.parquet` — to linearize its
+evaporative flux, and the two ways that curve can be absent are handled
+differently:
+
+- **No geometry rows at all** is a **hard load-time error**. A hydro that
+  declares `evaporation.coefficients_mm` but contributes no rows to
+  `system/hydro_geometry.parquet` is rejected at load, naming the plant: the
+  evaporation linearization requires area-volume curve data and none is
+  present.
+- **Rows present but every `area_km2` is zero** is **disabled with a
+  warning**. The curve exists but describes zero surface area throughout, so
+  evaporative flux is identically zero regardless of the authored
+  coefficients. Cobre disables evaporation (zero flux) for that hydro and
+  logs a warning naming the plant rather than failing the run.
+
+Two conditions raised while building the per-stage linearization remain hard
+load-time errors: a stage whose total block duration is not positive, and a
+computed evaporation coefficient — volume slope or intercept — that is not
+finite (the signature of a degenerate area-volume curve). The calendar month
+that selects each stage's monthly evaporation coefficient is taken from that
+stage's start date. See
 [Penalty System §"Signed Net Evaporation"](/math/penalty-system#signed-net-evaporation)
 for the water-balance treatment of the resulting flux.
 

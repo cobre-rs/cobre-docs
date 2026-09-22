@@ -192,17 +192,24 @@ ParallelCluster reference architecture.
 
 Runs the layered validation pipeline and prints a diagnostic report to stdout.
 
-On success, prints entity counts:
+On success, prints a single line of entity counts:
 
 ```
 Valid case: 3 buses, 12 hydros, 8 thermals, 4 lines
-  buses: 3
-  hydros: 12
-  thermals: 8
-  lines: 4
 ```
 
-On failure, prints each error prefixed with `error:` and exits with code 1.
+A warning-free case prints nothing else. When the pipeline raises warnings, a
+`Validation: 0 errors, N warnings in <dir>` summary follows the `Valid case:`
+line (with `<dir>` exactly as passed on the command line), then one `warning:`
+line per finding. When `config.json` configures a boundary policy, a
+`boundary policy priced at <date>` line and a one-line reconciliation summary
+follow.
+
+On failure, cobre prints a `Validation: N errors, 0 warnings in <dir>` summary
+followed by each error as an `error:`-prefixed line; a semantic constraint
+violation exits with code 1. An unreadable case directory is reported as an I/O
+error on stderr, without the summary. See [Exit Codes](#exit-codes) for the full
+mapping.
 
 ### Arguments
 
@@ -212,7 +219,9 @@ On failure, prints each error prefixed with `error:` and exits with code 1.
 
 ### Options
 
-None.
+| Option   | Type | Default | Description                                                                                                                                                                                                                                                                                                   |
+| -------- | ---- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--json` | flag | off     | Replace the human-readable report with exactly one JSON object on stdout. On success it carries the boundary-policy reconciliation outcome (`configured`, `boundary_date`, `report` — the last two `null` when no boundary policy is configured); on failure it carries an `error` object with the failing `phase` and `message`. Exit codes are unchanged. |
 
 ### Examples
 
@@ -222,6 +231,9 @@ cobre validate /data/cases/hydro_study
 
 # Use in a script: only proceed if validation passes
 cobre validate /data/cases/hydro_study && cobre run /data/cases/hydro_study
+
+# Machine-readable outcome for a pipeline step
+cobre validate /data/cases/hydro_study --json
 ```
 
 ---
@@ -258,11 +270,11 @@ cobre schema export --output-dir /data/schemas
 Prints the binary version, active solver and communication backends, compression
 support, host architecture, and build profile.
 
-### Output Format
+### Output lines
 
 ```
-cobre   v0.10.0
-solver: HiGHS
+cobre   v0.15.0
+solver: HiGHS 1.13.1
 comm:   local
 zstd:   enabled
 arch:   x86_64-linux
@@ -272,7 +284,7 @@ build:  release (lto=thin)
 | Line                               | Description                                                             |
 | ---------------------------------- | ----------------------------------------------------------------------- |
 | `cobre v{version}`                 | Binary version from `Cargo.toml`                                        |
-| `solver: HiGHS`                    | Active LP solver backend (HiGHS in all standard builds)                 |
+| `solver: {name} {version}`         | Active LP solver backend and its library version — `HiGHS 1.13.1` in standard builds; a CLP build reports `CLP <version>` |
 | `comm: local` or `comm: mpi`       | Communication backend (`mpi` only when compiled with the `mpi` feature) |
 | `zstd: enabled`                    | Output compression support                                              |
 | `arch: {arch}-{os}`                | Host CPU architecture and operating system                              |
@@ -293,10 +305,10 @@ None.
 | Code | Category   | Cause                                                                                                                |
 | ---- | ---------- | -------------------------------------------------------------------------------------------------------------------- |
 | `0`  | Success    | The command completed without errors                                                                                 |
-| `1`  | Validation | `cobre run`: every non-I/O load failure (parse, schema, semantic constraint, policy compatibility). `cobre validate`: a `config.json` parse/schema error, or any semantic constraint violation |
+| `1`  | Validation | A parse, schema, or semantic-constraint error in any case file — including `config.json` — collected into the validation report (both subcommands); `cobre run` also exits `1` for every other non-I/O load failure |
 | `2`  | I/O        | File not found, permission denied, disk full, or write failure during loading or output (both subcommands)           |
 | `3`  | Solver     | LP infeasible subproblem or numerical solver failure during training or simulation                                   |
-| `4`  | Internal   | Communication failure, unexpected channel closure, or other software/environment problem. `cobre validate` also maps a parse, schema, or policy-incompatibility error found in any case file **other than `config.json`** (e.g., a malformed `system/*.json` or `scenarios/*`) here |
+| `4`  | Internal   | Communication failure, unexpected channel closure, or other software/environment problem. `cobre validate` also maps the rare load errors that escape the validation report — a scenario-assembly schema error (an AR-coefficient count mismatch) or a policy-incompatibility error — to this code, where `cobre run` exits `1` |
 
 A dangling reference (an entity ID that refers to a non-existent entity) surfaces
 as an `InvalidReference` line inside a semantic-constraint violation (exit code 1).
@@ -305,15 +317,17 @@ Error messages are printed to stderr with `error:` prefix and hint lines. See
 [Error Codes](/reference/error-codes/) for a detailed catalog.
 
 :::note
-`cobre validate` and `cobre run` do not share one exit code for the same load
-failure. `cobre validate` exits `1` for a `config.json` parse/schema error and
-for a semantic constraint violation, `2` for an I/O error, and `4` for a parse,
-schema, or policy-incompatibility error in any *other* case file; `cobre run`
-exits `1` for every non-I/O load error. These pages follow the binary.
+`cobre validate` and `cobre run` do not share one exit code for every load
+failure. Parse, schema, and semantic-constraint errors found while reading the
+case files are collected into the validation report and exit `1` under both
+subcommands. The load errors that surface only after that report is complete —
+a scenario-assembly schema error or a policy-incompatibility error — exit `4`
+under `cobre validate` but `1` under `cobre run`. These pages follow the binary
+as executed.
 :::
 
 ---
 
 ## Environment Variables
 
-Cobre reads **no configuration** from environment variables. Every setting comes from the case's config/data files and from `cobre` CLI arguments — thread count from `--threads`, color from `--color`, and the communication backend from `--comm-backend`. Terminal width (for progress rendering under a piped stderr) and the hostname recorded in run provenance are queried directly from the terminal and the OS. The one environment signal cobre still consults is whether it was launched under an MPI launcher, used only by `--comm-backend auto` to select a backend — a runtime fact, not a configuration channel.
+Cobre reads **no configuration** from environment variables. Every setting comes from the case's config/data files and from `cobre` CLI arguments — thread count from `--threads`, color from `--color`, and the communication backend from `--comm-backend`. Terminal width (for progress rendering under a piped stderr) and the hostname recorded in run provenance are queried directly from the terminal and the OS. Two runtime signals are the only environment inputs, and neither is a configuration channel: whether the process was launched under an MPI launcher (consulted only by `--comm-backend auto` to select a backend), and `RUST_LOG`, which sets the verbosity of the diagnostic log written to stderr. `RUST_LOG` defaults to `warn`, which surfaces deprecation and model-quality warnings; `RUST_LOG=debug` (or `trace`) adds diagnostic detail — for example the per-slot boundary-policy reconciliation lines that `cobre validate` and `cobre run` otherwise fold into a one-line summary — but never changes study results, only what is logged.

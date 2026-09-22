@@ -10,7 +10,9 @@ itself stays in the methodology body above, not here.
 
 `penalties.json` is required in every case directory. All four top-level
 sections — `bus`, `line`, `hydro`, `non_controllable_source` — are required,
-and every scalar cost must be strictly positive.
+and every scalar cost must be strictly positive (`> 0.0`), with one exception:
+the hydro `turbined_cost` regularization cost is validated `>= 0.0` (a `0.0`
+turbined cost — no turbine-flow penalty — is valid).
 
 ```json
 {
@@ -127,7 +129,7 @@ at a more specific tier:
 | Field                                        | Entity-level override                      | Stage-level override                            |
 | --------------------------------------------- | -------------------------------------------- | -------------------------------------------------- |
 | `line.exchange_cost`                          | `lines[].exchange_cost` in `system/lines.json` | `constraints/penalty_overrides_line.parquet`       |
-| `non_controllable_source.curtailment_cost`    | not supported                                | `constraints/penalty_overrides_ncs.parquet`        |
+| `non_controllable_source.curtailment_cost`    | `non_controllable_sources[].curtailment_cost` in `system/non_controllable_sources.json`                                | `constraints/penalty_overrides_ncs.parquet`        |
 
 ### Resolution Cascade at a Glance
 
@@ -139,5 +141,5 @@ tiers differ per field, so this is a lookup table, not a single uniform rule:
 | `bus.deficit_segments`                          | not supported                                     | `buses[].deficit_segments`                                                          | `penalties.json` → `bus.deficit_segments`                     |
 | `bus.excess_cost`                                | `penalty_overrides_bus.parquet`                   | not supported                                                                       | `penalties.json` → `bus.excess_cost`                          |
 | `line.exchange_cost`                             | `penalty_overrides_line.parquet`                  | `lines[].exchange_cost`                                                             | `penalties.json` → `line.exchange_cost`                       |
-| `hydro.*` (11 cost fields)                       | `penalty_overrides_hydro.parquet` (subset)        | `hydros[].penalties` — see the [Hydro Configure tab](/math/hydro-production-models#implementation-in-cobre) | `penalties.json` → `hydro.*`                                  |
-| `non_controllable_source.curtailment_cost`      | `penalty_overrides_ncs.parquet`                   | not supported                                                                       | `penalties.json` → `non_controllable_source.curtailment_cost` |
+| `hydro.*`                       | `penalty_overrides_hydro.parquet`        | `hydros[].penalties` — see the [Hydro Configure tab](/math/hydro-production-models#implementation-in-cobre) | `penalties.json` → `hydro.*`                                  |
+| `non_controllable_source.curtailment_cost`      | `penalty_overrides_ncs.parquet`                   | `non_controllable_sources[].curtailment_cost`                                                                       | `penalties.json` → `non_controllable_source.curtailment_cost` |

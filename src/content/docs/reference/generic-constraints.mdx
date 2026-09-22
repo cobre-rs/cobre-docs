@@ -539,8 +539,8 @@ exhaustive catalog and resolutions — it is not repeated here.
 | Constraint declares a bound reference but has no activation rows             | [`InvalidReference`](/reference/error-codes/#invalidreference) |
 | A bounds row with neither endpoint, and no affine remainder to fill one      | [`InvalidValue`](/reference/error-codes/#invalidvalue) |
 | Inverted interval (`bound_upper < bound_lower`, both statically resolvable)  | [`InvalidValue`](/reference/error-codes/#invalidvalue) |
-| `block_id` out of range for the stage's block count                          | [`InvalidValue`](/reference/error-codes/#invalidvalue) |
-| Duplicate `(constraint_id, stage_id, block_id)` key in the bounds parquet     | [`DuplicateId`](/reference/error-codes/#duplicateid) |
+| `block_id` out of range for the stage's block count | [`BusinessRuleViolation`](/reference/error-codes/#businessruleviolation) |
+| The same bound column (`bound_lower` or `bound_upper`) set twice for one `(constraint_id, stage_id, block_id)` — a `bound_lower` row and a `bound_upper` row for the same triple are distinct keys and legal | [`DuplicateId`](/reference/error-codes/#duplicateid) |
 | Two distinct lines sharing one unordered bus pair, addressed via `line_exchange(source_bus=, target_bus=)` | `SchemaError` |
 
 ---

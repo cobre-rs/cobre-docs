@@ -87,7 +87,7 @@ After all stages complete, a run summary is printed to stderr with:
 
 - **Training**: iteration count, convergence status, bounds, gap, cuts, solves, time
 - **Simulation** (when enabled): scenarios requested, completed, failed
-- **Output directory**: absolute path to results
+- **Output directory**: an `Output written to <dir>/` line carrying the path exactly as passed to `--output` (or the `<CASE_DIR>/output/` default) — a relative `--output` path is printed relative, not resolved to an absolute path
 
 ---
 

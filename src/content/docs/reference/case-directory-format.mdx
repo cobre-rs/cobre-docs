@@ -136,7 +136,7 @@ sections are optional and fall back to documented defaults when absent.
 | `upper_bound_evaluation` | object | `{}`         | Inner approximation upper-bound settings                            |
 | `policy`                 | object | fresh mode   | Policy directory path and warm-start mode                           |
 | `simulation`             | object | disabled     | Post-training simulation settings                                   |
-| `exports`                | object | all enabled  | Output file selection flags                                         |
+| `exports`                | object | all disabled | Output file selection flags                                         |
 
 **`modeling` section:**
 
@@ -153,12 +153,12 @@ authored in `penalties.json::hydro.inflow_nonnegativity_cost`.
 | Field                      | Type            | Default                             | Description                                                                                                                |
 | -------------------------- | --------------- | ----------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
 | `training.selection`       | object          | **required**                        | Scenario-selection method — `sampled{forward_passes}` or `enumerated{}` (see below); a missing `training.selection` is a hard load error |
-| `training.stopping_rules`  | array           | **required**                        | At least one stopping rule entry; must include an `iteration_limit` rule                                                   |
+| `training.stopping_rules`  | array or null   | `[{ iteration_limit: 100 }]`        | Optional list of stopping-rule entries; when omitted or empty, the binary applies a single `iteration_limit` rule of 100 iterations |
 | `training.stopping_mode`   | string          | `"any"`                             | How multiple rules combine: `"any"` (stop when any triggers) or `"all"` (stop when all trigger)                            |
 | `training.enabled`         | boolean         | `true`                              | When `false`, skip training and proceed directly to simulation                                                             |
 | `training.tree_seed`       | integer or null | `null`                              | Random seed for reproducible noise generation (see [Seed resolution](#seed-resolution))                                    |
 | `training.scenario_source` | object or null  | `null`                              | Per-class sampling scheme for the training forward pass (see below)                                                        |
-| `training.parallelism`     | object or null  | `{backward_scheduler: trial_point}` | Backward-pass scheduler selection; see [Configuration](/running/configuration/#parallelism)                                |
+| `training.parallelism`     | object or null  | `{backward_scheduler: by_scenario}` | Backward-pass scheduler selection; see [Configuration](/running/configuration/#parallelism)                                |
 | `training.solver`          | object or null  | `null`                              | LP solver retry policy and optional per-phase solver profiles; see [Configuration](/running/configuration/#trainingsolver) |
 
 **`training.selection` sub-section:**
@@ -216,7 +216,15 @@ Each entry has a `"type"` discriminator. Valid types:
 | `iteration_limit` | `limit: integer`                                                      | Iteration count reaches `limit`                                          |
 | `time_limit`      | `seconds: number`                                                     | Wall-clock time exceeds `seconds`                                        |
 | `bound_stalling`  | `iterations: integer`, `tolerance: number`                            | Lower bound improvement falls below `tolerance` over `iterations` window |
-| `simulation`      | `replications`, `period`, `bound_window`, `distance_tol`, `bound_tol` | Both policy cost and bound have stabilized                               |
+| `gap`             | `tolerance: number` and/or `relative_tolerance: number` (at least one required) | The optimality gap between the lower and upper bounds falls below the tolerance |
+
+:::note[`stopping_rules` is optional]
+Earlier documentation described `training.stopping_rules` as required and said it
+must include an `iteration_limit` rule. The current binary treats the array as
+optional: when `stopping_rules` is omitted or empty, it applies a single
+`iteration_limit` rule of 100 iterations. This page follows the binary — supply
+your own rules to override that fallback.
+:::
 
 **`training.cut_selection` sub-section:**
 
@@ -289,6 +297,7 @@ field carried before this field existed.
 | ------------ | ------- | ------- | ----------------------------------------------------------------- |
 | `states`     | boolean | `false` | Export visited forward-pass trial points to the policy checkpoint |
 | `stochastic` | boolean | `false` | Export stochastic preprocessing artifacts to `output/stochastic/` |
+| `fpha_deviation_points` | boolean | `false` | Export the per-grid-point computed-FPHA fit-deviation table to `output/hydro_models/fpha_deviation_points.parquet`. |
 
 **Minimal valid example:**
 
@@ -307,7 +316,9 @@ field carried before this field existed.
 ### `penalties.json`
 
 Global penalty cost defaults used when no entity-level override is present.
-All four sections are required. Every scalar cost must be strictly positive (> 0.0).
+All four sections are required. Every scalar cost must be strictly positive
+(`> 0.0`), with one exception: the hydro `turbined_cost` regularization cost is
+validated `>= 0.0` (a `0.0` turbined cost — no turbine-flow penalty — is valid).
 Deficit segment costs must be monotonically increasing and the last segment must
 have `depth_mw: null` (unbounded).
 
@@ -836,7 +847,7 @@ can inject generation onto several electrical buses:
 
 | Field               | Required | Description                                                                  |
 | ------------------- | -------- | ------------------------------------------------------------------------------ |
-| `id`                | Yes      | Group identifier: dense, 0-based, unique **within the plant** (not globally)   |
+| `id`                | Yes      | Group identifier: unique **within the plant** (not globally)   |
 | `name`              | Yes      | Human-readable group name                                                     |
 | `bus_id`            | Yes      | Bus where this group's generation is injected                                |
 | `min_turbined_m3s`  | Yes      | Minimum turbined flow for this group [m³/s]                                  |
@@ -1105,6 +1116,32 @@ plant and is identified by a unique `hydro_id`. Results are loaded in
 }
 ```
 
+**`fpha_plane_reduction` (optional top-level block).** A sibling of the
+`production_models` array — not a per-hydro field — that trims the computed-FPHA
+hyperplane set after fitting. When the key is **absent, no reduction is applied**
+(off by default). It is a tagged object keyed by `method`; unknown fields are
+rejected, so a tolerance field that belongs to the _other_ method is rejected.
+
+| Field (`"method": "angle"`) | Required | Description                                              |
+| --------------------------- | -------- | -------------------------------------------------------- |
+| `method`                    | Yes      | The literal string `"angle"`.                            |
+| `tolerance_deg`             | Yes      | Merge tolerance in degrees; finite and in `[0.0, 90.0]`. |
+
+| Field (`"method": "distance"`) | Required | Description                                     |
+| ------------------------------ | -------- | ----------------------------------------------- |
+| `method`                       | Yes      | The literal string `"distance"`.                |
+| `tolerance_pct`                | Yes      | Distance tolerance (percentage); finite, `>= 0.0`. |
+| `n_samples`                    | Yes      | Sample count; integer `>= 1`.                   |
+
+```json
+{
+  "production_models": [ ... ],
+  "fpha_plane_reduction": { "method": "angle", "tolerance_deg": 5.0 }
+}
+```
+
+The `distance` form is `{ "method": "distance", "tolerance_pct": 0.5, "n_samples": 64 }`.
+
 **Per-hydro entry fields:**
 
 | Field            | Required | Description                                                                 |
@@ -1235,7 +1272,7 @@ available.
 
 11 columns. Rows are sorted by `(hydro_id, stage_id, plane_id)` ascending.
 Null `stage_id` sorts before any non-null stage and means the plane is valid for
-all stages of that hydro. One row per hyperplane; at least 3 planes are required
+all stages of that hydro. One row per hyperplane; at least 1 plane is required
 per `(hydro_id, stage_id)` group.
 
 | Column            | Type   | Nullable | Description                                                 |
@@ -1278,7 +1315,7 @@ by a stage-specific row.
 | `stage_id`                               | INT32        | yes      | Stage; NULL means "applies to all stages"                                                |
 | `equivalent_productivity_mw_per_m3s`     | DOUBLE       | yes      | Direct ρ_eq override [MW/(m³/s)]; finite and >= 0.0 (`0.0` marks a planned-outage stage) |
 | `reference_outflow_m3s`                  | DOUBLE       | yes      | Q_ref override [m³/s]; finite and >= 0.0                                                 |
-| `specific_productivity_mw_per_m3s_per_m` | DOUBLE       | yes      | ρ_esp override [MW/(m³/s)/m]; finite and > 0.0                                           |
+| `specific_productivity_mw_per_m3s_per_m` | DOUBLE       | yes      | ρ_esp override [MW/(m³/s)/m]; finite and >= 0.0 (`0.0` marks a planned-outage stage)                                           |
 
 **Validation:**
 
@@ -1540,11 +1577,12 @@ for every block.
 | Field      | Type    | Constraints                     | Description                                                                |
 | ---------- | ------- | ------------------------------- | -------------------------------------------------------------------------- |
 | `block_id` | integer | Must be a valid block for stage | Zero-based block index within the stage.                                   |
-| `factor`   | number  | >= 0, finite                    | Multiplier applied to the stage available generation bound for this block. |
+| `factor`   | number  | > 0, finite                    | Multiplier applied to the stage available generation bound for this block. |
 
 **Effect:** `available_mw_block = available_generation_mw * block_factor`.
-A factor of 1.0 leaves the bound unchanged. A factor of 0.0 sets availability
-to zero for that block (complete generation unavailability).
+A factor of 1.0 leaves the bound unchanged; factors below 1.0 reduce available
+generation and factors above 1.0 raise it. The factor must be strictly positive —
+`0.0` is rejected at load.
 
 ---
 
@@ -1708,8 +1746,9 @@ per-block contract price — deliberately asymmetric with
 
 Stage-varying available generation bounds for non-controllable sources. Uses
 sparse storage: only `(ncs_id, stage_id)` pairs that differ from the base
-entity-level value need rows. Absent rows keep the entity's declared
-`available_generation_mw` unchanged.
+entity-level value need rows. Absent rows keep the entity's
+declared `max_generation_mw` unchanged; a present row overrides that entity
+capacity with its per-stage `available_generation_mw` for the `(ncs_id, stage_id)` cell.
 
 | Column                    | Type   | Required | Description                                                     |
 | ------------------------- | ------ | -------- | --------------------------------------------------------------- |
@@ -1741,11 +1780,21 @@ constraints are added.
       "expression": "anticipated_decision(2)",
       "slack": { "enabled": false }
     }
+  ],
+  "expressions": [
+    { "name": "total_hydro", "expression": "hydro_generation(1) + hydro_generation(2)" }
   ]
 }
 ```
 
-**Per-entry fields:**
+Alongside `constraints`, the file accepts an optional top-level `expressions`
+array — named linear expressions (`{ "name", "expression" }`) shared by every
+constraint and referenced by name from any `expression`. It is absent by
+default. See
+[Generic Constraints](/reference/generic-constraints/) for the named-expression
+syntax and resolution rules.
+
+**Per-entry fields (`constraints[]`):**
 
 | Field         | Type            | Required | Description                                                                                   |
 | ------------- | --------------- | -------- | ------------------------------------------------------------------------------------------------ |
@@ -1808,8 +1857,12 @@ is rejected unless the constraint's own inline affine remainder (an inline
 `<=`/`>=`/`==` on the constraint's `expression`, or a `per_stage_block`
 `generic_parameters.json` reference) supplies at least one endpoint for that
 cell — the row still activates the cell, but contributes no value. A
-constraint with no rows at all here is rejected outright: the activation grid
-is mandatory even when every value comes from a remainder. See
+constraint whose only bound endpoints come from an inline affine remainder but
+which has zero rows here fails referential validation (`InvalidReference` — the
+reference would apply to nothing): the activation grid decides _where_ such a
+constraint applies, even when it supplies none of the bound _value_. A plain
+constraint with no affine remainder and no rows is not an error — it simply
+applies to nothing and is silently inert. See
 [Generic Constraints: The activation grid](/reference/generic-constraints/#the-activation-grid)
 for the full validation rules and worked examples.
 

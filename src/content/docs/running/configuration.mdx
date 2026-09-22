@@ -74,6 +74,10 @@ openings instead of drawing a fixed count):
 | `enabled`       | boolean            | `true`  | Set to `false` to skip training and proceed directly to simulation (requires a pre-trained policy).                                                                                                     |
 | `tree_seed`     | integer            | `null`  | Random seed for the opening scenario tree. When `null`, a default seed of 42 is used (deterministic but arbitrary). See Stochastic Modeling for the dual-seed architecture. |
 | `stopping_mode` | `"any"` or `"all"` | `"any"` | How multiple stopping rules combine: `"any"` stops when the first rule is satisfied; `"all"` requires all rules to be satisfied simultaneously.                                                         |
+| `cut_selection`   | object             | row selection disabled                | Row-management (cut-selection) pipeline, nested at `training.cut_selection` (not a root key). See [`cut_selection`](#cut_selection). |
+| `solver`          | object             | retry policy, no per-phase overrides  | LP solver retry policy plus optional per-phase profile overrides. See [`training.solver`](#trainingsolver). |
+| `parallelism`     | object             | `by_scenario` scheduling              | Backward-pass worker-scheduling knobs. See [`parallelism`](#parallelism). |
+| `scenario_source` | object or `null`   | `null` (all `in_sample`)              | Per-class forward-pass noise source for the training forward pass. See [`scenario_source`](#scenario_source). |
 
 For the per-class `scenario_source` configuration, see the
 [`scenario_source` sub-section](#scenario_source) below and
@@ -457,6 +461,9 @@ For the methodology, see
 ---
 
 ## `cut_selection`
+
+This block is nested under `training`; its full path is
+`training.cut_selection`, not a root-level key.
 
 Controls the row management pipeline for managing row pool growth. The
 pipeline has up to two stages: strategy-based selection and budget

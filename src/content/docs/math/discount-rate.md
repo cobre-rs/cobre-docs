@@ -75,14 +75,12 @@ Individual transitions may override the global rate:
 
 ```json
 {
-  "source_id": 59,
-  "target_id": 48,
+  "source_id": 1,
+  "target_id": 2,
   "probability": 1.0,
-  "annual_discount_rate": 0.1
+  "annual_discount_rate_override": 0.1
 }
 ```
-
-Transition-specific discount rates are configured per transition in the case-level `policy_graph`.
 
 ## 4 Discount Factor in the Stage Subproblem
 
