@@ -3,20 +3,29 @@ title: Error Codes
 description: The `LoadError` and `ErrorKind` taxonomy cobre-io returns during case loading and layered validation, with causes and resolutions.
 ---
 
-`cobre-io` reports two kinds of errors: `LoadError` variants (the top-level
-`Result<System, LoadError>` returned by `load_case`) and `ErrorKind` values
-(diagnostic categories collected by `ValidationContext` during the layered
-validation pipeline).
+`cobre-io` reports two kinds of errors: `LoadError` variants (returned during
+case loading) and `ErrorKind` values (diagnostic categories collected during
+layered validation).
 
-For an explanation of how the validation pipeline works and when each error
-phase runs, see the `cobre-io` crate documentation in the cobre repository.
+## How these errors reach you
+
+Cobre surfaces errors through four user-facing channels:
+
+- **`cobre validate` human report** — errors print as `error:` prefixed lines; warnings (after a successful validation) print as `warning:` prefixed lines.
+- **`cobre validate --json`** — on success, one JSON object on stdout: `{ configured, boundary_date, report }`; on failure: `{ error: { phase, message } }`. The **`phase`** field carries the stable kind string (a `LoadError` variant name, a prep-phase kind, or an `ErrorKind` value).
+- **`cobre.io.validate(...)` (Python)** — returns `{ valid, errors: [{ kind, message, ... }], warnings: [{ kind, message, file, entity }] }`. The `kind` field carries the same stable string.
+- **`cobre.errors` Python exception classes** — `ValidationError`, `CaseIoError`, `SchemaError`, `ConstraintError`, `PolicyIncompatibleError` — raised by Python entry points when case loading fails.
+
+:::note
+The release notes and earlier spec drafts name this field `kind`; the current cobre binary serialises it as **`phase`** (the value is still the stable kind string below). These pages follow the binary.
+:::
 
 ---
 
 ## `LoadError` variants
 
-`LoadError` is the top-level error type returned by `load_case` and by every
-individual file parser. The variants are listed below, ordered by the pipeline phase
+`LoadError` is the top-level error type returned during case loading and by
+individual file parsers. The variants are listed below, ordered by the pipeline phase
 in which they typically occur.
 
 ### `IoError`
@@ -46,7 +55,7 @@ I/O error reading system/hydros.json: No such file or directory (os error 2)
 ```
 
 **Resolution:** Verify the file exists in the case directory. Check that the
-process has read permissions for the directory and file. For `load_case`, the
+process has read permissions for the directory and file. For a full case load, the
 case root must contain all required files (see [Case Directory Format](/reference/case-directory-format/)).
 
 ---
@@ -56,15 +65,10 @@ case root must contain all required files (see [Case Directory Format](/referenc
 **When it occurs:** A file is readable but its content is malformed — invalid
 JSON syntax, unexpected end of input, or an unreadable Parquet column header.
 Occurs in Layer 2 (schema) during initial deserialization before any
-field-level validation runs. Also returned for a `deny_unknown_fields`
-violation inside a tagged JSON union whose underlying `serde_json` message
-does not contain `unknown variant` or `missing field` — the only two
-substrings `parse_config` promotes to `SchemaError` — so the error falls
-through to `ParseError` instead. The primary case is `training.stopping_rules`:
-`StoppingRuleConfig` is `#[serde(tag = "type", deny_unknown_fields)]`, so a
-rule entry carrying a field that belongs to a *different* rule `type` (for
-example, `seconds` — a `time_limit` field — set on a `bound_stalling` rule)
-hard-fails at config load with an `unknown field` message.
+field-level validation runs. Also returned when a `training.stopping_rules`
+entry carries a field that belongs to a *different* rule `type` — for example,
+`seconds` (a `time_limit` field) on a `bound_stalling` rule — which is rejected
+as a `ParseError` with an `unknown field` message.
 
 **Display format:**
 
@@ -97,14 +101,10 @@ belong to that entry's `type`, or move it to an entry whose `type` declares it.
 
 #### Unknown field in a generic-constraint entry
 
-**When it occurs:** `constraints/generic_constraints.json`'s per-constraint
-object is `#[serde(deny_unknown_fields)]` with exactly five known fields
-(`id`, `name`, `description`, `expression`, `slack`), and the whole file
-deserializes in a single `serde_json::from_str` call with no promotion step —
-unlike `config.json`'s `parse_config` (above), nothing here promotes an
-`unknown field` substring to `SchemaError`. Any unknown key therefore fails at
-deserialization and surfaces as `ParseError`, never `SchemaError`. Two v0.13.0
-spellings hit this deliberately, with no alias:
+**When it occurs:** Each generic-constraint object accepts exactly five fields
+(`id`, `name`, `description`, `expression`, `slack`); any other key is rejected
+as a `ParseError` with an `unknown field` message. Two v0.13.0 spellings are
+rejected this way, with no alias:
 
 - A constraint object still carrying the removed **`sense`** field
   (`">="`/`"<="`/`"=="`) — a constraint's shape is now derived from which
@@ -119,7 +119,7 @@ spellings hit this deliberately, with no alias:
 | Field     | Type      | Description                                                                             |
 | --------- | --------- | ---------------------------------------------------------------------------------------- |
 | `path`    | `PathBuf` | Always `constraints/generic_constraints.json`                                            |
-| `message` | `String`  | The `serde_json` "unknown field" message, naming the offending key and the five accepted field names |
+| `message` | `String`  | An "unknown field" message, naming the offending key and the five accepted field names |
 
 **Example:**
 
@@ -139,10 +139,9 @@ grammar and the v0.13.0 → v0.14.0 worked migration example.
 
 **When it occurs:** A file parses successfully but a field violates a schema
 constraint: a required field is missing, a value is outside its valid range, or
-an enum discriminator names an unknown variant. Occurs in Layer 2
-(schema) during post-deserialization validation. Also returned by `parse_config`
-when `training.selection` (which carries the forward-pass count) or
-`training.stopping_rules` is absent.
+an enum discriminator names an unknown variant. Occurs in Layer 2 (schema)
+during post-deserialization validation. Also returned when `training.selection`
+(which carries the forward-pass count) or `training.stopping_rules` is absent.
 
 **Display format:**
 
@@ -172,8 +171,10 @@ schema error in system/buses.json, field buses[1].id: duplicate id 5 in buses ar
 Check that required fields are present and that values fall within documented
 ranges. For `config.json`, `training.selection` (for example
 `{ "method": "sampled", "forward_passes": 192 }`) and `training.stopping_rules`
-are mandatory and have no defaults; a root-level `training.forward_passes` key
-is rejected as an unknown field.
+are mandatory and have no defaults. A root-level `training.forward_passes` key
+is rejected as a **`ParseError`** (unknown field), not `SchemaError`; the
+`SchemaError` from this cluster is only for an **absent `training.selection`**
+(message `a forward-pass count is required via training.selection`).
 
 #### Namespace collision between a scalar parameter and a named expression
 
@@ -324,6 +325,32 @@ entity-id spellings a generic constraint's own `pumping_flow(id)` /
 [Generic Constraints — variable catalog](/reference/generic-constraints/)
 for the full addressing grammar.
 
+#### Undeclared `stage_id` in bound-override parquet
+
+**When it occurs:** A bound-override row (in any `*_bounds.parquet` file) whose
+`stage_id` is not one of the study's declared stages is rejected for **every**
+family. The rejection is uniform across hydro bounds, thermal bounds, pumping
+bounds, generic-constraint bounds, and penalty-override files.
+
+**Fields:**
+
+| Field     | Type      | Description                                                  |
+| --------- | --------- | ------------------------------------------------------------ |
+| `path`    | `PathBuf` | The bounds parquet file containing the invalid row           |
+| `field`   | `String`  | The column or row identifier (e.g., `"stage_id"`)            |
+| `message` | `String`  | `stage_id {N} resolves to no declared study stage; declared study stage ids: [...]` |
+
+**Example:**
+
+```
+schema error in constraints/hydro_bounds.parquet, field stage_id: stage_id 15 resolves to no declared study stage; declared study stage ids: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
+```
+
+**Resolution:** Correct the `stage_id` value to match one of the declared stage
+IDs in `stages.json`. The message lists all valid stage IDs. For a typo (e.g.,
+`15` instead of `5`), fix the row; for a stale override referencing a removed
+stage, delete the row or update the stages declaration.
+
 #### Deterministic external inflow column under an autoregressive model
 
 **When it occurs:** Under the `external` inflow sampling scheme, a class's mean
@@ -359,14 +386,13 @@ scheme configuration.
 
 ### `ConstraintError`
 
-**When it occurs:** A catch-all for all validation diagnostics collected by
-`ValidationContext` across any validation layer, for `SystemBuilder::build()`
-rejections, and for guards raised directly by loaders after assembly (for
-example, a non-finite closure-derived innovation scale — a non-stationary
-fitted inflow model — is rejected here naming the hydro and season). The
-`description` field contains every collected error message joined by newlines,
-each prefixed with its `[ErrorKind]`, source file, optional entity identifier,
-and message text.
+**When it occurs:** A catch-all for all validation diagnostics collected
+across any validation layer, for system assembly rejections, and for guards
+raised directly by loaders after assembly (for example, a non-finite
+closure-derived innovation scale — a non-stationary fitted inflow model — is
+rejected here naming the hydro and season). The `description` field contains
+every collected error message joined by newlines, each prefixed with its
+`[ErrorKind]`, source file, optional entity identifier, and message text.
 
 **Display format:**
 
@@ -621,10 +647,10 @@ resolved on the stage calendar) — see
 **Note:** A deck whose `past_anticipated_commitments` entries still carry the
 retired `values_mw` array (rather than the current per-window `value_mw`
 scalar on a `{thermal_id, start_date, end_date, value_mw}` record) fails
-earlier, at initial deserialization: the record type is
-`#[serde(deny_unknown_fields)]`, so an unrecognized `values_mw` key is rejected
-as a top-level `ParseError` naming `initial_conditions.json` — it never reaches
-this `ConstraintError` check. Re-emit the commitment history as dated windows.
+earlier, at initial deserialization: commitment records accept no unrecognized
+keys, so a `values_mw` key is rejected as a top-level `ParseError` naming
+`initial_conditions.json` — it never reaches this `ConstraintError` check.
+Re-emit the commitment history as dated windows.
 
 #### Diversion floor without a declared channel
 
@@ -653,17 +679,11 @@ the `min_diversion_m3s` override for that `(hydro, stage)` in
 
 #### Spillage-band inversion
 
-**When it occurs:** `constraints/hydro_bounds.parquet`'s row-level parser
-(`parse_hydro_bounds`) rejects a same-row `min_spillage_m3s > max_spillage_m3s`
-inversion, and separately rejects a negative `min_diversion_m3s`,
-`min_spillage_m3s`, or `max_spillage_m3s`. Called directly, this parser returns
-a top-level `LoadError::SchemaError` (`schema error in {path}, field {field}:
-{message}`, per the [`SchemaError`](#schemaerror) `LoadError` variant above).
-When the file is loaded as part of `load_case`, the same error is instead
-collected into the shared `ValidationContext` — `hydro_bounds.parquet` is an
-optional file whose Layer 2 failures are gathered rather than short-circuited
-— and surfaces here, in `ConstraintError`'s aggregate description, tagged
-`[SchemaViolation]` instead of the parser's own `SchemaError` label.
+**When it occurs:** An inverted spillage band (`min_spillage_m3s > max_spillage_m3s`)
+or a negative `min_diversion_m3s`, `min_spillage_m3s`, or `max_spillage_m3s` in
+`constraints/hydro_bounds.parquet` is reported here (tagged `[SchemaViolation]`)
+when a full case is loaded, and surfaces as a standalone `SchemaError` when that
+file is checked on its own.
 
 **Fields:**
 
@@ -692,11 +712,28 @@ max_spillage_m3s`, and so `min_diversion_m3s`, `min_spillage_m3s`, and
 ### `PolicyIncompatible`
 
 **When it occurs:** After all five validation layers pass, when `policy.mode` is
-`"warm_start"` or `"resume"` and the stored policy file is structurally
-incompatible with the current case. The four compatibility checks are: hydro
-count, stage count, cut dimension, and entity identity hash.
+`"warm_start"` or `"resume"` and the stored policy checkpoint is structurally
+incompatible with the current case. Policy load enforces:
+
+- **`format_version` ≥ 2 gate:** every earlier-format checkpoint is rejected (no in-place upgrade — re-export or retrain).
+- **State-dimension match:** policy and current system must agree on state dimension (a lag-state depth mismatch is a common cause).
+- **Stage-count match:** policy and current system must have the same number of stages.
+- **Pool-count match:** policy and current system must have the same number of pools.
+- **Graph-manifest node/edge identity:** when present, the policy's graph manifest must match the current study's node count, per-node `(id, stage_id, pool_id)`, edge count, and per-edge `(source_id, target_id)`.
+- **Entity-manifest length match:** policy and current system must have the same number of state slots.
+- **Per-slot entity-identity match:** each slot's `(entity_type, entity_id, subindex)` triple must match exactly — the cut coefficient at each slot must attach to the same state variable.
+
+These checks apply to warm-start and resume modes, which require an **exact**
+state-dimension match. **Boundary injection** (a different feature) instead
+**reconciles** a differing source by entity identity + delivery date and loads
+with a per-family drop summary, rather than rejecting.
 
 **Display format:**
+
+The `LoadError::PolicyIncompatible` display format shown for the variant is
+retained for completeness, but the variant is **effectively reserved** — the
+compatibility rejections a user actually encounters carry the messages listed
+above (e.g., `policy state_dimension mismatch: policy has 42, current system has 43 (a lag-state depth mismatch is a common cause)`).
 
 ```
 policy incompatible: {check} mismatch — policy has {policy_value}, system has {system_value}
@@ -710,37 +747,31 @@ policy incompatible: {check} mismatch — policy has {policy_value}, system has 
 | `policy_value` | `String` | Value recorded in the policy file                               |
 | `system_value` | `String` | Value present in the current system                             |
 
-**Example:**
-
-```
-policy incompatible: hydro count mismatch — policy has 42, system has 43
-```
-
 **Resolution:** The stored policy was produced by a run with a different system
 configuration. Options:
 
 - Set `policy.mode` to `"fresh"` to start from scratch without loading the policy.
-- Revert the system change that caused the mismatch.
+- Revert the system change that caused the mismatch (adjust stage count, entity count, or lag depth).
 - Delete the policy directory and start fresh.
 
 ---
 
 ## `ErrorKind` values
 
-`ErrorKind` categorises the validation problem within the `ValidationContext`
-diagnostic system. Every `ValidationEntry` carries one `ErrorKind`. When
-`ValidationContext::into_result()` produces a `ConstraintError`, each line in
-`description` is prefixed with the `ErrorKind` in debug format (e.g., `[FileNotFound]`).
+`ErrorKind` categorises the validation problem within the diagnostic system.
+Every diagnostic entry carries one `ErrorKind`. When a validation failure
+produces a `ConstraintError`, each line in the error `description` is prefixed
+with the `ErrorKind` in debug format (e.g., `[FileNotFound]`).
 
-The `ErrorKind` values are listed below. The `Severity::Warning` variants are
-reported but do not block execution; all other variants default to `Severity::Error`
-and must be resolved before `load_case` succeeds. One value, `NotImplemented`, is
-reserved and never emitted by the current validator, so it is not documented in
-detail below.
+The `ErrorKind` values are listed below. Each diagnostic entry carries its own
+severity. The warning kinds (`UnusedEntity`, `ModelQuality`, `SemanticAmbiguity`)
+are reported without blocking execution; all other kinds must be resolved before
+the case loads. One value, `NotImplemented`, is reserved and never emitted
+by the current validator, so it is not documented in detail below.
 
 ### `FileNotFound`
 
-**Default severity:** Error
+**Severity:** Error
 
 **What triggers it:** A file that is required by the case structure is missing
 from the case directory. Emitted by Layer 1 (structural validation) for each of
@@ -756,7 +787,7 @@ the required files that is not found on disk.
 
 ### `ParseError`
 
-**Default severity:** Error
+**Severity:** Error
 
 **What triggers it:** A file exists and was read but could not be parsed —
 invalid JSON syntax, an unreadable Parquet header, or an unknown enum variant
@@ -773,7 +804,7 @@ trailing commas, missing quotation marks, or mismatched braces.
 
 ### `SchemaViolation`
 
-**Default severity:** Error
+**Severity:** Error
 
 **What triggers it:** A file parses successfully but a field fails a schema
 constraint: a required field is missing, a value is outside its valid range
@@ -788,15 +819,15 @@ dot-notation and zero-based array indices. Consult the
 [Case Directory Format](/reference/case-directory-format/) page for valid ranges and required fields.
 
 **See also:** a `constraints/hydro_bounds.parquet` spillage-band inversion or
-non-negativity rejection is collected under this kind when loaded via
-`load_case` — see
+non-negativity rejection is collected under this kind during a full case
+load — see
 [Spillage-band inversion](#spillage-band-inversion) under `ConstraintError`.
 
 ---
 
 ### `InvalidReference`
 
-**Default severity:** Error
+**Severity:** Error
 
 **What triggers it:** A cross-entity foreign-key reference points to an entity
 that does not exist in the expected registry. For example, one of a hydro
@@ -814,7 +845,7 @@ correct the ID in the referencing file. Check all ID references:
 
 ### `DuplicateId`
 
-**Default severity:** Error
+**Severity:** Error
 
 **What triggers it:** Two entities within the same registry share the same ID.
 IDs must be unique within each entity type. Emitted by Layer 2 (schema validation)
@@ -829,7 +860,7 @@ non-negative value as long as each is unique within its registry file.
 
 ### `InvalidValue`
 
-**Default severity:** Error
+**Severity:** Error
 
 **What triggers it:** A field value falls outside its valid range or violates a
 value constraint that is specific to the field's domain. Examples: a reservoir's
@@ -851,7 +882,7 @@ under `ConstraintError`.
 
 ### `CycleDetected`
 
-**Default severity:** Error
+**Severity:** Error
 
 **What triggers it:** A directed graph contains a cycle. The primary case is the
 hydro cascade: the `downstream_id` links among hydro plants must form a directed
@@ -868,7 +899,7 @@ downstream (tailwater discharge).
 
 ### `DimensionMismatch`
 
-**Default severity:** Error
+**Severity:** Error
 
 **What triggers it:** A cross-file coverage check fails. For example, when
 `scenarios/inflow_seasonal_stats.parquet` is present, every hydro plant must
@@ -886,7 +917,7 @@ that file is present.
 
 ### `BusinessRuleViolation`
 
-**Default severity:** Error
+**Severity:** Error
 
 **What triggers it:** A domain-specific business rule is violated that cannot
 be expressed as a simple range constraint. Examples: penalty tiers must be
@@ -913,12 +944,14 @@ under `ConstraintError`.
 
 ### `WarmStartIncompatible`
 
-**Default severity:** Error
+**Severity:** Error
 
 **What triggers it:** A warm-start policy is structurally incompatible with the
-current system. The four compatibility checks are: hydro count, stage count, cut
-dimension, and entity identity hash. The policy was produced by a run with a
-different system configuration. This `ErrorKind` is the `ValidationContext`
+current system. Policy load enforces state-dimension, stage-count, pool-count,
+graph-manifest node/edge identity, entity-manifest length, and per-slot
+entity-identity checks, plus the **`format_version` ≥ 2 gate** (every
+earlier-format checkpoint is rejected). The policy was produced by a run with a
+different system configuration. This `ErrorKind` is the validation diagnostic
 counterpart to the `LoadError::PolicyIncompatible` variant.
 
 **Example message:** `warm-start policy has 42 hydros but current system has 43`
@@ -929,7 +962,7 @@ counterpart to the `LoadError::PolicyIncompatible` variant.
 
 ### `ResumeIncompatible`
 
-**Default severity:** Error
+**Severity:** Error
 
 **What triggers it:** A resume state (checkpoint) is incompatible with the current
 run configuration. The checkpoint may have been produced by a run with a different
@@ -946,7 +979,7 @@ discard the checkpoint and start a new run.
 
 ### `UnusedEntity`
 
-**Default severity:** Warning (does not block execution)
+**Severity:** Warning (does not block execution)
 
 **What triggers it:** An entity is defined in a registry file but appears to be
 inactive — for example, a thermal plant with `max_generation_mw: 0.0` for all
@@ -963,7 +996,7 @@ intentionally inactive, this warning can be ignored.
 
 ### `ModelQuality`
 
-**Default severity:** Warning (does not block execution)
+**Severity:** Warning (does not block execution)
 
 **What triggers it:** A statistical quality concern is detected in the input
 model. Examples: residual bias in the PAR model seasonal statistics, high
@@ -982,7 +1015,7 @@ not accurately represent historical inflows.
 
 ### `SemanticAmbiguity`
 
-**Default severity:** Warning (does not block execution)
+**Severity:** Warning (does not block execution)
 
 **What triggers it:** A valid construct whose semantics are ambiguous or
 stage-dependent in a way that is likely to surprise the user. The primary case
@@ -999,6 +1032,68 @@ commitment itself should use `anticipated_decision(N)` instead. Emitted by Layer
 generation dispatched at the delivery stage, `thermal_generation(N)` is correct
 and the warning can be ignored. If you want to bound the advance commitment
 decision itself, replace `thermal_generation(N)` with `anticipated_decision(N)`.
+
+---
+
+## Preparation-phase kinds
+
+The five `phase` values below appear only in `cobre validate`'s pre-solver
+validation checks and are **not** `LoadError` kinds. They surface in
+`cobre validate --json`'s error `phase` field when a prep-phase check fails
+before the solver is initialized.
+
+### `ConfigValidationError`
+
+**What triggers it:** A `config.json` validation failure in the study-setup
+preparation phase, after the config has been parsed and before stochastic model
+setup begins. File label: `config.json`.
+
+**Example:** An invalid solver-profile override (e.g., a `primal_feasibility_tolerance`
+outside its accepted range).
+
+---
+
+### `StochasticPreparationError`
+
+**What triggers it:** A failure during stochastic model preparation — scenario
+generation, inflow-model setup, or external scenario validation. File label:
+`scenarios/` or `scenarios/inflow_history.parquet` (the latter when the error is
+specifically an inflow-history issue).
+
+**Example:** A non-stationary fitted inflow model (non-finite innovation scale),
+or a deterministic external inflow column under an autoregressive model of order > 0.
+
+---
+
+### `HydroModelsPreparationError`
+
+**What triggers it:** A failure during computed-FPHA fitting or hydro production
+model preparation. File label: `system/hydro_production_models.json`.
+
+**Example:** A fitted production function that cannot be resolved for a plant.
+
+---
+
+### `GenericConstraintValidationError`
+
+**What triggers it:** A failure during generic-constraint preparation, including
+expression inlining, parameter resolution, and slack setup. File label:
+`constraints/`.
+
+An **unresolved `@parameter` scalar** — a generic-constraint parameter
+referenced in an expression but never given a value in
+`constraints/generic_parameters.json` — fails here at `cobre validate` time.
+
+**Example:** `unknown parameter "@demanda": no definition with this name was loaded`.
+
+---
+
+### `BoundaryReconciliationError`
+
+**What triggers it:** A failure when reconciling an injected boundary policy with
+the current study. File label: `policy.boundary`.
+
+**Example:** A boundary policy with a state-dimension mismatch that prevents injection.
 
 ---
 
@@ -1074,10 +1169,9 @@ printed expanded rather than in scientific notation); `2147483647` is
 
 | Severity | Effect                                | `ErrorKind` values                                                       |
 | -------- | ------------------------------------- | ------------------------------------------------------------------------ |
-| Error    | Prevents `load_case` from succeeding  | All kinds except `UnusedEntity`, `ModelQuality`, and `SemanticAmbiguity` |
+| Error    | Prevents the case from loading        | All kinds except `UnusedEntity`, `ModelQuality`, and `SemanticAmbiguity` |
 | Warning  | Reported but does not block execution | `UnusedEntity`, `ModelQuality`, `SemanticAmbiguity`                      |
 
-To inspect warnings after a successful `load_case`, call
-`ValidationContext::warnings()` before calling `into_result()`. Warnings are
-not surfaced in the `Result` returned by `load_case`; they must be read from
-the context directly.
+Warnings are reported via user-facing surfaces after a successful validation:
+- `cobre validate` prints warnings as `warning:` prefixed lines after the `Valid case: ...` line.
+- `cobre.io.validate` (Python) returns them in its `warnings` array.

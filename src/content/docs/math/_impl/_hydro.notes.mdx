@@ -90,8 +90,21 @@ Load-time validation of a declared arc:
   still PreFilling/Filling, or before its commissioning entry stage, over the
   arrival window is rejected — the water would arrive at a reservoir not yet
   present in the dispatch.
-- **Zero travel time.** A zero (or absent) travel time is treated as undeclared
-  — an instantaneous transfer, adding no bucket and requiring no seed.
+- **Heterogeneous travel time under chronological blocks.** When two or more
+  declared arcs feed the _same_ downstream plant with _differing_
+  `travel_time_hours` and at least one study stage runs in chronological block
+  mode, the case is rejected at load as an **unsupported-in-v1** error naming
+  the downstream plant and the conflicting arcs; align the arcs'
+  `travel_time_hours`, or keep every study stage in parallel block mode. Equal
+  travel times into a confluence, or a study with no chronological stage, are
+  unaffected.
+- **Zero, absent, or invalid travel time.** A zero or absent `travel_time_hours`
+  is treated as undeclared — an instantaneous transfer that creates no
+  cross-stage arc, adds no in-transit bucket, and needs no `past_defluences`
+  seed. An **explicit** `0.0` additionally logs a **model-quality warning** that
+  it is being read as undeclared, so a deliberate zero is flagged while an
+  omitted field stays silent. A **negative or non-finite** `travel_time_hours`
+  is a hard load-time error. See [Error Codes](/reference/error-codes).
 
 **Horizon limitation.** In-transit water that would mature after the study's
 last stage is dropped rather than credited to terminal storage — but only

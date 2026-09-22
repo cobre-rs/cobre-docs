@@ -55,17 +55,29 @@ thermal with this expression is a hard load-time error, and referencing an
 anticipated thermal's per-block generation with `thermal_generation(N)` is
 accepted but flagged, since it does not read the forward commitment.
 
-### Delivered commitments are reconciled against solver drift
+### Over-commitment is rejected at case load, not reconciled per solve
 
-The commitment a delivery stage receives is the solver's computed value for a
-ring state column, so it is accurate only to the LP backend's feasibility
-tolerance rather than exact. The delivery-stage generation bound that the
-must-generate coupling pins it to is therefore reconciled against that
-sub-watt drift on every solve — a commitment arriving a hair outside its cap
-trains normally instead of surfacing as a spurious infeasible LP. A commitment
-genuinely beyond its cap is not absorbed: it is refused as a named error
-identifying the thermal, the stage, and the overshoot — never reported as a
-bare infeasibility.
+A delivered commitment's forward value is carried as ring-buffer state, so at
+its delivery stage the must-generate coupling reads the solver's computed value
+— accurate only to the LP backend's feasibility tolerance, not exact. Cobre runs
+**no** per-solve reconciliation pass. Instead, the outgoing state is
+**canonicalized onto its admissible bounds when it is read back** from each
+solve, and that projection is the identity for a value already in box: a
+commitment that settles a hair outside its cap is clamped back in-box before it
+is carried forward, so training continues normally instead of surfacing a
+spurious infeasible LP. This is the single read-back canonicalization seam the
+methodology states once — see
+[SDDP algorithm §3.1](/math/sddp-algorithm#31-forward-pass) and
+[Determinism Guarantees §3](/math/determinism-guarantees#3-methodology-mechanisms).
+
+A commitment **genuinely** beyond the plant's generation bounds is not a solver
+artifact and is not absorbed by that clamp. It is caught **at case load**, when
+`initial_conditions.json`'s `past_anticipated_commitments` windows are validated
+(see the Configure tab). A `value_mw` outside the bounds admissible at a covered
+delivery stage is a named load-time error that identifies the thermal, the
+offending window, the `value_mw`, and the bounds it violates — not a bare
+infeasible LP surfacing mid-solve. See [Error Codes](/reference/error-codes) for
+the failure class.
 
 ### Must-run NCS and the double-discount trap
 

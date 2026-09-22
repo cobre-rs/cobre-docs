@@ -290,19 +290,27 @@ None.
 
 ## Exit Codes
 
-All subcommands follow the same exit code convention.
+| Code | Category   | Cause                                                                                                                |
+| ---- | ---------- | -------------------------------------------------------------------------------------------------------------------- |
+| `0`  | Success    | The command completed without errors                                                                                 |
+| `1`  | Validation | `cobre run`: every non-I/O load failure (parse, schema, semantic constraint, policy compatibility). `cobre validate`: a `config.json` parse/schema error, or any semantic constraint violation |
+| `2`  | I/O        | File not found, permission denied, disk full, or write failure during loading or output (both subcommands)           |
+| `3`  | Solver     | LP infeasible subproblem or numerical solver failure during training or simulation                                   |
+| `4`  | Internal   | Communication failure, unexpected channel closure, or other software/environment problem. `cobre validate` also maps a parse, schema, or policy-incompatibility error found in any case file **other than `config.json`** (e.g., a malformed `system/*.json` or `scenarios/*`) here |
 
-| Code | Category   | Cause                                                                                                                                                     |
-| ---- | ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `0`  | Success    | The command completed without errors                                                                                                                      |
-| `1`  | Validation | Case directory failed the validation pipeline — schema errors, cross-reference errors, semantic constraint violations, or policy compatibility mismatches |
-| `2`  | I/O        | File not found, permission denied, disk full, or write failure during loading or output                                                                   |
-| `3`  | Solver     | LP infeasible subproblem or numerical solver failure during training or simulation                                                                        |
-| `4`  | Internal   | Communication failure, unexpected channel closure, or other software/environment problem                                                                  |
+A dangling reference (an entity ID that refers to a non-existent entity) surfaces
+as an `InvalidReference` line inside a semantic-constraint violation (exit code 1).
 
-Codes 1–2 indicate user-correctable input problems; codes 3–4 indicate case/environment
-problems. Error messages are printed to stderr with `error:` prefix and hint lines.
-See [Error Codes](/reference/error-codes/) for a detailed catalog.
+Error messages are printed to stderr with `error:` prefix and hint lines. See
+[Error Codes](/reference/error-codes/) for a detailed catalog.
+
+:::note
+`cobre validate` and `cobre run` do not share one exit code for the same load
+failure. `cobre validate` exits `1` for a `config.json` parse/schema error and
+for a semantic constraint violation, `2` for an I/O error, and `4` for a parse,
+schema, or policy-incompatibility error in any *other* case file; `cobre run`
+exits `1` for every non-I/O load error. These pages follow the binary.
+:::
 
 ---
 
