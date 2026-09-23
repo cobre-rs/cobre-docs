@@ -647,10 +647,9 @@ The cross-scheme implications are:
 - **InSample / OutOfSample.** Unaffected — these schemes do not invert noise
   from observed inflows; they sample $\varepsilon_t$ from the PAR model directly.
 
-A 64-bit SipHash-1-3 fingerprint of the derived seed
-(`historical_library_seed_digest` on the model provenance report) is stored
-alongside the historical scenario library so consumers can detect when a
-precomputed library has drifted out of sync with the seed currently in use.
+A fingerprint of the derived seed is stored alongside the historical scenario
+library, so a consumer can detect when a precomputed library has drifted out of
+sync with the seed currently in use.
 
 ### 4.5 External Scenarios in Simulation
 

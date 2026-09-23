@@ -26,7 +26,7 @@ the `format_version` marker; it replaces the hand-editable `policy/metadata.json
 of earlier releases.
 
 The schema lives at
-[`crates/cobre-io/schemas/policy.fbs`](https://github.com/cobre-rs/cobre/blob/main/crates/cobre-io/schemas/policy.fbs)
+[`crates/cobre-io/schemas/policy.fbs`](https://github.com/cobre-rs/cobre/blob/v0.16.0/crates/cobre-io/schemas/policy.fbs)
 under namespace `Cobre.IO.Policy`. It declares `file_identifier "CBVF"`
 and `file_extension "bin"`, but still no `root_type` — `--root-type` is
 still required per file to select the entry point for `flatc`. The reader
@@ -105,7 +105,7 @@ For other targets see `flatc --help`.
 ## Field-by-field reference
 
 The authoritative description of every field lives in
-[`policy.fbs`](https://github.com/cobre-rs/cobre/blob/main/crates/cobre-io/schemas/policy.fbs)
+[`policy.fbs`](https://github.com/cobre-rs/cobre/blob/v0.16.0/crates/cobre-io/schemas/policy.fbs)
 itself — every field carries an inline doc comment. The
 [Output Format](/reference/output-format/) page has a tabular summary suitable
 for reading on the web.

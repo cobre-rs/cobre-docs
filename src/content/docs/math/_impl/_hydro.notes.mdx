@@ -118,6 +118,24 @@ Load-time validation of a declared arc:
   it is being read as undeclared, so a deliberate zero is flagged while an
   omitted field stays silent. A **negative or non-finite** `travel_time_hours`
   is a hard load-time error. See [Error Codes](/reference/error-codes).
+- **Model-quality warnings (non-blocking).** Three further conditions on a
+  declared arc are reported as `warning:` lines after `Valid case: …`; the case
+  still loads and runs. See
+  [Error Codes — `ModelQuality`](/reference/error-codes/#modelquality).
+  - **Negligible travel time.** When `travel_time_hours` is below 1 % of every
+    study stage's length (`travel_time_hours / stage hours < 0.01` on every
+    stage), the arc carries a negligible cross-stage fraction; the warning
+    suggests not declaring it.
+  - **Longer than the remaining study horizon.** When `travel_time_hours`
+    exceeds the remaining study horizon from some stage, releases from that
+    stage onward never arrive within the study, and the warning names the
+    first such stage as the point from which the arc is economically inert.
+    The in-transit sizing stays safe.
+  - **Downstream exit inside an arrival window.** When the downstream plant's
+    `exit_stage_id` falls inside the arrival window of a release made while
+    that plant is in service, the delivery maturing past the exit is dropped,
+    not consumed. The warning names the downstream plant, the upstream plant,
+    the release stage, and the arrival window.
 
 **Horizon limitation.** In-transit water that would mature after the study's
 last stage is dropped rather than credited to terminal storage — but only

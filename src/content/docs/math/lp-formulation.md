@@ -653,6 +653,16 @@ where $x_e$ can reference any LP variable using expression syntax:
 
 `hydro_turbined` and `hydro_generation` additionally accept a named `bus=` argument selecting one **(hydro, bus) cell** of a plant split across several buses — e.g. `hydro_turbined(5, bus=2)` — resolving to that cell's own column; no other variable form accepts it. An optional positional block argument, when present, precedes the named argument: `f(id)`, `f(id, block)`, `f(id, bus=b)`, and `f(id, block, bus=b)` all parse. Omitting `bus=` on a plant with more than one cell addresses every one of its cells at once, matching the whole-entity reference every other variable form uses.
 
+A term may also address a plant's **useful volume** $v_h - V^{min}_h$ — its storage above the physical minimum $V^{min}_h$. It is realised on the storage variable itself by shifting both endpoints by the same amount,
+
+$$
+\ell_g \le \gamma_{g,e}\,(v_h - V^{min}_h) + \dots \le u_g
+\iff
+\ell_g + \gamma_{g,e}V^{min}_h \le \gamma_{g,e}\,v_h + \dots \le u_g + \gamma_{g,e}V^{min}_h,
+$$
+
+so it adds no LP variable; an absent endpoint stays absent, and a negative $\gamma_{g,e}$ lowers both endpoints.
+
 Either endpoint, $\ell_g$ or $u_g$, may be absent — never both — with an absent side read as the corresponding infinity. This single interval subsumes every shape a constraint can take: a present $\ell_g$ alone is a floor, a present $u_g$ alone is a cap, $\ell_g = u_g$ is an equality, and both present together bound a two-sided band. A constraint is no longer characterised by picking one relation out of a fixed set — its shape falls out of which endpoints happen to be present.
 
 ### Coefficients and Endpoints
@@ -668,7 +678,7 @@ A named scalar parameter resolves to a single number per stage and can carry one
 | `constant`         | One value for every stage                                                                                                                                              |
 | `per_stage`        | Explicit value per stage                                                                                                                                               |
 | `seasonal`         | One value per season; stages inherit the value from their season                                                                                                       |
-| `computed`         | Value derived from a small expression evaluated at LP-build time (e.g., a fraction of installed capacity)                                                              |
+| `computed`         | A quantity derived from a hydro plant's geometry and energy-conversion model — its reference-point or useful-range mean productivities, reference operating point, physical storage range, or maximum stored energy (see [Hydro Production Models §5](/math/hydro-production-models#5-energy-conversion-quantities)) |
 | Per-(stage, block) | Explicit value per stage **and** per block within that stage — the finest-grained schedule, letting a value vary across a stage's blocks, not just from stage to stage |
 
 Resolution happens once at LP-build time, so the LP coefficients and endpoints are still numeric at solve time — the parameter mechanism does not introduce LP-variable coupling between constraints. Methodology relevance: it lets the corpus express ramping limits, capacity caps, and operator-imposed quotas that vary by stage, season, or block without authoring a separate constraint per stage. Coefficient and endpoint values can therefore be **stage- and block-varying constants**, not just literal numbers.

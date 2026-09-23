@@ -221,7 +221,7 @@ if a row exists for it there.
 
 ## Variable catalog
 
-All 24 LP variable types are addressable from an `expression`. The reference
+All 26 LP variable types are addressable from an `expression`. The reference
 grammar is `var_name(entity_id[, block_id][, bus=bus_id])` — an optional
 positional block argument, then an optional named `bus=` selector, in that
 order (`f(id)`, `f(id, block)`, `f(id, bus=b)`, `f(id, block, bus=b)` all
@@ -235,6 +235,8 @@ parse).
 | `hydro_inflow(id[, block])`      | Yes       | No     | `None` always expands to **one row per block** (upstream releases are per-block columns) — never collapses |
 | `hydro_storage_initial(id[, block])` | Yes (boundary) | No | `Some(k)` = incoming column of block `k`; `None` = stage-initial anchor S⁰ |
 | `hydro_storage_final(id[, block])`   | Yes (boundary) | No | `Some(k)` = outgoing column of block `k`; `None` = stage-final Sᴷ (equal to `hydro_storage`) |
+| `hydro_useful_volume_initial(id[, block])` | Yes (boundary) | No | Same column and block semantics as `hydro_storage_initial`; stands for storage − `reservoir.min_storage_hm3` (see below) |
+| `hydro_useful_volume_final(id[, block])`   | Yes (boundary) | No | Same column and block semantics as `hydro_storage_final`; stands for storage − `reservoir.min_storage_hm3` (see below) |
 | `hydro_turbined(id[, block][, bus=])` | Yes    | Yes    | `bus=` selects one `(hydro, bus)` cell; omitted sums over the plant's cells |
 | `hydro_spillage(id[, block])`    | Yes       | No     |                                                                           |
 | `hydro_diversion(id[, block])`   | Yes       | No     |                                                                           |
@@ -256,6 +258,18 @@ parse).
 
 Only `hydro_turbined` and `hydro_generation` accept `bus=`; any other
 variable rejects it as "does not accept a bus selector."
+
+**Useful-volume bound fold.** A term `c * hydro_useful_volume_initial(h)` or
+`c * hydro_useful_volume_final(h)` is built on plant `h`'s storage column, and
+`c × min_storage_hm3` of plant `h` — the physical minimum from
+`reservoir.min_storage_hm3`, never a `hydro_bounds` per-stage override — is
+added to every resolved bound endpoint of the constraint, once per such term
+(`c` being the term's fully resolved coefficient, so a `@name` coefficient
+contributes its resolved value). A negative `c` lowers the endpoints by the
+same rule. The constraint therefore reads as a quantity above dead storage while
+the LP column keeps the absolute storage value; no extra LP variable is
+created, and the folded endpoints are visible in
+[the resolved echo](#the-resolved-echo).
 
 ### `line_exchange(source_bus=, target_bus=)`
 
@@ -436,16 +450,14 @@ across the rework, even though the file itself now lives at
 | `constant`         | `"value": <f64>`                                       | One value for every stage                                                    |
 | `per_stage`        | `"values": [[stage_id, value], ...]`                   | Explicit value per stage; `stage_id`s must be a contiguous range from `0`     |
 | `seasonal`         | `"values": [[season_id, value], ...]`                  | One value per season; stages inherit their season's value; `season_id`s must be unique |
-| `computed`         | `"computed_spec": { "tag": "<variant>", "hydro_id": <int> }` | Derived from hydro geometry/operational data at LP-build time (e.g. `equivalent_productivity`) |
+| `computed`         | `"computed_spec": { "tag": "<variant>", "hydro_id": <int> }` | Derived from hydro geometry/operational data at LP-build time — one of ten hydro-derived tags (e.g. `equivalent_productivity`); see [Case Directory Format](/reference/case-directory-format/#constraintsgeneric_parametersjson) |
 | `per_stage_block`  | `"block_values": [[stage_id, block_id, value], ...]`   | Explicit value per `(stage_id, block_id)` pair; each pair unique              |
 
 :::note[The vendored schema's `kind` description is stale]
 [`generic_parameters.schema.json`](/schemas/generic_parameters.schema.json)'s
-`kind` field description currently lists only `constant`/`per_stage`/`seasonal`/`computed`
-— an upstream documentation lag in the schema generator (issue tracked
-upstream), not a parser limitation. `per_stage_block` is fully implemented and
-validated by `cobre-io`; trust this page and the code over that description
-until the generator is fixed.
+`kind` description lists four kinds (`constant`, `per_stage`, `seasonal`,
+`computed`); the `cobre-io` parser accepts five, including `per_stage_block`,
+which is fully validated. This page follows the parser.
 :::
 
 `per_stage_block` is the mechanism that makes a generic-constraint bound (or
@@ -490,8 +502,8 @@ correct charge.
 
 ## The resolved echo
 
-`generic_constraints/resolved_echo.parquet` is written to the training output
-tree whenever the study declares any generic constraints; for a study with
+`generic_constraints/resolved_echo.parquet` is written at the output root
+(`<out>/generic_constraints/`) whenever the study declares any generic constraints; for a study with
 none, the `generic_constraints/` directory does not exist at all.
 
 One row is emitted per **resolved LHS term** per active `(constraint, stage,
@@ -508,13 +520,19 @@ whose per-term columns are all null.
 | `constraint_name`    | UTF8      | Generic constraint name                                                                 |
 | `term_index`         | INT32, nullable | Position in the resolved LHS; null on the term-less placeholder row              |
 | `variable_kind`      | UTF8, nullable | `VariableRef` discriminant (e.g. `"thermal_generation"`); null on the placeholder |
-| `variable`           | UTF8, nullable | Rendered variable label (e.g. `"thermal[3]"`); null on the placeholder            |
+| `variable`           | UTF8, nullable | Rendered variable label (e.g. `"thermal_generation(id=3, block=all)"`); null on the placeholder            |
 | `coefficient`        | DOUBLE, nullable | Fully resolved numeric coefficient (`resolve(coefficient, stage, block) * scale`); null on the placeholder |
-| `bound_lower`        | DOUBLE, nullable | Lower interval endpoint after folding; null when unbounded below                 |
-| `bound_upper`        | DOUBLE, nullable | Upper interval endpoint after folding; null when unbounded above                 |
+| `bound_lower`        | DOUBLE, nullable | Lower interval endpoint after folding — including each useful-volume term's `coef × min_storage_hm3` shift; null when unbounded below                 |
+| `bound_upper`        | DOUBLE, nullable | Upper interval endpoint after folding — including each useful-volume term's `coef × min_storage_hm3` shift; null when unbounded above                 |
 | `derived_shape`      | UTF8      | The same `floor`/`cap`/`band`/`equality` label as above — never an authored sense       |
 | `slack_enabled`      | BOOLEAN   | Whether the constraint carries a slack term                                             |
 | `slack_penalty`      | DOUBLE, nullable | Slack penalty; null when slack is disabled                                       |
+
+The echo is the place to observe a folded bound: the input
+`constraints/generic_constraint_bounds.parquet` shows the pre-fold value. For
+example, a floor `hydro_useful_volume_final(0) >= 20` on a plant whose
+`reservoir.min_storage_hm3` is `100` echoes `bound_lower = 120.0`
+(`20 + 1 × 100`) with `variable = "hydro_useful_volume_final(id=0, block=all)"`.
 
 This is the fully **desugared** form: every named-expression reference is
 already inlined into flat terms, every inline relational RHS has already
@@ -522,6 +540,82 @@ normalized into the `bound_lower`/`bound_upper` pair, and every `@name`
 coefficient or bound has already resolved to its numeric value at that
 `(stage, block)`. It is exactly what the solver saw — the tool for auditing an
 authored expression against the LP that was actually built.
+
+---
+
+## Worked example: a security curve
+
+A security curve keeps plant `h`'s end-of-stage stored energy above a fraction
+`p` of its maximum, stated in energy terms with the useful-range mean
+productivity of
+[Hydro Production Models §5.3](/math/hydro-production-models#53-useful-range-mean-productivity):
+`@rho_int * hydro_useful_volume_final(h) >= p * @emax`.
+
+`constraints/generic_parameters.json` declares the two computed parameters for
+hydro `0`:
+
+```json
+{
+  "scalar_parameters": [
+    {
+      "id": 1,
+      "name": "rho_int",
+      "kind": "computed",
+      "computed_spec": { "tag": "integrated_accumulated_productivity", "hydro_id": 0 }
+    },
+    {
+      "id": 2,
+      "name": "emax",
+      "kind": "computed",
+      "computed_spec": { "tag": "max_stored_energy", "hydro_id": 0 }
+    }
+  ]
+}
+```
+
+`constraints/generic_constraints.json` states the curve for `p = 0.3`:
+
+```json
+{
+  "constraints": [
+    {
+      "id": 1,
+      "name": "security_curve_h0",
+      "expression": "@rho_int * hydro_useful_volume_final(0) >= 0.3 * @emax",
+      "slack": { "enabled": true, "penalty": 5000.0 }
+    }
+  ]
+}
+```
+
+The inline RHS carries the whole bound, but the constraint still needs
+**activation rows** in `constraints/generic_constraint_bounds.parquet` — one
+row per active stage, with both bounds null; without them the constraint is
+never built ([the activation grid](#the-activation-grid)):
+
+| constraint_id | stage_id | block_id | bound_lower | bound_upper |
+| ------------- | -------- | -------- | ----------- | ----------- |
+| 1             | 0        | null     | null        | null        |
+| 1             | 1        | null     | null        | null        |
+| …             | …        | …        | …           | …           |
+
+**Why it cancels.** `integrated_accumulated_productivity` and
+`max_stored_energy` are evaluated by the same useful-range mean evaluator and
+in the same raw unit, so `@emax` is exactly `@rho_int` times the useful
+volume; `hydro_useful_volume_final` reads storage above the physical minimum,
+the same range `@emax` spans. Pairing `max_stored_energy` with the
+reference-point `accumulated_productivity` instead does not cancel and raises a
+[`SemanticAmbiguity`](/reference/error-codes/#semanticambiguity) warning.
+
+**What the echo shows.** On a plant with `reservoir.min_storage_hm3 = 100`,
+the stage-0 [resolved echo](#the-resolved-echo) row reads `coefficient = 1.493`,
+`bound_lower = 552.41` and
+`variable = "hydro_useful_volume_final(id=0, block=all)"`: the RHS
+`0.3 × 1343.7` plus the useful-volume fold `1.493 × 100`.
+
+Writing the same curve by hand on `hydro_storage_final(h)`, with the dead-volume
+energy `@rho_int × min_storage_hm3` pre-folded into the bound (here
+`bound_lower = 552.41` on `@rho_int * hydro_storage_final(0)`), is equivalent.
 
 ---
 
@@ -542,6 +636,7 @@ exhaustive catalog and resolutions — it is not repeated here.
 | `block_id` out of range for the stage's block count | [`BusinessRuleViolation`](/reference/error-codes/#businessruleviolation) |
 | The same bound column (`bound_lower` or `bound_upper`) set twice for one `(constraint_id, stage_id, block_id)` — a `bound_lower` row and a `bound_upper` row for the same triple are distinct keys and legal | [`DuplicateId`](/reference/error-codes/#duplicateid) |
 | Two distinct lines sharing one unordered bus pair, addressed via `line_exchange(source_bus=, target_bus=)` | `SchemaError` |
+| `max_stored_energy(h)` and `accumulated_productivity(h)` for the same hydro in one constraint (the matching coefficient is `integrated_accumulated_productivity`) | [`SemanticAmbiguity`](/reference/error-codes/#semanticambiguity) — warning, the case still validates |
 
 ---
 

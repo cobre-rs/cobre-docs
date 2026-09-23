@@ -221,7 +221,7 @@ Every load path surfaces the same failure, tagged for its caller:
 - **CLI** (`cobre run` in warm-start, resume, or simulation-only mode) prints a message prefixed `failed to read policy checkpoint: …`.
 
 :::note[Checkpoint-read error class differs by entry point]
-The same underlying checkpoint-read failure is reported with different exception classes depending on the entry point: `load_policy` raises `OutputError` (or a builtin `FileNotFoundError` when the file is absent), whereas `run` / `Study` in warm-start or resume mode raise `SolverError`. Catch `cobre.errors.CobreError` (the common base) if you need to handle both paths uniformly. These pages follow the binary.
+The release notes say case-load and policy-load failures raise `CaseIoError` or `ValidationError`. The current binary raises `SolverError` when `run` / `Study` reads a checkpoint in warm-start or resume mode, and `OutputError` (or a builtin `FileNotFoundError` for a missing file) from `load_policy`, including for a malformed `manifest.bin`. Catch `cobre.errors.CobreError` to handle every path uniformly. These pages follow the binary.
 :::
 
 See
@@ -349,9 +349,11 @@ function writes `manifest.bin`, `cuts/`, `basis/`, and `states/` directly under
 `path` — the same [Checkpoint Directory Contents](#checkpoint-directory-contents)
 layout described above, so `path` should be a `policy/`-style directory, the
 same kind of path used by `policy.path` and `policy.boundary.path` elsewhere
-on this page. Before writing, it validates every cut's `coefficients` length
-against its stage's `state_dimension` and every state payload's length
-against `count * state_dimension`, raising `ValueError` on a mismatch.
+on this page. Before writing, it validates the payload and raises
+`ValueError` on any of the conditions listed in
+[Python Quickstart — Input Validation](/getting-started/python-quickstart/#input-validation)
+(coefficient and state lengths, and inflow-lag coefficients without a
+positive `inflow_lag_depth`).
 
 See [Python Quickstart](/getting-started/python-quickstart/) for a full
 runnable load → edit → write round trip.

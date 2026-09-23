@@ -37,8 +37,6 @@ auditor. This chapter is concerned with the five categories of information they
 capture and why each category is necessary. The concrete files that carry each
 category are a software-layer concern.
 
-For implementation, see the cobre developer-guide.
-
 ## 2. What Is Recorded
 
 Five categories of provenance are recorded. Each is necessary; none is

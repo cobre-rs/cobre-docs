@@ -116,6 +116,12 @@ my_case/
 | `constraints/penalty_overrides_hydro.parquet`   | Parquet | No       | Stage-varying hydro penalty costs                                                  |
 | `constraints/penalty_overrides_ncs.parquet`     | Parquet | No       | Stage-varying NCS curtailment cost                                                 |
 
+Input Parquet files must be uncompressed or zstd-compressed; Snappy, gzip and LZ4
+are rejected at load as a `ParseError`
+(`Parquet error: Disabled feature at compile time: snap` for Snappy). pyarrow
+`pq.write_table` writes Snappy by default, so pass `compression="zstd"`; polars
+`write_parquet` already defaults to zstd.
+
 ---
 
 ## Root-level files
@@ -179,14 +185,38 @@ rejected as an unknown field.
 **`training.scenario_source` sub-section:**
 
 Configures which scenario sampling scheme is used for each entity class during training.
-When absent, all classes default to `InSample` (PAR-based noise generation).
+When absent, all classes default to `"in_sample"` (PAR-based noise generation).
 
-| Field                                       | Type            | Default       | Description                                                                                            |
-| ------------------------------------------- | --------------- | ------------- | ------------------------------------------------------------------------------------------------------ |
-| `training.scenario_source.inflow.scheme`    | string          | `"in_sample"` | Inflow sampling scheme: `"in_sample"`, `"historical"`, `"external"`, or `"out_of_sample"`              |
-| `training.scenario_source.load.scheme`      | string          | `"in_sample"` | Load sampling scheme: `"in_sample"`, `"historical"`, `"external"`, or `"out_of_sample"`                |
-| `training.scenario_source.ncs.scheme`       | string          | `"in_sample"` | NCS sampling scheme: `"in_sample"`, `"historical"`, `"external"`, or `"out_of_sample"`                 |
-| `training.scenario_source.historical_years` | array or object | `null`        | Years eligible as inflow replay windows. List (`[2010, 2015]`) or range (`{"from": 2010, "to": 2023}`) |
+| Field                                       | Type            | Default                     | Description                                                                                            |
+| ------------------------------------------- | --------------- | --------------------------- | ------------------------------------------------------------------------------------------------------ |
+| `training.scenario_source.seed`             | integer or null | `null`                      | Forward-pass seed; **required** when any class uses `"out_of_sample"`, `"historical"`, or `"external"` |
+| `training.scenario_source.inflow.scheme`    | string          | `"in_sample"`               | Inflow sampling scheme: `"in_sample"`, `"historical"`, `"external"`, or `"out_of_sample"`              |
+| `training.scenario_source.load.scheme`      | string          | `"in_sample"`               | Load sampling scheme: `"in_sample"`, `"external"`, or `"out_of_sample"` (no replay scheme; see the admission rules) |
+| `training.scenario_source.ncs.scheme`       | string          | `"in_sample"`               | NCS sampling scheme: `"in_sample"`, `"external"`, or `"out_of_sample"` (no replay scheme; see the admission rules)  |
+| `training.scenario_source.historical_years` | array or object | `null`                      | Years eligible as inflow replay windows. List (`[2010, 2015]`) or range (`{"from": 2010, "to": 2023}`) |
+| `training.scenario_source.openings`         | object          | `{"source": "generated"}`   | Backward opening-tree source: `{"source": "generated"}` builds the tree internally; `{"source": "file"}` reads `scenarios/noise_openings.parquet` (see [`scenarios/noise_openings.parquet`](#scenariosnoise_openingsparquet)). Training only |
+
+**Admission rules.** Both `training.scenario_source` and `simulation.scenario_source`
+are checked at load; each violation is a `SchemaViolation` on `config.json` naming the
+field (`<section>` is `training` or `simulation`):
+
+- `historical` is inflow-only — `field <section>.scenario_source.load.scheme` (or
+  `.ncs.scheme`): `historical scheme is only valid for the inflow class`.
+- `seed` is required whenever any class is not `"in_sample"` —
+  `field <section>.scenario_source.seed`:
+  `seed is required when any class uses out_of_sample, historical, or external scheme`.
+- `historical_years` needs a class on `"historical"` —
+  `field <section>.scenario_source.historical_years`:
+  `historical_years is specified but no class uses the 'historical' scheme`.
+- A `historical_years` range must satisfy `from <= to` —
+  `field <section>.scenario_source.historical_years`: for example `range 'from' (2010) must be <= 'to' (2000)`.
+- `openings` is training-only — `field simulation.scenario_source.openings`:
+  `openings is only valid under training.scenario_source, not simulation.scenario_source`.
+
+With `openings = {"source": "file"}`, a missing `scenarios/noise_openings.parquet` fails
+the load (`openings source is 'file' but the conventional scenarios/noise_openings.parquet is absent`),
+and the declaration is rejected together with a declared `nodes[]` policy graph or under
+`training.selection.method = "enumerated"`.
 
 #### Seed resolution
 
@@ -271,10 +301,11 @@ per-method field tables.
 | `enabled`                                     | boolean         | `false`       | Enable post-training simulation                                                                        |
 | `simulation.selection`                        | object or null  | `null`        | Scenario-selection method — `sampled{num_scenarios}` or `enumerated{}` (see below); absent resolves to the default sampled count (`2000`) |
 | `io_channel_capacity`                         | integer         | `64`          | Channel capacity between simulation and I/O writer threads                                             |
-| `simulation.scenario_source`                  | object or null  | `null`        | Per-class sampling scheme for the simulation pass (see below)                                          |
+| `simulation.scenario_source`                  | object or null  | `null`        | Per-class sampling scheme for the simulation pass; when absent, the simulation reuses `training.scenario_source` as a whole. Same admission rules as training; `openings` is rejected here |
+| `simulation.scenario_source.seed`             | integer or null | `null`        | Forward-pass seed; **required** when any class uses `"out_of_sample"`, `"historical"`, or `"external"` |
 | `simulation.scenario_source.inflow.scheme`    | string          | `"in_sample"` | Inflow sampling scheme: `"in_sample"`, `"historical"`, `"external"`, or `"out_of_sample"`              |
-| `simulation.scenario_source.load.scheme`      | string          | `"in_sample"` | Load sampling scheme: `"in_sample"`, `"historical"`, `"external"`, or `"out_of_sample"`                |
-| `simulation.scenario_source.ncs.scheme`       | string          | `"in_sample"` | NCS sampling scheme: `"in_sample"`, `"historical"`, `"external"`, or `"out_of_sample"`                 |
+| `simulation.scenario_source.load.scheme`      | string          | `"in_sample"` | Load sampling scheme: `"in_sample"`, `"external"`, or `"out_of_sample"` (no replay scheme; see the admission rules) |
+| `simulation.scenario_source.ncs.scheme`       | string          | `"in_sample"` | NCS sampling scheme: `"in_sample"`, `"external"`, or `"out_of_sample"` (no replay scheme; see the admission rules)  |
 | `simulation.scenario_source.historical_years` | array or object | `null`        | Years eligible as inflow replay windows. List (`[2010, 2015]`) or range (`{"from": 2010, "to": 2023}`) |
 
 **`simulation.selection` sub-section:**
@@ -438,7 +469,7 @@ Scenario sampling is configured per-pass in `config.json` —
 | `id`              | Yes      | Stage identifier (non-negative integer, unique)                   |
 | `start_date`      | Yes      | ISO 8601 date (e.g., `"2024-01-01"`)                              |
 | `end_date`        | Yes      | ISO 8601 date; must be after `start_date`                         |
-| `blocks`          | Yes      | Array of load blocks (`id`, `name`, `hours`)                      |
+| `blocks`          | Yes      | Array of load blocks (`id`, `name`, `hours`); must be non-empty, and every `hours` must be finite and `> 0` (an empty array is rejected as `InvalidValue`, a non-positive `hours` at parse time as `SchemaViolation`) |
 | `num_openings`    | Yes      | Number of within-node openings for this stage (>= 1); required on the plain stage-chain dialect (no `policy_graph.nodes[]`) and at a generated-openings stage under `nodes[]`, rejected at a stage that carries only external openings |
 | `season_id`       | No       | Reference to a season in `season_definitions`                     |
 | `block_mode`      | No       | Block execution mode: `"parallel"` (default) or `"chronological"` |
@@ -827,11 +858,11 @@ Key fields:
 | `hydros[].operational_start_date`                 | Yes      | Calendar date the plant enters the registry's operational history, ISO-8601 (`YYYY-MM-DD`). Provenance and the canonical `(operational_start_date, id)` ordering key (see [Notation Conventions](/overview/notation-conventions)) — independent of `entry_stage_id`/`exit_stage_id` below, which alone gate commissioning |
 | `hydros[].entry_stage_id`                         | No       | Stage when plant enters service; `null` = always exists                                                       |
 | `hydros[].exit_stage_id`                          | No       | Stage when plant is decommissioned; `null` = never                                                            |
-| `hydros[].reservoir`                              | Yes      | `min_storage_hm3` and `max_storage_hm3` (both >= 0)                                                           |
+| `hydros[].reservoir`                              | Yes      | `min_storage_hm3` and `max_storage_hm3` (both >= 0) — the plant's **physical**, stage-invariant range: stored-energy outputs, the `hydro_useful_volume_*` bound fold and the `min_storage`/`max_storage`/`max_stored_energy` computed tags read it; `constraints/hydro_bounds.parquet` storage overrides tighten only the per-stage operative bounds of the LP storage variable |
 | `hydros[].outflow`                                | Yes      | `min_outflow_m3s` and `max_outflow_m3s` total outflow bounds                                                  |
 | `hydros[].generation`                             | Yes      | Generation model: `model`, turbine flow bounds, generation MW bounds                                          |
 | `hydros[].generation.model`                       | Yes      | `"constant_productivity"`, `"linearized_head"`, or `"fpha"`                                                   |
-| `hydros[].specific_productivity_mw_per_m3s_per_m` | No       | Specific productivity ρ_esp [MW/(m³/s)/m]. Required for FPHA hydros that rely on VHA geometry to derive ρ_eq. |
+| `hydros[].specific_productivity_mw_per_m3s_per_m` | No       | Specific productivity ρ_esp [MW/(m³/s)/m]. Required for FPHA hydros that derive ρ_eq from VHA geometry; on any hydro with `system/hydro_geometry.parquet` rows it also feeds the useful-range mean evaluator (per-stage overrides in `system/hydro_energy_productivity.parquet`). |
 | `hydros[].tailrace`                               | No       | Tailrace model: `"polynomial"` or `"piecewise"`                                                               |
 | `hydros[].hydraulic_losses`                       | No       | Head loss model: `"factor"` or `"constant"`                                                                   |
 | `hydros[].efficiency`                             | No       | Turbine efficiency model: `"constant"`                                                                        |
@@ -1078,6 +1109,17 @@ configured with a computed FPHA production model (`source: "computed"`) or with
 evaporation linearization. When absent, FPHA computation and evaporation
 linearization are unavailable for all plants.
 
+The table is also read by the useful-range mean evaluator
+([Hydro Production Models §5.3](/math/hydro-production-models#53-useful-range-mean-productivity))
+for **any** hydro, whatever its generation model, that has a specific
+productivity (the `system/hydros.json` entity field or a
+`system/hydro_energy_productivity.parquet` override). For such a plant, a table
+that fails to build, or a non-positive mean equivalent head, rejects the case at
+`cobre validate` (see
+[`GenericConstraintValidationError`](/reference/error-codes/#genericconstraintvalidationerror)).
+Author the table to span `reservoir.min_storage_hm3` … `reservoir.max_storage_hm3`:
+when the table is narrower, the mean is taken over the table's own extent.
+
 4 columns, all non-nullable. Rows are sorted by `(hydro_id, volume_hm3)` ascending.
 Multiple rows per `hydro_id` together constitute the VHA curve for that plant.
 
@@ -1188,8 +1230,8 @@ source of truth for V_ref: when absent, the case-wide default fraction is used.
 | `source`                         | Yes      | —              | `"precomputed"` or `"computed"`                               |
 | `volume_discretization_points`   | No       | solver default | Number of volume grid points for hyperplane computation       |
 | `turbine_discretization_points`  | No       | solver default | Number of turbine-flow grid points for hyperplane computation |
-| `spillage_discretization_points` | No       | solver default | Number of spillage grid points for hyperplane computation     |
-| `max_planes_per_hydro`           | No       | solver default | Maximum hyperplanes per plant after selection heuristic       |
+| `spillage_discretization_points` | No       | `5`            | Validated (`>= 2`); does not add a spillage axis to the fit — accepted for input round-tripping (see [Hydro Production Models → Configure](/math/hydro-production-models#implementation-in-cobre)) |
+| `max_planes_per_hydro`           | No       | `10`           | Validated (`>= 1`); does not currently trim the fitted plane set (see [Hydro Production Models → Configure](/math/hydro-production-models#implementation-in-cobre)) |
 | `fitting_window`                 | No       | full range     | Volume range restriction for hyperplane computation           |
 
 `source: "precomputed"` means the hyperplanes are loaded from
@@ -1304,10 +1346,25 @@ suitable for use as a future precomputed input.
 ### `system/hydro_energy_productivity.parquet`
 
 Optional per-plant, per-stage overrides for the energy-conversion preprocessing
-layer. When present, any non-null column in a matching row replaces the value
-that would otherwise be derived from VHA geometry or plant defaults. Rows with
-`stage_id = NULL` act as per-hydro defaults and apply to all stages not covered
-by a stage-specific row.
+layer. Rows with `stage_id = NULL` act as per-hydro defaults and apply to all
+stages not covered by a stage-specific row. Each override column reaches a
+different set of consumers:
+
+- `equivalent_productivity_mw_per_m3s` — replaces ρ_eq outright in **both**
+  energy-conversion evaluators (the reference-point value and the useful-range
+  mean value), and therefore the `equivalent_productivity` /
+  `integrated_equivalent_productivity` computed tags and the
+  `equivalent_productivity_mw_per_m3s` /
+  `integrated_equivalent_productivity_mw_per_m3s` simulation output columns.
+- `specific_productivity_mw_per_m3s_per_m` — the ρ_esp that multiplies the net
+  head in **both** evaluators' head-derived ρ_eq (the reference-point value of an
+  FPHA plant; the useful-range mean value of any plant with VHA geometry), and
+  the `specific_productivity` computed tag. It is resolved per
+  `(hydro, stage)` as stage-specific row → `stage_id = NULL` row → the entity's
+  `specific_productivity_mw_per_m3s_per_m` in `system/hydros.json`.
+- `reference_outflow_m3s` — reaches the `reference_turbine` computed tag
+  **only**. It does not change the net head: both evaluators always evaluate the
+  head at the plant's `max_turbined_m3s`.
 
 | Column                                   | Parquet type | Nullable | Description                                                                              |
 | ---------------------------------------- | ------------ | -------- | ---------------------------------------------------------------------------------------- |
@@ -1446,41 +1503,45 @@ that column ignored outright; the derived value always wins.
 
 ### `scenarios/noise_openings.parquet`
 
-User-supplied backward-pass opening tree. When present, Cobre loads the opening
-tree directly from this file instead of generating it internally via
-`generate_opening_tree()`. This enables cross-tool comparison, sensitivity
+User-supplied backward-pass opening tree, read **only** when `config.json`
+declares `training.scenario_source.openings = {"source": "file"}` (an undeclared
+file is ignored; a declared but absent file is an error). Not admitted with a
+`nodes[]` policy graph or under enumerated forward selection (see
+[`config.json`](#configjson)). This enables cross-tool comparison, sensitivity
 analysis, and round-trip replay of a previously exported opening tree.
 
-| Column          | Type   | Required | Description                                                                   |
-| --------------- | ------ | -------- | ----------------------------------------------------------------------------- |
-| `stage_id`      | INT32  | Yes      | Zero-based stage index (0 to n_stages − 1)                                    |
-| `opening_index` | UINT32 | Yes      | Zero-based opening index within the stage (0 to openings_per_stage − 1)       |
-| `entity_index`  | UINT32 | Yes      | Zero-based entity index in system dimension order (see entity ordering below) |
-| `value`         | DOUBLE | Yes      | Noise realization for this (stage, opening, entity) triple                    |
+| Column          | Type   | Required | Description                                                                              |
+| --------------- | ------ | -------- | ---------------------------------------------------------------------------------------- |
+| `stage_id`      | INT32  | Yes      | Declared study-stage id from `stages.json` (not a 0-based position)                      |
+| `opening_index` | UINT32 | Yes      | 0-based opening index within the stage (0 to that stage's `num_openings − 1`)            |
+| `entity_index`  | UINT32 | Yes      | 0-based position in the noise vector (see entity ordering below)                         |
+| `value`         | DOUBLE | Yes      | Noise realization for this (stage, opening, entity) triple                               |
 
-**Entity ordering.** The `entity_index` column follows the system dimension
-convention: hydro entities first (sorted by canonical ID), then load buses
-(sorted by canonical ID), matching the ordering used by the internal opening
-tree generator. Violating this convention causes silent value misassignment
-because the file stores indices only, not entity identifiers.
+**Entity ordering.** The noise vector is hydros in canonical order
+(`operational_start_date`, then id), then the load buses that carry load noise
+(`std_mw > 0`, or every load bus under the `external` load scheme), then every
+NCS with availability statistics (including `std = 0`, plus external-scenario
+NCS under `external`); the load-bus and NCS blocks are each sorted by id. A
+zero-std NCS still occupies a slot. Violating this order causes silent value
+misassignment because the file stores indices only, not entity identifiers.
 
-**Validation rules.** The loader checks three conditions and raises a hard error
-on failure:
+**Validation rules.** The loader raises a hard error on failure:
 
+- **Unresolved stage** — every `stage_id` must be a declared study-stage id.
 - **Dimension mismatch** — the number of distinct `entity_index` values must
-  equal `n_hydros + n_load_buses`.
-- **Stage count mismatch** — the number of distinct `stage_id` values must
-  equal the configured number of study stages.
+  equal the noise-vector length defined above.
+- **Stage count mismatch** — the distinct `stage_id` values must be the
+  declared study stages.
 - **Missing opening indices** — for each stage, every opening index from 0 to
-  `openings_per_stage − 1` must be present for every entity. Gaps are not
-  permitted; partial-stage override is not supported.
+  that stage's `num_openings − 1` must be present for every entity. Gaps are
+  not permitted; partial-stage override is not supported.
 
-The total row count must equal `n_stages × openings_per_stage × (n_hydros +
-n_load_buses)`.
+The total row count must equal the sum over study stages of
+`num_openings × dimension`.
 
-See the `noise_openings.rs` module for the full schema and validation
-rules, and the User-Supplied Opening Trees section of the Stochastic
-Modeling guide for usage instructions.
+See [Scenario Generation](/math/scenario-generation) for the opening tree and
+[Configuration](/running/configuration/#scenario_source) for the `openings`
+field.
 
 ---
 
@@ -1833,6 +1894,14 @@ To constrain an anticipated thermal's commitment, use
 `anticipated_decision(N)` (stage-level scalar, no block index); see
 [`system/thermals.json`](#systemthermalsjson) above for `anticipated_config`.
 
+`hydro_useful_volume_initial(id[, block])` and
+`hydro_useful_volume_final(id[, block])` address the same LP column and accept
+the same block argument as `hydro_storage_initial`/`hydro_storage_final`, but
+read as storage above the plant's physical minimum
+(`reservoir.min_storage_hm3`); see
+[Generic Constraints](/reference/generic-constraints/#variable-catalog) for the
+bound fold that realises them.
+
 ### `constraints/generic_constraint_bounds.parquet`
 
 Stage-varying, optionally per-block RHS bound overrides for generic
@@ -1908,15 +1977,21 @@ and name changed.
 
 **`computed_spec` tag values:**
 
-| `tag`                      | Description                             |
-| -------------------------- | --------------------------------------- |
-| `equivalent_productivity`  | Equivalent productivity ρ_eq            |
-| `accumulated_productivity` | Accumulated cascade productivity ρ_acum |
-| `reference_volume`         | Reference reservoir volume V_ref        |
-| `reference_turbine`        | Reference turbined flow Q_ref           |
-| `min_storage`              | Minimum operational storage V_min       |
-| `max_storage`              | Maximum operational storage V_max       |
-| `specific_productivity`    | Specific productivity ρ_esp             |
+| `tag`                                 | Description                                                                                                         |
+| ------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| `equivalent_productivity`             | Equivalent productivity ρ_eq                                                                                        |
+| `accumulated_productivity`            | Accumulated cascade productivity ρ_acum                                                                             |
+| `reference_volume`                    | Reference reservoir volume V_ref                                                                                    |
+| `reference_turbine`                   | Reference turbined flow Q_ref                                                                                       |
+| `min_storage`                         | Physical minimum storage `reservoir.min_storage_hm3` (the plant's stage-invariant range, not a `hydro_bounds` per-stage override) |
+| `max_storage`                         | Physical maximum storage `reservoir.max_storage_hm3` (the plant's stage-invariant range, not a `hydro_bounds` per-stage override) |
+| `specific_productivity`               | Specific productivity ρ_esp                                                                                         |
+| `integrated_equivalent_productivity`  | Useful-range mean equivalent productivity ρ̄_eq (forebay level averaged over the physical storage range)            |
+| `integrated_accumulated_productivity` | ρ̄_eq summed along the downstream cascade — the coefficient that pairs with `max_stored_energy`                      |
+| `max_stored_energy`                   | `integrated_accumulated_productivity` × (`max_storage_hm3` − `min_storage_hm3`) over the physical range, in MW/(m³/s)·hm³ — **not** MWh |
+
+The productivity and stored-energy quantities these tags resolve to are defined in
+[Hydro Production Models §5](/math/hydro-production-models#5-energy-conversion-quantities).
 
 **Validation:**
 

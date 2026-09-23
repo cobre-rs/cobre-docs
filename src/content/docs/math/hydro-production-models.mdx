@@ -374,7 +374,7 @@ The production model may vary by stage or by season per hydro, configured via th
 
 ## 5. Energy-Conversion Quantities
 
-The three production models of sections 1–3 describe how generation depends on the operating state. For accounting purposes — natural-inflow energy (ENA), stored reservoir energy (EARM), and per-stage MW/MWh reporting — Cobre reduces each plant's production model to a small set of per-(hydro, stage) scalars at a representative operating point. These scalars are computed once at study setup and reused on every stage of every scenario.
+The three production models of sections 1–3 describe how generation depends on the operating state. For accounting purposes — natural-inflow energy (ENA), stored reservoir energy (EARM), and per-stage MW/MWh reporting — Cobre reduces each plant's production model to a small set of per-(hydro, stage) scalars produced by **two evaluators**: one evaluated at a representative reference operating point (§5.1–§5.2), and one averaged over the plant's physical storage range (§5.3). These scalars are computed once at study setup and reused on every stage of every scenario.
 
 ### 5.1 Equivalent Productivity $\rho_{eq}$
 
@@ -384,11 +384,11 @@ The **equivalent productivity** $\rho_{eq,h,t}$ (MW per m³/s) is the single-sca
 | ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `constant_productivity` | A per-(hydro, stage) numeric value authored by the case — see "Authoring sources" below.                                                                                                                                                                                                                                                                            |
 | `linearized_head`       | A per-(hydro, stage) numeric value authored by the case — same resolution as `constant_productivity`.                                                                                                                                                                                                                                                               |
-| `fpha`                  | $\rho_{eq,h,t} = \rho_{esp,h} \cdot h_{eq}(V^{ref}_{h,t},\, Q^{ref}_{h,t})$, where $h_{eq}$ is the net head computed from the VHA geometry (section 2.3) at the reference point. FPHA hydros do **not** author a separate $\rho_{eq}$ scalar in the production-models input — it is derived. A parquet-level override is still accepted (see "FPHA override path"). |
+| `fpha`                  | $\rho_{eq,h,t} = \rho_{esp,h,t} \cdot h_{eq}(V^{ref}_{h,t},\, Q^{ref}_{h,t})$, where $h_{eq}$ is the net head computed from the VHA geometry (section 2.3) at the reference point and $\rho_{esp,h,t}$ is resolved per stage: a per-stage override, else a per-plant default override, else the plant's own value. FPHA hydros do **not** author a separate $\rho_{eq}$ scalar in the production-models input — it is derived. A parquet-level override is still accepted (see "FPHA override path"). |
 
-**Reference volume**: the reference operating volume $V^{ref}_{h,t}$ is declared by a single **`reference_volume`** field in the production-model config entry (`stage_range` or `seasonal`). The field takes exactly one of two forms: an absolute `volume_hm3` value, or a `percentile` (fraction of useful volume between $V_{min}$ and $V_{max}$); when absent it defaults to 65% of useful volume. This single field is the source of truth for the $\rho_{eq}$ derivation above and for the reservoir reference level at which the computed-FPHA piecewise-quartic tailrace families are interpolated (§2.3.1 — a plant's reference volume sets the downstream forebay level seen by the plant immediately upstream). It does **not** set the computed-FPHA volume fitting window $[V_{min}, V_{max}]$: that window is configured separately by the optional `fitting_window` block inside `fpha_config` (§2.6.1), defaulting to the plant's full forebay storage range.
+**Reference volume**: the reference operating volume $V^{ref}_{h,t}$ is declared by a single **`reference_volume`** field in the production-model config entry (`stage_range` or `seasonal`). The field takes exactly one of two forms: an absolute `volume_hm3` value, or a `percentile` (fraction of useful volume between $V^{min}_h$ and $V^{max}_h$); when absent it defaults to 65% of useful volume. This single field is the source of truth for the $\rho_{eq}$ derivation above and for the reservoir reference level at which the computed-FPHA piecewise-quartic tailrace families are interpolated (§2.3.1 — a plant's reference volume sets the downstream forebay level seen by the plant immediately upstream). It does **not** set the computed-FPHA volume fitting window $[V_{min}, V_{max}]$: that window is configured separately by the optional `fitting_window` block inside `fpha_config` (§2.6.1), defaulting to the plant's full forebay storage range.
 
-The reference flow $Q^{ref}$ is typically set at installed turbine capacity.
+The reference flow $Q^{ref}_{h,t}$ at which both evaluators compute the net head is the plant's installed turbined-flow capacity.
 
 #### Authoring sources for non-FPHA hydros
 
@@ -420,11 +420,11 @@ A coverage failure never reaches the dispatch pipeline — it is caught alongsid
 
 #### FPHA override path
 
-For FPHA hydros, $\rho_{eq}$ is derived from VHA geometry and $\rho_{esp}$ at the reference operating point. The per-stage energy-productivity input remains available as an **override**: if a row supplies a value for an FPHA $(h, t)$, it replaces the derived value. The production-models JSON file does **not** accept `productivity_mw_per_m3s` for FPHA — that field is rejected at parse time. FPHA hydros are therefore exempt from the non-FPHA conflict and coverage rules.
+For FPHA hydros, $\rho_{eq}$ is derived from VHA geometry and $\rho_{esp}$ at the reference operating point. The per-stage energy-productivity input remains available as an **override**: if a row supplies a value for an FPHA $(h, t)$, it replaces the derived value. The override replaces the value of **both** evaluators — the reference-point value here and the useful-range mean value of §5.3. The production-models JSON file does **not** accept `productivity_mw_per_m3s` for FPHA — that field is rejected at parse time. FPHA hydros are therefore exempt from the non-FPHA conflict and coverage rules.
 
 #### Zero as planned-outage marker
 
-A resolved $\rho_{eq,h,t} = 0$ is **accepted** for non-FPHA hydros and a resolved $\rho_{esp,h} = 0$ is accepted for FPHA hydros. Both are interpreted as a **planned outage** for the affected stage: the LP uses these scalars as multipliers (never divisors), so zero productivity produces zero generation cleanly without any divide-by-zero or feasibility hazard. The same relaxation applies to the parquet $\rho_{eq}$ override, the parquet $\rho_{esp}$ column, and the JSON range-level productivity. Negative values are still rejected at load time as nonsensical.
+A resolved $\rho_{eq,h,t} = 0$ is **accepted** for non-FPHA hydros and a resolved $\rho_{esp,h,t} = 0$ is accepted for FPHA hydros. Both are interpreted as a **planned outage** for the affected stage: the LP uses these scalars as multipliers (never divisors), so zero productivity produces zero generation cleanly without any divide-by-zero or feasibility hazard. The same relaxation applies to the parquet $\rho_{eq}$ override, the parquet $\rho_{esp}$ column, and the JSON range-level productivity. Negative values are still rejected at load time as nonsensical.
 
 This relaxation lets real-world cases mark a plant as out-of-service for specific stages without the case author needing to remove it from the system definition, restructure the cascade, or work around a strict-positivity check.
 
@@ -438,9 +438,63 @@ $$
 
 The sum is taken in topological order over the cascade (see [system elements](/math/system-elements) for the cascade topology). Plants with no downstream successors have $\rho_{acum} = \rho_{eq}$. The accumulation is per-stage because each summand can vary by stage.
 
-### 5.3 Inflow and Storage in Energy Units
+### 5.3 Useful-Range Mean Productivity
 
-$\rho_{acum}$ converts hydraulic quantities to energy units that downstream reporting expects:
+The reference-point scalars of §5.1–§5.2 value water at a single operating volume. A quantity that values the **whole** stored volume — stored energy, or a floor on it — needs a productivity representative of every volume the reservoir can occupy. The second evaluator supplies it by averaging the forebay level over the plant's physical storage range.
+
+**Physical storage range.** Each plant carries a physical storage range $[V^{min}_h, V^{max}_h]$: a stage-invariant property of the plant (its dead-volume floor and its full-reservoir ceiling). It is distinct from the per-stage operative bounds $[\underline V_h, \bar V_h]$ on the storage variable, which may be tighter at a given stage (for example under a flood-control ceiling). Every quantity in this subsection and in §5.4 reads the physical range, never the operative bounds, so an active operative restriction never truncates a stored-energy value.
+
+**Mean forebay level.** The forebay level is averaged over the physical range:
+
+$$
+\bar h_{fore,h} \;=\; \frac{1}{V^{max}_h - V^{min}_h} \int_{V^{min}_h}^{V^{max}_h} h_{fore}(v)\, dv
+$$
+
+Because $h_{fore}$ is the piecewise-linear volume–height curve of §2.3, this integral is evaluated exactly (a composite trapezoid over the curve's breakpoints), not approximated by quadrature.
+
+**Mean equivalent productivity.** With $h_{eq}(h_f, Q) = h_f - h_{tail}(Q) - h_{loss}$ the net-head function of §5.1, evaluated from a forebay level $h_f$ and the reference flow $Q$:
+
+$$
+\bar\rho_{eq,h,t} \;=\; \rho_{esp,h,t} \cdot h_{eq}\big(\bar h_{fore,h},\; Q^{ref}_{h,t}\big)
+$$
+
+It is the **forebay level** that is averaged, not the net head: the tailrace level and the hydraulic losses are then evaluated at $Q^{ref}_{h,t}$ exactly as the reference-point evaluator evaluates them. The two evaluators therefore differ only in the forebay level they feed to the same net-head function.
+
+**Resolution order.** For each (hydro $h$, stage $t$):
+
+1. An explicit equivalent-productivity override replaces **both** evaluators with the same value, so $\bar\rho_{eq,h,t} = \rho_{eq,h,t}$ equals the override.
+2. Otherwise, a collapsed physical range ($V^{min}_h = V^{max}_h$), or a plant without volume–height geometry or without a specific productivity $\rho_{esp,h,t}$, gives $\bar\rho_{eq,h,t} = \rho_{eq,h,t}$: a zero-width range reduces the average to a point evaluation.
+3. Otherwise, $\bar\rho_{eq,h,t}$ is the integrated value above.
+
+The integrating evaluator is gated by the plant's geometry, not by its generation model: it applies to **any** plant with volume–height geometry and a specific productivity, whether its LP production model is FPHA or constant productivity. A non-positive mean net head is rejected at study setup. The collapsed-range rule is how a run-of-river plant falls out of the data: with a collapsed range it behaves identically under either evaluator.
+
+**Mean accumulated productivity.** $\bar\rho_{acum,h,t}$ follows from the mean own terms by the same downstream recurrence as §5.2:
+
+$$
+\bar\rho_{acum,h,t} \;=\; \bar\rho_{eq,h,t} \;+\; \sum_{h' \,\in\, \text{downstream}(h)} \bar\rho_{eq,h',t}
+$$
+
+**Maximum stored energy.** The energy content of the plant's full useful volume is
+
+$$
+E^{max}_{h,t} \;=\; \bar\rho_{acum,h,t}\,\big(V^{max}_h - V^{min}_h\big)
+$$
+
+Its unit is the raw product MW/(m³/s) × hm³ — **not** MWh (no hm³-to-hours factor is applied).
+
+**Security-curve identity.** A security curve is a per-stage floor on stored energy expressed as a fraction $p$ of the maximum stored energy. Written on the outgoing storage $v_h$ with both sides on the mean evaluator,
+
+$$
+\bar\rho_{acum,h,t}\,\big(v_h - V^{min}_h\big) \;\ge\; p\,E^{max}_{h,t}
+\;\;\Longleftrightarrow\;\;
+v_h - V^{min}_h \;\ge\; p\,\big(V^{max}_h - V^{min}_h\big)
+$$
+
+states "at least a fraction $p$ of the useful volume, in energy terms". The per-plant coefficient cancels only because both sides use the same (mean) evaluator and the same raw unit; mixing the reference-point coefficient on one side with $E^{max}_{h,t}$ on the other, or converting one side to MWh alone, would not reduce to the useful-volume fraction. How such a row is authored is described in [LP Formulation §10](/math/lp-formulation#10-generic-constraints).
+
+### 5.4 Inflow and Storage in Energy Units
+
+$\rho_{acum}$ and $\bar\rho_{acum}$ convert hydraulic quantities to energy units that downstream reporting expects:
 
 **Incremental inflow energy** (MW):
 
@@ -453,18 +507,28 @@ This is the rate-form **natural energy inflow** in MW. Stagewise energy (MWh) is
 **Stored reservoir energy** (MWh):
 
 $$
-\text{EARM}^{\,\text{init}}_h \;=\; (V^{init}_h - V^{min}_h) \cdot \rho_{acum,h,t} \cdot \frac{10^6}{3600}
+\text{EARM}^{\,\text{init}}_h \;=\; (V^{init}_h - V^{min}_h) \cdot \bar\rho_{acum,h,t} \cdot \frac{10^6}{3600}
 \qquad
-\text{EARM}^{\,\text{final}}_h \;=\; (V^{final}_h - V^{min}_h) \cdot \rho_{acum,h,t} \cdot \frac{10^6}{3600}
+\text{EARM}^{\,\text{final}}_h \;=\; (V^{final}_h - V^{min}_h) \cdot \bar\rho_{acum,h,t} \cdot \frac{10^6}{3600}
 $$
 
-The conversion factor $10^6 / 3600$ converts hm³ to m³ and seconds to hours so that storage in hm³ multiplied by productivity in MW/(m³/s) yields MWh.
+where $V^{min}_h$ is the **physical** minimum storage of §5.3 (not the stage's operative lower bound) and $\bar\rho_{acum,h,t}$ is the useful-range mean accumulated productivity. The conversion factor $10^6 / 3600$ converts hm³ to m³ and seconds to hours so that storage in hm³ multiplied by productivity in MW/(m³/s) yields MWh; no stage duration enters, so EARM is independent of stage length.
+
+**Stored reservoir energy, power form** (MW):
+
+$$
+\text{EARM}^{\,\text{MW}}_h \;=\; \frac{\text{EARM}_h}{\sum_{k \in \mathcal{K}} \tau_k}
+$$
+
+for either the initial or the final value, where the divisor is the stage's total block hours — the same divisor for every block of the stage.
+
+EARM and ENA use different evaluators on purpose: ENA values an inflow at the plant's representative operating point, while EARM values the stored volume over the whole range it can occupy.
 
 These quantities do not enter the LP — they are accounting outputs derived from the LP solution. Their methodology relevance is that they make the production model auditable in the same energy units used by the load forecast and the cost objective.
 
-### 5.4 Why a Scalar Reduction Exists at All
+### 5.5 Why a Scalar Reduction Exists at All
 
-The full FPHA production function (section 2) is multi-dimensional and concave; constant productivity is a scalar but per-plant. Neither can be summed across a cascade or scaled by inflow without a reference operating point. The energy-conversion scalars resolve this: each model is reduced to one number per (hydro, stage), at one operating point, and that number is what the cascade-summation, ENA, and EARM formulas above can consume uniformly. The LP continues to enforce the full production model — the scalar reduction is for accounting, not for dispatch.
+The full FPHA production function (section 2) is multi-dimensional and concave; constant productivity is a scalar but per-plant. Neither can be summed across a cascade or scaled by inflow without a reference operating point. The energy-conversion scalars resolve this: each model is reduced to two numbers per (hydro, stage) — one from the reference-point evaluator, one from the useful-range mean evaluator — and those numbers are what the cascade-summation, ENA, EARM, and maximum-stored-energy formulas above can consume uniformly. The LP's production model does not use these scalars; it continues to enforce the full production model. They are accounting quantities that may also be used as coefficients of user-authored generic constraints, such as the security curve of §5.3 (see [LP Formulation §10](/math/lp-formulation#10-generic-constraints)).
 
 ## 6. Data Requirements Summary
 
@@ -473,14 +537,14 @@ The full FPHA production function (section 2) is multi-dimensional and concave; 
 | Hydro plant entity              | `tailrace` (polynomial, piecewise, or piecewise-quartic families)                                        | $h_{tail}(q_{out})$ computation                                                                          |
 | Hydro plant entity              | `hydraulic_losses` (factor or constant)                                                                  | $h_{loss}$ computation                                                                                   |
 | Hydro plant entity              | `efficiency` (constant)                                                                                  | Turbine efficiency $\eta$                                                                                |
-| Hydro plant entity              | `specific_productivity_mw_per_m3s_per_m` (FPHA)                                                          | $\rho_{esp}$ for $\rho_{eq}$ derivation (§5.1)                                                           |
+| Hydro plant entity              | `specific_productivity_mw_per_m3s_per_m` (FPHA, and the useful-range mean evaluator for any model)      | $\rho_{esp}$ for $\rho_{eq}$ derivation (§5.1) and $\bar\rho_{eq}$ (§5.3)                                  |
 | Hydro plant entity              | Cascade topology (downstream pointer)                                                                    | $\rho_{acum}$ topological sum (§5.2)                                                                     |
 | Hydro production models input   | Range-level productivity per `stage_range` / `seasonal` entry (non-FPHA, optional)                       | $\rho_{h,t}$ for sections 1 and 3 (§5.1 authoring source 1)                                              |
 | Hydro production models input   | `reference_volume` per `stage_range` / `seasonal` entry (absolute or percentile)                         | $V^{ref}$ for the energy-conversion reduction (§5.1) and the tailrace backwater reference level (§2.3.1) |
 | Hydro production models input   | FPHA `fitting_window` per `stage_range` / `seasonal` entry (absolute or percentile bounds, optional)     | Computed-FPHA volume grid $[v_{min}, v_{max}]$ (§2.6.1)                                                  |
 | Hydro production models input   | FPHA fitting configuration and optional `fpha_plane_reduction` block                                     | Grid sizes, plane reduction method (§2.6–§2.8)                                                           |
-| Hydro energy productivity input | Per-(hydro, stage) `equivalent_productivity_mw_per_m3s`                                                  | $\rho_{eq,h,t}$ override (§5.1 authoring source 2 + FPHA override path)                                  |
-| Hydro geometry                  | volume_hm3, height_m                                                                                     | $h_{fore}(v)$ interpolation (§2.3)                                                                       |
+| Hydro energy productivity input | Per-(hydro, stage) `equivalent_productivity_mw_per_m3s` and specific productivity                        | $\rho_{eq,h,t}$ override for both evaluators (§5.1 authoring source 2 + FPHA override path); $\rho_{esp,h,t}$ for both evaluators' head-derived value (§5.1, §5.3) |
+| Hydro geometry                  | volume_hm3, height_m                                                                                     | $h_{fore}(v)$ interpolation (§2.3); mean forebay level $\bar h_{fore,h}$ (§5.3)                           |
 | Pre-fitted FPHA planes          | $\gamma_0, \gamma_v, \gamma_q, \gamma_s$ (plus `kappa` column retained for back-compat, defaults to 1.0) | Optional alternative to in-process fitting                                                               |
 
 For non-FPHA hydros, the per-(hydro, stage) productivity coefficient is resolved from exactly one of the two authoring sources listed in §5.1: range-level productivity in the production-models input, or per-stage productivity in the energy-productivity input. Supplying a value from both for the same $(h, t)$ is rejected at load time; supplying neither for any study stage of a non-FPHA hydro is also rejected at load time.

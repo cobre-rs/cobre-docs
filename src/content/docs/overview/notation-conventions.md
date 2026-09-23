@@ -164,6 +164,12 @@ Direct calculation: $100 \text{ m³/s} \times 728 \text{ h} \times 3600 \text{ s
 | $\bar{O}_h$, $\underline{O}_h$                   | m³/s      | Outflow bounds                                                                                                                                                                                                          |
 | $r_h$                                            | m³/s      | Water withdrawal target — stage-level, signed fixed RHS parameter (not a per-block LP decision variable); negative = inter-basin return/addition. See [LP Formulation](/math/lp-formulation).                           |
 | $\rho_h$                                         | MW/(m³/s) | Productivity (constant model)                                                                                                                                                                                           |
+| $V^{min}_h$, $V^{max}_h$ | hm³ | Physical storage range — stage-invariant plant property (dead-volume floor, full-reservoir ceiling); distinct from the operative storage-variable bounds $\underline{V}_h$, $\bar{V}_h$. See [Hydro Production Models](/math/hydro-production-models). |
+| $\rho_{eq,h,t}$ | MW/(m³/s) | Equivalent productivity at the reference operating point. See [Hydro Production Models](/math/hydro-production-models). |
+| $\rho_{acum,h,t}$ | MW/(m³/s) | Accumulated cascade productivity (plant plus downstream), reference-point evaluator. See [Hydro Production Models](/math/hydro-production-models). |
+| $\bar\rho_{eq,h,t}$ | MW/(m³/s) | Useful-range mean equivalent productivity — forebay level averaged over $[V^{min}_h, V^{max}_h]$. See [Hydro Production Models](/math/hydro-production-models). |
+| $\bar\rho_{acum,h,t}$ | MW/(m³/s) | Useful-range mean accumulated cascade productivity. See [Hydro Production Models](/math/hydro-production-models). |
+| $E^{max}_{h,t}$ | MW/(m³/s)·hm³ | Maximum stored energy $\bar\rho_{acum,h,t}\,(V^{max}_h - V^{min}_h)$ (raw unit, not MWh). See [Hydro Production Models](/math/hydro-production-models). |
 | $\gamma_0^m, \gamma_v^m, \gamma_q^m, \gamma_s^m$ | -         | FPHA plane $m$ coefficients — intercept ($\gamma_0^m$), storage/volume ($\gamma_v^m$), turbined flow ($\gamma_q^m$), spillage ($\gamma_s^m$); already $\alpha_{FPHA}$-scaled. Lowercase by convention — never $\Gamma$. |
 | $\alpha_{FPHA}$                                  | -         | FPHA least-squares fit-correction factor; scales the fitted plane set, distinct from the Benders cut intercept $\alpha$. See [Hydro Production Models](/math/hydro-production-models).                                  |
 
@@ -172,7 +178,7 @@ Direct calculation: $100 \text{ m³/s} \times 728 \text{ h} \times 3600 \text{ s
 | Symbol                              | Units | Description                                                              |
 | ----------------------------------- | ----- | ------------------------------------------------------------------------ |
 | $\bar{F}^+_\ell$, $\bar{F}^-_\ell$  | MW    | Line capacity (direct/reverse)                                           |
-| $\eta_\ell = 1 - \text{losses}/100$ | -     | Line efficiency (distinct from the PAR innovation $\varepsilon_t$, §3.5) |
+| $\eta_\ell = 1 - \text{losses}/100$ | -     | Reported line efficiency: scales the post-solve reported transmission losses, $(1-\eta_\ell)(f^+ + f^-)$; it does not enter the dispatch LP, whose line flows carry coefficient ±1. Distinct from the PAR innovation $\varepsilon_t$ (§3.5). |
 | $\bar{C}_c$, $\underline{C}_c$      | MW    | Contract capacity bounds                                                 |
 
 ### 3.5 Inflow Model Parameters

@@ -78,16 +78,16 @@ The capacity limits $\bar{F}^+_l$ and $\bar{F}^-_l$ may vary by stage and, optio
 At source bus:
 
 $$
--f^+_{l,k} + \eta_l f^-_{l,k}
+-f^+_{l,k} + f^-_{l,k}
 $$
 
 At target bus:
 
 $$
-\eta_l f^+_{l,k} - f^-_{l,k}
+f^+_{l,k} - f^-_{l,k}
 $$
 
-where $\eta_l = 1 - \text{losses\_percent}/100$ accounts for transmission losses.
+The dispatch LP is lossless: both flow directions enter the bus balances with coefficient ±1. Transmission losses are a reported quantity computed after the solve, $\text{loss}_{l,k} = (1 - \eta_l)\,(f^+_{l,k} + f^-_{l,k})$, where $\eta_l$ is the line's reported efficiency ([Notation Conventions](/overview/notation-conventions)). See [System Elements](/math/system-elements) for the network model.
 
 **Objective Contribution:**
 
@@ -102,7 +102,7 @@ The cost $c^{exch}_l$ is a **regularization term**, not an actual transmission c
 2. **Guide the solver**: Small positive cost encourages minimal power transfers when indifferent
 3. **Improve numerical stability**: Reduces cycling in LP simplex iterations
 
-Typical values are very small (\$0.01–1.00/MWh), several orders of magnitude below generation costs. If this cost significantly affects dispatch decisions, the value is set too high.
+Its value is set well below every generation and deficit cost, so that it only breaks ties; if it noticeably changes dispatch decisions, it is set too high.
 
 See LP formulation (§1.4 Regularization Costs) for the full taxonomy of penalty vs. cost types.
 :::

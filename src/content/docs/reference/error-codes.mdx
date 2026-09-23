@@ -12,9 +12,9 @@ layered validation).
 Cobre surfaces errors through four user-facing channels:
 
 - **`cobre validate` human report** — errors print as `error:` prefixed lines; warnings (after a successful validation) print as `warning:` prefixed lines.
-- **`cobre validate --json`** — on success, one JSON object on stdout: `{ configured, boundary_date, report }`; on failure: `{ error: { phase, message } }`. The **`phase`** field carries the stable kind string (a `LoadError` variant name, a prep-phase kind, or an `ErrorKind` value).
+- **`cobre validate --json`** — on success, one JSON object on stdout: `{ configured, boundary_date, report }`; on failure: `{ configured: null, boundary_date: null, report: null, error: { phase, message } }`. The **`phase`** field carries the stable kind string (a `LoadError` variant name, a prep-phase kind, or an `ErrorKind` value).
 - **`cobre.io.validate(...)` (Python)** — returns `{ valid, errors: [{ kind, message, ... }], warnings: [{ kind, message, file, entity }] }`. The `kind` field carries the same stable string.
-- **`cobre.errors` Python exception classes** — `ValidationError`, `CaseIoError`, `SchemaError`, `ConstraintError`, `PolicyIncompatibleError` — raised by Python entry points when case loading fails.
+- **`cobre.errors` Python exception classes** — case loading raises `ValidationError`, `CaseIoError`, or `PolicyIncompatibleError`; see [Python Quickstart — Error Handling](/getting-started/python-quickstart/#error-handling) for the full hierarchy.
 
 :::note
 The release notes and earlier spec drafts name this field `kind`; the current cobre binary serialises it as **`phase`** (the value is still the stable kind string below). These pages follow the binary.
@@ -324,32 +324,6 @@ entity-id spellings a generic constraint's own `pumping_flow(id)` /
 `non_controllable_generation(id)` expression terms address — see
 [Generic Constraints — variable catalog](/reference/generic-constraints/)
 for the full addressing grammar.
-
-#### Undeclared `stage_id` in bound-override parquet
-
-**When it occurs:** A bound-override row (in any `*_bounds.parquet` file) whose
-`stage_id` is not one of the study's declared stages is rejected for **every**
-family. The rejection is uniform across hydro bounds, thermal bounds, pumping
-bounds, generic-constraint bounds, and penalty-override files.
-
-**Fields:**
-
-| Field     | Type      | Description                                                  |
-| --------- | --------- | ------------------------------------------------------------ |
-| `path`    | `PathBuf` | The bounds parquet file containing the invalid row           |
-| `field`   | `String`  | The column or row identifier (e.g., `"stage_id"`)            |
-| `message` | `String`  | `stage_id {N} resolves to no declared study stage; declared study stage ids: [...]` |
-
-**Example:**
-
-```
-schema error in constraints/hydro_bounds.parquet, field stage_id: stage_id 15 resolves to no declared study stage; declared study stage ids: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
-```
-
-**Resolution:** Correct the `stage_id` value to match one of the declared stage
-IDs in `stages.json`. The message lists all valid stage IDs. For a typo (e.g.,
-`15` instead of `5`), fix the row; for a stale override referencing a removed
-stage, delete the row or update the stages declaration.
 
 #### Deterministic external inflow column under an autoregressive model
 
@@ -707,6 +681,43 @@ max_spillage_m3s`, and so `min_diversion_m3s`, `min_spillage_m3s`, and
 [Case Directory Format](/reference/case-directory-format/) for
 `hydro_bounds.parquet`'s column reference.
 
+#### Undeclared `stage_id` in bound-override parquet
+
+**When it occurs:** A row in `constraints/{thermal,hydro,line,pumping,contract,hydro_unit_group}_bounds.parquet`
+whose `stage_id` is not a declared study stage (membership in the declared ids of
+`stages.json`, which may be gapped or start at 1) is rejected at `cobre validate`
+as [`BusinessRuleViolation`](#businessruleviolation); a `constraints/ncs_bounds.parquet`
+row is rejected as [`InvalidReference`](#invalidreference) with
+`NcsBoundsRow[i] has invalid stage_id N (not a valid study stage)`. Rows in
+`constraints/generic_constraint_bounds.parquet` and
+`constraints/penalty_overrides_*.parquet` with an undeclared `stage_id` are
+**not** rejected and have no effect.
+
+**Fields:**
+
+| Field         | Type     | Description                                                                                                                                                                                  |
+| ------------- | -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `description` | `String` | One `[BusinessRuleViolation] constraints/{family}_bounds.parquet (...): ...` line per rejected row for the six families, or one `[InvalidReference] constraints/ncs_bounds.parquet: NcsBoundsRow[i] has invalid stage_id N ...` line for NCS |
+
+**Example:**
+
+```
+error: [BusinessRuleViolation] constraints/hydro_bounds.parquet (hydro_id=0, stage_id=15): Hydro 0: hydro_bounds override names stage_id=15, which is not a declared study stage
+```
+
+**Resolution:** Correct the `stage_id` value to match one of the declared stage
+IDs in `stages.json`. For a typo (e.g., `15` instead of `5`), fix the row; for a
+stale override referencing a removed stage, delete the row or update the stages
+declaration.
+
+:::note
+The release notes say an override row whose `stage_id` is not a declared study
+stage is rejected for every bound family. The current binary rejects the six
+families above and `ncs_bounds`, but accepts such rows in
+`generic_constraint_bounds.parquet` and the `penalty_overrides_*.parquet`
+files, where they have no effect. These pages follow the binary.
+:::
+
 ---
 
 ### `PolicyIncompatible`
@@ -864,14 +875,18 @@ non-negative value as long as each is unique within its registry file.
 
 **What triggers it:** A field value falls outside its valid range or violates a
 value constraint that is specific to the field's domain. Examples: a reservoir's
-`min_storage_hm3` exceeds `max_storage_hm3`, or a stage has `num_openings: 0`.
-Emitted by Layer 2 (schema validation).
+`min_storage_hm3` exceeds `max_storage_hm3`, a stage has `num_openings: 0`,
+or a study stage has an empty `blocks` array. Emitted by Layer 2 (schema
+validation); the empty-`blocks` check is emitted by Layer 5 (semantic validation).
 
 **Example message:** `min_storage_hm3 (8000.0) must be <= max_storage_hm3 (5000.0)`
 
+**Example message:** `stage 1 declares no blocks; every study stage must declare at least one block`
+
 **Resolution:** Correct the field value to be within the valid range. Consult
 the [Case Directory Format](/reference/case-directory-format/) page for documented constraints. For storage
-bounds, ensure `min <= max`. For opening counts, ensure `num_openings >= 1`.
+bounds, ensure `min <= max`. For opening counts, ensure `num_openings >= 1`. For stages, declare at least one
+block in every study stage's `blocks` array.
 
 **See also:** a `min_diversion_m3s` floor on a hydro with no declared
 diversion channel is reported this way — see
@@ -938,6 +953,9 @@ reported this way — see
 [Post-study boundary unanchored or malformed](#post-study-boundary-unanchored-or-malformed),
 and
 [Uncovered or over-covered past_anticipated_commitments window](#uncovered-or-over-covered-past_anticipated_commitments-window)
+under `ConstraintError`. The undeclared-`stage_id` bound-override rule is
+also reported this way — see
+[Undeclared `stage_id` in bound-override parquet](#undeclared-stage_id-in-bound-override-parquet)
 under `ConstraintError`.
 
 ---
@@ -1018,20 +1036,40 @@ not accurately represent historical inflows.
 **Severity:** Warning (does not block execution)
 
 **What triggers it:** A valid construct whose semantics are ambiguous or
-stage-dependent in a way that is likely to surprise the user. The primary case
-is using `thermal_generation(N)` in a generic constraint when thermal `N` is an
-anticipated thermal. `thermal_generation` refers to the per-block generation
-measured at the _delivery_ stage (when the commitment matures), not the
-commitment decision made at the current stage. Users who intend to constrain the
-commitment itself should use `anticipated_decision(N)` instead. Emitted by Layer
-5 (semantic validation) in `constraints/generic_constraints.json`.
+stage-dependent in a way that is likely to surprise the user. Two constructs
+trigger it, both emitted by Layer 5 (semantic validation) in
+`constraints/generic_constraints.json`:
 
-**Example message:** `Constraint "peak_cap": thermal_generation(5) references an anticipated thermal. thermal_generation refers to the per-block generation at the delivery stage, not the forward commitment. If you intend to constrain the commitment itself, use anticipated_decision(5) instead.`
+1. **`thermal_generation(N)` on an anticipated thermal.** Using
+   `thermal_generation(N)` in a generic constraint when thermal `N` is an
+   anticipated thermal. `thermal_generation` refers to the per-block generation
+   measured at the _delivery_ stage (when the commitment matures), not the
+   commitment decision made at the current stage. Users who intend to constrain
+   the commitment itself should use `anticipated_decision(N)` instead.
 
-**Resolution:** Review the constraint expression. If you want to bound the
-generation dispatched at the delivery stage, `thermal_generation(N)` is correct
-and the warning can be ignored. If you want to bound the advance commitment
-decision itself, replace `thermal_generation(N)` with `anticipated_decision(N)`.
+   **Example message:** `Constraint "peak_cap": thermal_generation(5) references an anticipated thermal. thermal_generation refers to the per-block generation at the delivery stage, not the forward commitment. If you intend to constrain the commitment itself, use anticipated_decision(5) instead.`
+
+   **Resolution:** Review the constraint expression. If you want to bound the
+   generation dispatched at the delivery stage, `thermal_generation(N)` is correct
+   and the warning can be ignored. If you want to bound the advance commitment
+   decision itself, replace `thermal_generation(N)` with `anticipated_decision(N)`.
+
+2. **`max_stored_energy(h)` paired with `accumulated_productivity(h)`.** One
+   constraint references both computed tags for the same hydro — in its
+   expression coefficients or in its bounds (an `@emax` on the right-hand side
+   counts). The two are evaluated differently (`accumulated_productivity` at the
+   plant's reference point, `max_stored_energy` over the useful range), so a
+   stored-energy comparison built from them does not cancel. One warning is
+   emitted per such hydro; the case still validates.
+
+   **Example message:** `Constraint "sec_mismatch": pairs max_stored_energy(0) with accumulated_productivity(0) for hydro 0; the two ride different evaluators and would not cancel. The coefficient matching max_stored_energy is integrated_accumulated_productivity, not accumulated_productivity.`
+
+   **Resolution:** Use `integrated_accumulated_productivity` as the coefficient
+   that matches `max_stored_energy`; see
+   [the security-curve example](/reference/generic-constraints/#worked-example-a-security-curve).
+
+The warning is printed by `cobre validate` in its human-readable output; the
+`--json` success output does not carry warnings.
 
 ---
 
@@ -1085,6 +1123,23 @@ referenced in an expression but never given a value in
 `constraints/generic_parameters.json` — fails here at `cobre validate` time.
 
 **Example:** `unknown parameter "@demanda": no definition with this name was loaded`.
+
+This phase also reports **energy-conversion** failures of a hydro plant computed
+at the same step — a forebay (VHA) table in `system/hydro_geometry.parquet` that
+fails to build, or a non-positive useful-range mean equivalent head — for any
+plant with VHA geometry and a specific productivity, independent of its
+generation model and of whether the case declares generic constraints (see
+[Hydro Production Models §5.3](/math/hydro-production-models#53-useful-range-mean-productivity)).
+
+**Example:** `error: constraints/: configuration validation error: hydro EntityId(0) has non-positive equivalent head h_eq=-40`.
+
+:::note
+These hydro energy-conversion failures are reported under the generic-constraint
+phase with file label `constraints/`, although no constraint file is involved;
+the message names the plant in the form `EntityId(N)`, and `cobre validate`
+prints its `Valid case: …` summary line before the error.
+These pages follow the binary.
+:::
 
 ---
 

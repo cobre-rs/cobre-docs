@@ -295,8 +295,16 @@ cobre.write_policy_checkpoint(
 
 ### Input Validation
 
-`write_policy_checkpoint` raises `ValueError` on two malformed-input shapes,
-naming the offending stage and cut (or stage) in the message.
+`write_policy_checkpoint` raises `ValueError` when any of the following holds.
+The message locates the problem: the stage and cut for the two per-cut checks,
+the stage for a state-data mismatch, and the hydro for an unplaceable
+inflow-lag coefficient.
+
+- a cut's `coefficients` length does not match its stage's `state_dimension`;
+- a stage's state data length does not match `count * state_dimension`;
+- a cut carries `inflow_lag_coefficients` without a positive `inflow_lag_depth`;
+- (under `inflow_lag_depth`) a manifest lacks a leading storage block; or
+- (under `inflow_lag_depth`) an inflow-lag coefficient is unplaceable.
 
 A cut whose `coefficients` length disagrees with its stage's
 `state_dimension`:
@@ -344,9 +352,38 @@ cobre.write_policy_checkpoint(
 # ValueError: stage 0: states data has 3 entries, expected count*state_dimension=6
 ```
 
+A cut carrying `inflow_lag_coefficients` with no `inflow_lag_depth` passed to
+reserve the lag slots (keyed by **integer** hydro id; list index `0` = lag
+depth 1):
+
+```python
+stage_cuts = [
+    {
+        "stage_id": 0,
+        "state_dimension": 3,
+        "capacity": 10,
+        "cuts": [
+            {
+                "cut_id": 1,
+                "slot_index": 0,
+                "iteration": 1,
+                "forward_pass_index": 0,
+                "intercept": 42.0,
+                "coefficients": [1.0, 2.0, 3.0],
+                "is_active": True,
+                "inflow_lag_coefficients": {0: [0.5]},
+            },
+        ],
+    }
+]
+
+cobre.write_policy_checkpoint("output/policy", stage_cuts, metadata)
+# ValueError: stage 0 cut 1: inflow_lag_coefficients supplied without inflow_lag_depth; pass inflow_lag_depth=N to reserve the lag slots
+```
+
 ## Next Steps
 
-- See the case directory format for input file specifications.
-- Explore the examples for ready-to-run cases.
+- See [Case Directory Format](/reference/case-directory-format/) for input file specifications.
+- Explore the [Worked Examples](/examples/toy-single-reservoir/) for small, fully worked cases.
 - Read the [Jupyter quickstart notebook](https://github.com/cobre-rs/cobre/blob/main/examples/notebooks/quickstart.ipynb)
   for a complete end-to-end workflow with visualization.

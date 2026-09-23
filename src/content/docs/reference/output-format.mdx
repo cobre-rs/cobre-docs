@@ -149,7 +149,7 @@ single file. Consumers should check `status` before interpreting other fields.
 
 ```json
 {
-  "cobre_version": "0.15.0",
+  "cobre_version": "0.16.0",
   "hostname": "<hostname>",
   "solver": "highs",
   "solver_version": "<solver version>",
@@ -997,7 +997,7 @@ LP solver statistics, and distribution information.
 
 ```json
 {
-  "cobre_version": "0.15.0",
+  "cobre_version": "0.16.0",
   "hostname": "<hostname>",
   "solver": "highs",
   "started_at": "<timestamp>",
@@ -1159,11 +1159,13 @@ Stage and block-level cost breakdown. One row per (stage, block) pair. 29 column
 
 ### `simulation/hydros/`
 
-Hydro plant dispatch results. One row per (stage, block, hydro) triplet. 37 columns.
+Hydro plant dispatch results. One row per (stage, block, hydro) triplet. 41 columns.
 
-See the Energy Variables guide for an explanation of the
-five energy columns (`equivalent_productivity_mw_per_m3s` through
-`stored_energy_final_mwh`).
+The nine energy-conversion columns
+(`equivalent_productivity_mw_per_m3s` … `stored_energy_final_mwh`, plus the four
+tail columns below) report the two evaluators defined in
+[Hydro Production Models §5](/math/hydro-production-models#5-energy-conversion-quantities):
+the reference-point pair and the useful-range mean (`integrated_*`) pair.
 
 | Column                                | Type    | Nullable | Description                                                                                                                                                                                          |
 | ------------------------------------- | ------- | -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -1187,8 +1189,8 @@ five energy columns (`equivalent_productivity_mw_per_m3s` through
 | `equivalent_productivity_mw_per_m3s`  | Float64 | No       | Equivalent productivity ρ_eq [MW/(m³/s)] at the reference operating point for this stage.                                                                                                            |
 | `accumulated_productivity_mw_per_m3s` | Float64 | No       | Accumulated cascade productivity ρ_acum [MW/(m³/s)]: sum of ρ_eq for this plant and all downstream plants.                                                                                           |
 | `incremental_inflow_energy_mw`        | Float64 | No       | Power equivalent of incremental inflow: ρ_acum × incremental_inflow_m3s [MW].                                                                                                                        |
-| `stored_energy_initial_mwh`           | Float64 | No       | Energy content of usable storage at stage start: (storage_initial_hm3 − V_min) × ρ_acum × 1e6/3600 [MWh].                                                                                            |
-| `stored_energy_final_mwh`             | Float64 | No       | Energy content of usable storage at stage end: (storage_final_hm3 − V_min) × ρ_acum × 1e6/3600 [MWh].                                                                                                |
+| `stored_energy_initial_mwh`           | Float64 | No       | Energy content of usable storage at stage start: (storage_initial_hm3 − V_min) × integrated_accumulated_productivity_mw_per_m3s × 1e6/3600 [MWh], where `V_min` is the plant's physical `reservoir.min_storage_hm3` (never a `hydro_bounds` storage override) and `storage_initial_hm3` is the row's own value (the per-block boundary storage on a chronological stage). |
+| `stored_energy_final_mwh`             | Float64 | No       | Energy content of usable storage at stage end: (storage_final_hm3 − V_min) × integrated_accumulated_productivity_mw_per_m3s × 1e6/3600 [MWh], where `V_min` is the plant's physical `reservoir.min_storage_hm3` (never a `hydro_bounds` storage override) and `storage_final_hm3` is the row's own value (the per-block boundary storage on a chronological stage). |
 | `spillage_cost`                       | Float64 | No       | Monetary cost attributed to spillage.                                                                                                                                                                |
 | `water_value_per_hm3`                 | Float64 | No       | Shadow price of the reservoir water balance constraint (monetary units per hm³).                                                                                                                     |
 | `storage_binding_code`                | Int8    | No       | Whether the storage bounds were binding (see `codes.json` `storage_binding` mapping).                                                                                                                |
@@ -1204,6 +1206,12 @@ five energy columns (`equivalent_productivity_mw_per_m3s` through
 | `inflow_nonnegativity_slack_m3s`      | Float64 | No       | Inflow non-negativity slack in m³/s. Zero under normal operation.                                                                                                                                    |
 | `water_withdrawal_violation_pos_m3s`  | Float64 | No       | Water withdrawal over-target violation in m³/s. Zero when withdrawal is at or below target.                                                                                                          |
 | `water_withdrawal_violation_neg_m3s`  | Float64 | No       | Water withdrawal under-target violation in m³/s. Zero when withdrawal is at or above target.                                                                                                         |
+| `integrated_equivalent_productivity_mw_per_m3s` | Float64 | No       | Useful-range mean equivalent productivity [MW/(m³/s)]: ρ_eq with the forebay level averaged over the plant's physical storage range (`reservoir` in `system/hydros.json`). Equals `equivalent_productivity_mw_per_m3s` when the range is collapsed, the plant has no VHA geometry or specific productivity, or an `equivalent_productivity_mw_per_m3s` override is supplied. |
+| `integrated_accumulated_productivity_mw_per_m3s` | Float64 | No       | `integrated_equivalent_productivity_mw_per_m3s` summed over this plant and every downstream plant [MW/(m³/s)].                                                                                       |
+| `stored_energy_initial_mw`            | Float64 | No       | `stored_energy_initial_mwh` ÷ the stage's total block hours [MW] — the same divisor on every block row of the stage, never the block's own hours.                                                    |
+| `stored_energy_final_mw`              | Float64 | No       | `stored_energy_final_mwh` ÷ the stage's total block hours [MW].                                                                                                                                      |
+
+The `stored_energy_initial_mwh` and `stored_energy_final_mwh` columns equal the reference-point product (with `accumulated_productivity_mw_per_m3s`) only when a plant's physical storage range is collapsed or it has no resolvable VHA geometry.
 
 ---
 

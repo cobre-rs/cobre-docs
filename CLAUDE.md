@@ -30,7 +30,7 @@ diverge from the code, the spec must be updated — not the other way around.
 
 ## Current State
 
-**Synced to: cobre v0.15.0 (2026-08-24).**
+**Synced to: cobre v0.16.0 (2026-09-22).**
 
 The corpus is a **unified two-layer reference**: the annotation-free **math
 layer** (formulation, algorithm, worked examples) interleaved per topic with a
@@ -201,7 +201,7 @@ sentinel. Periodic-pruning methods (`level1`/`lml1`/`domination`) deactivate;
 **DCS** keeps the pool whole and loads a bounded resident subset per solve
 (`crates/cobre-sddp/src/cut/dcs.rs`), and is inadmissible under enumerated
 forward traversal.
-→ **Checkpoint format (self-describing, v0.15.0)**: `policy/manifest.bin` (a
+→ **Checkpoint format (self-describing, introduced in v0.15.0)**: `policy/manifest.bin` (a
 `FlatBuffers` `CheckpointManifest` root: study graph, stage count, producer
 provenance + `format_version`) is written LAST as the commit signal and read
 FIRST behind the version gate; it replaces the removed hand-editable
