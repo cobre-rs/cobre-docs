@@ -32,7 +32,7 @@ Controls the SDDP training phase.
 | Field            | Type   | Description                                                                                                                                                                                            |
 | ---------------- | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `selection`      | object | Scenario-selection method for the training forward pass — `sampled{forward_passes}` or `enumerated{}` (see [`training.selection`](#trainingselection) below). No default: a missing `training.selection` is a hard load error. |
-| `stopping_rules` | array  | At least one stopping rule (see below). The rule set must contain at least one `iteration_limit` rule.                                                                                                |
+| `stopping_rules` | array  | Stopping rules (see below). The key is required; any non-empty set is accepted. Training never runs past the largest `iteration_limit` in the set, or 100 iterations when the set has none. An empty array `[]` is treated as a single `iteration_limit` rule of 100 iterations. |
 
 ### `training.selection`
 
@@ -489,17 +489,7 @@ value:
 | `ncs`              | object            | `in_sample`   | Sampling scheme for NCS availability. Object with `"scheme"` key.                                       |
 | `historical_years` | array or object   | auto-discover | Restrict the pool of historical windows. List (`[1940, 1953]`) or range (`{"from": 1940, "to": 2010}`). |
 
-Valid values for `"scheme"`: `"in_sample"`, `"out_of_sample"`, `"external"` for every class;
-`"historical"` for `inflow` only.
-
-Admission rules (checked at load; the exact messages are listed under
-[Case Directory Format](/reference/case-directory-format/#configjson)):
-
-- `historical` is valid for `inflow` only — `load` or `ncs` on `historical` is rejected.
-- `seed` is required when any class is not `in_sample`.
-- `historical_years` is rejected unless some class uses `historical`.
-- A `historical_years` range must have `from <= to`.
-- `openings` is rejected here — it is accepted under `training.scenario_source` only.
+The scheme values and admission rules are those of [`training.scenario_source`](#scenario_source); `openings` is rejected here.
 
 Example — simulate with out-of-sample inflow while training uses in-sample:
 
@@ -685,8 +675,7 @@ models.
 | `path`   | string  | —       | Path to the source policy checkpoint directory.                                                                                                                    |
 | `strict` | boolean | `false` | Reject the load when the source prices an entity or commitment this study does not model. `false` drops the surplus (recorded in the reconciliation report) and loads. |
 
-Example — load a monthly policy as the terminal boundary (the source pool priced
-at the study's terminal date is selected automatically):
+Example — load a monthly policy as the terminal boundary:
 
 ```json
 {

@@ -171,7 +171,7 @@ schema error in system/buses.json, field buses[1].id: duplicate id 5 in buses ar
 Check that required fields are present and that values fall within documented
 ranges. For `config.json`, `training.selection` (for example
 `{ "method": "sampled", "forward_passes": 192 }`) and `training.stopping_rules`
-are mandatory and have no defaults. A root-level `training.forward_passes` key
+are mandatory keys with no default when absent. A root-level `training.forward_passes` key
 is rejected as a **`ParseError`** (unknown field), not `SchemaError`; the
 `SchemaError` from this cluster is only for an **absent `training.selection`**
 (message `a forward-pass count is required via training.selection`).
@@ -726,13 +726,16 @@ files, where they have no effect. These pages follow the binary.
 `"warm_start"` or `"resume"` and the stored policy checkpoint is structurally
 incompatible with the current case. Policy load enforces:
 
-- **`format_version` ≥ 2 gate:** every earlier-format checkpoint is rejected (no in-place upgrade — re-export or retrain).
 - **State-dimension match:** policy and current system must agree on state dimension (a lag-state depth mismatch is a common cause).
 - **Stage-count match:** policy and current system must have the same number of stages.
 - **Pool-count match:** policy and current system must have the same number of pools.
 - **Graph-manifest node/edge identity:** when present, the policy's graph manifest must match the current study's node count, per-node `(id, stage_id, pool_id)`, edge count, and per-edge `(source_id, target_id)`.
 - **Entity-manifest length match:** policy and current system must have the same number of state slots.
 - **Per-slot entity-identity match:** each slot's `(entity_type, entity_id, subindex)` triple must match exactly — the cut coefficient at each slot must attach to the same state variable.
+
+A `manifest.bin` whose `format_version` is not exactly `2` fails earlier, as a
+checkpoint read error, not as `PolicyIncompatible` (see
+[Policy Management](/running/policy-management/)).
 
 These checks apply to warm-start and resume modes, which require an **exact**
 state-dimension match. **Boundary injection** (a different feature) instead
@@ -741,7 +744,7 @@ with a per-family drop summary, rather than rejecting.
 
 **Display format:**
 
-The `LoadError::PolicyIncompatible` display format shown for the variant is
+The `PolicyIncompatible` display format shown for the variant is
 retained for completeness, but the variant is **effectively reserved** — the
 compatibility rejections a user actually encounters carry the messages listed
 above (e.g., `policy state_dimension mismatch: policy has 42, current system has 43 (a lag-state depth mismatch is a common cause)`).
@@ -965,12 +968,10 @@ under `ConstraintError`.
 **Severity:** Error
 
 **What triggers it:** A warm-start policy is structurally incompatible with the
-current system. Policy load enforces state-dimension, stage-count, pool-count,
-graph-manifest node/edge identity, entity-manifest length, and per-slot
-entity-identity checks, plus the **`format_version` ≥ 2 gate** (every
-earlier-format checkpoint is rejected). The policy was produced by a run with a
+current system: it fails one of the policy-load checks listed under
+[`PolicyIncompatible`](#policyincompatible). The policy was produced by a run with a
 different system configuration. This `ErrorKind` is the validation diagnostic
-counterpart to the `LoadError::PolicyIncompatible` variant.
+counterpart to the `PolicyIncompatible` load error.
 
 **Example message:** `warm-start policy has 42 hydros but current system has 43`
 

@@ -159,7 +159,7 @@ authored in `penalties.json::hydro.inflow_nonnegativity_cost`.
 | Field                      | Type            | Default                             | Description                                                                                                                |
 | -------------------------- | --------------- | ----------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
 | `training.selection`       | object          | **required**                        | Scenario-selection method — `sampled{forward_passes}` or `enumerated{}` (see below); a missing `training.selection` is a hard load error |
-| `training.stopping_rules`  | array or null   | `[{ iteration_limit: 100 }]`        | Optional list of stopping-rule entries; when omitted or empty, the binary applies a single `iteration_limit` rule of 100 iterations |
+| `training.stopping_rules`  | array           | **required**                        | List of stopping-rule entries; a missing key is a hard load error. An empty array `[]` is treated as a single `iteration_limit` rule of 100 iterations |
 | `training.stopping_mode`   | string          | `"any"`                             | How multiple rules combine: `"any"` (stop when any triggers) or `"all"` (stop when all trigger)                            |
 | `training.enabled`         | boolean         | `true`                              | When `false`, skip training and proceed directly to simulation                                                             |
 | `training.tree_seed`       | integer or null | `null`                              | Random seed for reproducible noise generation (see [Seed resolution](#seed-resolution))                                    |
@@ -248,12 +248,13 @@ Each entry has a `"type"` discriminator. Valid types:
 | `bound_stalling`  | `iterations: integer`, `tolerance: number`                            | Lower bound improvement falls below `tolerance` over `iterations` window |
 | `gap`             | `tolerance: number` and/or `relative_tolerance: number` (at least one required) | The optimality gap between the lower and upper bounds falls below the tolerance |
 
-:::note[`stopping_rules` is optional]
-Earlier documentation described `training.stopping_rules` as required and said it
-must include an `iteration_limit` rule. The current binary treats the array as
-optional: when `stopping_rules` is omitted or empty, it applies a single
-`iteration_limit` rule of 100 iterations. This page follows the binary — supply
-your own rules to override that fallback.
+:::note[`stopping_rules` need not include `iteration_limit`]
+Earlier documentation said the rule set must include an `iteration_limit` rule.
+The binary requires the `training.stopping_rules` key, but accepts any non-empty
+set without an `iteration_limit` rule. Training still never runs past an
+iteration budget: the largest `iteration_limit` in the set, or 100 iterations
+when the set has none. An empty array `[]` is treated as a single
+`iteration_limit` rule of 100 iterations. These pages follow the binary.
 :::
 
 **`training.cut_selection` sub-section:**

@@ -130,7 +130,7 @@ breaking change, reclaimed one field id and permanently burned three others:
   (`YYYYMMDD`) of a `HydroInflowLag` slot; **`interval_start` (id 7)** /
   **`interval_end` (id 8)** — the half-open forward-family window (a
   `HydroTransitBucket` arrival window or an `AnticipatedThermalState` delivery
-  window). Each date field reads sentinel `-2147483648` (`i32::MIN`) where a
+  window). Each date field reads sentinel `-2147483648` (the int32 minimum) where a
   slot's family carries no such date. The burn rule is **per-table**:
   `EntitySlot`'s id 7 (`interval_start`) is a **live** field, distinct from the
   burned `AffinePiece.reserved_7` (also id 7).

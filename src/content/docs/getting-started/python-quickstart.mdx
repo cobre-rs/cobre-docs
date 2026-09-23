@@ -180,7 +180,7 @@ that let an externally-authored boundary-cut checkpoint round-trip through
 carries follows from its family: a `HydroInflowLag` slot carries `reference_date`
 (its reference past-stage `start_date`, encoded `YYYYMMDD`); the forward families
 (`HydroTransitBucket`, `AnticipatedThermalState`) carry the half-open
-`interval_start`/`interval_end` window (both encoded `YYYYMMDD`); every other slot reads the `i32::MIN`
+`interval_start`/`interval_end` window (both encoded `YYYYMMDD`); every other slot reads the int32-minimum
 sentinel (`-2147483648`) in all three fields.
 
 ### Write a Checkpoint (`write_policy_checkpoint`)

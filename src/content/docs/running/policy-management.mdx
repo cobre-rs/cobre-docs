@@ -379,14 +379,6 @@ Add a `boundary` object to the `policy` section of `config.json`:
 | `path`   | string  | —       | Path to the source Cobre policy checkpoint directory.                                                                                                                                                  |
 | `strict` | boolean | `false` | Governs a **superset** source (one pricing an entity or commitment this study does not model). `false` drops the surplus, records it in the reconciliation report, and loads; `true` rejects the load. |
 
-There is **no stage-index knob**: the source pool is selected automatically by
-the coupled study's terminal boundary date (see [How it works](#how-it-works)
-above), so the configuration never names a stage. A source that prices
-_more_ than this study models — an extra reservoir, or an anticipated commitment
-or in-transit bucket for an entity the study does not carry — is reconciled
-according to `strict`: dropped-and-reported by default, or rejected under
-`strict: true`.
-
 When `boundary` is absent or `null`, no boundary cuts are loaded (the default).
 
 ### Compatibility requirements
@@ -430,7 +422,7 @@ descriptor (`season_manifest`) must agree with the study's. This check is
 **always-on** — it is **not** gated by `strict`, and fires whenever the loading
 study declares a season cycle (a study modelling no seasonal/PAR inflow skips it
 entirely). It runs ahead of the subset checks below, and aborts the load with a
-named `SddpError::Validation` on the boundary-load path — distinct from the
+validation error on the boundary-load path — distinct from the
 version-gate failure in [Format Version and Migration](#format-version-and-migration)
 above. A boundary source is rejected when its `season_manifest`:
 

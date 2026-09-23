@@ -60,17 +60,17 @@ Cobre does not include binary commitment variables in the training LP. The minim
 
 **Decision Variables:**
 
-- $f^+_{l,k}$ = direct flow (source → target)
-- $f^-_{l,k}$ = reverse flow (target → source)
+- $f^+_{\ell,k}$ = direct flow (source → target)
+- $f^-_{\ell,k}$ = reverse flow (target → source)
 
 **Bounds:**
 
 $$
-0 \leq f^+_{l,k} \leq \bar{F}^+_l, \quad 0 \leq f^-_{l,k} \leq \bar{F}^-_l
+0 \leq f^+_{\ell,k} \leq \bar{F}^+_\ell, \quad 0 \leq f^-_{\ell,k} \leq \bar{F}^-_\ell
 $$
 
 :::note[Stage- and block-varying capacity]
-The capacity limits $\bar{F}^+_l$ and $\bar{F}^-_l$ may vary by stage and, optionally, by block through absolute-MW overrides on `constraints/line_bounds.parquet` (`direct_mw`/`reverse_mw`, with an optional `block_id`). A line with no override rows keeps its base capacity unchanged.
+The capacity limits $\bar{F}^+_\ell$ and $\bar{F}^-_\ell$ may vary by stage and, optionally, by block through absolute-MW overrides on `constraints/line_bounds.parquet` (`direct_mw`/`reverse_mw`, with an optional `block_id`). A line with no override rows keeps its base capacity unchanged.
 :::
 
 **Load Balance Contribution:**
@@ -78,25 +78,25 @@ The capacity limits $\bar{F}^+_l$ and $\bar{F}^-_l$ may vary by stage and, optio
 At source bus:
 
 $$
--f^+_{l,k} + f^-_{l,k}
+-f^+_{\ell,k} + f^-_{\ell,k}
 $$
 
 At target bus:
 
 $$
-f^+_{l,k} - f^-_{l,k}
+f^+_{\ell,k} - f^-_{\ell,k}
 $$
 
-The dispatch LP is lossless: both flow directions enter the bus balances with coefficient ±1. Transmission losses are a reported quantity computed after the solve, $\text{loss}_{l,k} = (1 - \eta_l)\,(f^+_{l,k} + f^-_{l,k})$, where $\eta_l$ is the line's reported efficiency ([Notation Conventions](/overview/notation-conventions)). See [System Elements](/math/system-elements) for the network model.
+The dispatch LP is lossless: both flow directions enter the bus balances with coefficient ±1. Transmission losses are a reported quantity computed after the solve, $\text{loss}_{\ell,k} = (1 - \eta_\ell)\,(f^+_{\ell,k} + f^-_{\ell,k})$, where $\eta_\ell$ is the line's reported efficiency ([Notation Conventions](/overview/notation-conventions)). See [System Elements](/math/system-elements) for the network model.
 
 **Objective Contribution:**
 
 $$
-\sum_{k} \tau_k \cdot c^{exch}_l (f^+_{l,k} + f^-_{l,k})
+\sum_{k} \tau_k \cdot c^{exch}_\ell (f^+_{\ell,k} + f^-_{\ell,k})
 $$
 
 :::note[Note on Exchange Cost]
-The cost $c^{exch}_l$ is a **regularization term**, not an actual transmission cost. Its purpose is to:
+The cost $c^{exch}_\ell$ is a **regularization term**, not an actual transmission cost. Its purpose is to:
 
 1. **Prevent degenerate solutions**: Without this term, multiple equivalent solutions exist with different flow patterns
 2. **Guide the solver**: Small positive cost encourages minimal power transfers when indifferent
@@ -236,7 +236,7 @@ The methodology above defines every equipment type's LP constraints; the tabs be
 
 ## Cross-References
 
-- [Notation conventions](/overview/notation-conventions) — variable and set definitions ($g_j$, $f_l$, $\chi_c$, $p_j$, $\tau_k$)
+- [Notation conventions](/overview/notation-conventions) — variable and set definitions ($g_j$, $f_\ell$, $\chi_c$, $p_j$, $\tau_k$)
 - [System elements](/math/system-elements) — element descriptions, decision variables, and connections
 - [LP formulation](/math/lp-formulation) — how equipment constraints integrate into the assembled LP; hydro water balance (§4), generation constraints (§6), variable bounds (§8)
 - [Hydro production models](/math/hydro-production-models) — hydro-specific production function constraints (constant, FPHA, linearized head)

@@ -342,13 +342,13 @@ When a hydro transitions between production models across stages:
 
 `linearized_head` is a **reserved production-model name**: it is equivalent to `constant_productivity` (§1) in every phase — training (backward and forward passes) and simulation alike — and selecting it applies no head correction and imposes no phase restriction.
 
-Selecting `linearized_head` therefore yields dispatch identical to `constant_productivity`: generation is $g_{h,k} = \rho_{h,t} \cdot q_{h,k}$ with the plant's per-(hydro, stage) productivity (§5.1). It still requires the plant's productivity input.
+Generation is therefore $g_{h,k} = \rho_{h,t} \cdot q_{h,k}$ with the plant's per-(hydro, stage) productivity (§5.1). It still requires the plant's productivity input.
 
 ## 4. Model Selection Guidelines
 
 ### Training (Policy Construction)
 
-The substantive choice during training is between `constant_productivity` and `fpha` — `linearized_head` resolves to constant productivity (§3) and behaves identically to `constant_productivity`. That choice trades accuracy against computational cost:
+The substantive choice during training is between `constant_productivity` and `fpha` (`linearized_head` is an alias for the former, §3). That choice trades accuracy against computational cost:
 
 | Scenario                       | Recommended Model     | Rationale                          |
 | ------------------------------ | --------------------- | ---------------------------------- |

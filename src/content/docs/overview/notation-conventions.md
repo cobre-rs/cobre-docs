@@ -25,15 +25,16 @@ This document follows [SDDP.jl](https://sddp.dev/stable/) notation conventions f
 
 ### Stage Indexing
 
-Math formulas throughout this corpus index stages starting at $1$: $t \in \{1, \ldots, T\}$ (the convention already fixed above). Cobre's configuration and output files index stages starting at $0$. The two conventions are related by a single, fixed offset, stated once here:
+Math formulas throughout this corpus index stages starting at $1$: $t \in \{1, \ldots, T\}$ (the convention already fixed above). Cobre's configuration files and Parquet outputs instead identify a stage by its **declared** `stage_id` — the integer `id` the stage carries in `stages.json`. Declared ids need not start at $0$ or be contiguous (a pre-study stage may carry a negative id); stages are ordered by id ascending, and $t$ is a study stage's position in that order.
 
-| Context                    | Convention                                |
-| -------------------------- | ----------------------------------------- |
-| Math (this corpus)         | $t \in \{1, \ldots, T\}$                  |
-| Config / output `stage_id` | $\text{stage\_id} \in \{0, \ldots, T-1\}$ |
-| Mapping                    | $\text{stage\_id} = t - 1$                |
+| Context                                         | Convention                                                          |
+| ----------------------------------------------- | ------------------------------------------------------------------- |
+| Math (this corpus)                              | $t \in \{1, \ldots, T\}$ — position in ascending-id order          |
+| Config `stage_id` and fields built on it        | The declared stage `id` from `stages.json`                          |
+| Output `stage_id` column (simulation, training) | The same declared stage `id`, unchanged                             |
+| Mapping, when ids are declared densely from $0$ | $\text{stage\_id} = t - 1$                                          |
 
-Every math-layer chapter uses the 1-based $t$. Every JSON config field, Parquet output column, and CLI reference named `stage_id` — and every field built on it, such as `entry_stage_id`, `exit_stage_id`, and `start_stage_id` — uses the 0-based convention. No other chapter restates this mapping; it defers here.
+Every math-layer chapter uses the 1-based $t$. Every JSON config field, Parquet output column, and CLI reference named `stage_id` — and every field built on it, such as `entry_stage_id`, `exit_stage_id`, and `start_stage_id` — carries the declared id, not a position; a window such as `[entry_stage_id, exit_stage_id)` is compared against declared ids. The offset $\text{stage\_id} = t - 1$ holds only for a case whose study stages are declared $0, 1, \ldots, T-1$. No other chapter restates this mapping; it defers here.
 
 ### Terminology
 

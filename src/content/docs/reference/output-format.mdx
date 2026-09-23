@@ -461,7 +461,7 @@ columns. `iteration`, `scenario_id`, `stage_id`, `opening_index`, `rank`, and
 | `iteration`                  | Int32   | Yes      | Training iteration (1-based). NULL on a simulation row (`scenario_id` is filled instead).                            |
 | `scenario_id`                | Int32   | Yes      | Simulation scenario id (0-based). NULL on a training row (`iteration` is filled instead).                            |
 | `phase`                      | Utf8    | No       | `"forward"`, `"backward"`, `"lower_bound"`, or `"simulation"`.                                                       |
-| `stage_id`                   | Int32   | Yes      | Stage index (0-based). NULL on `lower_bound` rows.                                                                   |
+| `stage_id`                   | Int32   | Yes      | Declared stage id (from `stages.json`). NULL on `lower_bound` rows.                                                                   |
 | `opening_index`              | Int32   | Yes      | Opening (noise realization) index within the stage for backward rows. NULL for forward, `lower_bound`, `simulation`. |
 | `rank`                       | Int32   | Yes      | MPI rank that produced this row. NULL for rank-aggregated rows.                                                      |
 | `worker_id`                  | Int32   | Yes      | Rayon worker index within the rank's pool. NULL for rows without a per-worker dimension.                             |
@@ -716,7 +716,7 @@ resolution (global / entity / stage overrides).
 | `entity_type_code` | Int8    | No       | Entity type code (see `codes.json`).                                              |
 | `entity_id`        | Int32   | No       | Entity ID.                                                                        |
 | `hydro_id`         | Int32   | Yes      | Owning hydro plant ID for a hydro-scoped bound; `null` for entity-scoped bounds.  |
-| `stage_id`         | Int32   | No       | Stage index (0-based).                                                            |
+| `stage_id`         | Int32   | No       | Declared stage id from `stages.json` (not a position).                            |
 | `block_id`         | Int32   | Yes      | Block index for a per-block bound; `null` for a stage-level bound.                |
 | `bound_type_code`  | Int8    | No       | Bound type code (see `codes.json` `bound_type` mapping).                          |
 | `bound_value`      | Float64 | No       | Resolved bound value in the bound's natural unit.                                 |
@@ -839,15 +839,9 @@ entities is rejected.
 | `entity_id`     | int32  | Owning entity id — for a transit bucket, the downstream hydro.                                                        |
 | `subindex`      | uint32 | Secondary index within the entity: the inflow-lag order, anticipated-commitment ring slot, or transit maturity lag.  |
 | `was_active`    | bool   | Whether the owning entity was operationally active at this stage (excluded from the load-time identity check).       |
-| `reference_date` | int32  | The `HydroInflowLag` reference past-stage `start_date`, encoded `YYYYMMDD` (`year*10000 + month*100 + day`); sentinel `i32::MIN` (`-2147483648`) for every other family. |
-| `interval_start` | int32  | Forward-family half-open window inclusive start, encoded `YYYYMMDD`: a `HydroTransitBucket` arrival start or an `AnticipatedThermalState` delivery start; sentinel `i32::MIN` for `HydroStorage` and `HydroInflowLag`. |
-| `interval_end`   | int32  | The half-open window exclusive end, paired with `interval_start`; sentinel `i32::MIN` for `HydroStorage` and `HydroInflowLag`. |
-
-Which date field a slot populates follows from its `entity_type`: a
-`HydroInflowLag` slot populates `reference_date`, the forward families
-(`HydroTransitBucket`, `AnticipatedThermalState`) populate
-`interval_start`/`interval_end`, and a `HydroStorage` slot populates none — every
-unpopulated date field reads the `i32::MIN` sentinel.
+| `reference_date` | int32  | The `HydroInflowLag` reference past-stage `start_date`, encoded `YYYYMMDD` (`year*10000 + month*100 + day`); sentinel `-2147483648` (the int32 minimum) for every other family. |
+| `interval_start` | int32  | Forward-family half-open window inclusive start, encoded `YYYYMMDD`: a `HydroTransitBucket` arrival start or an `AnticipatedThermalState` delivery start; sentinel `-2147483648` for `HydroStorage` and `HydroInflowLag`. |
+| `interval_end`   | int32  | The half-open window exclusive end, paired with `interval_start`; sentinel `-2147483648` for `HydroStorage` and `HydroInflowLag`. |
 
 The encoding uses the FlatBuffers runtime builder API (little-endian, no
 reflection, no generated code). Field order in the binary matches the
@@ -1104,7 +1098,7 @@ all non-null. Joins to any entity file on `(scenario_id, stage_id)`.
 | Column        | Type  | Nullable | Description                                                       |
 | ------------- | ----- | -------- | ----------------------------------------------------------------- |
 | `scenario_id` | Int32 | No       | Scenario id (0-based).                                            |
-| `stage_id`    | Int32 | No       | Stage index (0-based).                                            |
+| `stage_id`    | Int32 | No       | Declared stage id (from `stages.json`).                                            |
 | `node_id`     | Int32 | No       | Visited policy-graph node id; equals `stage_id` on a stage chain. |
 
 ### `simulation/scenario_summary.parquet`
@@ -1126,7 +1120,7 @@ Stage and block-level cost breakdown. One row per (stage, block) pair. 29 column
 | Column                         | Type    | Nullable | Description                                                                                                                  |
 | ------------------------------ | ------- | -------- | ---------------------------------------------------------------------------------------------------------------------------- |
 | `scenario_id`                  | Int32   | No       | Scenario id (0-based). Duplicates the Hive partition directory (`scenario_id=NNNN/`) as an explicit in-file column.          |
-| `stage_id`                     | Int32   | No       | Stage index (0-based).                                                                                                       |
+| `stage_id`                     | Int32   | No       | Declared stage id (from `stages.json`).                                                                                                       |
 | `node_id`                      | Int32   | No       | Visited policy-graph node id; equals `stage_id` on a stage chain.                                                            |
 | `block_id`                     | Int32   | Yes      | Load block index within the stage. `null` for stage-level (non-block) records.                                               |
 | `total_cost`                   | Float64 | No       | Total discounted cost for this stage/block (monetary units).                                                                 |
@@ -1170,7 +1164,7 @@ the reference-point pair and the useful-range mean (`integrated_*`) pair.
 | Column                                | Type    | Nullable | Description                                                                                                                                                                                          |
 | ------------------------------------- | ------- | -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `scenario_id`                         | Int32   | No       | Scenario id (0-based). Duplicates the Hive partition directory (`scenario_id=NNNN/`) as an explicit in-file column.                                                                                  |
-| `stage_id`                            | Int32   | No       | Stage index (0-based).                                                                                                                                                                               |
+| `stage_id`                            | Int32   | No       | Declared stage id (from `stages.json`).                                                                                                                                                                               |
 | `node_id`                             | Int32   | No       | Visited policy-graph node id; equals `stage_id` on a stage chain.                                                                                                                                    |
 | `block_id`                            | Int32   | Yes      | Load block index. `null` for stage-level records.                                                                                                                                                    |
 | `hydro_id`                            | Int32   | No       | Hydro plant ID.                                                                                                                                                                                      |
@@ -1233,7 +1227,7 @@ itself solves.
 | Column           | Type    | Nullable | Description                                                                                                         |
 | ---------------- | ------- | -------- | ------------------------------------------------------------------------------------------------------------------- |
 | `scenario_id`    | Int32   | No       | Scenario id (0-based). Duplicates the Hive partition directory (`scenario_id=NNNN/`) as an explicit in-file column. |
-| `stage_id`       | Int32   | No       | Stage index (0-based).                                                                                              |
+| `stage_id`       | Int32   | No       | Declared stage id (from `stages.json`).                                                                                              |
 | `node_id`        | Int32   | No       | Visited policy-graph node id; equals `stage_id` on a stage chain.                                                   |
 | `block_id`       | Int32   | Yes      | Load block index. `null` for stage-level records.                                                                   |
 | `hydro_id`       | Int32   | No       | Hydro plant ID.                                                                                                     |
@@ -1262,7 +1256,7 @@ Thermal unit dispatch results. One row per (stage, block, thermal) triplet. 12 c
 | Column                     | Type    | Nullable | Description                                                                                                         |
 | -------------------------- | ------- | -------- | ------------------------------------------------------------------------------------------------------------------- |
 | `scenario_id`              | Int32   | No       | Scenario id (0-based). Duplicates the Hive partition directory (`scenario_id=NNNN/`) as an explicit in-file column. |
-| `stage_id`                 | Int32   | No       | Stage index (0-based).                                                                                              |
+| `stage_id`                 | Int32   | No       | Declared stage id (from `stages.json`).                                                                                              |
 | `node_id`                  | Int32   | No       | Visited policy-graph node id; equals `stage_id` on a stage chain.                                                   |
 | `block_id`                 | Int32   | Yes      | Load block index. `null` for stage-level records.                                                                   |
 | `thermal_id`               | Int32   | No       | Thermal unit ID.                                                                                                    |
@@ -1283,7 +1277,7 @@ Transmission line flow results. One row per (stage, block, line) triplet. 13 col
 | Column                 | Type    | Nullable | Description                                                                                                         |
 | ---------------------- | ------- | -------- | ------------------------------------------------------------------------------------------------------------------- |
 | `scenario_id`          | Int32   | No       | Scenario id (0-based). Duplicates the Hive partition directory (`scenario_id=NNNN/`) as an explicit in-file column. |
-| `stage_id`             | Int32   | No       | Stage index (0-based).                                                                                              |
+| `stage_id`             | Int32   | No       | Declared stage id (from `stages.json`).                                                                                              |
 | `node_id`              | Int32   | No       | Visited policy-graph node id; equals `stage_id` on a stage chain.                                                   |
 | `block_id`             | Int32   | Yes      | Load block index. `null` for stage-level records.                                                                   |
 | `line_id`              | Int32   | No       | Transmission line ID.                                                                                               |
@@ -1305,7 +1299,7 @@ Bus load balance results. One row per (stage, block, bus) triplet. 12 columns.
 | Column        | Type    | Nullable | Description                                                                                                         |
 | ------------- | ------- | -------- | ------------------------------------------------------------------------------------------------------------------- |
 | `scenario_id` | Int32   | No       | Scenario id (0-based). Duplicates the Hive partition directory (`scenario_id=NNNN/`) as an explicit in-file column. |
-| `stage_id`    | Int32   | No       | Stage index (0-based).                                                                                              |
+| `stage_id`    | Int32   | No       | Declared stage id (from `stages.json`).                                                                                              |
 | `node_id`     | Int32   | No       | Visited policy-graph node id; equals `stage_id` on a stage chain.                                                   |
 | `block_id`    | Int32   | Yes      | Load block index. `null` for stage-level records.                                                                   |
 | `bus_id`      | Int32   | No       | Bus ID.                                                                                                             |
@@ -1326,7 +1320,7 @@ Pumping station results. One row per (stage, block, pumping station) triplet. 11
 | Column                   | Type    | Nullable | Description                                                                                                         |
 | ------------------------ | ------- | -------- | ------------------------------------------------------------------------------------------------------------------- |
 | `scenario_id`            | Int32   | No       | Scenario id (0-based). Duplicates the Hive partition directory (`scenario_id=NNNN/`) as an explicit in-file column. |
-| `stage_id`               | Int32   | No       | Stage index (0-based).                                                                                              |
+| `stage_id`               | Int32   | No       | Declared stage id (from `stages.json`).                                                                                              |
 | `node_id`                | Int32   | No       | Visited policy-graph node id; equals `stage_id` on a stage chain.                                                   |
 | `block_id`               | Int32   | Yes      | Load block index. `null` for stage-level records.                                                                   |
 | `pumping_station_id`     | Int32   | No       | Pumping station ID.                                                                                                 |
@@ -1346,7 +1340,7 @@ Energy contract results. One row per (stage, block, contract) triplet. 10 column
 | Column                 | Type    | Nullable | Description                                                                                                                                                             |
 | ---------------------- | ------- | -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `scenario_id`          | Int32   | No       | Scenario id (0-based). Duplicates the Hive partition directory (`scenario_id=NNNN/`) as an explicit in-file column.                                                     |
-| `stage_id`             | Int32   | No       | Stage index (0-based).                                                                                                                                                  |
+| `stage_id`             | Int32   | No       | Declared stage id (from `stages.json`).                                                                                                                                                  |
 | `node_id`              | Int32   | No       | Visited policy-graph node id; equals `stage_id` on a stage chain.                                                                                                       |
 | `block_id`             | Int32   | Yes      | Load block index. `null` for stage-level records.                                                                                                                       |
 | `contract_id`          | Int32   | No       | Contract ID.                                                                                                                                                            |
@@ -1366,7 +1360,7 @@ storage, etc.). One row per (stage, block, non-controllable) triplet. 12 columns
 | Column                 | Type    | Nullable | Description                                                                                                         |
 | ---------------------- | ------- | -------- | ------------------------------------------------------------------------------------------------------------------- |
 | `scenario_id`          | Int32   | No       | Scenario id (0-based). Duplicates the Hive partition directory (`scenario_id=NNNN/`) as an explicit in-file column. |
-| `stage_id`             | Int32   | No       | Stage index (0-based).                                                                                              |
+| `stage_id`             | Int32   | No       | Declared stage id (from `stages.json`).                                                                                              |
 | `node_id`              | Int32   | No       | Visited policy-graph node id; equals `stage_id` on a stage chain.                                                   |
 | `block_id`             | Int32   | Yes      | Load block index. `null` for stage-level records.                                                                   |
 | `non_controllable_id`  | Int32   | No       | Non-controllable source ID.                                                                                         |
@@ -1389,7 +1383,7 @@ triplet. No block dimension — inflow lags are stage-level state variables.
 | Column        | Type    | Nullable | Description                                                                                                         |
 | ------------- | ------- | -------- | ------------------------------------------------------------------------------------------------------------------- |
 | `scenario_id` | Int32   | No       | Scenario id (0-based). Duplicates the Hive partition directory (`scenario_id=NNNN/`) as an explicit in-file column. |
-| `stage_id`    | Int32   | No       | Stage index (0-based).                                                                                              |
+| `stage_id`    | Int32   | No       | Declared stage id (from `stages.json`).                                                                                              |
 | `node_id`     | Int32   | No       | Visited policy-graph node id; equals `stage_id` on a stage chain.                                                   |
 | `hydro_id`    | Int32   | No       | Hydro plant ID.                                                                                                     |
 | `lag_index`   | Int32   | No       | Autoregressive lag order (1-based). Lag 1 is the previous stage's inflow.                                           |
@@ -1409,7 +1403,7 @@ byte-neutral otherwise.
 | Column                  | Type    | Nullable | Description                                                                                                         |
 | ----------------------- | ------- | -------- | ------------------------------------------------------------------------------------------------------------------- |
 | `scenario_id`           | Int32   | No       | Scenario id (0-based). Duplicates the Hive partition directory (`scenario_id=NNNN/`) as an explicit in-file column. |
-| `stage_id`              | Int32   | No       | Stage index (0-based).                                                                                              |
+| `stage_id`              | Int32   | No       | Declared stage id (from `stages.json`).                                                                                              |
 | `node_id`               | Int32   | No       | Visited policy-graph node id; equals `stage_id` on a stage chain.                                                   |
 | `hydro_id`              | Int32   | No       | Downstream (receiving) hydro plant ID the in-transit water is destined for.                                         |
 | `lag`                   | Int32   | No       | Maturity lag (1-based). Lag 1 matures into the receiving plant's reservoir at this stage; deeper lags arrive later. |
@@ -1450,7 +1444,7 @@ study declares `post_study_stages`.
 | Column                  | Type    | Nullable | Description                                                                                                         |
 | ----------------------- | ------- | -------- | ------------------------------------------------------------------------------------------------------------------- |
 | `scenario_id`           | Int32   | No       | Scenario id (0-based). Duplicates the Hive partition directory (`scenario_id=NNNN/`) as an explicit in-file column. |
-| `stage_id`              | Int32   | No       | Stage index (0-based) at which the lane's commitment was deposited.                                                 |
+| `stage_id`              | Int32   | No       | Declared stage id (from `stages.json`) at which the lane's commitment was deposited.                                                 |
 | `node_id`               | Int32   | No       | Visited policy-graph node id; equals `stage_id` on a stage chain.                                                   |
 | `thermal_id`            | Int32   | No       | Anticipated thermal unit ID.                                                                                        |
 | `delivery_date`         | Int32   | No       | Calendar date the commitment delivers, encoded `YYYYMMDD` (`year*10000 + month*100 + day`).                         |
@@ -1490,7 +1484,7 @@ constraint) triplet where a violation occurred. 7 columns.
 | Column          | Type    | Nullable | Description                                                                                                                                                                     |
 | --------------- | ------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `scenario_id`   | Int32   | No       | Scenario id (0-based). Duplicates the Hive partition directory (`scenario_id=NNNN/`) as an explicit in-file column.                                                             |
-| `stage_id`      | Int32   | No       | Stage index (0-based).                                                                                                                                                          |
+| `stage_id`      | Int32   | No       | Declared stage id (from `stages.json`).                                                                                                                                                          |
 | `node_id`       | Int32   | No       | Visited policy-graph node id; equals `stage_id` on a stage chain.                                                                                                               |
 | `block_id`      | Int32   | Yes      | Load block index. `null` for stage-level constraints.                                                                                                                           |
 | `constraint_id` | Int32   | No       | Constraint ID as defined in the case input files.                                                                                                                               |

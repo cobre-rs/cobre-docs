@@ -186,8 +186,6 @@ function main() {
   for (const sourceFile of htmlFiles) {
     const html = readFileSync(sourceFile, "utf8");
     const rel = sourceFile.slice(distRoot.length);
-    anchorsFor(sourceFile, html); // seed the cache; reused below for self-links
-
     for (const match of html.matchAll(hrefPattern)) {
       const href = match[1];
       if (shouldSkip(href)) continue;
