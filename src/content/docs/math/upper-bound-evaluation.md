@@ -259,7 +259,7 @@ $$
 
 ## 9 Gap Computation
 
-At each training iteration $k$, the current lower and upper bounds are evaluated at stage 1's fixed initial state $\hat{x}_1$.
+At each training iteration $k$, the current lower and upper bounds are evaluated at stage 1's fixed initial state $\hat{x}_1$ (the [1-based math convention](/overview/notation-conventions#stage-indexing)).
 
 **Lower bound** (from cuts, the outer approximation):
 

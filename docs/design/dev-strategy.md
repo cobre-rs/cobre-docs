@@ -10,9 +10,9 @@ visual design, and the relationship between all deliverables.
 > mdBook at `methodology.cobre-rs.dev`. Cobre's documentation is now a **single
 > unified Astro Starlight site** at `docs.cobre-rs.dev`: the mdBooks are retired
 > and the developer/crate layer lives as `cobre` per-crate READMEs +
-> `ARCHITECTURE.md`. See [`unification-strategy.md`](./unification-strategy.md)
-> for the current architecture; the sections below are retained for historical
-> rationale.
+> `ARCHITECTURE.md`. The current architecture is stated in the
+> repository's [`CLAUDE.md`](../../CLAUDE.md) ("Unified corpus & the developer
+> surface"); the sections below are retained for historical rationale.
 
 ---
 

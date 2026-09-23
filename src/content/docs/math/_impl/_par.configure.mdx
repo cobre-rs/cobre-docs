@@ -25,7 +25,7 @@ The `estimation` block is a top-level key of `config.json` (a sibling of
 | ------------------------------ | --------------- | -------- | ----------- |
 | `max_order`                    | integer          | `6`      | Maximum lag order `p_max` considered by PACF order selection (methodology §4.1). |
 | `order_selection`               | string          | `"pacf"` | Order-selection criterion. Exactly two values are accepted: `"pacf"` (classical PAR(p), methodology §1–§8) and `"pacf_annual"` (PAR(p)-A, methodology §9). |
-| `min_observations_per_season`  | integer          | `30`     | Recommended minimum observation count per (hydro, season) group. Below this count, estimation still proceeds — see Implementation notes. |
+| `min_observations_per_season`  | integer          | `30`     | Recommended minimum number of fully-covered stage occurrences of each season per hydro. Below this count, estimation still proceeds — see Implementation notes. |
 | `max_coefficient_magnitude`    | float or `null`  | `null`   | Optional safety net on fitted coefficient magnitude — see Implementation notes for the exact effect. |
 
 Setting `"order_selection": "pacf_annual"` activates the PAR(p)-A annual
@@ -180,5 +180,6 @@ Each correlation group's `matrix` must be square, match the length of
 
 **Same-type enforcement**: every entity within a single correlation group must
 share the same `type`. Mixing types in one group is rejected at case-load
-time; to correlate inflow with load, define separate groups (one per type)
-with matching correlation structure.
+time. Correlation is modelled **independently per entity class** — inflow,
+load, and NCS each carry their own spatial correlation structure, and there is
+**no** cross-class correlation term.

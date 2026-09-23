@@ -40,8 +40,11 @@ will not produce `simulation/pumping_stations/`.
       iterations.parquet
       retry_histogram.parquet
     scaling_report.json
+    hydro_models.json                (always)
+    model_provenance.json            (when an estimation path ran)
     cut_selection/
       iterations.parquet         (when cut_selection is enabled)
+    _SUCCESS                         # always; written last as the completion signal
   policy/
     manifest.bin                     # study-global; FlatBuffers, written last
     cuts/                            # pool-keyed
@@ -112,6 +115,7 @@ will not produce `simulation/pumping_stations/`.
     solver/
       iterations.parquet
       retry_histogram.parquet
+    _SUCCESS                         # when simulation ran; written last
   anticipated/                       # when a pre-study-decided post-horizon commitment exists
     fixed_deliveries.parquet
   generic_constraints/               # when the study has generic constraints
@@ -120,12 +124,13 @@ will not produce `simulation/pumping_stations/`.
     fpha_hyperplanes.parquet         (when any hydro uses source: "computed")
     evaporation_models.parquet       (when any hydro has evaporation)
     fpha_deviation_points.parquet    (when exports.fpha_deviation_points = true)
-  stochastic/
+  stochastic/                        # only when exports.stochastic = true (off by default)
     inflow_seasonal_stats.parquet    (when estimation was performed)
     inflow_ar_coefficients.parquet   (when estimation was performed)
-    correlation.json                 (always)
+    inflow_annual_component.parquet  (when estimation was performed)
+    correlation.json                 (always, when exported)
     fitting_report.json              (when estimation was performed)
-    noise_openings.parquet           (always)
+    noise_openings.parquet           (always, when exported)
     load_seasonal_stats.parquet      (when load buses exist)
 ```
 
@@ -144,7 +149,7 @@ single file. Consumers should check `status` before interpreting other fields.
 
 ```json
 {
-  "cobre_version": "0.9.0",
+  "cobre_version": "0.16.0",
   "hostname": "<hostname>",
   "solver": "highs",
   "solver_version": "<solver version>",
@@ -182,7 +187,8 @@ single file. Consumers should check `status` before interpreting other fields.
     "cuts_active": 384,
     "rows_in_lp_total": 0,
     "rows_in_lp_solve_count": 0,
-    "rows_in_lp_max": 0
+    "rows_in_lp_max": 0,
+    "total_loaded": 0
   },
   "bounds": {
     "final_lower_bound": 15595518.38,
@@ -202,7 +208,7 @@ single file. Consumers should check `status` before interpreting other fields.
     "backend": "local",
     "world_size": 1,
     "ranks_participated": 1,
-    "num_nodes": 1,
+    "num_hosts": 1,
     "threads_per_rank": 1,
     "hosts": [{ "hostname": "<hostname>", "ranks": [0] }]
   }
@@ -221,6 +227,7 @@ single file. Consumers should check `status` before interpreting other fields.
 | `completed_at`     | string | No       | ISO 8601 timestamp when training completed.                                       |
 | `duration_seconds` | number | No       | Total training wall-clock duration in seconds.                                    |
 | `status`           | string | No       | Run status: `"complete"` or `"partial"`.                                          |
+| `production_fit_deviation` | object | Yes | Run-level rollup of the per-entity production-model fit deviation (informational, never hashed). Omitted when the run fitted no model whose deviation is measured. |
 
 **`configuration` fields:**
 
@@ -230,7 +237,7 @@ single file. Consumers should check `status` before interpreting other fields.
 | `max_iterations` | integer | Yes      | Maximum iterations from the iteration-limit stopping rule. `null` when no limit was set. |
 | `forward_passes` | integer | Yes      | Number of forward-pass scenario trajectories per iteration.                              |
 | `stopping_mode`  | string  | No       | How multiple stopping rules combine: `"any"` or `"all"`.                                 |
-| `policy_mode`    | string  | No       | Policy warm-start mode: `"fresh"` or `"resume"`.                                         |
+| `policy_mode`    | string  | No       | Policy warm-start mode: `"fresh"`, `"warm_start"`, or `"resume"`.                                         |
 
 **`problem_dimensions` fields:**
 
@@ -268,6 +275,7 @@ single file. Consumers should check `status` before interpreting other fields.
 | `rows_in_lp_total`       | integer | No       | Sum of resident rows-in-LP over every lazy-selection solve in the run. Zero when no lazy selection ran. |
 | `rows_in_lp_solve_count` | integer | No       | Number of lazy-selection solves in the run. Zero when no lazy selection ran.                            |
 | `rows_in_lp_max`         | integer | No       | Largest resident rows-in-LP over any single lazy-selection solve. Zero when no lazy selection ran.      |
+| `total_loaded`           | integer | No       | Cut rows loaded from a boundary policy rather than generated by this run; a subset of `total_generated`. `0` when no boundary policy loaded. |
 
 **`bounds` fields:**
 
@@ -297,7 +305,7 @@ single file. Consumers should check `status` before interpreting other fields.
 | `backend`            | string        | No       | Communication backend: `"mpi"` or `"local"`.                                                                                     |
 | `world_size`         | integer       | No       | Total number of processes in the communicator. `1` for single-process runs.                                                      |
 | `ranks_participated` | integer       | No       | Number of processes that participated in computation.                                                                            |
-| `num_nodes`          | integer       | No       | Number of distinct physical hosts.                                                                                               |
+| `num_hosts`          | integer       | No       | Number of distinct physical hosts.                                                                                               |
 | `threads_per_rank`   | integer       | No       | Rayon worker threads per process.                                                                                                |
 | `mpi_library`        | string        | Yes      | MPI implementation version (e.g. `"Open MPI v4.1.6"`). Omitted for the local backend.                                            |
 | `mpi_standard`       | string        | Yes      | MPI standard version (e.g. `"MPI 4.0"`). Omitted for the local backend.                                                          |
@@ -321,6 +329,26 @@ These values are non-deterministic (informational only): they vary run-to-run wi
 machine load and are excluded from any parity computation. The entire `setup` key
 is omitted from metadata produced before setup timing was introduced, and any field
 absent in such legacy metadata deserialises as `0.0`.
+
+**`production_fit_deviation` fields** (absent when the run fitted no model whose deviation is measured, and from legacy metadata):
+
+| Field            | Type    | Nullable | Description                                                              |
+| ---------------- | ------- | -------- | ------------------------------------------------------------------------ |
+| `n_entries`      | integer | No       | Number of per-entity entries the rollup summarizes.                      |
+| `mean_abs`       | number  | No       | Arithmetic mean of the per-entry mean absolute deviation magnitudes.     |
+| `max_abs`        | number  | No       | Maximum of the per-entry max absolute deviation magnitudes.              |
+| `worst_relative` | number  | No       | Largest per-entry relative (dimensionless) deviation across all entries. |
+| `worst_entry`    | object  | Yes      | The entry with the largest relative deviation. `null` when no entry exists. |
+
+**`production_fit_deviation.worst_entry` fields:**
+
+| Field       | Type    | Nullable | Description                                            |
+| ----------- | ------- | -------- | ------------------------------------------------------ |
+| `entity_id` | integer | No       | Identifier of the entity owning the worst entry.       |
+| `stage_id`  | integer | No       | Stage index owning the worst entry.                    |
+| `relative`  | number  | No       | Relative (dimensionless) deviation of the worst entry. |
+| `mean_abs`  | number  | No       | Mean absolute deviation magnitude of the worst entry.  |
+| `max_abs`   | number  | No       | Max absolute deviation magnitude of the worst entry.   |
 
 ---
 
@@ -433,7 +461,7 @@ columns. `iteration`, `scenario_id`, `stage_id`, `opening_index`, `rank`, and
 | `iteration`                  | Int32   | Yes      | Training iteration (1-based). NULL on a simulation row (`scenario_id` is filled instead).                            |
 | `scenario_id`                | Int32   | Yes      | Simulation scenario id (0-based). NULL on a training row (`iteration` is filled instead).                            |
 | `phase`                      | Utf8    | No       | `"forward"`, `"backward"`, `"lower_bound"`, or `"simulation"`.                                                       |
-| `stage_id`                   | Int32   | Yes      | Stage index (0-based). NULL on `lower_bound` rows.                                                                   |
+| `stage_id`                   | Int32   | Yes      | Declared stage id (from `stages.json`). NULL on `lower_bound` rows.                                                                   |
 | `opening_index`              | Int32   | Yes      | Opening (noise realization) index within the stage for backward rows. NULL for forward, `lower_bound`, `simulation`. |
 | `rank`                       | Int32   | Yes      | MPI rank that produced this row. NULL for rank-aggregated rows.                                                      |
 | `worker_id`                  | Int32   | Yes      | Rayon worker index within the rank's pool. NULL for rows without a per-worker dimension.                             |
@@ -453,7 +481,10 @@ columns. `iteration`, `scenario_id`, `stage_id`, `opening_index`, `rank`, and
 ### `simulation/solver/iterations.parquet`
 
 Identical schema to [`training/solver/iterations.parquet`](#trainingsolveriterationsparquet).
-One row per `(scenario_id, phase, stage_id)` triple where `phase == "simulation"`.
+One row per `scenario_id`; `phase` is always `"simulation"`. `iteration`, `stage_id`,
+`opening_index`, `rank`, and `worker_id` are **NULL** (a simulation row carries no
+per-iteration / per-stage / per-opening / per-rank / per-worker attribution); `scenario_id`
+is set.
 
 ### `training/solver/retry_histogram.parquet`
 
@@ -465,7 +496,7 @@ the count is positive (sparse encoding). 5 columns. All non-nullable except
 | Column        | Type   | Nullable | Description                                                                                                                                         |
 | ------------- | ------ | -------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `iteration`   | UInt32 | No       | Training iteration number (1-based).                                                                                                                |
-| `phase`       | Utf8   | No       | Algorithm phase: `"forward"`, `"backward"`, or `"lower_bound"`.                                                                                     |
+| `phase`       | Utf8   | No       | Algorithm phase: `"forward"`, `"backward"`, `"lower_bound"`, or `"simulation"`.                                                                                     |
 | `stage_id`    | Int32  | Yes      | Stage index (0-based). NULL for the forward, `lower_bound`, and simulation rows that carry no per-stage attribution.                                |
 | `retry_level` | UInt32 | No       | Retry escalation level (0--11). See the [Solver Safeguards](/running/performance/#solver-safeguards) section of the Performance Accelerators guide. |
 | `count`       | UInt64 | No       | Number of LP solves recovered at this retry level.                                                                                                  |
@@ -665,14 +696,14 @@ One row per output column across all Parquet schemas. Documents every column
 name, its parent schema, and its unit of measure. Useful for building generic
 result readers that do not hard-code column names.
 
-| Column        | Description                                                                                                                               |
-| ------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
-| `schema`      | Name of the Parquet schema this column belongs to (e.g. `"hydros"`, `"costs"`).                                                           |
-| `column_name` | Exact column name as it appears in the Parquet file.                                                                                      |
-| `arrow_type`  | Arrow data type string (e.g. `"Int32"`, `"Float64"`, `"Boolean"`).                                                                        |
-| `nullable`    | `"true"` or `"false"`.                                                                                                                    |
-| `unit`        | Physical unit or `"code"` for categorical fields, `"boolean"` for flag fields, `"id"` for identifiers, `"dimensionless"` for pure ratios. |
-| `description` | Short description of the column's meaning.                                                                                                |
+| Column        | Description                                                                                                     |
+| ------------- | --------------------------------------------------------------------------------------------------------------- |
+| `file`        | Grouping label for the output schema this column belongs to (e.g. `"hydros"`, `"costs"`).                       |
+| `column`      | Exact column name as it appears in the Parquet file.                                                            |
+| `type`        | Lowercase column type token: `i8`, `i32`, `i64`, `u32`, `u64`, `f64`, `bool`, `string`, `date32`, or `unknown`. |
+| `unit`        | Physical unit, or `""`/a category label for dimensionless, code, boolean, or id columns.                        |
+| `description` | Short description of the column's meaning.                                                                       |
+| `nullable`    | `"true"` or `"false"`.                                                                                          |
 
 #### `bounds.parquet`
 
@@ -680,14 +711,78 @@ Per-entity, per-stage resolved LP variable bounds. Documents the actual
 numerical bounds used in each LP solve, after applying the three-tier penalty
 resolution (global / entity / stage overrides).
 
-| Column             | Type    | Nullable | Description                                              |
-| ------------------ | ------- | -------- | -------------------------------------------------------- |
-| `entity_type_code` | Int8    | No       | Entity type code (see `codes.json`).                     |
-| `entity_id`        | Int32   | No       | Entity ID.                                               |
-| `stage_id`         | Int32   | No       | Stage index (0-based).                                   |
-| `bound_type_code`  | Int8    | No       | Bound type code (see `codes.json` `bound_type` mapping). |
-| `lower_bound`      | Float64 | No       | Resolved lower bound value in the bound's natural unit.  |
-| `upper_bound`      | Float64 | No       | Resolved upper bound value in the bound's natural unit.  |
+| Column             | Type    | Nullable | Description                                                                       |
+| ------------------ | ------- | -------- | --------------------------------------------------------------------------------- |
+| `entity_type_code` | Int8    | No       | Entity type code (see `codes.json`).                                              |
+| `entity_id`        | Int32   | No       | Entity ID.                                                                        |
+| `hydro_id`         | Int32   | Yes      | Owning hydro plant ID for a hydro-scoped bound; `null` for entity-scoped bounds.  |
+| `stage_id`         | Int32   | No       | Declared stage id from `stages.json` (not a position).                            |
+| `block_id`         | Int32   | Yes      | Block index for a per-block bound; `null` for a stage-level bound.                |
+| `bound_type_code`  | Int8    | No       | Bound type code (see `codes.json` `bound_type` mapping).                          |
+| `bound_value`      | Float64 | No       | Resolved bound value in the bound's natural unit.                                 |
+
+### `training/hydro_models.json`
+
+Aggregated production- and evaporation-model counts, plus per-hydro detail for
+every plant that uses an FPHA production model. Always written. Top-level object:
+
+| Field                    | Type    | Nullable | Description                                                             |
+| ------------------------ | ------- | -------- | ----------------------------------------------------------------------- |
+| `n_constant`             | integer | No       | Number of hydro plants using a constant-productivity production model.  |
+| `n_fpha`                 | integer | No       | Number of hydro plants using an FPHA production model.                  |
+| `total_planes`           | integer | No       | Total number of hyperplanes across all FPHA hydro plants.               |
+| `fpha_details`           | array   | No       | Per-hydro detail for each FPHA hydro plant (see below).                 |
+| `n_evaporation`          | integer | No       | Number of hydro plants with a linearized evaporation model.             |
+| `n_no_evaporation`       | integer | No       | Number of hydro plants with no evaporation model.                       |
+| `n_user_supplied_ref`    | integer | No       | Number of evaporation plants that used user-supplied reference volumes. |
+| `n_default_midpoint_ref` | integer | No       | Number of evaporation plants that used the default midpoint reference.  |
+
+**`fpha_details[]` fields:**
+
+| Field      | Type    | Nullable | Description                                                                                                        |
+| ---------- | ------- | -------- | ----------------------------------------------------------------------------------------------------------------- |
+| `hydro_id` | integer | No       | Entity identifier of the hydro plant.                                                                             |
+| `name`     | string  | No       | Human-readable name of the hydro plant.                                                                           |
+| `source`   | string  | No       | Origin of the FPHA hyperplanes: `"default_constant"`, `"precomputed_hyperplanes"`, or `"computed_from_geometry"`. |
+| `n_planes` | integer | No       | Number of hyperplanes in the FPHA approximation for this plant.                                                  |
+
+### `training/model_provenance.json`
+
+Records which data sources fed the inflow and hydro-production models. Written
+**only when an estimation path ran**; diagnostic. Top-level object with two
+sub-objects, `inflow` and `hydro_production`.
+
+**`inflow` fields:**
+
+| Field                            | Type          | Nullable | Description                                                                                        |
+| -------------------------------- | ------------- | -------- | -------------------------------------------------------------------------------------------------- |
+| `estimation_path`                | string        | No       | Stable label of the estimation path taken.                                                         |
+| `seasonal_stats_source`          | string        | No       | Origin of seasonal mean/std data: `"estimated"`, `"user_file"`, or `"n/a"`.                        |
+| `ar_coefficients_source`         | string        | No       | Origin of the AR lag coefficients (same value set).                                                |
+| `correlation_source`             | string        | No       | Origin of the spatial correlation decomposition (same value set).                                  |
+| `opening_tree_source`            | string        | No       | Origin of the noise opening scenario tree (same value set).                                        |
+| `n_hydros`                       | integer       | No       | Number of hydro plants in the system.                                                              |
+| `ar_method`                      | string        | Yes      | Order-selection method used when AR coefficients were estimated. `null` when AR was not estimated. |
+| `ar_max_order`                   | integer       | Yes      | Maximum AR order across all hydro plants. `null` when AR was not estimated.                         |
+| `white_noise_fallbacks`          | integer array | No       | IDs of hydro plants that fell back to white noise. Empty when none did.                            |
+| `historical_library_seed_digest` | integer       | Yes      | Fingerprint of the inflow-lag seed for the historical library. Omitted when no library was built.  |
+
+**`hydro_production` fields:**
+
+| Field                                | Type    | Nullable | Description                                                                     |
+| ------------------------------------ | ------- | -------- | ------------------------------------------------------------------------------- |
+| `n_fpha_computed_from_geometry`      | integer | No       | Hydro plants whose FPHA hyperplanes were computed from reservoir geometry.      |
+| `n_fpha_precomputed_hyperplanes`     | integer | No       | Hydro plants whose FPHA hyperplanes were supplied precomputed.                  |
+| `n_evaporation_ref_user_supplied`    | integer | No       | Hydro plants whose evaporation reference level was user-supplied.               |
+| `n_evaporation_ref_default_midpoint` | integer | No       | Hydro plants whose evaporation reference level defaulted to the curve midpoint. |
+
+### Success markers
+
+`training/_SUCCESS` is an empty file written **last** in the `training/`
+directory, after every other training artifact, to signal that the directory is
+complete. `simulation/_SUCCESS` is the same completion signal for `simulation/`,
+written only when a simulation ran. A consumer can treat the presence of a
+`_SUCCESS` marker as confirmation that its directory was written in full.
 
 ---
 
@@ -744,7 +839,9 @@ entities is rejected.
 | `entity_id`     | int32  | Owning entity id — for a transit bucket, the downstream hydro.                                                        |
 | `subindex`      | uint32 | Secondary index within the entity: the inflow-lag order, anticipated-commitment ring slot, or transit maturity lag.  |
 | `was_active`    | bool   | Whether the owning entity was operationally active at this stage (excluded from the load-time identity check).       |
-| `delivery_date` | int32  | Canonical absolute delivery/arrival calendar date for delivery-timed dimensions, encoded `YYYYMMDD` (`year*10000 + month*100 + day`); sentinel `i32::MIN` when the slot has no delivery semantics. |
+| `reference_date` | int32  | The `HydroInflowLag` reference past-stage `start_date`, encoded `YYYYMMDD` (`year*10000 + month*100 + day`); sentinel `-2147483648` (the int32 minimum) for every other family. |
+| `interval_start` | int32  | Forward-family half-open window inclusive start, encoded `YYYYMMDD`: a `HydroTransitBucket` arrival start or an `AnticipatedThermalState` delivery start; sentinel `-2147483648` for `HydroStorage` and `HydroInflowLag`. |
+| `interval_end`   | int32  | The half-open window exclusive end, paired with `interval_start`; sentinel `-2147483648` for `HydroStorage` and `HydroInflowLag`. |
 
 The encoding uses the FlatBuffers runtime builder API (little-endian, no
 reflection, no generated code). Field order in the binary matches the
@@ -771,9 +868,19 @@ The logical record structure is:
 | --------------- | ------- | ----------------------------------------------------------------------------------------------------------- |
 | `stage_id`      | uint32  | Stage index (0-based).                                                                                      |
 | `iteration`     | uint32  | Training iteration that produced this basis.                                                                |
-| `column_status` | uint8[] | One status code per LP column (variable). Encoding is HiGHS-specific.                                       |
-| `row_status`    | uint8[] | One status code per LP row (constraint). Encoding is HiGHS-specific.                                        |
+| `num_columns`   | uint32  | Number of LP columns; equals the `column_status` length.                                                    |
+| `num_rows`      | uint32  | Number of LP rows; equals the `row_status` length.                                                          |
+| `column_status` | uint8[] | One canonical basis-status code per LP column (variable). See the encoding note below.                      |
+| `row_status`    | uint8[] | One canonical basis-status code per LP row (constraint). See the encoding note below.                       |
 | `num_cut_rows`  | uint32  | Number of trailing rows in `row_status` that correspond to cut rows (as opposed to structural constraints). |
+
+The `column_status`/`row_status` bytes are the canonical solver-neutral
+`BasisStatus` superset `0..=6` — `0` Lower, `1` Basic, `2` Upper, `3` Zero,
+`4` Nonbasic, `5` Superbasic, `6` Fixed — not a backend-specific encoding; cobre
+maps each LP backend (HiGHS default, CLP opt-in) onto this canonical set on
+export. `num_columns` and `num_rows` are wire-only: they let a generated reader
+size the status vectors and are not surfaced by the Python `load_policy` dict
+(which derives the lengths from the vectors themselves).
 
 ### `policy/states/NNN.bin`
 
@@ -817,12 +924,13 @@ dict keys.
 
 | Field            | Type    | Nullable | Description                                                                                                                             |
 | ----------------- | ------- | -------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
-| `format_version` | integer | No       | On-disk format version; must equal `1` on read. A checkpoint from an earlier release has no `manifest.bin` at all and is rejected at the first read, before any payload is parsed. |
+| `format_version` | integer | No       | On-disk format version; must equal `2` on read. A checkpoint from an earlier release has no `manifest.bin` at all and is rejected at the first read, before any payload is parsed. |
 | `cobre_version`  | string  | No       | Version of the cobre binary that wrote this checkpoint.                                                                                 |
 | `created_at`     | string  | No       | ISO 8601 timestamp when the checkpoint was written.                                                                                     |
 | `num_stages`     | integer | No       | Number of stages the graph manifest spans. Must match the case configuration on resume.                                                 |
 | `graph_manifest` | object  | No       | Graph manifest: node list, edge list, node -> pool map, and pool-set size. Defaults to empty on a plain stage chain.                    |
 | `producer`       | object  | No       | Producer-namespaced metadata — the training algorithm's own recorded state. See below.                                                 |
+| `season_manifest` | object | No       | Study-global season / periodic-AR compatibility descriptor: `cycle_code` (`255` = absent / non-periodic), `n_seasons`, and per-hydro AR orders (ascending by hydro id). Compared across studies by the boundary/warm-start gate — see [Compatibility requirements](/running/policy-management/#compatibility-requirements). |
 
 **`graph_manifest` fields:**
 
@@ -883,7 +991,7 @@ LP solver statistics, and distribution information.
 
 ```json
 {
-  "cobre_version": "0.9.0",
+  "cobre_version": "0.16.0",
   "hostname": "<hostname>",
   "solver": "highs",
   "started_at": "<timestamp>",
@@ -911,7 +1019,7 @@ LP solver statistics, and distribution information.
     "backend": "local",
     "world_size": 1,
     "ranks_participated": 1,
-    "num_nodes": 1,
+    "num_hosts": 1,
     "threads_per_rank": 1,
     "hosts": [{ "hostname": "<hostname>", "ranks": [0] }]
   }
@@ -990,7 +1098,7 @@ all non-null. Joins to any entity file on `(scenario_id, stage_id)`.
 | Column        | Type  | Nullable | Description                                                       |
 | ------------- | ----- | -------- | ----------------------------------------------------------------- |
 | `scenario_id` | Int32 | No       | Scenario id (0-based).                                            |
-| `stage_id`    | Int32 | No       | Stage index (0-based).                                            |
+| `stage_id`    | Int32 | No       | Declared stage id (from `stages.json`).                                            |
 | `node_id`     | Int32 | No       | Visited policy-graph node id; equals `stage_id` on a stage chain. |
 
 ### `simulation/scenario_summary.parquet`
@@ -1012,7 +1120,7 @@ Stage and block-level cost breakdown. One row per (stage, block) pair. 29 column
 | Column                         | Type    | Nullable | Description                                                                                                                  |
 | ------------------------------ | ------- | -------- | ---------------------------------------------------------------------------------------------------------------------------- |
 | `scenario_id`                  | Int32   | No       | Scenario id (0-based). Duplicates the Hive partition directory (`scenario_id=NNNN/`) as an explicit in-file column.          |
-| `stage_id`                     | Int32   | No       | Stage index (0-based).                                                                                                       |
+| `stage_id`                     | Int32   | No       | Declared stage id (from `stages.json`).                                                                                                       |
 | `node_id`                      | Int32   | No       | Visited policy-graph node id; equals `stage_id` on a stage chain.                                                            |
 | `block_id`                     | Int32   | Yes      | Load block index within the stage. `null` for stage-level (non-block) records.                                               |
 | `total_cost`                   | Float64 | No       | Total discounted cost for this stage/block (monetary units).                                                                 |
@@ -1045,16 +1153,18 @@ Stage and block-level cost breakdown. One row per (stage, block) pair. 29 column
 
 ### `simulation/hydros/`
 
-Hydro plant dispatch results. One row per (stage, block, hydro) triplet. 37 columns.
+Hydro plant dispatch results. One row per (stage, block, hydro) triplet. 41 columns.
 
-See the Energy Variables guide for an explanation of the
-five energy columns (`equivalent_productivity_mw_per_m3s` through
-`stored_energy_final_mwh`).
+The nine energy-conversion columns
+(`equivalent_productivity_mw_per_m3s` … `stored_energy_final_mwh`, plus the four
+tail columns below) report the two evaluators defined in
+[Hydro Production Models §5](/math/hydro-production-models#5-energy-conversion-quantities):
+the reference-point pair and the useful-range mean (`integrated_*`) pair.
 
 | Column                                | Type    | Nullable | Description                                                                                                                                                                                          |
 | ------------------------------------- | ------- | -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `scenario_id`                         | Int32   | No       | Scenario id (0-based). Duplicates the Hive partition directory (`scenario_id=NNNN/`) as an explicit in-file column.                                                                                  |
-| `stage_id`                            | Int32   | No       | Stage index (0-based).                                                                                                                                                                               |
+| `stage_id`                            | Int32   | No       | Declared stage id (from `stages.json`).                                                                                                                                                                               |
 | `node_id`                             | Int32   | No       | Visited policy-graph node id; equals `stage_id` on a stage chain.                                                                                                                                    |
 | `block_id`                            | Int32   | Yes      | Load block index. `null` for stage-level records.                                                                                                                                                    |
 | `hydro_id`                            | Int32   | No       | Hydro plant ID.                                                                                                                                                                                      |
@@ -1073,8 +1183,8 @@ five energy columns (`equivalent_productivity_mw_per_m3s` through
 | `equivalent_productivity_mw_per_m3s`  | Float64 | No       | Equivalent productivity ρ_eq [MW/(m³/s)] at the reference operating point for this stage.                                                                                                            |
 | `accumulated_productivity_mw_per_m3s` | Float64 | No       | Accumulated cascade productivity ρ_acum [MW/(m³/s)]: sum of ρ_eq for this plant and all downstream plants.                                                                                           |
 | `incremental_inflow_energy_mw`        | Float64 | No       | Power equivalent of incremental inflow: ρ_acum × incremental_inflow_m3s [MW].                                                                                                                        |
-| `stored_energy_initial_mwh`           | Float64 | No       | Energy content of usable storage at stage start: (storage_initial_hm3 − V_min) × ρ_acum × 1e6/3600 [MWh].                                                                                            |
-| `stored_energy_final_mwh`             | Float64 | No       | Energy content of usable storage at stage end: (storage_final_hm3 − V_min) × ρ_acum × 1e6/3600 [MWh].                                                                                                |
+| `stored_energy_initial_mwh`           | Float64 | No       | Energy content of usable storage at stage start: (storage_initial_hm3 − V_min) × integrated_accumulated_productivity_mw_per_m3s × 1e6/3600 [MWh], where `V_min` is the plant's physical `reservoir.min_storage_hm3` (never a `hydro_bounds` storage override) and `storage_initial_hm3` is the row's own value (the per-block boundary storage on a chronological stage). |
+| `stored_energy_final_mwh`             | Float64 | No       | Energy content of usable storage at stage end: (storage_final_hm3 − V_min) × integrated_accumulated_productivity_mw_per_m3s × 1e6/3600 [MWh], where `V_min` is the plant's physical `reservoir.min_storage_hm3` (never a `hydro_bounds` storage override) and `storage_final_hm3` is the row's own value (the per-block boundary storage on a chronological stage). |
 | `spillage_cost`                       | Float64 | No       | Monetary cost attributed to spillage.                                                                                                                                                                |
 | `water_value_per_hm3`                 | Float64 | No       | Shadow price of the reservoir water balance constraint (monetary units per hm³).                                                                                                                     |
 | `storage_binding_code`                | Int8    | No       | Whether the storage bounds were binding (see `codes.json` `storage_binding` mapping).                                                                                                                |
@@ -1090,6 +1200,12 @@ five energy columns (`equivalent_productivity_mw_per_m3s` through
 | `inflow_nonnegativity_slack_m3s`      | Float64 | No       | Inflow non-negativity slack in m³/s. Zero under normal operation.                                                                                                                                    |
 | `water_withdrawal_violation_pos_m3s`  | Float64 | No       | Water withdrawal over-target violation in m³/s. Zero when withdrawal is at or below target.                                                                                                          |
 | `water_withdrawal_violation_neg_m3s`  | Float64 | No       | Water withdrawal under-target violation in m³/s. Zero when withdrawal is at or above target.                                                                                                         |
+| `integrated_equivalent_productivity_mw_per_m3s` | Float64 | No       | Useful-range mean equivalent productivity [MW/(m³/s)]: ρ_eq with the forebay level averaged over the plant's physical storage range (`reservoir` in `system/hydros.json`). Equals `equivalent_productivity_mw_per_m3s` when the range is collapsed, the plant has no VHA geometry or specific productivity, or an `equivalent_productivity_mw_per_m3s` override is supplied. |
+| `integrated_accumulated_productivity_mw_per_m3s` | Float64 | No       | `integrated_equivalent_productivity_mw_per_m3s` summed over this plant and every downstream plant [MW/(m³/s)].                                                                                       |
+| `stored_energy_initial_mw`            | Float64 | No       | `stored_energy_initial_mwh` ÷ the stage's total block hours [MW] — the same divisor on every block row of the stage, never the block's own hours.                                                    |
+| `stored_energy_final_mw`              | Float64 | No       | `stored_energy_final_mwh` ÷ the stage's total block hours [MW].                                                                                                                                      |
+
+The `stored_energy_initial_mwh` and `stored_energy_final_mwh` columns equal the reference-point product (with `accumulated_productivity_mw_per_m3s`) only when a plant's physical storage range is collapsed or it has no resolvable VHA geometry.
 
 ---
 
@@ -1111,7 +1227,7 @@ itself solves.
 | Column           | Type    | Nullable | Description                                                                                                         |
 | ---------------- | ------- | -------- | ------------------------------------------------------------------------------------------------------------------- |
 | `scenario_id`    | Int32   | No       | Scenario id (0-based). Duplicates the Hive partition directory (`scenario_id=NNNN/`) as an explicit in-file column. |
-| `stage_id`       | Int32   | No       | Stage index (0-based).                                                                                              |
+| `stage_id`       | Int32   | No       | Declared stage id (from `stages.json`).                                                                                              |
 | `node_id`        | Int32   | No       | Visited policy-graph node id; equals `stage_id` on a stage chain.                                                   |
 | `block_id`       | Int32   | Yes      | Load block index. `null` for stage-level records.                                                                   |
 | `hydro_id`       | Int32   | No       | Hydro plant ID.                                                                                                     |
@@ -1140,7 +1256,7 @@ Thermal unit dispatch results. One row per (stage, block, thermal) triplet. 12 c
 | Column                     | Type    | Nullable | Description                                                                                                         |
 | -------------------------- | ------- | -------- | ------------------------------------------------------------------------------------------------------------------- |
 | `scenario_id`              | Int32   | No       | Scenario id (0-based). Duplicates the Hive partition directory (`scenario_id=NNNN/`) as an explicit in-file column. |
-| `stage_id`                 | Int32   | No       | Stage index (0-based).                                                                                              |
+| `stage_id`                 | Int32   | No       | Declared stage id (from `stages.json`).                                                                                              |
 | `node_id`                  | Int32   | No       | Visited policy-graph node id; equals `stage_id` on a stage chain.                                                   |
 | `block_id`                 | Int32   | Yes      | Load block index. `null` for stage-level records.                                                                   |
 | `thermal_id`               | Int32   | No       | Thermal unit ID.                                                                                                    |
@@ -1161,7 +1277,7 @@ Transmission line flow results. One row per (stage, block, line) triplet. 13 col
 | Column                 | Type    | Nullable | Description                                                                                                         |
 | ---------------------- | ------- | -------- | ------------------------------------------------------------------------------------------------------------------- |
 | `scenario_id`          | Int32   | No       | Scenario id (0-based). Duplicates the Hive partition directory (`scenario_id=NNNN/`) as an explicit in-file column. |
-| `stage_id`             | Int32   | No       | Stage index (0-based).                                                                                              |
+| `stage_id`             | Int32   | No       | Declared stage id (from `stages.json`).                                                                                              |
 | `node_id`              | Int32   | No       | Visited policy-graph node id; equals `stage_id` on a stage chain.                                                   |
 | `block_id`             | Int32   | Yes      | Load block index. `null` for stage-level records.                                                                   |
 | `line_id`              | Int32   | No       | Transmission line ID.                                                                                               |
@@ -1183,7 +1299,7 @@ Bus load balance results. One row per (stage, block, bus) triplet. 12 columns.
 | Column        | Type    | Nullable | Description                                                                                                         |
 | ------------- | ------- | -------- | ------------------------------------------------------------------------------------------------------------------- |
 | `scenario_id` | Int32   | No       | Scenario id (0-based). Duplicates the Hive partition directory (`scenario_id=NNNN/`) as an explicit in-file column. |
-| `stage_id`    | Int32   | No       | Stage index (0-based).                                                                                              |
+| `stage_id`    | Int32   | No       | Declared stage id (from `stages.json`).                                                                                              |
 | `node_id`     | Int32   | No       | Visited policy-graph node id; equals `stage_id` on a stage chain.                                                   |
 | `block_id`    | Int32   | Yes      | Load block index. `null` for stage-level records.                                                                   |
 | `bus_id`      | Int32   | No       | Bus ID.                                                                                                             |
@@ -1204,7 +1320,7 @@ Pumping station results. One row per (stage, block, pumping station) triplet. 11
 | Column                   | Type    | Nullable | Description                                                                                                         |
 | ------------------------ | ------- | -------- | ------------------------------------------------------------------------------------------------------------------- |
 | `scenario_id`            | Int32   | No       | Scenario id (0-based). Duplicates the Hive partition directory (`scenario_id=NNNN/`) as an explicit in-file column. |
-| `stage_id`               | Int32   | No       | Stage index (0-based).                                                                                              |
+| `stage_id`               | Int32   | No       | Declared stage id (from `stages.json`).                                                                                              |
 | `node_id`                | Int32   | No       | Visited policy-graph node id; equals `stage_id` on a stage chain.                                                   |
 | `block_id`               | Int32   | Yes      | Load block index. `null` for stage-level records.                                                                   |
 | `pumping_station_id`     | Int32   | No       | Pumping station ID.                                                                                                 |
@@ -1224,7 +1340,7 @@ Energy contract results. One row per (stage, block, contract) triplet. 10 column
 | Column                 | Type    | Nullable | Description                                                                                                                                                             |
 | ---------------------- | ------- | -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `scenario_id`          | Int32   | No       | Scenario id (0-based). Duplicates the Hive partition directory (`scenario_id=NNNN/`) as an explicit in-file column.                                                     |
-| `stage_id`             | Int32   | No       | Stage index (0-based).                                                                                                                                                  |
+| `stage_id`             | Int32   | No       | Declared stage id (from `stages.json`).                                                                                                                                                  |
 | `node_id`              | Int32   | No       | Visited policy-graph node id; equals `stage_id` on a stage chain.                                                                                                       |
 | `block_id`             | Int32   | Yes      | Load block index. `null` for stage-level records.                                                                                                                       |
 | `contract_id`          | Int32   | No       | Contract ID.                                                                                                                                                            |
@@ -1244,7 +1360,7 @@ storage, etc.). One row per (stage, block, non-controllable) triplet. 12 columns
 | Column                 | Type    | Nullable | Description                                                                                                         |
 | ---------------------- | ------- | -------- | ------------------------------------------------------------------------------------------------------------------- |
 | `scenario_id`          | Int32   | No       | Scenario id (0-based). Duplicates the Hive partition directory (`scenario_id=NNNN/`) as an explicit in-file column. |
-| `stage_id`             | Int32   | No       | Stage index (0-based).                                                                                              |
+| `stage_id`             | Int32   | No       | Declared stage id (from `stages.json`).                                                                                              |
 | `node_id`              | Int32   | No       | Visited policy-graph node id; equals `stage_id` on a stage chain.                                                   |
 | `block_id`             | Int32   | Yes      | Load block index. `null` for stage-level records.                                                                   |
 | `non_controllable_id`  | Int32   | No       | Non-controllable source ID.                                                                                         |
@@ -1267,7 +1383,7 @@ triplet. No block dimension — inflow lags are stage-level state variables.
 | Column        | Type    | Nullable | Description                                                                                                         |
 | ------------- | ------- | -------- | ------------------------------------------------------------------------------------------------------------------- |
 | `scenario_id` | Int32   | No       | Scenario id (0-based). Duplicates the Hive partition directory (`scenario_id=NNNN/`) as an explicit in-file column. |
-| `stage_id`    | Int32   | No       | Stage index (0-based).                                                                                              |
+| `stage_id`    | Int32   | No       | Declared stage id (from `stages.json`).                                                                                              |
 | `node_id`     | Int32   | No       | Visited policy-graph node id; equals `stage_id` on a stage chain.                                                   |
 | `hydro_id`    | Int32   | No       | Hydro plant ID.                                                                                                     |
 | `lag_index`   | Int32   | No       | Autoregressive lag order (1-based). Lag 1 is the previous stage's inflow.                                           |
@@ -1287,7 +1403,7 @@ byte-neutral otherwise.
 | Column                  | Type    | Nullable | Description                                                                                                         |
 | ----------------------- | ------- | -------- | ------------------------------------------------------------------------------------------------------------------- |
 | `scenario_id`           | Int32   | No       | Scenario id (0-based). Duplicates the Hive partition directory (`scenario_id=NNNN/`) as an explicit in-file column. |
-| `stage_id`              | Int32   | No       | Stage index (0-based).                                                                                              |
+| `stage_id`              | Int32   | No       | Declared stage id (from `stages.json`).                                                                                              |
 | `node_id`               | Int32   | No       | Visited policy-graph node id; equals `stage_id` on a stage chain.                                                   |
 | `hydro_id`              | Int32   | No       | Downstream (receiving) hydro plant ID the in-transit water is destined for.                                         |
 | `lag`                   | Int32   | No       | Maturity lag (1-based). Lag 1 matures into the receiving plant's reservoir at this stage; deeper lags arrive later. |
@@ -1328,7 +1444,7 @@ study declares `post_study_stages`.
 | Column                  | Type    | Nullable | Description                                                                                                         |
 | ----------------------- | ------- | -------- | ------------------------------------------------------------------------------------------------------------------- |
 | `scenario_id`           | Int32   | No       | Scenario id (0-based). Duplicates the Hive partition directory (`scenario_id=NNNN/`) as an explicit in-file column. |
-| `stage_id`              | Int32   | No       | Stage index (0-based) at which the lane's commitment was deposited.                                                 |
+| `stage_id`              | Int32   | No       | Declared stage id (from `stages.json`) at which the lane's commitment was deposited.                                                 |
 | `node_id`               | Int32   | No       | Visited policy-graph node id; equals `stage_id` on a stage chain.                                                   |
 | `thermal_id`            | Int32   | No       | Anticipated thermal unit ID.                                                                                        |
 | `delivery_date`         | Int32   | No       | Calendar date the commitment delivers, encoded `YYYYMMDD` (`year*10000 + month*100 + day`).                         |
@@ -1368,7 +1484,7 @@ constraint) triplet where a violation occurred. 7 columns.
 | Column          | Type    | Nullable | Description                                                                                                                                                                     |
 | --------------- | ------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `scenario_id`   | Int32   | No       | Scenario id (0-based). Duplicates the Hive partition directory (`scenario_id=NNNN/`) as an explicit in-file column.                                                             |
-| `stage_id`      | Int32   | No       | Stage index (0-based).                                                                                                                                                          |
+| `stage_id`      | Int32   | No       | Declared stage id (from `stages.json`).                                                                                                                                                          |
 | `node_id`       | Int32   | No       | Visited policy-graph node id; equals `stage_id` on a stage chain.                                                                                                               |
 | `block_id`      | Int32   | Yes      | Load block index. `null` for stage-level constraints.                                                                                                                           |
 | `constraint_id` | Int32   | No       | Constraint ID as defined in the case input files.                                                                                                                               |
@@ -1447,18 +1563,21 @@ The `status` field is always the first indicator to check:
 | `"complete"` | The run finished normally. All output files are present.               |
 | `"partial"`  | Not all scenarios completed without error. (Simulation metadata only.) |
 
-`cobre report` reads both metadata files and prints a combined JSON summary to
-stdout. Use it in CI pipelines or shell scripts to inspect outcomes without
-parsing JSON directly:
+Both files are plain JSON, so `jq` reads them directly. Use it in CI pipelines
+or shell scripts to inspect outcomes without writing a data-loading script:
 
 ```bash
-# Extract the termination reason
-cobre report results/ | jq '.training.convergence.termination_reason'
+# Extract the training termination reason
+jq -r '.convergence.termination_reason' results/training/metadata.json
 
-# Fail a CI job if the run did not complete
-status=$(cobre report results/ | jq -r '.status')
-[ "$status" = "complete" ] || exit 1
+# Fail a CI job unless both phases completed
+[ "$(jq -r '.status' results/training/metadata.json)" = "complete" ] || exit 1
+[ "$(jq -r '.status' results/simulation/metadata.json)" = "complete" ] || exit 1
 ```
+
+From Python, `cobre.results.load_results(output_dir)` returns both metadata
+documents in one dict, together with a per-phase `complete` flag — see the
+[Python Quickstart](/getting-started/python-quickstart/).
 
 ---
 
@@ -1597,6 +1716,7 @@ by default.
 | ------------------------------------------- | ------------------------ | -------------------------------------------------------- |
 | `stochastic/inflow_seasonal_stats.parquet`  | Estimation was performed | Same as input `scenarios/inflow_seasonal_stats.parquet`  |
 | `stochastic/inflow_ar_coefficients.parquet` | Estimation was performed | Same as input `scenarios/inflow_ar_coefficients.parquet` |
+| `stochastic/inflow_annual_component.parquet` | Estimation was performed | 5-column Parquet schema (see below)                     |
 | `stochastic/correlation.json`               | Always                   | Same as input `scenarios/correlation.json`               |
 | `stochastic/fitting_report.json`            | Estimation was performed | JSON diagnostic report (see below)                       |
 | `stochastic/noise_openings.parquet`         | Always                   | Same schema as `scenarios/noise_openings.parquet`        |
@@ -1612,6 +1732,20 @@ the input file `scenarios/noise_openings.parquet`. See the
 [Case Directory Format](/reference/case-directory-format/#scenariosnoise_openingsparquet)
 for the 4-column schema (`stage_id`, `opening_index`, `entity_index`, `value`).
 
+### `stochastic/inflow_annual_component.parquet`
+
+The fitted per-`(hydro, stage)` annual inflow component derived during
+estimation. Written only when Cobre performed estimation from
+`inflow_history.parquet`. The schema has 5 columns, all non-nullable.
+
+| Column               | Type    | Nullable | Description                                                        |
+| -------------------- | ------- | -------- | ------------------------------------------------------------------ |
+| `hydro_id`           | Int32   | No       | Entity identifier of the hydro plant.                              |
+| `stage_id`           | Int32   | No       | Stage identifier the component applies to.                         |
+| `annual_coefficient` | Float64 | No       | Fitted annual-component coefficient for this hydro and stage.      |
+| `annual_mean_m3s`    | Float64 | No       | Annual mean inflow for this hydro and stage, in m³/s.              |
+| `annual_std_m3s`     | Float64 | No       | Annual inflow standard deviation for this hydro and stage, in m³/s. |
+
 ### `stochastic/fitting_report.json`
 
 A JSON diagnostic report for the PAR model fitting. This file is written only
@@ -1624,18 +1758,36 @@ when Cobre performed estimation from `inflow_history.parquet`.
   "hydros": {
     "<hydro_id>": {
       "selected_order": 3,
-      "aic_scores": [12.4, 11.1, 10.8, 11.3],
-      "coefficients": [[0.42, -0.11, 0.07]]
+      "coefficients": [[0.42, -0.11, 0.07]],
+      "contribution_reductions": [
+        {
+          "season_id": 4,
+          "original_order": 3,
+          "reduced_order": 2,
+          "contributions": [0.42, -0.11, 0.07],
+          "reason": "negative_contribution"
+        }
+      ]
     }
   }
 }
 ```
 
-| Field            | Type         | Description                                                                      |
-| ---------------- | ------------ | -------------------------------------------------------------------------------- |
-| `selected_order` | integer      | AIC-selected AR order for this hydro plant                                       |
-| `aic_scores`     | number array | AIC score for each candidate order; `aic_scores[i]` is the score for order `i+1` |
-| `coefficients`   | nested array | One row per season; each row contains the AR coefficients for that season        |
+| Field                     | Type         | Description                                                                |
+| ------------------------- | ------------ | -------------------------------------------------------------------------- |
+| `selected_order`          | integer      | Selected AR order for this hydro plant.                                    |
+| `coefficients`            | nested array | One row per season; each row contains the AR coefficients for that season. |
+| `contribution_reductions` | array        | Order reductions applied during fitting, one entry per affected season. Optional; omitted when no reduction was needed. |
+
+**`contribution_reductions[]` fields:**
+
+| Field            | Type         | Description                                                                                                    |
+| ---------------- | ------------ | ------------------------------------------------------------------------------------------------------------- |
+| `season_id`      | integer      | Season where the reduction occurred.                                                                          |
+| `original_order` | integer      | AR order before reduction.                                                                                    |
+| `reduced_order`  | integer      | AR order after reduction.                                                                                     |
+| `contributions`  | number array | Contribution values at the original order that triggered the reduction.                                       |
+| `reason`         | string       | Mechanism that triggered the reduction: `"magnitude_bound"`, `"phi1_negative"`, or `"negative_contribution"`. |
 
 This file is diagnostic only. It is not consumed as input on subsequent runs.
 

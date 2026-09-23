@@ -105,7 +105,7 @@ For a glossary of domain terms used throughout the book, see
   _Cited in [PAR Inflow Model](/math/par-inflow-model) §4.3._
 
 - **Larroyd, P.V., Pedrini, R., Beltran, F., Teixeira, G., Finardi, E.C. & Picarelli, L.B.** (2022). Dealing with Negative Inflows in the Long-Term Hydrothermal Scheduling Problem. _Energies_, 15(3), 1115. [doi:10.3390/en15031115](https://doi.org/10.3390/en15031115)
-  Inflow non-negativity treatment for PAR(p) models in hydrothermal dispatch — the reference design that motivates the production clamp-plus-slack formulation.
+  Inflow non-negativity treatment for PAR(p) models in hydrothermal dispatch — the reference design that motivates the clamp-plus-slack formulation.
   _Cited in [Inflow Non-Negativity](/math/inflow-nonnegativity) §8._
 
 - **Maceira, M.E.P., Terry, L.A., Costa, F.S., Damázio, J.M. & Melo, A.C.G.** (2002). Chain of optimization models for setting the energy dispatch and spot price in the Brazilian system. In _Proceedings of the 14th Power Systems Computation Conference (PSCC)_, Seville, Spain.

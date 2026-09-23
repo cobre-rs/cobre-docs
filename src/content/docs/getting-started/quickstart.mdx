@@ -24,23 +24,23 @@ Cobre writes 11 input files into a new `my_first_study/` directory and prints a
 summary to stderr:
 
 ```
- ━━━━━━━━━━━●
- ━━━━━━━━━━━●⚡  COBRE v0.9.1
- ━━━━━━━━━━━●   Power systems in Rust
+ ╺━━━━━━━━━╻●
+ ╺━━━━━━━━━╻●⚡  COBRE v0.16.0
+ ╺━━━━━━━━━╻●   Power systems in Rust
 
 Created my_first_study case directory from template '1dtoy':
 
-  ✔ config.json                    Algorithm configuration: training (forward passes, stopping rules) and simulation settings
-  ✔ initial_conditions.json        Initial reservoir storage volumes for each hydro plant at the start of the planning horizon
-  ✔ penalties.json                 Global penalty costs for constraint violations (deficit, excess, spillage, storage bounds, etc.)
-  ✔ stages.json                    Planning horizon definition: policy graph type, discount rate, stage dates, time blocks, and scenario counts
-  ✔ system/buses.json              Electrical bus definitions with deficit cost segments
-  ✔ system/hydros.json             Hydro plant definitions: reservoir bounds, outflow limits, turbine model, and generation limits
+  ✔ config.json  Algorithm configuration: training (forward passes, stopping rules) and simulation settings
+  ✔ initial_conditions.json  Initial reservoir storage volumes for each hydro plant at the start of the planning horizon
+  ✔ penalties.json  Global penalty costs for constraint violations (deficit, excess, spillage, storage bounds, etc.)
+  ✔ stages.json  Planning horizon definition: policy graph type, discount rate, stage dates, time blocks, and scenario counts
+  ✔ system/buses.json  Electrical bus definitions with deficit cost segments
+  ✔ system/hydros.json  Hydro plant definitions: reservoir bounds, outflow limits, turbine model, and generation limits
   ✔ system/hydro_production_models.json  Per-(hydro, stage) production-model configuration carrying the productivity coefficient
-  ✔ system/lines.json              Transmission line definitions (empty in this single-bus example)
-  ✔ system/thermals.json           Thermal plant definitions with piecewise cost segments and generation bounds
+  ✔ system/lines.json  Transmission line definitions (empty in this single-bus example)
+  ✔ system/thermals.json  Thermal plant definitions with piecewise cost segments and generation bounds
   ✔ scenarios/inflow_seasonal_stats.parquet  Seasonal PAR(p) statistics for hydro inflow scenario generation (mean, std, lag correlations)
-  ✔ scenarios/load_seasonal_stats.parquet    Seasonal PAR(p) statistics for electrical load scenario generation (mean, std, lag correlations)
+  ✔ scenarios/load_seasonal_stats.parquet  Seasonal PAR(p) statistics for electrical load scenario generation (mean, std, lag correlations)
 
 Next steps:
   -> cobre validate my_first_study
@@ -75,19 +75,19 @@ cobre validate my_first_study
 ```
 
 The validation pipeline checks all layers — schema, references, physical
-feasibility, stochastic consistency, and solver feasibility — and prints entity
-counts on success:
+feasibility, stochastic consistency, and solver feasibility — and prints a
+single line of entity counts on success:
 
 ```
 Valid case: 1 buses, 1 hydros, 2 thermals, 0 lines
-  buses: 1
-  hydros: 1
-  thermals: 2
-  lines: 0
 ```
 
-If any layer fails, Cobre prints each error prefixed with `error:` and exits with
-code 1. The 1dtoy template always passes validation.
+That is the whole output for a warning-free case; a case that raises warnings
+adds a `Validation: 0 errors, N warnings in <dir>` summary and one `warning:`
+line per finding. If any layer fails, Cobre prints a
+`Validation: N errors, 0 warnings in <dir>` summary followed by each error
+prefixed with `error:`, and exits with code 1. The 1dtoy template always passes
+validation.
 
 ---
 
@@ -99,27 +99,40 @@ cobre run my_first_study --output my_first_study/results
 
 Cobre runs the SDDP training loop (128 iterations, 1 forward pass each) followed by
 a simulation pass (100 scenarios). Output is written to `my_first_study/results/`.
-The banner, a progress bar, and a post-run summary are printed to stderr:
+The banner, an execution/setup header, and progress bars are printed to stderr;
+once the progress bars finish, the rest of stderr is the post-run summary:
 
 ```
-Training complete in 0.5s (128 iterations, iteration_limit)
+Training complete in 0.4s (128 iterations, iteration_limit)
   Lower bound:  1.55955e7 $/stage
   Upper bound:  5.79592e5 +/- 0.00000e0 $/stage
-  Gap:          -2590.8% (started at 70.5%)
+  Gap:          -96.3% (started at 238.4%)
   Policy rows:  384 active / 384 generated
   LP solves:    5632 (5632 first-try, 0 retried, 0 failed)
-
-Simulation complete in 0.6s (100 scenarios)
+  Avg iter:     3ms
+  Time split:   Forward  3ms (<1%)   solve 3ms · wait 0ms (0% of phase)
+                Backward 186ms (42%)   solve 186ms · wait 0ms (0% of phase)
+                Serial   249ms (57%)   bound 53ms · selection 0ms · other 196ms
+Writing training outputs...
+Output written to my_first_study/results/ (0.0s)
+Simulation starting... (100 scenarios across 1 ranks × 1 threads)
+Simulation complete in 0.1s (100 scenarios)
   Completed: 100  Failed: 0
-
-Output written to my_first_study/results/
+  Expected cost: 9.67939e6 +/- 4.64452e6 (std: 2.36965e7)
+  LP solves:    400 (400 first-try, 0 retried, 0 failed)
+  Avg/scenario: 0.002s
+  Time split:   Solver 53ms (27%)
+                Other  144ms (73%)
+Writing simulation outputs...
+Output written to my_first_study/results/ (0.0s)
 ```
 
-> **Why is the gap a large negative number?**
+> **Why is the gap negative?**
 > The 1dtoy config uses `forward_passes: 1`, which means each training iteration
 > draws a single scenario trajectory for the upper-bound estimate. A single scenario
 > is an extremely noisy sample of the true expected cost — one unlucky trajectory
-> can land far below the lower bound, driving the gap deeply negative. This is
+> can land far below the lower bound, driving the gap negative (the gap is measured
+> relative to the lower bound, so it bottoms out at -100%). This is
 > expected behavior, not a solver error. The gap only becomes well-behaved and
 > stable when training runs with multiple forward passes, because
 > averaging over more scenarios produces a reliable upper-bound estimate. The 1dtoy
@@ -127,19 +140,31 @@ Output written to my_first_study/results/
 > increase this value and add a convergence-based stopping rule so training halts
 > when the gap truly stabilizes.
 
-Exact numerical values (bounds, gap, policy row counts, timing) will vary across
-runs because scenario sampling is stochastic. The gap and iteration count depend on
-the random seed and the convergence tolerance configured in `config.json`.
+The bounds, gap, expected cost, and policy-row and LP-solve counts above are
+reproducible: the template fixes the scenario seed
+(`training.scenario_source.seed` in `config.json`), so every run draws the same
+scenarios. Only the timings — the `complete in` durations, `Avg iter`,
+`Avg/scenario`, the `Time split` lines, and the write times — vary with the
+machine and the run. Changing the seed, the stopping rule, or `forward_passes`
+changes the bounds and the gap. The complete summary format, including the
+`Time split` block, is documented in
+[CLI Reference → Output format](/reference/cli-reference/#output-format).
 
 The results directory contains training convergence data, a FlatBuffers policy
-checkpoint, and Hive-partitioned Parquet files for simulation dispatch results:
+checkpoint, and Hive-partitioned Parquet files for simulation dispatch results.
+This is what the `1dtoy` template produces:
 
 ```
 my_first_study/results/
   training/
+    _SUCCESS
     metadata.json
     convergence.parquet
+    hydro_models.json
+    model_provenance.json
+    scaling_report.json
     dictionaries/
+    solver/
     timing/
   policy/
     manifest.bin
@@ -148,12 +173,25 @@ my_first_study/results/
     basis/
       000.bin  ...  003.bin
   simulation/
+    _SUCCESS
     metadata.json
-    costs/
-    hydros/
-    thermals/
+    paths.parquet
+    scenario_summary.parquet
     buses/
+    costs/
+    hydro_bus_generation/
+    hydros/
+    inflow_lags/
+    solver/
+    thermals/
 ```
+
+The tree is template-specific. `policy/basis/` holds a file per stage only when
+training produced a warm-start basis for that stage (the directory itself is
+always created), and cases with other entities add further simulation
+partitions — for example `pumping_stations/`, `contracts/`, `in_transit/`, and
+generic-constraint `violations/`. See [Output Format](/reference/output-format/)
+for the authoritative, conditional schema of every file.
 
 ---
 
@@ -162,7 +200,7 @@ my_first_study/results/
 You have completed a full SDDP study from case setup to results. The following pages
 go deeper into how the case is structured and how to interpret the output:
 
-- Anatomy of a Case — what each input file controls
+- [Case Directory Format](/reference/case-directory-format/) — what each input file controls
 - [Convergence & Diagnostics](/running/interpreting-results/) — how to read Parquet output and assess convergence
 - [CLI Reference](/reference/cli-reference/) — all flags, subcommands, and exit codes
 - [Configuration](/running/configuration/) — every `config.json` field documented

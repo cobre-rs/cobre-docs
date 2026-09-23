@@ -77,6 +77,8 @@ Rules Cobre enforces (or that silently mis-scale the model if broken):
 
 ### Outputs
 
+The entire `output/stochastic/` directory is written **only when the case sets `exports.stochastic: true`** (in the `exports` config block); it is **off by default**, so a default run produces no `stochastic/` directory at all. The per-file conditions in the table below are **secondary** — they decide which artifacts appear *inside* the directory once stochastic export is enabled.
+
 | File | Role |
 | ---- | ---- |
 | `output/stochastic/inflow_seasonal_stats.parquet` | Fitted seasonal statistics, same schema as the input file — written whenever the estimation path ran. |

@@ -23,6 +23,26 @@ This document follows [SDDP.jl](https://sddp.dev/stable/) notation conventions f
 | $(\alpha, \pi)$          | Cut intercept and coefficients            |
 | $k$                      | Iteration counter                         |
 
+### Stage Indexing
+
+Math formulas throughout this corpus index stages starting at $1$: $t \in \{1, \ldots, T\}$ (the convention already fixed above). Cobre's configuration files and Parquet outputs instead identify a stage by its **declared** `stage_id` — the integer `id` the stage carries in `stages.json`. Declared ids need not start at $0$ or be contiguous (a pre-study stage may carry a negative id); stages are ordered by id ascending, and $t$ is a study stage's position in that order.
+
+| Context                                         | Convention                                                          |
+| ----------------------------------------------- | ------------------------------------------------------------------- |
+| Math (this corpus)                              | $t \in \{1, \ldots, T\}$ — position in ascending-id order          |
+| Config `stage_id` and fields built on it        | The declared stage `id` from `stages.json`                          |
+| Output `stage_id` column (simulation, training) | The same declared stage `id`, unchanged                             |
+| Mapping, when ids are declared densely from $0$ | $\text{stage\_id} = t - 1$                                          |
+
+Every math-layer chapter uses the 1-based $t$. Every JSON config field, Parquet output column, and CLI reference named `stage_id` — and every field built on it, such as `entry_stage_id`, `exit_stage_id`, and `start_stage_id` — carries the declared id, not a position; a window such as `[entry_stage_id, exit_stage_id)` is compared against declared ids. The offset $\text{stage\_id} = t - 1$ holds only for a case whose study stages are declared $0, 1, \ldots, T-1$. No other chapter restates this mapping; it defers here.
+
+### Terminology
+
+Two term choices are pinned corpus-wide:
+
+- **Opening** is the canonical term for a single realization drawn from a stage's set of pre-generated noise vectors (e.g. "every opening $\omega \in \Omega_t$"). "Branch"/"branching" is reserved for the abstract scenario-tree _structure_ itself — the branching factor $N_t$ (how many children a node has) — used only where a chapter discusses the tree's topology, such as [Scenario Generation](/math/scenario-generation), never for a specific drawn realization.
+- **Cost-to-go** is the canonical term for the value function $V_t(x)$ (§1 above) in math-layer prose. "FCF" (_Função de Custo Futuro_) is reserved for the bilingual [Glossary](/reference/glossary) and other DECOMP/DESSEM/NEWAVE practitioner-facing term-maps.
+
 ## 2. Index Sets
 
 | Symbol                                      | Description                                                                                       |
@@ -43,6 +63,7 @@ This document follows [SDDP.jl](https://sddp.dev/stable/) notation conventions f
 | $\mathcal{P}$                               | Pumping stations                                                                                  |
 | $\mathcal{G}$                               | Generic constraints                                                                               |
 | $\mathcal{S}_b$                             | Deficit segments for bus $b$                                                                      |
+| $\mathcal{B}_h \subseteq \mathcal{B}$       | Buses hosting one of hydro $h$'s (hydro, bus) cells                                               |
 | $\mathcal{M}_h$                             | FPHA planes for hydro $h$                                                                         |
 | $\mathcal{U}_h$                             | Upstream hydros of $h$                                                                            |
 | $\Omega_t$                                  | Scenario realizations at stage $t$                                                                |
@@ -130,29 +151,36 @@ Direct calculation: $100 \text{ m³/s} \times 728 \text{ h} \times 3600 \text{ s
 | $c^{th}_{j,s}$  | \$/MWh      | Thermal cost at plant $j$, segment $s$                   |
 | $c^{spill}_h$   | \$/(m³/s·h) | Spillage cost                                            |
 | $c^{div}_h$     | \$/(m³/s·h) | Diversion cost                                           |
-| $c^{exch}_l$    | \$/MWh      | Exchange (transmission) cost                             |
+| $c^{exch}_\ell$ | \$/MWh      | Exchange (transmission) cost                             |
 | $c^{ctr}_c$     | \$/MWh      | Contract price (signed: + import cost, − export revenue) |
 
 ### 3.3 Hydro Parameters
 
-| Symbol                                           | Units     | Description                                                                                                                                                                            |
-| ------------------------------------------------ | --------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| $\hat{v}_h$                                      | hm³       | Incoming storage (state from previous stage)                                                                                                                                           |
-| $\bar{V}_h$, $\underline{V}_h$                   | hm³       | Storage bounds                                                                                                                                                                         |
-| $\bar{Q}_h$, $\underline{Q}_h$                   | m³/s      | Turbined flow bounds                                                                                                                                                                   |
-| $\bar{G}_h$, $\underline{G}_h$                   | MW        | Generation bounds                                                                                                                                                                      |
-| $\bar{O}_h$, $\underline{O}_h$                   | m³/s      | Outflow bounds                                                                                                                                                                         |
-| $\rho_h$                                         | MW/(m³/s) | Productivity (constant model)                                                                                                                                                          |
-| $\gamma^m_0, \gamma^m_v, \gamma^m_q, \gamma^m_s$ | -         | FPHA plane coefficients (already $\alpha_{FPHA}$-scaled)                                                                                                                               |
-| $\alpha_{FPHA}$                                  | -         | FPHA least-squares fit-correction factor; scales the fitted plane set, distinct from the Benders cut intercept $\alpha$. See [Hydro Production Models](/math/hydro-production-models). |
+| Symbol                                           | Units     | Description                                                                                                                                                                                                             |
+| ------------------------------------------------ | --------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| $\hat{v}_h$                                      | hm³       | Incoming storage (state from previous stage)                                                                                                                                                                            |
+| $\bar{V}_h$, $\underline{V}_h$                   | hm³       | Storage bounds                                                                                                                                                                                                          |
+| $\bar{Q}_h$, $\underline{Q}_h$                   | m³/s      | Turbined flow bounds                                                                                                                                                                                                    |
+| $\bar{G}_h$, $\underline{G}_h$                   | MW        | Generation bounds                                                                                                                                                                                                       |
+| $\bar{O}_h$, $\underline{O}_h$                   | m³/s      | Outflow bounds                                                                                                                                                                                                          |
+| $r_h$                                            | m³/s      | Water withdrawal target — stage-level, signed fixed RHS parameter (not a per-block LP decision variable); negative = inter-basin return/addition. See [LP Formulation](/math/lp-formulation).                           |
+| $\rho_h$                                         | MW/(m³/s) | Productivity (constant model)                                                                                                                                                                                           |
+| $V^{min}_h$, $V^{max}_h$ | hm³ | Physical storage range — stage-invariant plant property (dead-volume floor, full-reservoir ceiling); distinct from the operative storage-variable bounds $\underline{V}_h$, $\bar{V}_h$. See [Hydro Production Models](/math/hydro-production-models). |
+| $\rho_{eq,h,t}$ | MW/(m³/s) | Equivalent productivity at the reference operating point. See [Hydro Production Models](/math/hydro-production-models). |
+| $\rho_{acum,h,t}$ | MW/(m³/s) | Accumulated cascade productivity (plant plus downstream), reference-point evaluator. See [Hydro Production Models](/math/hydro-production-models). |
+| $\bar\rho_{eq,h,t}$ | MW/(m³/s) | Useful-range mean equivalent productivity — forebay level averaged over $[V^{min}_h, V^{max}_h]$. See [Hydro Production Models](/math/hydro-production-models). |
+| $\bar\rho_{acum,h,t}$ | MW/(m³/s) | Useful-range mean accumulated cascade productivity. See [Hydro Production Models](/math/hydro-production-models). |
+| $E^{max}_{h,t}$ | MW/(m³/s)·hm³ | Maximum stored energy $\bar\rho_{acum,h,t}\,(V^{max}_h - V^{min}_h)$ (raw unit, not MWh). See [Hydro Production Models](/math/hydro-production-models). |
+| $\gamma_0^m, \gamma_v^m, \gamma_q^m, \gamma_s^m$ | -         | FPHA plane $m$ coefficients — intercept ($\gamma_0^m$), storage/volume ($\gamma_v^m$), turbined flow ($\gamma_q^m$), spillage ($\gamma_s^m$); already $\alpha_{FPHA}$-scaled. Lowercase by convention — never $\Gamma$. |
+| $\alpha_{FPHA}$                                  | -         | FPHA least-squares fit-correction factor; scales the fitted plane set, distinct from the Benders cut intercept $\alpha$. See [Hydro Production Models](/math/hydro-production-models).                                  |
 
 ### 3.4 Transmission and Contract Parameters
 
-| Symbol                           | Units | Description                    |
-| -------------------------------- | ----- | ------------------------------ |
-| $\bar{F}^+_l$, $\bar{F}^-_l$     | MW    | Line capacity (direct/reverse) |
-| $\eta_l = 1 - \text{losses}/100$ | -     | Line efficiency                |
-| $\bar{C}_c$, $\underline{C}_c$   | MW    | Contract capacity bounds       |
+| Symbol                              | Units | Description                                                              |
+| ----------------------------------- | ----- | ------------------------------------------------------------------------ |
+| $\bar{F}^+_\ell$, $\bar{F}^-_\ell$  | MW    | Line capacity (direct/reverse)                                           |
+| $\eta_\ell = 1 - \text{losses}/100$ | -     | Reported line efficiency: scales the post-solve reported transmission losses, $(1-\eta_\ell)(f^+ + f^-)$; it does not enter the dispatch LP, whose line flows carry coefficient ±1. Distinct from the PAR innovation $\varepsilon_t$ (§3.5). |
+| $\bar{C}_c$, $\underline{C}_c$      | MW    | Contract capacity bounds                                                 |
 
 ### 3.5 Inflow Model Parameters
 
@@ -166,12 +194,13 @@ The PAR(p) model uses periodic parameters that repeat with a cycle length $M$. C
 We use **"season $m$"** as a generic term for the position within the cycle, avoiding the term "month" which is resolution-specific. The mapping $m(t) = ((t-1) \mod M) + 1$ converts stage index $t$ to season index $m \in \{1, \ldots, M\}$.
 :::
 
-| Symbol             | Units | Description                                |
-| ------------------ | ----- | ------------------------------------------ |
-| $\mu_m$            | m³/s  | Seasonal mean inflow for season $m$        |
-| $\psi_{m,\ell}$    | -     | AR coefficient for season $m$, lag $\ell$  |
-| $\sigma_m$         | m³/s  | Residual standard deviation for season $m$ |
-| $\hat{a}_{h,\ell}$ | m³/s  | Incoming AR lag $\ell$ (state)             |
+| Symbol             | Units | Description                                                                                                                                                                                                                                      |
+| ------------------ | ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| $\mu_m$            | m³/s  | Seasonal mean inflow for season $m$                                                                                                                                                                                                              |
+| $\psi_{m,\ell}$    | -     | AR coefficient for season $m$, lag $\ell$                                                                                                                                                                                                        |
+| $\sigma_m$         | m³/s  | Residual standard deviation for season $m$                                                                                                                                                                                                       |
+| $\varepsilon_t$    | -     | PAR innovation: standardized noise term, $\varepsilon_t \sim \mathcal{N}(0,1)$ (distinct from the line efficiency $\eta_\ell$, §3.4, and the excess-generation variable $\epsilon_{b,k}$, §4.1). See [PAR Inflow Model](/math/par-inflow-model). |
+| $\hat{a}_{h,\ell}$ | m³/s  | Incoming AR lag $\ell$ (state)                                                                                                                                                                                                                   |
 
 ## 4. Decision Variables
 
@@ -192,8 +221,8 @@ Per-block variables are indexed by $k \in \mathcal{K}$:
 | ---------------- | ------------------------------ | ----- | --------------------------------------------------------------------------------------------------------------------------------------------- |
 | $\delta_{b,k,s}$ | $[0, \bar{d}_{b,s}]$           | MW    | Deficit at bus $b$, segment $s$                                                                                                               |
 | $\epsilon_{b,k}$ | $\geq 0$                       | MW    | Excess generation at bus $b$                                                                                                                  |
-| $f^+_{l,k}$      | $[0, \bar{F}^+_l]$             | MW    | Direct flow on line $l$                                                                                                                       |
-| $f^-_{l,k}$      | $[0, \bar{F}^-_l]$             | MW    | Reverse flow on line $l$                                                                                                                      |
+| $f^+_{\ell,k}$   | $[0, \bar{F}^+_\ell]$          | MW    | Direct flow on line $\ell$                                                                                                                    |
+| $f^-_{\ell,k}$   | $[0, \bar{F}^-_\ell]$          | MW    | Reverse flow on line $\ell$                                                                                                                   |
 | $g_{j,k,s}$      | $[0, \bar{g}_{j,s}]$           | MW    | Thermal generation at plant $j$, segment $s$                                                                                                  |
 | $q_{h,k}$        | $[\underline{Q}_h, \bar{Q}_h]$ | m³/s  | Turbined flow at hydro $h$                                                                                                                    |
 | $s_{h,k}$        | $\geq 0$                       | m³/s  | Spillage at hydro $h$                                                                                                                         |
@@ -202,7 +231,6 @@ Per-block variables are indexed by $k \in \mathcal{K}$:
 | $u_{h,k}$        | $[0, \bar{U}_h]$               | m³/s  | Diversion/bypass flow (to separate channel)                                                                                                   |
 | $o_{h,k}$        | -                              | m³/s  | Total downstream outflow: $o_{h,k} = q_{h,k} + s_{h,k}$                                                                                       |
 | $e_{h,k}$        | free                           | m³/s  | Evaporation (can be negative for condensation)                                                                                                |
-| $r_{h,k}$        | signed                         | m³/s  | Water withdrawal; pinned to a signed target (negative = inter-basin return/addition); the realized value cannot cross zero past the target    |
 | $p_{j,k}$        | $[\underline{P}_j, \bar{P}_j]$ | m³/s  | Pumped flow at station $j$                                                                                                                    |
 | $\chi_{c,k}$     | $[\underline{C}_c, \bar{C}_c]$ | MW    | Contract dispatch (import if $c \in \mathcal{C}^{imp}$, export if $c \in \mathcal{C}^{exp}$); $\underline{C}_c > 0$ is a take-or-pay floor    |
 
@@ -222,17 +250,17 @@ Per-block variables are indexed by $k \in \mathcal{K}$:
 
 Slack variables for soft constraints:
 
-| Variable                                 | Domain   | Units | Constraint                         |
-| ---------------------------------------- | -------- | ----- | ---------------------------------- |
-| $\sigma^{v-}_h$                          | $\geq 0$ | hm³   | Storage below minimum              |
-| $\sigma^{fill}_h$                        | $\geq 0$ | hm³   | Per-stage filling-floor shortfall  |
-| $\sigma^{q-}_{h,k}$                      | $\geq 0$ | m³/s  | Turbined flow below minimum        |
-| $\sigma^{o-}_{h,k}$                      | $\geq 0$ | m³/s  | Outflow below minimum              |
-| $\sigma^{o+}_{h,k}$                      | $\geq 0$ | m³/s  | Outflow above maximum              |
-| $\sigma^{g-}_{h,k}$                      | $\geq 0$ | MW    | Generation below minimum           |
-| $\sigma^{e+}_{h,k}$, $\sigma^{e-}_{h,k}$ | $\geq 0$ | m³/s  | Evaporation violation              |
-| $\sigma^{r}_{h,k}$                       | $\geq 0$ | m³/s  | Water withdrawal violation         |
-| $\sigma^{inf}_h$                         | $\geq 0$ | m³/s  | Inflow non-negativity (if enabled) |
+| Variable                                 | Domain   | Units | Constraint                                                                                                                                        |
+| ---------------------------------------- | -------- | ----- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| $\sigma^{v-}_h$                          | $\geq 0$ | hm³   | Storage below minimum                                                                                                                             |
+| $\sigma^{fill}_h$                        | $\geq 0$ | hm³   | Per-stage filling-floor shortfall                                                                                                                 |
+| $\sigma^{q-}_{h,b,k}$                    | $\geq 0$ | m³/s  | Turbined flow below minimum — one per (hydro, bus) cell $b \in \mathcal{B}_h$ of a split plant                                                    |
+| $\sigma^{o-}_{h,k}$                      | $\geq 0$ | m³/s  | Outflow below minimum (per plant — no per-cell outflow column to attribute a floor to)                                                            |
+| $\sigma^{o+}_{h,k}$                      | $\geq 0$ | m³/s  | Outflow above maximum (per plant)                                                                                                                 |
+| $\sigma^{g-}_{h,b,k}$                    | $\geq 0$ | MW    | Generation below minimum — one per (hydro, bus) cell $b \in \mathcal{B}_h$ of a split plant                                                       |
+| $\sigma^{e+}_{h,k}$, $\sigma^{e-}_{h,k}$ | $\geq 0$ | m³/s  | Evaporation violation (per plant)                                                                                                                 |
+| $\sigma^{w-}_h$, $\sigma^{w+}_h$         | $\geq 0$ | m³/s  | Water withdrawal under-/over-delivery relative to the target $r_h$ (stage-level, not per-block); priced by $c^{wv-}_h$ / $c^{wv+}_h$ respectively |
+| $\sigma^{inf}_h$                         | $\geq 0$ | m³/s  | Inflow non-negativity (if enabled)                                                                                                                |
 
 ## 5. Dual Variables and Reduced Costs
 
@@ -253,7 +281,7 @@ This design allows the hot path to update incoming state values by patching colu
 The water balance is mathematically:
 
 $$
-v_h = \hat{v}_h + \zeta \Big[ a_h + \sum_{k \in \mathcal{K}} w_k \cdot \text{net\_flows}_{h,k} \Big]
+v_h = \hat{v}_h + \zeta \Big[ a_h + \sum_{k \in \mathcal{K}} w_k \cdot \text{net\_flows}_{h,k} - r_h \Big]
 $$
 
 For LP implementation, the incoming storage is carried as a dedicated LP variable $v^{in}_h$ (the `storage_in` column) rather than a constant, and **all LP variables are collected on the LHS** with a zero RHS:
@@ -265,9 +293,9 @@ $$
   + \sum_{i:\text{div}=h} u_{i,k} \\
 & \qquad
   + \sum_{j:\text{dest}=h} p_{j,k}
-  - q_{h,k} - s_{h,k} - u_{h,k} - e_{h,k} - r_{h,k}
+  - q_{h,k} - s_{h,k} - u_{h,k} - e_{h,k}
   - \sum_{j:\text{src}=h} p_{j,k}
-\Big] = 0
+\Big] + \zeta \cdot r_h = 0
 \end{aligned}
 $$
 

@@ -37,7 +37,7 @@ following keys:
 | `simulation`    | `dict` or `None`  | Simulation summary (if enabled)                 |
 | `stochastic`    | `dict` or `None`  | Stochastic preprocessing summary                |
 | `hydro_models`  | `dict` or `None`  | Hydro model summary                             |
-| `provenance`    | `dict`            | Build version and environment metadata          |
+| `provenance`    | `ProvenanceReport` or `None` | Build version and environment metadata (a `ProvenanceReport` typed dict, or `None` when provenance was not captured) |
 
 ```python
 print(f"Converged: {result['converged']}")
@@ -54,10 +54,48 @@ print(f"Output dir: {result['output_dir']}")
 result = cobre.run.run(
     "path/to/case",
     output_dir="path/to/output",   # default: case_dir/output
-    threads=4,                      # default: 1
-    skip_simulation=True,           # default: False
+    threads=4,                      # default: None → 1 worker
+    config_overrides={"simulation": {"enabled": False}},  # default: None
 )
 ```
+
+- **`output_dir`**: where to write results (default: `case_dir/output`).
+- **`threads`**: worker count for the internal pool. Default `None` ⇒ **1 worker**. `0` is **rejected** (`ValueError: threads must be >= 1 when given`); a value `≥ 1` sets the worker count.
+- **`config_overrides`**: a dict merged into `config.json`. Both nested `{"simulation": {"enabled": False}}` and flat dotted `{"training.tree_seed": 7}` shapes are deep-merged into the configuration.
+
+## Validate a Case
+
+Before running a study, validate the case directory to check for errors:
+
+```python
+import cobre.io
+
+report = cobre.io.validate("path/to/case")
+# Returns: {"valid": bool, "errors": [...], "warnings": [...]}
+
+if not report["valid"]:
+    for e in report["errors"]:
+        print(f"{e['kind']}: {e['message']}")
+```
+
+`Study(...).validate()` returns the same-shaped dict.
+
+## Error Handling
+
+Cobre defines a typed exception hierarchy under `cobre.errors`. All exceptions inherit from `CobreError` (the common base) and also from the matching builtin (`ValueError`, `OSError`, or `RuntimeError`), so existing `except OSError` handlers keep catching while new code can catch the typed class.
+
+| Exception                  | Inherits                        | Description                                                                                         |
+| -------------------------- | ------------------------------- | --------------------------------------------------------------------------------------------------- |
+| `CobreError`               | `Exception`                     | Base class for every Cobre exception                                                                |
+| `ValidationError`          | `CobreError`, `ValueError`      | Case data or configuration failed validation                                                        |
+| `PolicyIncompatibleError`  | `CobreError`, `ValueError`      | A warm-start policy is incompatible with the current system                                         |
+| `CaseIoError`              | `CobreError`, `OSError`         | A filesystem read or write failure while loading or writing a case                                  |
+| `OutputError`              | `CobreError`, `OSError`         | An output serialization, schema, or manifest failure while writing results                          |
+| `SolverError`              | `CobreError`, `RuntimeError`    | A training or solver failure. For an infeasible subproblem, the `.stage`, `.iteration`, and `.scenario` attributes are the integer coordinates; otherwise they are `None` |
+| `SimulationError`          | `CobreError`, `RuntimeError`    | A simulation-phase failure                                                                          |
+| `InternalError`            | `CobreError`, `RuntimeError`    | An internal software or environment fault                                                           |
+
+See [Error Codes](/reference/error-codes/) for the full catalogue of error conditions.
 
 ## Read Output with Polars
 
@@ -114,7 +152,7 @@ checkpoint from `<output_dir>/<policy_subdir>` (`policy_subdir` defaults to
 
 | Key           | Type         | Description                                                             |
 | ------------- | ------------ | ------------------------------------------------------------------------ |
-| `metadata`    | `dict`       | `format_version`, `cobre_version`, `created_at`, `num_stages`, `graph_manifest`, `producer` |
+| `metadata`    | `dict`       | `format_version`, `cobre_version`, `created_at`, `num_stages`, `graph_manifest`, `season_manifest`, `producer` |
 | `stage_cuts`  | `list[dict]` | One entry per stage — see below                                        |
 | `stage_bases` | `list[dict]` | One entry per saved LP basis: `stage_id`, `iteration`, `column_status`, `row_status`, `num_cut_rows` |
 
@@ -136,11 +174,14 @@ Python dict key for a cut's id is `cut_id` (the FlatBuffers *wire* field is
 `piece_id`; `cut_id` is the record-level name used everywhere in this API).
 
 `entity_manifest` is new this release: a list of per-slot markers,
-`{entity_type, entity_id, subindex, was_active, delivery_date}`, that let an
-externally-authored boundary-cut checkpoint round-trip through
-`write_policy_checkpoint` without losing slot identity. Its delivery marker
-is `delivery_date` — a `YYYYMMDD` calendar date — which replaced the former
-`delivery_anchor` (a month-integer).
+`{entity_type, entity_id, subindex, was_active, reference_date, interval_start, interval_end}`,
+that let an externally-authored boundary-cut checkpoint round-trip through
+`write_policy_checkpoint` without losing slot identity. Which date marker a slot
+carries follows from its family: a `HydroInflowLag` slot carries `reference_date`
+(its reference past-stage `start_date`, encoded `YYYYMMDD`); the forward families
+(`HydroTransitBucket`, `AnticipatedThermalState`) carry the half-open
+`interval_start`/`interval_end` window (both encoded `YYYYMMDD`); every other slot reads the int32-minimum
+sentinel (`-2147483648`) in all three fields.
 
 ### Write a Checkpoint (`write_policy_checkpoint`)
 
@@ -148,9 +189,11 @@ is `delivery_date` — a `YYYYMMDD` calendar date — which replaced the former
 write_policy_checkpoint(path, stage_cuts, metadata, stage_bases=None, stage_states=None, inflow_lag_depth=None)
 ```
 
-`stage_cuts` and `metadata` mirror the `load_policy` shapes above (the dict
-shape is unchanged from earlier releases), so a checkpoint loaded from disk
-round-trips through Python without reshaping. `inflow_lag_depth`, when set to
+`stage_cuts` and `metadata` mirror the `load_policy` shapes above, so a checkpoint
+loaded from disk round-trips through Python without reshaping — with one caveat:
+`active_cut_indices` is written by `write_policy_checkpoint` but not returned by
+`load_policy`, so a load → write cycle resets it, and cut activity round-trips
+through each cut's `is_active` flag instead. `inflow_lag_depth`, when set to
 `N > 0`, reserves `N` canonical `HydroInflowLag` state slots per storage hydro
 and places each cut's `inflow_lag_coefficients` at their `(hydro, depth)`
 positions (for authoring a boundary policy of a case with no autoregressive
@@ -226,7 +269,7 @@ metadata = {
 cobre.write_policy_checkpoint(f"{parent}/policy", stage_cuts, metadata)
 
 loaded = cobre.results.load_policy(parent)
-assert loaded["metadata"]["format_version"] == 1
+assert loaded["metadata"]["format_version"] == 2
 assert loaded["stage_cuts"][0]["populated_count"] == 2
 
 # Edit: append a third cut. Its coefficients must match state_dimension (3).
@@ -252,8 +295,16 @@ cobre.write_policy_checkpoint(
 
 ### Input Validation
 
-`write_policy_checkpoint` raises `ValueError` on two malformed-input shapes,
-naming the offending stage and cut (or stage) in the message.
+`write_policy_checkpoint` raises `ValueError` when any of the following holds.
+The message locates the problem: the stage and cut for the two per-cut checks,
+the stage for a state-data mismatch, and the hydro for an unplaceable
+inflow-lag coefficient.
+
+- a cut's `coefficients` length does not match its stage's `state_dimension`;
+- a stage's state data length does not match `count * state_dimension`;
+- a cut carries `inflow_lag_coefficients` without a positive `inflow_lag_depth`;
+- (under `inflow_lag_depth`) a manifest lacks a leading storage block; or
+- (under `inflow_lag_depth`) an inflow-lag coefficient is unplaceable.
 
 A cut whose `coefficients` length disagrees with its stage's
 `state_dimension`:
@@ -301,9 +352,38 @@ cobre.write_policy_checkpoint(
 # ValueError: stage 0: states data has 3 entries, expected count*state_dimension=6
 ```
 
+A cut carrying `inflow_lag_coefficients` with no `inflow_lag_depth` passed to
+reserve the lag slots (keyed by **integer** hydro id; list index `0` = lag
+depth 1):
+
+```python
+stage_cuts = [
+    {
+        "stage_id": 0,
+        "state_dimension": 3,
+        "capacity": 10,
+        "cuts": [
+            {
+                "cut_id": 1,
+                "slot_index": 0,
+                "iteration": 1,
+                "forward_pass_index": 0,
+                "intercept": 42.0,
+                "coefficients": [1.0, 2.0, 3.0],
+                "is_active": True,
+                "inflow_lag_coefficients": {0: [0.5]},
+            },
+        ],
+    }
+]
+
+cobre.write_policy_checkpoint("output/policy", stage_cuts, metadata)
+# ValueError: stage 0 cut 1: inflow_lag_coefficients supplied without inflow_lag_depth; pass inflow_lag_depth=N to reserve the lag slots
+```
+
 ## Next Steps
 
-- See the case directory format for input file specifications.
-- Explore the examples for ready-to-run cases.
+- See [Case Directory Format](/reference/case-directory-format/) for input file specifications.
+- Explore the [Worked Examples](/examples/toy-single-reservoir/) for small, fully worked cases.
 - Read the [Jupyter quickstart notebook](https://github.com/cobre-rs/cobre/blob/main/examples/notebooks/quickstart.ipynb)
   for a complete end-to-end workflow with visualization.

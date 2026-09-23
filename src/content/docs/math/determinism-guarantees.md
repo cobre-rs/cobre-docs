@@ -140,6 +140,21 @@ ascending maturity lag — consistent with the storage and inflow-lag block
 orderings. See [LP Formulation](/math/lp-formulation) for the column and row
 layout that this construction produces.
 
+**Trial-point values canonicalized onto bounds.** Canonical layout is only half
+of what makes a trial point reproducible; its values are pinned too. The
+outgoing state a forward solve records is not the raw LP primal but its
+projection onto the resolved admissible bounds — each bounded coordinate
+(storage, in-transit volume, anticipated-thermal commitment hold) clamped into
+its interval, the unbounded inflow lags passed through unchanged; the projection
+is the identity for an in-box optimum. Because a bound-pinned coordinate can
+settle a hair outside its interval on a degenerate or numerically drifting
+solve, this read-back projection is what makes the trial point $\hat{x}$ a
+function of the stage's optimal value and its resolved bounds — not of the
+terminating vertex or of round-off — the same property the reduced-cost cut
+reading relies on. It is applied once, at read-back, and read by every consumer.
+See [SDDP Algorithm §3.1](/math/sddp-algorithm#31-forward-pass) for the
+projection stated in full.
+
 **Solve order pinned; completion order irrelevant.** Two orders matter in the
 backward pass, and Cobre pins each for a different reason. The first is the
 order in which a trial point's openings are solved. As the preceding mechanism
@@ -188,6 +203,21 @@ There are no broadcast races, no per-rank entropy, and no dependence on MPI
 message ordering. See [Scenario Generation](/math/scenario-generation) for
 the hash input encoding and the little-endian byte layout that ensures
 cross-platform stability.
+
+**Rank-invariant terminal-boundary injection.** When a study seeds its terminal
+cost-to-go from an imported boundary policy, the imported cut set is reconciled
+onto the study's own terminal state **once** — the dated, hour-weighted fan-out
+and per-family reconciliation described in
+[Post-Study Boundary §4](/math/post-study-boundary) — and the single reconciled
+result is injected identically at the terminal stage on **every** rank. That
+reconciliation is a pure function of globally known inputs: the imported source
+policy, together with the current study's own stage calendar and state layout —
+quantities every rank already holds. It therefore does not depend on the number
+of ranks, on how work is partitioned, or on which rank reads the source policy.
+Every rank injects the same terminal cut set, so the seeded outer approximation,
+and every lower bound and cut derived from it, is identical across topologies —
+the same rank-count invariance already established for internally generated cuts,
+trial points, and simulation costs.
 
 **Order-independent parallel cut selection.** Cut selection evaluates every cut
 at every visited trial point and decides survival per cut. The trial points are

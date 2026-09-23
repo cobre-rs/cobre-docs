@@ -1,4 +1,5 @@
-# Doc-lint baseline allowlist (Epic 04 ticket-015; burned down in ticket-028).
+# Doc-lint baseline allowlist (Epic 04 ticket-015; burned down in ticket-028,
+# reopened by ticket-001, burned down again by ticket-008).
 #
 # Grandfathers PRE-EXISTING strict-zone hits found by check-doc-voice.mjs and
 # check-doc-version.mjs on the committed corpus, so those two gates land GREEN
@@ -14,9 +15,11 @@
 # that fires on that exact path:line (the rule-id column is documentation,
 # not a filter — see scripts/doc-lint-allowlist.mjs).
 #
-# ── STATE: EMPTY ─────────────────────────────────────────────────────────────
-# ticket-028 burned the grandfather set down to zero: the three categories of
-# pre-existing hit were resolved at the source rather than tolerated —
+# ── HISTORY: burned down to empty by ticket-028, reopened by ticket-001,
+#    burned down again by ticket-008 ───────────────────────────────────────
+# ticket-028 first burned the grandfather set down to zero: the three
+# categories of pre-existing hit were resolved at the source rather than
+# tolerated —
 #   • Category 1 (cobre-version-annotation narration) — the offending prose was
 #     rewritten in present tense with no version reference.
 #   • Category 2 (unpinned "typical" instance magnitudes) — the hedged numbers
@@ -29,6 +32,23 @@
 #     sentence that STATES the no-version rule and thereby tripped the bare
 #     "migration" pattern) is now excluded structurally by the self-reference
 #     guard in check-doc-version.mjs, not grandfathered here.
+#
+# ticket-001 (Epic 01 batch 0, RI-5/ADR-006) then added the `instance-magnitude`
+# rule to check-doc-voice.mjs, closing the table-cell scanning gap: a bare
+# monetary-rate magnitude (e.g. a "Typical Range" column cell) carries no hedge
+# word, so the older unpinned-number check never saw it. It grandfathered 14
+# pre-existing SYS-03 magnitudes in math/penalty-system.mdx pending the scrub.
+#
+# ticket-008 (Epic 02 batch 9) then burned that set back down to zero: the
+# three "Typical Range" columns in math/penalty-system.mdx were dropped (the
+# methodological orderings they encoded — storage violation > deficit >
+# filling target, turbined_cost > spillage_cost, etc. — already live as prose
+# in "Penalty Priority Ordering" and were not duplicated), the line-44
+# "excess_cost" note was rewritten qualitatively, and the parallel
+# instance-specific magnitudes in math/system-elements.mdx (SYS-06 — the
+# \$100/MWh and 500 MW examples, the named-region SIN aside, and four more
+# \$/MWh penalty examples) were scrubbed or genericized. All 14 entries below
+# are removed; check:voice reports zero grandfathered hits for both files.
 #
 # The gate remains active: any genuinely NEW hit must be fixed at the source, or
 # marked with an inline `<!-- doc-voice-ok: reason -->` for a real exception, or

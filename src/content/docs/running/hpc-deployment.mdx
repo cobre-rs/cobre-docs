@@ -24,9 +24,11 @@ Cobre parallelises on two levels, and they compose:
 - **rayon threads within a rank** — solves LP subproblems concurrently inside
   each rank. Controlled by `--threads`.
 
-The parallel model itself (work-stealing, the basis broadcast, the
-communication-free seed derivation) is documented in
-[Performance Accelerators §Parallel Execution](/running/performance/#parallel-execution).
+The parallel model — how backward-pass work is scheduled across workers
+(`by_node` / `by_scenario`) — is summarised in
+[Performance Accelerators §Parallel Execution](/running/performance/#parallel-execution);
+the scheduler and communication internals live in the
+[`cobre-sddp` README](https://github.com/cobre-rs/cobre/blob/main/crates/cobre-sddp/README.md).
 This page is the operational counterpart: how to build and launch it.
 
 A single `cobre run` uses the local (single-process) backend. Launching under an
@@ -102,8 +104,18 @@ headers and link flags through `pkg-config`, so ensure `PKG_CONFIG_PATH`
 includes your MPICH `lib/pkgconfig` directory.
 
 :::note[NUMA topology]
-Adding `--features numa` (which implies `mpi`) enables the ferrompi NUMA
-extension for NUMA-aware topology reporting. It is optional and off by default.
+`cobre-cli` has no `numa` feature of its own; the ferrompi NUMA extension is a
+feature of the `cobre-comm` crate (`numa = ["mpi", "ferrompi/numa"]`). Enable it
+through the dependency:
+
+```bash
+cargo build --release --features mpi,cobre-comm/numa -p cobre-cli
+```
+
+With it on, the topology also carries the SLURM job metadata (job ID, node
+list, CPUs per task): the post-run summary prints a `SLURM:` line and
+`distribution.slurm_job_id` in `training/metadata.json` /
+`simulation/metadata.json` is populated. It is optional and off by default.
 :::
 
 ---
@@ -308,8 +320,8 @@ The moving parts:
   compute-optimised instances work the same way.
 - **Storage (FSx).** The case directory, checkpoints, and exported results live
   on the shared FSx filesystem. Cobre's per-solve hot path holds its working set
-  in memory (see
-  [Performance §Memory Efficiency](/running/performance/#memory-efficiency)); it
+  in memory (its allocation discipline is documented in the
+  [`cobre-sddp` README](https://github.com/cobre-rs/cobre/blob/main/crates/cobre-sddp/README.md)); it
   touches the shared filesystem heavily only at **checkpointing** and **result
   export**, so FSx throughput is sized for those phases rather than the solve
   loop.
@@ -350,7 +362,12 @@ Cobre's MPI results are **rank-count invariant**: for a given case, the
 classified output files are decoded-value bit-identical whether you run on one
 rank or many, and whether the ranks sit on one node or several. Only wall-clock
 timing columns and the per-rank/per-worker execution-topology tables legitimately
-differ. This means you can develop and validate on a single rank and scale out
+differ. The invariance holds for `policy.boundary` runs too: an imported terminal
+boundary policy is reconciled onto the study's own state once and the reconciled
+boundary pool is applied on every rank, so a boundary-coupled run is rank-count
+invariant like any other — see
+[Compatibility requirements](/running/policy-management/#compatibility-requirements)
+for how that boundary pool is reconciled. This means you can develop and validate on a single rank and scale out
 to the full fleet without changing results — the broader guarantee is documented
 in [Determinism Guarantees](/math/determinism-guarantees/).
 

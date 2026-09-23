@@ -1,13 +1,17 @@
-// Internal link-check gate (E3 ticket-016, the epic's exit gate).
+// Internal link-check gate (E3 ticket-016, the epic's exit gate; extended by
+// drift-remediation ticket-002 to also resolve #fragment anchors).
 //
 // Tickets 013/014/015 rewrote every cross-chapter mdBook link to a Starlight
 // root-relative slug (e.g. `[…](/math/cut-management)`) but deliberately deferred
 // broken-link detection to this script. It proves, mechanically and with no new
 // dependency, that every internal link in the BUILT corpus resolves to a real
-// page: it walks `dist/**/*.html`, extracts every `href`, skips the links that are
-// not internal page links (external / mailto / protocol-relative / pure in-page
-// fragment / asset), and asserts each remaining target maps to a file Astro
-// actually emitted.
+// page AND, when the link carries a `#fragment`, to a real heading id on that
+// page: it walks `dist/**/*.html`, extracts every `href`, skips the links that
+// are not internal page links (external / mailto / protocol-relative / asset),
+// and asserts each remaining target maps to a file Astro actually emitted —
+// then, for any `#fragment`, that the fragment matches an `id`/`name` attribute
+// emitted on the target page. A pure in-page link (`#foo`) is resolved against
+// the SOURCE page's own ids, not skipped — it is a real intra-page link.
 //
 // Why a static-HTML crawl (not lychee/linkinator): the corpus links are entirely
 // internal root-relative slugs, so no network crawler and no running server is
@@ -16,28 +20,25 @@
 //
 // Resolution model (Starlight emits directory-style URLs): a slug `/math/x`
 // resolves to `dist/math/x/index.html`. Links appear both with and without a
-// trailing slash and may carry a `#fragment`/`?query`, all of which are stripped
-// before resolution. `/` is the landing page → `dist/index.html`. The build `base`
-// (DOCS_BASE) is honoured: an absolute href carrying the base prefix has it
-// stripped before resolving against `dist/`. The whole tree is walked, so links
-// inside `dist/pt-br/…` are validated too (intentional — not special-cased).
+// trailing slash and may carry a `#fragment`/`?query`, the latter stripped
+// before page resolution. `/` is the landing page → `dist/index.html`. The build
+// `base` (DOCS_BASE) is honoured: an absolute href carrying the base prefix has
+// it stripped before resolving against `dist/`. The whole tree is walked, so
+// links inside `dist/pt-br/…` are validated too (intentional — not special-cased).
+// Anchor ids are read directly from each target file's emitted HTML (github-
+// slugger's output), never re-derived from heading text.
 //
-// Run AFTER `npm run build`. Exits 0 when every internal link resolves; exits 1
-// listing each unresolved link as `<source-html> -> <href>`, or with a build-first
+// Run AFTER `npm run build`. Exits 0 when every internal link AND every
+// `#fragment` resolves; exits 1 listing each unresolved link as
+// `<source-html> -> <href>`, marking a resolved-page-but-missing-fragment case
+// as `<source-html> -> <href> (missing #fragment)`, or with a build-first
 // message when `dist/` is absent.
 
 import { readFileSync, readdirSync, existsSync, statSync } from "node:fs";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import path from "node:path";
 
 const distRoot = fileURLToPath(new URL("../dist/", import.meta.url));
-
-if (!existsSync(distRoot)) {
-  console.error(
-    "check:links: dist/ not found — run `npm run build` before `npm run check:links`.",
-  );
-  process.exit(1);
-}
 
 // The build `base` (Architecture B: e.g. "/v0.8/"). Absolute hrefs are emitted
 // with this prefix, so it is stripped before resolving against dist/. Normalised
@@ -73,6 +74,22 @@ const ASSET_EXT = new Set([
   ".zip",
 ]);
 
+// Matches an `id="..."`/`name="..."` attribute, anchored to the preceding
+// whitespace so a hyphenated attribute like `data-id="..."` is never mistaken
+// for a plain `id`. Raw text, no entity-decoding — matches the id exactly as
+// Starlight/github-slugger emits it.
+const ANCHOR_ATTR_PATTERN = /\s(?:id|name)="([^"]*)"/g;
+
+// Pure helper: the Set of every id/name attribute value found in `html`.
+// Exported for the node:test fixture.
+export function extractAnchors(html) {
+  const anchors = new Set();
+  for (const match of html.matchAll(ANCHOR_ATTR_PATTERN)) {
+    anchors.add(match[1]);
+  }
+  return anchors;
+}
+
 // Recursively collect every .html file under dist/ (shape mirrors
 // check-math-parity.mjs's collectSourceFiles walker). The whole tree is walked,
 // including dist/pt-br/, so links on every built page are checked.
@@ -90,11 +107,11 @@ function collectHtmlFiles(dir) {
 }
 
 // True for links that are NOT internal page links and must be skipped:
-// external schemes, protocol-relative, pure in-page fragments, empty hrefs, and
-// asset files.
+// external schemes, protocol-relative, empty hrefs, and asset files. A
+// `#fragment` (page-relative or pure in-page) is never skipped here — it is
+// routed to fragment resolution in the main loop.
 function shouldSkip(href) {
   if (href === "") return true;
-  if (href.startsWith("#")) return true; // pure in-page fragment
   if (href.startsWith("//")) return true; // protocol-relative (external)
   if (/^[a-z][a-z0-9+.-]*:/i.test(href)) return true; // http:, https:, mailto:, tel:, …
   const ext = path.extname(href.split(/[?#]/, 1)[0]).toLowerCase();
@@ -136,35 +153,94 @@ function resolveTarget(href, sourceFile) {
   return null;
 }
 
-const htmlFiles = collectHtmlFiles(distRoot).sort();
-const hrefPattern = /href="([^"]*)"/g;
-const failures = [];
-let linksChecked = 0;
+// --- Main (run only when invoked directly, not when imported by a test) ------
+// Walk dist/, collect failures, print, and exit. Kept behind a direct-run guard
+// so importing this module for `extractAnchors` (the node:test fixture) does
+// NOT trigger the crawl or process.exit.
+function main() {
+  if (!existsSync(distRoot)) {
+    console.error(
+      "check:links: dist/ not found — run `npm run build` before `npm run check:links`.",
+    );
+    process.exit(1);
+  }
 
-for (const sourceFile of htmlFiles) {
-  const html = readFileSync(sourceFile, "utf8");
-  const rel = sourceFile.slice(distRoot.length);
-  for (const match of html.matchAll(hrefPattern)) {
-    const href = match[1];
-    if (shouldSkip(href)) continue;
-    linksChecked += 1;
-    if (resolveTarget(href, sourceFile) === null) {
-      failures.push({ source: rel, href });
+  const htmlFiles = collectHtmlFiles(distRoot).sort();
+  const hrefPattern = /href="([^"]*)"/g;
+  const failures = [];
+  // Anchor ids per resolved file path, parsed once per file no matter how many
+  // hrefs target it.
+  const anchorCache = new Map();
+  function anchorsFor(filePath, html) {
+    let anchors = anchorCache.get(filePath);
+    if (anchors === undefined) {
+      anchors = extractAnchors(html ?? readFileSync(filePath, "utf8"));
+      anchorCache.set(filePath, anchors);
+    }
+    return anchors;
+  }
+
+  let linksChecked = 0;
+  let fragmentsChecked = 0;
+
+  for (const sourceFile of htmlFiles) {
+    const html = readFileSync(sourceFile, "utf8");
+    const rel = sourceFile.slice(distRoot.length);
+    for (const match of html.matchAll(hrefPattern)) {
+      const href = match[1];
+      if (shouldSkip(href)) continue;
+      linksChecked += 1;
+
+      const hashIndex = href.indexOf("#");
+      const fragment = hashIndex === -1 ? null : href.slice(hashIndex + 1);
+
+      if (href.startsWith("#")) {
+        // Pure in-page fragment: resolve against the SOURCE page's own ids.
+        fragmentsChecked += 1;
+        if (!anchorsFor(sourceFile, html).has(fragment)) {
+          failures.push({ source: rel, href, missingFragment: true });
+        }
+        continue;
+      }
+
+      const target = resolveTarget(href, sourceFile);
+      if (target === null) {
+        failures.push({ source: rel, href });
+        continue;
+      }
+      if (fragment !== null) {
+        fragmentsChecked += 1;
+        if (!anchorsFor(target).has(fragment)) {
+          failures.push({ source: rel, href, missingFragment: true });
+        }
+      }
     }
   }
-}
 
-if (failures.length > 0) {
-  console.error(
-    `check:links: ${failures.length} unresolved internal link(s) across ${htmlFiles.length} HTML file(s):\n`,
-  );
-  for (const f of failures) {
-    console.error(`  ${f.source} -> ${f.href}`);
+  if (failures.length > 0) {
+    console.error(
+      `check:links: ${failures.length} unresolved internal link(s) across ${htmlFiles.length} HTML file(s):\n`,
+    );
+    for (const f of failures) {
+      const suffix = f.missingFragment ? " (missing #fragment)" : "";
+      console.error(`  ${f.source} -> ${f.href}${suffix}`);
+    }
+    process.exit(1);
   }
-  process.exit(1);
+
+  console.log(
+    `check:links: ${htmlFiles.length} HTML files crawled, ${linksChecked} internal links checked, ${fragmentsChecked} fragments checked, 0 broken.`,
+  );
+  process.exit(0);
 }
 
-console.log(
-  `check:links: ${htmlFiles.length} HTML files crawled, ${linksChecked} internal links checked, 0 broken.`,
-);
-process.exit(0);
+// Run when executed as `node scripts/check-links.mjs`; stay inert when
+// imported (the comparison holds because Node sets argv[1] to the entry script).
+// `argv[1]` is absent when loaded via `node -e`/an importer with no entry file,
+// so guard before pathToFileURL — an import context is never a direct run.
+const entryHref = process.argv[1]
+  ? pathToFileURL(process.argv[1]).href
+  : undefined;
+if (import.meta.url === entryHref) {
+  main();
+}

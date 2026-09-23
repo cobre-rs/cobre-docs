@@ -32,7 +32,7 @@ Controls the SDDP training phase.
 | Field            | Type   | Description                                                                                                                                                                                            |
 | ---------------- | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `selection`      | object | Scenario-selection method for the training forward pass — `sampled{forward_passes}` or `enumerated{}` (see [`training.selection`](#trainingselection) below). No default: a missing `training.selection` is a hard load error. |
-| `stopping_rules` | array  | At least one stopping rule (see below). The rule set must contain at least one `iteration_limit` rule.                                                                                                |
+| `stopping_rules` | array  | Stopping rules (see below). The key is required; any non-empty set is accepted. Training never runs past the largest `iteration_limit` in the set, or 100 iterations when the set has none. An empty array `[]` is treated as a single `iteration_limit` rule of 100 iterations. |
 
 ### `training.selection`
 
@@ -72,12 +72,16 @@ openings instead of drawing a fixed count):
 | Field           | Type               | Default | Description                                                                                                                                                                                             |
 | --------------- | ------------------ | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `enabled`       | boolean            | `true`  | Set to `false` to skip training and proceed directly to simulation (requires a pre-trained policy).                                                                                                     |
-| `tree_seed`     | integer            | `null`  | Random seed for the opening scenario tree. When `null`, a default seed of 42 is used (deterministic but arbitrary). See Stochastic Modeling for the dual-seed architecture. |
+| `tree_seed`     | integer            | `null`  | Random seed for the opening scenario tree. When `null`, a default seed of 42 is used (deterministic but arbitrary). See [Seed resolution](/reference/case-directory-format/#seed-resolution) for how it relates to `scenario_source.seed`. |
 | `stopping_mode` | `"any"` or `"all"` | `"any"` | How multiple stopping rules combine: `"any"` stops when the first rule is satisfied; `"all"` requires all rules to be satisfied simultaneously.                                                         |
+| `cut_selection`   | object             | row selection disabled                | Row-management (cut-selection) pipeline, nested at `training.cut_selection` (not a root key). See [`cut_selection`](#cut_selection). |
+| `solver`          | object             | retry policy, no per-phase overrides  | LP solver retry policy plus optional per-phase profile overrides. See [`training.solver`](#trainingsolver). |
+| `parallelism`     | object             | `by_scenario` scheduling              | Backward-pass worker-scheduling knobs. See [`parallelism`](#parallelism). |
+| `scenario_source` | object or `null`   | `null` (all `in_sample`)              | Per-class forward-pass noise source for the training forward pass. See [`scenario_source`](#scenario_source). |
 
 For the per-class `scenario_source` configuration, see the
 [`scenario_source` sub-section](#scenario_source) below and
-Stochastic Modeling.
+[Scenario Generation §3](/math/scenario-generation#3-sampling-scheme-abstraction).
 
 ### `scenario_source`
 
@@ -87,13 +91,25 @@ pre-generated opening tree).
 
 | Field              | Type              | Default       | Description                                                                                             |
 | ------------------ | ----------------- | ------------- | ------------------------------------------------------------------------------------------------------- |
-| `seed`             | integer or `null` | `null`        | Shared forward-pass seed for `out_of_sample`, `historical`, and `external` schemes.                     |
+| `seed`             | integer or `null` | `null`        | Shared forward-pass seed; **required when any class is not `in_sample`** (`out_of_sample`, `historical`, or `external`). |
 | `inflow`           | object            | `in_sample`   | Sampling scheme for hydro inflow. Object with `"scheme"` key.                                           |
 | `load`             | object            | `in_sample`   | Sampling scheme for bus load. Object with `"scheme"` key.                                               |
 | `ncs`              | object            | `in_sample`   | Sampling scheme for NCS availability. Object with `"scheme"` key.                                       |
 | `historical_years` | array or object   | auto-discover | Restrict the pool of historical windows. List (`[1940, 1953]`) or range (`{"from": 1940, "to": 2010}`). |
+| `openings`         | object            | `{"source": "generated"}` | Backward opening-tree source. `{"source": "generated"}` builds the tree internally; `{"source": "file"}` reads a user-supplied tree from `scenarios/noise_openings.parquet` (sampled selection and chain-dialect `stages.json` only). Training only. |
 
-Valid values for `"scheme"`: `"in_sample"`, `"out_of_sample"`, `"historical"`, `"external"`.
+Valid values for `"scheme"`: `"in_sample"`, `"out_of_sample"`, `"external"` for every class;
+`"historical"` for `inflow` only.
+
+Admission rules (checked at load; the exact messages are listed under
+[Case Directory Format](/reference/case-directory-format/#configjson)):
+
+- `historical` is valid for `inflow` only — `load` or `ncs` on `historical` is rejected.
+- `seed` is required when any class is not `in_sample`.
+- `historical_years` is rejected unless some class uses `historical`.
+- A `historical_years` range must have `from <= to`.
+- `openings` is accepted under `training.scenario_source` only; under
+  `simulation.scenario_source` it is rejected.
 
 Under the `"external"` scheme a class's mean and standard deviation are derived
 from its external scenario file itself, so that class's seasonal-statistics
@@ -121,8 +137,8 @@ Example — out-of-sample inflow with in-sample load and NCS:
 }
 ```
 
-See Stochastic Modeling — Sampling Schemes for a full description of
-each scheme and the `historical_years` field.
+See [Scenario Generation §3](/math/scenario-generation#3-sampling-scheme-abstraction)
+for a full description of each scheme and of historical windows.
 
 ### Stopping Rules
 
@@ -299,6 +315,115 @@ For the backward pass this schedules work within, see [SDDP Algorithm §3.4 (Exe
 
 ---
 
+### `cut_selection`
+
+Full path: `training.cut_selection`.
+
+Controls the row management pipeline for managing row pool growth. The
+pipeline has up to two stages: strategy-based selection and budget
+enforcement. Row management periodically scans the row pool and
+deactivates rows that are unlikely to improve the policy, reducing LP
+size without sacrificing convergence quality. For a detailed explanation
+of each stage, see
+[Performance Accelerators](/running/performance/#cut-management-pipeline).
+
+The block has two always-on knobs at the top level plus a `selection`
+sub-object that chooses the method and carries only that method's parameters.
+Omitting `selection` (or setting it to `null`) disables row selection — that is
+the default.
+
+#### Always-on fields
+
+| Field                    | Type    | Default | Description                                                                                                                                                           |
+| ------------------------ | ------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `row_activity_tolerance` | float   | `0.0`   | Minimum dual-multiplier magnitude for a constraint row to count as binding at a solution point. Rows whose dual falls below this are treated as inactive in tracking. |
+| `max_active_per_stage`   | integer | `null`  | Hard cap on active rows per stage LP, enforced after the selection method runs. `null` = no cap.                                                                      |
+| `selection`              | object  | `null`  | The active selection method and its parameters (see below). `null` (the default) disables row selection.                                                              |
+
+#### The `selection` object
+
+`selection.method` is the discriminator; each method exposes only its own
+parameters. Supplying a parameter that belongs to a different method is a config
+load error, and a misspelled method is rejected with the list of valid methods.
+
+- `"level1"` — evaluates all populated rows at every visited state and retains
+  any row whose value is within `tie_tolerance` of the per-state maximum at some
+  state. Least aggressive; preserves the convergence guarantee.
+
+  | Field             | Type    | Default | Description                                                              |
+  | ----------------- | ------- | ------- | ------------------------------------------------------------------------ |
+  | `tie_tolerance`   | float   | `1e-10` | A row is active at a state when within this of the best row value there. |
+  | `check_frequency` | integer | `5`     | Iterations between periodic pruning checks. Must be `> 0`.               |
+
+- `"lml1"` — at each visited state, retains only the oldest eligible row within
+  `tie_tolerance` of the per-state maximum; the selected set is the union of
+  those per-state survivors. More aggressive than `"level1"`. Same fields as
+  `"level1"` (`tie_tolerance`, `check_frequency`).
+
+- `"domination"` — removes rows dominated at all visited states.
+
+  | Field                  | Type    | Default | Description                                                                      |
+  | ---------------------- | ------- | ------- | ---------------------------------------------------------------------------------- |
+  | `domination_tolerance` | float   | --      | A row survives if within this of the maximum at any visited state. **Required.** |
+  | `check_frequency`      | integer | `5`     | Iterations between periodic pruning checks. Must be `> 0`.                       |
+
+- `"dynamic"` — a per-solve lazy loop that loads only a small resident subset of
+  rows per solve while retaining the full pool. The resident set is seeded from
+  the most recent iterations, and each lazy-solve round adds the most-violated
+  candidate rows.
+
+  | Field                 | Type    | Default | Description                                                                                                                                                                                                                                                                              |
+  | --------------------- | ------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+  | `start_iteration`     | integer | `2`     | First 1-based iteration at which the lazy loop becomes active. Must be `>= 1`.                                                                                                                                                                                                           |
+  | `seed_window`         | integer | `5`     | Number of most-recent iterations whose rows seed the initial resident set. `0` is valid (seeds only the current iteration).                                                                                                                                                              |
+  | `candidate_recency`   | integer | `null`  | Only rows generated within the last `candidate_recency` iterations are scored. `null` (the default) is unbounded — every pool row is a candidate, which preserves exactness. `Some(n)` (must be `>= 1`) makes the loop deliberately inexact: rows older than the window are never added. |
+  | `max_added_per_round` | integer | `10`    | Maximum rows added per lazy-solve round. Must be `>= 1`.                                                                                                                                                                                                                                 |
+  | `violation_tolerance` | float   | `1e-10` | Violation tolerance for accepting a candidate row. Must be `> 0`.                                                                                                                                                                                                                        |
+
+The dynamic method is mutually exclusive with the periodic-pruning methods by
+construction — choosing it from the tagged `selection` block means none of
+`level1` / `lml1` / `domination` can run.
+
+Example with the dynamic method:
+
+```json
+{
+  "training": {
+    "cut_selection": {
+      "row_activity_tolerance": 1e-6,
+      "max_active_per_stage": 4000,
+      "selection": {
+        "method": "dynamic",
+        "start_iteration": 2,
+        "seed_window": 5,
+        "max_added_per_round": 10,
+        "violation_tolerance": 1e-10
+      }
+    }
+  }
+}
+```
+
+Example with the `level1` method and a per-stage budget:
+
+```json
+{
+  "training": {
+    "cut_selection": {
+      "row_activity_tolerance": 1e-6,
+      "max_active_per_stage": 500,
+      "selection": {
+        "method": "level1",
+        "tie_tolerance": 1e-10,
+        "check_frequency": 5
+      }
+    }
+  }
+}
+```
+
+---
+
 ## `simulation`
 
 Controls the optional post-training simulation phase.
@@ -351,15 +476,20 @@ When absent, simulation falls back to the scheme configured under
 simulate with a different scheme (for example, out-of-sample or historical)
 without modifying the training configuration.
 
-The fields are identical to `training.scenario_source`:
+The fields are those of `training.scenario_source` except `openings`, which is
+training-only. When `simulation.scenario_source` is present it replaces the training
+source as a whole — a class it omits defaults to `in_sample`, not to the training
+value:
 
 | Field              | Type              | Default       | Description                                                                                             |
 | ------------------ | ----------------- | ------------- | ------------------------------------------------------------------------------------------------------- |
-| `seed`             | integer or `null` | `null`        | Shared forward-pass seed for `out_of_sample`, `historical`, and `external` schemes.                     |
+| `seed`             | integer or `null` | `null`        | Shared forward-pass seed; **required when any class is not `in_sample`** (`out_of_sample`, `historical`, or `external`). |
 | `inflow`           | object            | `in_sample`   | Sampling scheme for hydro inflow. Object with `"scheme"` key.                                           |
 | `load`             | object            | `in_sample`   | Sampling scheme for bus load. Object with `"scheme"` key.                                               |
 | `ncs`              | object            | `in_sample`   | Sampling scheme for NCS availability. Object with `"scheme"` key.                                       |
 | `historical_years` | array or object   | auto-discover | Restrict the pool of historical windows. List (`[1940, 1953]`) or range (`{"from": 1940, "to": 2010}`). |
+
+The scheme values and admission rules are those of [`training.scenario_source`](#scenario_source); `openings` is rejected here.
 
 Example — simulate with out-of-sample inflow while training uses in-sample:
 
@@ -456,113 +586,6 @@ For the methodology, see
 
 ---
 
-## `cut_selection`
-
-Controls the row management pipeline for managing row pool growth. The
-pipeline has up to two stages: strategy-based selection and budget
-enforcement. Row management periodically scans the row pool and
-deactivates rows that are unlikely to improve the policy, reducing LP
-size without sacrificing convergence quality. For a detailed explanation
-of each stage, see
-[Performance Accelerators](/running/performance/#cut-management-pipeline).
-
-The block has two always-on knobs at the top level plus a `selection`
-sub-object that chooses the method and carries only that method's parameters.
-Omitting `selection` (or setting it to `null`) disables row selection — that is
-the default.
-
-### Always-on fields
-
-| Field                    | Type    | Default | Description                                                                                                                                                           |
-| ------------------------ | ------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `row_activity_tolerance` | float   | `0.0`   | Minimum dual-multiplier magnitude for a constraint row to count as binding at a solution point. Rows whose dual falls below this are treated as inactive in tracking. |
-| `max_active_per_stage`   | integer | `null`  | Hard cap on active rows per stage LP, enforced after the selection method runs. `null` = no cap.                                                                      |
-| `selection`              | object  | `null`  | The active selection method and its parameters (see below). `null` (the default) disables row selection.                                                              |
-
-### The `selection` object
-
-`selection.method` is the discriminator; each method exposes only its own
-parameters. Supplying a parameter that belongs to a different method is a config
-load error, and a misspelled method is rejected with the list of valid methods.
-
-- `"level1"` — evaluates all populated rows at every visited state and retains
-  any row whose value is within `tie_tolerance` of the per-state maximum at some
-  state. Least aggressive; preserves the convergence guarantee.
-
-  | Field             | Type    | Default | Description                                                              |
-  | ----------------- | ------- | ------- | ------------------------------------------------------------------------ |
-  | `tie_tolerance`   | float   | `1e-10` | A row is active at a state when within this of the best row value there. |
-  | `check_frequency` | integer | `5`     | Iterations between periodic pruning checks. Must be `> 0`.               |
-
-- `"lml1"` — at each visited state, retains only the oldest eligible row within
-  `tie_tolerance` of the per-state maximum; the selected set is the union of
-  those per-state survivors. More aggressive than `"level1"`. Same fields as
-  `"level1"` (`tie_tolerance`, `check_frequency`).
-
-- `"domination"` — removes rows dominated at all visited states.
-
-  | Field                  | Type    | Default | Description                                                                      |
-  | ---------------------- | ------- | ------- | ---------------------------------------------------------------------------------- |
-  | `domination_tolerance` | float   | --      | A row survives if within this of the maximum at any visited state. **Required.** |
-  | `check_frequency`      | integer | `5`     | Iterations between periodic pruning checks. Must be `> 0`.                       |
-
-- `"dynamic"` — a per-solve lazy loop that loads only a small resident subset of
-  rows per solve while retaining the full pool. The resident set is seeded from
-  the most recent iterations, and each lazy-solve round adds the most-violated
-  candidate rows.
-
-  | Field                 | Type    | Default | Description                                                                                                                                                                                                                                                                              |
-  | --------------------- | ------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-  | `start_iteration`     | integer | `2`     | First 1-based iteration at which the lazy loop becomes active. Must be `>= 1`.                                                                                                                                                                                                           |
-  | `seed_window`         | integer | `5`     | Number of most-recent iterations whose rows seed the initial resident set. `0` is valid (seeds only the current iteration).                                                                                                                                                              |
-  | `candidate_recency`   | integer | `null`  | Only rows generated within the last `candidate_recency` iterations are scored. `null` (the default) is unbounded — every pool row is a candidate, which preserves exactness. `Some(n)` (must be `>= 1`) makes the loop deliberately inexact: rows older than the window are never added. |
-  | `max_added_per_round` | integer | `10`    | Maximum rows added per lazy-solve round. Must be `>= 1`.                                                                                                                                                                                                                                 |
-  | `violation_tolerance` | float   | `1e-10` | Violation tolerance for accepting a candidate row. Must be `> 0`.                                                                                                                                                                                                                        |
-
-The dynamic method is mutually exclusive with the periodic-pruning methods by
-construction — choosing it from the tagged `selection` block means none of
-`level1` / `lml1` / `domination` can run.
-
-Example with the dynamic method:
-
-```json
-{
-  "training": {
-    "cut_selection": {
-      "row_activity_tolerance": 1e-6,
-      "max_active_per_stage": 4000,
-      "selection": {
-        "method": "dynamic",
-        "start_iteration": 2,
-        "seed_window": 5,
-        "max_added_per_round": 10,
-        "violation_tolerance": 1e-10
-      }
-    }
-  }
-}
-```
-
-Example with the `level1` method and a per-stage budget:
-
-```json
-{
-  "training": {
-    "cut_selection": {
-      "row_activity_tolerance": 1e-6,
-      "max_active_per_stage": 500,
-      "selection": {
-        "method": "level1",
-        "tie_tolerance": 1e-10,
-        "check_frequency": 5
-      }
-    }
-  }
-}
-```
-
----
-
 ## `estimation`
 
 Controls the PAR(p) model estimation pipeline. When the case provides
@@ -613,13 +636,22 @@ Controls policy persistence (checkpoint saving and warm-start loading).
 
 ### `checkpointing`
 
-| Field                 | Type    | Default | Description                                     |
-| --------------------- | ------- | ------- | ------------------------------------------------- |
-| `enabled`             | boolean | `false` | Enable periodic checkpointing during training.  |
-| `initial_iteration`   | integer | `null`  | First iteration to write a checkpoint.          |
-| `interval_iterations` | integer | `null`  | Iterations between checkpoints.                 |
-| `store_basis`         | boolean | `false` | Include LP basis in checkpoints for warm-start. |
-| `compress`            | boolean | `false` | Compress checkpoint files.                      |
+:::note[Accepted but not yet consumed]
+The `checkpointing` block (`enabled`, `initial_iteration`, `interval_iterations`,
+`store_basis`, `compress`) is accepted and validated, but the current Cobre binary
+has no consumer for it — **periodic** checkpointing is not performed. A single
+policy checkpoint is always written at the **end** of training regardless of these
+keys (see [Policy Management — Resume](/running/policy-management/#resume)). These
+pages follow the binary.
+:::
+
+| Field                 | Type    | Default | Description                                                         |
+| --------------------- | ------- | ------- | ------------------------------------------------------------------- |
+| `enabled`             | boolean | `false` | Accepted; currently inert — no periodic checkpointing is performed. |
+| `initial_iteration`   | integer | `null`  | First iteration to write a checkpoint.                              |
+| `interval_iterations` | integer | `null`  | Iterations between checkpoints.                                     |
+| `store_basis`         | boolean | `false` | Accepted; currently inert — basis output is not gated by this key.  |
+| `compress`            | boolean | `false` | Compress checkpoint files.                                          |
 
 ### `boundary`
 
@@ -633,12 +665,17 @@ This enables Cobre-to-Cobre model coupling: a monthly study produces a
 policy checkpoint, and a weekly+monthly coupled study loads that checkpoint's
 cuts as its terminal-stage future cost function.
 
-| Field          | Type    | Description                                                     |
-| -------------- | ------- | ----------------------------------------------------------------- |
-| `path`         | string  | Path to the source policy checkpoint directory.                 |
-| `source_stage` | integer | 0-based stage index in the source checkpoint to load cuts from. |
+The source pool is selected automatically by the current study's **terminal
+boundary date** (the last non-negative stage's `end_date`) — there is no
+stage-index knob. `strict` governs a source that prices _more_ than this study
+models.
 
-Example — load stage 2's cuts from a monthly policy as terminal boundary:
+| Field    | Type    | Default | Description                                                                                                                                                        |
+| -------- | ------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `path`   | string  | —       | Path to the source policy checkpoint directory.                                                                                                                    |
+| `strict` | boolean | `false` | Reject the load when the source prices an entity or commitment this study does not model. `false` drops the surplus (recorded in the reconciliation report) and loads. |
+
+Example — load a monthly policy as the terminal boundary:
 
 ```json
 {
@@ -646,14 +683,45 @@ Example — load stage 2's cuts from a monthly policy as terminal boundary:
     "mode": "fresh",
     "boundary": {
       "path": "../monthly_study/policy",
-      "source_stage": 2
+      "strict": false
     }
   }
 }
 ```
 
+Running `cobre validate --json` on a case that configures a boundary emits the
+selected date and the per-family reconciliation report as one object — the
+success shape carries `configured`, `boundary_date`, and `report`:
+
+```json
+{
+  "configured": true,
+  "boundary_date": "2027-12-01",
+  "report": {
+    "reconciled": true,
+    "storage": { "copy": 44, "fan_out": 0, "straddling": 0, "default_zero": 0, "dropped_source": 0 },
+    "inflow_lag": { "copy": 44, "fan_out": 0, "straddling": 0, "default_zero": 0, "dropped_source": 0 },
+    "transit_bucket": { "copy": 6, "fan_out": 0, "straddling": 0, "default_zero": 0, "dropped_source": 0 },
+    "anticipated": { "copy": 3, "fan_out": 0, "straddling": 0, "default_zero": 0, "dropped_source": 1 },
+    "anticipated_coverage": { "source_interval_count": 4 },
+    "other_identity": { "copy": 0, "fan_out": 0, "straddling": 0, "default_zero": 0, "dropped_source": 0 },
+    "dropped_source_slots": [
+      { "family": "anticipated", "entity_id": 17, "subindex": 0, "interval": ["2028-01-01", "2028-02-01"], "reference_date": null }
+    ],
+    "straddling_slots": []
+  }
+}
+```
+
+Here one anticipated-commitment slot the source priced (plant `17`, delivering
+in January 2028) is not modelled by this study, so it is dropped and counted
+under `anticipated.dropped_source`; with `strict: true` that same drop would
+reject the load instead.
+
 See [Policy Management — Boundary Cuts](/running/policy-management/#boundary-cuts)
-for a full explanation of the coupling workflow.
+for a full explanation of the coupling workflow, and
+[Compatibility requirements](/running/policy-management/#compatibility-requirements)
+for the date-selection and subset rejects.
 
 ---
 
@@ -834,7 +902,7 @@ for advanced use cases and may change between releases:
 
 | Section                          | Purpose                                                                                                  |
 | --------------------------------- | ---------------------------------------------------------------------------------------------------------- |
-| `upper_bound_evaluation`         | Inner approximation upper-bound evaluation settings                                                      |
+| `upper_bound_evaluation`         | Inner approximation upper-bound evaluation settings. Accepted and validated, but currently inert — the engine evaluates the upper bound with its built-in defaults and does not consult this block. |
 | `training.solver`                | LP solver retry policy and optional per-phase profile overrides (`backward`, `forward`) — see [`training.solver`](#trainingsolver) below; for the performance-tuning treatment of the same profiles, see [Solver Safeguards](/running/performance/#solver-safeguards) |
 | `simulation.io_channel_capacity` | Async I/O channel buffer size for simulation output writing                                              |
 
@@ -848,6 +916,13 @@ silently ignored. For the complete list of fields and their types, see the
 LP solver retry policy plus optional per-phase profile overrides.
 `retry_max_attempts` and `retry_time_budget_seconds` are pre-existing
 fields; `backward` and `forward` are new in v0.12.0.
+
+:::note[Retry knobs accepted but not yet consumed]
+`retry_max_attempts` and `retry_time_budget_seconds` are accepted and validated
+but currently inert — the solve path does not retry on these settings. The rows
+below and the example JSON remain valid input and round-trip unchanged. The
+per-phase `backward` / `forward` profile overrides are consumed as documented.
+:::
 
 | Field                       | Type              | Default | Description                                                             |
 | ---------------------------- | ----------------- | ------- | --------------------------------------------------------------------------- |

@@ -149,16 +149,24 @@ commanded before the study that matures past the last stage). A window may
 never cover a stage the study itself decides, and no single window may straddle
 the horizon end — split it there into an in-study and a post-study window. A
 stretch with no scheduled commitment still needs an explicit `0.0`-rate window
-rather than a gap left to be inferred. Each `value_mw` must lie within the
-plant's `[min_mw, max_mw]` generation bounds and, if the plant declares a
-commissioning window, a non-zero rate must mature inside it. The values are
+rather than a gap left to be inferred. How each `value_mw` is bounds-checked
+depends on where its window's delivery stages fall. A window covering one or
+more **in-study** delivery stages has each covered, commissioning-active
+stage's `value_mw` checked against **that stage's resolved generation box** —
+the base `[min_mw, max_mw]` narrowed by any `constraints/thermal_bounds.parquet`
+stage/block override — within the solver's feasibility tolerance. A **purely
+post-horizon** window (covering no in-study stage) instead checks each
+`value_mw` against the plant's static `[min_mw, max_mw]` bounds, within the same
+tolerance. A `value_mw` outside its stage's box is a load-time error, because
+the LP delivery equality on that stage could not otherwise be satisfied. The
+values are
 **sunk cost**: an in-study window seeds the fishing constraint at its
 pre-horizon stages, a post-horizon window is folded as a constant into the
 terminal future-cost cut intercepts — neither enters the study objective, and a
 post-horizon window is echoed at its real delivery date in
 `anticipated/fixed_deliveries.parquet`. **The old positional per-lead-slot
-MW-array field is no longer accepted** — the file's `deny_unknown_fields`
-contract rejects a deck still carrying it.
+MW-array field is no longer accepted** — a deck still carrying it is rejected at
+load.
 
 #### Post-horizon deliveries
 
@@ -172,7 +180,7 @@ declaration surfaces, by who decides the commitment:
   per reached post-study stage. The study decides the MW; the cell supplies its
   price and capability. The removed `future_anticipated_deliveries[]` field of
   `initial_conditions.json` carried this role in earlier releases; a deck still
-  declaring it is rejected by `deny_unknown_fields`.
+  declaring it is rejected at load.
 - **Decided before the study, delivered post-horizon** (_já-comandada_) — a
   `past_anticipated_commitments` window (above) extending past the horizon end.
 
@@ -221,6 +229,7 @@ per-block delivered generation, not the forward commitment.
 | Anticipated lead validity    | Physical feasibility  | When `anticipated_config` is present, `lead_stages` must be `>= 1` and must not exceed the study's stage count. |
 | Commitment-window tiling     | Reference error       | Every anticipated thermal's `past_anticipated_commitments` windows must tile every delivery stage the plant decided before the study exactly (coverage `1.0`, no gap, no overlap) — in-study leading stages and post-horizon _já-comandada_ stages alike — never a stage the study itself decides, and no window may straddle the horizon end. |
 | Commitment thermal reference | Reference error   | Every `past_anticipated_commitments` entry's `thermal_id` must reference an anticipated thermal. |
+| Commitment value bounds      | Physical feasibility  | Each `past_anticipated_commitments` window's `value_mw` must lie within every covered delivery stage's resolved generation box (in-study coverage) or the plant's static `[min_mw, max_mw]` bounds (purely post-horizon), within solver tolerance. See [Error Codes](/reference/error-codes). |
 | Post-study delivery bounds   | Reference error       | Every post-study stage an anticipated thermal's lead reaches must carry a matching `post_study_stages.json` `thermal_bounds[]` cell, and every post-study stage a _já-comandada_ window covers must be tiled at coverage `1.0`. See [Error Codes](/reference/error-codes) for the exact failure modes. |
 
 ### `system/non_controllable_sources.json` — NCS Registry

@@ -18,11 +18,18 @@ The package is maintained in a separate repository:
 pip install cobre-bridge
 ```
 
-To enable post-conversion validation with the Cobre solver:
+`cobre-python` is a **required** runtime dependency, not an optional extra —
+it provides the Python bindings that `convert --validate`, `dashboard`, and
+`convert decomp`'s boundary-FCF import need, so `pip install cobre-bridge` pulls
+it in automatically. (`compare` does not use the bindings: it reads Cobre's
+simulation-output parquet files directly.)
 
-```bash
-pip install cobre-bridge cobre-python
-```
+A cobre-bridge release `X.Y.Z` targets cobre `X.Y.Z`: the converted case
+follows that cobre release's input contract, and the `cobre-python` version
+floor is the oldest cobre the converted output loads on. A packaging test
+keeps the two versions in lockstep. If the installed `cobre-python` is older
+than that floor, `convert --validate` skips its validation step (printing a
+note) instead of failing.
 
 ---
 
@@ -37,33 +44,81 @@ cobre-bridge convert newave /path/to/source/case /path/to/output/case
 
 ### Options
 
-| Flag         | Description                                               |
-| ------------ | --------------------------------------------------------- |
-| `--validate` | Run `cobre validate` on the output after conversion.      |
-| `--force`    | Overwrite the destination directory if it already exists. |
-| `--verbose`  | Enable detailed logging output.                           |
+`convert newave` flags:
+
+| Flag                      | Description                                                                                                          |
+| ------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| `--validate`              | After conversion, validate the output with the cobre package.                                                          |
+| `--force`                 | Overwrite the destination directory if it already contains files.                                                      |
+| `--diagnostics-json PATH` | Also write the conversion diagnostics (counts + findings) as JSON.                                                     |
+| `--json`                  | Emit a single machine-readable JSON verdict to stdout and suppress the human-readable (Rich) output.                   |
+| `--dry-run`               | Run the full conversion in memory and report what would be written, without creating or modifying the destination.     |
+| `-v, --verbose INTEGER`   | Increase console log verbosity (`-v` INFO, `-vv` DEBUG). Default: `0`.                                                  |
+| `--log-file PATH`         | Write the full DEBUG log to `PATH` (the console verbosity is unaffected).                                               |
+| `--no-color`              | Disable coloured output (also honoured via the `NO_COLOR` env var).                                                     |
+| `--quiet`                 | Suppress the summary and info notes; warnings/errors still show.                                                        |
+
+`convert decomp` (below) accepts this same flag set plus `--no-fcf`.
+
+#### Exit codes
+
+| Code | Meaning                                |
+| ---- | --------------------------------------- |
+| `0`  | Conversion completed.                   |
+| `1`  | Conversion error.                       |
+| `2`  | `--validate` reported a load failure.   |
+
+`convert decomp` uses the same `0`/`1`/`2` exit-code set.
+
+#### `--json` output
+
+With `--json`, `convert` (and every other cobre-bridge command) emits one
+JSON document to stdout instead of the Rich console output, with exactly
+five top-level keys in this fixed order: `schema_version`, `command`,
+`status`, `summary`, `diagnostics`. `summary` holds the command-specific
+payload (entity counts, for `convert`); `diagnostics` is the same findings
+list the Rich panels render.
+
+For the complete flag reference for every command, see the
+[cobre-bridge CLI reference](https://github.com/cobre-rs/cobre-bridge/blob/v0.16.0/docs/cli.md).
+
+### Converting a DECOMP Deck
+
+```bash
+cobre-bridge convert decomp /path/to/deck /path/to/output/case
+```
+
+By default, when the deck declares its `cortes`/`cortesh` cut files (its FC
+records), `convert decomp` imports the deck's boundary FCF as a
+terminal-stage cobre policy checkpoint via an in-process, one-iteration
+cobre pass. This import is slow and requires `cobre-python`. It is always
+skipped under `--dry-run`, and is skipped — with an informational note, not
+an error — when the deck declares no cut files. Pass **`--no-fcf`** to skip
+the boundary-FCF import for a quicker conversion with no terminal FCF.
 
 ### What Gets Converted
 
 The conversion pipeline transforms the source case's input files into a
-complete Cobre case directory. The mapping covers:
+complete Cobre case directory, organised by output sub-directory:
 
-| Source Concept              | Cobre Entity             | Output File                             |
-| --------------------------- | ------------------------ | --------------------------------------- |
-| Hydro plant configuration   | `HydroPlant`             | `system/hydros.json`                    |
-| Thermal plant configuration | `ThermalUnit`            | `system/thermals.json`                  |
-| Subsystem definitions       | `Bus`                    | `system/buses.json`                     |
-| Inter-area exchange limits  | `Line`                   | `system/lines.json`                     |
-| Non-controllable sources    | `NonControllableSource`  | `system/non_controllable_sources.json`  |
-| Historical inflow records   | PAR(p) inflow model      | `scenarios/inflow_history.parquet`      |
-| Demand time series          | Load seasonal statistics | `scenarios/load_seasonal_stats.parquet` |
-| Study horizon configuration | Stage definitions        | `stages.json`                           |
-| Solver parameters           | Config                   | `config.json`                           |
-| Reservoir bounds/overrides  | Per-stage hydro bounds   | `constraints/hydro_bounds.parquet`      |
-| Thermal maintenance windows | Per-stage thermal bounds | `constraints/thermal_bounds.parquet`    |
-| Transmission capacity       | Per-stage/per-block line bounds (`direct_mw`/`reverse_mw`) | `constraints/line_bounds.parquet` |
-| VminOP / electric / AGRINT  | Generic LP constraints   | `constraints/generic_constraints.json`  |
-| VminOP storage coefficients | Named constraint parameters (`@rho_acum`) | `constraints/generic_parameters.json` |
+- **`system/`** -- plant and network configuration: hydros, thermals, buses,
+  lines, non-controllable sources, hydro production models, and hydro
+  geometry.
+- **`scenarios/`** -- stochastic inputs: inflow, load, and non-controllable
+  seasonal statistics and factors.
+- **`constraints/`** -- per-stage bounds, penalty overrides, and generic
+  constraints.
+- **Top level** -- study configuration, stage definitions, penalties, and
+  initial conditions.
+
+For the authoritative, field-level source-to-Cobre lineage -- which deck
+file, record, and column feeds which output field, and what transformation
+is applied -- see the bridge's own generated data maps. They are produced by
+`scripts/gen-lineage-docs.py`, verified by tests against a real conversion,
+marked "Do not edit by hand," and written in Portuguese:
+[`newave-data-map.md`](https://github.com/cobre-rs/cobre-bridge/blob/v0.16.0/docs/newave-data-map.md)
+and
+[`decomp-data-map.md`](https://github.com/cobre-rs/cobre-bridge/blob/v0.16.0/docs/decomp-data-map.md).
 
 ### Output Directory Structure
 
@@ -73,56 +128,80 @@ output/
   stages.json
   penalties.json
   initial_conditions.json
+  conversion_manifest.json
   system/
     hydros.json
     thermals.json
     buses.json
     lines.json
     non_controllable_sources.json
-    hydro_production_models.json       (when applicable)
-    hydro_geometry.parquet             (forebay/tailrace curves)
+    hydro_production_models.json
+    hydro_geometry.parquet
+    tailrace_curves.parquet             (conditional)
+    hydro_energy_productivity.parquet   (conditional)
   scenarios/
-    inflow_seasonal_stats.parquet
-    inflow_history.parquet
-    load_seasonal_stats.parquet
     load_factors.json
-    non_controllable_stats.parquet
     non_controllable_factors.json
+    inflow_history.parquet
+    inflow_seasonal_stats.parquet
+    load_seasonal_stats.parquet
+    non_controllable_stats.parquet
   constraints/
-    generic_constraints.json
-    generic_parameters.json               (named @parameters, e.g. VminOP ρ_acum)
-    generic_constraint_bounds.parquet
-    hydro_bounds.parquet
-    thermal_bounds.parquet
+    generic_parameters.json
     line_bounds.parquet
+    hydro_bounds.parquet                (conditional)
+    thermal_bounds.parquet              (conditional)
+    penalty_overrides_bus.parquet       (conditional)
+    penalty_overrides_hydro.parquet     (conditional)
+    generic_constraints.json            (conditional: deck has generic constraints)
+    generic_constraint_bounds.parquet   (conditional: deck has generic constraints)
 ```
 
-Not all files are always produced. Optional files (e.g., `hydro_production_models.json`,
-generic constraints) are written only when the source data contains the relevant
-configuration.
+Files marked *(conditional)* are written only when the source deck supplies
+the corresponding data; `--dry-run` writes nothing at all (the conversion
+report's `would_write_paths` previews the set a real run would write).
 
 ---
 
 ## Comparing Results
 
 After running both the source tool and Cobre on the same case, the `compare`
-subcommand checks LP bounds for consistency:
+subcommand aligns the source tool's **published results** against **Cobre's
+simulation-output parquets**:
 
 ```bash
-cobre-bridge compare newave /path/to/source/sintese /path/to/cobre/output \
-  --tolerance 1e-3
+cobre-bridge compare newave /path/to/source/case /path/to/cobre/output
 ```
 
-| Flag            | Description                                                      |
-| --------------- | ---------------------------------------------------------------- |
-| `--tolerance`   | Absolute tolerance for bound comparison (default: `1e-3`).       |
-| `--output PATH` | Write a detailed diff report as a Parquet file.                  |
-| `--summary`     | Print only summary counts, not individual mismatches.            |
-| `--variables`   | Filter to specific variables (e.g., `storage_min,turbined_max`). |
+`compare newave <NEWAVE_DIR> <COBRE_OUTPUT_DIR>` compares NEWAVE's published
+results (`MEDIAS-*.CSV`, `pmo.dat`) against Cobre simulation output.
+`compare decomp <DECOMP_DIR> <COBRE_OUTPUT_DIR>` compares a DECOMP run's
+published operation (`dec_oper_*.csv`) the same way. Both source directories
+must hold the case/deck and its result files directly (not nested in a
+subdirectory).
 
-The comparison reads the source tool's synthesis output and Cobre's
-`training/dictionaries/bounds.parquet`, aligns entities by name, and reports
-any mismatches beyond the tolerance.
+| Flag                | Description                                                                                                                    |
+| ------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| `--tolerance FLOAT` | Relative tolerance for the results comparison. Default `1e-2`. Env `COBRE_BRIDGE_RESULTS_TOLERANCE`.                            |
+| `--format FORMAT`   | Output format(s): `console,html,csv,parquet,json,all` (comma-separated and/or repeatable). Default `console,parquet,json`. Env `COBRE_BRIDGE_FORMAT`. |
+| `--out-dir PATH`    | Directory for file artifacts. Default `<cobre_output_dir>/comparison_artifacts`. Env `COBRE_BRIDGE_OUT_DIR`.                     |
+| `--json`            | Emit a single machine-readable JSON verdict to stdout instead of the Rich tables.                                               |
+
+`compare` is informational: it reports every divergence it finds, beyond
+tolerance or not, but a divergence never fails the run. On both the `newave` and
+`decomp` tracks the exit code reports only whether the comparison could run:
+
+| Exit code | Meaning                                                                  |
+| --------- | ------------------------------------------------------------------------ |
+| `0`       | The comparison ran (whether or not any divergence was found).            |
+| `1`       | `compare newave` only: the NEWAVE case directory is missing. (On `compare decomp` a missing deck directory exits `2`.) |
+| `2`       | An invalid `--format` token, or a source deck or Cobre output file that cannot be read (missing or malformed data). |
+
+:::note
+The command's `--help` text says it always exits 0. The current release exits
+`1` or `2` in the setup failures listed above; this page documents the code's
+behaviour.
+:::
 
 ---
 
@@ -132,14 +211,80 @@ For programmatic use, import the conversion pipeline directly:
 
 ```python
 from pathlib import Path
-from cobre_bridge.pipeline import convert_newave_case
+from cobre_bridge.newave.pipeline import convert_newave_case
 
 report = convert_newave_case(
-    src=Path("/path/to/source/case"),
-    dst=Path("/path/to/output/case"),
+    Path("/path/to/source/case"),
+    Path("/path/to/output/case"),
+    on_phase=lambda phase: print(f"phase: {phase}"),
+    dry_run=False,
 )
-print(report)  # ConversionReport with entity counts and warnings
+print(report)
 ```
+
+`convert_newave_case(src, dst, *, on_phase=None, dry_run=False) ->
+ConversionReport` takes `src`/`dst` as positional `Path`s, plus two
+keyword-only arguments: an optional `on_phase` progress callback invoked with
+the current conversion phase's name, and `dry_run` (default `False`) — set
+it to `True` to run the full conversion in memory and populate the report
+without writing anything to `dst`.
+
+The returned `ConversionReport` carries `hydro_count`, `thermal_count`,
+`bus_count`, `line_count`, `stage_count`, `diagnostics` (structured
+findings), `warnings` (flat warning strings), and `would_write_paths` (the
+output paths written, or that would have been written under
+`dry_run=True`).
+
+DECOMP conversions use the equivalent
+`cobre_bridge.decomp.pipeline.convert_decomp_case(src, dst, *, force=False,
+on_phase=None, dry_run=False, fcf_inputs_out=None) -> ConversionReport`.
+
+---
+
+## Other Commands
+
+### Checking a Case
+
+`check` validates a source case or deck without converting or writing any
+output — a preflight check before committing to a full `convert` run:
+
+```bash
+cobre-bridge check newave /path/to/source/case
+cobre-bridge check decomp /path/to/deck
+```
+
+`check decomp` also reports what the conversion will leave behind (deck
+features `convert decomp` does not carry over), so a limitation is never a
+silent omission.
+
+`check` shares `convert`'s `--json`, `-v/--verbose`, `--log-file`,
+`--no-color`, and `--quiet` flags.
+
+#### Exit codes
+
+| Code | Meaning              |
+| ---- | -------------------- |
+| `0`  | Ready to convert.     |
+| `1`  | Ready, with warnings. |
+| `2`  | Will not convert.     |
+
+### Generating a Dashboard
+
+`dashboard` builds an interactive HTML dashboard from Cobre simulation
+results:
+
+```bash
+cobre-bridge dashboard /path/to/cobre/case
+```
+
+| Flag                 | Description                                                             |
+| -------------------- | ------------------------------------------------------------------------ |
+| `--output, -o PATH`  | Output HTML file path. Default `<case_dir>/dashboard.html`.             |
+| `--open`             | Open the generated dashboard in the default web browser after writing.  |
+| `--json`             | Emit a single machine-readable JSON verdict to stdout.                  |
+
+`dashboard` also shares `convert`'s `-v/--verbose`, `--log-file`,
+`--no-color`, and `--quiet` flags. Exit codes: `0` written, `1` error.
 
 ---
 
@@ -191,17 +336,27 @@ merged with sequential integer IDs, and per-stage right-hand-side bounds in
 
 ## Dependencies
 
-| Package        | Purpose                                         |
-| -------------- | ----------------------------------------------- |
-| `inewave`      | Reads legacy fixed-width and binary input files |
-| `pyarrow`      | Writes Parquet output tables                    |
-| `pandas`       | DataFrame manipulation during conversion        |
-| `cobre-python` | Optional: post-conversion validation            |
+| Package                     | Purpose                                                                              |
+| ---------------------------- | ------------------------------------------------------------------------------------- |
+| `idecomp`                    | Reads legacy DECOMP fixed-width and binary deck files                                |
+| `inewave>=1.15.1`             | Reads legacy NEWAVE fixed-width and binary input files                               |
+| `pyarrow`                    | Writes Parquet output tables                                                          |
+| `pandas`                     | DataFrame manipulation during conversion                                             |
+| `plotly`                     | Renders the `dashboard` HTML charts                                                   |
+| `polars`                     | DataFrame manipulation for the `compare` and `dashboard` pipelines                    |
+| `rich`                       | Console rendering (progress bars, tables, diagnostics)                                |
+| `typer`                      | The CLI framework                                                                     |
+| `cobre-python>=0.16.0,<0.17` | **Required.** Powers `convert --validate`, `dashboard`, and `convert decomp`'s boundary-FCF import. |
+
+`cobre-python`'s floor tracks cobre-bridge's own `MIN_COBRE_VERSION`
+constant: cobre-bridge 0.16.0 requires `cobre-python>=0.16.0,<0.17`, kept in
+lockstep with the pin above by a packaging test. As stated under
+[Installation](#installation), a cobre-bridge release `X.Y.Z` always targets
+cobre `X.Y.Z`.
 
 ---
 
 ## See Also
 
-- Anatomy of a Case -- what each output file controls
 - [Configuration](/running/configuration/) -- all `config.json` fields
 - [Case Directory Format](/reference/case-directory-format/) -- complete input schema reference

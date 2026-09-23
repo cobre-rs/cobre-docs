@@ -25,7 +25,8 @@ stage-indexed arrays so that the forward and backward passes operate on a single
 flat structure per (stage, hydro) pair.
 
 **Why preprocessing separates stored from derived quantities.** The input files
-store standardized AR coefficients ($\psi^*_{m,\ell}$, the direct Yule-Walker
+store standardized [AR coefficients](/overview/notation-conventions#35-inflow-model-parameters)
+($\psi^*_{m,\ell}$, the direct Yule-Walker
 output) — not original-unit coefficients and not the innovation scale $r_m$.
 Preprocessing derives $r_m$ from $\psi^*$ via the periodic-ACF closure (see the
 [PAR(p) model](/math/par-inflow-model), section 3), then converts everything to
@@ -126,14 +127,15 @@ The generation process:
    eigendecomposition $\Sigma = V \operatorname{diag}(\lambda) V^T$ during
    preprocessing. The spectral factor
    $D = V \operatorname{diag}(\sqrt{\max(0,\lambda)}) V^T$ transforms
-   independent noise into correlated noise: $\eta = D \cdot z$. Negative
+   independent noise into the correlated [PAR innovation](/overview/notation-conventions#35-inflow-model-parameters):
+   $\varepsilon = D \cdot z$. Negative
    eigenvalues are clipped to zero, yielding the nearest
    positive-semidefinite approximation. Spectral factorisation is the only
    method Cobre implements — the `method` field in `correlation.json` accepts
    only `"spectral"` (see [PAR(p) Inflow Model](/math/par-inflow-model)
    section 8 for the rationale).
 3. **Entity assignment** — Each entity in the group receives its own
-   correlated noise value $\eta_i$ from the transformed vector.
+   correlated noise value $\varepsilon_i$ from the transformed vector.
 
 Entities in different correlation groups are independent of each other.
 Entities not assigned to any group receive independent $N(0,1)$ noise.
@@ -182,8 +184,30 @@ the input replaces `iteration` and `scenario` with a single `opening_index`:
 base seed (8 bytes), opening index (4 bytes), stage (4 bytes) — 16 bytes
 total.
 
+**Input encoding (batch samplers at a stage).** Some noise methods draw all of
+a stage's openings together as one coordinated block rather than opening by
+opening (for example Latin-hypercube or quasi-Monte-Carlo sampling). These
+derive a single per-stage seed from base seed (8 bytes) and stage (4 bytes) —
+12 bytes total — so the whole stage's opening batch shares one reproducible
+stream.
+
+**Input encoding (noise groups).** When stages are bucketed into noise groups —
+for example, weekly stages that share a single month's PAR innovation within a
+(season, year) bucket — the per-stage identifier in the forward-pass encoding is
+replaced by the group identifier, so every stage in a group derives the same
+noise draw. This grouped encoding carries a distinguishing leading tag byte so
+it can never collide with the plain forward-pass encoding, even at equal width.
+
+**Input encoding (per stochastic class).** Each stochastic entity class sampled
+out of sample — inflow, load, and non-controllable-source availability — folds
+its class identifier into the forward seed behind its own leading tag byte. The
+classes therefore draw independent noise streams even at an identical
+`(iteration, scenario, stage)` coordinate: the streams are independent precisely
+because their seeds differ here. Any spatial coupling within a class is imposed
+afterwards, by the correlation step — not by the seed.
+
 **Output.** The derived seed is a 64-bit hash value used to initialize a
-pseudo-random number generator, which then produces the noise vector $\eta$
+pseudo-random number generator, which then produces the noise vector $\varepsilon$
 for the corresponding tuple.
 
 ### 2.3 Opening Tree
@@ -246,7 +270,7 @@ scenarios.
 active (see section 3.2), the forward pass samples a random opening
 $\omega \in \Omega_n$ at each node it visits — a random index
 $j \in \{0, \ldots, N_t - 1\}$ on the implicit chain — and uses its
-corresponding noise vector $\eta_{t,j}$ from the opening tree. Other sampling
+corresponding noise vector $\varepsilon_{t,j}$ from the opening tree. Other sampling
 schemes (`External`, `Historical`) use entirely separate data sources and do
 not access the opening tree; the forward pass noise path is governed by the
 sampling scheme abstraction (section 3).
@@ -277,7 +301,7 @@ uses.
 uniform Monte Carlo random sampling from the deterministic-seeded RNG. Each
 noise vector component $z_i$ is drawn as an independent standard normal
 $\mathcal{N}(0,1)$, then transformed by the spectral correlation factor
-(section 2.1) to produce the correlated noise vector $\eta$.
+(section 2.1) to produce the correlated noise vector $\varepsilon$.
 
 **Summary of sampling methods:**
 
@@ -345,7 +369,7 @@ sub-objects in `training.scenario_source`:
 
 At each stage $t$, sample a random index
 $j \in \{0, \ldots, N_{\text{openings}} - 1\}$ and use the corresponding noise
-vector $\eta_{t,j}$ from the fixed opening tree (section 2.3). The PAR model
+vector $\varepsilon_{t,j}$ from the fixed opening tree (section 2.3). The PAR model
 dynamics equation is embedded in the LP as a constraint; the solver evaluates
 the inflow realization implicitly when it solves the LP with the fixed noise.
 
@@ -522,7 +546,7 @@ Given target inflow $a_t^{\text{target}}$ at stage $t$ for hydro $h$ with
 season $m$:
 
 $$
-\eta_t = \frac{a_t^{\text{target}} - \phi_m - \sum_{\ell=1}^{P} \psi_{m,\ell} \cdot a_{t-\ell}}{\sigma_m}
+\varepsilon_t = \frac{a_t^{\text{target}} - \phi_m - \sum_{\ell=1}^{P} \psi_{m,\ell} \cdot a_{t-\ell}}{\sigma_m}
 $$
 
 where $\phi_m = \mu_m - \sum_{\ell=1}^{P} \psi_{m,\ell} \cdot \mu_{m-\ell}$ is
@@ -546,17 +570,12 @@ lag buffer for the next):
    (see "x₀ consistency under historical replay" below for the reason this is
    the only admissible seed).
 2. For each stage $t$: compute the deterministic PAR component, solve for
-   $\eta_t$, update the lag buffer with $a_t^{\text{target}}$.
+   $\varepsilon_t$, update the lag buffer with $a_t^{\text{target}}$.
 3. Validate the inverted noise:
-   - **Warning** if $|\eta_t| > 4.0$ (extreme noise suggests the external
-     scenario deviates significantly from the PAR model)
    - **Error** if $\sigma_m \approx 0$ but the residual
      $a_t^{\text{target}} - \text{deterministic component}$ exceeds a
      tolerance (the PAR model says this series is deterministic, but the
      external scenario disagrees)
-
-After inversion, a JSON validation report is emitted with noise statistics
-(mean, std, min, max, extreme count), warnings, and an overall status.
 
 ### 4.4 Deterministic (σ = 0) External Columns
 
@@ -580,13 +599,13 @@ concrete rejection message is a software-layer concern — see
 #### x₀ consistency under historical replay
 
 The historical and external schemes share the same SDDP forward pass: the
-sampler returns a standardised noise residual $\eta_t$ and the LP reconstructs
-the realised inflow from $\eta_t$ together with the lag state carried in the
+sampler returns a standardised noise residual $\varepsilon_t$ and the LP reconstructs
+the realised inflow from $\varepsilon_t$ together with the lag state carried in the
 state vector. The lag state at stage 0 is taken uniformly from the derived
 inflow-lag seed for every scenario, so all forward replays share a single
 hydrological starting tendency.
 
-For the implied $\eta_t$ on a historical window to reconstruct the raw
+For the implied $\varepsilon_t$ on a historical window to reconstruct the raw
 historical observation exactly when the LP starts from the same $x_0$, the
 inversion lag chain must also be rooted at that same derived seed — not at
 the year-preceding raw historical inflows of the window being replayed. If
@@ -617,7 +636,7 @@ to the historical inversion.
 The cross-scheme implications are:
 
 - **Historical scheme.** Every scenario starts the forward LP from the
-  derived seed; the implied $\eta$ rebuilds the raw historical observation to
+  derived seed; the implied $\varepsilon$ rebuilds the raw historical observation to
   within floating-point precision at every stage; the LB and UB evaluate
   $V_0$ at the same $x_0$.
 - **External scheme.** Same rolling-chain machinery — the supplied target
@@ -626,14 +645,13 @@ The cross-scheme implications are:
   lag structure), preserving LB/UB consistency at $x_0$ across all forward
   replays.
 - **InSample / OutOfSample.** Unaffected — these schemes do not invert noise
-  from observed inflows; they sample $\eta_t$ from the PAR model directly.
+  from observed inflows; they sample $\varepsilon_t$ from the PAR model directly.
 
-A 64-bit SipHash-1-3 fingerprint of the derived seed
-(`historical_library_seed_digest` on the model provenance report) is stored
-alongside the historical scenario library so consumers can detect when a
-precomputed library has drifted out of sync with the seed currently in use.
+A fingerprint of the derived seed is stored alongside the historical scenario
+library, so a consumer can detect when a precomputed library has drifted out of
+sync with the seed currently in use.
 
-### 4.4 External Scenarios in Simulation
+### 4.5 External Scenarios in Simulation
 
 When a stochastic class uses the `External` sampling scheme during simulation,
 the forward pass returns values directly from the pre-loaded per-class data —
@@ -650,10 +668,10 @@ deviation. Load models are typically **independent** (no AR structure) — each
 load realization is drawn as:
 
 $$
-d_{b,t} = \mu_{b,t}^{\text{load}} + s_{b,t}^{\text{load}} \cdot \eta_{b,t}^{\text{load}}
+d_{b,t} = \mu_{b,t}^{\text{load}} + s_{b,t}^{\text{load}} \cdot \varepsilon_{b,t}^{\text{load}}
 $$
 
-where $\eta_{b,t}^{\text{load}} \sim N(0,1)$ is an independent noise term.
+where $\varepsilon_{b,t}^{\text{load}} \sim N(0,1)$ is an independent noise term.
 
 When `load_seasonal_stats.parquet` is absent, loads are treated as
 deterministic (taken from the demand values in the entity definitions).

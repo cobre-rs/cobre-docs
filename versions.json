@@ -1,4 +1,4 @@
 {
-  "latest": { "label": "latest", "base": "/" },
+  "latest": { "label": "latest", "base": "/", "cobre": "v0.16.0" },
   "versions": []
 }

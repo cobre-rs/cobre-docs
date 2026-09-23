@@ -23,8 +23,8 @@ This is a deliberate design decision with consequences across the formulation:
 
 | Aspect                 | Consequence                                                                                                    |
 | ---------------------- | -------------------------------------------------------------------------------------------------------------- |
-| **Objective function** | All cost terms are scaled by $\tau_k$: the coefficient for a \$100/MWh thermal is $\tau_k \times 100$          |
-| **Variable bounds**    | Block-invariant — a 500 MW capacity bound is the same regardless of block duration                             |
+| **Objective function** | All cost terms are scaled by $\tau_k$: the coefficient for a thermal with marginal cost $c^{th}$ is $\tau_k \times c^{th}$ |
+| **Variable bounds**    | Block-invariant — a capacity bound $\bar{g}$ is the same regardless of block duration                          |
 | **Constraint matrix**  | Clean coefficients: load balance has ±1, production function uses $\rho$ [MW/(m³/s)] directly                  |
 | **Duals**              | Load balance dual $\pi_{b,k}$ has units \$/MW. To obtain the marginal cost (CMO) in \$/MWh, divide by $\tau_k$ |
 | **Cut coefficients**   | Unaffected — coupling state variables (storage in hm³, AR lags in m³/s) are independent of this choice         |
@@ -83,7 +83,7 @@ gen_h -> bus1: "q → g"
 gen_t -> bus1: "g"
 gen_v -> bus2: "gⁿᶜ"
 
-bus1 <-> bus2: "line flow  f±  (η losses)"
+bus1 <-> bus2: "line flow  f±"
 
 bus1 -> demand1: "d"
 bus2 -> demand2: "d"
@@ -129,7 +129,7 @@ are independent, and neither is derived from the other.
 A **bus** represents a node in the power network where electrical energy balance must be maintained. The granularity is user-defined: a bus may represent a large regional subsystem, a single substation, or any aggregation level in between. The model scales from a handful of buses to hundreds or thousands without structural changes.
 
 :::note[Example]
-In studies of the Brazilian interconnected system (SIN), buses typically correspond to the four major regions (Southeast/Midwest, South, Northeast, North), but finer decompositions are equally valid.
+Real-world dispatch studies often model buses at the scale of major interconnection regions, but finer decompositions are equally valid.
 :::
 
 ### Decision Variables
@@ -161,7 +161,7 @@ $$
 \sum_{k \in \mathcal{K}} \tau_k \left[ \sum_{b \in \mathcal{B}} \sum_{s \in \mathcal{S}_b} c^{def}_{b,s} \cdot \delta_{b,k,s} + \sum_{b \in \mathcal{B}} c^{exc}_b \cdot \epsilon_{b,k} \right]
 $$
 
-- **Deficit cost**: Very high penalty (\$1,000–10,000/MWh) representing value of lost load
+- **Deficit cost**: Very high penalty representing the value of lost load
 - **Excess cost**: Small regularization term to eliminate spurious slack generation
 
 ### LP Constraint Preview
@@ -178,7 +178,7 @@ For the assembled constraint, see [LP formulation](/math/lp-formulation).
 
 ### Physical Meaning
 
-A **transmission line** represents the interconnection between two buses, allowing power transfer subject to capacity limits and transmission losses. Lines are bidirectional.
+A **transmission line** represents the interconnection between two buses, allowing power transfer subject to capacity limits. Lines are bidirectional and **lossless in the dispatch LP** — transmission losses are computed and reported as an output quantity, not modeled as a reduction of delivered power (see the Configure/I·O tabs).
 
 ### Decision Variables
 
@@ -195,8 +195,8 @@ Cobre uses two non-negative variables ($f^+$, $f^-$) rather than a single signed
 
 Each line connects exactly two buses:
 
-- **Source bus**: Exports $f^+_{l,k}$, receives $\eta_l \cdot f^-_{l,k}$
-- **Target bus**: Receives $\eta_l \cdot f^+_{l,k}$, exports $f^-_{l,k}$
+- **Source bus**: Exports $f^+_{l,k}$, receives $f^-_{l,k}$
+- **Target bus**: Receives $f^+_{l,k}$, exports $f^-_{l,k}$
 
 ### Key Parameters
 
@@ -204,7 +204,6 @@ Each line connects exactly two buses:
 | ------------- | ------ | -------------------------------------------------------------------------- |
 | $\bar{F}^+_l$ | MW     | Capacity limit (direct direction); may vary by stage and, optionally, by block |
 | $\bar{F}^-_l$ | MW     | Capacity limit (reverse direction); may vary by stage and, optionally, by block |
-| $\eta_l$      | —      | Transmission efficiency: $\eta_l = 1 - \text{losses}/100$                  |
 | $c^{exch}_l$  | \$/MWh | Exchange cost (regularization)                                             |
 
 ### Role in Objective Function
@@ -223,7 +222,7 @@ $$
 0 \leq f^+_{l,k} \leq \bar{F}^+_l, \quad 0 \leq f^-_{l,k} \leq \bar{F}^-_l
 $$
 
-**Load balance contribution** at source bus: $-f^+_{l,k} + \eta_l \cdot f^-_{l,k}$
+**Load balance contribution** at source bus: $-f^+_{l,k} + f^-_{l,k}$
 
 For detailed constraints, see [equipment formulations](/math/equipment-formulations).
 
@@ -260,7 +259,7 @@ $$
 \sum_{k \in \mathcal{K}} \tau_k \sum_{j \in \mathcal{T}} \sum_{s} c^{th}_{j,s} \cdot g_{j,k,s}
 $$
 
-Thermal costs represent actual operating expenses (\$50–500/MWh depending on fuel type) and constitute the primary controllable cost in the objective function.
+Thermal costs represent actual operating expenses, which vary by fuel type, and constitute the primary controllable cost in the objective function.
 
 ### LP Constraint Preview
 
@@ -276,7 +275,7 @@ For detailed constraints, see [equipment formulations](/math/equipment-formulati
 
 ### Anticipated Thermal Plants
 
-A thermal plant may be flagged as **anticipated** by attaching a per-plant lead $K \geq 1$. The physical motivation is fuel-ordering lead time: LNG (originally _Gás Natural Liquefeito_) terminals, long-haul coal contracts and similar arrangements require the committed dispatch quantity to be locked $K$ stages before the energy is physically delivered. Anticipated thermals therefore split the per-stage thermal decision into two coupled variables — the **commitment**, made at the decision stage $t$, and the **delivered generation**, which is forced to match the matured commitment at the delivery stage $t + K$.
+A thermal plant may be flagged as **anticipated** by attaching a per-plant lead $K \geq 1$. The physical motivation is fuel-ordering lead time: LNG terminals, long-haul coal contracts and similar arrangements require the committed dispatch quantity to be locked $K$ stages before the energy is physically delivered. Anticipated thermals therefore split the per-stage thermal decision into two coupled variables — the **commitment**, made at the decision stage $t$, and the **delivered generation**, which is forced to match the matured commitment at the delivery stage $t + K$.
 
 The lead resolves to an integer plant-specific parameter $K_i \geq 1$, supplied in one of two mutually exclusive forms: a **stage count** (`lead_stages`, calendar-free) or a **physical duration** (`lead_time_hours`, resolved against the stage calendar by end-anchoring the lead on the cumulative stage-hour boundaries). A plant with $K_i = 1$ commits one stage ahead; a plant with $K_i = 3$ commits three stages ahead. A physical lead shorter than the decision stage's own duration resolves to $K_i = 0$, and the plant then dispatches as an ordinary thermal. Plants without the anticipation flag use the standard thermal model from the preceding subsections.
 
@@ -447,11 +446,11 @@ Cobre carries the water in transit on such an arc as additional **in-transit sta
 
 ### Production Function (Water to Power)
 
-Cobre supports three models for converting turbined flow to electrical generation, in increasing order of complexity:
+Cobre supports three production-model names for converting turbined flow to electrical generation:
 
 1. **Constant Productivity**: $g_{h,b,k} = \rho_h \cdot q_{h,b,k}$ (per cell $(h,b)$) — simple linear relationship with fixed $\rho_h$ [MW/(m³/s)], suitable for plants with stable head.
 
-2. **Linearized Head** (**simulation-only**): Adjusts productivity based on head variation with storage level. Requires hydro geometry data (Volume-Height-Area curve). This model is excluded from training because the bilinear term ($q \times v^{avg}$) requires re-fixing $v^{avg}$ between iterations, changing the LP and breaking SDDP convergence guarantees. See [hydro production models §3](/math/hydro-production-models).
+2. **Linearized Head** (reserved alias): A reserved model name that resolves to **constant productivity** in every phase — training and simulation alike. No distinct head-dependent model is applied; requesting it yields the constant-productivity model above. See [hydro production models §3](/math/hydro-production-models).
 
 3. **FPHA (Função de Produção Hidrelétrica Aproximada)**: Piecewise-linear approximation via hyperplanes that captures head variation with storage level and accounts for tailrace effects from spillage. Fitted once per plant and evaluated per cell $(h,b)$, apportioning the plane's flow-independent terms by the cell's share of the plant's turbine capacity (see [hydro production models §2.9](/math/hydro-production-models)). Each plane $m$:
 
@@ -460,7 +459,7 @@ g_{h,b,k} \leq \sigma_{h,b}\big(\gamma_0^m + \gamma_v^m \cdot v^{avg}_h + \gamma
 $$
 
 :::note[Training models]
-Only `constant_productivity` and `fpha` are valid during training (policy construction). The linearized head model is available during simulation (policy evaluation) only.
+All three model names are accepted for both training (policy construction) and simulation (policy evaluation). A `linearized_head` request resolves to the constant-productivity model in every phase — no production model is restricted to a single phase.
 :::
 
 The production model can vary by stage or season per hydro.
@@ -512,7 +511,7 @@ $$
 \sum_{k \in \mathcal{K}} \tau_k \sum_{h \in \mathcal{H}} \left[ c^{spill}_h \cdot s_{h,k} + c^{fpha}_h \cdot q_{h,k} + c^{div}_h \cdot u_{h,k} \right] + \text{(slack penalties)}
 $$
 
-- **Spillage cost**: Small regularization (\$0.001–0.01 per m³/s·h) to prefer turbining over spilling
+- **Spillage cost**: Small regularization to prefer turbining over spilling
 - **FPHA turbined cost**: Regularization applied **only** to hydros using the FPHA production model. Must be > `spillage_cost` for the same plant to prevent interior FPHA solutions. See [Penalty System](/math/penalty-system).
 - **Diversion cost**: Small regularization, typically higher than spillage (water leaves main cascade)
 - **Slack penalties**: High costs for constraint violations — storage below dead volume, outflow violations, generation violations, evaporation violations, water withdrawal shortfall. See [Penalty System](/math/penalty-system) for the full penalty taxonomy and priority ordering.
@@ -592,7 +591,7 @@ $$
 \sum_{k \in \mathcal{K}} \tau_k \sum_{r \in \mathcal{R}} c^{curt}_r \cdot (A_r - g^{nc}_{r,k})
 $$
 
-The curtailment cost is a small regularization term (\$0.001–0.01/MWh) that incentivizes the solver to use all available generation before curtailing.
+The curtailment cost is a small regularization term that incentivizes the solver to use all available generation before curtailing.
 
 ### LP Constraint Preview
 

@@ -56,8 +56,8 @@ cobre version
 Expected output (exact versions and arch will vary):
 
 ```
-cobre   v0.13.0
-solver: HiGHS
+cobre   v0.16.0
+solver: HiGHS 1.13.1
 comm:   local
 zstd:   enabled
 arch:   x86_64-linux
@@ -163,7 +163,7 @@ explicitly. The default build (no extra flags) uses HiGHS.
 The `cobre version` banner shows which backend is compiled in:
 
 ```
-cobre   v0.13.0
+cobre   v0.16.0
 solver: CLP 1.17.11
 comm:   local
 ...
@@ -198,14 +198,6 @@ Existing builds are unaffected. The default backend is HiGHS, unchanged from
 prior releases. The CLP backend is strictly opt-in: users who do not pass
 `--no-default-features --features clp` continue to build and run against HiGHS
 exactly as before.
-
-### Known limitation
-
-Re-loading a fresh model into a CLP solver instance after a hot-start snapshot
-has been taken is unsupported and guarded against at runtime. This situation does
-not arise on the production solve paths; it is relevant only to callers that
-construct solver instances directly and interleave `load_model` calls with
-hot-start operations.
 
 On a CLP build, every `training.solver`/`simulation.solver` override field is
 rejected at study setup — see

@@ -51,8 +51,10 @@ These provide slack for physical or operational constraints that may be impossib
 | Outflow minimum          | $c^{ov-}_h$  | \$/(m³/s·h) | $o_{h,k} \geq \underline{O}_h$                           |
 | Outflow maximum          | $c^{ov+}_h$  | \$/(m³/s·h) | $o_{h,k} \leq \bar{O}_h$                                 |
 | Generation minimum       | $c^{gv-}_h$  | \$/MWh      | $g_{h,b,k} \geq \underline{G}_{h,b}$ (per cell)          |
-| Evaporation violation    | $c^{ev}_h$   | \$/(m³/s·h) | Evaporation within physical limits                       |
-| Withdrawal violation     | $c^{wv}_h$   | \$/(m³/s·h) | Water withdrawal commitment (bidirectional: under/over)  |
+| Evaporation above target | $c^{ev+}_h$  | \$/(m³/s·h) | Net evaporation flow above the linearized target         |
+| Evaporation below target | $c^{ev-}_h$  | \$/(m³/s·h) | Net evaporation flow below the linearized target         |
+| Withdrawal above target  | $c^{wv+}_h$  | \$/(m³/s·h) | Realized withdrawal above the signed target $r_h$        |
+| Withdrawal below target  | $c^{wv-}_h$  | \$/(m³/s·h) | Realized withdrawal below the signed target $r_h$        |
 
 ### 1.4 Category 3: Regularization Costs (Solution Guidance)
 
@@ -75,14 +77,14 @@ Regularization costs should be at least 2-3 orders of magnitude smaller than eco
 The following ordering must be maintained (from highest to lowest):
 
 $$
-c^{sv-} > c^{def} > c^{tv-}, c^{ov\pm}, c^{gv-}, c^{ev}, c^{wv} > c^{th}, c^{ctr} > c^{spill}, c^{fpha}, c^{div}, c^{curt}, c^{exch}
+c^{sv-} > c^{def} > c^{tv-}, c^{ov\pm}, c^{gv-}, c^{ev\pm}, c^{wv\pm} > c^{th}, c^{ctr} > c^{spill}, c^{fpha}, c^{div}, c^{curt}, c^{exch}
 $$
 
 with the filling-target penalty pinned **below deficit** on a separate rung: $c^{def} > c^{fill}$.
 
 1. **Storage violation** ($c^{sv-}$): Highest penalty — reservoir below dead volume risks dam safety, so it must exceed deficit
 2. **Deficit** ($c^{def}$): Value of lost load; exceeds any generation cost
-3. **Constraint violations** ($c^{tv-}$, $c^{ov\pm}$, $c^{gv-}$, $c^{ev}$, $c^{wv}$): Exceed typical marginal cost but allow violation when physically necessary
+3. **Constraint violations** ($c^{tv-}$, $c^{ov\pm}$, $c^{gv-}$, $c^{ev\pm}$, $c^{wv\pm}$): Exceed typical marginal cost but allow violation when physically necessary
 4. **Resource costs** ($c^{th}$, $c^{ctr}$): Market-based or fuel-based
 5. **Regularization** ($c^{spill}$, $c^{fpha}$, $c^{div}$, $c^{curt}$, $c^{exch}$): Near-zero
 6. **Filling target** ($c^{fill}$): Pinned below deficit — a commissioning fill schedule is not defended as hard as load serving. Its position relative to the operational-constraint tier (item 3) is left to study calibration.
@@ -162,7 +164,7 @@ $$
 $$
 
 $$
-+ \sum_{l: \text{target}=b} \eta_l f^+_{l,k} + \sum_{l: \text{source}=b} \eta_l f^-_{l,k}
++ \sum_{l: \text{target}=b} f^+_{l,k} + \sum_{l: \text{source}=b} f^-_{l,k}
 $$
 
 $$
@@ -200,7 +202,7 @@ where:
 - $b^{\mathrm{in}}_{h,1}$ = in-transit volume maturing at the current stage on a declared travel-time arc into $h$ (hm³), added directly as a stage-level inflow (already a volume, so it sits **outside** the $\zeta$ conversion). When a cascade arc carries a travel time, the upstream release is delayed through this term instead of entering the same-stage upstream inflow sum above; see §5d. Absent (zero) for instantaneous arcs
 - $q_{h,k} = \sum_{b \in \mathcal{B}_h} q_{h,b,k}$ = the plant's total turbined flow, summed over its (hydro, bus) cells (§3). Each cell's own column $q_{h,b,k}$ is bounded independently (§8) and, for an FPHA hydro, feeds that cell's own generation constraint (§6); storage, spillage, diversion, and inflow stay single per-plant quantities regardless of cell count. A single-cell plant has $q_{h,k} \equiv q_{h,b,k}$
 - $a_h$ = incremental inflow (from AR model, see [PAR(p) inflow model](/math/par-inflow-model)); equivalently $z_h$ from the z-inflow constraint (§5b)
-- $r_h$ = water withdrawal target (m³/s), a **signed fixed RHS parameter** from `water_withdrawal_m3s` (not a per-block LP decision variable). $r_h > 0$ schedules a consumptive removal; $r_h < 0$ schedules an inter-basin return/addition that adds water to the reservoir. The realized withdrawal removed from the reservoir is $R_h = r_h - \sigma^{w-}_h + \sigma^{w+}_h$; see §9 for the slack bounds that prevent the realized flow from flipping sign. Withdrawal is applied at the stage level, outside the per-block summation
+- $r_h$ = water withdrawal target (m³/s), a **signed fixed RHS parameter** from `water_withdrawal_m3s` (not a per-block LP decision variable). $r_h > 0$ schedules a consumptive removal; $r_h < 0$ schedules an inter-basin return/addition that adds water to the reservoir. The realized withdrawal removed from the reservoir is $R_h = r_h - \sigma^{w-}_h + \sigma^{w+}_h$; see §9 for the slack bounds that prevent the realized flow from flipping sign. Withdrawal is applied at the stage level, outside the per-block summation. Matches [notation conventions §3.3](/overview/notation-conventions#33-hydro-parameters) for $r_h$ and [§4.3](/overview/notation-conventions#43-slack-variables) for $\sigma^{w-}_h, \sigma^{w+}_h$
 - $e_{h,k}$ = signed net evaporation flow (m³/s): positive values represent net evaporative loss subtracted from storage; negative values represent net rainfall input on the lake surface that adds to storage through the same coefficient (the leading $-$ sign on $e_{h,k}$ flips the contribution automatically — see [penalty system §5](/math/penalty-system))
 - $w_k = \tau_k / \sum_j \tau_j$ = block weight
 - $\zeta = 0.0036 \times \sum_k \tau_k$ = time conversion factor
@@ -312,7 +314,7 @@ The incremental inflow $a_h$ is determined by the PAR(p) autoregressive model:
 $$
 a_h = \underbrace{\left( \mu_t - \sum_{\ell=1}^{P_h} \psi_\ell \mu_{t-\ell} \right)}_{\text{deterministic base}}
 + \underbrace{\sum_{\ell=1}^{P_h} \psi_\ell \cdot a_{h,\ell}}_{\text{lag contribution}}
-+ \underbrace{\sigma_t \cdot \eta_t}_{\text{stochastic innovation}}
++ \underbrace{\sigma_t \cdot \varepsilon_t}_{\text{stochastic innovation}}
 $$
 
 To maintain the Markov property, lagged inflows $a_{h,\ell}$ are promoted to state variables pinned by column bounds — see section 5a below.
@@ -344,7 +346,7 @@ where:
 For each hydro $h \in \mathcal{H}$, the LP includes an auxiliary variable $z_h$ representing the total realized inflow (m³/s) at the current stage. These variables are defined by equality constraints that combine the deterministic base, lag contributions, and stochastic noise:
 
 $$
-z_h = b_{h,m(t)} + \sum_{\ell=1}^{P_h} \psi_{m(t),\ell} \cdot a_{h,\ell} + \sigma_{m(t)} \cdot \eta_t
+z_h = b_{h,m(t)} + \sum_{\ell=1}^{P_h} \psi_{m(t),\ell} \cdot a_{h,\ell} + \sigma_{m(t)} \cdot \varepsilon_t
 $$
 
 where:
@@ -353,11 +355,11 @@ where:
 - $b_{h,m(t)}$ = deterministic base (precomputed from seasonal means and AR coefficients — see [PAR(p) model §7.4](/math/par-inflow-model))
 - $\psi_{m(t),\ell}$ = original-unit AR coefficients (constraint matrix entries, set once at LP construction)
 - $a_{h,\ell}$ = LP variables for lagged inflows (state variables, fixed by §5a)
-- $\sigma_{m(t)} \cdot \eta_t$ = noise innovation (patched into the constraint RHS per scenario)
+- $\sigma_{m(t)} \cdot \varepsilon_t$ = noise innovation (patched into the constraint RHS per scenario)
 
 The z-inflow variable $z_h$ then enters the water balance constraint (§4) in place of the raw inflow term $a_h$, and its primal value after solving gives the realized inflow for reporting and simulation extraction.
 
-The z-inflow columns sit between the AR lag columns and the incoming storage columns in the column layout (section 4b). Because state is pinned by column bounds rather than fixing rows, their constraint rows form the **first** equality block (section 4b). The RHS is patched per scenario with $b_{h,m(t)} + \sigma_{m(t)} \cdot \eta_t$, where $\eta_t$ is the effective noise (possibly clamped for inflow non-negativity — see [Inflow Non-Negativity](/math/inflow-nonnegativity)). These are not state variables and do not contribute to cut coefficients.
+The z-inflow columns sit between the AR lag columns and the incoming storage columns in the column layout (section 4b). Because state is pinned by column bounds rather than fixing rows, their constraint rows form the **first** equality block (section 4b). The RHS is patched per scenario with $b_{h,m(t)} + \sigma_{m(t)} \cdot \varepsilon_t$, where $\varepsilon_t$ is the effective noise (possibly clamped for inflow non-negativity — see [Inflow Non-Negativity](/math/inflow-nonnegativity)). These are not state variables and do not contribute to cut coefficients.
 
 **Constraint count**: $N$ total constraints, where $N = |\mathcal{H}|$ is the number of operating hydros. See section 4b for the row layout.
 
@@ -485,7 +487,7 @@ In-transit volume that would mature **after the study's last stage** is dropped 
 
 ## 6. Hydro Generation Constraints
 
-Cobre supports two production models during training, in increasing order of complexity. A third model (linearized head) is available during simulation only — see [hydro production models §3](/math/hydro-production-models). The model can vary by stage or season per hydro.
+Cobre supports two production models, in increasing order of complexity. A third model name, linearized head, is a reserved alias that resolves to constant productivity in every phase — see [hydro production models §3](/math/hydro-production-models). The model can vary by stage or season per hydro.
 
 Both models are evaluated **per cell** $(h, b)$ (§3) rather than per plant; a single-cell plant's constraint is byte-identical to the pre-partition, per-plant form.
 
@@ -521,7 +523,7 @@ $$
 \underline{G}_{h,b} = \sum_{g \,\in\, (h,b)} \underline{G}_g, \qquad \bar{G}_{h,b} = \min\!\Big( \sum_{g \,\in\, (h,b)} \bar{G}_g,\ \ \bar{G}_h \Big)
 $$
 
-Generation bounds are user-defined (declared per unit group, not derived from turbined flow). The lower bound is soft, with one slack $\sigma^{g-}_{h,b,k}$ **per cell** — priced at the plant's own penalty $c^{gv-}_h$ at full magnitude on every cell of a split plant, never divided by cell count; a constant-productivity cell's floor couples this same slack to $\rho_h \cdot q_{h,b,k}$ rather than to a generation column. The upper bound's plain sum over the cell's own unit groups closes against the plant's own resolved maximum $\bar{G}_h$ — a bounds override may never raise a cell above it. See [system elements §5](/math/system-elements).
+Generation bounds are user-defined (declared per unit group, not derived from turbined flow). The lower bound is soft, with one slack $\sigma^{g-}_{h,b,k}$ **per cell** — priced at the plant's own penalty $c^{gv-}_h$ at full magnitude on every cell of a split plant, never divided by cell count; a constant-productivity cell's floor couples this same slack to $\rho_h \cdot q_{h,b,k}$ rather than to a generation column. The upper bound's plain sum over the cell's own unit groups closes against the plant's own resolved maximum $\bar{G}_h$ — a bounds override may never raise a cell above it. See [system elements §5](/math/system-elements). Matches the per-cell $\sigma^{g-}_{h,b,k}$ defined in [notation conventions §4.3](/overview/notation-conventions#43-slack-variables).
 
 For details on the FPHA construction and production function model variants, see [hydro production models](/math/hydro-production-models).
 
@@ -581,7 +583,7 @@ $$
 \bar{Q}_{h,b} = \min\!\left( \sum_{g \,\in\, (h,b)} \mathrm{fold}(g),\ \ \bar{Q}_h \right)
 $$
 
-where $\mathrm{fold}(g) = \bar{Q}_g$ for an FPHA hydro (turbined flow and generation are independent columns there) and $\mathrm{fold}(g) = \min(\bar{Q}_g,\ \bar{G}_g / \rho_h)$ for a constant-productivity hydro — each group's own flow cap and MW-implied flow cap must be folded **before** summing across the cell, since $\min$ does not distribute over a sum of groups that bind on different sides. This is the mechanism that enforces a constant-productivity cell's generation cap (§6): there is no separate generation column to bound directly.
+where $\mathrm{fold}(g) = \bar{Q}_g$ for an FPHA hydro (turbined flow and generation are independent columns there) and $\mathrm{fold}(g) = \min(\bar{Q}_g,\ \bar{G}_g / \rho_h)$ for a constant-productivity hydro — each group's own flow cap and MW-implied flow cap must be folded **before** summing across the cell, since $\min$ does not distribute over a sum of groups that bind on different sides. This is the mechanism that enforces a constant-productivity cell's generation cap (§6): there is no separate generation column to bound directly. Matches the per-cell $\sigma^{q-}_{h,b,k}$ defined in [notation conventions §4.3](/overview/notation-conventions#43-slack-variables).
 
 ### Diversion Flow Bounds (per hydro $h$, block $k$)
 
@@ -613,7 +615,7 @@ $$
 The turbined- and generation-minimum slacks are **per cell** — each of a split plant's cells carries its own slack column and its own row, priced at the plant's penalty at full magnitude, never divided across cells. The outflow and evaporation slacks stay per-plant: outflow has no per-cell column to attribute a floor to.
 
 $$
-+ \sum_{h \in \mathcal{H}} T \cdot c^{wv}_h (\sigma^{w-}_h + \sigma^{w+}_h)
++ \sum_{h \in \mathcal{H}} T \cdot \bigl(c^{wv-}_h \sigma^{w-}_h + c^{wv+}_h \sigma^{w+}_h\bigr)
 $$
 
 where $T = \sum_k \tau_k$ is the total stage duration in hours. Withdrawal violation slacks ($\sigma^{w-}_h$, $\sigma^{w+}_h$) are stage-level (not per-block) and bidirectional: $\sigma^{w-}_h$ penalizes under-delivery (the realized withdrawal $R_h = r_h - \sigma^{w-}_h + \sigma^{w+}_h$ falls short of the target), and $\sigma^{w+}_h$ penalizes over-delivery. The **withdrawal target $r_h$ is signed** (§4), and the slack bounds ensure the realized withdrawal cannot flip sign relative to the target:
@@ -651,6 +653,16 @@ where $x_e$ can reference any LP variable using expression syntax:
 
 `hydro_turbined` and `hydro_generation` additionally accept a named `bus=` argument selecting one **(hydro, bus) cell** of a plant split across several buses — e.g. `hydro_turbined(5, bus=2)` — resolving to that cell's own column; no other variable form accepts it. An optional positional block argument, when present, precedes the named argument: `f(id)`, `f(id, block)`, `f(id, bus=b)`, and `f(id, block, bus=b)` all parse. Omitting `bus=` on a plant with more than one cell addresses every one of its cells at once, matching the whole-entity reference every other variable form uses.
 
+A term may also address a plant's **useful volume** $v_h - V^{min}_h$ — its storage above the physical minimum $V^{min}_h$. It is realised on the storage variable itself by shifting both endpoints by the same amount,
+
+$$
+\ell_g \le \gamma_{g,e}\,(v_h - V^{min}_h) + \dots \le u_g
+\iff
+\ell_g + \gamma_{g,e}V^{min}_h \le \gamma_{g,e}\,v_h + \dots \le u_g + \gamma_{g,e}V^{min}_h,
+$$
+
+so it adds no LP variable; an absent endpoint stays absent, and a negative $\gamma_{g,e}$ lowers both endpoints.
+
 Either endpoint, $\ell_g$ or $u_g$, may be absent — never both — with an absent side read as the corresponding infinity. This single interval subsumes every shape a constraint can take: a present $\ell_g$ alone is a floor, a present $u_g$ alone is a cap, $\ell_g = u_g$ is an equality, and both present together bound a two-sided band. A constraint is no longer characterised by picking one relation out of a fixed set — its shape falls out of which endpoints happen to be present.
 
 ### Coefficients and Endpoints
@@ -666,7 +678,7 @@ A named scalar parameter resolves to a single number per stage and can carry one
 | `constant`         | One value for every stage                                                                                                                                              |
 | `per_stage`        | Explicit value per stage                                                                                                                                               |
 | `seasonal`         | One value per season; stages inherit the value from their season                                                                                                       |
-| `computed`         | Value derived from a small expression evaluated at LP-build time (e.g., a fraction of installed capacity)                                                              |
+| `computed`         | A quantity derived from a hydro plant's geometry and energy-conversion model — its reference-point or useful-range mean productivities, reference operating point, physical storage range, or maximum stored energy (see [Hydro Production Models §5](/math/hydro-production-models#5-energy-conversion-quantities)) |
 | Per-(stage, block) | Explicit value per stage **and** per block within that stage — the finest-grained schedule, letting a value vary across a stage's blocks, not just from stage to stage |
 
 Resolution happens once at LP-build time, so the LP coefficients and endpoints are still numeric at solve time — the parameter mechanism does not introduce LP-variable coupling between constraints. Methodology relevance: it lets the corpus express ramping limits, capacity caps, and operator-imposed quotas that vary by stage, season, or block without authoring a separate constraint per stage. Coefficient and endpoint values can therefore be **stage- and block-varying constants**, not just literal numbers.
@@ -697,7 +709,7 @@ where:
 
 When anticipated thermals are present, the cut carries one additional coefficient per anticipated-state slot (§5c), read from the same reduced-cost mechanism. When travel-time arcs are present, it likewise carries one coefficient per in-transit bucket dimension (§5d); unlike the storage and lag coefficients, the bucket coefficients are always part of the cut projection.
 
-Cuts live in an **append-only pool** at stable slot indices: every cut ever generated is retained for the lifetime of the run, and only the active subset is baked into each iteration's stage template. Deactivation toggles a cut row's bound to a trivially-satisfied $\pm\infty$ sentinel rather than removing the row, so slot indices stay stable and reactivation is exact. See [cut management](/math/cut-management).
+Cuts live in an **append-only pool** at stable slot indices: every cut ever generated is retained for the lifetime of the run, and only the active subset is baked into each iteration's stage template. Deactivation **excludes** a cut from each iteration's stage-template rebake rather than mutating any row; the persistent lower-bound LP is append-only (its rows are never removed, so the lower bound stays monotone). Slot indices stay stable, so reactivation — re-baking the cut into the template at the same slot — is exact. See [cut management](/math/cut-management).
 
 For cut coefficient derivation, aggregation, and selection strategies, see [cut management](/math/cut-management).
 
