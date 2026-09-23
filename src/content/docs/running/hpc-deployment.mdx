@@ -155,6 +155,34 @@ make -j"$(nproc)"
 make install
 ```
 
+:::caution[`--with-pmix` must point at the PMIx your SLURM uses]
+`--with-pmi=pmix` alone is **not** enough. MPICH checks `--with-pmix` as an
+*optional* dependency: if the flag is missing, or its path holds no usable
+`pmix.h`/`libpmix`, configure does not fail. It falls back to MPICH's built-in
+PMIx client instead, and that client may not speak the same protocol version
+as SLURM's PMIx plugin. A mismatch shows no error at launch. `MPI_Init` quietly
+falls back to a **singleton**, so every rank runs as a separate one-rank job
+(see [Troubleshooting](#troubleshooting)).
+
+Point `--with-pmix` at the PMIx installation SLURM's `pmix` plugin was built
+against. `srun --mpi=list` names that plugin, and its suffix gives the PMIx
+major version (`pmix_v5` means PMIx 5.x). On AWS ParallelCluster that
+installation is `/opt/pmix`.
+:::
+
+Before you use the build, confirm that `libmpi` links the cluster's PMIx and
+not the built-in client:
+
+```bash
+ldd /opt/mpich/lib/libmpi.so.12 | grep libpmix
+#   libpmix.so.2 => /opt/pmix/lib/libpmix.so.2 (0x...)
+```
+
+If this prints nothing, or the library resolves outside the PMIx that SLURM
+uses, reconfigure with the correct `--with-pmix` path and rebuild. PMIx 4.x and
+5.x both ship `libpmix.so.2`, so the thing to check is the resolved **path**,
+not the soname.
+
 Then make it discoverable for both compiling (`pkg-config`) and running
 (`LD_LIBRARY_PATH`):
 
@@ -170,7 +198,8 @@ What each flag does:
 | -------------------------------- | ------------------------------------------------------------------------------------------------ |
 | `--with-device=ch4:ofi`          | Use the modern CH4 device over an OpenFabrics Interfaces (libfabric) provider — the fabric path. |
 | `--with-libfabric=/opt/amazon/efa` | Link against the EFA installer's libfabric so the `ofi` netmod can select the EFA provider.     |
-| `--with-pmi=pmix` / `--with-pmix` | Build the PMIx client so `srun --mpi=pmix` can launch and wire up the ranks.                    |
+| `--with-pmi=pmix`                | Use PMIx as the only process-management interface, so `srun --mpi=pmix` launches and wires up the ranks. No PMI-1/PMI-2 client is built. |
+| `--with-pmix=/opt/pmix`          | Link the cluster's PMIx library, the same one SLURM's `pmix` plugin uses. If you omit it, MPICH silently uses its built-in client (see the caution above). |
 | `--with-slurm=/opt/slurm`        | Integrate with the cluster's SLURM installation.                                                 |
 | `--with-pm=no`                   | Build **no** internal process manager (no Hydra/`mpiexec`) — SLURM launches the ranks.           |
 
@@ -184,9 +213,19 @@ The paths above (`/opt/amazon/efa`, `/opt/pmix`, `/opt/slurm`) are the
 conventional locations for the EFA installer, PMIx, and SLURM on AWS
 ParallelCluster; adjust them to your environment.
 
-Optional build-time trims — Cobre uses no Fortran, C++, or MPI-IO bindings, so
-`--disable-fortran --disable-cxx --disable-romio --disable-doc` shorten the
-build without affecting Cobre.
+If you cannot write to `/opt`, install into a prefix on a filesystem every node
+can see, for example `--prefix="$HOME/mpich-4.2.3"`. Then use that prefix in the
+`PATH`/`LD_LIBRARY_PATH` exports and in the batch script. Replacing the MPICH
+runtime does not require rebuilding `cobre-mpi`, because the binary only
+depends on the stable `libmpi.so.12` ABI.
+
+Optional build flags:
+
+- **Trims.** Cobre uses no Fortran, C++, or MPI-IO bindings, so
+  `--disable-fortran --disable-cxx --disable-romio --disable-doc` shorten the
+  build without affecting Cobre.
+- **Faster runtime.** `--enable-fast=O3,ndebug` builds an optimised MPICH
+  without internal assertions.
 
 :::caution[Pin MPICH to a 4.2.x release]
 MPICH **4.3.0** introduced a PMI2 client regression that deadlocks multi-node
@@ -237,14 +276,22 @@ limit for your workload):
 #SBATCH --partition=cobre-hpc-queue
 #SBATCH --time=0-08:00:00
 
-export PATH=/opt/mpich/bin:$PATH
-export LD_LIBRARY_PATH=/opt/mpich/lib:${LD_LIBRARY_PATH:-}
+MPICH_PREFIX=/opt/mpich
+COBRE_MPI="$HOME/assets/cobre-mpi"
 
-srun --mpi=pmix ./cobre-mpi run "$1" --threads "$SLURM_CPUS_PER_TASK"
+export PATH="$MPICH_PREFIX/bin:$PATH"
+export LD_LIBRARY_PATH="$MPICH_PREFIX/lib:${LD_LIBRARY_PATH:-}"
+
+srun --mpi=pmix "$COBRE_MPI" run "$1" --threads "$SLURM_CPUS_PER_TASK"
 ```
 
-Place it somewhere visible to every node (a shared filesystem or your home
-directory) and submit it with the case directory as its argument:
+Refer to the binary by an **absolute path**. `sbatch` runs the script in the
+directory you submitted from, so `./cobre-mpi` works only if you happen to run
+`sbatch` from the directory that holds the binary.
+
+Place the script and the binary somewhere visible to every node (a shared
+filesystem or your home directory). Submit the script with the case directory
+as its argument:
 
 ```bash
 sbatch ~/assets/run-cobre.sh /shared/cases/hydro_study
@@ -255,7 +302,7 @@ sbatch ~/assets/run-cobre.sh /shared/cases/hydro_study
 | Flag                         | Purpose                                                       |
 | ---------------------------- | ------------------------------------------------------------- |
 | `--mpi=pmix`                 | PMIx process startup (recommended; see the tip below)         |
-| `--mpi=pmi2`                 | Alternative PMI-2 startup                                     |
+| `--mpi=pmi2`                 | PMI-2 startup. It needs an MPICH built with PMI-2 support; the `--with-pmi=pmix` build above has none |
 | `--nodes=N`                  | Number of nodes                                               |
 | `--ntasks-per-node=N`        | MPI ranks per node (`1` for the one-rank-per-node mapping)    |
 | `--cpus-per-task=T`          | Cores per rank — pass the same value to `--threads`           |
@@ -345,11 +392,35 @@ launched under a recognised launcher. Force the backend with
 `--comm-backend mpi`; it fails with a clear message on a non-MPI binary rather
 than silently running single-process.
 
-**`srun --mpi=pmi2` fails with `pmijobid missing in fullinit command`** — an
-incompatibility between SLURM 24.05's PMI2 plugin and MPICH's PMI2 wire
-protocol. Use `--mpi=pmix` instead (the recommended build supports it). If only
-PMI2 is available and you built Hydra (i.e. not `--with-pm=no`), `mpiexec`
-bypasses PMI2 entirely.
+**Every rank reports `Layout: 1 rank`, and the run repeats once per node.**
+Symptoms: the `Execution` banner appears once per rank, not once in total, and
+each copy reads `Layout: 1 rank on <host>`. The simulation reports
+`... across 1 ranks`, and the separate copies collide on the shared output
+directory with write errors. `MPI_Init` fell back to a singleton: every
+process launched by `srun` became its own one-rank `MPI_COMM_WORLD`.
+
+`cobre-mpi version` still reports `comm: mpi` and the banner still shows
+`Backend: MPI`, because the binary is fine. The fault is in the MPICH runtime:
+it was built without `--with-pmix`, or against a different PMIx than SLURM's
+plugin, so the PMIx handshake failed silently.
+
+To fix it:
+
+1. Confirm the cause with `ldd <mpich-prefix>/lib/libmpi.so.12 | grep libpmix`.
+   Seeing no line, or a path outside the cluster's PMIx, confirms it.
+2. Rebuild MPICH with `--with-pmix` pointing at the PMIx that SLURM uses (see
+   [Building MPICH from source](#building-mpich-from-source)).
+3. Point the batch script's exports at the new build. `cobre-mpi` itself needs
+   no rebuild.
+
+Switching to `--mpi=pmi2` does not fix this.
+
+**`srun --mpi=pmi2` fails with `pmijobid missing in fullinit command`.** An
+MPICH built `--with-pmi=pmix` (the recommended build) contains no PMI-2 client,
+so `--mpi=pmi2` is not an alternative launch path for it. Use `--mpi=pmix`. The
+same error is also caused by an incompatibility between SLURM 24.05's PMI2
+plugin and MPICH's PMI2 wire protocol. If only PMI2 is available and you built
+Hydra (i.e. not `--with-pm=no`), `mpiexec` bypasses PMI2 entirely.
 
 **Multi-node job hangs at `MPI_Init` on MPICH 4.3.x** — the 4.3.0 PMI2 client
 regression described above. Downgrade to MPICH 4.2.x.
@@ -371,17 +442,37 @@ for how that boundary pool is reconciled. This means you can develop and validat
 to the full fleet without changing results — the broader guarantee is documented
 in [Determinism Guarantees](/math/determinism-guarantees/).
 
-A quick two-rank smoke test in a one-node SLURM allocation:
+Check your setup in three steps. Each step catches a different failure.
 
-```bash
-srun --mpi=pmix --nodes=1 --ntasks=2 ./cobre-mpi run /shared/cases/hydro_study --threads 2
-```
+1. **The binary is MPI-enabled.** This only checks the build, not the runtime
+   wiring:
 
-Confirm the banner reports the MPI backend:
+   ```bash
+   ~/assets/cobre-mpi version   # → comm: mpi
+   ```
 
-```bash
-./cobre-mpi version   # → comm: mpi
-```
+2. **MPICH links the cluster's PMIx.** Run the `ldd … | grep libpmix` check from
+   [Building MPICH from source](#building-mpich-from-source).
+
+3. **The ranks form one job.** Run a two-node smoke test, which exercises both
+   PMIx wire-up and the inter-node fabric:
+
+   ```bash
+   srun --mpi=pmix --nodes=2 --ntasks-per-node=1 \
+       ~/assets/cobre-mpi run /shared/cases/hydro_study --threads 2
+   ```
+
+   Only rank 0 prints the `Execution` banner, so it must appear **once** and
+   read:
+
+   ```text
+     Backend:   MPI (...)
+     Layout:    2 ranks across 2 nodes
+   ```
+
+   If the banner appears twice, each copy reading `Layout: 1 rank on <host>`,
+   the ranks fell back to singletons. See
+   [Troubleshooting](#troubleshooting).
 
 ---
 
