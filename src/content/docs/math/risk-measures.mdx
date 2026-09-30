@@ -102,8 +102,12 @@ The penalty $\psi(p, \mu) = 0$ for CVaR (no penalty term).
 For the convex combination $\rho^{\lambda, \alpha}[Z] = (1-\lambda)\mathbb{E}[Z] + \lambda \cdot \text{CVaR}_\alpha[Z]$:
 
 $$
-\mathcal{M}^{EAVaR}(p) = \left\{\mu \geq 0 : \sum_\omega \mu_\omega = 1, \; \mu_\omega \leq (1-\lambda) p_\omega + \frac{\lambda p_\omega}{\alpha} \; \forall \omega \right\}
+\mathcal{M}^{EAVaR}(p) = \left\{\mu : \sum_\omega \mu_\omega = 1, \; (1-\lambda)p_\omega \leq \mu_\omega \leq (1-\lambda) p_\omega + \frac{\lambda p_\omega}{\alpha} \; \forall \omega \right\}
 $$
+
+The lower bound on each weight follows from writing the mixture as
+$\mu = (1-\lambda)p + \lambda q$, where $q$ belongs to the pure-CVaR risk set.
+Keeping only the upper bound enlarges the set and changes the objective.
 
 ## 5 Risk-Averse Subgradient Theorem
 
@@ -173,24 +177,28 @@ $$
 \bar{\mu}_\omega = (1 - \lambda_t) \, p_\omega + \frac{\lambda_t \, p_\omega}{\alpha_t}
 $$
 
-Since $\bar{\mu}_\omega > p_\omega$ when $\lambda_t > 0$ and $\alpha_t < 1$, the total capacity $\sum_\omega \bar{\mu}_\omega > 1$. The risk-adjusted weights are found by assigning as much weight as possible to the most expensive scenarios:
+Write $\mu_\omega = (1-\lambda_t)p_\omega + r_\omega$, where
+$0 \leq r_\omega \leq \lambda_t p_\omega/\alpha_t$ and
+$\sum_\omega r_\omega = \lambda_t$. The expectation floor is mandatory:
+omitting it changes the risk measure.
 
-1. Sort scenarios by cost $Q_\omega$ in **descending** order
-2. Walk down the sorted list, assigning $\mu^*_\omega = \bar{\mu}_\omega$ (the upper bound) to each scenario
-3. When the cumulative weight reaches 1, the current scenario receives the remaining fraction, and all cheaper scenarios get $\mu^*_\omega = 0$
+1. Initialize every weight to $(1-\lambda_t)p_\omega$ and the remaining mass to $\lambda_t$.
+2. Sort scenarios by cost $Q_\omega$ in **descending** order.
+3. Add the smaller of the remaining mass and $\lambda_t p_\omega/\alpha_t$ to each weight, subtracting that allocation from the remaining mass.
+4. Stop when the remaining mass is exhausted. Cheaper scenarios retain their expectation floor.
 
-This is a greedy allocation (continuous knapsack) — it places maximum weight on the worst scenarios and minimum weight on the best.
+This is continuous-knapsack allocation of the CVaR component, after reserving the expectation component.
 
 :::note[Special cases]
 
 - **Risk-neutral** ($\lambda_t = 0$): $\bar{\mu}_\omega = p_\omega$ for all $\omega$, so $\mu^* = p$ and this reduces to the standard aggregation from [Cut Management §3](/math/cut-management).
 - **Pure CVaR** ($\lambda_t = 1$): $\bar{\mu}_\omega = p_\omega / \alpha_t$. Only the worst $\alpha_t$-fraction of scenarios receive weight; all others get $\mu^*_\omega = 0$.
-- **Convex combination** ($0 < \lambda_t < 1$): All scenarios receive at least some weight (the $(1-\lambda_t) p_\omega$ floor), but the worst scenarios receive up to $\bar{\mu}_\omega$.
+- **Convex combination** ($0 < \lambda_t < 1$): All positive-probability scenarios receive at least some weight (the $(1-\lambda_t) p_\omega$ floor), but the worst scenarios receive up to $\bar{\mu}_\omega$.
 
 :::
 
 :::note[Equivalence note]
-This sorting procedure produces the same $\mu^*$ as solving the dual LP from §4.2, because the LP maximizes a linear objective with per-scenario upper bounds — a structure whose optimal solution is the greedy allocation above.
+This sorting procedure produces the same $\mu^*$ as solving the dual LP from §4.2, because the LP maximizes a linear objective with per-scenario lower and upper bounds — after reserving the lower bounds, a structure whose optimal solution is the greedy allocation above.
 :::
 
 **Step 3: Compute risk-averse cut coefficients** using $\mu^*$ (justified by the theorem in §5):
@@ -220,7 +228,7 @@ Risk aversion can vary by stage. The `risk_measure` field in `stages.json` speci
 | Option            | Description                                                           |
 | ----------------- | --------------------------------------------------------------------- |
 | `"expectation"`   | Risk-neutral expected value (default)                                 |
-| `{"cvar": {...}}` | CVaR parameters with `alpha` (confidence level) and `lambda` (weight) |
+| `{"cvar": {...}}` | CVaR parameters with `alpha` (upper-tail fraction) and `lambda` (weight) |
 
 Example with stage-varying risk:
 
@@ -258,44 +266,22 @@ For a sampled forward pass, or a stage-varying measure, the inner approximation 
 
 ## 10 Lower Bound Validity with Risk Measures
 
-:::caution[Critical Warning]
-The lower bound computed during SDDP training is **NOT a valid bound** for risk-averse problems.
-:::
+With valid initial lower approximations and correctly computed cuts, the
+first-stage risk-adjusted value is a lower bound on the optimum of the
+**nested risk objective**. The supporting-hyperplane argument in §5 applies
+to the convex risk-adjusted value function: weights selected at a training
+state produce a supporting cut, even when that cut is evaluated at another
+state. They need not be recomputed at every point on the cut.
 
-### Why the Lower Bound Fails
+This lower bound is not a lower bound on the risk-neutral expected policy
+cost. A sampled forward mean estimates a different quantity; it may be below
+the risk-adjusted lower bound without certifying convergence or proving that
+the cuts are invalid. A meaningful optimality gap must compare bounds on the
+same nested objective. See §9 for the supported upper-bound evaluation.
 
-In risk-neutral SDDP, the lower bound $\underline{z} = V_1(x_0)$ is the optimal value of the first-stage LP, which uses cuts that provide valid outer approximations of the expected future cost. This bound converges to the true optimal expected cost.
-
-In risk-averse SDDP, this property **does not hold** because:
-
-1. **Cuts approximate nested risk measures**: Each cut approximates $\rho_t[V_{t+1}(x_t, \omega)]$, where the risk measure $\rho_t$ depends on the _distribution of costs at that stage_.
-
-2. **The LP optimizes under the wrong distribution**: The first-stage LP optimizes $\rho_1[V_2]$, but the risk-adjusted distribution used in the cuts was computed for the _training_ states, not for the optimal first-stage decision.
-
-3. **Nested risk measures are not time-consistent in expectation**: Unlike $\mathbb{E}[\cdot]$, the nested application of CVaR does not satisfy:
-
-   $$
-   \rho_1[\rho_2[\ldots]] \neq \rho[\text{total cost}]
-   $$
-
-### What the "Lower Bound" Represents
-
-For risk-averse problems, the value $\underline{z} = V_1(x_0)$ computed by SDDP is:
-
-- A **convergence indicator**: It increases monotonically and plateaus when additional cuts provide no improvement
-- **NOT a valid lower bound** on the true risk-averse optimal cost
-
-### Recommendations
-
-| Purpose                    | Method                                                                                                    |
-| -------------------------- | --------------------------------------------------------------------------------------------------------- |
-| **Convergence monitoring** | Track $\underline{z}$ stabilization (bound stalling rule — see [Stopping Rules §4](/math/stopping-rules)) |
-| **Valid upper bound**      | Inner approximation (SIDP) — see [Upper Bound Evaluation](/math/upper-bound-evaluation)                   |
-| **Policy evaluation**      | Monte Carlo simulation with risk-averse policy decisions                                                  |
-
-:::note[Convergence reporting]
-When risk measures are enabled, convergence reports should label the "lower bound" as "convergence indicator" or explicitly note that it is not a valid bound.
-:::
+Stabilization of the lower bound is useful as a stopping heuristic, but does
+not by itself certify an optimality gap. Policies and cuts computed with an
+incorrect risk envelope must be retrained before relying on their bounds.
 
 ## 11 References
 
