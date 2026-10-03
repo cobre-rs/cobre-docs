@@ -11,9 +11,10 @@
 # voice/version judgement call — it has no grandfather path).
 #
 # Format: one entry per line, `<relpath>:<line>  <rule-id>  # rationale`.
-# `<relpath>` is relative to src/content/docs/. An entry silences EVERY rule
-# that fires on that exact path:line (the rule-id column is documentation,
-# not a filter — see scripts/doc-lint-allowlist.mjs).
+# `<relpath>` is relative to src/content/docs/. An entry grandfathers only the
+# rule it names, and only for the gate that owns that rule; each gate fails by
+# name on its own entries that match no hit (STALE) — see
+# scripts/doc-lint-allowlist.mjs.
 #
 # ── HISTORY: burned down to empty by ticket-028, reopened by ticket-001,
 #    burned down again by ticket-008 ───────────────────────────────────────
@@ -53,3 +54,74 @@
 # The gate remains active: any genuinely NEW hit must be fixed at the source, or
 # marked with an inline `<!-- doc-voice-ok: reason -->` for a real exception, or
 # (for a hit under editorial review) added below with a rationale.
+#
+# ── CHANGE-NARRATION RATCHET (check-doc-narration.mjs, both zones) ──────────
+# The change-narration gate reads this file too. Each grandfathered hit is one
+# entry whose rationale names the epic that will reword it as a neutral
+# statement of current behaviour:
+#   # owner: E<NN> <ledger-id|page> — <matched phrase>
+#   • Owners DELETE their entries when they rewrite the prose. No entry is
+#     added for new prose; a new hit is reworded at the source.
+#   • An edit that shifts a grandfathered line re-keys its entry in the same
+#     change, or the gate fails on both sides: the unlisted hit at its new line
+#     and the stale entry at the old one.
+#   • Each owning epic's acceptance asserts
+#     `grep -c '# owner: E<NN> ' scripts/doc-lint-allow.txt` = 0.
+#   • Epic 15 ticket-248 confirms the residue is zero.
+
+getting-started/installation.mdx:199  narration-migration  # owner: E09 ALG-20 — Migration
+getting-started/python-quickstart.mdx:176  narration-this-release  # owner: E14 ONB-06 — this release
+math/_impl/_cut-management.io.mdx:21  narration-migration  # owner: E03 POL-18 — Migration
+math/_impl/_equipment.configure.mdx:168  narration-no-longer  # owner: E10 LPS-18 — no longer accepted
+math/_impl/_equipment.configure.mdx:182  narration-earlier-docs  # owner: E10 LPS-18 — earlier releases
+math/_impl/_network.configure.mdx:77  narration-earlier-docs  # owner: E10 LPS-18 — Earlier documentation
+math/cut-management.mdx:262  narration-no-longer  # owner: E09 ALG-12 — no longer accepted
+math/hydro-production-models.mdx:357  narration-now-verb  # owner: E10 LPS-07 — now supports
+reference/case-directory-format.mdx:177  narration-earlier-docs  # owner: E11 REF-46 — earlier releases
+reference/case-directory-format.mdx:252  narration-earlier-docs  # owner: E11 REF-46 — Earlier documentation
+reference/case-directory-format.mdx:438  narration-migration  # owner: E11 reference/case-directory-format — migration
+reference/case-directory-format.mdx:684  narration-no-longer  # owner: E11 REF-46 — no longer accepted
+reference/case-directory-format.mdx:705  narration-no-longer  # owner: E11 REF-46 — no longer declared
+reference/case-directory-format.mdx:1388  narration-no-longer  # owner: E11 REF-46 — no longer an override column
+reference/error-codes.mdx:134  narration-migration  # owner: E11 reference/error-codes — migration
+reference/error-codes.mdx:336  narration-earlier-docs  # owner: E11 reference/error-codes — Earlier releases
+reference/error-codes.mdx:485  narration-earlier-docs  # owner: E11 reference/error-codes — earlier releases
+reference/flatbuffers-schema.mdx:26  narration-earlier-docs  # owner: E03 reference/flatbuffers-schema — earlier releases
+reference/flatbuffers-schema.mdx:34  narration-earlier-docs  # owner: E03 reference/flatbuffers-schema — earlier release
+reference/flatbuffers-schema.mdx:53  narration-earlier-docs  # owner: E03 reference/flatbuffers-schema — earlier release
+reference/flatbuffers-schema.mdx:115  narration-this-release  # owner: E03 reference/flatbuffers-schema — This release
+reference/flatbuffers-schema.mdx:118  narration-formerly  # owner: E03 reference/flatbuffers-schema — formerly
+reference/flatbuffers-schema.mdx:123  narration-this-release  # owner: E03 reference/flatbuffers-schema — this release
+reference/flatbuffers-schema.mdx:139  narration-earlier-docs  # owner: E03 reference/flatbuffers-schema — earlier release
+reference/flatbuffers-schema.mdx:188  narration-earlier-docs  # owner: E03 POL-08 — earlier release
+reference/flatbuffers-schema.mdx:194  narration-earlier-docs  # owner: E03 POL-08 — earlier release
+reference/flatbuffers-schema.mdx:219  narration-this-release  # owner: E03 reference/flatbuffers-schema — this release
+reference/generic-constraints.mdx:16  narration-before-after-heading  # owner: E11 REF-43 — ### Before
+reference/generic-constraints.mdx:52  narration-before-after-heading  # owner: E11 REF-43 — ### After
+reference/generic-constraints.mdx:130  narration-no-longer  # owner: E11 reference/generic-constraints — no longer exists
+reference/glossary.md:67  narration-earlier-docs  # owner: E13 RST-04 — earlier releases
+reference/output-format.mdx:850  narration-earlier-docs  # owner: E03 POL-08 — earlier release
+reference/output-format.mdx:855  narration-this-release  # owner: E03 POL-08 — this release
+reference/output-format.mdx:914  narration-earlier-docs  # owner: E11 reference/output-format — earlier releases
+reference/output-format.mdx:927  narration-earlier-docs  # owner: E03 POL-08 — earlier release
+running/configuration.mdx:54  narration-pre-version  # owner: E12 RUN-02 — pre-v0
+running/configuration.mdx:266  narration-pre-version  # owner: E12 RUN-02 — pre-v0
+running/configuration.mdx:563  narration-pre-version  # owner: E12 RUN-02 — pre-v0
+running/configuration.mdx:918  narration-new-in  # owner: E12 RUN-02 — new in
+running/policy-management.mdx:166  narration-migration  # owner: E03 running/policy-management — Migration
+running/policy-management.mdx:167  narration-earlier-docs  # owner: E03 running/policy-management — earlier releases
+running/policy-management.mdx:183  narration-migration  # owner: E03 POL-16 — Migration
+running/policy-management.mdx:187  narration-earlier-docs  # owner: E03 POL-16 — earlier release
+running/policy-management.mdx:188  narration-no-longer  # owner: E03 POL-16 — no longer reads
+running/policy-management.mdx:188  narration-this-release  # owner: E03 POL-16 — this release
+running/policy-management.mdx:212  narration-earlier-docs  # owner: E03 POL-16 — earlier release
+running/policy-management.mdx:253  narration-no-longer  # owner: E03 POL-29 — no longer dependent
+running/policy-management.mdx:280  narration-earlier-docs  # owner: E03 POL-15 — earlier release
+running/policy-management.mdx:280  narration-earlier-docs  # owner: E03 POL-15 — earlier release
+running/policy-management.mdx:280  narration-this-release  # owner: E03 POL-15 — this release
+running/policy-management.mdx:284  narration-earlier-docs  # owner: E03 POL-15 — earlier release
+running/policy-management.mdx:285  narration-this-release  # owner: E03 POL-15 — this release
+running/policy-management.mdx:286  narration-migration  # owner: E03 POL-15 — Migration
+running/policy-management.mdx:294  narration-this-release  # owner: E03 POL-29 — this release
+running/policy-management.mdx:398  narration-earlier-docs  # owner: E03 running/policy-management — earlier releases
+running/policy-management.mdx:426  narration-migration  # owner: E03 POL-17 — Migration

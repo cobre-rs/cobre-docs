@@ -35,19 +35,29 @@
 // physical lines — a real narration phrase in this tree ("removed entirely in
 // the\nv0.8.2 restructure") is split by a mid-sentence line wrap, and a
 // naive per-line regex would silently miss it. Each match is mapped back to
-// the physical line on which it STARTS for reporting.
+// the physical line on which it STARTS for reporting. The block building,
+// offset mapping and rule self-reference guard are shared preprocessing in
+// scripts/doc-text.mjs.
 //
 // A committed baseline allowlist (scripts/doc-lint-allow.txt, shared with
-// check-doc-voice.mjs) grandfathers pre-existing strict-zone hits.
+// check-doc-voice.mjs) grandfathers pre-existing strict-zone hits. An entry
+// grandfathers only the rule id it names, and an entry of this gate's that
+// matches no hit is reported as STALE and fails the gate.
 //
-// Exports `parseAnchor(text)` and `detectVersionViolations(text, zone)` behind
-// a direct-run guard, mirroring check-doc-voice.mjs.
+// Exports `parseAnchor(text)`, `detectVersionViolations(text, zone)` and
+// `RULE_IDS` (the rule ids this gate can emit) behind a direct-run guard,
+// mirroring check-doc-voice.mjs.
 
 import { readFileSync, existsSync } from "node:fs";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { join, dirname } from "node:path";
 import { zoneOf, ZONE_STRICT, collectZonedSourceFiles } from "./doc-zones.mjs";
-import { loadAllowlist, isAllowlisted } from "./doc-lint-allowlist.mjs";
+import { loadAllowlist, partitionByAllowlist } from "./doc-lint-allowlist.mjs";
+import {
+  buildBlocks,
+  lineForOffset,
+  inRuleSelfReference,
+} from "./doc-text.mjs";
 
 const scriptDir = dirname(fileURLToPath(import.meta.url));
 const repoRoot = join(scriptDir, "..");
@@ -96,7 +106,6 @@ const NARRATION_PATTERNS = [
   ["version-narration-earlier-releases", /earlier\s+(?:cobre\s+)?releases?\b/gi],
   ["version-narration-deprecated", /\bdeprecated\b/gi],
   ["version-narration-migration", /\bmigration\b/gi],
-  // ADDED beyond the R3 literal list (see comment above).
   [
     "version-narration-renamed",
     /(?:renamed|restructured|changed)\s+(?:from|in)\s+(?:the\s+)?v\d/gi,
@@ -128,93 +137,15 @@ const VERSION_TOKEN_PATTERNS = [
 ];
 
 const WELL_FORMED_VERSION = /^\d+\.\d+\.\d+$/;
+const MALFORMED_VERSION_RULE = "malformed-version-string";
 
-// ---------------------------------------------------------------------------
-// Split text into paragraph BLOCKS (contiguous non-blank lines), each with a
-// joined single-space-separated string and a per-physical-line offset table,
-// so a match found in the joined string can be attributed back to the
-// physical line on which it starts. This is what lets a narration phrase
-// split across a hard-wrapped line break still be detected (see module
-// header) without losing line-number precision for well-behaved single-line
-// hits (the common case).
-// ---------------------------------------------------------------------------
-function buildBlocks(text) {
-  const rawLines = text.split("\n");
-  const rawBlocks = [];
-  let current = null;
-
-  for (let i = 0; i < rawLines.length; i++) {
-    const lineno = i + 1;
-    if (rawLines[i].trim() === "") {
-      if (current) {
-        rawBlocks.push(current);
-        current = null;
-      }
-      continue;
-    }
-    if (!current) current = { startLine: lineno, lines: [] };
-    // Strip markdown bold markers ("**") before matching: a narration verb is
-    // routinely wrapped for emphasis (e.g. "is **removed entirely** in the
-    // vX.Y.Z restructure"), and the literal "**" between "entirely" and "in"
-    // would otherwise break a `\s+`-only narration regex. Stripping (not
-    // blanking to a space) keeps the surrounding words adjacent, which is
-    // what the phrase actually reads as once rendered. Length changes are
-    // harmless here — this gate reports whole-phrase text, not a fixed-width
-    // character window (contrast check-doc-voice.mjs's 30-char hedge lookahead).
-    current.lines.push(rawLines[i].replace(/\*\*/g, ""));
-  }
-  if (current) rawBlocks.push(current);
-
-  return rawBlocks.map((b) => {
-    let joined = "";
-    const lineStarts = [];
-    for (let k = 0; k < b.lines.length; k++) {
-      lineStarts.push(joined.length);
-      joined += b.lines[k];
-      if (k < b.lines.length - 1) joined += " ";
-    }
-    return { startLine: b.startLine, joined, lineStarts };
-  });
-}
-
-// ---------------------------------------------------------------------------
-// Self-reference guard (ticket-028). The corpus's own "Code as ground truth"
-// principle sentence STATES the no-version-annotations rule by naming the very
-// constructs the narration patterns hunt for: "… it does not carry version
-// annotations, deprecation notices, or migration notes …". A clause that
-// NEGATES carrying such notes is describing the policy, not narrating a version
-// change, so a bare-lexical narration hit ("migration", "deprecated") landing
-// inside it is a false positive. Detected conservatively: the clause containing
-// the match — bounded by the nearest sentence/clause breaks on each side — must
-// contain an explicit "does not carry" / "carries no" / "carry no" / "without"
-// / "no" negation governing an "annotations|notices|notes" enumeration. Real
-// change-narration ("a migration guide added in v0.9") never has this shape, so
-// the exclusion cannot mask a genuine version annotation.
-// ---------------------------------------------------------------------------
-const NEGATED_ANNOTATION_ENUM =
-  /\b(?:does not carry|do not carry|carries no|carry no|without|no)\b[^.;]*\b(?:annotations?|notices?|notes?)\b/i;
-
-function inRuleSelfReference(joined, matchIndex) {
-  const clauseStart =
-    Math.max(
-      joined.lastIndexOf(".", matchIndex - 1),
-      joined.lastIndexOf(";", matchIndex - 1),
-    ) + 1;
-  const nextDot = joined.indexOf(".", matchIndex);
-  const clauseEnd = nextDot === -1 ? joined.length : nextDot;
-  return NEGATED_ANNOTATION_ENUM.test(joined.slice(clauseStart, clauseEnd));
-}
-
-// Map a character offset within a block's joined text back to its physical
-// line number.
-function lineForOffset(block, offset) {
-  let lineIdx = 0;
-  for (let k = 0; k < block.lineStarts.length; k++) {
-    if (block.lineStarts[k] <= offset) lineIdx = k;
-    else break;
-  }
-  return block.startLine + lineIdx;
-}
+// Every rule id this gate can emit (except `unreadable`); the allowlist applies
+// and reports only these.
+export const RULE_IDS = new Set([
+  ...NARRATION_PATTERNS.map(([rule]) => rule),
+  ...VERSION_TOKEN_PATTERNS.map(([rule]) => rule),
+  MALFORMED_VERSION_RULE,
+]);
 
 // ---------------------------------------------------------------------------
 // Pure per-file detector (exported for the node:test fixture and for main()).
@@ -252,7 +183,7 @@ export function detectVersionViolations(text, zone) {
           if (!WELL_FORMED_VERSION.test(versionValue)) {
             violations.push({
               lineno,
-              rule: "malformed-version-string",
+              rule: MALFORMED_VERSION_RULE,
               text: `${m[0].trim()} (version token ${JSON.stringify(versionValue)} is not a well-formed X.Y.Z)`,
             });
           }
@@ -311,26 +242,27 @@ function main() {
         lineno: 0,
         rule: "unreadable",
         text: `${error.code ?? error.name}: ${error.message}`,
-        allowlisted: false,
       });
       continue;
     }
 
     for (const v of detectVersionViolations(text, zone)) {
-      const allowlisted = isAllowlisted(allowlist, rel, v.lineno);
-      violations.push({ rel, ...v, allowlisted });
+      violations.push({ rel, ...v });
     }
   }
 
-  const failing = violations.filter((v) => !v.allowlisted);
+  const { failing, grandfathered, stale } = partitionByAllowlist(
+    violations,
+    allowlist,
+    (id) => RULE_IDS.has(id),
+  );
 
-  if (failing.length === 0) {
-    const grandfathered = violations.length - failing.length;
+  if (failing.length === 0 && stale.length === 0) {
     console.log(
       `OK: ${relFiles.length} files scanned; anchor is cobre v${anchor.version}; ` +
         `no NEW cobre-version violations found` +
-        (grandfathered > 0
-          ? ` (${grandfathered} pre-existing hit(s) grandfathered via scripts/doc-lint-allow.txt).`
+        (grandfathered.length > 0
+          ? ` (${grandfathered.length} pre-existing hit(s) grandfathered via scripts/doc-lint-allow.txt).`
           : "."),
     );
     process.exit(0);
@@ -339,11 +271,16 @@ function main() {
   for (const v of failing) {
     console.log(`VIOLATION [${v.rule}]: ${v.rel}:${v.lineno}: ${JSON.stringify(v.text)}`);
   }
+  for (const s of stale) {
+    console.log(
+      `STALE [${s.ruleId}]: ${s.key} — doc-lint-allow.txt:${s.fileLine} matches no version hit`,
+    );
+  }
   console.log(
-    `FAIL: ${failing.length} version violation(s). The methodology corpus carries no ` +
+    `FAIL: ${failing.length} version violation(s), ${stale.length} stale allowlist entry(ies). The methodology corpus carries no ` +
       `cobre-version numbers/annotations outside the CLAUDE.md "Synced to" anchor (v${anchor.version}); ` +
       `a lenient-zone version string must be a well-formed X.Y.Z. Add a rationale to ` +
-      `scripts/doc-lint-allow.txt for a pre-existing hit under editorial review.`,
+      `scripts/doc-lint-allow.txt for a pre-existing hit under editorial review; delete or re-key a stale entry there.`,
   );
   process.exit(1);
 }

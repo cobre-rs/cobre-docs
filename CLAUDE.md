@@ -30,7 +30,7 @@ diverge from the code, the spec must be updated — not the other way around.
 
 ## Current State
 
-**Synced to: cobre v0.16.0 (2026-09-22).**
+**Synced to: cobre v0.17.0 (2026-10-01).**
 
 The corpus is a **unified two-layer reference**: the annotation-free **math
 layer** (formulation, algorithm, worked examples) interleaved per topic with a
@@ -69,6 +69,24 @@ snapshots yet.
   [`docs/design/brand.md`](docs/design/brand.md) before any theming. **Never infer
   brand colour from the `spike/` palette** (its `--dgm-accent` is flow-blue for
   diagram/hydro use, not the UI accent).
+- **Current-state voice, both layers.** Every page in both layers states what
+  cobre does now, with no change narration (no "now", "no longer", "previously",
+  "used to", "formerly", "fixed in", "was broken", "BREAKING", "new in",
+  "as of vX", "this release", migration notes, Before/After examples,
+  removed-key lists, or "Earlier documentation…" / "Known discrepancy" boxes).
+  The software layer may state current version-scoped facts (keys, pins, flags)
+  but never change history; a current-behaviour caveat is a neutral fact, never
+  "a bug where…".
+- **Generic positioning.** Main areas (`index.mdx` lead, CTAs and persona cards,
+  `overview/*`, `getting-started/*`, the sidebar labels, and every section
+  heading outside `running/case-conversion.mdx` and `reference/glossary.md`)
+  name no other planning tool (no NEWAVE, DECOMP, DESSEM or GEVAZP) and use
+  generic phrasing such as "Coming from other software?" or "Converting an
+  existing case", linking to `running/case-conversion`. NEWAVE and DECOMP are
+  named on the bridge page; named term-mapping tables and named equivalent terms
+  live only in the glossary and the bridge page, and other pages carry a generic
+  pointer ("for equivalent terms in other planning tools, see the Glossary").
+  Literal file or identifier references and bibliography citations are exempt.
 
 ---
 
@@ -121,9 +139,9 @@ Part-1 docs review, 2026-06; scoped to `math/*` + overview/notation/glossary.)
   owns them — reinforces _code > spec_.
 - **Don't justify symbol choices.** State the notation clearly; do not explain why a
   symbol was chosen (no etymology/provenance asides, especially Portuguese). The
-  bilingual **glossary** and practitioner term-maps (`reference/glossary.md`,
-  `hydro-production-models` §3) are a deliberate translation aid for
-  DECOMP/DESSEM/NEWAVE practitioners — those stay.
+  bilingual **glossary** and practitioner term-maps (`reference/glossary.md` and
+  the bridge (case-conversion) page, `running/case-conversion.mdx`) are a
+  deliberate translation aid for DECOMP/DESSEM/NEWAVE practitioners — those stay.
 - **Conceptual / overview chapters earn their visuals.** Introduce an idea with the
   equation(s) + a diagram + the tested-compute plots (use `.mdx` to embed the
   Observable Plot islands), and keep notation consistent with the deep chapters the

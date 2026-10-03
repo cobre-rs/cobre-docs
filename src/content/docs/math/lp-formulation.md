@@ -138,7 +138,7 @@ $$
 $$
 
 $$
-  + \underbrace{\text{Constraint violation penalties}}_{\text{See §9}}
+  + \underbrace{\text{Constraint violation penalties}}_{\text{See }\S 9}
 \Bigg]
 $$
 

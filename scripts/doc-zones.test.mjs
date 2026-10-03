@@ -1,8 +1,7 @@
 // Unit fixture for the shared zoneOf() predicate (Epic 04 ticket-015).
 //
 // Pins the zone map so check-doc-voice.mjs and check-doc-version.mjs cannot
-// silently drift apart on what counts as strict/lenient/excluded. The four
-// mappings below are exactly the ones the ticket's Acceptance Criteria name.
+// silently drift apart on what counts as strict/lenient/excluded.
 
 import test from "node:test";
 import assert from "node:assert/strict";
@@ -40,8 +39,8 @@ test("overview/* is strict", () => {
   assert.equal(zoneOf("overview/what-cobre-solves.md"), ZONE_STRICT);
 });
 
-test("index.mdx is excluded", () => {
-  assert.equal(zoneOf("index.mdx"), ZONE_EXCLUDED);
+test("index.mdx is lenient", () => {
+  assert.equal(zoneOf("index.mdx"), ZONE_LENIENT);
 });
 
 test("pt-br/* is excluded", () => {

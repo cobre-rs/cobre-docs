@@ -49,10 +49,11 @@ const STRICT_TOP_LEVEL_DIRS = ["overview/"];
 export function zoneOf(relPath) {
   const normalized = relPath.replace(/\\/g, "/").replace(/^\/+/, "");
 
-  // Excluded: the root landing page (a renderer/harness demo, not migrated
-  // content) and the pt-br/ subtree (a future locale, not yet gated).
-  if (normalized === "index.mdx") return ZONE_EXCLUDED;
+  // Excluded: the pt-br/ subtree (a future locale, not yet gated).
   if (normalized.startsWith("pt-br/")) return ZONE_EXCLUDED;
+
+  // The root landing page is software-layer content (CTAs, cards, links).
+  if (normalized === "index.mdx") return ZONE_LENIENT;
 
   // math/_impl/** is UNDER math/ but IS the software layer — must be checked
   // before the general math/ strict rule below, or it would wrongly inherit
@@ -75,7 +76,7 @@ export function zoneOf(relPath) {
 /**
  * Recursively collect every `.md`/`.mdx` file under `contentRoot`, returning
  * paths RELATIVE to `contentRoot` (forward-slash separated), skipping any
- * file whose `zoneOf()` result is "excluded" (pt-br/, index.mdx, ...).
+ * file whose `zoneOf()` result is "excluded" (pt-br/ ...).
  *
  * Shared by check-doc-voice.mjs and check-doc-version.mjs so the two gates
  * can never walk different file sets. UNLIKE check-figures.mjs /
@@ -96,8 +97,10 @@ export function collectZonedSourceFiles(contentRoot) {
       const rel = prefix + entry.name;
       if (entry.isDirectory()) {
         files.push(...walk(join(dir, entry.name), `${rel}/`));
-      } else if (/\.(md|mdx)$/.test(entry.name)) {
-        if (zoneOf(rel) === ZONE_EXCLUDED) continue;
+      } else if (
+        /\.(md|mdx)$/.test(entry.name) &&
+        zoneOf(rel) !== ZONE_EXCLUDED
+      ) {
         files.push(rel);
       }
     }

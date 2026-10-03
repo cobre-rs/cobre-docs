@@ -123,6 +123,11 @@ jobs:
       - name: Check doc version (cobre-version references vs the Synced-to anchor)
         run: npm run check:version
 
+      # R62/ADR-007: change-narration ratchet, both zones (static source read, pre-build).
+      # Pre-existing hits are grandfathered per owning epic in scripts/doc-lint-allow.txt.
+      - name: Check doc narration (change-narration ratchet, both zones)
+        run: npm run check:narration
+
       # ticket-014 (strategy §6b): advisory vendored-JSON-schema validation.
       # Asserts the COMMITTED public/schemas/ copy is present, exactly 18
       # files, and every file is well-formed JSON. This needs NO `cobre`

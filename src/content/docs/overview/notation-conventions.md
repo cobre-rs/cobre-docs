@@ -99,7 +99,7 @@ $$
 3. Target volume: $V$ [hm³] = $10^6$ m³
 
 $$
-V \text{ [hm³]} = Q \text{ [m³/s]} \times \tau \text{ [hours]} \times \frac{3600 \text{ s}}{1 \text{ hour}} \times \frac{1 \text{ hm³}}{10^6 \text{ m³}}
+V \,[\mathrm{hm}^3] = Q \,[\mathrm{m}^3/\mathrm{s}] \times \tau \text{ [hours]} \times \frac{3600 \text{ s}}{1 \text{ hour}} \times \frac{1 \,\mathrm{hm}^3}{10^6 \,\mathrm{m}^3}
 $$
 
 $$
@@ -110,13 +110,13 @@ $$
 If the stage has blocks $k \in \mathcal{K}$ with durations $\tau_k$ hours, and the flow is assumed constant across the stage (parallel blocks), the total time is $\sum_k \tau_k$ hours:
 
 $$
-\zeta = 0.0036 \times \sum_{k \in \mathcal{K}} \tau_k \quad \text{[hm³/(m³/s)]}
+\zeta = 0.0036 \times \sum_{k \in \mathcal{K}} \tau_k \quad [\mathrm{hm}^3/(\mathrm{m}^3/\mathrm{s})]
 $$
 
 **Dimensional Analysis**:
 
 $$
-[\zeta] = \frac{\text{s}}{\text{h}} \times \frac{\text{m³}}{\text{hm³}} \times \text{h} = \frac{\text{hm³}}{\text{m³/s}}
+[\zeta] = \frac{\text{s}}{\text{h}} \times \frac{\mathrm{m}^3}{\mathrm{hm}^3} \times \text{h} = \frac{\mathrm{hm}^3}{\mathrm{m}^3/\mathrm{s}}
 $$
 
 **Worked Example** (Monthly Stage):
@@ -129,16 +129,16 @@ $$
 | **Total** |        | **728**               |
 
 $$
-\zeta = 0.0036 \times 728 = 2.6208 \text{ hm³/(m³/s)}
+\zeta = 0.0036 \times 728 = 2.6208 \,\mathrm{hm}^3/(\mathrm{m}^3/\mathrm{s})
 $$
 
 **Verification**: A constant inflow of $Q = 100$ m³/s over the month yields:
 
 $$
-V = Q \times \zeta = 100 \times 2.6208 = 262.08 \text{ hm³}
+V = Q \times \zeta = 100 \times 2.6208 = 262.08 \,\mathrm{hm}^3
 $$
 
-Direct calculation: $100 \text{ m³/s} \times 728 \text{ h} \times 3600 \text{ s/h} / 10^6 = 262.08 \text{ hm³}$ ✓
+Direct calculation: $100 \,\mathrm{m}^3/\mathrm{s} \times 728 \text{ h} \times 3600 \text{ s/h} / 10^6 = 262.08 \,\mathrm{hm}^3$ ✓
 
 ### 3.2 Load and Costs
 

@@ -18,6 +18,7 @@
     "check:voice": "node scripts/check-doc-voice.mjs",
     "check:counts": "node scripts/check-doc-counts.mjs",
     "check:version": "node scripts/check-doc-version.mjs",
+    "check:narration": "node scripts/check-doc-narration.mjs",
     "gen:notices": "node scripts/gen-notices.mjs",
     "refresh:schemas": "node scripts/refresh-schemas.mjs",
     "refresh:recordings": "node scripts/refresh-recordings.mjs",

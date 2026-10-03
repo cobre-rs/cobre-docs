@@ -80,7 +80,7 @@ payload (entity counts, for `convert`); `diagnostics` is the same findings
 list the Rich panels render.
 
 For the complete flag reference for every command, see the
-[cobre-bridge CLI reference](https://github.com/cobre-rs/cobre-bridge/blob/v0.16.0/docs/cli.md).
+[cobre-bridge CLI reference](https://github.com/cobre-rs/cobre-bridge/blob/v0.17.0/docs/cli.md).
 
 ### Converting a DECOMP Deck
 
@@ -116,9 +116,9 @@ file, record, and column feeds which output field, and what transformation
 is applied -- see the bridge's own generated data maps. They are produced by
 `scripts/gen-lineage-docs.py`, verified by tests against a real conversion,
 marked "Do not edit by hand," and written in Portuguese:
-[`newave-data-map.md`](https://github.com/cobre-rs/cobre-bridge/blob/v0.16.0/docs/newave-data-map.md)
+[`newave-data-map.md`](https://github.com/cobre-rs/cobre-bridge/blob/v0.17.0/docs/newave-data-map.md)
 and
-[`decomp-data-map.md`](https://github.com/cobre-rs/cobre-bridge/blob/v0.16.0/docs/decomp-data-map.md).
+[`decomp-data-map.md`](https://github.com/cobre-rs/cobre-bridge/blob/v0.17.0/docs/decomp-data-map.md).
 
 ### Output Directory Structure
 
@@ -339,17 +339,17 @@ merged with sequential integer IDs, and per-stage right-hand-side bounds in
 | Package                     | Purpose                                                                              |
 | ---------------------------- | ------------------------------------------------------------------------------------- |
 | `idecomp`                    | Reads legacy DECOMP fixed-width and binary deck files                                |
-| `inewave>=1.15.1`             | Reads legacy NEWAVE fixed-width and binary input files                               |
+| `inewave>=1.16.1`             | Reads legacy NEWAVE fixed-width and binary input files                               |
 | `pyarrow`                    | Writes Parquet output tables                                                          |
 | `pandas`                     | DataFrame manipulation during conversion                                             |
 | `plotly`                     | Renders the `dashboard` HTML charts                                                   |
 | `polars`                     | DataFrame manipulation for the `compare` and `dashboard` pipelines                    |
 | `rich`                       | Console rendering (progress bars, tables, diagnostics)                                |
 | `typer`                      | The CLI framework                                                                     |
-| `cobre-python>=0.16.0,<0.17` | **Required.** Powers `convert --validate`, `dashboard`, and `convert decomp`'s boundary-FCF import. |
+| `cobre-python>=0.17.0,<0.18` | **Required.** Powers `convert --validate`, `dashboard`, and `convert decomp`'s boundary-FCF import. |
 
 `cobre-python`'s floor tracks cobre-bridge's own `MIN_COBRE_VERSION`
-constant: cobre-bridge 0.16.0 requires `cobre-python>=0.16.0,<0.17`, kept in
+constant: cobre-bridge 0.17.0 requires `cobre-python>=0.17.0,<0.18`, kept in
 lockstep with the pin above by a packaging test. As stated under
 [Installation](#installation), a cobre-bridge release `X.Y.Z` always targets
 cobre `X.Y.Z`.
