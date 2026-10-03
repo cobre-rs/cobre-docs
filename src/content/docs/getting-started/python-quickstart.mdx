@@ -152,7 +152,7 @@ checkpoint from `<output_dir>/<policy_subdir>` (`policy_subdir` defaults to
 
 | Key           | Type         | Description                                                             |
 | ------------- | ------------ | ------------------------------------------------------------------------ |
-| `metadata`    | `dict`       | `format_version`, `cobre_version`, `created_at`, `num_stages`, `graph_manifest`, `season_manifest`, `producer` |
+| `metadata`    | `dict`       | `format_version`, `software`, `software_version`, `created_at`, `num_stages`, `graph_manifest`, `season_manifest`, `producer` |
 | `stage_cuts`  | `list[dict]` | One entry per stage — see below                                        |
 | `stage_bases` | `list[dict]` | One entry per saved LP basis: `stage_id`, `iteration`, `column_status`, `row_status`, `num_cut_rows` |
 
@@ -245,7 +245,6 @@ stage_cuts = [
 ]
 
 metadata = {
-    "cobre_version": "0.13.0",
     "created_at": "2026-07-30T00:00:00Z",
     "num_stages": 1,
     "producer": {

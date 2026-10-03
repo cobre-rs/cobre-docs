@@ -149,7 +149,8 @@ single file. Consumers should check `status` before interpreting other fields.
 
 ```json
 {
-  "cobre_version": "0.16.0",
+  "software": "cobre",
+  "software_version": "0.16.0",
   "hostname": "<hostname>",
   "solver": "highs",
   "solver_version": "<solver version>",
@@ -219,7 +220,8 @@ single file. Consumers should check `status` before interpreting other fields.
 
 | Field              | Type   | Nullable | Description                                                                       |
 | ------------------ | ------ | -------- | --------------------------------------------------------------------------------- |
-| `cobre_version`    | string | No       | Version of the cobre binary that produced this output (from `CARGO_PKG_VERSION`). |
+| `software`         | string | No       | Name of the software that produced this output (`"cobre"`).                       |
+| `software_version` | string | No       | Version of the software that produced this output (from `CARGO_PKG_VERSION`).     |
 | `hostname`         | string | No       | Hostname of the machine that ran training.                                        |
 | `solver`           | string | No       | LP solver backend: `"highs"` or `"clp"`.                                          |
 | `solver_version`   | string | Yes      | Version string of the linked LP solver library. Omitted when not available.       |
@@ -925,7 +927,8 @@ dict keys.
 | Field            | Type    | Nullable | Description                                                                                                                             |
 | ----------------- | ------- | -------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
 | `format_version` | integer | No       | On-disk format version; must equal `2` on read. A checkpoint from an earlier release has no `manifest.bin` at all and is rejected at the first read, before any payload is parsed. |
-| `cobre_version`  | string  | No       | Version of the cobre binary that wrote this checkpoint.                                                                                 |
+| `software`       | string  | No       | Name of the software that wrote this checkpoint (`"cobre"`); a checkpoint that recorded none is refused at load.                           |
+| `software_version` | string | No     | Version of the software that wrote this checkpoint. A checkpoint loads only in the same software at the same version.                   |
 | `created_at`     | string  | No       | ISO 8601 timestamp when the checkpoint was written.                                                                                     |
 | `num_stages`     | integer | No       | Number of stages the graph manifest spans. Must match the case configuration on resume.                                                 |
 | `graph_manifest` | object  | No       | Graph manifest: node list, edge list, node -> pool map, and pool-set size. Defaults to empty on a plain stage chain.                    |
@@ -991,7 +994,8 @@ LP solver statistics, and distribution information.
 
 ```json
 {
-  "cobre_version": "0.16.0",
+  "software": "cobre",
+  "software_version": "0.16.0",
   "hostname": "<hostname>",
   "solver": "highs",
   "started_at": "<timestamp>",
@@ -1030,7 +1034,8 @@ LP solver statistics, and distribution information.
 
 | Field              | Type   | Nullable | Description                                                   |
 | ------------------ | ------ | -------- | ------------------------------------------------------------- |
-| `cobre_version`    | string | No       | Version of the cobre binary that produced this output.        |
+| `software`         | string | No       | Name of the software that produced this output (`"cobre"`).   |
+| `software_version` | string | No       | Version of the software that produced this output.            |
 | `hostname`         | string | No       | Hostname of the machine that ran simulation.                  |
 | `solver`           | string | No       | LP solver backend: `"highs"` or `"clp"`.                      |
 | `solver_version`   | string | Yes      | LP solver library version string. Omitted when not available. |
