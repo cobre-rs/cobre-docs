@@ -60,17 +60,17 @@ Cobre does not include binary commitment variables in the training LP. The minim
 
 **Decision Variables:**
 
-- $f^+_{\ell,k}$ = direct flow (source → target)
-- $f^-_{\ell,k}$ = reverse flow (target → source)
+- $f^+_{n,k}$ = direct flow (source → target)
+- $f^-_{n,k}$ = reverse flow (target → source)
 
 **Bounds:**
 
 $$
-0 \leq f^+_{\ell,k} \leq \bar{F}^+_\ell, \quad 0 \leq f^-_{\ell,k} \leq \bar{F}^-_\ell
+0 \leq f^+_{n,k} \leq \bar{F}^+_n, \quad 0 \leq f^-_{n,k} \leq \bar{F}^-_n
 $$
 
 :::note[Stage- and block-varying capacity]
-The capacity limits $\bar{F}^+_\ell$ and $\bar{F}^-_\ell$ may vary by stage and, optionally, by block through absolute-MW overrides on `constraints/line_bounds.parquet` (`direct_mw`/`reverse_mw`, with an optional `block_id`). A line with no override rows keeps its base capacity unchanged.
+The capacity limits $\bar{F}^+_n$ and $\bar{F}^-_n$ may vary by stage and, optionally, by block through absolute-MW overrides on `constraints/line_bounds.parquet` (`direct_mw`/`reverse_mw`, with an optional `block_id`). A line with no override rows keeps its base capacity unchanged.
 :::
 
 **Load Balance Contribution:**
@@ -78,25 +78,25 @@ The capacity limits $\bar{F}^+_\ell$ and $\bar{F}^-_\ell$ may vary by stage and,
 At source bus:
 
 $$
--f^+_{\ell,k} + f^-_{\ell,k}
+-f^+_{n,k} + f^-_{n,k}
 $$
 
 At target bus:
 
 $$
-f^+_{\ell,k} - f^-_{\ell,k}
+f^+_{n,k} - f^-_{n,k}
 $$
 
-The dispatch LP is lossless: both flow directions enter the bus balances with coefficient ±1. Transmission losses are a reported quantity computed after the solve, $\text{loss}_{\ell,k} = (1 - \eta_\ell)\,(f^+_{\ell,k} + f^-_{\ell,k})$, where $\eta_\ell$ is the line's reported efficiency ([Notation Conventions](/overview/notation-conventions)). See [System Elements](/math/system-elements) for the network model.
+The dispatch LP is lossless: both flow directions enter the bus balances with coefficient ±1. Transmission losses are a reported quantity computed after the solve, $\text{loss}_{n,k} = (1 - \eta_n)\,(f^+_{n,k} + f^-_{n,k})$, where $\eta_n$ is the line's reported efficiency ([Notation Conventions](/overview/notation-conventions)). See [System Elements](/math/system-elements) for the network model.
 
 **Objective Contribution:**
 
 $$
-\sum_{k} \tau_k \cdot c^{exch}_\ell (f^+_{\ell,k} + f^-_{\ell,k})
+\sum_{k} \tau_k \cdot c^{exch}_n (f^+_{n,k} + f^-_{n,k})
 $$
 
 :::note[Note on Exchange Cost]
-The cost $c^{exch}_\ell$ is a **regularization term**, not an actual transmission cost. Its purpose is to:
+The cost $c^{exch}_n$ is a **regularization term**, not an actual transmission cost. Its purpose is to:
 
 1. **Prevent degenerate solutions**: Without this term, multiple equivalent solutions exist with different flow patterns
 2. **Guide the solver**: Small positive cost encourages minimal power transfers when indifferent
@@ -144,12 +144,12 @@ Pumping stations transfer water from a source reservoir to a destination reservo
 
 **Decision Variables:**
 
-- $p_{j,k}$ = pumped water flow at station $j$, block $k$ (m³/s)
+- $p_{y,k}$ = pumped water flow at station $y$, block $k$ (m³/s)
 
 **Bounds:**
 
 $$
-\underline{P}_j \leq p_{j,k} \leq \bar{P}_j
+\underline{P}_y \leq p_{y,k} \leq \bar{P}_y
 $$
 
 Both bounds are hard constraints. Pumping stations honor the generic commissioning window ([system elements §1](/math/system-elements#entity-commissioning-windows)): outside `[entry_stage_id, exit_stage_id)` the flow column is pinned to zero, so the station moves no water and draws no power.
@@ -157,19 +157,19 @@ Both bounds are hard constraints. Pumping stations honor the generic commissioni
 **Power Consumption:**
 
 $$
-P^{pump}_{j,k} = \gamma_j \cdot p_{j,k}
+P^{pump}_{y,k} = \rho^{pump}_y \cdot p_{y,k}
 $$
 
-where $\gamma_j$ is the power consumption rate (MW per m³/s).
+where $\rho^{pump}_y$ is the power consumption rate (MW per m³/s).
 
 **Water Balance Impact:**
 
-- Source hydro: $-p_{j,k}$ (water removed)
-- Destination hydro: $+p_{j,k}$ (water added)
+- Source hydro: $-p_{y,k}$ (water removed)
+- Destination hydro: $+p_{y,k}$ (water added)
 
 **Load Balance Impact:**
 
-At connected bus: $-P^{pump}_{j,k} = -\gamma_j \cdot p_{j,k}$ (power consumed)
+At connected bus: $-P^{pump}_{y,k} = -\rho^{pump}_y \cdot p_{y,k}$ (power consumed)
 
 **Objective Contribution:** None
 
@@ -236,7 +236,7 @@ The methodology above defines every equipment type's LP constraints; the tabs be
 
 ## Cross-References
 
-- [Notation conventions](/overview/notation-conventions) — variable and set definitions ($g_j$, $f_\ell$, $\chi_c$, $p_j$, $\tau_k$)
+- [Notation conventions](/overview/notation-conventions) — variable and set definitions ($g_j$, $f_n$, $\chi_c$, $p_y$, $\tau_k$)
 - [System elements](/math/system-elements) — element descriptions, decision variables, and connections
 - [LP formulation](/math/lp-formulation) — how equipment constraints integrate into the assembled LP; hydro water balance (§4), generation constraints (§6), variable bounds (§8)
 - [Hydro production models](/math/hydro-production-models) — hydro-specific production function constraints (constant, FPHA, linearized head)

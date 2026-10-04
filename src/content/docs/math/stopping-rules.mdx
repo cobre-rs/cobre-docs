@@ -74,8 +74,10 @@ $$
 **Stopping condition**:
 
 $$
-\text{STOP} \iff |\Delta_k| < \text{tolerance}
+\text{STOP} \iff |\Delta_k| < \varepsilon_{\text{stall}}
 $$
+
+where $\varepsilon_{\text{stall}}$ is the bound-stalling tolerance on the relative improvement, set by the rule's `tolerance` parameter.
 
 **Interpretation**: The bound has plateaued — the relative improvement over the last $\tau$ iterations is below the specified tolerance, indicating diminishing returns from further iterations.
 
@@ -89,6 +91,22 @@ Under risk-averse formulations (e.g., CVaR), the lower bound $\underline{z}^k$ m
 
 _Bound evolution across iterations $k$: the lower bound $\underline{z}^k$ rises monotonically (the append-only cut pool), while the upper bound $\bar{z}^k$ descends toward it. A confidence band around the descending series applies only when the upper bound is a statistical estimate — it tightens as sampling accumulates; the exact upper bound the gap rule compares against carries no such band._
 
+### Optimality gap
+
+At iteration $k$, the optimality gap is the difference between the upper bound $\bar{z}^k$ and the lower bound $\underline{z}^k$, whichever mechanism supplies the upper bound — the statistical estimate of a sampled forward pass or the exact bound of an enumerated one ([Upper Bound Evaluation](/math/upper-bound-evaluation)):
+
+$$
+\text{gap}^k = \bar{z}^k - \underline{z}^k
+$$
+
+The percent gap normalizes it by the lower bound:
+
+$$
+100 \cdot \frac{\text{gap}^k}{\max(1, |\underline{z}^k|)}
+$$
+
+Both bounds are in unscaled currency units — the original cost units, with the [cost scaling](/math/lp-formulation#121-cost-scaling) of the stage LP undone — so $\text{gap}^k$ is in currency units and the percent gap is dimensionless. The denominator is the magnitude of the **lower** bound, **never** the upper bound, floored at one currency unit so that the ratio stays bounded when the lower bound is near zero. The per-iteration reported gap and the relative arm of the gap rule below share this denominator, so the two never disagree on what "relative gap" means.
+
 The gap rule terminates training once the exact upper bound has closed on the lower bound.
 
 **Configuration**:
@@ -99,21 +117,15 @@ The gap rule terminates training once the exact upper bound has closed on the lo
 
 **Evaluation**:
 
-The gap is the clamped distance between the exact upper bound $\bar{z}$ and the lower bound $\underline{z}$:
-
-$$
-\text{gap} = \max(0,\; \bar{z} - \underline{z})
-$$
-
-In exact arithmetic the exact upper bound satisfies $\bar{z} \geq \underline{z}$; the clamp only absorbs floating-point noise once the gap has closed to (numerically) zero.
+The rule evaluates the [optimality gap](#optimality-gap) with the exact upper bound, $\bar{z}^k = \bar{z}_{\text{exact}}$, and compares it clamped at zero, $\max(0,\; \text{gap}^k)$; the clamp belongs to the rule's comparison, not to the gap's definition. In exact arithmetic the exact upper bound satisfies $\bar{z} \geq \underline{z}$; the clamp only absorbs floating-point noise once the gap has closed to (numerically) zero.
 
 **Stopping condition** — two arms combined by disjunction (either is sufficient):
 
 $$
-\text{STOP} \iff \text{gap} \leq \text{tolerance} \quad\text{or}\quad 100 \cdot \text{gap} / \max(1, |\underline{z}|) \leq \text{relative tolerance}
+\text{STOP} \iff \max(0,\; \text{gap}^k) \leq \varepsilon_{\text{abs}} \quad\text{or}\quad 100 \cdot \max(0,\; \text{gap}^k) / \max(1, |\underline{z}^k|) \leq \varepsilon_{\text{rel}}
 $$
 
-The absolute arm compares the gap directly against `tolerance`, in the objective's own units. The relative arm normalizes the gap by the **lower** bound, $\max(1, |\underline{z}|)$ — floored so the ratio stays bounded when the lower bound is near zero — **never** by the upper bound; this is the same denominator the per-iteration reported gap uses, so the two never disagree on what "relative gap" means. Either bound may be configured alone; when both are configured, training stops as soon as either arm is satisfied.
+The absolute tolerance $\varepsilon_{\text{abs}}$, in currency units, is set by the rule's `tolerance` parameter. The relative tolerance $\varepsilon_{\text{rel}}$, in percent, is set by the rule's `relative_tolerance` parameter. Either tolerance may be configured alone; when both are configured, training stops as soon as either arm is satisfied.
 
 **Admissibility**: the comparison above is only valid when the upper bound it uses is the *exact* bound, not a statistical estimate. Both of the following must hold:
 
@@ -193,7 +205,7 @@ When any stopping rule triggers, the output includes:
 | `final_iteration` | Iteration count at termination                                             |
 | `lower_bound`     | Final deterministic lower bound                                            |
 | `upper_bound`     | Final upper bound (statistical or exact)                                   |
-| `gap`             | Optimality gap: $(\bar{z} - \underline{z}) / \max(1, \lvert\underline{z}\rvert)$ |
+| `gap`             | Final [optimality gap](#optimality-gap)                                    |
 
 The `stopping_rule` field carries the rule that triggered, including `"graceful_shutdown"`
 when an external signal terminated the run.

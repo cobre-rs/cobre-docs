@@ -79,7 +79,7 @@ The fitting process:
    season
 4. **Order selection** — For each season, compute the periodic partial
    autocorrelation function (PACF) up to `max_order`, select the largest lag
-   whose PACF exceeds the significance threshold $1.96 / \sqrt{N_m}$, then apply
+   whose PACF exceeds the significance threshold of the [PAR Inflow Model](/math/par-inflow-model) order selection, then apply
    the Maceira & Damázio contribution-based order reduction
 5. **Yule-Walker solution** — Solve the periodic Yule-Walker system (whose
    correlation matrix is symmetric but **not** Toeplitz) via Gaussian
@@ -124,11 +124,11 @@ The generation process:
 1. **Independent sampling** — Generate independent standard normal
    $z_i \sim N(0,1)$ samples, one per entity in the correlation group
 2. **Spectral transform** — Pre-decompose the correlation matrix via
-   eigendecomposition $\Sigma = V \operatorname{diag}(\lambda) V^T$ during
+   eigendecomposition $C = U \Lambda U^\top$ during
    preprocessing. The spectral factor
-   $D = V \operatorname{diag}(\sqrt{\max(0,\lambda)}) V^T$ transforms
+   $C^{1/2} = U \tilde{\Lambda}^{1/2} U^\top$ transforms
    independent noise into the correlated [PAR innovation](/overview/notation-conventions#35-inflow-model-parameters):
-   $\varepsilon = D \cdot z$. Negative
+   $\varepsilon = C^{1/2} z$. Negative
    eigenvalues are clipped to zero, yielding the nearest
    positive-semidefinite approximation. Spectral factorisation is the only
    method Cobre implements — the `method` field in `correlation.json` accepts
@@ -269,7 +269,7 @@ scenarios.
 **Forward pass usage (InSample only):** When the `InSample` sampling scheme is
 active (see section 3.2), the forward pass samples a random opening
 $\omega \in \Omega_n$ at each node it visits — a random index
-$j \in \{0, \ldots, N_t - 1\}$ on the implicit chain — and uses its
+$j \in \{1, \ldots, N_t\}$ on the implicit chain — and uses its
 corresponding noise vector $\varepsilon_{t,j}$ from the opening tree. Other sampling
 schemes (`External`, `Historical`) use entirely separate data sources and do
 not access the opening tree; the forward pass noise path is governed by the
@@ -368,7 +368,7 @@ sub-objects in `training.scenario_source`:
 #### InSample (Default)
 
 At each stage $t$, sample a random index
-$j \in \{0, \ldots, N_{\text{openings}} - 1\}$ and use the corresponding noise
+$j \in \{1, \ldots, N_{\text{openings}}\}$ and use the corresponding noise
 vector $\varepsilon_{t,j}$ from the fixed opening tree (section 2.3). The PAR model
 dynamics equation is embedded in the LP as a constraint; the solver evaluates
 the inflow realization implicitly when it solves the LP with the fixed noise.
@@ -459,7 +459,7 @@ stage during the backward pass. Cobre implements one scheme:
   fixed opening tree. This is the standard SDDP backward pass that guarantees
   proper cut generation by considering every branching.
 
-A Monte Carlo backward sampling variant — sampling $n$ openings with
+A Monte Carlo backward sampling variant — sampling $n_{\text{sample}}$ openings with
 replacement instead of evaluating all — is not currently implemented.
 
 ### 3.5 Configuration
@@ -546,16 +546,16 @@ Given target inflow $a_t^{\text{target}}$ at stage $t$ for hydro $h$ with
 season $m$:
 
 $$
-\varepsilon_t = \frac{a_t^{\text{target}} - \phi_m - \sum_{\ell=1}^{P} \psi_{m,\ell} \cdot a_{t-\ell}}{\sigma_m}
+\varepsilon_t = \frac{a_t^{\text{target}} - b_{h,m} - \sum_{\ell=1}^{P_h} \psi_{m,\ell} \cdot a_{t-\ell}}{\sigma_m}
 $$
 
-where $\phi_m = \mu_m - \sum_{\ell=1}^{P} \psi_{m,\ell} \cdot \mu_{m-\ell}$ is
+where $b_{h,m} = \mu_m - \sum_{\ell=1}^{P_h} \psi_{m,\ell} \cdot \mu_{m-\ell}$ is
 the precomputed base value.
 
 All quantities ($\mu_m$, $\psi_{m,\ell}$, $\sigma_m$) are in their respective
 units as described in [PAR(p) Inflow Model](/math/par-inflow-model). The AR
 coefficients are in original units; $\sigma_m$ is the derived residual std.
-Under PAR(p)-A, the upper index $P$ of the lag sum equals the full width of
+Under PAR(p)-A, the upper index $P_h$ of the lag sum equals the full width of
 the AR-dynamics row (12 for monthly cycles when the annual component is
 active), not the classical AR order — the annual coefficient is spread across
 the trailing lag positions and must enter the deterministic component of the
@@ -614,7 +614,7 @@ from the derived seed, the two paths build their lag chains from different
 roots and produce a systematic per-stage offset of
 
 $$
-z_h^{(t)} = a_t^{\text{target}} - a_t^{\text{reconstructed}}
+\Delta a_{h,t} = a_t^{\text{target}} - a_t^{\text{reconstructed}}
         = \sum_{\ell} \psi_{m,\ell} \cdot \bigl(\text{seed}_\ell - \text{window\_lag}_\ell\bigr)
 $$
 
@@ -716,9 +716,9 @@ is exact for the given tree.
 The scenario tree is defined by per-stage branching counts $N_t$ for
 $t = 1, \ldots, T$:
 
-- **Total nodes at stage $t$**: $\prod_{s=1}^{t} N_s$
+- **Total nodes at stage $t$**: $\prod_{t'=1}^{t} N_{t'}$
 - **Total leaf nodes**: $\prod_{t=1}^{T} N_t$
-- **Total tree nodes**: $\sum_{t=1}^{T} \prod_{s=1}^{t} N_s$
+- **Total tree nodes**: $\sum_{t=1}^{T} \prod_{t'=1}^{t} N_{t'}$
 
 Each node at stage $t$ has $N_t$ children, each corresponding to a distinct
 realization (noise vector or external scenario value). The branchings at each
@@ -757,7 +757,7 @@ stT -> bN: "branch Nₜ"
 ```
 
 **General case** — $N_t$ branchings at every stage, so the node count grows
-multiplicatively. With $N_1 = N_2 = 3$ the tree fans to $\prod_{s=1}^{3} N_s = 9$
+multiplicatively. With $N_1 = N_2 = 3$ the tree fans to $\prod_{t'=1}^{3} N_{t'} = 9$
 nodes at stage 3 (node labels below are the stage index):
 
 ```d2

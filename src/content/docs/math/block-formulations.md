@@ -23,7 +23,7 @@ $$
 
 where:
 
-- $w_k = \tau_k / \sum_j \tau_j$ is the block weight
+- $w_k = \tau_k / \sum_{k' \in \mathcal{K}} \tau_{k'}$ is the block weight
 - $\text{net\_flows}_{h,k}$ = inflows from upstream − outflows − evaporation − withdrawal
 
 This formulation assumes the reservoir can freely redistribute water across blocks within the stage.
@@ -93,7 +93,7 @@ Inter-block storages $v_{h,k}$ for $k < |\mathcal{K}|$ are internal LP variables
 In chronological mode, the incoming storage LP variable $v^{in}_h$ is pinned to its trial value $\hat{v}_h$ by equal column bounds (see [LP formulation §4a](/math/lp-formulation)). The **reduced cost** of that pinned column gives the storage cut coefficient directly:
 
 $$
-\pi^v_h = \bar{c}^{in}_h / d^{col}_h
+\beta^v_h = \bar{c}^{in}_h / d^{col}_h
 $$
 
 By the LP envelope theorem, this reduced cost automatically captures all downstream effects through the chain of inter-block water balances ($v^{in}_h \to v_{h,1} \to \ldots \to v_{h,|\mathcal{K}|}$), FPHA constraints, and generic constraints. No special handling or dual combination is required. See [Cut management](/math/cut-management).

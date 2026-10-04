@@ -53,7 +53,7 @@ Rules Cobre enforces (or that silently mis-scale the model if broken):
 - **Standardize by the seasonal std, consistently.** The coefficients are those
   of the series standardized by its seasonal sample std — the classical
   standardization — and the $s_m$ you divide by must be exactly the `std_m3s`
-  you store: Cobre reconstructs $\psi$ and $\sigma$ from the stored `std_m3s`,
+  you store: Cobre reconstructs $\psi_{m,\ell}$ and $\sigma_m$ from the stored `std_m3s`,
   so a mismatch is silent.
 - **Cobre hard-rejects a coefficient set that fails its stationarity gate.**
   The gate runs the [periodic-ACF closure](/math/par-inflow-model) on your

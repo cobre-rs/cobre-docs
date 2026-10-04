@@ -105,7 +105,7 @@ t4 -> b4
 | Parameter             | Symbol    | Value       |
 | --------------------- | --------- | ----------- |
 | Stages                | $T$       | 4           |
-| Openings per stage    | $N$       | 3           |
+| Openings per stage    | $N_t$     | 3           |
 | Thermal marginal cost | $c^{th}$  | 50 \$/MWh   |
 | Deficit cost          | $c^{def}$ | 1000 \$/MWh |
 | Discount factor       | $d$       | 1.0         |
@@ -165,10 +165,10 @@ $\theta \geq 0$.
 
 **Future cost variable $\theta$**: as in the single-reservoir case, the
 terminal stage carries no cuts; cuts of the form
-$\theta \geq \alpha + \sum_h \pi^v_h\, v_h$ are added by the backward
+$\theta \geq \beta_0 + \sum_h \beta^v_h\, v_h$ are added by the backward
 pass to earlier stages' LPs. With four reservoirs the cut is now a
 4-coefficient hyperplane in storage state space, with each
-$\pi^v_h \leq 0$ reflecting that storage at hydro $h$ reduces future
+$\beta^v_h \leq 0$ reflecting that storage at hydro $h$ reduces future
 cost.
 
 Note again the absence of any AR-lag state: 0-order inflow has no
@@ -192,8 +192,8 @@ is no `correlation.json` file in the actual `examples/4ree/` case, and
 this walkthrough preserves that property.
 
 If a `correlation.json` file were supplied, the spatial structure
-$\Sigma$ between innovations would be applied via the spectral
-factorisation $\varepsilon = L\, z$ with $L L^{\top} = \Sigma$ — see
+$C$ between innovations would be applied via the spectral
+factorisation $\varepsilon = C^{1/2} z$ with $C^{1/2} = U \Lambda^{1/2} U^{\top}$ — see
 [PAR Inflow Model](/math/par-inflow-model) section 8 for the
 multivariate case. For this walkthrough the four innovations are
 drawn independently.
@@ -217,40 +217,40 @@ Because at the initial state every bus has enough hydro plus storage
 to meet demand from hydro alone, stages 1–3 carry zero cost. Stage 4
 runs water-short on three of the four buses.
 
-**Stage 1** — incoming storage $\hat v_0 = (30, 30, 20, 20)$, inflows
+**Stage 1** — incoming storage $\hat x_0 = (30, 30, 20, 20)$, inflows
 $(15, 12, 10, 8)$. At every bus, $q_h = D_b$ (demand met from hydro);
 end-of-stage storage:
 
 $$
-v_1 = (30 + 15 - 25,\; 30 + 12 - 20,\; 20 + 10 - 15,\; 20 + 8 - 12) = (20, 22, 15, 16).
+x_1 = (30 + 15 - 25,\; 30 + 12 - 20,\; 20 + 10 - 15,\; 20 + 8 - 12) = (20, 22, 15, 16).
 $$
 
 Stage cost: $0$ (no thermal, no deficit).
 
-**Stage 2** — $\hat v_1 = (20, 22, 15, 16)$. Same pattern: each bus
+**Stage 2** — $\hat x_1 = (20, 22, 15, 16)$. Same pattern: each bus
 meets demand from hydro; storage decreases by $D_b - \mu_h$:
 
 $$
-v_2 = (10, 14, 10, 12).
+x_2 = (10, 14, 10, 12).
 $$
 
 Stage cost: $0$.
 
-**Stage 3** — $\hat v_2 = (10, 14, 10, 12)$. Bus 1 reaches a knife
+**Stage 3** — $\hat x_2 = (10, 14, 10, 12)$. Bus 1 reaches a knife
 edge: water available $= \hat v_{1,2} + a_1 = 10 + 15 = 25 = D_1$; the
 LP turbines all available water and ends with $v_{1,3} = 0$. Other
 buses still have surplus.
 
 $$
-v_3 = (0, 6, 5, 8).
+x_3 = (0, 6, 5, 8).
 $$
 
 Stage cost: $0$.
 
-**Stage 4** — $\hat v_3 = (0, 6, 5, 8)$, inflows $(15, 12, 10, 8)$.
+**Stage 4** — $\hat x_3 = (0, 6, 5, 8)$, inflows $(15, 12, 10, 8)$.
 Now three buses go water-short:
 
-| Bus | $\hat v_3$ | $a$ | Avail. | $D$ | $q$ | $g^{th}$ | $\delta$ |
+| Bus | $\hat v_{h,3}$ | $a$ | Avail. | $D$ | $q$ | $g^{th}$ | $\delta$ |
 | --- | ---------- | --- | ------ | --- | --- | -------- | -------- |
 | B1  | 0          | 15  | 15     | 25  | 15  | 10       | 0        |
 | B2  | 6          | 12  | 18     | 20  | 18  | 2        | 0        |
@@ -275,7 +275,7 @@ case).
 
 ### Stage 4 (terminal)
 
-**Trial point**: $\hat v_3 = (0, 6, 5, 8)$. Inflows under the three
+**Trial point**: $\hat x_3 = (0, 6, 5, 8)$. Inflows under the three
 shared openings (all four hydros move together with $\varepsilon$):
 
 | Opening    | $\varepsilon$ | $a_1$ | $a_2$ | $a_3$ | $a_4$ |
@@ -289,7 +289,7 @@ For each opening, each bus solves its local dispatch independently
 
 **$\omega_1$ (dry):**
 
-| Bus | Avail. | $D$ | $q$ | $g^{th}$ | Stage cost | $\pi^v_h$ |
+| Bus | Avail. | $D$ | $q$ | $g^{th}$ | Stage cost | $\beta^v_h$ |
 | --- | ------ | --- | --- | -------- | ---------- | --------- |
 | B1  | 10     | 25  | 10  | 15       | 750        | $-50$     |
 | B2  | 14     | 20  | 14  | 6        | 300        | $-50$     |
@@ -300,12 +300,12 @@ $Q_4(\omega_1) = 750 + 300 + 150 + 0 = 1200$.
 
 The storage cut coefficient at each bus — the reduced cost of the pinned
 incoming-storage column — follows the single-reservoir logic: water-limited
-buses with thermal active have $\pi^v_h = -50$; buses where demand is met by
-hydro alone have $\pi^v_h = 0$.
+buses with thermal active have $\beta^v_h = -50$; buses where demand is met by
+hydro alone have $\beta^v_h = 0$.
 
 **$\omega_2$ (mean):**
 
-| Bus | Avail. | $D$ | $q$ | $g^{th}$ | Stage cost | $\pi^v_h$ |
+| Bus | Avail. | $D$ | $q$ | $g^{th}$ | Stage cost | $\beta^v_h$ |
 | --- | ------ | --- | --- | -------- | ---------- | --------- |
 | B1  | 15     | 25  | 15  | 10       | 500        | $-50$     |
 | B2  | 18     | 20  | 18  | 2        | 100        | $-50$     |
@@ -313,12 +313,12 @@ hydro alone have $\pi^v_h = 0$.
 | B4  | 16     | 12  | 12  | 0        | 0          | $0$       |
 
 $Q_4(\omega_2) = 600$. B3 is at a knife edge ($D = $ avail.); the
-walkthrough takes the basis returning $\pi^v_3(\omega_2) = 0$ (extra
-storage flows to terminal $v_4$ which has zero value).
+walkthrough takes the basis returning $\beta^v_3(\omega_2) = 0$ (extra
+storage flows to terminal $x_4$ which has zero value).
 
 **$\omega_3$ (wet):**
 
-| Bus | Avail. | $D$ | $q$ | $g^{th}$ | Stage cost | $\pi^v_h$ |
+| Bus | Avail. | $D$ | $q$ | $g^{th}$ | Stage cost | $\beta^v_h$ |
 | --- | ------ | --- | --- | -------- | ---------- | --------- |
 | B1  | 20     | 25  | 20  | 5        | 250        | $-50$     |
 | B2  | 22     | 20  | 20  | 0        | 0          | $0$       |
@@ -328,24 +328,24 @@ storage flows to terminal $v_4$ which has zero value).
 $Q_4(\omega_3) = 250$.
 
 **Per-opening intercepts**
-$\hat\alpha_4(\omega) = Q_4(\omega) - \sum_h \pi^v_h(\omega)\, \hat{v}_{h,3}$:
+$\beta_{0,4}(\omega) = Q_4(\omega) - \sum_h \beta^v_h(\omega)\, \hat{v}_{h,3}$:
 
-| Opening    | $Q_4$  | $-\sum_h \pi^v_h \hat v_{h,3}$       | $\hat\alpha_4$ |
+| Opening    | $Q_4$  | $-\sum_h \beta^v_h \hat v_{h,3}$       | $\beta_{0,4}$ |
 | ---------- | ------ | ------------------------------------ | -------------- |
 | $\omega_1$ | $1200$ | $50(0) + 50(6) + 50(5) + 0(8) = 550$ | $1750$         |
 | $\omega_2$ | $600$  | $50(0) + 50(6) + 0(5) + 0(8) = 300$  | $900$          |
 | $\omega_3$ | $250$  | $50(0) + 0(6) + 0(5) + 0(8) = 0$     | $250$          |
 
-(The signs flip because $\pi^v < 0$ and the formula subtracts a
+(The signs flip because $\beta^v < 0$ and the formula subtracts a
 negative-times-positive product.)
 
 **Aggregation** ($p = 1/3$):
 
 $$
-\bar\alpha_4 = \tfrac{1}{3}(1750 + 900 + 250) = \tfrac{2900}{3} \approx 966.7
+\bar\beta_{0,4} = \tfrac{1}{3}(1750 + 900 + 250) = \tfrac{2900}{3} \approx 966.7
 $$
 
-| Hydro | $\bar\pi^v_h$                                   |
+| Hydro | $\bar\beta^v_h$                                   |
 | ----- | ----------------------------------------------- |
 | H1    | $\tfrac{1}{3}(-50 - 50 - 50) = -50$             |
 | H2    | $\tfrac{1}{3}(-50 - 50 + 0)  = -\tfrac{100}{3}$ |
@@ -358,7 +358,7 @@ $$
 \theta \;\geq\; \tfrac{2900}{3} - 50\, v_1 - \tfrac{100}{3}\, v_2 - \tfrac{50}{3}\, v_3 + 0 \cdot v_4
 $$
 
-**Sanity check.** At $v = \hat v_3 = (0, 6, 5, 8)$, the cut evaluates
+**Sanity check.** At $x = \hat x_3 = (0, 6, 5, 8)$, the cut evaluates
 to
 
 $$
@@ -382,11 +382,11 @@ at H4 has no marginal value at this trial point.
 The same procedure repeats at the earlier stages, with the cut from
 the next stage active in the LP. At each stage:
 
-1. Pin the incoming storage vector $\hat v_{t-1}$ (column bounds).
+1. Pin the incoming storage vector $\hat x_{t-1}$ (column bounds).
 2. Solve all three opening LPs with the next-stage cut active.
 3. Read four pinned-column reduced costs per opening (one per reservoir).
 4. Compute per-opening intercepts via
-   $\hat\alpha(\omega) = Q(\omega) - \sum_h \pi^v_h(\omega)\, \hat v_{h,t-1}$.
+   $\beta_0(\omega) = Q(\omega) - \sum_h \beta^v_h(\omega)\, \hat v_{h,t-1}$.
 5. Aggregate by probability-weighted averaging into one
    5-coefficient cut (intercept plus four storage slopes).
 6. Add the cut to the previous stage's LP.
@@ -403,15 +403,15 @@ dimensionality of the cut. Each cut is now a hyperplane in
 4-dimensional storage state space:
 
 $$
-\hat{V}_t^k(v) \;=\; \max_{i = 1, \ldots, k}
-\Bigl\{ \bar\alpha^i + \bar\pi^{v,i}_1\, v_1 + \bar\pi^{v,i}_2\, v_2
-+ \bar\pi^{v,i}_3\, v_3 + \bar\pi^{v,i}_4\, v_4 \Bigr\}.
+\underline{V}_t^k(v) \;=\; \max_{i = 1, \ldots, k}
+\Bigl\{ \bar\beta_0^i + \bar\beta^{v,i}_1\, v_1 + \bar\beta^{v,i}_2\, v_2
++ \bar\beta^{v,i}_3\, v_3 + \bar\beta^{v,i}_4\, v_4 \Bigr\}.
 $$
 
 Several practical consequences follow:
 
 **Per-reservoir marginal water value.** The four slopes
-$\bar\pi^v_h$ at the iteration-1 stage-3 cut — $-50$, $-100/3$,
+$\bar\beta^v_h$ at the iteration-1 stage-3 cut — $-50$, $-100/3$,
 $-50/3$, $0$ — encode where storage matters most at the visited
 trial point. The optimiser at stage 3 sees these slopes and
 preferentially holds water at H1 (highest marginal value) and
@@ -428,7 +428,7 @@ maximum over many such hyperplanes converges to the convex value
 function.
 
 **Per-bus thermal regime drives slope structure.** A bus whose
-thermal is always idle (B4 in this trial) gets $\bar\pi^v_h = 0$;
+thermal is always idle (B4 in this trial) gets $\bar\beta^v_h = 0$;
 the corresponding reservoir's storage has no marginal value at the
 visited state. As subsequent iterations sample trial points where
 B4 also runs short, that reservoir's slope becomes negative in those
@@ -439,12 +439,8 @@ where every reservoir's storage carries a non-zero marginal value.
 
 ## 7. Convergence on This Case
 
-The relative gap
-
-$$
-\text{gap}^k = \frac{\bar z^k - \underline z^k}{\max(1, |\bar z^k|)}
-$$
-
+The relative gap (the percent form of the
+[optimality gap](/math/stopping-rules#optimality-gap))
 narrows as cuts accumulate. Convergence is faster than for one
 reservoir because the four-reservoir cuts contain four times as much
 information per iteration, but the state space being explored is also
@@ -472,7 +468,7 @@ no transmission. It does not cover:
   buses.
 - **Cascade coupling**: in branched cascades, downstream reservoirs
   receive upstream releases via a water-balance term
-  $v_h = v^{in}_h + a_h - q_h - s_h + \sum_{u \in \text{upstream}}(q_u + s_u)$;
+  $v_h = v^{in}_h + a_h - q_h - s_h + \sum_{h' \in \mathcal{U}_h}(q_{h'} + s_{h'})$;
   the storage cut coefficient at upstream plants then carries the
   expected downstream value of released water. See
   [System Elements](/math/system-elements) for cascade topology
@@ -491,7 +487,7 @@ no transmission. It does not cover:
   coefficient per lag; the cut becomes a hyperplane in storage _and_
   lag state space.
 - **Risk measures**: CVaR weighting that shifts cut aggregation
-  probabilities away from uniform $p = 1/N$ toward worst scenarios,
+  probabilities away from uniform $p = 1/N_t$ toward worst scenarios,
   raising cut intercepts and slopes in the dry direction. See
   [Risk Measures](/math/risk-measures).
 - **Cyclic policy graphs**: the four-stage horizon terminates without
@@ -512,6 +508,6 @@ no transmission. It does not cover:
 - [System Elements](/math/system-elements) — Hydro plant element, cascade topology (not exercised here), water-balance convention, FPHA overview
 - [Hydro Production Models](/math/hydro-production-models) — Constant-productivity (used here) and FPHA hyperplane fitting; impact on Benders cut coefficients
 - [PAR Inflow Model](/math/par-inflow-model) — Inflow model definition; the $p = 0$ degenerate case (white noise) used here; spatial correlation factorisation for multivariate cases
-- [Cut Management](/math/cut-management) — Dual extraction, per-opening intercepts, single-cut aggregation; sign convention $\pi^v = \partial Q/\partial \hat v$
+- [Cut Management](/math/cut-management) — Dual extraction, per-opening intercepts, single-cut aggregation; sign convention $\beta^v = \partial Q/\partial \hat v$
 - [Risk Measures](/math/risk-measures) — CVaR definition, EAVaR convex combination, risk-adjusted aggregation weights
 - [Horizon Modes](/math/horizon-modes) — Finite (supported) vs. reserved cyclic policy graphs and the season-indexed cut pool

@@ -12,7 +12,7 @@ This spec defines the four methods available for handling negative inflow realiz
 The PAR(p) model's inflow equation — using the AR coefficient [$\psi_{m,\ell}$](/overview/notation-conventions#35-inflow-model-parameters) — can produce a negative realization:
 
 $$
-a_h = \underbrace{\mu_m - \sum_{\ell=1}^{p} \psi_{m,\ell} \mu_{m-\ell}}_{\text{deterministic base}} + \underbrace{\sum_{\ell=1}^{p} \psi_{m,\ell} \cdot \hat{a}_{h,\ell}}_{\text{lag contribution}} + \underbrace{\sigma_m \cdot \varepsilon}_{\text{noise term}}
+a_h = \underbrace{b_{h,m}}_{\text{deterministic base}} + \underbrace{\sum_{\ell=1}^{p} \psi_{m,\ell} \cdot \hat{a}_{h,\ell}}_{\text{lag contribution}} + \underbrace{\sigma_m \cdot \varepsilon}_{\text{noise term}}
 $$
 
 When the [innovation](/overview/notation-conventions#35-inflow-model-parameters) $\varepsilon$ is sufficiently negative (e.g., $\varepsilon < -2$), the total can become negative. That is not itself a physical impossibility: $a_h$ is _incremental_ inflow — a plant's natural flow minus its upstream plants' — so a genuinely negative value is real hydrology (a reach that loses water over the period), and the same $a_h < 0$ case arises whether the realization comes from PAR(p) noise or from replaying a negative window of historical/observed data directly (`inflow_history`/`recent_observations`; see [PAR(p) Inflow Model](/math/par-inflow-model)). What the methods below solve is the LP's water-balance consequence of $a_h < 0$: absorbing it without the other water-balance variables (storage, release, spillage — all bounded $\geq 0$) being driven infeasible.
@@ -28,17 +28,17 @@ $$
 Since inflow $a_h$ is defined per stage (not per block), the inflow non-negativity penalty appears **outside** the block summation in the objective, alongside storage violation penalties:
 
 $$
-+ \sum_{h \in \mathcal{H}} c^{inf} \cdot \sigma^{inf}_h \cdot T
++ \sum_{h \in \mathcal{H}} c^{inf} \cdot \sigma^{inf}_h \cdot H_t
 $$
 
-where $T = \sum_k \tau_k$ is the total stage duration in hours. The product $\sigma^{inf}_h \cdot T$ converts the slack rate (m³/s) to an energy-equivalent dimension over the full stage.
+where $H_t = \sum_k \tau_k$ is the total stage duration in hours. The product $\sigma^{inf}_h \cdot H_t$ converts the slack rate (m³/s) to an energy-equivalent dimension over the full stage.
 
 ## 3. Method: `none`
 
 **LP Formulation**: Standard AR constraint (unchanged):
 
 $$
-a_h = \text{deterministic\_base} + \sum_{\ell=1}^{p} \psi_{m,\ell} \cdot a_{h,\ell} + \sigma_m \cdot \varepsilon
+a_h = b_{h,m} + \sum_{\ell=1}^{p} \psi_{m,\ell} \cdot a_{h,\ell} + \sigma_m \cdot \varepsilon
 $$
 
 **Implications**:
@@ -57,7 +57,7 @@ $$
 **Modified AR Constraint**:
 
 $$
-a_h + \sigma^{inf}_h = \text{deterministic\_base} + \sum_{\ell=1}^{p} \psi_{m,\ell} \cdot a_{h,\ell} + \sigma_m \cdot \varepsilon
+a_h + \sigma^{inf}_h = b_{h,m} + \sum_{\ell=1}^{p} \psi_{m,\ell} \cdot a_{h,\ell} + \sigma_m \cdot \varepsilon
 $$
 
 **Interpretation**: When the AR model produces negative $a_h$, the slack $\sigma^{inf}_h$ absorbs the violation, making the effective inflow:
@@ -69,10 +69,10 @@ $$
 **Objective Function Addition** (outside block summation):
 
 $$
-+ \sum_{h \in \mathcal{H}} c^{inf} \cdot \sigma^{inf}_h \cdot T
++ \sum_{h \in \mathcal{H}} c^{inf} \cdot \sigma^{inf}_h \cdot H_t
 $$
 
-where $c^{inf}$ is the penalty cost and $T = \sum_k \tau_k$ is the total stage duration in hours.
+where $c^{inf}$ is the penalty cost and $H_t = \sum_k \tau_k$ is the total stage duration in hours.
 
 **Advantages**:
 
@@ -90,7 +90,7 @@ where $c^{inf}$ is the penalty cost and $T = \sum_k \tau_k$ is the total stage d
 **Scenario Generation**:
 
 $$
-a_h = \max\left(0, \text{deterministic\_base} + \sum_{\ell=1}^{p} \psi_{m,\ell} \cdot \hat{a}_{h,\ell} + \sigma_m \cdot \varepsilon\right)
+a_h = \max\left(0, b_{h,m} + \sum_{\ell=1}^{p} \psi_{m,\ell} \cdot \hat{a}_{h,\ell} + \sigma_m \cdot \varepsilon\right)
 $$
 
 **LP Formulation**: Standard AR constraint with the already-truncated $a_h$ value:
@@ -119,7 +119,7 @@ The two preceding methods each handle one side of the problem well but leave the
 The PAR(p) noise is clamped outside the LP before the scenario is patched in, exactly as in the `truncation` method:
 
 $$
-a_h = \max\left(0, \text{deterministic\_base} + \sum_{\ell=1}^{p} \psi_{m,\ell} \cdot \hat{a}_{h,\ell} + \sigma_m \cdot \varepsilon\right)
+a_h = \max\left(0, b_{h,m} + \sum_{\ell=1}^{p} \psi_{m,\ell} \cdot \hat{a}_{h,\ell} + \sigma_m \cdot \varepsilon\right)
 $$
 
 Inside the LP, penalty slack columns $\sigma^{inf}_h$ are added to the water-balance constraint, exactly as in the `penalty` method:
@@ -133,13 +133,13 @@ Inside the LP, penalty slack columns $\sigma^{inf}_h$ are added to the water-bal
 **Modified AR Constraint** (inside LP, using the clamped $a_h$):
 
 $$
-a_h + \sigma^{inf}_h = \text{deterministic\_base} + \sum_{\ell=1}^{p} \psi_{m,\ell} \cdot a_{h,\ell} + \sigma_m \cdot \varepsilon
+a_h + \sigma^{inf}_h = b_{h,m} + \sum_{\ell=1}^{p} \psi_{m,\ell} \cdot a_{h,\ell} + \sigma_m \cdot \varepsilon
 $$
 
 **Objective Function Addition** (outside block summation):
 
 $$
-+ \sum_{h \in \mathcal{H}} c^{inf} \cdot \sigma^{inf}_h \cdot T
++ \sum_{h \in \mathcal{H}} c^{inf} \cdot \sigma^{inf}_h \cdot H_t
 $$
 
 ### 6.2 Why the hybrid
@@ -173,7 +173,7 @@ where $\varepsilon_h$ is the original (possibly very negative) noise realization
 **Part B — Inflow with adjusted noise**:
 
 $$
-a_h = \text{deterministic\_base} + \sum_{\ell=1}^{p} \psi_{m,\ell} \cdot a_{h,\ell} + \sigma_m \cdot \varepsilon_h^{adj}
+a_h = b_{h,m} + \sum_{\ell=1}^{p} \psi_{m,\ell} \cdot a_{h,\ell} + \sigma_m \cdot \varepsilon_h^{adj}
 $$
 
 **Non-negativity constraint**:
@@ -185,13 +185,13 @@ $$
 **Interpretation**: The optimizer chooses $\xi_h$ to be the minimum adjustment needed to make $a_h \geq 0$:
 
 $$
-\xi_h = \max\left(0, -\varepsilon_h - \frac{\text{deterministic\_base} + \sum_\ell \psi_{m,\ell} \cdot \hat{a}_{h,\ell}}{\sigma_m}\right)
+\xi_h = \max\left(0, -\varepsilon_h - \frac{b_{h,m} + \sum_\ell \psi_{m,\ell} \cdot \hat{a}_{h,\ell}}{\sigma_m}\right)
 $$
 
 **Objective Function Addition** (outside block summation):
 
 $$
-+ \sum_{h \in \mathcal{H}} c^{inf} \cdot \sigma_m \cdot \xi_h \cdot T
++ \sum_{h \in \mathcal{H}} c^{inf} \cdot \sigma_m \cdot \xi_h \cdot H_t
 $$
 
 The penalty is proportional to $\sigma_m \cdot \xi_h$, which is the actual inflow adjustment in m³/s. Note that $\sigma_m$ varies by season, so the effective penalty for a given noise adjustment $\xi_h$ is larger in high-variability seasons and smaller in low-variability seasons. This is by design — a given noise adjustment represents a larger physical inflow correction when $\sigma_m$ is large.

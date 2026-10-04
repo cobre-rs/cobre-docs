@@ -163,8 +163,8 @@ $\mathcal{C}_\tau$ is valid for every stage in $\mathcal{C}_\tau$, so the
 cut pool is indexed by season rather than by absolute stage:
 
 $$
-\underline{V}_\tau(x) \;=\; \max_{k \in \mathcal{K}_\tau}
-\bigl\{\, \alpha_k + \pi_k^{\top} x \,\bigr\}.
+\underline{V}_\tau(x) \;=\; \max_{i \in \mathcal{I}_\tau}
+\bigl\{\, \beta_{0,i} + \beta_i^{\top} x \,\bigr\}.
 $$
 
 A single cycle of $P$ pools therefore represents the entire infinite
@@ -177,13 +177,13 @@ season.
 The cyclic value function satisfies the seasonal Bellman recursion
 
 $$
-V_\tau \;=\; T_\tau\, V_{\tau + 1 \,(\bmod P)},
+V_\tau \;=\; \mathbb{T}_\tau\, V_{\tau + 1 \,(\bmod P)},
 $$
 
-where $T_\tau$ is the one-stage Bellman operator at season $\tau$:
+where $\mathbb{T}_\tau$ is the one-stage Bellman operator at season $\tau$:
 
 $$
-(T_\tau V)(x) \;=\; \mathbb{E}_{\omega_\tau}\!\left[\,
+(\mathbb{T}_\tau V)(x) \;=\; \mathbb{E}_{\omega_\tau}\!\left[\,
 \min_{x'}\, \bigl\{ c_\tau(x', u) + d \cdot V(x') \bigr\}
 \,\right].
 $$

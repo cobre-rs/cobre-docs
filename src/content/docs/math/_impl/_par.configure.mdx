@@ -32,7 +32,7 @@ Setting `"order_selection": "pacf_annual"` activates the PAR(p)-A annual
 component (methodology §9): the periodic Yule-Walker system is extended with
 the annual cross-correlation term, per-season sample statistics of the
 rolling 12-month average are computed, and the fitted triple
-(ψ, annual mean, annual std) is written to `inflow_annual_component.parquet`
+($\psi^{A*}_m$, annual mean, annual std) is written to `inflow_annual_component.parquet`
 — see the Inputs & Outputs tab. When absent (or set to `"pacf"`), only the
 classical PAR(p) path runs and no annual triple is produced.
 

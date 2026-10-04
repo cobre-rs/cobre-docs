@@ -66,7 +66,7 @@ Small costs that guide the solver toward physically preferred solutions when the
 | FPHA turbined flow | $c^{fpha}_h$    | \$/(m³/s·h) | Prevent interior FPHA solutions (FPHA-only)     |
 | Diversion          | $c^{div}_h$     | \$/(m³/s·h) | Prefer main channel flow                        |
 | Curtailment        | $c^{curt}_r$    | \$/MWh      | Prioritize using available NCS generation       |
-| Exchange           | $c^{exch}_\ell$ | \$/MWh      | Prevent unnecessary power flows                 |
+| Exchange           | $c^{exch}_n$ | \$/MWh      | Prevent unnecessary power flows                 |
 
 :::note[Note]
 Regularization costs should be at least 2-3 orders of magnitude smaller than economic costs to avoid distorting the optimal solution.
@@ -134,7 +134,7 @@ $$
 
 $$
   + \underbrace{\sum_{r \in \mathcal{R}} c^{curt}_r (A_r - g^{nc}_{r,k})}_{\text{Curtailment (regularization)}}
-  + \underbrace{\sum_{l \in \mathcal{L}} c^{exch}_l (f^+_{l,k} + f^-_{l,k})}_{\text{Exchange (regularization)}}
+  + \underbrace{\sum_{n \in \mathcal{L}} c^{exch}_n (f^+_{n,k} + f^-_{n,k})}_{\text{Exchange (regularization)}}
 $$
 
 $$
@@ -164,13 +164,13 @@ $$
 $$
 
 $$
-+ \sum_{l: \text{target}=b} f^+_{l,k} + \sum_{l: \text{source}=b} f^-_{l,k}
++ \sum_{n: \text{target}=b} f^+_{n,k} + \sum_{n: \text{source}=b} f^-_{n,k}
 $$
 
 $$
-- \sum_{l: \text{source}=b} f^+_{l,k} - \sum_{l: \text{target}=b} f^-_{l,k}
+- \sum_{n: \text{source}=b} f^+_{n,k} - \sum_{n: \text{target}=b} f^-_{n,k}
 - \sum_{c \in \mathcal{C}^{exp}_b} \chi_{c,k}
-- \sum_{j \in \mathcal{P}_b} \gamma_j p_{j,k}
+- \sum_{y \in \mathcal{P}_b} \rho^{pump}_y p_{y,k}
 + \sum_{s \in \mathcal{S}_b} \delta_{b,k,s} - \epsilon_{b,k} = D_{b,k}
 $$
 
@@ -184,15 +184,15 @@ For each hydro $h \in \mathcal{H}$ (parallel blocks formulation):
 
 $$
 v_h = v^{in}_h + b^{\mathrm{in}}_{h,1} + \zeta \Bigg[ a_h + \sum_{k \in \mathcal{K}} w_k \Big(
-  \underbrace{\sum_{i \in \mathcal{U}_h} (q_{i,k} + s_{i,k} + u_{i,k})}_{\text{Inflow from upstream}}
-  + \underbrace{\sum_{i: \text{div}=h} u_{i,k}}_{\text{Diverted inflow}}
-  + \underbrace{\sum_{j: \text{dest}=h} p_{j,k}}_{\text{Pumped inflow}}
+  \underbrace{\sum_{h' \in \mathcal{U}_h} (q_{h',k} + s_{h',k} + u_{h',k})}_{\text{Inflow from upstream}}
+  + \underbrace{\sum_{h': \text{div}=h} u_{h',k}}_{\text{Diverted inflow}}
+  + \underbrace{\sum_{y: \text{dest}=h} p_{y,k}}_{\text{Pumped inflow}}
 $$
 
 $$
   - \underbrace{q_{h,k} - s_{h,k} - u_{h,k}}_{\text{Outflows}}
   - \underbrace{e_{h,k}}_{\text{Evaporation}}
-  - \underbrace{\sum_{j: \text{src}=h} p_{j,k}}_{\text{Pumped outflow}}
+  - \underbrace{\sum_{y: \text{src}=h} p_{y,k}}_{\text{Pumped outflow}}
 \Big) - \underbrace{r_h}_{\text{Withdrawal (signed target)}} \Bigg]
 $$
 
@@ -204,7 +204,7 @@ where:
 - $a_h$ = incremental inflow (from AR model, see [PAR(p) inflow model](/math/par-inflow-model)); equivalently $z_h$ from the z-inflow constraint (§5b)
 - $r_h$ = water withdrawal target (m³/s), a **signed fixed RHS parameter** from `water_withdrawal_m3s` (not a per-block LP decision variable). $r_h > 0$ schedules a consumptive removal; $r_h < 0$ schedules an inter-basin return/addition that adds water to the reservoir. The realized withdrawal removed from the reservoir is $R_h = r_h - \sigma^{w-}_h + \sigma^{w+}_h$; see §9 for the slack bounds that prevent the realized flow from flipping sign. Withdrawal is applied at the stage level, outside the per-block summation. Matches [notation conventions §3.3](/overview/notation-conventions#33-hydro-parameters) for $r_h$ and [§4.3](/overview/notation-conventions#43-slack-variables) for $\sigma^{w-}_h, \sigma^{w+}_h$
 - $e_{h,k}$ = signed net evaporation flow (m³/s): positive values represent net evaporative loss subtracted from storage; negative values represent net rainfall input on the lake surface that adds to storage through the same coefficient (the leading $-$ sign on $e_{h,k}$ flips the contribution automatically — see [penalty system §5](/math/penalty-system))
-- $w_k = \tau_k / \sum_j \tau_j$ = block weight
+- $w_k = \tau_k / \sum_{k' \in \mathcal{K}} \tau_{k'}$ = block weight
 - $\zeta = 0.0036 \times \sum_k \tau_k$ = time conversion factor
 
 :::note[Dimensional Consistency]
@@ -236,12 +236,12 @@ where:
 - $\hat{v}_h$ = incoming state value (end-of-stage storage from the previous stage), written into both bounds per scenario via bound patching
 
 :::note[Pinning by bounds not by a row]
-The incoming state is pinned by **column bounds**, not by an explicit equality _constraint row_ $v^{in}_h = \hat{v}_h$ whose dual would be read: the equivalent fixing-row block is a permanent empty sentinel (§4b). Pinning by bounds keeps $N(1+L)$ redundant equality rows per stage out of the model (plus the anticipated-state rows, §5c); the two formulations are KKT-equivalent — see below.
+The incoming state is pinned by **column bounds**, not by an explicit equality _constraint row_ $v^{in}_h = \hat{v}_h$ whose dual would be read: the equivalent fixing-row block is a permanent empty sentinel (§4b). Pinning by bounds keeps $N(1+P^{\max})$ redundant equality rows per stage out of the model (plus the anticipated-state rows, §5c); the two formulations are KKT-equivalent — see below.
 :::
 
 The variable $v^{in}_h$ then appears as an LP variable (not a constant) in all constraints that depend on incoming storage: the water balance (§4), the FPHA average storage computation (§6), and any generic constraints (§10) that reference incoming storage.
 
-**Cut coefficient**: the storage cut coefficient $\pi^v_h$ is the **reduced cost** of the pinned `storage_in` column (unscaled by its prescaler column factor — see §12 (LP Scaling) and [cut management](/math/cut-management)). No fixing-constraint dual is involved.
+**Cut coefficient**: the storage cut coefficient $\beta^v_h$ is the **reduced cost** of the pinned `storage_in` column (unscaled by its prescaler column factor — see §12 (LP Scaling) and [cut management](/math/cut-management)). No fixing-constraint dual is involved.
 
 **Why this design**: By LP duality, when a column is pinned at $\underline{x} = \bar{x}$ its reduced cost equals the sensitivity $\partial Q_t / \partial \hat{v}_h$ of the optimal value to the pinned bound — exactly the multiplier the equivalent equality row $v^{in}_h = \hat{v}_h$ would have carried (KKT parity). This sensitivity automatically accounts for all downstream effects through water balance, FPHA, and generic constraints, so a single reduced-cost value suffices — no combination of duals from multiple constraint types is needed. This is the same "fishing" technique used by SDDP.jl, realised through column bounds rather than a fixing row, and is analogous to how the AR lags (section 5a) are pinned for inflow history.
 
@@ -257,7 +257,7 @@ for the Benders cuts, assembled with the constraint-row families below.
 direction: down
 
 columns: "Decision-variable columns — fixed contiguous order in x" {
-  state: "1 · State (coupling)\nvₕ storage · aₕ,ℓ AR lags\npinned by column bounds; reduced costs → π"
+  state: "1 · State (coupling)\nvₕ storage · aₕ,ℓ AR lags\npinned by column bounds; reduced costs → β"
   dispatch: "2 · Dispatch (per block k)\nflow · hydro · turbined · spill\nthermal · NCS · deficit"
   future: "3 · Future\nθ future cost (bounded by cuts)"
   state -> dispatch -> future
@@ -268,34 +268,34 @@ rows: "Constraint-row families" {
   lb: "Load balance — per bus, per block"
   wb: "Water balance — per hydro, per block"
   fix: "Fixing — incoming-state coupling"
-  cut: "Benders cuts:  θ ≥ α + πᵀx" {style.stroke-dash: 4}
+  cut: "Benders cuts:  θ ≥ β₀ + βᵀx" {style.stroke-dash: 4}
 }
 
 columns -> rows: "assembled into the stage LP"
 ```
 
-The stage LP uses a fixed column and row layout that places state variables first, followed by auxiliary and equipment columns. State is pinned by **column bounds** on the incoming-state columns (§4a, §5a, §5c, §5d), and cut coefficients are read as the **reduced costs** of those columns — so the fixed column order, not a fixed row order, is what enables contiguous coefficient extraction. With $N = |\mathcal{H}|$ hydros, $L$ = maximum AR order, $A$ = number of anticipated thermals, $K = K_{\max} = \max_i K_i$, and $B$ = total in-transit bucket count (the sum, over receiving plants, of each plant's maturity-lag depth — §5d):
+The stage LP uses a fixed column and row layout that places state variables first, followed by auxiliary and equipment columns. State is pinned by **column bounds** on the incoming-state columns (§4a, §5a, §5c, §5d), and cut coefficients are read as the **reduced costs** of those columns — so the fixed column order, not a fixed row order, is what enables contiguous coefficient extraction. With $N = |\mathcal{H}|$ hydros, $P^{\max}$ = maximum AR order, $A$ = number of anticipated thermals, $K_{\max} = \max_i K_i$, and $B$ = total in-transit bucket count (the sum, over receiving plants, of each plant's maturity-lag depth — §5d):
 
 **Column layout**:
 
 | Region                | Count | Description                                                                       |
 | --------------------- | ----- | --------------------------------------------------------------------------------- |
 | `storage`             | $N$   | Outgoing storage volumes (state) — first                                          |
-| `inflow_lags`         | $NL$  | AR lag variables (state) — after storage                                          |
+| `inflow_lags`         | $N P^{\max}$  | AR lag variables (state) — after storage                                          |
 | `transit_buckets_out` | $B$   | Outgoing in-transit bucket volumes (state, plant-major lag-minor) — after lags    |
-| `anticipated_state`   | $K A$ | Ring-buffer slots for anticipated thermals (state, slot-major plant-minor)        |
+| `anticipated_state`   | $K_{\max} A$ | Ring-buffer slots for anticipated thermals (state, slot-major plant-minor)        |
 | `z_inflow`            | $N$   | Realized inflow (auxiliary, not state) — after the state block                    |
 | `storage_in`          | $N$   | Incoming storage volumes (auxiliary, for §4a) — after z-inflow                    |
 | `transit_buckets_in`  | $B$   | Incoming in-transit bucket volumes (auxiliary, pinned for §5d) — after storage_in |
 | `theta`               | $1$   | Future cost variable — last of the state prefix                                   |
 
-Equipment columns (turbine, spillage, diversion, thermal, anticipated-decision and anticipated-state-out, line flows, deficit, excess, slacks) follow immediately after `theta`. The `turbine` column family, and the FPHA `generation` column family, are indexed by **(hydro, bus) cell** rather than by plant — one column per cell (§3, §6) — while every other hydro equipment column (spillage, diversion) stays indexed by plant; a single-cell plant's layout is byte-identical to the pre-partition, per-plant form. The `transit_buckets_out` block is an identity-resolved state carrier (like `storage`, and mirroring the anticipated-state-out carrier of §5c): it holds the volume still in transit on each cascade arc, defined by in-LP ring shift and deposit rows rather than pinned, and the `transit_buckets_in` block is the matching pinned incoming copy read for the delayed-arrival water-balance entry and the cut coefficient (§5d). Two auxiliary blocks are reserved for anticipated thermals: $A$ **anticipated-decision** columns $d^i_t$ carrying the commitment placed at this stage for delivery $K_i$ stages later, and $A$ **anticipated-state-out** columns $y^i_t$ used to decouple the post-shift state from the decision-write coefficient — see §5c.
+Equipment columns (turbine, spillage, diversion, thermal, anticipated-decision and anticipated-state-out, line flows, deficit, excess, slacks) follow immediately after `theta`. The `turbine` column family, and the FPHA `generation` column family, are indexed by **(hydro, bus) cell** rather than by plant — one column per cell (§3, §6) — while every other hydro equipment column (spillage, diversion) stays indexed by plant; a single-cell plant's layout is byte-identical to the pre-partition, per-plant form. The `transit_buckets_out` block is an identity-resolved state carrier (like `storage`, and mirroring the anticipated-state-out carrier of §5c): it holds the volume still in transit on each cascade arc, defined by in-LP ring shift and deposit rows rather than pinned, and the `transit_buckets_in` block is the matching pinned incoming copy read for the delayed-arrival water-balance entry and the cut coefficient (§5d). Two auxiliary blocks are reserved for anticipated thermals: $A$ **anticipated-decision** columns $g^{\mathrm{a}}_{i,t}$ carrying the commitment placed at this stage for delivery $K_i$ stages later, and $A$ **anticipated-state-out** columns $y^i_t$ used to decouple the post-shift state from the decision-write coefficient — see §5c.
 
 The `z_inflow` region holds one free column per hydro representing the total realized inflow $z_h = a_h$ (m³/s) for each hydro at the current stage. These are auxiliary columns (zero objective cost, unbounded) whose primal values after solving give the realized inflow. They participate in the water balance (§4) and are defined by the z-inflow constraints (§5b).
 
 **Row layout** (equality-constraint prefix):
 
-Because state is pinned by column bounds (§4a, §5a, §5c, §5d) rather than by equality rows, there are **no** state-fixing rows: the former `storage_fixing` ($N$), `lag_fixing` ($NL$), `transit_bucket_fixing` ($B$), and `anticipated_state_fixing` ($KA$) row blocks are permanent empty sentinels (zero rows). The equality-constraint prefix therefore begins directly with the z-inflow definitions:
+Because state is pinned by column bounds (§4a, §5a, §5c, §5d) rather than by equality rows, there are **no** state-fixing rows: the former `storage_fixing` ($N$), `lag_fixing` ($N P^{\max}$), `transit_bucket_fixing` ($B$), and `anticipated_state_fixing` ($K_{\max} A$) row blocks are permanent empty sentinels (zero rows). The equality-constraint prefix therefore begins directly with the z-inflow definitions:
 
 | Region     | Count | Description                                                         |
 | ---------- | ----- | ------------------------------------------------------------------- |
@@ -305,16 +305,16 @@ Equipment rows (water balance, load balance, FPHA, evaporation, outflow bounds, 
 
 Cut coefficients are **not** read from a contiguous dual slice over a fixing-row prefix. Instead, each incoming-state coordinate is pinned on its own LP column — `storage_in` for storage, `inflow_lags` for AR lags, `transit_buckets_in` for in-transit buckets, `anticipated_state` for anticipated-thermal slots — and its cut coefficient is the **reduced cost** of that column (§4a, [cut management](/math/cut-management)). The map from a state coordinate to its pinned column is fixed (`state_to_lp_incoming_column`), and each of these incoming-state column regions is contiguous, so all storage, inflow-lag, in-transit bucket, and anticipated-state coefficients are still gathered by reading a few contiguous slices — of the reduced-cost vector rather than the dual vector.
 
-**Worked example** ($N = 3$, $L = 2$, $A = 0$, $B = 0$ — no travel-time arcs): the storage region holds 3 columns, the AR lag region holds 6 (3 hydros × 2 lags), the z-inflow region holds 3, and the incoming-storage region holds 3, so `theta` is the 16th column. The state count (outgoing storage + AR lags) is $N(1 + L) = 9$. With $B = 0$ the layout is byte-for-byte the bucket-free layout.
+**Worked example** ($N = 3$, $P^{\max} = 2$, $A = 0$, $B = 0$ — no travel-time arcs): the storage region holds 3 columns, the AR lag region holds 6 (3 hydros × 2 lags), the z-inflow region holds 3, and the incoming-storage region holds 3, so `theta` is the 16th column. The state count (outgoing storage + AR lags) is $N(1 + P^{\max}) = 9$. With $B = 0$ the layout is byte-for-byte the bucket-free layout.
 
 ## 5. AR Inflow Dynamics
 
-The incremental inflow $a_h$ is determined by the PAR(p) autoregressive model:
+The realized inflow $z_h$ is determined by the PAR(p) autoregressive model:
 
 $$
-a_h = \underbrace{\left( \mu_t - \sum_{\ell=1}^{P_h} \psi_\ell \mu_{t-\ell} \right)}_{\text{deterministic base}}
-+ \underbrace{\sum_{\ell=1}^{P_h} \psi_\ell \cdot a_{h,\ell}}_{\text{lag contribution}}
-+ \underbrace{\sigma_t \cdot \varepsilon_t}_{\text{stochastic innovation}}
+z_h = \underbrace{b_{h,m(t)}}_{\text{deterministic base}}
++ \underbrace{\sum_{\ell=1}^{P_h} \psi_{m(t),\ell} \cdot a_{h,\ell}}_{\text{lag contribution}}
++ \underbrace{\sigma_{m(t)} \cdot \varepsilon_t}_{\text{stochastic innovation}}
 $$
 
 To maintain the Markov property, lagged inflows $a_{h,\ell}$ are promoted to state variables pinned by column bounds — see section 5a below.
@@ -323,9 +323,9 @@ See [PAR(p) inflow model](/math/par-inflow-model) for the complete PAR(p) model 
 
 ## 5a. AR Lag Pinning
 
-The AR dynamics equation (section 5) uses lagged inflows $a_{h,\ell}$ as LP variables. To maintain the Markov property in the SDDP decomposition, each lag variable is pinned to its incoming state value via equal lower and upper **column bounds** on the `inflow_lags` column. This binds the lag variables to the known incoming state, and the **reduced cost** of each pinned column provides the cut coefficient $\pi^{lag}_{h,\ell}$ for the corresponding inflow-lag dimension of the Benders cuts (section 11). Whether these lag dimensions actually enter the cut is governed by the stage's `state_variables` selection (which defaults to storage-only): when `inflow_lags` is disabled the lag columns are still pinned for the AR dynamics, but their reduced costs are projected out of the cut, yielding a storage-only cut even under a PAR($p$) fit — see [cut management](/math/cut-management).
+The AR dynamics equation (section 5) uses lagged inflows $a_{h,\ell}$ as LP variables. To maintain the Markov property in the SDDP decomposition, each lag variable is pinned to its incoming state value via equal lower and upper **column bounds** on the `inflow_lags` column. This binds the lag variables to the known incoming state, and the **reduced cost** of each pinned column provides the cut coefficient $\beta^{lag}_{h,\ell}$ for the corresponding inflow-lag dimension of the Benders cuts (section 11). Whether these lag dimensions actually enter the cut is governed by the stage's `state_variables` selection (which defaults to storage-only): when `inflow_lags` is disabled the lag columns are still pinned for the AR dynamics, but their reduced costs are projected out of the cut, yielding a storage-only cut even under a PAR($p$) fit — see [cut management](/math/cut-management).
 
-For each hydro $h \in \mathcal{H}$ and each lag $\ell \in \{0, \ldots, L-1\}$:
+For each hydro $h \in \mathcal{H}$ and each lag $\ell \in \{1, \ldots, P^{\max}\}$:
 
 $$
 \underline{a}_{h,\ell} = \bar{a}_{h,\ell} = \hat{a}_{h,\ell}
@@ -335,11 +335,11 @@ where:
 
 - $a_{h,\ell}$ = LP variable representing the inflow at lag $\ell$ for hydro $h$
 - $\hat{a}_{h,\ell}$ = incoming state value (inflow observation from $\ell$ stages ago), written into both bounds via bound patching
-- $L$ = maximum AR order across all hydros (uniform lag storage convention)
+- $P^{\max}$ = maximum AR order across all hydros (uniform lag storage convention)
 
-**Column count**: $N \times L$ pinned lag columns, where $N = |\mathcal{H}|$ is the number of operating hydros and $L$ is the system-wide maximum lag. All hydros store $L$ lags regardless of their individual AR order $P_h$; hydros with $P_h < L$ have zero-valued AR coefficients ($\psi_\ell = 0$ for $\ell > P_h$) in the dynamics equation, but their lag columns are still present and pinned. This uniform layout keeps the `inflow_lags` columns contiguous, so all lag cut coefficients are read in a single slice of the reduced-cost vector (section 4b). There is no corresponding lag-fixing row block.
+**Column count**: $N \times P^{\max}$ pinned lag columns, where $N = |\mathcal{H}|$ is the number of operating hydros and $P^{\max}$ is the system-wide maximum lag. All hydros store $P^{\max}$ lags regardless of their individual AR order $P_h$; hydros with $P_h < P^{\max}$ have zero-valued AR coefficients ($\psi_{m(t),\ell} = 0$ for $\ell > P_h$) in the dynamics equation, but their lag columns are still present and pinned. This uniform layout keeps the `inflow_lags` columns contiguous, so all lag cut coefficients are read in a single slice of the reduced-cost vector (section 4b). There is no corresponding lag-fixing row block.
 
-**Cut coefficient**: $\pi^{lag}_{h,\ell}$ (marginal value of inflow history at lag $\ell$ for hydro $h$) is the reduced cost of the pinned `inflow_lags` column, unscaled by its prescaler column factor (§12, LP Scaling) — see [cut management](/math/cut-management).
+**Cut coefficient**: $\beta^{lag}_{h,\ell}$ (marginal value of inflow history at lag $\ell$ for hydro $h$) is the reduced cost of the pinned `inflow_lags` column, unscaled by its prescaler column factor (§12, LP Scaling) — see [cut management](/math/cut-management).
 
 ## 5b. Realized-Inflow Definition Constraints (z-inflow)
 
@@ -369,42 +369,42 @@ Anticipated thermals (see [System Elements §4](/math/system-elements)) introduc
 
 ### State pinning (column bounds, one per `(slot, plant)`)
 
-For each plant $i \in \{0, \ldots, A - 1\}$ and slot $s \in \{0, \ldots, K - 1\}$, the anticipated-state slot column is pinned by equal column bounds:
+For each plant $i \in \{1, \ldots, A\}$ and slot $s \in \{0, \ldots, K_{\max} - 1\}$, the anticipated-state slot column is pinned by equal column bounds:
 
 $$
 \underline{x}^{\mathrm{a}}_{s, i, t} \;=\; \bar{x}^{\mathrm{a}}_{s, i, t} \;=\; \widehat{x}^{\mathrm{a}}_{s, i, t}
 $$
 
-The value $\widehat{x}^{\mathrm{a}}_{s, i, t}$ is the incoming state from the previous stage's ring-buffer shift (or, at $t = 0$, the committed MW rate resolved **by date** from the pre-horizon commitment window covering delivery stage $s$ — an externally-decided rate held constant over that window, not a value read positionally from an array). The slot is **pinned** by its column bounds alone; no decision-write coefficient appears anywhere on the slot column. The cut subgradient with respect to the incoming-state coordinate, $\partial Q_t / \partial \widehat{x}^{\mathrm{a}}_{s, i, t}$, is the **reduced cost** of the pinned slot column (§4a). Padding slots $s \geq K_i$ are pinned to zero by the same bounds; their reduced cost is zero because the slot carries no information. These seed windows tile the plant's leading delivery stages exactly — a committed 0 MW is written explicitly for any stage with no scheduled commitment, never implied by omission — the LP-level statement of the coverage contract detailed at [System Elements §4](/math/system-elements#anticipated-thermal-plants) and the software layer.
+The value $\widehat{x}^{\mathrm{a}}_{s, i, t}$ is the incoming state from the previous stage's ring-buffer shift (or, at $t = 1$, the committed MW rate resolved **by date** from the pre-horizon commitment window covering delivery stage $s + 1$ — an externally-decided rate held constant over that window, not a value read positionally from an array). The slot is **pinned** by its column bounds alone; no decision-write coefficient appears anywhere on the slot column. The cut subgradient with respect to the incoming-state coordinate, $\partial Q_t / \partial \widehat{x}^{\mathrm{a}}_{s, i, t}$, is the **reduced cost** of the pinned slot column (§4a). Padding slots $s \geq K_i$ are pinned to zero by the same bounds; their reduced cost is zero because the slot carries no information. These seed windows tile the plant's leading delivery stages exactly — a committed 0 MW is written explicitly for any stage with no scheduled commitment, never implied by omission — the LP-level statement of the coverage contract detailed at [System Elements §4](/math/system-elements#anticipated-thermal-plants) and the software layer.
 
 ### Fishing equality (one row per anticipated plant, every stage)
 
-For each plant $i$ and every stage $t \in [0, T - 1]$, the per-block generation of plant $i$ is bound to the matured commitment in slot 0:
+For each plant $i$ and every stage $t \in \{1, \ldots, T\}$, the per-block generation of plant $i$ is bound to the matured commitment in slot 0:
 
 $$
-\sum_{b = 0}^{B - 1} h_b \cdot g_{i, b, t} \;-\; H_t \cdot x^{\mathrm{a}}_{0, i, t} \;=\; 0
+\sum_{k \in \mathcal{K}} \tau_k \cdot g_{i,k} \;-\; H_t \cdot x^{\mathrm{a}}_{0, i, t} \;=\; 0
 $$
 
-where $h_b$ is the block-$b$ duration and $H_t = \sum_b h_b$. The row is active at every study stage; at $t < K_i$ the slot-0 value comes from the seed rate for the window covering delivery stage $t$ and the LP cannot freely choose the per-block generation. From $t \geq K_i$ onward, slot 0 carries a past LP decision delivered via the ring buffer.
+where $\tau_k$ is the block-$k$ duration and $H_t = \sum_{k \in \mathcal{K}} \tau_k$. The row is active at every study stage; at $t \leq K_i$ the slot-0 value comes from the seed rate for the window covering delivery stage $t$ and the LP cannot freely choose the per-block generation. From $t > K_i$ onward, slot 0 carries a past LP decision delivered via the ring buffer.
 
 ### State-out equality (one row per active plant)
 
-For each plant $i$ active at stage $t$ (i.e., $t + K_i < T$), one auxiliary row pins the **anticipated-state-out** column $y^i_t$ to the decision $d^i_t$:
+For each plant $i$ active at stage $t$ (i.e., $t + K_i \leq T$), one auxiliary row pins the **anticipated-state-out** column $y^i_t$ to the decision $g^{\mathrm{a}}_{i,t}$:
 
 $$
-y^i_t \;-\; d^i_t \;=\; 0
+y^i_t \;-\; g^{\mathrm{a}}_{i,t} \;=\; 0
 $$
 
-The ring-buffer shift between stages uses $y^i_t$ — not $d^i_t$ — as the value written into slot $K_i - 1$ of the next stage's incoming state. The auxiliary $y$ column carries zero objective cost and serves only as the "carrier" that decouples the post-shift state from the decision column. Without this decoupling, the decision column $d^i_t$ would feed directly into the slot whose pinned reduced cost the next stage's cut reads back, corrupting the subgradient routing at $K_i = 1$ (slot 0 = slot $K_i - 1$ collision).
+The ring-buffer shift between stages uses $y^i_t$ — not $g^{\mathrm{a}}_{i,t}$ — as the value written into slot $K_i - 1$ of the next stage's incoming state. The auxiliary $y$ column carries zero objective cost and serves only as the "carrier" that decouples the post-shift state from the decision column. Without this decoupling, the decision column $g^{\mathrm{a}}_{i,t}$ would feed directly into the slot whose pinned reduced cost the next stage's cut reads back, corrupting the subgradient routing at $K_i = 1$ (slot 0 = slot $K_i - 1$ collision).
 
 ### Objective contributions
 
 Two terms enter the objective for each anticipated plant:
 
 $$
-\sum_{i = 0}^{A - 1} c_i(t + K_i) \cdot H_{t + K_i} \cdot d^{\mathrm{NPV}}_{t + K_i} \cdot d^i_t
+\sum_{i = 1}^{A} c_i(t + K_i) \cdot H_{t + K_i} \cdot d_{1 \to t + K_i} \cdot g^{\mathrm{a}}_{i,t}
 \;-\;
-\sum_{i \in \mathrm{deliver}(t)} \sum_b c_i(t) \cdot h_b \cdot d^{\mathrm{NPV}}_t \cdot g_{i, b, t}
+\sum_{i \in \mathrm{deliver}(t)} \sum_{k \in \mathcal{K}} c_i(t) \cdot \tau_k \cdot d_{1 \to t} \cdot g_{i,k}
 $$
 
 The first sum is the **commitment cost discounted to the delivery stage** $t + K_i$. The second sum subtracts the standard per-block thermal cost at every delivery stage so the same MWh is not charged twice — once through the matured commitment and once through the per-block dispatch. Anticipated-state columns and anticipated-state-out columns carry zero objective cost; they are pure carriers of state. In run cost output this commitment term is reported as its own `anticipated_thermal_cost` category (zero when no anticipated plants are present), distinct from the per-block `thermal_cost`, so the named cost categories sum to the stage's immediate cost.
@@ -413,11 +413,11 @@ The first sum is the **commitment cost discounted to the delivery stage** $t + K
 
 When the backward pass returns a subgradient on slot $(s, i)$ of stage $t + 1$ — read as the reduced cost of that pinned slot column — the cut-row builder maps it to a column in the **predecessor's** stage problem as follows:
 
-- $s + 1 = K_i$ (slot 0 viewed from the next stage equals slot $K_i - 1$ viewed from this stage): the coefficient targets the predecessor's commitment column $d^i_{t}$ directly. This is the only branch that fires for $K_i = 1$.
+- $s + 1 = K_i$ (slot 0 viewed from the next stage equals slot $K_i - 1$ viewed from this stage): the coefficient targets the predecessor's commitment column $g^{\mathrm{a}}_{i,t}$ directly. This is the only branch that fires for $K_i = 1$.
 - $s + 1 < K_i$: the coefficient targets the predecessor's outgoing-state slot $s + 1$, which holds the same commitment one stage earlier in its journey through the ring buffer.
 - $s \geq K_i$ (padding): identity remap; the reduced cost is structurally zero so the cut coefficient on the padded slot does not propagate any sensitivity.
 
-The recursion guarantees that, no matter how many stages elapse between commitment and delivery, the marginal cost of a future obligation reaches the original $d^i$ column it should price.
+The recursion guarantees that, no matter how many stages elapse between commitment and delivery, the marginal cost of a future obligation reaches the original $g^{\mathrm{a}}_i$ column it should price.
 
 ## 5d. Water Travel Time (In-Transit Buckets)
 
@@ -427,12 +427,12 @@ When an upstream release takes appreciable time to travel down the cascade, the 
 
 ### In-transit bucket state
 
-For each receiving (downstream) plant $i$ that has at least one incoming travel-time arc, the in-transit water destined for $i$ is discretized into **maturity lags** $d \in \{1, \ldots, L_i\}$. The bucket $b_{i,d}$ (hm³) holds the aggregate volume — summed over every upstream arc feeding $i$ — that matures into plant $i$'s reservoir $d - 1$ stages after the current one. Lag $d = 1$ matures at the current stage; lag $d = L_i$ is the freshest deposit, furthest from delivery. The per-plant depth $L_i$ is the deepest maturity lag any arc into $i$ can reach on the stage calendar. The confluence of several arcs into one plant collapses into this single aggregated bucket block.
+For each receiving (downstream) plant $h$ that has at least one incoming travel-time arc, the in-transit water destined for $h$ is discretized into **maturity lags** $d \in \{1, \ldots, L_h\}$. The bucket $b^{\mathrm{out}}_{h,d}$ (hm³) holds the aggregate volume — summed over every upstream arc feeding $h$ — that matures into plant $h$'s reservoir $d - 1$ stages after the current one. Lag $d = 1$ matures at the current stage; lag $d = L_h$ is the freshest deposit, furthest from delivery. The per-plant depth $L_h$ is the deepest maturity lag any arc into $h$ can reach on the stage calendar. The confluence of several arcs into one plant collapses into this single aggregated bucket block.
 
-The buckets extend the state vector. With $B = \sum_i L_i$ the total bucket count, the state dimension is
+The buckets extend the state vector. With $B = \sum_h L_h$ the total bucket count, the state dimension is
 
 $$
-n_{\text{state}} = N(1 + L) + B + A \, K_{\max}
+n_{\text{state}} = N(1 + P^{\max}) + B + A \, K_{\max}
 $$
 
 The bucket block sits **after** the AR inflow lags and **before** the anticipated-thermal slots in the canonical state order (§4b). Buckets are ordered canonically by $(\text{plant}, \text{lag})$ — the receiving plant in the same $(\texttt{operational\_start\_date}, \texttt{id})$ order every state block uses, then ascending maturity lag. When no arc is declared, $B = 0$ and the layout reproduces the bucket-free state byte-for-byte.
@@ -442,22 +442,22 @@ The bucket block sits **after** the AR inflow lags and **before** the anticipate
 Like every other incoming state coordinate, each incoming bucket is carried on its own LP column (`transit_buckets_in`, §4b) and pinned to its trial value by equal lower and upper **column bounds**:
 
 $$
-\underline{b}^{\,\mathrm{in}}_{i,d} = \bar{b}^{\,\mathrm{in}}_{i,d} = \hat{b}_{i,d}
+\underline{b}^{\,\mathrm{in}}_{h,d} = \bar{b}^{\,\mathrm{in}}_{h,d} = \hat{b}_{h,d}
 $$
 
-where $\hat{b}_{i,d}$ is the incoming in-transit volume carried from the previous stage's ring shift (or, at the first stage, the seed derived from `past_defluences` — see [system elements §5](/math/system-elements) and the hydro Implementation notes). The **reduced cost** of the pinned bucket column is the cut coefficient for that in-transit dimension (see below) — the same regime used for storage (§4a) and AR lags (§5a). No fixing row is involved; the `transit_bucket_fixing` block is a permanent empty sentinel like the other state blocks (§4b).
+where $\hat{b}_{h,d}$ is the incoming in-transit volume carried from the previous stage's ring shift (or, at the first stage, the seed derived from `past_defluences` — see [system elements §5](/math/system-elements) and the hydro Implementation notes). The **reduced cost** of the pinned bucket column is the cut coefficient for that in-transit dimension (see below) — the same regime used for storage (§4a) and AR lags (§5a). No fixing row is involved; the `transit_bucket_fixing` block is a permanent empty sentinel like the other state blocks (§4b).
 
 ### Delayed-arrival water-balance entry
 
-The bucket maturing at the current stage, $b^{\mathrm{in}}_{i,1}$, delivers its volume into receiving plant $i$'s water balance (§4). Because the bucket is already an accumulated volume (hm³), it enters the balance directly — outside the $\zeta$ flow-to-volume conversion — with a $-1.0$ coefficient in the all-variables-on-the-LHS form:
+The bucket maturing at the current stage, $b^{\mathrm{in}}_{h,1}$, delivers its volume into receiving plant $h$'s water balance (§4). Because the bucket is already an accumulated volume (hm³), it enters the balance directly — outside the $\zeta$ flow-to-volume conversion — with a $-1.0$ coefficient in the all-variables-on-the-LHS form:
 
 $$
-v_i - v^{\mathrm{in}}_i - b^{\mathrm{in}}_{i,1} - \zeta\big[\,\cdots\,\big] = 0
+v_h - v^{\mathrm{in}}_h - b^{\mathrm{in}}_{h,1} - \zeta\big[\,\cdots\,\big] = 0
 $$
 
-Equivalently, $b^{\mathrm{in}}_{i,1}$ is a stage-level inflow added to the reservoir. Because the confluence of several upstream arcs is already summed inside the single state coordinate, exactly one delayed-arrival entry appears per receiving plant.
+Equivalently, $b^{\mathrm{in}}_{h,1}$ is a stage-level inflow added to the reservoir. Because the confluence of several upstream arcs is already summed inside the single state coordinate, exactly one delayed-arrival entry appears per receiving plant.
 
-Under the parallel-blocks formulation the maturing bucket is a single stage-level entry. Under the [chronological-blocks formulation](/math/block-formulations), the same volume is delivered across the arrival stage's own blocks, weighted by a fixed **arrival density** $\phi_{i,k} \ge 0$ with $\sum_k \phi_{i,k} = 1$, resolved against the arrival stage's block partition. The arrival density is a single fixed split per maturing bucket — it does not depend on which source block released the water, an accepted modeling bound when the release and arrival stages partition their hours differently.
+Under the parallel-blocks formulation the maturing bucket is a single stage-level entry. Under the [chronological-blocks formulation](/math/block-formulations), the same volume is delivered across the arrival stage's own blocks, weighted by a fixed **arrival density** $\phi_{h,k} \ge 0$ with $\sum_k \phi_{h,k} = 1$, resolved against the arrival stage's block partition. The arrival density is a single fixed split per maturing bucket — it does not depend on which source block released the water, an accepted modeling bound when the release and arrival stages partition their hours differently.
 
 Once a travel-time arc is declared for an upstream plant, that plant's release no longer enters the downstream water balance as the same-stage upstream term of §4; it is routed into the buckets at release and re-enters only as this delayed-arrival term at maturity.
 
@@ -466,17 +466,17 @@ Once a travel-time arc is declared for an upstream plant, that plant's release n
 The buckets advance through the recursion with the same generic **DeliveryRing** primitive that carries the anticipated-thermal ring (§5c): a slot-major, lane-minor grid of $B$ outgoing and $B$ incoming columns, one lane per receiving plant. The ring performs a Markov-1 slot advance — the water at maturity lag $d + 1$ at one stage is at maturity lag $d$ at the next, one step closer to delivery. Within each stage this is encoded by in-LP **shift rows** binding the outgoing carrier to the incoming state one slot deeper,
 
 $$
-b^{\mathrm{out}}_{i,d} \equiv b^{\mathrm{in}}_{i,d+1}
+b^{\mathrm{out}}_{h,d} \equiv b^{\mathrm{in}}_{h,d+1}
 $$
 
-(one row per interior slot), together with the cross-stage identity that carries the outgoing state into the next stage's incoming state — never an out-of-LP shift. The outgoing bucket state $b^{\mathrm{out}}_{i,d}$ is resolved by identity — it is a genuine LP column, part of $n_{\text{state}}$ — and its freshest slots receive the current stage's upstream releases through per-arc **deposit** entries: each release, scaled by the fraction of it maturing at each reachable lag, is written into the corresponding outgoing bucket slots. This is the direct analogue of the anticipated ring's decision-write, reusing the same skeleton.
+(one row per interior slot), together with the cross-stage identity that carries the outgoing state into the next stage's incoming state — never an out-of-LP shift. The outgoing bucket state $b^{\mathrm{out}}_{h,d}$ is resolved by identity — it is a genuine LP column, part of $n_{\text{state}}$ — and its freshest slots receive the current stage's upstream releases through per-arc **deposit** entries: each release, scaled by the fraction of it maturing at each reachable lag, is written into the corresponding outgoing bucket slots. This is the direct analogue of the anticipated ring's decision-write, reusing the same skeleton.
 
 ### Cut coefficient
 
-Because the incoming bucket column is pinned at equal bounds, its reduced cost is the sensitivity $\partial Q_t / \partial \hat{b}_{i,d}$ of the optimal stage cost to the in-transit volume, unscaled by the column prescaler (§12, LP Scaling):
+Because the incoming bucket column is pinned at equal bounds, its reduced cost is the sensitivity $\partial Q_t / \partial \hat{b}_{h,d}$ of the optimal stage cost to the in-transit volume, unscaled by the column prescaler (§12, LP Scaling):
 
 $$
-\pi^{b}_{i,d} = \bar{c}^{\,b}_{i,d} / d^{col}_{i,d}
+\beta^{b}_{h,d} = \bar{c}^{\,b}_{h,d} / d^{col}_{h,d}
 $$
 
 Transit buckets are **always** included in the cut projection — never gated by the per-stage `state_variables` selection that can drop the storage or inflow-lag dimensions (see [cut management](/math/cut-management)). Each cut therefore carries one coefficient per bucket dimension, contiguous with the storage, lag, and anticipated coefficients and read from the same reduced-cost mechanism (§11). In the policy manifest a bucket dimension is tagged with the **downstream** hydro as its entity and the maturity lag as its sub-index.
@@ -502,16 +502,16 @@ Constant-productivity hydros carry no separate generation column: $g_{h,b,k}$ is
 **FPHA Model** (for each plane $m \in \mathcal{M}_h$, cell $(h, b)$ of hydro $h \in \mathcal{H}^{fpha}$, block $k$):
 
 $$
-g_{h,b,k} \leq \sigma_{h,b} \big( \gamma^m_0 + \gamma^m_v \cdot v^{avg}_h + \gamma^m_s \cdot s_{h,k} \big) + \gamma^m_q \cdot q_{h,b,k}
+g_{h,b,k} \leq \lambda_{h,b} \big( \gamma^m_0 + \gamma^m_v \cdot v^{avg}_h + \gamma^m_s \cdot s_{h,k} \big) + \gamma^m_q \cdot q_{h,b,k}
 $$
 
-where $v^{avg}_h = (v^{in}_h + v_h)/2$ is the average storage during the stage, with $v^{in}_h$ being the incoming storage LP variable (§4a) and $v_h$ the end-of-stage storage — a single plant-level quantity shared by every cell, since storage is not partitioned. $\sigma_{h,b}$ is cell $(h,b)$'s **apportionment share** of plant $h$'s declared turbine capacity,
+where $v^{avg}_h = (v^{in}_h + v_h)/2$ is the average storage during the stage, with $v^{in}_h$ being the incoming storage LP variable (§4a) and $v_h$ the end-of-stage storage — a single plant-level quantity shared by every cell, since storage is not partitioned. $\lambda_{h,b}$ is cell $(h,b)$'s **apportionment share** of plant $h$'s declared turbine capacity,
 
 $$
-\sigma_{h,b} = \frac{\sum_{g \,\in\, (h,b)} \bar{Q}_g}{\sum_{g \,\in\, h} \bar{Q}_g}
+\lambda_{h,b} = \frac{\sum_{u \,\in\, (h,b)} \bar{Q}_u}{\sum_{u \,\in\, h} \bar{Q}_u}
 $$
 
-(the ratio of the cell's own unit groups' declared `max_turbined_m3s` to the plant's total, $0$ when the plant's total is $0$), satisfying $\sum_{b \in \mathcal{B}_h} \sigma_{h,b} = 1$. Only the plane's flow-independent part — the intercept $\gamma^m_0$, the storage term, and the spillage term — is apportioned by $\sigma_{h,b}$; the flow coefficient $\gamma^m_q$ stays on the cell's own $q_{h,b,k}$ unscaled, because it alone is homogeneous in the cell partition (summing the per-cell rows at fixed $v^{avg}_h$, $s_{h,k}$, and $\sum_b q_{h,b,k}$ recovers the plant-level bound this replaces). A single-cell plant has $\sigma_{h,b} = 1$ exactly, reproducing the pre-partition row with no special case.
+(the ratio of the cell's own unit groups' declared `max_turbined_m3s` to the plant's total, $0$ when the plant's total is $0$), satisfying $\sum_{b \in \mathcal{B}_h} \lambda_{h,b} = 1$. Only the plane's flow-independent part — the intercept $\gamma^m_0$, the storage term, and the spillage term — is apportioned by $\lambda_{h,b}$; the flow coefficient $\gamma^m_q$ stays on the cell's own $q_{h,b,k}$ unscaled, because it alone is homogeneous in the cell partition (summing the per-cell rows at fixed $v^{avg}_h$, $s_{h,k}$, and $\sum_b q_{h,b,k}$ recovers the plant-level bound this replaces). A single-cell plant has $\lambda_{h,b} = 1$ exactly, reproducing the pre-partition row with no special case.
 
 **Generation Bounds** (per cell $(h, b)$, block $k$ — the FPHA generation column's own bound; a constant-productivity cell has no such column, so its generation cap is folded into the turbined-flow bound below instead):
 
@@ -520,7 +520,7 @@ $$
 $$
 
 $$
-\underline{G}_{h,b} = \sum_{g \,\in\, (h,b)} \underline{G}_g, \qquad \bar{G}_{h,b} = \min\!\Big( \sum_{g \,\in\, (h,b)} \bar{G}_g,\ \ \bar{G}_h \Big)
+\underline{G}_{h,b} = \sum_{u \,\in\, (h,b)} \underline{G}_u, \qquad \bar{G}_{h,b} = \min\!\Big( \sum_{u \,\in\, (h,b)} \bar{G}_u,\ \ \bar{G}_h \Big)
 $$
 
 Generation bounds are user-defined (declared per unit group, not derived from turbined flow). The lower bound is soft, with one slack $\sigma^{g-}_{h,b,k}$ **per cell** — priced at the plant's own penalty $c^{gv-}_h$ at full magnitude on every cell of a split plant, never divided by cell count; a constant-productivity cell's floor couples this same slack to $\rho_h \cdot q_{h,b,k}$ rather than to a generation column. The upper bound's plain sum over the cell's own unit groups closes against the plant's own resolved maximum $\bar{G}_h$ — a bounds override may never raise a cell above it. See [system elements §5](/math/system-elements). Matches the per-cell $\sigma^{g-}_{h,b,k}$ defined in [notation conventions §4.3](/overview/notation-conventions#43-slack-variables).
@@ -577,13 +577,13 @@ $$
 \underline{Q}_{h,b} - \sigma^{q-}_{h,b,k} \leq q_{h,b,k} \leq \bar{Q}_{h,b}
 $$
 
-The lower bound is soft, with one slack $\sigma^{q-}_{h,b,k}$ per cell, priced at the plant's own penalty $c^{tv-}_h$ at full magnitude on every cell — never divided by cell count; it is the plain sum of the cell's own unit groups' resolved minimum turbined flow, $\underline{Q}_{h,b} = \sum_{g \,\in\, (h,b)} \underline{Q}_g$. The upper bound is hard and closes against the plant's own resolved maximum, never raised above it:
+The lower bound is soft, with one slack $\sigma^{q-}_{h,b,k}$ per cell, priced at the plant's own penalty $c^{tv-}_h$ at full magnitude on every cell — never divided by cell count; it is the plain sum of the cell's own unit groups' resolved minimum turbined flow, $\underline{Q}_{h,b} = \sum_{u \,\in\, (h,b)} \underline{Q}_u$. The upper bound is hard and closes against the plant's own resolved maximum, never raised above it:
 
 $$
-\bar{Q}_{h,b} = \min\!\left( \sum_{g \,\in\, (h,b)} \mathrm{fold}(g),\ \ \bar{Q}_h \right)
+\bar{Q}_{h,b} = \min\!\left( \sum_{u \,\in\, (h,b)} \mathrm{fold}(u),\ \ \bar{Q}_h \right)
 $$
 
-where $\mathrm{fold}(g) = \bar{Q}_g$ for an FPHA hydro (turbined flow and generation are independent columns there) and $\mathrm{fold}(g) = \min(\bar{Q}_g,\ \bar{G}_g / \rho_h)$ for a constant-productivity hydro — each group's own flow cap and MW-implied flow cap must be folded **before** summing across the cell, since $\min$ does not distribute over a sum of groups that bind on different sides. This is the mechanism that enforces a constant-productivity cell's generation cap (§6): there is no separate generation column to bound directly. Matches the per-cell $\sigma^{q-}_{h,b,k}$ defined in [notation conventions §4.3](/overview/notation-conventions#43-slack-variables).
+where $\mathrm{fold}(u) = \bar{Q}_u$ for an FPHA hydro (turbined flow and generation are independent columns there) and $\mathrm{fold}(u) = \min(\bar{Q}_u,\ \bar{G}_u / \rho_h)$ for a constant-productivity hydro — each group's own flow cap and MW-implied flow cap must be folded **before** summing across the cell, since $\min$ does not distribute over a sum of groups that bind on different sides. This is the mechanism that enforces a constant-productivity cell's generation cap (§6): there is no separate generation column to bound directly. Matches the per-cell $\sigma^{q-}_{h,b,k}$ defined in [notation conventions §4.3](/overview/notation-conventions#43-slack-variables).
 
 ### Diversion Flow Bounds (per hydro $h$, block $k$)
 
@@ -593,10 +593,10 @@ $$
 
 Both bounds are hard. Diversion cost is a regularization term (see §1.4), not a violation penalty.
 
-### Pumping Flow Bounds (per station $j$, block $k$)
+### Pumping Flow Bounds (per station $y$, block $k$)
 
 $$
-\underline{P}_j \leq p_{j,k} \leq \bar{P}_j
+\underline{P}_y \leq p_{y,k} \leq \bar{P}_y
 $$
 
 Both bounds are hard.
@@ -615,10 +615,10 @@ $$
 The turbined- and generation-minimum slacks are **per cell** — each of a split plant's cells carries its own slack column and its own row, priced at the plant's penalty at full magnitude, never divided across cells. The outflow and evaporation slacks stay per-plant: outflow has no per-cell column to attribute a floor to.
 
 $$
-+ \sum_{h \in \mathcal{H}} T \cdot \bigl(c^{wv-}_h \sigma^{w-}_h + c^{wv+}_h \sigma^{w+}_h\bigr)
++ \sum_{h \in \mathcal{H}} H_t \cdot \bigl(c^{wv-}_h \sigma^{w-}_h + c^{wv+}_h \sigma^{w+}_h\bigr)
 $$
 
-where $T = \sum_k \tau_k$ is the total stage duration in hours. Withdrawal violation slacks ($\sigma^{w-}_h$, $\sigma^{w+}_h$) are stage-level (not per-block) and bidirectional: $\sigma^{w-}_h$ penalizes under-delivery (the realized withdrawal $R_h = r_h - \sigma^{w-}_h + \sigma^{w+}_h$ falls short of the target), and $\sigma^{w+}_h$ penalizes over-delivery. The **withdrawal target $r_h$ is signed** (§4), and the slack bounds ensure the realized withdrawal cannot flip sign relative to the target:
+where $H_t = \sum_k \tau_k$ is the total stage duration in hours. Withdrawal violation slacks ($\sigma^{w-}_h$, $\sigma^{w+}_h$) are stage-level (not per-block) and bidirectional: $\sigma^{w-}_h$ penalizes under-delivery (the realized withdrawal $R_h = r_h - \sigma^{w-}_h + \sigma^{w+}_h$ falls short of the target), and $\sigma^{w+}_h$ penalizes over-delivery. The **withdrawal target $r_h$ is signed** (§4), and the slack bounds ensure the realized withdrawal cannot flip sign relative to the target:
 
 - $r_h > 0$ (scheduled removal): $\sigma^{w-}_h \leq r_h$ (under-delivery slack capped at the target magnitude; floors $R_h \geq 0$), $\sigma^{w+}_h$ unbounded.
 - $r_h < 0$ (scheduled inter-basin return/addition): $\sigma^{w+}_h \leq |r_h|$ (over-delivery slack capped at $|r_h|$; caps $R_h \leq 0$), $\sigma^{w-}_h$ unbounded.
@@ -643,7 +643,7 @@ For the full resolution semantics and all penalty value definitions, see [Penalt
 User-defined linear constraints (per constraint $g \in \mathcal{G}$) take a two-sided interval form:
 
 $$
-\ell_g \;\leq\; \sum_{e} \gamma_{g,e} \cdot x_e \;\leq\; u_g
+\underline{b}_g \;\leq\; \sum_{e} \gamma_{g,e} \cdot x_e \;\leq\; \bar{b}_g
 $$
 
 where $x_e$ can reference any LP variable using expression syntax:
@@ -656,14 +656,14 @@ where $x_e$ can reference any LP variable using expression syntax:
 A term may also address a plant's **useful volume** $v_h - V^{min}_h$ — its storage above the physical minimum $V^{min}_h$. It is realised on the storage variable itself by shifting both endpoints by the same amount,
 
 $$
-\ell_g \le \gamma_{g,e}\,(v_h - V^{min}_h) + \dots \le u_g
+\underline{b}_g \le \gamma_{g,e}\,(v_h - V^{min}_h) + \dots \le \bar{b}_g
 \iff
-\ell_g + \gamma_{g,e}V^{min}_h \le \gamma_{g,e}\,v_h + \dots \le u_g + \gamma_{g,e}V^{min}_h,
+\underline{b}_g + \gamma_{g,e}V^{min}_h \le \gamma_{g,e}\,v_h + \dots \le \bar{b}_g + \gamma_{g,e}V^{min}_h,
 $$
 
 so it adds no LP variable; an absent endpoint stays absent, and a negative $\gamma_{g,e}$ lowers both endpoints.
 
-Either endpoint, $\ell_g$ or $u_g$, may be absent — never both — with an absent side read as the corresponding infinity. This single interval subsumes every shape a constraint can take: a present $\ell_g$ alone is a floor, a present $u_g$ alone is a cap, $\ell_g = u_g$ is an equality, and both present together bound a two-sided band. A constraint is no longer characterised by picking one relation out of a fixed set — its shape falls out of which endpoints happen to be present.
+Either endpoint, $\underline{b}_g$ or $\bar{b}_g$, may be absent — never both — with an absent side read as the corresponding infinity. This single interval subsumes every shape a constraint can take: a present $\underline{b}_g$ alone is a floor, a present $\bar{b}_g$ alone is a cap, $\underline{b}_g = \bar{b}_g$ is an equality, and both present together bound a two-sided band. A constraint is no longer characterised by picking one relation out of a fixed set — its shape falls out of which endpoints happen to be present.
 
 ### Coefficients and Endpoints
 
@@ -685,11 +685,11 @@ Resolution happens once at LP-build time, so the LP coefficients and endpoints a
 
 ### Two-Sided Slack
 
-A constraint may optionally carry a slack, penalized per unit of violation, so the row relaxes at a cost instead of forcing infeasibility. A one-sided row — only $\ell_g$ or only $u_g$ present — carries a single slack column relaxing that one endpoint. A two-sided row — both $\ell_g$ and $u_g$ present — carries **two** independent slack columns, $\sigma^{gc+}_g$ relaxing the floor upward and $\sigma^{gc-}_g$ relaxing the cap downward: a single column cannot represent both "how far below the floor" and "how far above the cap" without conflating the two directions.
+A constraint may optionally carry a slack, penalized per unit of violation, so the row relaxes at a cost instead of forcing infeasibility. A one-sided row — only $\underline{b}_g$ or only $\bar{b}_g$ present — carries a single slack column relaxing that one endpoint. A two-sided row — both $\underline{b}_g$ and $\bar{b}_g$ present — carries **two** independent slack columns, $\sigma^{gc+}_g$ relaxing the floor upward and $\sigma^{gc-}_g$ relaxing the cap downward: a single column cannot represent both "how far below the floor" and "how far above the cap" without conflating the two directions.
 
 The reported violation is the **signed net** $\sigma^{gc+}_g - \sigma^{gc-}_g$: positive when the row sits below its floor, negative when it sits above its cap, matching the sign of the underlying deviation rather than reading as an unsigned magnitude. The objective charges both columns, $\sigma^{gc+}_g + \sigma^{gc-}_g$, which coincides with the net's magnitude whenever only one direction is active — the case at any optimum, since paying for both directions on the same row at once is strictly dominated by paying for neither of the excess.
 
-**Row materialization**: a constraint bound declared with `block_id = None` over a **block-independent** expression — one whose every term references a stock variable (incoming storage $v^{in}_h$, outgoing storage $v_h$, evaporation outflow $e_{h,k}$ collapsed to its stage average, or an anticipated-thermal commitment) — is materialized as a **single stage-level row** priced by the total stage hours $T$, since per-block rows would be identical, **provided its endpoints are block-independent too**: an endpoint drawn from the per-(stage, block) parameter kind above varies within the stage, which forces the per-block row set even when the expression alone would otherwise qualify for the collapse. A `block_id = None` bound on a block-level expression, or any `block_id = Some(k)` bound, still produces one row per relevant block. This is an LP row-count optimization that is cost- and parity-neutral.
+**Row materialization**: a constraint bound declared with `block_id = None` over a **block-independent** expression — one whose every term references a stock variable (incoming storage $v^{in}_h$, outgoing storage $v_h$, evaporation outflow $e_{h,k}$ collapsed to its stage average, or an anticipated-thermal commitment) — is materialized as a **single stage-level row** priced by the total stage hours $H_t$, since per-block rows would be identical, **provided its endpoints are block-independent too**: an endpoint drawn from the per-(stage, block) parameter kind above varies within the stage, which forces the per-block row set even when the expression alone would otherwise qualify for the collapse. A `block_id = None` bound on a block-level expression, or any `block_id = Some(k)` bound, still produces one row per relevant block. This is an LP row-count optimization that is cost- and parity-neutral.
 
 See [Generic Constraints](/reference/generic-constraints) for the authoring grammar, the activation grid, and the per-file field tables this formulation implements.
 
@@ -698,14 +698,14 @@ See [Generic Constraints](/reference/generic-constraints) for the authoring gram
 For each active cut $i$ from previous iterations:
 
 $$
-\theta \geq \alpha_i + \sum_{h \in \mathcal{H}} \pi^v_{i,h} \cdot v_h + \sum_{h,\ell} \pi^{lag}_{i,h,\ell} \cdot a_{h,\ell}
+\theta \geq \beta_{0,i} + \sum_{h \in \mathcal{H}} \beta^v_{i,h} \cdot v_h + \sum_{h,\ell} \beta^{lag}_{i,h,\ell} \cdot a_{h,\ell}
 $$
 
 where:
 
-- $\alpha_i$ = cut intercept (RHS)
-- $\pi^v_{i,h}$ = coefficient for storage state variable
-- $\pi^{lag}_{i,h,\ell}$ = coefficient for AR lag state variable
+- $\beta_{0,i}$ = cut intercept (RHS)
+- $\beta^v_{i,h}$ = coefficient for storage state variable
+- $\beta^{lag}_{i,h,\ell}$ = coefficient for AR lag state variable
 
 When anticipated thermals are present, the cut carries one additional coefficient per anticipated-state slot (§5c), read from the same reduced-cost mechanism. When travel-time arcs are present, it likewise carries one coefficient per in-transit bucket dimension (§5d); unlike the storage and lag coefficients, the bucket coefficients are always part of the cut projection.
 
@@ -725,7 +725,7 @@ $$
 \tilde{c}_j = \frac{c_j}{K} \quad \text{for all } j \neq \theta
 $$
 
-The $\theta$ variable retains its coefficient of 1.0 because the Benders cuts enforce $\theta \geq \alpha_{scaled}$ where $\alpha_{scaled} = Q_{successor} / K$, so $\theta$ already operates in scaled cost space. The LP objective is $\sum_j \tilde{c}_j x_j + 1.0 \cdot \theta$, and the total scaled objective equals $(C_{stage} + C_{future}) / K$. All cost-domain outputs (objective values, duals, cost breakdowns) are multiplied by $K$ at the reporting boundary to recover original units.
+The $\theta$ variable retains its coefficient of 1.0 because the Benders cuts enforce $\theta \geq \beta_0^{scaled}$ where $\beta_0^{scaled} = Q_{successor} / K$, so $\theta$ already operates in scaled cost space. The LP objective is $\sum_j \tilde{c}_j x_j + 1.0 \cdot \theta$, and the total scaled objective equals $(C_{stage} + C_{future}) / K$. All cost-domain outputs (objective values, duals, cost breakdowns) are multiplied by $K$ at the reporting boundary to recover original units.
 
 :::note[Impact on cut coefficients]
 Cut intercepts and coefficients are stored in scaled cost space (divided by $K$). When evaluating or reporting cut values, the factor $K$ must be applied. Duals extracted from the LP are already in scaled cost space and must be multiplied by $K$ to obtain original-unit values.
@@ -755,8 +755,8 @@ $$
 
 The transformation replaces:
 
-- Matrix entries: $\hat{A}_{ij} = \tilde{A}_{ij} \cdot d_i^{row}$
-- Row bounds: $\hat{l}_i^{row} = l_i^{row} \cdot d_i^{row}$, $\hat{u}_i^{row} = u_i^{row} \cdot d_i^{row}$
+- Matrix entries: $\check{A}_{ij} = \tilde{A}_{ij} \cdot d_i^{row}$
+- Row bounds: $\check{l}_i^{row} = l_i^{row} \cdot d_i^{row}$, $\check{u}_i^{row} = u_i^{row} \cdot d_i^{row}$
 
 Column bounds and objective coefficients are not modified by row scaling.
 
@@ -767,7 +767,7 @@ LP row duals are in the scaled problem's space. To recover original-unit duals: 
 :::
 
 :::note[Reduced-cost unscaling for cut coefficients]
-State cut coefficients are read as the **reduced costs** of the pinned incoming-state columns (§4a, Incoming-Storage Pinning), not as row duals. A reduced cost is reported in the scaled problem's space; the original-unit sensitivity is $\pi_j^{original} = (\bar{c}_j^{scaled} / d_j^{col}) \cdot K$ — divide by the column factor, then multiply by $K$. The **division** by $d_j^{col}$ (not multiplication) follows from the column transform $\tilde{x}_j = x_j / d_j^{col}$ of §12.2 (Column Scaling): the LP solver/backend differentiates the scaled objective with respect to $\tilde{x}_j$, so recovering $\partial Q / \partial x_j$ divides the column factor back out. When the solve applies no scaling beyond Cobre's own prescaling — the case by default — this single unscaling is exact; if the backend applies a further scaling of its own on top of the prescaled matrix, a second scaling factor enters that this identity does not account for, and the single unscaling no longer exactly recovers original units. (Cut coefficients are stored in scaled cost space — the $\bar{c}_j^{scaled}/d_j^{col}$ value — with $K$ applied only at the reporting boundary, as for all cost-domain quantities.)
+State cut coefficients are read as the **reduced costs** of the pinned incoming-state columns (§4a, Incoming-Storage Pinning), not as row duals. A reduced cost is reported in the scaled problem's space; the original-unit sensitivity is $\beta_j^{original} = (\bar{c}_j^{scaled} / d_j^{col}) \cdot K$ — divide by the column factor, then multiply by $K$. The **division** by $d_j^{col}$ (not multiplication) follows from the column transform $\tilde{x}_j = x_j / d_j^{col}$ of §12.2 (Column Scaling): the LP solver/backend differentiates the scaled objective with respect to $\tilde{x}_j$, so recovering $\partial Q / \partial x_j$ divides the column factor back out. When the solve applies no scaling beyond Cobre's own prescaling — the case by default — this single unscaling is exact; if the backend applies a further scaling of its own on top of the prescaled matrix, a second scaling factor enters that this identity does not account for, and the single unscaling no longer exactly recovers original units. (Cut coefficients are stored in scaled cost space — the $\bar{c}_j^{scaled}/d_j^{col}$ value — with $K$ applied only at the reporting boundary, as for all cost-domain quantities.)
 :::
 
 ## Cross-References

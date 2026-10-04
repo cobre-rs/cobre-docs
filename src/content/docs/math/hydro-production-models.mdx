@@ -100,10 +100,10 @@ Cobre uses **tabular data with linear interpolation** for the forebay curve — 
 
 #### Forebay Level $h_{fore}(v)$
 
-The upstream water level is read from the volume-height curve in `hydro_geometry.parquet`. For storage $v$ where $v_i \leq v < v_{i+1}$:
+The upstream water level is read from the volume-height curve in `hydro_geometry.parquet`. For storage $v$ where $v^{(i)} \leq v < v^{(i+1)}$:
 
 $$
-h_{fore}(v) = h_i + \frac{h_{i+1} - h_i}{v_{i+1} - v_i} \times (v - v_i)
+h_{fore}(v) = h^{(i)} + \frac{h^{(i+1)} - h^{(i)}}{v^{(i+1)} - v^{(i)}} \times (v - v^{(i)})
 $$
 
 #### Tailrace Level $h_{tail}(q_{out})$
@@ -124,10 +124,10 @@ $$
 
 #### 2.3.1 Piecewise-Quartic Tailrace Families (Backwater Coupling)
 
-When plants are hydraulically close, plant $i$'s tailrace level depends on the downstream reservoir's forebay. An optional per-plant tailrace table provides **piecewise-quartic** tailrace segments: the flow domain $[Q_{jus,lo}, Q_{jus,hi}]$ is split into contiguous segments, each a degree-4 polynomial
+When plants are hydraulically close, plant $h$'s tailrace level depends on the downstream reservoir's forebay. An optional per-plant tailrace table provides **piecewise-quartic** tailrace segments: the flow domain $[Q_{jus,lo}, Q_{jus,hi}]$ is split into contiguous segments, each a degree-4 polynomial
 
 $$
-h_{tail}^{(k)}(q_{jus}) = a_0^{(k)} + a_1^{(k)} q_{jus} + a_2^{(k)} q_{jus}^2 + a_3^{(k)} q_{jus}^3 + a_4^{(k)} q_{jus}^4
+h_{tail}^{(n)}(q_{jus}) = c_0^{(n)} + c_1^{(n)} q_{jus} + c_2^{(n)} q_{jus}^2 + c_3^{(n)} q_{jus}^3 + c_4^{(n)} q_{jus}^4
 $$
 
 evaluated via Horner's method for numerical stability. C0 continuity between segments is enforced to ~1 mm. These segments are grouped into **backwater families** keyed by the downstream reservoir's reference forebay level ($HrefJus$, in metres). At fitting time, the active family is **linearly interpolated** by the downstream plant's resolved stage reference level — clamped to the calibrated level range, never extrapolated. Plants with a single keyless family (no backwater coupling) evaluate that family directly regardless of the downstream level. Plants without a tailrace table use the entity-level polynomial or piecewise-linear tailrace.
@@ -185,7 +185,7 @@ The plane is fitted once per plant (§2.1–§2.8); a plant split across buses e
 
 ### 2.6 Computed FPHA Fitting Pipeline
 
-The computed-FPHA path produces hyperplanes from topology data in four stages: convex-hull fit → $\alpha_{FPHA}$ correction → lateral-flow secant → optional plane reduction. The fit is resolved **per production-model entry** (per season or stage range), so planes can differ across the horizon for the same plant. Results are expanded to per-stage hyperplane rows.
+The computed-FPHA path produces hyperplanes from topology data in four stages: convex-hull fit → $k_{FPHA}$ correction → lateral-flow secant → optional plane reduction. The fit is resolved **per production-model entry** (per season or stage range), so planes can differ across the horizon for the same plant. Results are expanded to per-stage hyperplane rows.
 
 #### 2.6.1 Grid and Cloud
 
@@ -204,29 +204,25 @@ Each cloud point is capped at the plant's installed capacity $\bar{G}_h$. Spilla
 
 The 3-D convex hull of the $(V, Q, \text{generation})$ cloud is computed via the qhull library. The **upper-envelope facets** — those whose outward normal has a positive generation component — are selected. Each is read as $\text{generation} = \gamma_0 + \gamma_v V + \gamma_q Q$. The result is a **concave outer approximation** (the smallest concave function lying above $\phi$); non-concave regions of $\phi$ fall inside the hull and their facets drop out. Near-parallel coplanar facets arising from hull triangulation are deduplicated by exact coefficient comparison.
 
-#### 2.6.3 Least-Squares $\alpha_{FPHA}$ Correction
+#### 2.6.3 Least-Squares $k_{FPHA}$ Correction
 
-The raw hull envelope $FPHA_0$ is optimistic where $\phi$ is non-concave and pessimistic where it is concave. A single scalar $\alpha_{FPHA}$ corrects the bias by minimising the mean-squared error between $\alpha_{FPHA} \cdot FPHA_0$ and the exact $\phi$ over the spill$=0$ grid:
+The raw hull envelope $FPHA_0$ is optimistic where $\phi$ is non-concave and pessimistic where it is concave. A single scalar $k_{FPHA}$ corrects the bias by minimising the mean-squared error between $k_{FPHA} \cdot FPHA_0$ and the exact $\phi$ over the spill$=0$ grid:
 
 $$
-\alpha_{FPHA} = \frac{\sum_{i,j} FPHA_0(V_i,Q_j)\,\phi(V_i,Q_j)}{\sum_{i,j} FPHA_0(V_i,Q_j)^2}, \qquad FPHA = \alpha_{FPHA}\cdot FPHA_0
+k_{FPHA} = \frac{\sum_{i,j} FPHA_0(V_i,Q_j)\,\phi(V_i,Q_j)}{\sum_{i,j} FPHA_0(V_i,Q_j)^2}, \qquad FPHA = k_{FPHA}\cdot FPHA_0
 $$
 
 Key properties:
 
 - The regression uses the **pointwise minimum** over the raw hull planes as $FPHA_0(V_i, Q_j)$, because the LP applies planes as $g \le \gamma_0^m + \gamma_v^m V + \gamma_q^m Q$ for every $m$, so the binding cap is the minimum, not the maximum.
-- The regression is over the spill$=0$ grid only — adding a spillage axis would pull $\alpha_{FPHA}$ toward the larger-deviation spill region and degrade the no-spill operating region.
-- $\alpha_{FPHA}$ scales the **whole affine function** ($\gamma_0, \gamma_v, \gamma_q$ alike), not just the intercept. This is why $\alpha_{FPHA} \ne \kappa$ (the old intercept-only shrink).
-- $\alpha_{FPHA}$ may be **greater or less than 1** (an MSE balance, not a one-sided shrink). Validation requires $\alpha_{FPHA} > 0$. A degenerate denominator (all-zero production) yields the neutral $\alpha_{FPHA} = 1$.
+- The regression is over the spill$=0$ grid only — adding a spillage axis would pull $k_{FPHA}$ toward the larger-deviation spill region and degrade the no-spill operating region.
+- $k_{FPHA}$ scales the **whole affine function** ($\gamma_0, \gamma_v, \gamma_q$ alike), not just the intercept. This is why $k_{FPHA} \ne \kappa$ (the old intercept-only shrink).
+- $k_{FPHA}$ may be **greater or less than 1** (an MSE balance, not a one-sided shrink). Validation requires $k_{FPHA} > 0$. A degenerate denominator (all-zero production) yields the neutral $k_{FPHA} = 1$.
 - Validation also requires $\gamma_v \ge 0$, $\gamma_q \ge 0$, $\gamma_s \le 0$.
 
-:::note[Notation note]
-$\alpha_{FPHA}$ is written with a subscript throughout this chapter to distinguish it from the Benders cut intercept $\alpha$ (see [cut management](/math/cut-management)).
-:::
+**Fit-quality diagnostic**: after the full pipeline, the relative mean-absolute-deviation of the emitted min-envelope vs the exact $\phi$ over the spill$=0$ grid is computed. A warning is emitted (in canonical plant/stage order) when it exceeds **5%** — typically indicating a strongly non-concave surface that no single $k_{FPHA}$ can track well.
 
-**Fit-quality diagnostic**: after the full pipeline, the relative mean-absolute-deviation of the emitted min-envelope vs the exact $\phi$ over the spill$=0$ grid is computed. A warning is emitted (in canonical plant/stage order) when it exceeds **5%** — typically indicating a strongly non-concave surface that no single $\alpha_{FPHA}$ can track well.
-
-**Precomputed input**: when using `source: "precomputed"`, hyperplanes are read directly from `fpha_hyperplanes.parquet`. That file retains a `kappa` column (defaulting to 1.0); for precomputed planes it is still applied as an intercept-only scale ($\gamma_0 \leftarrow \gamma_0 \cdot \kappa$) and is validated to lie in $(0, 1]$. Only the **computed** path retired $\kappa$ — there the whole-affine $\alpha_{FPHA}$ correction above replaces it.
+**Precomputed input**: when using `source: "precomputed"`, hyperplanes are read directly from `fpha_hyperplanes.parquet`. That file retains a `kappa` column (defaulting to 1.0); for precomputed planes it is still applied as an intercept-only scale ($\gamma_0 \leftarrow \gamma_0 \cdot \kappa$) and is validated to lie in $(0, 1]$. Only the **computed** path retired $\kappa$ — there the whole-affine $k_{FPHA}$ correction above replaces it.
 
 ### 2.7 Lateral-Flow Secant
 
@@ -236,7 +232,7 @@ $$
 S_{max} = \begin{cases}2 \cdot \text{MLT} & \text{if MLT} > 0 \\ 2 \cdot q_{max} & \text{if MLT} = 0\end{cases}
 $$
 
-where MLT is the long-term mean inflow (m³/s). The **representative operating point** for each plane is the spill$=0$ grid point where that plane is the active (tightest) upper bound and attains the largest generation — the operating region the plane actually governs. The secant samples the **uncapped** production function $\phi$ (not clipped at installed capacity $\bar{G}_h$), so the spillage sensitivity is read from the raw head curve and is not flattened wherever the capacity ceiling binds — unlike the cloud and the $\alpha_{FPHA}$ regression (§2.6), which both use the capacity-capped output.
+where MLT is the long-term mean inflow (m³/s). The **representative operating point** for each plane is the spill$=0$ grid point where that plane is the active (tightest) upper bound and attains the largest generation — the operating region the plane actually governs. The secant samples the **uncapped** production function $\phi$ (not clipped at installed capacity $\bar{G}_h$), so the spillage sensitivity is read from the raw head curve and is not flattened wherever the capacity ceiling binds — unlike the cloud and the $k_{FPHA}$ regression (§2.6), which both use the capacity-capped output.
 
 **Sign**: $\gamma_s \le 0$ (more lateral flow raises the tailrace, reduces generation). Near-zero slopes $|\gamma_s| < 10^{-10}$ of either sign are **snapped to exactly 0** to protect LP column scaling from near-zero structural coefficients.
 
@@ -262,18 +258,18 @@ A hydro plant is partitioned into one or more **(hydro, bus) cells** — one per
 For each cell $(h, b)$ of a hydro $h$ using FPHA, block $k$, and plane $m \in \mathcal{M}_h$:
 
 $$
-g_{h,b,k} \leq \sigma_{h,b} \big( \gamma_0^m + \gamma_v^m \cdot v_h^{avg} + \gamma_s^m \cdot s_{h,k} \big) + \gamma_q^m \cdot q_{h,b,k}
+g_{h,b,k} \leq \lambda_{h,b} \big( \gamma_0^m + \gamma_v^m \cdot v_h^{avg} + \gamma_s^m \cdot s_{h,k} \big) + \gamma_q^m \cdot q_{h,b,k}
 $$
 
-The coefficients are already $\alpha_{FPHA}$-scaled — there is no separate pre-scaling step. These are **hard constraints** — no slack variables. Feasibility is ensured through the `turbined_cost` regularization mechanism (see section 2.10).
+The coefficients are already $k_{FPHA}$-scaled — there is no separate pre-scaling step. These are **hard constraints** — no slack variables. Feasibility is ensured through the `turbined_cost` regularization mechanism (see section 2.10).
 
-$\sigma_{h,b}$ apportions the plane's **flow-independent** part — the intercept $\gamma_0^m$, the storage term, and the spillage term — by cell $(h,b)$'s share of the plant's declared turbine capacity:
+$\lambda_{h,b}$ apportions the plane's **flow-independent** part — the intercept $\gamma_0^m$, the storage term, and the spillage term — by cell $(h,b)$'s share of the plant's declared turbine capacity:
 
 $$
-\sigma_{h,b} = \frac{\sum_{g \,\in\, (h,b)} \bar{Q}_g}{\sum_{g \,\in\, h} \bar{Q}_g}
+\lambda_{h,b} = \frac{\sum_{u \,\in\, (h,b)} \bar{Q}_u}{\sum_{u \,\in\, h} \bar{Q}_u}
 $$
 
-($0$ when the plant's declared total is $0$, never `NaN`), a study-time constant derived from each unit group's declared `max_turbined_m3s` — never recomputed per stage or block, and never re-derived from a resolved per-stage override, which would double-count an availability derate already enforced on the flow path by each cell's own column bounds. It satisfies $\sum_{b \in \mathcal{B}_h} \sigma_{h,b} = 1$, and a single-cell plant has $\sigma_{h,b} = 1$ exactly. The flow coefficient $\gamma_q^m$ stays on the cell's own $q_{h,b,k}$ **unscaled** — it is the only term homogeneous in the cell partition, which is what makes $\sum_{b} g_{h,b,k}$ at fixed $v^{avg}_h$, $s_{h,k}$, and $\sum_b q_{h,b,k}$ recover the plant-level bound this per-cell form replaces.
+($0$ when the plant's declared total is $0$, never `NaN`), a study-time constant derived from each unit group's declared `max_turbined_m3s` — never recomputed per stage or block, and never re-derived from a resolved per-stage override, which would double-count an availability derate already enforced on the flow path by each cell's own column bounds. It satisfies $\sum_{b \in \mathcal{B}_h} \lambda_{h,b} = 1$, and a single-cell plant has $\lambda_{h,b} = 1$ exactly. The flow coefficient $\gamma_q^m$ stays on the cell's own $q_{h,b,k}$ **unscaled** — it is the only term homogeneous in the cell partition, which is what makes $\sum_{b} g_{h,b,k}$ at fixed $v^{avg}_h$, $s_{h,k}$, and $\sum_b q_{h,b,k}$ recover the plant-level bound this per-cell form replaces.
 
 #### Average Storage Computation
 
@@ -283,7 +279,7 @@ $$
 v^{avg}_h = \frac{v^{in}_h + v_h}{2}
 $$
 
-where $v^{in}_h$ is the incoming storage LP variable (pinned to $\hat{v}_h$ via column bounds — see [LP Formulation §4a](/math/lp-formulation)) and $v_h$ is end-of-stage storage — a single plant-level quantity shared by every cell, since storage is not partitioned. Both are LP variables, so $v^{in}_h$ appears in every cell's FPHA constraint with coefficient $\sigma_{h,b} \cdot \gamma_v^m / 2$. The LP solver automatically accounts for this in the reduced cost of the pinned $v^{in}_h$ column.
+where $v^{in}_h$ is the incoming storage LP variable (pinned to $\hat{v}_h$ via column bounds — see [LP Formulation §4a](/math/lp-formulation)) and $v_h$ is end-of-stage storage — a single plant-level quantity shared by every cell, since storage is not partitioned. Both are LP variables, so $v^{in}_h$ appears in every cell's FPHA constraint with coefficient $\lambda_{h,b} \cdot \gamma_v^m / 2$. The LP solver automatically accounts for this in the reduced cost of the pinned $v^{in}_h$ column.
 
 #### Generation as Independent Variable
 
@@ -314,15 +310,15 @@ For the full penalty taxonomy and priority ordering, see [Penalty System](/math/
 
 ### 2.11 Impact on Benders Cuts
 
-The FPHA formulation affects water value computation. Because the incoming storage variable $v^{in}_h$ appears in **every one of the plant's cells'** FPHA constraints (via $v^{avg}_h = (v^{in}_h + v_h)/2$, each apportioned by that cell's $\sigma_{h,b}$, section 2.9), the FPHA hyperplane duals of every cell contribute to the marginal value of incoming storage. However, the implementation does **not** require manually combining duals from the water balance and FPHA constraints. Instead, pinning $v^{in}_h$ to $\hat{v}_h$ by column bounds (see [LP Formulation §4a](/math/lp-formulation)) makes its reduced cost capture the total sensitivity $\partial Q_t / \partial \hat{v}_h$ automatically — the LP solver propagates every cell's FPHA contribution through the single shared $v^{in}_h$.
+The FPHA formulation affects water value computation. Because the incoming storage variable $v^{in}_h$ appears in **every one of the plant's cells'** FPHA constraints (via $v^{avg}_h = (v^{in}_h + v_h)/2$, each apportioned by that cell's $\lambda_{h,b}$, section 2.9), the FPHA hyperplane duals of every cell contribute to the marginal value of incoming storage. However, the implementation does **not** require manually combining duals from the water balance and FPHA constraints. Instead, pinning $v^{in}_h$ to $\hat{v}_h$ by column bounds (see [LP Formulation §4a](/math/lp-formulation)) makes its reduced cost capture the total sensitivity $\beta^v_h$ automatically — the LP solver propagates every cell's FPHA contribution through the single shared $v^{in}_h$.
 
 The cut coefficient for storage is simply the reduced cost of the pinned $v^{in}_h$ column:
 
 $$
-\pi^v_h = \bar{c}^{in}_h / d^{col}_h
+\beta^v_h = \bar{c}^{in}_h / d^{col}_h
 $$
 
-This dual implicitly includes the water balance contribution ($\pi^{wb}_h$), the FPHA contribution summed over every cell of the plant ($\frac{1}{2} \sum_{b \in \mathcal{B}_h} \sigma_{h,b} \sum_m \pi_{h,b,m}^{fpha} \cdot \gamma_v^m$), and any generic constraint contributions — all resolved by the LP solver without explicit dual combination.
+This dual implicitly includes the water balance contribution ($\pi^{wb}_h$), the FPHA contribution summed over every cell of the plant ($\frac{1}{2} \sum_{b \in \mathcal{B}_h} \lambda_{h,b} \sum_m \pi_{h,b,m}^{fpha} \cdot \gamma_v^m$), and any generic constraint contributions — all resolved by the LP solver without explicit dual combination.
 
 For the complete cut coefficient computation, see [cut management](/math/cut-management).
 

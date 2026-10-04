@@ -548,7 +548,7 @@ physical geometry. Cobre evaluates the exact production function on a
 `q = 0`, whose zero-flow column anchors the lower closure, so there is no
 synthetic closing point and no spillage axis in the cloud — takes the 3-D
 convex hull of the resulting cloud with vendored qhull, applies a
-least-squares `alpha_FPHA` correction that scales the **whole affine plane**
+least-squares $k_{FPHA}$ correction that scales the **whole affine plane**
 (intercept and slopes together, not just the intercept), and fits a per-plane
 lateral-flow secant. Fits are resolved independently per stage range or
 season. Run-of-river plants (a single fitting volume) are supported: the
@@ -582,7 +582,7 @@ All fields except `source` are optional:
 | -------------------------------- | ------- | ----------- |
 | `volume_discretization_points`   | 5       | Number of volume grid points for fitting. Must be `>= 2`. Run-of-river plants (`γ_V` snapped to 0) bypass volume discretization — the fit collapses to a single volume point and emits one `hydro_geometry.parquet` row. |
 | `turbine_discretization_points`  | 5       | Number of turbined-flow grid points. Must be `>= 2`. |
-| `spillage_discretization_points` | 5       | Validated (must be `>= 2`) but does **not** add a spillage axis to the fitting grid — the cloud and the `alpha_FPHA` regression fix spillage at `0`, and the lateral-flow secant sweeps its own sample range independently (§2.7). The field is retained for input round-tripping. |
+| `spillage_discretization_points` | 5       | Validated (must be `>= 2`) but does **not** add a spillage axis to the fitting grid — the cloud and the $k_{FPHA}$ regression fix spillage at `0`, and the lateral-flow secant sweeps its own sample range independently (§2.7). The field is retained for input round-tripping. |
 | `max_planes_per_hydro`           | 10      | Accepted and validated (`>= 1`) but does not currently trim the plane set — the hull fitter emits exactly the upper-envelope facets. |
 | `fitting_window`                 | null    | Optional volume range for fitting; absent uses the full operating range `[min_storage_hm3, max_storage_hm3]`. |
 

@@ -20,18 +20,18 @@ The stages and scenario paths introduced here are the special case of a more gen
 At each stage, the future is summarised by a **cost-to-go function** $V_t$ — the minimum expected cost from that stage forward, as a function of the incoming state (reservoir levels, inflow lags). The dispatch problem obeys a stagewise (Bellman) recursion: the cost-to-go at stage $t$ is the expected cost of the best decision now plus the cost-to-go of the state that decision leaves behind:
 
 $$
-V_t(x_{t-1}) = \mathbb{E}_{\omega_t}\!\left[\, \min_{x_t}\; c_t^\top x_t + V_{t+1}(x_t) \,\right]
+V_t(x_{t-1}) = \mathbb{E}_{\omega_t}\!\left[\, \min_{x_t, u_t}\; c_t(x_t, u_t) + V_{t+1}(x_t) \,\right]
 $$
 
-with terminal condition $V_{T+1}(x) = 0$. The minimisation runs over the feasible stage-$t$ decisions $x_t$ given the incoming state $x_{t-1}$ and the realized uncertainty $\omega_t$. For LP subproblems $V_t$ is convex and piecewise linear — the property SDDP exploits.
+with terminal condition $V_{T+1}(x) = 0$. The minimisation runs over the feasible stage-$t$ state $x_t$ and control $u_t$, $(x_t, u_t) \in \mathcal{X}_t(x_{t-1}, \omega_t)$, given the incoming state $x_{t-1}$ and the realized uncertainty $\omega_t$. For LP subproblems $V_t$ is convex and piecewise linear — the property SDDP exploits.
 
 SDDP never forms $V_{t+1}$ explicitly. It approximates it from below with a growing collection of affine functions called **Benders cuts**, each a valid underestimator everywhere:
 
 $$
-V_{t+1}(x) \;\ge\; \alpha_i + \pi_i^\top x \qquad \text{for every cut } i
+V_{t+1}(x) \;\ge\; \beta_{0,i} + \beta_i^\top x \qquad \text{for every cut } i
 $$
 
-In the stage problem the future cost is carried by an epigraph variable $\theta$ bounded by every cut ($\theta \ge \alpha_i + \pi_i^\top x$), so the approximation is the upper envelope $\max_i (\alpha_i + \pi_i^\top x)$.
+In the stage problem the future cost is carried by an epigraph variable $\theta_t$, approximating $V_{t+1}(x_t)$ and bounded by every cut ($\theta_t \ge \beta_{0,i} + \beta_i^\top x_t$), so the approximation is the upper envelope $\max_i (\beta_{0,i} + \beta_i^\top x)$.
 
 The approximation improves iteratively. Starting with no cuts, the algorithm alternates two passes:
 
@@ -71,11 +71,7 @@ SDDP maintains two bounds on the optimal expected cost:
 
 **Upper bound** $\overline{z}$: The sample-average cost of forward simulations under the current policy. Because this average is computed from a finite number of scenarios, it carries statistical uncertainty; Cobre reports both the estimate and its confidence interval.
 
-The **optimality gap** is the difference between the two:
-
-$$
-\text{gap} = \overline{z} - \underline{z}
-$$
+The **optimality gap** is the upper bound minus the lower bound; its percent form normalises that difference by the lower bound (see [Optimality gap](/math/stopping-rules#optimality-gap)).
 
 When the gap falls below the stopping criterion, the algorithm terminates. The stopping rule governs how the gap is assessed; see [Stopping Rules](/math/stopping-rules) for the full treatment.
 
@@ -93,7 +89,7 @@ $$
 \text{CVaR}_\alpha(Z) = \min_{\eta \in \mathbb{R}} \left\{ \eta + \frac{1}{\alpha} \mathbb{E}\left[(Z - \eta)^+\right] \right\}
 $$
 
-where $\alpha \in (0, 1]$ is the confidence level — $\text{CVaR}_\alpha$ is the expected cost in the worst $\alpha$-fraction of scenarios. Cobre uses a convex combination of expectation and CVaR,
+where $\alpha \in (0, 1]$ is the tail fraction — $\text{CVaR}_\alpha$ is the expected cost in the worst $\alpha$-fraction of scenarios. Cobre uses a convex combination of expectation and CVaR,
 
 $$
 \rho^{\lambda, \alpha}[Z] = (1 - \lambda)\, \mathbb{E}[Z] + \lambda \cdot \text{CVaR}_\alpha[Z]
@@ -103,7 +99,7 @@ with risk-aversion weight $\lambda \in [0, 1]$ ($\lambda = 0$ recovers the risk-
 
 <CvarPlot />
 
-_Cost distribution with the mean, $\mathrm{VaR}_\alpha$ and $\mathrm{CVaR}_\alpha$ marked and the worst $(1-\alpha)$ tail shaded; raising $\lambda$ moves the policy from the mean toward the tail._
+_Cost distribution with the mean, $\mathrm{VaR}_\alpha$ and $\mathrm{CVaR}_\alpha$ marked and the worst $\alpha$ tail shaded; raising $\lambda$ moves the policy from the mean toward the tail._
 
 ## 4. Where to Go Next
 

@@ -28,7 +28,7 @@ The discount factor $d \in (0, 1]$ captures the time value of money or risk pref
 The standard risk-neutral Bellman recursion with discount factor $d$ is:
 
 $$
-V_t(x_{t-1}) = \mathbb{E}_{\omega_t}\left[\min_{x_t \in \mathcal{X}_t(\omega_t)} \left\{ c_t(x_t, u_t) + d_{t \to t+1} \cdot V_{t+1}(x_t) \right\}\right]
+V_t(x_{t-1}) = \mathbb{E}_{\omega_t}\left[\min_{(x_t, u_t) \in \mathcal{X}_t(x_{t-1}, \omega_t)} \left\{ c_t(x_t, u_t) + d_{t \to t+1} \cdot V_{t+1}(x_t) \right\}\right]
 $$
 
 where:
@@ -43,7 +43,7 @@ The discount factor $d$ multiplies only the **future cost** $V_{t+1}$, not the i
 - **Immediate cost** $c_t$: Not discounted (incurred "now" at stage $t$)
 - **Future cost** $d \cdot V_{t+1}$: Discounted to present value at stage $t$
 
-This is mathematically equivalent to computing all costs at "time 0" (stage 1) present value, where stage $t$ costs are multiplied by $\prod_{s=1}^{t-1} d_{s \to s+1}$ in the objective. The Bellman formulation above is the recursive form that SDDP exploits.
+This is mathematically equivalent to computing all costs at "time 0" (stage 1) present value, where stage $t$ costs are multiplied by $\prod_{t'=1}^{t-1} d_{t' \to t'+1}$ in the objective. The Bellman formulation above is the recursive form that SDDP exploits.
 :::
 
 ## 3 Input Specification
@@ -93,13 +93,13 @@ $$
 subject to all standard constraints (load balance, hydro balance, etc.) and Benders cuts:
 
 $$
-\theta \geq \alpha_i + \sum_{h} \pi^v_{i,h} \cdot v_h + \sum_{h,\ell} \pi^{lag}_{i,h,\ell} \cdot a_{h,\ell} \quad \forall i
+\theta \geq \beta_{0,i} + \sum_{h} \beta^v_{i,h} \cdot v_h + \sum_{h,\ell} \beta^{lag}_{i,h,\ell} \cdot a_{h,\ell} \quad \forall i
 $$
 
-The cut coefficients $(\alpha_i, \pi^v_{i,h}, \pi^{lag}_{i,h,\ell})$ are the **undiscounted** values from the backward pass. Cuts are stored and managed in undiscounted form — the discount factor appears only in the objective coefficient of $\theta$. See [Cut Management](/math/cut-management) for cut generation and aggregation details.
+The cut coefficients $(\beta_{0,i}, \beta^v_{i,h}, \beta^{lag}_{i,h,\ell})$ are the **undiscounted** values from the backward pass. Cuts are stored and managed in undiscounted form — the discount factor appears only in the objective coefficient of $\theta$. See [Cut Management](/math/cut-management) for cut generation and aggregation details.
 
 :::note[Why discount on θ, not on cuts]
-Applying the discount factor to the $\theta$ variable rather than scaling each cut individually is simpler and avoids modifying cut coefficients. The mathematical result is identical — if $\theta \geq \alpha + \pi^\top x$ and $d \cdot \theta$ appears in the objective, it is equivalent to having $\theta' \geq d \cdot (\alpha + \pi^\top x)$ with $\theta'$ in the objective.
+Applying the discount factor to the $\theta$ variable rather than scaling each cut individually is simpler and avoids modifying cut coefficients. The mathematical result is identical — if $\theta \geq \beta_0 + \beta^\top x$ and $d \cdot \theta$ appears in the objective, it is equivalent to having $\theta' \geq d \cdot (\beta_0 + \beta^\top x)$ with $\theta'$ in the objective.
 :::
 
 ## 5 Cumulative Discounting
@@ -165,10 +165,10 @@ complete reserved cyclic-mode formulation.
 In the reserved cyclic policy graph design (infinite periodic horizon), discounting would be **required** for convergence. The cumulative discount around one full cycle would have to satisfy:
 
 $$
-d_{cycle} = \prod_{t \in \text{cycle}} d_{t \to t+1} < 1
+d_{\text{cycle}} = \prod_{t \in \text{cycle}} d_{t \to t+1} < 1
 $$
 
-This would ensure the value function remains finite: $\lim_{n \to \infty} d_{cycle}^n \cdot V_t(x) = 0$. Any strictly positive per-cycle discount rate keeps $d_{cycle} < 1$, so the geometric series of future contributions would converge.
+This would ensure the value function remains finite: $\lim_{n \to \infty} d_{\text{cycle}}^n \cdot V_t(x) = 0$. Any strictly positive per-cycle discount rate keeps $d_{\text{cycle}} < 1$, so the geometric series of future contributions would converge.
 
 For the complete reserved cyclic-mode formulation — including the season-indexed cut pool, the cut-sharing equation, and the cycle convergence criterion — see [Horizon Modes](/math/horizon-modes).
 

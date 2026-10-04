@@ -90,14 +90,14 @@ there.
 
 ## 3. Boundary Pricing (`β·x`)
 
-An imported terminal cut carries an intercept $\alpha$ and a coefficient
+An imported terminal cut carries an intercept $\beta_0$ and a coefficient
 $\beta$ for every coordinate of the terminal incoming-state vector — one
 entry per hydro storage, per AR lag, per in-transit bucket, and, once held
 live by section 2, per post-horizon commitment lane. Each cut is the familiar
 affine floor on the terminal future-cost variable,
 
 $$
-\theta \;\geq\; \alpha \;+\; \beta^{\top} x,
+\theta \;\geq\; \beta_0 \;+\; \beta^{\top} x,
 $$
 
 evaluated through the same cut **row** every other Benders cut uses (see
@@ -131,7 +131,7 @@ A commitment the plant decided **before the study** whose delivery also falls
 past the horizon is priced differently again. It is not a decision the study
 makes — the quantity is fixed exogenously, already committed — so it carries
 neither a decision column nor a coordinate of $\beta$. Its cost is a **sunk
-cost**, folded once, at load, as a constant into the intercept $\alpha$ of every
+cost**, folded once, at load, as a constant into the intercept $\beta_0$ of every
 boundary cut whose delivery date it covers. Moving only the intercept and never
 a coefficient, it shifts the terminal future-cost floor by a fixed amount
 without changing how any live state is priced — the accounting a commitment

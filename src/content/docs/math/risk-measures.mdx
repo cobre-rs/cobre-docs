@@ -13,10 +13,9 @@ For notation conventions (index sets, parameters, decision variables, dual varia
 
 :::note[Symbol conventions]
 
-- $\alpha$ denotes the **CVaR confidence level** (matching the `alpha` field in `stages.json`). This is the standard convention in the risk measure literature.
-- $\hat{\alpha}_t(\omega)$ denotes **per-scenario cut intercepts** within this spec. This corresponds to $\alpha$ in [Cut Management §1](/math/cut-management), renamed here to avoid collision with the CVaR parameter.
+- $\alpha$ denotes the **CVaR tail fraction** (matching the `alpha` field in `stages.json`).
 - $d$ denotes the **discount factor**. See [Discount Rate](/math/discount-rate).
-- $\mu$ denotes the **risk-adjusted probability measure** (not $q$, which denotes turbined flow).
+- $\mu$ denotes the **risk-adjusted probability measure**.
 - $\psi(p, \mu)$ denotes the **dual penalty function** in the general dual representation.
 
 :::
@@ -27,11 +26,11 @@ Risk-neutral SDDP minimizes expected cost, which can lead to policies that perfo
 
 <CvarPlot />
 
-_Cost distribution $f(C)$ for a right-skewed Gamma law with $\mathbb{E}[C]$, $\mathrm{VaR}_\alpha$ and $\mathrm{CVaR}_\alpha$ marked and the worst $(1-\alpha)$ tail shaded. The convex-combination measure $\rho^{\lambda,\alpha}[C] = (1-\lambda)\,\mathbb{E}[C] + \lambda\,\mathrm{CVaR}_\alpha[C]$ interpolates between the risk-neutral mean and the tail. All three markers are derived numerically from the PDF._
+_Cost distribution $f(Z)$ for a right-skewed Gamma law with $\mathbb{E}[Z]$, $\mathrm{VaR}_\alpha$ and $\mathrm{CVaR}_\alpha$ marked and the worst $\alpha$ tail shaded. The convex-combination measure $\rho^{\lambda,\alpha}[Z] = (1-\lambda)\,\mathbb{E}[Z] + \lambda\,\mathrm{CVaR}_\alpha[Z]$ interpolates between the risk-neutral mean and the tail. All three markers are derived numerically from the PDF._
 
 ## 2 Conditional Value-at-Risk (CVaR)
 
-For a random variable $Z$ representing cost and confidence level $\alpha \in (0, 1]$:
+For a random variable $Z$ representing cost and tail fraction $\alpha \in (0, 1]$:
 
 $$
 \text{CVaR}_\alpha(Z) = \min_{\eta \in \mathbb{R}} \left\{ \eta + \frac{1}{\alpha} \mathbb{E}\left[(Z - \eta)^+\right] \right\}
@@ -59,7 +58,7 @@ $$
 where:
 
 - $\lambda \in [0, 1]$: Risk aversion weight (0 = risk-neutral, 1 = pure CVaR)
-- $\alpha \in (0, 1]$: CVaR confidence level
+- $\alpha \in (0, 1]$: CVaR tail fraction
 
 This is sometimes called the **EAVaR** (Expectation + Average Value-at-Risk) risk measure.
 
@@ -111,22 +110,22 @@ The key theorem for computing risk-averse cuts:
 
 :::note[Theorem (Risk-Averse Subgradient)]
 
-Let $V(x, \omega)$ be convex with respect to $x$ for all fixed $\omega \in \Omega$, and let $\lambda(\tilde{x}, \omega)$ be a subgradient of $V(x, \omega)$ at $x = \tilde{x}$.
+Let $V(x, \omega)$ be convex with respect to $x$ for all fixed $\omega \in \Omega$, and let $\beta(\tilde{x}, \omega)$ be a subgradient of $V(x, \omega)$ at $x = \tilde{x}$.
 
 If $\mu^* = \text{argmax}_{\mu \in \mathcal{M}(p)} \mathbb{E}_\mu[V(\tilde{x}, \omega)] - \psi(p, \mu)$, then:
 
 $$
-\sum_{\omega \in \Omega} \mu^*_\omega \cdot \lambda(\tilde{x}, \omega)
+\sum_{\omega \in \Omega} \mu^*_\omega \cdot \beta(\tilde{x}, \omega)
 $$
 
 is a subgradient of $\mathbb{F}[V(x, \omega)]$ at $\tilde{x}$.
 
 :::
 
-**Application to Cut Generation**: In SDDP, the subgradients $\lambda(\tilde{x}, \omega)$ are the cut coefficients $\pi_t(\omega)$ obtained from LP duals (see [Cut Management §2](/math/cut-management)). The risk-averse cut coefficients are computed by replacing the uniform scenario probabilities with risk-adjusted probabilities $\mu^*$:
+**Application to Cut Generation**: In SDDP, the subgradients $\beta(\tilde{x}, \omega)$ are the cut coefficients $\beta_t(\omega)$ obtained from LP duals (see [Cut Management §2](/math/cut-management)). The risk-averse cut coefficients are computed by replacing the uniform scenario probabilities with risk-adjusted probabilities $\mu^*$:
 
 $$
-\bar{\pi}_{t-1,h} = \sum_{\omega \in \Omega_t} \mu^*_\omega \cdot \pi_{t,h}(\omega)
+\bar{\beta}_{t-1,h} = \sum_{\omega \in \Omega_t} \mu^*_\omega \cdot \beta_{t,h}(\omega)
 $$
 
 where $\mu^*$ is the optimal dual probability vector computed from the scenario costs $\{Q_t(\hat{x}, \omega)\}_{\omega \in \Omega_t}$.
@@ -136,7 +135,7 @@ where $\mu^*$ is the optimal dual probability vector computed from the scenario 
 The risk-averse value function with discount factor $d$ satisfies:
 
 $$
-V_t(x_{t-1}) = \rho^{\lambda_t, \alpha_t}\left[\min_{x_t} \left\{ c_t^\top x_t + d_{t \to t+1} \cdot V_{t+1}(x_t) : (x_t, x_{t-1}) \text{ feasible} \right\}\right]
+V_t(x_{t-1}) = \rho^{\lambda_t, \alpha_t}\left[\min_{x_t, u_t} \left\{ c_t(x_t, u_t) + d_{t \to t+1} \cdot V_{t+1}(x_t) : (x_t, u_t) \in \mathcal{X}_t(x_{t-1}, \omega) \right\}\right]
 $$
 
 This modifies the standard [Bellman recursion](/math/sddp-algorithm) in two ways:
@@ -157,13 +156,13 @@ For each visited state $\hat{x}_{t-1}$, compute the risk-averse cut as follows:
 **Step 1: Solve subproblems** for all realizations $\omega \in \Omega_t$:
 
 $$
-Q_t(\hat{x}_{t-1}, \omega) = \min_{x_t} \left\{ c_t^\top x_t + d_{t \to t+1} \cdot \theta_t : \text{constraints} \right\}
+Q_t(\hat{x}_{t-1}, \omega) = \min_{x_t, u_t} \left\{ c_t(x_t, u_t) + d_{t \to t+1} \cdot \theta_t : \text{constraints} \right\}
 $$
 
-Extract dual solutions $\pi_t(\omega)$ and compute per-scenario cut coefficients:
+Extract dual solutions $\beta_t(\omega)$ and compute per-scenario cut coefficients:
 
-- Intercept: $\hat{\alpha}_t(\omega) = Q_t(\hat{x}_{t-1}, \omega) - \pi_t(\omega)^\top \hat{x}_{t-1}$
-- Coefficients: $\pi_t(\omega)$ — derived from LP duals (see [Cut Management §2](/math/cut-management))
+- Intercept: $\beta_{0,t}(\omega) = Q_t(\hat{x}_{t-1}, \omega) - \beta_t(\omega)^\top \hat{x}_{t-1}$
+- Coefficients: $\beta_t(\omega)$ — derived from LP duals (see [Cut Management §2](/math/cut-management))
 
 **Step 2: Compute risk-adjusted scenario weights** $\mu^*_\omega$.
 
@@ -196,17 +195,17 @@ This sorting procedure produces the same $\mu^*$ as solving the dual LP from §4
 **Step 3: Compute risk-averse cut coefficients** using $\mu^*$ (justified by the theorem in §5):
 
 $$
-\bar{\hat{\alpha}}_{t-1} = \sum_{\omega \in \Omega_t} \mu^*_\omega \cdot \hat{\alpha}_t(\omega)
+\bar{\beta}_{0,t-1} = \sum_{\omega \in \Omega_t} \mu^*_\omega \cdot \beta_{0,t}(\omega)
 $$
 
 $$
-\bar{\pi}_{t-1} = \sum_{\omega \in \Omega_t} \mu^*_\omega \cdot \pi_t(\omega)
+\bar{\beta}_{t-1} = \sum_{\omega \in \Omega_t} \mu^*_\omega \cdot \beta_t(\omega)
 $$
 
 **Step 4: Add cut to stage $t-1$**:
 
 $$
-\theta_{t-1} \geq \bar{\hat{\alpha}}_{t-1} + \bar{\pi}_{t-1}^\top x_{t-1}
+\theta_{t-1} \geq \bar{\beta}_{0,t-1} + \bar{\beta}_{t-1}^\top x_{t-1}
 $$
 
 :::note[Comparison with risk-neutral aggregation]
@@ -220,7 +219,7 @@ Risk aversion can vary by stage. The `risk_measure` field in `stages.json` speci
 | Option            | Description                                                           |
 | ----------------- | --------------------------------------------------------------------- |
 | `"expectation"`   | Risk-neutral expected value (default)                                 |
-| `{"cvar": {...}}` | CVaR parameters with `alpha` (confidence level) and `lambda` (weight) |
+| `{"cvar": {...}}` | CVaR parameters with `alpha` (tail fraction) and `lambda` (weight) |
 
 Example with stage-varying risk:
 

@@ -75,8 +75,8 @@ math/_impl/_cut-management.io.mdx:21  narration-migration  # owner: E03 POL-18 �
 math/_impl/_equipment.configure.mdx:168  narration-no-longer  # owner: E10 LPS-18 — no longer accepted
 math/_impl/_equipment.configure.mdx:182  narration-earlier-docs  # owner: E10 LPS-18 — earlier releases
 math/_impl/_network.configure.mdx:77  narration-earlier-docs  # owner: E10 LPS-18 — Earlier documentation
-math/cut-management.mdx:262  narration-no-longer  # owner: E09 ALG-12 — no longer accepted
-math/hydro-production-models.mdx:357  narration-now-verb  # owner: E10 LPS-07 — now supports
+math/cut-management.mdx:264  narration-no-longer  # owner: E09 ALG-12 — no longer accepted
+math/hydro-production-models.mdx:353  narration-now-verb  # owner: E10 LPS-07 — now supports
 reference/case-directory-format.mdx:177  narration-earlier-docs  # owner: E11 REF-46 — earlier releases
 reference/case-directory-format.mdx:252  narration-earlier-docs  # owner: E11 REF-46 — Earlier documentation
 reference/case-directory-format.mdx:438  narration-migration  # owner: E11 reference/case-directory-format — migration

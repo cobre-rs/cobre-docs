@@ -8,7 +8,7 @@
   id="cvar-plot"
   class="vf-plot"
   role="img"
-  aria-label="Cost distribution f(C) with E[C], VaR and CVaR marked and the (1−α) tail shaded"
+  aria-label="Cost distribution f(Z) with E[Z], VaR and CVaR marked and the worst α tail shaded"
 >
 </div>
 
@@ -29,7 +29,7 @@
     // The PDF curve rides the copper ramp; axis text follows the theme text tone.
     const curve = cssVar("--dgm-curve") || "#d4956a";
     const text = cssVar("--dgm-text") || "#c8c6c2";
-    // Risk markers (E[C]/VaR/CVaR) and the shaded tail are NOT hydro -> warm
+    // Risk markers (E[Z]/VaR/CVaR) and the shaded tail are NOT hydro -> warm
     // accent (Patina), per brand §2.4 #3. Flow Blue is reserved for water marks.
     // The literal mirrors the --dgm-accent fallback in palette.css (warm, not blue).
     const accent = cssVar("--dgm-accent") || "#4a8b6f";
@@ -43,7 +43,7 @@
     const { expected, varAlpha, cvarAlpha } = riskMoments(shape, scale, alpha);
 
     const markers = [
-      { value: expected, label: "E[C]" },
+      { value: expected, label: "E[Z]" },
       { value: varAlpha, label: "VaRα" },
       { value: cvarAlpha, label: "CVaRα" },
     ];
@@ -57,7 +57,7 @@
         marginBottom: 48,
         marginLeft: 60,
         style: { background: "transparent", color: text, fontSize: "13px" },
-        x: { label: "total cost C", grid: true, domain: [0, 170] },
+        x: { label: "total cost Z", grid: true, domain: [0, 170] },
         y: { label: "probability density", grid: true },
         marks: [
           Plot.areaY(tail, {

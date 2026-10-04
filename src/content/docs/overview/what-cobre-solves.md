@@ -25,7 +25,7 @@ The algorithm converges when the gap between a lower bound and an upper bound fa
 
 At convergence, Cobre provides three bounds on the optimal policy cost:
 
-1. **Lower bound** — the objective value of the stage-zero LP with the current cut approximation. This bound increases monotonically across iterations and converges to the true optimal value.
+1. **Lower bound** — the objective value of the stage-1 LP with the current cut approximation. This bound increases monotonically across iterations and converges to the true optimal value.
 2. **Statistical upper bound** — the sample-average cost of forward simulations under the current policy, with a confidence interval. This bound carries genuine sampling error that narrows only as more scenarios are drawn.
 3. **Exact (deterministic) upper bound** — the probability-weighted expectation over an enumerated scenario tree, visiting every leaf path exactly once. It carries no sampling error.
 

@@ -2,7 +2,7 @@
 // ported out of matplotlib into tested TypeScript. No rendering here; this only
 // derives data from the math. The renderer (Observable Plot) consumes it.
 //
-// Model: a convex, decreasing future-cost function Q(v) = A·exp(-v/s), standing
+// Model: a convex, decreasing future-cost function V(v) = A·exp(-v/s), standing
 // in for an SDDP cost-to-go in stored volume v. Benders cuts are its tangents.
 
 export interface Point {
@@ -18,7 +18,7 @@ export function Q(v: number): number {
   return A * Math.exp(-v / S);
 }
 
-/** Analytic derivative Q'(v). The Benders subgradient. */
+/** Analytic derivative V'(v). The Benders subgradient. */
 export function dQ(v: number): number {
   return -(A / S) * Math.exp(-v / S);
 }

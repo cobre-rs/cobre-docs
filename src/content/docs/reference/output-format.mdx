@@ -821,7 +821,7 @@ contained in the file is:
 | `slot_index`         | uint32    | LP row position. Required for checkpoint reproducibility and basis warm-starting.                                                    |
 | `iteration`          | uint32    | Training iteration that generated this cut.                                                                                          |
 | `forward_pass_index` | uint32    | Forward pass index within the generating iteration.                                                                                  |
-| `intercept`          | float64   | Pre-computed cut intercept: `alpha - beta' * x_hat`, where `x_hat` is the state at the generating forward pass node.                 |
+| `intercept`          | float64   | Pre-computed cut intercept $\beta_0 = \bar{Q}_t - \beta^\top \hat{x}_{t-1}$, where $\hat{x}_{t-1}$ is the state at the generating forward pass node and $\bar{Q}_t$ the aggregated stage value there. |
 | `coefficients`       | float64[] | Gradient coefficient vector. Length equals the state dimension — the number of entries in the embedded entity manifest below, also the pool's own `state_dimension` (per-pool, not a `policy/manifest.bin` field). |
 | `is_active`          | bool      | Whether this cut is currently active in the LP. Inactive cuts are retained for potential reactivation by the cut selection strategy. |
 

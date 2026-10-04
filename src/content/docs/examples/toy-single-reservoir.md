@@ -62,7 +62,7 @@ def -> bus
 | Parameter                     | Symbol    | Value              |
 | ----------------------------- | --------- | ------------------ |
 | Stages                        | $T$       | 4                  |
-| Inflow openings per stage     | $N$       | 3                  |
+| Inflow openings per stage     | $N_t$     | 3                  |
 | Initial storage               | $v_0$     | 30 (storage units) |
 | Reservoir capacity            | $\bar{V}$ | 100                |
 | Demand per stage              | $D$       | 40                 |
@@ -124,9 +124,9 @@ $$
 
 **Future cost variable $\theta$**: in the terminal stage 4 there are no
 cuts, and $\theta$ is bound to zero. As the backward pass runs, cuts of
-the form $\theta \geq \alpha + \pi^v\, v$ are added to earlier stages'
+the form $\theta \geq \beta_0 + \beta^v\, v$ are added to earlier stages'
 LPs. Because the value function $V(v)$ is decreasing in storage (more
-water means lower future cost), the cut slope $\pi^v$ is negative.
+water means lower future cost), the cut slope $\beta^v$ is negative.
 
 Note the absence of any AR-lag state variable: the 0-order inflow has
 no memory across stages, so storage is the only state.
@@ -218,19 +218,19 @@ $a_4(\omega) \in \{20, 30, 40\}$.
 | $\omega_2$ | $0$           | 30    | 30                        | 30  | 10       | 500   |
 | $\omega_3$ | $+1$          | 40    | 40                        | 40  | 0        | 0     |
 
-**Storage cut coefficient** $\pi^v_4(\omega) = \partial Q_4/\partial \hat{v}_3$,
+**Storage cut coefficient** $\beta^v_4(\omega) = \partial Q_4/\partial \hat{v}_3$,
 the reduced cost of the pinned incoming-storage column. By the LP envelope
 theorem applied to the pinned bound $v^{in}_4 = \hat{v}_3$:
 
 - For $\omega_1$ and $\omega_2$ (water-limited, thermal active): one
   extra unit of $\hat{v}_3$ enables one extra unit of turbining,
   displacing one unit of thermal worth $50$. Optimal cost falls by
-  $50$, so $\pi^v_4(\omega) = -50$.
+  $50$, so $\beta^v_4(\omega) = -50$.
 - For $\omega_3$ (demand met exactly by hydro alone): the LP already
   has $q = 40 = D$; extra storage flows into terminal $v_4$, which has
-  zero value at the terminal stage. $\pi^v_4(\omega_3) = 0$.
+  zero value at the terminal stage. $\beta^v_4(\omega_3) = 0$.
 
-| Opening    | $\pi^v_4$ |
+| Opening    | $\beta^v_4$ |
 | ---------- | --------- |
 | $\omega_1$ | $-50$     |
 | $\omega_2$ | $-50$     |
@@ -239,18 +239,18 @@ theorem applied to the pinned bound $v^{in}_4 = \hat{v}_3$:
 **Per-opening intercepts** (anchoring each cut at the trial point):
 
 $$
-\hat{\alpha}_4(\omega) = Q_4(\omega) - \pi^v_4(\omega)\,\hat{v}_3
+\beta_{0,4}(\omega) = Q_4(\omega) - \beta^v_4(\omega)\,\hat{v}_3
 $$
 
-With $\hat{v}_3 = 0$ this simplifies to $\hat{\alpha}_4(\omega) = Q_4(\omega)$:
-$\hat{\alpha}_4 = (1000,\, 500,\, 0)$.
+With $\hat{v}_3 = 0$ this simplifies to $\beta_{0,4}(\omega) = Q_4(\omega)$:
+$\beta_{0,4} = (1000,\, 500,\, 0)$.
 
 **Single-cut aggregation** (uniform probability $p = 1/3$; see
 [Cut Management](/math/cut-management) section 3):
 
 $$
-\bar{\alpha} = \tfrac{1}{3}(1000 + 500 + 0) = 500, \qquad
-\bar{\pi}^v = \tfrac{1}{3}(-50 - 50 + 0) = -\tfrac{100}{3}
+\bar{\beta}_0 = \tfrac{1}{3}(1000 + 500 + 0) = 500, \qquad
+\bar{\beta}^v = \tfrac{1}{3}(-50 - 50 + 0) = -\tfrac{100}{3}
 $$
 
 **Cut added to stage 3's LP**:
@@ -293,22 +293,22 @@ more is $+50 - 100/3 \approx +16.7$, so the optimiser pushes $q$ to
 its load-balance bound at $40$, leaving $v_3 = 10$ and the cut value
 at $500/3 \approx 167$.
 
-**Storage cut coefficients** $\pi^v_3(\omega) = \partial Q_3/\partial \hat{v}_2$ (reduced costs of the pinned incoming-storage column):
+**Storage cut coefficients** $\beta^v_3(\omega) = \partial Q_3/\partial \hat{v}_2$ (reduced costs of the pinned incoming-storage column):
 
 - $\omega_1$ (water-limited): one extra unit of $\hat{v}_2$ frees one
-  extra turbine unit, saves $50$ of thermal. $\pi^v_3(\omega_1) = -50$.
+  extra turbine unit, saves $50$ of thermal. $\beta^v_3(\omega_1) = -50$.
 - $\omega_2$ (demand exactly met): the LP is at a kink; both
-  $\pi^v = -50$ (water-limited regime) and $\pi^v = -100/3$
+  $\beta^v = -50$ (water-limited regime) and $\beta^v = -100/3$
   (storage-flow regime) are valid subgradients. The walkthrough takes
-  the basis returning $\pi^v_3(\omega_2) = -50$.
+  the basis returning $\beta^v_3(\omega_2) = -50$.
 - $\omega_3$ (water surplus, holding storage): one extra unit of
   $\hat{v}_2$ raises $v_3$ by one, lowers the cut value by $100/3$.
-  $\pi^v_3(\omega_3) = -100/3$.
+  $\beta^v_3(\omega_3) = -100/3$.
 
 **Per-opening intercepts**
-$\hat{\alpha}_3(\omega) = Q_3(\omega) - \pi^v_3(\omega)\,\hat{v}_2$:
+$\beta_{0,3}(\omega) = Q_3(\omega) - \beta^v_3(\omega)\,\hat{v}_2$:
 
-| Opening    | $Q_3$   | $\pi^v_3 \cdot \hat{v}_2$ | $\hat{\alpha}_3$ |
+| Opening    | $Q_3$   | $\beta^v_3 \cdot \hat{v}_2$ | $\beta_{0,3}$ |
 | ---------- | ------- | ------------------------- | ---------------- |
 | $\omega_1$ | $1000$  | $-500$                    | $1500$           |
 | $\omega_2$ | $500$   | $-500$                    | $1000$           |
@@ -317,8 +317,8 @@ $\hat{\alpha}_3(\omega) = Q_3(\omega) - \pi^v_3(\omega)\,\hat{v}_2$:
 **Aggregation** ($p = 1/3$):
 
 $$
-\bar{\alpha} = \tfrac{1}{3}(1500 + 1000 + 500) = 1000, \qquad
-\bar{\pi}^v = \tfrac{1}{3}\!\left(-50 - 50 - \tfrac{100}{3}\right) = -\tfrac{400}{9}
+\bar{\beta}_0 = \tfrac{1}{3}(1500 + 1000 + 500) = 1000, \qquad
+\bar{\beta}^v = \tfrac{1}{3}\!\left(-50 - 50 - \tfrac{100}{3}\right) = -\tfrac{400}{9}
 $$
 
 **Cut added to stage 2's LP**:
@@ -338,7 +338,7 @@ The same procedure repeats at stages 2 and 1. At each stage:
 1. Pin the incoming storage to the trial point from the forward pass (column bounds).
 2. Solve all three opening LPs, including the cut from the next stage.
 3. Read the reduced cost of the pinned incoming-storage column.
-4. Compute per-opening intercepts via $\hat{\alpha}(\omega) = Q(\omega) - \pi^v(\omega)\,\hat{v}_{t-1}$.
+4. Compute per-opening intercepts via $\beta_0(\omega) = Q(\omega) - \beta^v(\omega)\,\hat{v}_{t-1}$.
 5. Aggregate by probability-weighted averaging.
 6. Add the cut to the previous stage's LP.
 
@@ -361,7 +361,7 @@ $$
 
 where $Q_1^1$ is the stage-1 optimal objective under opening $\omega$
 with the iteration-1 cut in place, and $x_0 = v_0 = 30$ is the fixed
-initial storage. The lower bound rises from $0$ (iteration 0, no cuts)
+initial storage. The lower bound rises from $0$ (before the first iteration, no cuts)
 to a positive value once the first cut is installed; the value
 reflects the policy's expected cost given the partial information
 encoded in the single iteration-1 cut at each stage.
@@ -390,12 +390,12 @@ storage $v$. Each cut is a line in this one-dimensional state space,
 and the outer approximation is the pointwise maximum over all cuts:
 
 $$
-\hat{V}_t^k(v) \;=\; \max_{i = 1, \ldots, k}
-\bigl\{ \bar{\alpha}^i + \bar{\pi}^{v,i}\, v \bigr\}.
+\underline{V}_t^k(v) \;=\; \max_{i = 1, \ldots, k}
+\bigl\{ \bar{\beta}_0^i + \bar{\beta}^{v,i}\, v \bigr\}.
 $$
 
 Because $V_t$ is decreasing in storage (more water means lower future
-cost) and convex, the slopes $\bar{\pi}^{v,i}$ are negative and the
+cost) and convex, the slopes $\bar{\beta}^{v,i}$ are negative and the
 approximation is a lower envelope of decreasing lines. As $k$ grows,
 visited trial points spread across the state space — low-storage
 trajectories force the algorithm to evaluate cut quality in the
@@ -408,14 +408,10 @@ scenarios.
 
 As iterations accumulate, the lower bound $\underline{z}^k$ rises and
 the simulation-based upper-bound estimate $\bar{z}^k$ (the mean over
-many forward trajectories) converges. The relative gap
-
-$$
-\text{gap}^k = \frac{\bar{z}^k - \underline{z}^k}{\max(1, |\underline{z}^k|)}
-$$
-
+many forward trajectories) converges. The relative gap (the percent
+form of the [optimality gap](/math/stopping-rules#optimality-gap))
 narrows as cuts accumulate. For a problem of this size (one reservoir,
-four stages, three openings) the gap typically narrows below 1% within
+four stages, three openings) the relative gap typically narrows below 1% within
 tens of iterations and below 0.1% within a few hundred. These are
 illustrative scales, not guarantees: the actual iteration count
 depends on the demand-to-inflow ratio, the initial storage, and the
@@ -454,7 +450,7 @@ illustrate:
   bind, contributing to the storage cut coefficient. See
   [Hydro Production Models](/math/hydro-production-models).
 - **Risk-measure effects**: CVaR weighting that shifts cut aggregation
-  probabilities away from uniform $p = 1/N$. See
+  probabilities away from uniform $p = 1/N_t$. See
   [Risk Measures](/math/risk-measures).
 
 The [Toy Four-Reservoir Walkthrough](/examples/toy-four-reservoir) extends

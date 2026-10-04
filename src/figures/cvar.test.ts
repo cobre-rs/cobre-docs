@@ -1,4 +1,3 @@
-// The correctness guarantee matplotlib never gave us: now it's a test.
 // Mirrors valueFunction.test.ts (node:test + node:assert/strict).
 import test from "node:test";
 import assert from "node:assert/strict";
@@ -26,14 +25,14 @@ test("PDF is finite and non-negative everywhere, including x = 0", () => {
   }
 });
 
-test("riskMoments(3,15,0.10): E[C] ≈ 45 and E[C] < VaR < CVaR (correct by construction)", () => {
+test("riskMoments(3,15,0.10): E[Z] ≈ 45 and E[Z] < VaR < CVaR (correct by construction)", () => {
   const { expected, varAlpha, cvarAlpha } = riskMoments(3, 15, 0.1);
   // Mean of Gamma(shape, scale) = shape·scale = 45; numeric quadrature within 0.5.
   assert.ok(Math.abs(expected - 45) < 0.5, `expected=${expected}`);
   // CVaR is the tail mean strictly beyond VaR for a continuous right-skewed law.
   assert.ok(varAlpha < cvarAlpha, `VaR=${varAlpha} not < CVaR=${cvarAlpha}`);
   // Full ordering for this right-skewed gamma: the mean sits below both tail marks.
-  assert.ok(expected < varAlpha, `E[C]=${expected} not < VaR=${varAlpha}`);
+  assert.ok(expected < varAlpha, `E[Z]=${expected} not < VaR=${varAlpha}`);
 });
 
 test("trapezoid CDF is monotone non-decreasing and ends at ≈ 1.0", () => {

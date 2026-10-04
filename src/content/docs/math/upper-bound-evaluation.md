@@ -15,13 +15,7 @@ This spec uses $d$ for the discount factor. See [Discount Rate](/math/discount-r
 
 ## 1 Overview of Upper-Bound Mechanisms
 
-Standard SDDP produces only a **lower bound** $\underline{z}$ on the optimal cost, through the outer (cut) approximation. A convergence certificate additionally requires an **upper bound** $\bar{z}$, closing the gap
-
-$$
-\text{gap} = \max(0,\; \bar{z} - \underline{z})
-$$
-
-(section 9 gives the full per-iteration gap computation; [Stopping Rules](/math/stopping-rules), section 5, describes how the gap-based stopping rule consumes it).
+Standard SDDP produces only a **lower bound** $\underline{z}$ on the optimal cost, through the outer (cut) approximation. A convergence certificate additionally requires an **upper bound** $\bar{z}$ that closes the [optimality gap](/math/stopping-rules#optimality-gap) between the two bounds.
 
 Cobre computes this per-iteration upper bound via one of two forward-pass mechanisms, selected by the forward pass's sampling mode:
 
@@ -54,7 +48,7 @@ Because the enumeration is exhaustive rather than sampled, $\bar{z}_{\text{exact
 
 The bound $\bar{z}_{\text{exact}} = \sum_{\ell} P(\ell)\, C(\ell)$ above is the exact upper bound under an **expectation** objective. Under a CVaR measure held uniform across every stage, the same exhaustive enumeration yields an exact bound of a different shape — a nested risk recursion — developed in section 2.1; see [Risk Measures](/math/risk-measures) for the risk-measure background.
 
-Contrast with the statistical mechanism (section 1): a sampled forward pass computes the same weighted-sum _form_ — sample weight $1/N$ per scenario — but that sum is a Monte Carlo estimator of the expectation, carrying genuine sampling error. Only the enumerated forward pass's weights (the true leaf-path probabilities) make the sum exact rather than an estimate.
+Contrast with the statistical mechanism (section 1): a sampled forward pass computes the same weighted-sum _form_ — sample weight $1/M$ per scenario — but that sum is a Monte Carlo estimator of the expectation, carrying genuine sampling error. Only the enumerated forward pass's weights (the true leaf-path probabilities) make the sum exact rather than an estimate.
 
 This is the **training-phase**, per-iteration mechanism: it is evaluated once per training iteration and feeds the gap computation (section 9). It is distinct from the post-training out-of-sample simulation's census variant (section 11.4), which computes the same probability-weighted-sum form over an independently drawn simulation population, evaluated once after training completes.
 
@@ -95,7 +89,7 @@ The vertex-based inner approximation (SIDP) described in this section through se
 The inner approximation $\bar{V}_t(x)$ would be constructed from **vertices** (visited state-value pairs):
 
 $$
-\mathcal{V}_t = \{(x^{(1)}, \bar{v}^{(1)}), (x^{(2)}, \bar{v}^{(2)}), \ldots, (x^{(n)}, \bar{v}^{(n)})\}
+\mathcal{V}_t = \{(x^{(1)}, \bar{v}^{(1)}), (x^{(2)}, \bar{v}^{(2)}), \ldots, (x^{(I_t)}, \bar{v}^{(I_t)})\}
 $$
 
 where each vertex would store:
@@ -198,17 +192,17 @@ For policy evaluation with the inner approximation, the stage LP would replace t
 **Standard LP (outer approximation — lower bound; this part is implemented today)**:
 
 $$
-\min \; c_t^\top x_t + d_{t \to t+1} \cdot \theta
+\min \; c_t(x_t, u_t) + d_{t \to t+1} \cdot \theta
 $$
 
 $$
-\text{s.t. } \theta \geq \alpha_k + \pi_k^\top x_t \quad \forall k \text{ (cuts)}
+\text{s.t. } \theta \geq \beta_0 + \beta^\top x_t \quad \text{for every cut } (\beta_0, \beta)
 $$
 
 **Inner approximation LP (upper bound; reserved)**:
 
 $$
-\min \; c_t^\top x_t + d_{t \to t+1} \cdot \bar{\theta}
+\min \; c_t(x_t, u_t) + d_{t \to t+1} \cdot \bar{\theta}
 $$
 
 $$
@@ -269,26 +263,14 @@ $$
 
 **Upper bound** (from whichever forward-pass mechanism is active, section 1): under a sampled forward pass, $\bar{z}^k$ is the statistical estimator's sample mean; under an enumerated forward pass, $\bar{z}^k = \bar{z}_{\text{exact}}$ (section 2).
 
-**Gap**:
+**Gap**: the [optimality gap](/math/stopping-rules#optimality-gap) $\text{gap}^k$ is the distance between these two bounds, also stated in percent of the lower bound.
 
-$$
-\text{gap}^k = \max\bigl(0,\; \bar{z}^k - \underline{z}^k\bigr)
-$$
-
-Under the exact mechanism specifically, this is $\text{gap}^k = \max(0,\; \bar{z}_{\text{exact}} - \underline{z}^k)$. The clamp absorbs floating-point noise once the gap has closed to (numerically) zero; in exact arithmetic $\bar{z}^k \geq \underline{z}^k$ always holds.
-
-**Relative gap**:
-
-$$
-\frac{\text{gap}^k}{\max(1,\, |\underline{z}^k|)} \times 100\%
-$$
-
-normalized by the **lower** bound, floored at $1$ so the ratio stays bounded as $\underline{z}^k \to 0$ — never by the upper bound.
+Under the exact mechanism the compared bound is $\bar{z}^k = \bar{z}_{\text{exact}}$.
 
 **Convergence**: As $k \to \infty$, $\text{gap}^k \to 0$ for convex problems with finitely many scenarios, provided the upper bound is exact. Under a sampled forward pass, $\bar{z}^k$ carries sampling error, so a small reported gap reflects that noise as well as genuine convergence.
 
 :::note[Reserved mechanism]
-Under the reserved vertex-based inner approximation (sections 3–8), stage 1's upper bound would instead be $\bar{z}^k = c_1(\hat{x}_1) + d_{1 \to 2} \cdot \bar{V}_2(\hat{x}_1)$ — the inner approximation evaluated at the fixed initial state. The gap formula above is agnostic to which mechanism supplies $\bar{z}^k$.
+Under the reserved vertex-based inner approximation (sections 3–8), stage 1's upper bound would instead be $\bar{z}^k = c_1(\hat{x}_1) + d_{1 \to 2} \cdot \bar{V}_2(\hat{x}_1)$ — the inner approximation evaluated at the fixed initial state. The gap is agnostic to which mechanism supplies $\bar{z}^k$.
 :::
 
 For stopping rules that use the gap, see [Stopping Rules](/math/stopping-rules), section 5.
@@ -322,24 +304,24 @@ The unbiasedness guarantee applies to the expected-cost estimator under risk-neu
 
 ### 11.2 Sampled Estimator (Monte Carlo)
 
-The sampled variant executes a complete forward pass for each of the $N$ independently drawn scenarios, recording the total discounted cost $C_i$ for scenario $i$:
+The sampled variant executes a complete forward pass for each of the $N$ independently drawn scenarios, recording the total discounted cost $C_m$ for scenario $m$:
 
 $$
-C_i = \sum_{t=1}^{T} d_{1 \to t} \cdot c_t^{(i)}
+C_m = \sum_{t=1}^{T} d_{1 \to t} \cdot c_t^{(m)}
 $$
 
-where $c_t^{(i)}$ is the immediate cost at stage $t$ of scenario $i$, and $d_{1 \to t}$ is the cumulative discount factor from stage 1 to stage $t$ (see [Discount Rate](/math/discount-rate)).
+where $c_t^{(m)}$ is the immediate cost at stage $t$ of scenario $m$, and $d_{1 \to t}$ is the cumulative discount factor from stage 1 to stage $t$ (see [Discount Rate](/math/discount-rate)).
 
 The **sample mean** is the Monte Carlo estimator of expected total cost:
 
 $$
-\bar{C} = \frac{1}{N} \sum_{i=1}^{N} C_i
+\bar{C} = \frac{1}{N} \sum_{m=1}^{N} C_m
 $$
 
 This estimator is **unbiased** under independent draws: $\mathbb{E}[\bar{C}] = \mathbb{E}[C]$. The **sample standard deviation** is:
 
 $$
-\sigma_C = \sqrt{\frac{1}{N-1} \sum_{i=1}^{N} (C_i - \bar{C})^2}
+\sigma_C = \sqrt{\frac{1}{N-1} \sum_{m=1}^{N} (C_m - \bar{C})^2}
 $$
 
 the Bessel-corrected estimator appropriate to a drawn sample. For the census variant's population-level counterpart, see section 11.4.
@@ -360,26 +342,26 @@ This confidence interval applies to the **sampled** variant only. The census var
 
 ### 11.4 Census Estimator
 
-When the out-of-sample scenarios come from an exhaustive enumeration rather than a sample — a **declared census** — the per-scenario weight $w_i$ is that scenario's leaf-path probability rather than a uniform sample weight, and the weights sum to one: $\sum_i w_i = 1$.
+When the out-of-sample scenarios come from an exhaustive enumeration rather than a sample — a **declared census** — the per-scenario weight $w_m$ is that scenario's leaf-path probability rather than a uniform sample weight, and the weights sum to one: $\sum_m w_m = 1$.
 
 The census **weighted mean** replaces the sample mean:
 
 $$
-\bar{C} = \sum_i w_i\, C_i
+\bar{C} = \sum_m w_m\, C_m
 $$
 
 and the census **weighted standard deviation** is the **true weighted population variance** — no Bessel correction:
 
 $$
-\sigma_C = \sqrt{\sum_i w_i\,(C_i - \bar{C})^2}
+\sigma_C = \sqrt{\sum_m w_m\,(C_m - \bar{C})^2}
 $$
 
-The population form omits the sampled variant's $N/(N-1)$ correction because a census is exhaustive, not sampled: $C_i$ ranges over the entire population of scenarios rather than a draw from it, so there is no downward bias in the naive variance to correct for.
+The population form omits the sampled variant's $N/(N-1)$ correction because a census is exhaustive, not sampled: $C_m$ ranges over the entire population of scenarios rather than a draw from it, so there is no downward bias in the naive variance to correct for.
 
 Because the population is fully enumerated rather than estimated from a draw, the census estimator carries **no confidence interval** — $\bar{C}$ and $\sigma_C$ are exact statistics of the enumerated population, not estimates of an unknown expectation.
 
 :::note[Boundary with the training-phase exact bound]
-This census weighted mean shares its $\sum_i w_i C_i$ form with the training-phase exact upper bound (section 2, $\sum_\ell P(\ell)\, C(\ell)$) — both are probability-weighted sums over an exhaustive enumeration. They are nonetheless distinct: section 2's exact bound is evaluated once per training iteration, over the training tree, to feed the gap (section 9); this census estimator is evaluated once, after training, over an independently drawn out-of-sample population, to report the policy's out-of-sample cost distribution. Neither feeds the other.
+This census weighted mean shares its $\sum_m w_m C_m$ form with the training-phase exact upper bound (section 2, $\sum_\ell P(\ell)\, C(\ell)$) — both are probability-weighted sums over an exhaustive enumeration. They are nonetheless distinct: section 2's exact bound is evaluated once per training iteration, over the training tree, to feed the gap (section 9); this census estimator is evaluated once, after training, over an independently drawn out-of-sample population, to report the policy's out-of-sample cost distribution. Neither feeds the other.
 :::
 
 ### 11.5 Number of Simulation Scenarios
@@ -410,7 +392,7 @@ graph type is rejected at load with a named error. See
 
 For the reserved cyclic policy graphs design (see [Horizon Modes](/math/horizon-modes)), the inner approximation would operate on the same seasonal cut-pool structure: vertices organized by season $\tau$, not by absolute stage ID. The Lipschitz constant would need to account for the cumulative discount around the cycle, which bounds the geometric series of future contributions.
 
-The convergence guarantee would still hold: with $d_{cycle} < 1$, both the outer (cut) and inner (vertex) approximations would converge to the true value function at the fixed point.
+The convergence guarantee would still hold: with $d_{\text{cycle}} < 1$, both the outer (cut) and inner (vertex) approximations would converge to the true value function at the fixed point.
 
 ## 13 References
 

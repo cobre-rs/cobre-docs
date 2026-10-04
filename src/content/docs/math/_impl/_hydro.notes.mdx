@@ -13,7 +13,7 @@ sensitivity is captured separately by the per-plane lateral-flow secant
 (§2.7), not by adding a third grid dimension.
 
 The 3-D convex hull's upper-envelope facets are corrected by a single
-least-squares `alpha_FPHA` scalar. That correction scales the **whole affine
+least-squares $k_{FPHA}$ scalar. That correction scales the **whole affine
 plane** — intercept and both slopes together — not just the intercept; this
 is why it replaces (rather than equals) the retired `kappa` shrink, which
 only touched the intercept and now survives solely on the precomputed input
@@ -41,7 +41,7 @@ FPHA fit for hydro UHE Example (stage 3) deviates 6.2% from the exact production
 
 The warning is informational — the run continues with the fitted planes. A
 high deviation typically indicates a strongly non-concave production surface
-that no single `alpha_FPHA` scalar can track well; narrowing `fitting_window`
+that no single $k_{FPHA}$ scalar can track well; narrowing `fitting_window`
 or raising the discretization point counts are the usual remedies.
 
 ### Determinism guarantees
