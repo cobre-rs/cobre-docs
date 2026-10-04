@@ -65,6 +65,7 @@ This document follows [SDDP.jl](https://sddp.dev/stable/) notation conventions f
 A glyph takes a second meaning only on pages that never carry its first; each such reuse is declared here:
 
 - $k$ indexes the blocks of a stage, $k \in \mathcal{K}$, in the System Modelling chapters and [Scenario Generation](/math/scenario-generation); it counts training iterations in [SDDP Algorithm](/math/sddp-algorithm), [Cut Management](/math/cut-management), [LP Warm-Start](/math/lp-warm-start), [Stopping Rules](/math/stopping-rules), [Upper Bound Evaluation](/math/upper-bound-evaluation), [Horizon Modes](/math/horizon-modes), [Discount Rate](/math/discount-rate), [The SDDP Framework in One Page](/overview/sddp-framework-overview) and the worked examples; in [PAR(p) Inflow Model](/math/par-inflow-model) it is the candidate order of the partial-autocorrelation test.
+- $k_{max}$ is the number of slots in every anticipated thermal's commitment ring in [LP Formulation](/math/lp-formulation); in [Stopping Rules](/math/stopping-rules) it is the iteration limit.
 - $\ell$ is the lag index of the autoregressive inflow model; in [Stopping Rules](/math/stopping-rules) and [Upper Bound Evaluation](/math/upper-bound-evaluation) it indexes the leaf paths of an enumerated scenario tree.
 - $\lambda$ is the risk-aversion weight of the convex-combination risk measure; in [PAR(p) Inflow Model](/math/par-inflow-model) $\lambda_i$ are the eigenvalues of the correlation matrix, and in [LP Formulation](/math/lp-formulation), [System Elements](/math/system-elements) and [Hydro Production Models](/math/hydro-production-models) $\lambda_{h,b}$ is the share of cell $(h, b)$ in the turbine capacity of plant $h$.
 - $K$ is the cost-scale factor of the LP objective in [LP Formulation](/math/lp-formulation) and [Cut Management](/math/cut-management); in [Scenario Generation](/math/scenario-generation) it is the branching count of the last stage of a deterministic-trunk tree.
@@ -82,7 +83,7 @@ A glyph takes a second meaning only on pages that never carry its first; each su
 - $p(\omega)$ is the probability of opening $\omega$; in [Hydro Production Models](/math/hydro-production-models) $p$ is the security-curve fraction of the maximum stored energy, and in [LP Formulation](/math/lp-formulation), [System Elements](/math/system-elements) and [Equipment Formulations](/math/equipment-formulations) $p_{y,k}$ is the pumped flow of station $y$.
 - $Q_t$ is the optimal value of the stage-$t$ LP as a function of its incoming state; in [Hydro Production Models](/math/hydro-production-models) $Q$ is the turbined-flow coordinate of the FPHA fitting grid, and in [Multi-Resolution Studies](/math/multi-resolution-studies) a quarter of the duration-weighted aggregation.
 - $q_{h,k}$ is the turbined flow of hydro $h$; in [Upper Bound Evaluation](/math/upper-bound-evaluation) $q_{n \to n'}$ is the conditional probability of reaching child node $n'$ from node $n$ of an enumerated scenario tree.
-- $r_h$ is the water-withdrawal target of hydro $h$ in [LP Formulation](/math/lp-formulation), [System Elements](/math/system-elements) and [Block Formulations](/math/block-formulations); in [PAR(p) Inflow Model](/math/par-inflow-model) and [Scenario Generation](/math/scenario-generation) $r_m$ is the standardized innovation scale of season $m$.
+- $r_h$ is the water-withdrawal target of hydro $h$ in [LP Formulation](/math/lp-formulation), [System Elements](/math/system-elements) and [Block Formulations](/math/block-formulations); in [PAR(p) Inflow Model](/math/par-inflow-model) and [Scenario Generation](/math/scenario-generation) $r_m$ is the standardized innovation scale of season $m$, and in [Discount Rate](/math/discount-rate) $r_t$ is the annual discount rate that applies to stage $t$.
 - $u_{h,k}$ is the diversion flow of hydro $h$, and $u$ indexes the unit groups of a (hydro, bus) cell, in the System Modelling chapters; in [SDDP Algorithm](/math/sddp-algorithm), [Risk Measures](/math/risk-measures), [Upper Bound Evaluation](/math/upper-bound-evaluation), [Horizon Modes](/math/horizon-modes), [Discount Rate](/math/discount-rate), [The SDDP Framework in One Page](/overview/sddp-framework-overview) and the [Glossary](/reference/glossary) $u_t$ is the control vector of the stage problem.
 - $w_k$ is the weight of block $k$ in the System Modelling chapters; in [Upper Bound Evaluation](/math/upper-bound-evaluation) $w_m$ is the census weight of simulation scenario $m$, and in [PAR(p) Inflow Model](/math/par-inflow-model) $w$ indexes the rolling windows of a season bucket.
 - $Z$ is the random cost a risk measure applies to; in [PAR(p) Inflow Model](/math/par-inflow-model) it is the standardised series on which the PAR(p)-A conditional partial autocorrelation conditions.
@@ -164,6 +165,8 @@ Every operational entity index set above ($\mathcal{B}$, $\mathcal{H}$, $\mathca
 | $\zeta$                        | hm³/(m³/s) | Time conversion: m³/s over stage → hm³ |
 | $\zeta_k = 0.0036 \times \tau_k$ | hm³/(m³/s) | Block conversion: m³/s over block $k$ → hm³; $\zeta_k = w_k\,\zeta$ and $\sum_{k \in \mathcal{K}} \zeta_k = \zeta$ |
 | $d_{t \to t+1}$ | - | Discount factor of the transition from stage $t$ to $t+1$, applied to $\theta_t$ in the stage-$t$ objective |
+| $d_{1 \to t}$ | - | Cumulative discount factor of stage $t$: the product of the one-step factors of stages $1$ to $t - 1$, with $d_{1 \to 1} = 1$ |
+| $d_{t_1 \to t_2}$ | - | Discount from stage $t_2$ back to stage $t_1 \le t_2$, $d_{1 \to t_2} / d_{1 \to t_1}$ |
 | $d_{\text{cycle}}$ | - | Cumulative discount around one cycle of a cyclic policy graph, $d_{\text{cycle}} = \prod_{t \in \text{cycle}} d_{t \to t+1} < 1$ |
 
 #### Time Conversion Factor Derivation
@@ -202,7 +205,7 @@ Cost coefficients use $c$ with a superscript naming the cost type.
 | $c^{exch}_n$ | \$/MWh | Exchange (transmission) cost |
 | $c^{curt}_r$ | \$/MWh | Curtailment regularization cost of non-controllable source $r$ |
 | $c^{ctr}_c$     | \$/MWh      | Contract price (signed: + import cost, − export revenue) |
-| $c_i(t)$ | \$/MWh | Unit cost of anticipated thermal $i$ at stage $t$; a commitment is priced at its delivery stage |
+| $c_i(t)$ | \$/MWh | Unit cost of anticipated thermal $i$ at stage $t$; a commitment for delivery stage $m$ is priced at $c_i(m)$ on its decision column |
 
 ### 3.3 Hydro Parameters
 
@@ -233,7 +236,7 @@ Cost coefficients use $c$ with a superscript naming the cost type.
 | $\text{rate}_t$ | m³/s | Minimum accumulation rate of a filling hydro at stage $t$ |
 | $V^{\text{target}}_t$ | hm³ | Minimum end-of-stage storage of a filling hydro at stage $t$ (the filling floor), reaching $\underline{V}_h$ at stage $L$ |
 | $L_h$ | stages | Bucket depth of receiving plant $h$: the deepest maturity lag any travel-time arc into $h$ reaches on the stage calendar |
-| $\phi_{h,k}$ | - | Arrival density of plant $h$'s maturing in-transit volume over the blocks $k$ of a chronological stage, $\phi_{h,k} \geq 0$, $\sum_k \phi_{h,k} = 1$; on a parallel stage $\tau_k / H_t$ in a `hydro_inflow` term ([LP Formulation §10](/math/lp-formulation#hydro-inflow)) |
+| $\phi_{h,k}$ | - | Arrival density of plant $h$'s maturing in-transit volume over the blocks $k$ of a chronological stage, $\phi_{h,k} \geq 0$, $\sum_k \phi_{h,k} = 1$; on a parallel stage $\phi_{h,k} = w_k = \tau_k / H_t$ in a `hydro_inflow` term ([LP Formulation §10](/math/lp-formulation#hydro-inflow)) |
 | $\Delta^{tt}_{h'}$ | hours | Travel time of the main cascade arc of upstream hydro $h'$, $0$ when none is declared |
 | $\nu_{h',t,0}$ | - | Same-stage share of $h'$'s release on the downstream water balance at stage $t$, $(H_t - \Delta^{tt}_{h'})^+ / H_t$ |
 | $\nu^{k' \to k}_{h',t}$ | - | Within-stage routing share on a chronological stage, from $h'$'s block $k'$ to the downstream block $k \ge k'$ |
@@ -245,8 +248,10 @@ Cost coefficients use $c$ with a superscript naming the cost type.
 | ----------------------------------- | ----- | ------------------------------------------------------------------------ |
 | $\bar{G}_j$, $\underline{G}_j$ | MW | Thermal generation bounds: capacity and minimum stable load |
 | $\bar{g}_{j,s}$ | MW | Capacity of cost segment $s$ of thermal $j$ |
-| $K_i$ | stages | Integer stage lead of anticipated thermal $i$, resolved from a stage count or from a physical duration on the stage calendar |
-| $K_{\max} = \max_i K_i$ | stages | Maximum anticipated lead: the number of ring slots each anticipated thermal reserves in the state |
+| $K_i$ | - | Ring depth of anticipated thermal $i$; the lead for a stage-count lead |
+| $k_{max} = \max_i K_i$ | - | Number of slots in every anticipated thermal's commitment ring |
+| $t_i(m)$ | - | Decision stage of anticipated thermal $i$'s delivery at stage $m$: $m - K_i$ under a stage-count lead, and under a physical lead the stage containing the instant one lead time before the end of stage $m$ (an instant on a stage boundary belongs to the earlier stage); a delivery decided before the study has none |
+| $r_i(m)$ | - | Ring position of anticipated thermal $i$'s delivery at stage $m$; the delivery holds slot $r_i(m) \bmod k_{max}$ |
 | $\bar{F}^+_n$, $\bar{F}^-_n$  | MW    | Line capacity (direct/reverse)                                           |
 | $\eta_n = 1 - \text{losses}/100$ | -     | Reported line efficiency: scales the post-solve reported transmission losses, $(1-\eta_n)(f^+ + f^-)$; it does not enter the dispatch LP, whose line flows carry coefficient ±1. Distinct from the PAR innovation $\varepsilon_t$ (§3.5). |
 | $\text{loss}_{n,k}$ | MW | Reported transmission loss of line $n$ in block $k$, $(1-\eta_n)(f^+_{n,k} + f^-_{n,k})$ |
@@ -319,7 +324,7 @@ Per-block variables are indexed by $k \in \mathcal{K}$:
 | $s_{h,k}$        | $\geq 0$                       | m³/s  | Spillage at hydro $h$                                                                                                                         |
 | $g_{h,b,k}$ | $[0, \bar{G}_{h,b}]$ | MW | Hydro generation of cell $(h, b)$, injected at bus $b$; its minimum $\underline{G}_{h,b}$ is a soft floor (slack $\sigma^{g-}_{h,b,k}$) |
 | $g_{h,k}$ | - | MW | Plant hydro generation, $g_{h,k} = \sum_{b \in \mathcal{B}_h} g_{h,b,k}$ |
-| $v_{h,k}$ | $[\underline{V}_h, \bar{V}_h]$ | hm³ | Storage at the end of block $k$ on a chronological stage, $v_{h,0} = \hat{v}_h$; only $v_{h,\lvert\mathcal{K}\rvert}$ is state; the lower bound is $0$, not $\underline{V}_h$, for a filling hydro and for a hydro not in service (see [LP Formulation §8](/math/lp-formulation#8-variable-bounds-and-minimum-constraints)) |
+| $v_{h,k}$ | $[\underline{V}_h, \bar{V}_h]$ | hm³ | Storage at the end of block $k$ on a chronological stage, $v_{h,0} = \hat{v}_h$; only $v_{h,\lvert\mathcal{K}\rvert}$ is state; the column lower bound is $0$, not $\underline{V}_h$, for a filling hydro and for a hydro not in service (see [LP Formulation §8](/math/lp-formulation#8-variable-bounds-and-minimum-constraints)) |
 | $u_{h,k}$        | $[0, \bar{U}_h]$               | m³/s  | Diversion/bypass flow (to separate channel)                                                                                                   |
 | $o_{h,k}$        | -                              | m³/s  | Total downstream outflow: $o_{h,k} = q_{h,k} + s_{h,k}$                                                                                       |
 | $e_{h,k}$ | bounded | m³/s | Net evaporation flow (negative for net rainfall input): one stage-level value $e_h$ on a parallel stage, one per block $k$ on a chronological stage; its magnitude has a per-stage bound |
@@ -333,17 +338,18 @@ Per-block variables are indexed by $k \in \mathcal{K}$:
 
 | Variable                 | Domain                         | Units | Description                                                                                                                        |
 | ------------------------ | ------------------------------ | ----- | ---------------------------------------------------------------------------------------------------------------------------------- |
-| $v_h$                    | $[\underline{V}_h, \bar{V}_h]$ | hm³   | End-of-stage storage; the lower bound is $0$, not $\underline{V}_h$, for a filling hydro and for a hydro not in service (see [LP Formulation §8](/math/lp-formulation#8-variable-bounds-and-minimum-constraints)) |
+| $v_h$                    | $[\underline{V}_h, \bar{V}_h]$ | hm³   | End-of-stage storage; the column lower bound is $0$, not $\underline{V}_h$, for a filling hydro and for a hydro not in service (see [LP Formulation §8](/math/lp-formulation#8-variable-bounds-and-minimum-constraints)) |
 | $v^{in}_h$ | fixed | hm³ | Incoming-storage variable of the stage LP, fixed at the incoming storage $\hat{v}_h$ |
 | $v^{avg}_h$              | -                              | hm³   | Average storage during stage: $(\hat{v}_h + v_h)/2$                                                                                |
 | $a_{h,\ell}$             | fixed                          | m³/s  | AR lag $\ell$ (fixed by state transition)                                                                                          |
-| $x^{\mathrm{a}}_{s,i,t}$ | fixed                          | MW    | Slot $s$ of plant $i$'s anticipated-thermal ring buffer at stage $t$ (fixed by state transition).                                     |
+| $x^{\mathrm{a}}_{s,i}$ | free; $0$ when no row holds it | MW | Outgoing slot $s$ of anticipated thermal $i$'s commitment ring, $s \in \{0, \ldots, k_{max} - 1\}$ |
+| $x^{\mathrm{a,in}}_{s,i}$ | fixed | MW | Incoming slot $s$, fixed at its trial value $\hat{x}^{\mathrm{a}}_{s,i}$ |
 | $b^{\mathrm{out}}_{h,d}$ | $\geq 0$ | hm³ | In-transit water destined for downstream plant $h$ at maturity lag $d$, carried to the next stage; it enters $h$'s water balance $d$ stages after the current stage |
-| $g^{\mathrm{a}}_{i,t}$ | $[\underline{G}_i, \bar{G}_i]$ | MW | Anticipated-thermal commitment decided at stage $t$ for a later delivery stage ($t + K_i$ under a stage-count lead), bounded by the plant's generation limits at the delivery stage |
+| $g^{\mathrm{a}}_{i,t}$ | $[\underline{G}_i(m), \bar{G}_i(m)]$ | MW | Anticipated-thermal commitment decided at stage $t$ for its delivery stage $m$, $t_i(m) = t$ ($m = t + K_i$ under a stage-count lead) |
 | $x^{in}$ | fixed | - | Incoming-state variable of the stage LP, fixed at the trial point: $x^{in} = \hat{x}_{t-1}$ |
 | $\theta$ | $\geq 0$ | \$ | Future-cost epigraph variable $\theta_t$ of the stage-$t$ LP, approximating $V_{t+1}(x_t)$ |
 
-The state dimension is $n_{\text{state}} = N(1 + P^{\max}) + B + A \, K_{\max}$, with $N = \lvert\mathcal{H}\rvert$ hydros, $B = \sum_h L_h$ in-transit buckets and $A$ anticipated thermals.
+The state dimension is $n_{\text{state}} = N(1 + P^{\max}) + B + A \, k_{max}$, with $N = \lvert\mathcal{H}\rvert$ hydros, $B = \sum_h L_h$ in-transit buckets and $A$ anticipated thermals.
 
 ### 4.3 Slack Variables
 

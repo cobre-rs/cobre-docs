@@ -453,7 +453,7 @@ A deck with no `nodes[]` is a stage chain byte-for-byte as before — existing
 | `source_id`                       | Yes      | Source endpoint: a node id when `policy_graph.nodes[]` is non-empty, a stage id otherwise            |
 | `target_id`                       | Yes      | Target endpoint: a node id when `policy_graph.nodes[]` is non-empty, a stage id otherwise             |
 | `probability`                     | Yes      | Transition probability                                                                              |
-| `annual_discount_rate_override`   | No       | Optional per-transition discount rate override; absent uses `policy_graph.annual_discount_rate`     |
+| `annual_discount_rate_override`   | No       | Stage-chain dialect only (no `policy_graph.nodes[]`): folded onto the transition's source stage, and the stage's own `annual_discount_rate_override` wins when both are set; rejected under `policy_graph.nodes[]` — declare the rate on the stage. |
 
 :::caution[No top-level `scenario_source` in `stages.json`]
 Scenario sampling is configured per-pass in `config.json` —
@@ -477,6 +477,7 @@ Scenario sampling is configured per-pass in `config.json` —
 | `state_variables` | No       | Cut dimension for this stage: `{ storage, inflow_lags }` booleans, defaulting to storage-only (`inflow_lags` off). Governs which state dimensions the stage's cuts project onto — distinct from what is reported; a disabled dimension is projected out of the cut, not zero-padded. Travel-time buckets and anticipated-thermal slots are always included. See [Cut Management](/math/cut-management). |
 | `risk_measure`    | No       | Per-stage risk measure: `"expectation"` or CVaR config            |
 | `sampling_method` | No       | Noise method: `"saa"` or other variants                           |
+| `annual_discount_rate_override` | No       | The stage's own annual discount rate; absent uses `policy_graph.annual_discount_rate`. See [Discount Rate](/math/discount-rate#implementation-in-cobre). |
 
 **`season_definitions` sub-object:**
 
@@ -652,9 +653,10 @@ without this field are unaffected.
 **`past_anticipated_commitments`** supplies the externally-decided committed MW
 rate for an anticipated thermal plant — every delivery the plant **decided
 before the study begins**, whether that delivery matures inside the horizon
-(the classic pre-horizon ring seed) or past it (the DECOMP _já-comandada_ case,
-a commitment already commanded before the study whose delivery lands beyond the
-last stage). Each entry is a dated window carrying a constant rate:
+(seeding its ring slot at the first stage) or past it (a commitment decided
+before the study and delivered past the horizon; for the equivalent term in
+other planning tools, see the [Glossary](/reference/glossary)). Each entry is a
+dated window carrying a constant rate:
 
 | Field        | Type    | Description                                                                          |
 | ------------ | ------- | ------------------------------------------------------------------------------------- |
@@ -665,27 +667,28 @@ last stage). Each entry is a dated window carrying a constant rate:
 
 A plant's windows must **tile every delivery stage the plant decided before
 the study, exactly** — coverage `1.0`, no gap, no overlap. Those stages may
-fall on **either side** of the horizon: the leading calendar-derived delivery
-stages inside the study, and any post-horizon stages of a _já-comandada_
-delivery. A window may **never** cover a stage the study itself decides, and a
+fall on **either side** of the horizon: the leading in-study delivery stages,
+and any post-horizon stages of a delivery decided before the study. A window
+may **never** cover a stage the study itself decides, and a
 single window may not straddle the horizon end — split it into an in-study
 window ending at the horizon and a post-study window starting there. A stretch
 with no scheduled commitment still needs an explicit `0.0`-rate window rather
-than a gap left to be inferred. Each `value_mw` must lie within the plant's
-`[min_generation_mw, max_generation_mw]` bounds and, if the plant declares a
-commissioning window, mature inside it. The values are **sunk cost**: they
-never enter the study objective — a post-horizon window is priced against the
-terminal boundary by a constant fold into the future-cost cut intercepts, and
-echoed at its real delivery date in `anticipated/fixed_deliveries.parquet`.
+than a gap left to be inferred. An in-study window's `value_mw` is checked
+against the resolved generation bounds of every covered stage at which the
+plant is in service, and a purely post-horizon window's against the plant's
+static `[min_generation_mw, max_generation_mw]`; a non-zero window may not
+cover a stage outside the plant's commissioning window, when it declares one.
+The values are **sunk cost**: their fuel never enters the study objective. With
+a boundary loaded, a post-horizon window's state contribution is folded once,
+at load, into every boundary cut's intercept, and the window is echoed at its
+real delivery date in `anticipated/fixed_deliveries.parquet`.
 Windows for the same `thermal_id` must not overlap (adjacent ranges where
 `start_date == previous end_date` are accepted). Optional; defaults to an empty
 array when no anticipated thermals are present.
 
-**The old positional per-lead-slot MW-array shape is no longer accepted** —
-the file's `deny_unknown_fields` contract rejects a deck still carrying that
-legacy array field; each entry must be an explicit dated window instead. See
+Each entry is an explicit dated window. See
 [system elements §4](/math/system-elements#anticipated-thermal-plants) for
-the delivery-stage mechanics this tiles against.
+the delivery-stage mechanics the windows tile against.
 
 ```json
 {
@@ -702,13 +705,10 @@ the delivery-stage mechanics this tiles against.
 
 :::note[Post-horizon deliveries have two declaration surfaces]
 A commitment **decided in-study** whose delivery matures after the horizon is
-no longer declared here. It is bounded and costed **solely** by a
-`thermal_bounds[]` cell in [`post_study_stages.json`](#post_study_stagesjson)
-below — the study itself decides the MW, so only its price and capability
-need declaring. The removed `future_anticipated_deliveries[]` field carried
-that role; an `initial_conditions.json` still declaring it is rejected by the
-file's deny-unknown-fields contract. A commitment **decided before the study**
-that delivers post-horizon (_já-comandada_) is instead a
+bounded and costed **solely** by a `thermal_bounds[]` cell in
+[`post_study_stages.json`](#post_study_stagesjson) below — the study itself
+decides the MW, so only its price and capability need declaring. A commitment
+**decided before the study** and delivered past the horizon is instead a
 `past_anticipated_commitments` window extending past the horizon end (above).
 See [Post-Study Boundary](/math/post-study-boundary) for the boundary
 formulation both feed.
@@ -745,7 +745,9 @@ The post-study boundary calendar: a sequence of post-horizon stages plus a
 per-`(thermal, post-study stage)` cost and delivery-bound table. Its
 `thermal_bounds[]` table is the **sole surface** for declaring the bound and
 cost of a commitment an anticipated thermal decides **in-study** but delivers
-after the horizon (the boundary prices it on the extended calendar). Optional
+after the horizon (its decision column is charged at the cell's cost,
+discounted to the decision stage, and the loaded boundary prices the commitment
+it carries). Optional
 and inert when absent; **required** once any anticipated thermal's lead reaches
 a post-study stage — a missing cell for a reached stage is rejected at load,
 naming the plant and the post-study stage index. See
@@ -765,7 +767,8 @@ horizon end** — the date immediately after the last in-study stage. Post-study
 stages are **boundary-only**: they are never dispatched, never a study stage,
 and never carry Benders cuts — they exist solely to give a post-horizon
 delivery a calendar position to be priced against. No two stages may share a
-`start_date`.
+`start_date`. Post-study stages declare no discount rate: the cumulative
+discount continues over them at `policy_graph.annual_discount_rate`.
 
 **`thermal_bounds[]`** — per-`(thermal, post-study stage)` cost and delivery
 capability:
@@ -781,8 +784,8 @@ capability:
 No two rows may share a `(thermal_id, post_study_stage_index)` pair. Every
 post-study stage an anticipated thermal's lead reaches must carry a matching
 `thermal_bounds` row: the delivered commitment is bounded by that cell's
-`[min_mw, max_mw]` and priced at its `cost_per_mwh` against the extended
-horizon.
+`[min_mw, max_mw]` and charged at its `cost_per_mwh` on the decision column,
+discounted from the post-study stage to the decision stage.
 
 ```json
 {

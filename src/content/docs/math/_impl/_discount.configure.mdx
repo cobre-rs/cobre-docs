@@ -1,0 +1,63 @@
+Cobre reads the discount rates from `stages.json`: the global rate on the
+`policy_graph` object and, optionally, a rate per stage. This tab is the
+field-level configuration reference; the factors the rates produce are defined
+in [§3 Stage Discount Factor](/math/discount-rate#3-stage-discount-factor) and
+[§5 Cumulative Discounting](/math/discount-rate#5-cumulative-discounting)
+above. The full file reference is
+[`stages.json`](/reference/case-directory-format#stagesjson).
+
+### Discount Rate Fields
+
+| Field                                                      | Required | Description                                                                                                                                                                                                                                             |
+| ---------------------------------------------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `policy_graph.annual_discount_rate`                        | Yes      | The global annual rate, `>= 0.0`; a negative value is rejected at load. It is the rate of every stage without its own rate and of every post-study stage.                                                                                               |
+| `stages[].annual_discount_rate_override`                   | No       | The stage's own annual rate; absent uses the global rate.                                                                                                                                                                                               |
+| `policy_graph.transitions[].annual_discount_rate_override` | No       | Stage-chain dialect only (no `policy_graph.nodes[]`): the rate folds onto the edge's source stage, and the stage field wins when both are set. Under `policy_graph.nodes[]` it is rejected with an `InvalidValue` error that points to the stage field. |
+
+The global rate is a required key of the `policy_graph` object:
+
+```json
+{
+  "policy_graph": {
+    "type": "finite_horizon",
+    "annual_discount_rate": 0.06,
+    "transitions": [
+      { "source_id": 0, "target_id": 1, "probability": 1.0 },
+      { "source_id": 1, "target_id": 2, "probability": 1.0 }
+    ]
+  }
+}
+```
+
+The canonical spelling of a per-stage rate is the stage's own key. Stage 1
+below takes the annual rate `0.1` in place of the global rate:
+
+```json
+{
+  "stages": [
+    {
+      "id": 1,
+      "start_date": "2024-02-01",
+      "end_date": "2024-03-01",
+      "blocks": [{ "id": 0, "name": "SINGLE", "hours": 696 }],
+      "num_openings": 10,
+      "annual_discount_rate_override": 0.1
+    }
+  ]
+}
+```
+
+In the stage-chain dialect, a `policy_graph.transitions` entry may carry the
+same rate for the stage it leaves; this entry gives stage 1 the rate `0.1`:
+
+```json
+{
+  "source_id": 1,
+  "target_id": 2,
+  "probability": 1.0,
+  "annual_discount_rate_override": 0.1
+}
+```
+
+A rate of `0.0` means no discounting for the stages it governs; the post-study
+stages of `post_study_stages.json` declare no rate and use the global rate.

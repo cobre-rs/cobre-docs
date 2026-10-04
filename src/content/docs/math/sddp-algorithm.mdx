@@ -218,7 +218,7 @@ For SDDP to generate valid cuts, the subproblem must satisfy the **Markov proper
 | Hydro storage             | $v_h$                  | $N_{hydro}$  | Reservoir volume at end of stage                                                                    |
 | AR inflow lags            | $a_{h,\ell}$           | $\sum_h P_h$ | Lagged inflows for AR($P_h$) models                                                                 |
 | In-transit water buckets  | $b^{\mathrm{out}}_{h,d}$              | $B$          | Released water still in transit under travel-time delay — one bucket per receiving plant $h$ per maturity lag $d$ |
-| Anticipated-thermal slots | $x^{\mathrm{a}}_{s,i}$            | $\sum_i K_i$ | Pending anticipated-thermal commitments awaiting delivery — one ring of $K_i$ slots per anticipated plant |
+| Anticipated-thermal slots | $x^{\mathrm{a}}_{s,i}$            | one ring per anticipated plant | Commitments decided and not yet delivered — each holds one slot of its plant's ring until its delivery stage |
 
 The last two components are present only when the study declares them: water
 travel-time arcs introduce the in-transit buckets, and anticipated thermals
@@ -252,11 +252,12 @@ slot per downstream plant per maturity lag — so that a stage's future cost
 depends only on the current in-transit volumes, not on the release path that
 produced them.
 
-**Anticipated-thermal slots.** An anticipated thermal commits generation $K_i$
-stages ahead of delivery. Each pending commitment occupies a slot in a per-plant
-ring of length $K_i$; the ring shifts one position per stage until the
-commitment matures at its delivery stage. The ring slots are Markov state so
-that the cut at each stage prices the cost of commitments already in flight.
+**Anticipated-thermal slots.** An anticipated thermal commits generation ahead of
+its delivery stage, by a stage count or a physical lead time. Each commitment
+decided and not yet delivered holds one slot of the plant's commitment ring from
+its decision stage (the first stage, for a commitment decided before the study)
+to its delivery stage. The ring slots are Markov state so that the cut at each
+stage prices the commitments already in flight.
 
 Both expansions are optional and instance-specific; see
 [System Elements](/math/system-elements) for the entity configuration and

@@ -835,7 +835,7 @@ entities is rejected.
 | ---------------- | ------ | -------------------------------------------------------------------------------------------------------------------- |
 | `entity_type`   | uint8  | State-dimension kind: `0` HydroStorage, `1` HydroInflowLag, `2` AnticipatedThermalState, `3` HydroTransitBucket.     |
 | `entity_id`     | int32  | Owning entity id — for a transit bucket, the downstream hydro.                                                        |
-| `subindex`      | uint32 | Secondary index within the entity: the inflow-lag order, anticipated-commitment ring slot, or transit maturity lag.  |
+| `subindex`      | uint32 | Secondary index within the entity: the inflow-lag order, anticipated-commitment ring slot (counted from stage 0: $(s - 1) \bmod k_{max}$ for the [Hold Ring](/math/lp-formulation#hold-ring) slot $s$), or transit maturity lag.  |
 | `was_active`    | bool   | Whether the owning entity was operationally active at this stage (excluded from the load-time identity check).       |
 | `reference_date` | int32  | The `HydroInflowLag` reference past-stage `start_date`, encoded `YYYYMMDD` (`year*10000 + month*100 + day`); sentinel `-2147483648` (the int32 minimum) for every other family. |
 | `interval_start` | int32  | Inclusive start of the forward-family half-open window, encoded `YYYYMMDD`: a `HydroTransitBucket` arrival start or an `AnticipatedThermalState` delivery start. Sentinel `-2147483648` for `HydroStorage` and `HydroInflowLag`, and for an `AnticipatedThermalState` ring slot that holds no live commitment at the pool's stage or whose delivery lands past the study calendar extended by the post-study stages. |
@@ -1127,9 +1127,9 @@ Stage and block-level cost breakdown. One row per (stage, block) pair. 29 column
 | `total_cost`                   | Float64 | No       | Total discounted cost for this stage/block (monetary units).                                                                 |
 | `immediate_cost`               | Float64 | No       | Immediate (undiscounted) cost for this stage/block.                                                                          |
 | `future_cost`                  | Float64 | No       | Future cost estimate (Benders cut value) at the end of this stage.                                                           |
-| `discount_factor`              | Float64 | No       | Discount factor applied to this stage's costs.                                                                               |
+| `discount_factor`              | Float64 | No       | Cumulative discount factor of this stage: multiplying a cost of this stage by it gives its present value at the first stage.   |
 | `thermal_cost`                 | Float64 | No       | Thermal generation cost component.                                                                                           |
-| `anticipated_thermal_cost`     | Float64 | No       | Anticipated (forward-committed) thermal generation cost, booked at the decision stage. Zero when no anticipated units exist. |
+| `anticipated_thermal_cost`     | Float64 | No       | Fuel cost of the anticipated commitments decided at this stage, in this stage's monetary units — each commitment's delivery-stage cost discounted from its delivery stage to this stage; multiply by `discount_factor` for its present value. Zero when no anticipated units exist. |
 | `contract_cost`                | Float64 | No       | Energy contract cost component (positive for imports, negative for exports).                                                 |
 | `deficit_cost`                 | Float64 | No       | Cost of unserved load (deficit penalty).                                                                                     |
 | `excess_cost`                  | Float64 | No       | Cost of excess generation (excess penalty).                                                                                  |
@@ -1434,39 +1434,43 @@ when the system declares a travel-time arc.
 
 ### `simulation/anticipated_lanes/`
 
-Post-horizon commitment lane results, keyed `(thermal_id, delivery_date)` —
-distinct from the per-plant `anticipated_committed_mw`/`anticipated_decision_mw`
-columns on [`simulation/thermals/`](#simulationthermals). One row per declared
-window per terminal scenario. 7 columns. All columns are non-nullable.
-Hive-partitioned by `scenario_id`
+Post-horizon commitments the study decides, keyed
+`(thermal_id, delivery_date)` — distinct from the per-plant
+`anticipated_committed_mw`/`anticipated_decision_mw` columns on
+[`simulation/thermals/`](#simulationthermals). One row per scenario and
+decision whose delivery stage is a post-study stage, at its decision stage; a
+scenario with no such decision writes no partition. 7 columns. All columns are
+non-nullable. Hive-partitioned by `scenario_id`
 (`anticipated_lanes/scenario_id=NNNN/data.parquet`); written only when the
 study declares `post_study_stages`.
 
 | Column                  | Type    | Nullable | Description                                                                                                         |
 | ----------------------- | ------- | -------- | ------------------------------------------------------------------------------------------------------------------- |
 | `scenario_id`           | Int32   | No       | Scenario id (0-based). Duplicates the Hive partition directory (`scenario_id=NNNN/`) as an explicit in-file column. |
-| `stage_id`              | Int32   | No       | Declared stage id (from `stages.json`) at which the lane's commitment was deposited.                                                 |
+| `stage_id`              | Int32   | No       | Declared stage id of the decision stage, where the commitment is deposited into its ring slot.                                       |
 | `node_id`               | Int32   | No       | Visited policy-graph node id; equals `stage_id` on a stage chain.                                                   |
 | `thermal_id`            | Int32   | No       | Anticipated thermal unit ID.                                                                                        |
 | `delivery_date`         | Int32   | No       | Calendar date the commitment delivers, encoded `YYYYMMDD` (`year*10000 + month*100 + day`).                         |
-| `deposited_decision_mw` | Float64 | No       | Dispatch decision deposited into this lane at `stage_id` for delivery at `delivery_date`, in MW.                    |
-| `carried_committed_mw`  | Float64 | No       | Committed capacity carried forward in this lane toward `delivery_date`, in MW.                                      |
+| `deposited_decision_mw` | Float64 | No       | Commitment decided at `stage_id` for delivery at `delivery_date`, in MW.                                              |
+| `carried_committed_mw`  | Float64 | No       | Value of the ring slot holding the commitment at `stage_id`, in MW; the [deposit row](/math/lp-formulation#ring-rows) makes it equal to `deposited_decision_mw`. |
 
 ---
 
 ### `anticipated/fixed_deliveries.parquet`
 
-Run-level echo of every **pre-study-decided** commitment that delivers past the
-study horizon — the DECOMP _já-comandada_ deliveries, declared as
-`past_anticipated_commitments` windows extending past the horizon end. Unlike
+Run-level echo of every commitment **decided before the study** and delivered
+past the study horizon (for the equivalent term in other planning tools, see the
+[Glossary](/reference/glossary)), declared as `past_anticipated_commitments`
+windows extending past the horizon end. Unlike
 `simulation/anticipated_lanes/`, this file is **not** under `simulation/`, is
 **unpartitioned**, and carries no scenario, stage, or node axis: each row is a
 resolved input, scenario- and stage-independent. One row per fixed post-horizon
 window. 4 columns. All columns are non-nullable. Written by both the CLI and
 the Python bindings; written only when at least one such window exists — an
 empty set writes no file and no `anticipated/` directory. There is no cost
-column: the fuel is a sunk cost, folded into the terminal boundary cut
-intercepts rather than booked in the study objective.
+column: the fuel of a commitment decided before the study is sunk and enters no
+objective; when a boundary is loaded, the commitment's state contribution is
+folded into the boundary cuts' intercepts.
 
 | Column       | Type    | Nullable | Description                                                          |
 | ------------ | ------- | -------- | -------------------------------------------------------------------- |

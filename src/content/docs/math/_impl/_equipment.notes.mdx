@@ -24,7 +24,7 @@ An energy contract contributes exactly one LP column per block per direction
 and carries **no state variable** — it is not part of the Bellman recursion
 and contributes no term to the Benders cuts (methodology §3). This is a
 structural difference from hydro plants and anticipated thermals, whose
-storage / ring-buffer state variables do carry a cut term. A non-zero
+storage and commitment-ring state variables do carry a cut term. A non-zero
 `min_mw` at a contract's active stages is a hard take-or-pay floor: the LP
 must dispatch at least that quantity at the contract price regardless of
 cheaper alternatives elsewhere in the system. All contract cost — the import
@@ -46,9 +46,10 @@ pump-specific cost coefficient to tune.
 
 Every other equipment type in this chapter is memoryless: its dispatch at
 stage `t` depends only on that stage's own bounds and price. An anticipated
-thermal (`anticipated_config.lead_stages = K`) is the one exception — its
-commitment decision at stage `t` is carried forward as ring-buffer state and
-matures as delivered generation at stage `t + K` (system elements §4). The
+thermal (`anticipated_config`) is the one exception — its commitment, decided
+at an earlier stage or before the study, is held as commitment-ring state until
+its delivery stage,
+where the plant's generation must deliver it (system elements §4). The
 `anticipated_decision(N)` generic-constraint expression lets a case author
 cap or floor that forward commitment directly; referencing a non-anticipated
 thermal with this expression is a hard load-time error, and referencing an
@@ -57,8 +58,8 @@ accepted but flagged, since it does not read the forward commitment.
 
 ### Over-commitment is rejected at case load, not reconciled per solve
 
-A delivered commitment's forward value is carried as ring-buffer state, so at
-its delivery stage the must-generate coupling reads the solver's computed value
+A delivered commitment's forward value is held as commitment-ring state, so at
+its delivery stage the fish row ([LP formulation §5c](/math/lp-formulation#ring-rows)) reads the solver's computed value
 — accurate only to the LP backend's feasibility tolerance, not exact. Cobre runs
 **no** per-solve reconciliation pass. Instead, the outgoing state is
 **canonicalized onto its admissible bounds when it is read back** from each

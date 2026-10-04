@@ -107,7 +107,7 @@ This window applies uniformly to **transmission lines, thermal plants, non-contr
 Two element-specific lifecycle mechanisms layer on top of this generic window:
 
 - **Hydro dead-volume filling** (§5) — a hydro plant may _exist_ but be unable to generate while its reservoir is still filling toward the dead volume; this is a distinct commissioning state with its own per-stage storage floors, not just a presence gate.
-- **Anticipated thermals** (§4) — a commitment column is opened only when its delivery stage falls inside the study horizon, an additional horizon predicate beyond the entry/exit window.
+- **Anticipated thermals** (§4) — a commitment column is opened only when its delivery stage lies inside the study or on a declared post-study stage and the plant is commissioned at that delivery stage, whatever its status at the decision stage.
 
 ### Operational Start Date
 
@@ -275,72 +275,58 @@ For detailed constraints, see [equipment formulations](/math/equipment-formulati
 
 ### Anticipated Thermal Plants
 
-A thermal plant may be flagged as **anticipated** by attaching a per-plant lead $K_i \geq 1$. The physical motivation is fuel-ordering lead time: LNG terminals, long-haul coal contracts and similar arrangements require the committed dispatch quantity to be locked $K_i$ stages before the energy is physically delivered. Anticipated thermals therefore split the per-stage thermal decision into two coupled variables — the **commitment**, made at the decision stage $t$, and the **delivered generation**, which is forced to match the matured commitment at the delivery stage $t + K_i$.
+A thermal plant may be flagged as **anticipated**. The physical motivation is fuel-ordering lead time: LNG terminals, long-haul coal contracts and similar arrangements require the dispatch quantity to be committed before the energy is physically delivered. An anticipated plant therefore decides the **commitment** of each delivery at a stage before its **delivery stage** $m$, and the plant's generation at stage $m$ must match that commitment.
 
-The lead resolves to an integer plant-specific parameter $K_i \geq 1$, supplied in one of two mutually exclusive forms: a **stage count** (`lead_stages`, calendar-free) or a **physical duration** (`lead_time_hours`, resolved against the stage calendar by end-anchoring the lead on the cumulative stage-hour boundaries). A plant with $K_i = 1$ commits one stage ahead; a plant with $K_i = 3$ commits three stages ahead. A physical lead shorter than the decision stage's own duration resolves to $K_i = 0$, and the plant then dispatches as an ordinary thermal. Plants without the anticipation flag use the standard thermal model from the preceding subsections.
+The lead is a stage count or a physical lead time, and it fixes the decision stage of each delivery (see [LP formulation §5c](/math/lp-formulation#5c-anticipated-thermal-dispatch)). A delivery decided within its own stage — a physical lead shorter than the duration of that delivery stage — is not anticipated, and at that stage the plant dispatches as an ordinary thermal. Plants without the anticipation flag use the standard thermal model from the preceding subsections.
 
-#### State variables and ring-buffer layout
+#### Commitment ring
 
-Each anticipated plant $i$ carries a ring-buffer pipeline of $K_i$ pending commitments through the Bellman recursion alongside hydro storage and inflow lags. Anticipated thermals are the only non-hydro elements with state variables in the SDDP formulation.
+Every commitment the plant has decided but not yet delivered is state: the plant holds it in its **commitment ring**, carried through the Bellman recursion alongside hydro storage and inflow lags. A commitment keeps one slot of the ring, $s_i(m)$, from its decision stage to its delivery stage $m$ ([LP formulation §5c](/math/lp-formulation#hold-ring)). The ring depth $K_i$ is the lead itself under a stage-count lead and, under a physical lead, the most commitments the plant holds at the start of any stage. Anticipated thermals are the only non-hydro elements with state variables in the SDDP formulation.
 
-| State variable                 | Slot      | Meaning at the start of stage $t$                                                 |
-| ------------------------------ | --------- | --------------------------------------------------------------------------------- |
-| $x^{\mathrm{a}}_{0,i,t}$       | 0         | Commitment maturing **this** stage — sets the delivered generation at $t$         |
-| $x^{\mathrm{a}}_{1,i,t}$       | 1         | Commitment placed at $t - K_i + 1$, scheduled to deliver at $t + 1$               |
-| $\vdots$                       | $\vdots$  | ...                                                                               |
-| $x^{\mathrm{a}}_{K_i - 1,i,t}$ | $K_i - 1$ | Most-recent commitment, written at $t - 1$, scheduled to deliver at $t + K_i - 1$ |
+The figure follows one delivery through the ring under a stage-count lead. The commitment $g^{\mathrm{a}}_{i,t}$ decided at stage $t = m - K_i$ is deposited into the slot $s_i(m)$ of its delivery stage $m$, carried unchanged at stages $t + 1, \ldots, m - 1$, and fished at stage $m$, where the plant's generation must deliver it. A delivery decided before the study seeds its slot $s_i(m)$ at the first stage instead (the dashed path), and is then carried and fished in the same way. A physical lead changes which stage decides each delivery, not how the ring holds it.
 
-The state vector reserves $K_{\max} = \max_i K_i$ slots per plant for layout uniformity across stages; slots beyond $K_i$ are padded to zero by an LP equality and carry no information.
+```d2
+direction: right
 
-#### Decision variable and fishing constraint
+classes: {
+  thermal: {style: {stroke: "#f5a623"}}
+}
 
-At each stage $t$ the plant exposes a **commitment column** $g^{\mathrm{a}}_{i,t}$ on the LP. Its bounds replicate the generation bounds of the **delivery stage** $t + K_i$:
+decide: "stage t = m − Kᵢ\ndeposit gᵃ in sᵢ(m)" {class: thermal}
+seed: "decided before the study\nseeds sᵢ(m)\nat the first stage" {shape: parallelogram}
+carry: "stages t + 1 … m − 1\ncarry sᵢ(m) unchanged"
+deliver: "stage m\nfish sᵢ(m)" {class: thermal}
 
-$$
-g^{\mathrm{a}}_{i,t} \in
-\begin{cases}
-[\,\underline{G}_i(t + K_i),\ \bar{G}_i(t + K_i)\,] & t + K_i \leq T \\
-\{\,0\,\}                                          & t + K_i > T \quad \text{(presolved out)}
-\end{cases}
-$$
+decide -> carry
+seed -> carry: {style.stroke-dash: 4}
+carry -> deliver
+```
 
-The horizon predicate $t + K_i \leq T$ guarantees the commitment is only opened when there is a delivery stage inside the study horizon; commitments whose delivery would fall outside $T$ are pinned to zero.
+#### Decision and delivery
 
-The commitment is also **commissioning-gated at its delivery stage**: the delivery-stage generation bounds $[\underline{G}_i(t + K_i), \bar{G}_i(t + K_i)]$ collapse to $\{0\}$ whenever the plant is not in service at $t + K_i$, so a commitment can never be placed for a delivery stage the plant cannot honour — and a plant whose cap varies across stages cannot be over-committed to a value its delivery stage would reject. Two lead configurations are refused at load: a lead exceeding the study horizon **whose delivery reaches no post-study boundary segment** (no delivery stage exists, in-horizon or beyond, for the commitment to anchor to) — a plant whose lead reaches a declared post-study segment is exempt, since its commitment is decided in-study but its delivery is legitimately anchored past the remaining horizon instead (see the right-boundary carry, below) — and a physical `lead_time_hours` coarse enough that one decision stage would anchor more than one delivery stage.
+Each stage $t$ carries a **commitment column** $g^{\mathrm{a}}_{i,t}$ for the delivery it decides, fixed at zero when it decides none. Its bounds are the plant's generation limits at the delivery stage $m$, not at the decision stage, and it is zero when the plant is out of service at stage $m$, so a commitment is never placed for a delivery the plant cannot honour. At the delivery stage, the energy of the plant's per-block generation equals the committed rate times the stage hours $H_m$ (the fish row of [LP formulation §5c](/math/lp-formulation#ring-rows)). A physical lead coarse enough that one decision stage would decide more than one delivery is rejected when the study is set up, and a lead longer than the whole study horizon is accepted only when it reaches a declared post-study stage.
 
-The **fishing constraint** binds the per-block generation of plant $i$ to the matured commitment in slot 0 at every stage $t \in \{1, \ldots, T\}$:
+#### Deliveries past the horizon
 
-$$
-\sum_{k \in \mathcal{K}} \tau_k \cdot g_{i,k} \;=\; H_t \cdot x^{\mathrm{a}}_{0, i, t}
-$$
+A delivery past the horizon can be decided in the study only when the case declares a post-study calendar that reaches it. Its commitment is then bounded by the capability that calendar declares for the delivery stage, priced on its decision column (see the cost subsection below), carried in its slot to the terminal stage, and valued there by the terminal boundary — at zero, with a setup warning, when no boundary is loaded. See [Post-Study Boundary](/math/post-study-boundary) for the boundary formulation.
 
-where $\tau_k$ is the duration of block $k$ and $H_t = \sum_{k \in \mathcal{K}} \tau_k$ is the total stage hours. The fishing row is active at every stage, including the pre-horizon stages where slot 0 is fed by the seeded `past_anticipated_commitments` (see below) rather than by an LP-decided $g^{\mathrm{a}}_i$.
+#### Commitments decided before the study
 
-Column bounds pin each slot to its incoming value, and a separate **decoupled state-out column** writes the LP commitment $g^{\mathrm{a}}_{i,t}$ into the post-shift slot $K_i - 1$ for the next stage. The decoupling prevents a write into slot 0 from overlapping a read in the same stage, which is what makes the fishing-at-every-stage predicate safe even at $K_i = 1$.
+Every delivery the plant decided before the study is declared with its committed rate, a zero rate included. The in-study ones seed their slots at the first stage, each matched to its delivery stage by date, and are then carried and fished like any other commitment. Those past the horizon are fixed commitments: they hold no ring slot and are priced only through the terminal boundary (see [Post-Study Boundary](/math/post-study-boundary)). The declaration shape lives in the Configure tab of [Equipment Formulations](/math/equipment-formulations#implementation-in-cobre). For equivalent terms in other planning tools, see the [Glossary](/reference/glossary).
 
-#### Right-boundary carry
+#### Commitment cost
 
-Absent a terminal boundary, the horizon predicate above is unconditional: a commitment whose delivery stage would fall outside the study horizon is pinned to zero, because there is nothing past $T$ to price it against. When a terminal boundary future-cost function is loaded, a commitment decided in-study but delivered after the horizon is no longer suppressed this way. It is held live instead: the same ring carries it, over a **delivery axis extended across the post-study calendar** — not a separate carrier — so the post-horizon commitment survives into the terminal stage's incoming-state vector and is priced through the boundary's affine floor on the terminal future-cost variable rather than pinned away. The commitment's delivery-anchored fuel cost is booked separately, on its own decision column at the stage it is decided (the same column the in-study objective already prices), so the carried-state pricing and the fuel booking compose without double-counting the same delivered energy. How much the plant may commit to a post-horizon delivery is bounded and priced by the **post-study delivery capability the boundary segment declares for that stage, alone** — there is no second, decision-side interval to intersect it with; a commitment reaching past what the boundary calendar can place has no stage to anchor to. See [Post-Study Boundary](/math/post-study-boundary) for the boundary formulation and [LP formulation §5c](/math/lp-formulation#5c-anticipated-thermal-dispatch) for the column mechanics that carry and price this lane.
-
-#### Pre-horizon seed
-
-Because anticipated dispatch carries state across stages, plant $i$ must be primed with $K_i$ pre-horizon commitments — the values that were committed before the study begins and are scheduled to mature at stages $1, \ldots, K_i$. The seed is a set of **dated, delivery-anchored commitment windows**: each window declares an externally-decided MW rate held constant over the calendar span it covers, and the collection of windows must **tile the plant's leading delivery stages exactly** — every stage from $1$ to $K_i$ falls inside exactly one window, with a committed rate of zero written explicitly for any stretch with no scheduled commitment rather than left to be inferred from a gap. Both the generation-bounds check and the coverage check are enforced by the semantic validator at load. A plant with no pre-horizon commitments to declare needs no windows at all — the default for studies with no anticipated plants. The same windows also carry the plant's decisions that were made before the study but **deliver after the horizon** (the _já-comandada_ case): those are not an in-study decision at all but a sunk cost, priced against the terminal boundary — see [Post-Study Boundary](/math/post-study-boundary). The concrete window shape is a software-layer concern; see [Case Directory Format](/reference/case-directory-format) and [equipment formulations](/math/equipment-formulations) rather than this conceptual layer.
-
-The seed enters the LP via the slot-0 fishing constraint at stages $1, \ldots, K_i$: at each such stage $t$, slot 0 is fed by the rate declared by whichever window covers delivery stage $t$ — resolved **by date**, not by position in a list — and the ring-buffer shift carries the next leading stage's covering rate into slot 0 in turn. From stage $K_i + 1$ onward, slot 0 carries the LP-decided commitment $g^{\mathrm{a}}_{i,t - K_i}$.
-
-#### Cost discounted to the delivery stage
-
-Anticipation costs are **charged at the decision stage** but **discounted to the delivery stage** in the same way a real-world option is priced. The objective coefficient on $g^{\mathrm{a}}_{i,t}$ is
+A commitment is **charged at its decision stage** $t$ and **discounted from its delivery stage** $m$. The objective coefficient of its commitment column is
 
 $$
-\mathrm{obj}\bigl[\,g^{\mathrm{a}}_{i,t}\,\bigr] \;=\; c_i(t + K_i) \cdot H_{t + K_i} \cdot d_{1 \to t + K_i}
+\mathrm{obj}\bigl[\,g^{\mathrm{a}}_{i,t}\,\bigr] = c_i(m) \cdot H_m \cdot d_{t \to m}
 $$
 
-where $c_i(\cdot)$ is the unit cost in \$/MWh, $H_{t + K_i}$ is the total hours at the delivery stage, and $d_{1 \to t + K_i}$ is the cumulative NPV discount factor at the delivery stage. The per-block thermal column cost is **zeroed at delivery stages** for anticipated plants so the same energy is not double-priced once via the commitment and once via the per-block dispatch.
+where $c_i(m)$ is the plant's unit cost at the delivery stage in \$/MWh (the delivery stage's cost inside the study, the declared post-study cost past it), $H_m$ is the delivery stage's hours (a post-study stage's declared duration past the horizon), and $d_{t \to m}$ is the discount from the delivery stage back to the decision stage ([Discount Rate §5](/math/discount-rate#5-cumulative-discounting)). Every stage's future cost is discounted by its one-step factor, so the commitment cost reaches stage 1 as $c_i(m) H_m d_{1 \to m}$, discounted once. The plant's per-block generation carries no cost at a stage where its delivery is fished, so the same energy is priced once ([LP formulation §5c](/math/lp-formulation#objective-contributions)).
 
 #### Cut machinery
 
-Benders cuts propagate the marginal value of the matured commitment back through the ring buffer. The reduced cost of the pinned slot-0 column at stage $t + 1$ is the partial $\partial Q_{t+1} / \partial x^{\mathrm{a}}_{0, i, t+1}$ and is non-zero only when the fishing constraint has bound the LP there. The cut-row builder remaps this coefficient to the predecessor's commitment column (for $K_i = 1$) or to the predecessor's outgoing-state slot one step deeper into the ring buffer (for $K_i \geq 2$), so the subgradient ultimately lands on the original $g^{\mathrm{a}}_i$ decision regardless of how many stages have elapsed between commitment and delivery.
+Each ring slot $x^{\mathrm{a}}_{s,i}$ is a state coordinate with its own cut coefficient. The coefficient multiplies the outgoing slot, which the decision fixes through the deposit row at the decision stage and the carried value fixes at every later stage of the hold, so the marginal value of a commitment reaches its decision directly, whatever the lead ([LP formulation §5c](/math/lp-formulation#ring-slot-cut-coefficient)).
 
 ## 5. Hydro Plants
 
@@ -444,9 +430,9 @@ Cobre carries the water in transit on such an arc as additional **in-transit sta
 
 **Scope.** Travel time applies to the **main cascade arc only** — the arc to `downstream_id`. Diversion and pumping transfers are instantaneous. A travel time that is absent or zero is treated as an instantaneous transfer, adding no state.
 
-**Not-yet-operating downstream.** A release into a downstream plant that has not yet reached operating status — still filling its dead volume, or before its commissioning entry stage — is rejected at load time: the water would arrive at a reservoir that does not yet exist in the dispatch. The receiving plant must be operating over the arrival window.
+**Downstream commissioning window.** A release made at a stage before the downstream plant's commissioning entry stage — while it is PreFilling or still filling — is rejected at load. A release made while the downstream plant is in service whose arrival reaches the plant's exit stage is accepted with a warning, and the water maturing from the exit stage on leaves the modeled system.
 
-**Horizon limitation.** In-transit water that would mature after the study's last stage is dropped rather than credited to terminal storage — but only **when no terminal boundary future-cost function is loaded**. When a [terminal boundary](/math/post-study-boundary) is loaded instead, this drop is lifted: the terminal deep-lag in-transit buckets are held live rather than capped away, carried into the terminal stage's incoming-state vector, and priced at the boundary through the same reduced-cost cut mechanism the buckets already use — the still-in-transit water is valued rather than discarded, with no residual "deeper-than-horizon" drop once the boundary is in play. See [LP formulation §5d](/math/lp-formulation) for the bucket-level mechanics and [Post-Study Boundary](/math/post-study-boundary) for the boundary formulation.
+**Horizon limitation.** Without a loaded terminal boundary, in-transit water that would mature after the last stage is dropped; with one, it is carried to the terminal stage and priced there ([LP Formulation — Horizon limitation](/math/lp-formulation#horizon-limitation), [Post-Study Boundary](/math/post-study-boundary)).
 
 ### Production Function (Water to Power)
 
@@ -714,13 +700,13 @@ The following table maps each physical system element to its LP representation:
 | **Bus**                   | —                        | $\delta_{b,k,s}$, $\epsilon_{b,k}$         | Load balance                                | Deficit penalty (high), Excess penalty (low) |
 | **Transmission Line**     | —                        | $f^+_{n,k}$, $f^-_{n,k}$                   | Capacity bounds                             | Exchange cost (regularization)               |
 | **Thermal Plant**         | —                        | $g_{j,k,s}$                                | Generation bounds, Segment limits           | Fuel cost                                    |
-| **Thermal (anticipated)** | $x^{\mathrm{a}}_{s,i,t}$ | $g^{\mathrm{a}}_{i,t}$, $g_{j,k,s}$                       | Ring-buffer slot pinning + fishing equality | Commitment cost discounted to delivery stage |
+| **Thermal (anticipated)** | $x^{\mathrm{a}}_{s,i}$   | $g^{\mathrm{a}}_{i,t}$, $g_{j,k,s}$                       | Ring deposit, carry and fish rows           | Commitment cost at the decision stage, discounted from the delivery stage |
 | **Hydro Plant**           | $v_h$, $a_{h,\ell}$      | $q_{h,k}$, $s_{h,k}$, $u_{h,k}$, $g_{h,k}$ | Water balance, Generation function          | Spillage/diversion cost (regularization)     |
 | **Non-Controllable**      | —                        | $g^{nc}_{r,k}$                             | Availability bound                          | Curtailment penalty (regularization)         |
 | **Pumping Station**       | —                        | $p_{y,k}$                                  | Flow bounds (min/max)                       | None (cost via energy consumption)           |
 | **Contract**              | —                        | $\chi_{c,k}$                               | Dispatch bounds (min/max)                   | Import cost or Export revenue                |
 
-**Key insight**: The hydro storage variables $v_h$, the AR lag variables $a_{h,\ell}$, and the anticipated-thermal ring-buffer slots $x^{\mathrm{a}}_{s,i,t}$ are the **state variables** that link stages through the Bellman recursion — joined, when a cascade arc declares a water travel time, by the in-transit buckets carrying released water toward its downstream plant (see [LP formulation §5d](/math/lp-formulation)). All other elements contribute control variables that are determined within each stage. This structure enables SDDP's decomposition: the stage subproblem optimizes all control variables given the incoming state, and Benders cuts approximate the future cost as a function of the outgoing state.
+**Key insight**: The hydro storage variables $v_h$, the AR lag variables $a_{h,\ell}$, and the anticipated-thermal commitment-ring slots $x^{\mathrm{a}}_{s,i}$ are the **state variables** that link stages through the Bellman recursion — joined, when a cascade arc declares a water travel time, by the in-transit buckets carrying released water toward its downstream plant (see [LP formulation §5d](/math/lp-formulation)). All other elements contribute control variables that are determined within each stage. This structure enables SDDP's decomposition: the stage subproblem optimizes all control variables given the incoming state, and Benders cuts approximate the future cost as a function of the outgoing state.
 
 ## Implementation in Cobre
 

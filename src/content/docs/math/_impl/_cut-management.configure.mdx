@@ -1,6 +1,7 @@
-Cobre's cut-management knobs live entirely in `config.json`'s
-`training.cut_selection` block — there is no per-case data file for cuts (the
-cut pool is generated during training, not authored by the case). This tab is
+Cobre's cut-management settings live in two places: the
+`training.cut_selection` block of `config.json` (row management) and the
+per-stage `state_variables` field of `stages.json` (cut projection). The cut
+pool itself is generated during training, not authored by the case. This tab is
 the field-level configuration reference; the selection algorithms themselves
 stay in the methodology sections above (§6–§9).
 
@@ -126,3 +127,34 @@ Level-1 periodic pruning with a per-stage budget:
   }
 }
 ```
+
+### `stages[].state_variables` — Cut Projection
+
+Each study stage selects which incoming-state dimensions its cuts project onto —
+the [enabled state subset](/math/cut-management#cut-dimension-the-enabled-state-subset)
+of methodology §2.
+
+| Field         | Type    | Default | Description |
+| ------------- | ------- | ------- | ----------- |
+| `storage`     | boolean | `true`  | Project the cuts onto the storage dimensions. |
+| `inflow_lags` | boolean | `false` | Project the cuts onto the inflow-lag dimensions. |
+
+An absent `state_variables` gives the storage-only default,
+`{ "storage": true, "inflow_lags": false }`; an unknown field is rejected at
+load. In-transit buckets and commitment-ring slots are always projected in and
+have no field.
+
+A study that supplies AR coefficients of order above zero
+(`scenarios/inflow_ar_coefficients.parquet`) but has `inflow_lags` set to
+`false` on every study stage, explicitly or by default, draws a
+[`ModelQuality`](/reference/error-codes/#modelquality) validation warning; a
+PAR model estimated from the inflow history never draws it, because the check
+runs on the supplied table before estimation. Either way the lag columns are
+still pinned for the AR dynamics, but no cut carries their coefficients.
+
+```json
+"state_variables": { "storage": true, "inflow_lags": true }
+```
+
+The full `stages[]` entry is listed under
+[`stages.json`](/reference/case-directory-format#stagesjson).

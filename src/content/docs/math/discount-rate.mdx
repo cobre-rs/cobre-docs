@@ -3,6 +3,9 @@ title: Discount Rate Formulation
 description: Discounted Bellman equation, stage-dependent discount factors, the discount applied to the future cost variable θ, cumulative discounting, and lower/upper bound computation with discount.
 ---
 
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+import { Content as DiscountConfigure } from './_impl/_discount.configure.mdx';
+
 ## Purpose
 
 This spec defines how discount rates are incorporated into the Cobre SDDP solver: the discounted Bellman equation, stage-dependent discount factors, effect on the future cost variable $\theta$, cumulative discounting, and the effect on lower/upper bound computation.
@@ -43,44 +46,20 @@ The discount factor $d$ multiplies only the **future cost** $V_{t+1}$, not the i
 - **Immediate cost** $c_t$: Not discounted (incurred "now" at stage $t$)
 - **Future cost** $d \cdot V_{t+1}$: Discounted to present value at stage $t$
 
-This is mathematically equivalent to computing all costs at "time 0" (stage 1) present value, where stage $t$ costs are multiplied by $\prod_{t'=1}^{t-1} d_{t' \to t'+1}$ in the objective. The Bellman formulation above is the recursive form that SDDP exploits.
+This is mathematically equivalent to computing every cost at its stage-1 present value, where stage $t$ costs are multiplied by the cumulative factor $d_{1 \to t}$ of §5. The Bellman formulation above is the recursive form that SDDP exploits.
 :::
 
-## 3 Input Specification
+## 3 Stage Discount Factor
 
-Discount rates are specified as an **annual rate** in `stages.json`, within the `policy_graph` section:
+Each stage $t$ has an annual rate $r_t$: the study's global rate $r_{annual}$, unless the stage declares its own rate. $\Delta t$ is the duration of stage $t$ in years, its whole number of days divided by 365.25.
 
-```json
-{
-  "policy_graph": {
-    "type": "finite_horizon",
-    "annual_discount_rate": 0.06,
-    "transitions": [
-      { "source_id": 0, "target_id": 1, "probability": 1.0 },
-      { "source_id": 1, "target_id": 2, "probability": 1.0 }
-    ]
-  }
-}
-```
+$$
+d_{t \to t+1} = (1 + r_t)^{-\Delta t}
+$$
 
-The system converts the annual rate to a per-transition discount factor based on each stage's duration:
+The rate and the duration are those of the source stage $t$, whose future cost the factor discounts. A zero rate gives $d_{t \to t+1} = 1$.
 
-- Stage duration $\Delta t$ is derived from `end_date - start_date`, expressed in years
-- Transition discount factor: $d_{t \to t+1} = \frac{1}{(1 + r_{annual})^{\Delta t}}$
-- The duration used is that of the **source** stage (the stage whose future cost is being discounted)
-
-A value of `0.0` means no discounting ($d = 1.0$ for all transitions).
-
-Individual transitions may override the global rate:
-
-```json
-{
-  "source_id": 1,
-  "target_id": 2,
-  "probability": 1.0,
-  "annual_discount_rate_override": 0.1
-}
-```
+The rates are set for the study and, optionally, per stage; the Configure tab under [Implementation in Cobre](#implementation-in-cobre) lists the fields.
 
 ## 4 Discount Factor in the Stage Subproblem
 
@@ -96,7 +75,7 @@ $$
 \theta \geq \beta_{0,i} + \sum_{h} \beta^v_{i,h} \cdot v_h + \sum_{h,\ell} \beta^{lag}_{i,h,\ell} \cdot a_{h,\ell} \quad \forall i
 $$
 
-The cut coefficients $(\beta_{0,i}, \beta^v_{i,h}, \beta^{lag}_{i,h,\ell})$ are the **undiscounted** values from the backward pass. Cuts are stored and managed in undiscounted form — the discount factor appears only in the objective coefficient of $\theta$. See [Cut Management](/math/cut-management) for cut generation and aggregation details.
+The cut coefficients $(\beta_{0,i}, \beta^v_{i,h}, \beta^{lag}_{i,h,\ell})$ are the **undiscounted** values from the backward pass. When the study has in-transit water or anticipated thermals, the cut also carries terms on the in-transit buckets and the commitment-ring slots, undiscounted in the same way. Cuts are stored and managed in undiscounted form — the discount factor appears only in the objective coefficient of $\theta$. See [Cut Management](/math/cut-management) for cut generation and aggregation details.
 
 :::note[Why discount on θ, not on cuts]
 Applying the discount factor to the $\theta$ variable rather than scaling each cut individually is simpler and avoids modifying cut coefficients. The mathematical result is identical — if $\theta \geq \beta_0 + \beta^\top x$ and $d \cdot \theta$ appears in the objective, it is equivalent to having $\theta' \geq d \cdot (\beta_0 + \beta^\top x)$ with $\theta'$ in the objective.
@@ -104,19 +83,31 @@ Applying the discount factor to the $\theta$ variable rather than scaling each c
 
 ## 5 Cumulative Discounting
 
-For a path from stage 1 to stage $T$, the cumulative discount factor is:
+The cumulative discount factor of stage $t$ carries a cost incurred at stage $t$ to its present value at stage 1:
 
 $$
-d_{1 \to T} = \prod_{t=1}^{T-1} d_{t \to t+1}
+d_{1 \to t} = \prod_{t'=1}^{t-1} d_{t' \to t'+1}, \qquad d_{1 \to 1} = 1
 $$
 
-The present value at stage 1 of costs incurred at stage $T$ is:
+The present value at stage 1 of a cost $c_t$ incurred at stage $t$ is $d_{1 \to t} \, c_t$.
+
+### Arrow Form and Delivery Discount
+
+For stages $t_1 \le t_2$, the discount from stage $t_2$ back to stage $t_1$ is
 
 $$
-\text{PV}_1[c_T] = d_{1 \to T} \cdot c_T
+d_{t_1 \to t_2} = d_{1 \to t_2} / d_{1 \to t_1}
 $$
 
-where $d_{1 \to 1} = 1$.
+In this arrow form, $d_{t \to t+1}$ is the one-step factor of §3 and $d_{1 \to t}$ the cumulative factor. A cost incurred at stage $t_2$ and charged in the stage-$t_1$ objective is multiplied by $d_{t_1 \to t_2}$. An anticipated thermal's commitment cost is charged at its decision stage and discounted from its delivery stage in this way ([LP Formulation §5c](/math/lp-formulation#objective-contributions)).
+
+### Post-Study Extension
+
+Past the last study stage $T$, the cumulative factor continues over the declared post-study stages, at the global rate $r_{annual}$ on each post-study stage's duration. The horizon is bridged by the last study stage's one-step factor, $d_{1 \to T+1} = d_{1 \to T} \, d_{T \to T+1}$, so the continuation equals the factor a horizon covering the post-study stages would give. [Post-Study Boundary](/math/post-study-boundary) prices deliveries past the horizon with this extended factor.
+
+### Consistency with the Bellman Recursion
+
+Each stage objective multiplies $\theta$ by its one-step factor $d_{t \to t+1}$ (§4), so a cost entered in the stage-$t$ objective reaches stage 1 multiplied by $d_{1 \to t}$ exactly once. A cost charged at stage $t_1$ for stage $t_2$ reaches stage 1 multiplied by $d_{1 \to t_1} \, d_{t_1 \to t_2} = d_{1 \to t_2}$, the cumulative factor of the stage $t_2$ at which it is incurred. Charging it with $d_{1 \to t_2}$ in the stage-$t_1$ objective would discount it twice: it would reach stage 1 multiplied by $d_{1 \to t_1} \, d_{1 \to t_2}$.
 
 ## 6 Lower Bound with Discounting
 
@@ -171,6 +162,14 @@ $$
 This would ensure the value function remains finite: $\lim_{n \to \infty} d_{\text{cycle}}^n \cdot V_t(x) = 0$. Any strictly positive per-cycle discount rate keeps $d_{\text{cycle}} < 1$, so the geometric series of future contributions would converge.
 
 For the complete reserved cyclic-mode formulation — including the season-indexed cut pool, the cut-sharing equation, and the cycle convergence criterion — see [Horizon Modes](/math/horizon-modes).
+
+## Implementation in Cobre
+
+The methodology above defines the stage discount factor and the cumulative discount; the tab below covers how Cobre's software surface configures the rates.
+
+<Tabs>
+  <TabItem label="Configure"><DiscountConfigure /></TabItem>
+</Tabs>
 
 ## Cross-References
 
