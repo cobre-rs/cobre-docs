@@ -164,8 +164,12 @@ where $\rho^{pump}_y$ is the power consumption rate (MW per m³/s).
 
 **Water Balance Impact:**
 
-- Source hydro: $-p_{y,k}$ (water removed)
-- Destination hydro: $+p_{y,k}$ (water added)
+The pumped flow leaves the source plant's reservoir and enters the destination's, converted to volume by the block conversion $\zeta_k = 0.0036\,\tau_k$, with $\tau_k$ the duration of block $k$ in hours:
+
+- On a chronological stage, block $k$: $-\zeta_k \, p_{y,k}$ on the source plant's block-$k$ water balance and $+\zeta_k \, p_{y,k}$ on the destination's.
+- On a parallel stage each plant has one stage row: $-\sum_{k \in \mathcal{K}} \zeta_k \, p_{y,k}$ on the source's and $+\sum_{k \in \mathcal{K}} \zeta_k \, p_{y,k}$ on the destination's.
+
+These are storage-change signs; in the all-terms row of [LP Formulation §4](/math/lp-formulation#4-hydro-water-balance) the same terms appear on the left with the opposite signs.
 
 **Load Balance Impact:**
 

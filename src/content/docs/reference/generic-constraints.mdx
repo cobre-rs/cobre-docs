@@ -231,8 +231,8 @@ parse).
 | -------------------------------- | --------- | ------ | -------------------------------------------------------------------------- |
 | `hydro_storage(id)`              | No        | No     | Stage-level stock                                                        |
 | `hydro_withdrawal(id)`           | No        | No     | Stage-level                                                              |
-| `hydro_evaporation(id[, block])` | Yes       | No     | `None` = block 0 (parallel-mode stage evaporation); **rejected** with `None` in chronological mode with more than one block — a block must be named |
-| `hydro_inflow(id[, block])`      | Yes       | No     | `None` always expands to **one row per block** (upstream releases are per-block columns) — never collapses |
+| `hydro_evaporation(id[, block])` | Yes       | No     | One stage-level quantity on a parallel stage, one per block on a chronological stage; see [block references](#hydro_evaporation-block-references) |
+| `hydro_inflow(id[, block])`      | Yes       | No     | The plant's inflow in the block ([`hydro_inflow`](#hydro_inflow)); `None` expands to **one row per block** — never collapses |
 | `hydro_storage_initial(id[, block])` | Yes (boundary) | No | `Some(k)` = incoming column of block `k`; `None` = stage-initial anchor S⁰ |
 | `hydro_storage_final(id[, block])`   | Yes (boundary) | No | `Some(k)` = outgoing column of block `k`; `None` = stage-final Sᴷ (equal to `hydro_storage`) |
 | `hydro_useful_volume_initial(id[, block])` | Yes (boundary) | No | Same column and block semantics as `hydro_storage_initial`; stands for storage − `reservoir.min_storage_hm3` (see below) |
@@ -270,6 +270,43 @@ same rule. The constraint therefore reads as a quantity above dead storage while
 the LP column keeps the absolute storage value; no extra LP variable is
 created, and the folded endpoints are visible in
 [the resolved echo](#the-resolved-echo).
+
+### `hydro_evaporation` block references
+
+With `K` the number of blocks the stage declares, the generic-constraint check
+rejects a `hydro_evaporation` reference that its stage cannot expose:
+
+- On a parallel stage with two or more blocks, `hydro_evaporation(h)` and
+  `hydro_evaporation(h, 0)` address the one stage-level evaporation, and a block
+  from 1 to `K - 1` is rejected.
+- On a chronological stage with more than one block, a block is required:
+  `hydro_evaporation(h)` is rejected.
+- On a stage with one block, `hydro_evaporation(h)` and `hydro_evaporation(h, 0)`
+  both address the single block, including on a chronological stage.
+- A block at or beyond `K` is rejected on every stage, for a storage reference as
+  well.
+- The same check rejects a `hydro_storage_initial`, `hydro_storage_final`,
+  `hydro_useful_volume_initial` or `hydro_useful_volume_final` reference that
+  names an interior block boundary, one between two blocks, on a parallel stage.
+
+The check runs only for a (constraint, stage) pair that has a row in
+`generic_constraint_bounds.parquet`. Each rejection is a `BusinessRuleViolation`;
+the messages are quoted in
+[Error Codes — Per-block generic-constraint references](/reference/error-codes/#per-block-generic-constraint-references).
+
+### `hydro_inflow`
+
+A `hydro_inflow` term reads the plant's inflow in the block, a rate in m³/s: its
+local inflow and the flows diverted into it, the upstream releases credited to
+the block by travel time, the in-transit volume maturing at the stage (as a
+rate), and the water of upstream
+[PreFilling](/math/system-elements#not-yet-commissioned-hydros-prefilling) plants
+passing through. It excludes pumping, the inflow non-negativity slack, the
+plant's own outflows, evaporation and withdrawal. On a parallel stage only the
+duration-weighted stage total matches the water balance; the split across blocks
+is a convention.
+
+Definition: [LP Formulation — Hydro Inflow](/math/lp-formulation#hydro-inflow).
 
 ### `line_exchange(source_bus=, target_bus=)`
 

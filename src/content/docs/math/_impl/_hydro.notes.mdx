@@ -14,10 +14,9 @@ sensitivity is captured separately by the per-plane lateral-flow secant
 
 The 3-D convex hull's upper-envelope facets are corrected by a single
 least-squares $k_{FPHA}$ scalar. That correction scales the **whole affine
-plane** — intercept and both slopes together — not just the intercept; this
-is why it replaces (rather than equals) the retired `kappa` shrink, which
-only touched the intercept and now survives solely on the precomputed input
-path (validated in `(0, 1]`).
+plane** — intercept and both slopes together — not just the intercept, unlike
+the `kappa` factor of precomputed planes, which scales the intercept only and
+is validated in `(0, 1]`; the computed path does not use `kappa`.
 
 ### Run-of-river support
 
@@ -27,6 +26,36 @@ stays non-degenerate, then snapping the resulting `gamma_v` residual to
 exactly `0`. This enforces the correct run-of-river semantics — generation on
 these planes does not vary with storage — and is why run-of-river plants are
 supported on the computed path rather than rejected.
+
+### Computed FPHA without turbine capacity
+
+A plant that requests computed FPHA (`fpha_config.source: "computed"` in any
+of its production-model entries) and declares `max_turbined_m3s` at or below
+`1e-9` is not fitted; it is modelled with zero productivity at every stage
+([§2.6.1](#261-grid-and-cloud) above). The computed-FPHA prerequisites still
+apply: `tailrace`, `hydraulic_losses` and `efficiency` in `hydros.json` and
+geometry rows in `system/hydro_geometry.parquet`; a missing one is a load-time
+error.
+
+A warning names the plant; `cobre validate` and `cobre run` both print it:
+
+{/* capture: cobre validate case 2>&1 | cobre   v0.17.0 | binary: cobre-cli sha256 23916b46 | case: temporary 1dtoy derivative (cobre init --template 1dtoy; system/hydros.json hydro 0: generation.model fpha, generation.max_turbined_m3s and unit_groups[0].max_turbined_m3s 0.0, specific_productivity_mw_per_m3s_per_m 0.0091 added, tailrace polynomial with coefficients [5.0, 0.001] added, hydraulic_losses factor 0.03 added, efficiency constant 0.93 added; system/hydro_production_models.json: the one stage range set to model fpha with fpha_config.source computed, productivity_mw_per_m3s removed; system/hydro_geometry.parquet added with hydro_id [0, 0, 0], volume_hm3 [0, 500, 1000], height_m [100, 110, 120], area_km2 [10, 15, 20], zstd compression; run with NO_COLOR=1) */}
+
+```text
+ WARN hydro UHE1 (id=0) requests computed FPHA but has no turbine capacity (max_turbined_m3s = 0); modeling it with zero productivity
+```
+
+Every MPI rank prepares the production models, so a multi-rank run prints the
+warning once per rank.
+
+The plant counts as constant productivity: in `n_constant` of
+`training/hydro_models.json` and of the Python `hydro_models` summary, and in
+the `constant` count of the CLI `Production:` line. It is absent from
+`n_fpha`, `total_planes` and `fpha_details`, from
+`n_fpha_computed_from_geometry` in `training/model_provenance.json`, and from
+`hydro_models/fpha_hyperplanes.parquet`. Because the export holds no rows for
+this plant, see [Round-trip parquet export](#round-trip-parquet-export) before
+copying the file into `system/`.
 
 ### Fit-quality warning
 
@@ -183,3 +212,10 @@ coefficients are automatically written to
 `system/fpha_hyperplanes.parquet` input. To reuse a prior fit without
 refitting on a subsequent run, copy this output file into `system/` and
 change `source` to `"precomputed"` in `hydro_production_models.json`.
+
+A computed-FPHA plant with no turbine capacity has no rows in that file. Once
+`fpha_hyperplanes.parquet` is in `system/`, every plant on the FPHA model
+needs rows in it, whatever its `source`; otherwise the case is rejected at
+load with `has no FPHA hyperplanes`. Before the copy, switch the no-capacity
+plant to `"constant_productivity"` in both `hydros.json` (`generation.model`)
+and its `hydro_production_models.json` entries.

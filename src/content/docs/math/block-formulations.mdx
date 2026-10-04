@@ -21,21 +21,24 @@ In parallel blocks mode, all blocks within a stage are **independent** — there
 A single water balance constraint spans all blocks:
 
 $$
-v_h = \hat{v}_h + \zeta \left[ a_h + \sum_{k \in \mathcal{K}} w_k \cdot \text{net\_flows}_{h,k} \right]
+v_h = v^{in}_h + \zeta \, (a_h - e_h - r_h) + \sum_{k \in \mathcal{K}} \zeta_k \, \text{net\_flows}_{h,k}
 $$
 
 where:
 
-- $w_k = \tau_k / \sum_{k' \in \mathcal{K}} \tau_{k'}$ is the block weight
-- $\text{net\_flows}_{h,k}$ = inflows from upstream − outflows − evaporation − withdrawal
+- $\zeta_k = 0.0036\,\tau_k = w_k\,\zeta$ is the flow-to-volume conversion of block $k$, with $\tau_k$ the duration of block $k$ in hours and $w_k = \tau_k / \sum_{k' \in \mathcal{K}} \tau_{k'}$ the block weight, so the block conversions sum to the stage conversion, $\sum_{k \in \mathcal{K}} \zeta_k = \zeta$
+- $a_h$ is the stage's realized incremental inflow
+- $e_h$ is the net evaporation: one stage-level value on $(v^{in}_h + v_h)/2$, whatever the block count
+- $r_h$ is the stage-level withdrawal target
+- $\text{net\_flows}_{h,k}$ is the net flow of block $k$: the turbined and spilled release credited from upstream and the flows diverted and pumped in, minus the plant's own turbined, spilled and diverted flow and its pumped-out flow
 
-This formulation assumes the reservoir can freely redistribute water across blocks within the stage.
+This formulation assumes the reservoir can freely redistribute water across blocks within the stage. The canonical row with every term — the in-transit arrivals, the travel-time shares and the withdrawal and inflow slacks — is [LP Formulation §4](/math/lp-formulation#4-hydro-water-balance).
 
 ### 1.2 Characteristics
 
 | Aspect           | Description                                                                  |
 | ---------------- | ---------------------------------------------------------------------------- |
-| LP size          | Smaller (one water balance per hydro)                                        |
+| LP size          | Smaller: one water-balance row per hydro and one evaporation row per evaporating hydro |
 | Storage dynamics | End-of-stage only                                                            |
 | Use case         | Long-term strategic planning                                                 |
 | Configuration    | `block_mode: "parallel"` configured per stage via the `block_mode` parameter |
@@ -52,23 +55,25 @@ In chronological blocks mode, blocks are **sequential** within each stage, enabl
 
 The end-of-stage storage (state variable) is: $v_h = v_{h,|\mathcal{K}|}$
 
-### 2.2 Block 1 Water Balance
+### 2.2 Block Water Balance
+
+For every block $k \in \mathcal{K}$, with $v_{h,0} = v^{in}_h$ (the incoming storage, pinned at $\hat{v}_h$):
 
 $$
-v_{h,1} = \hat{v}_h + \zeta_1 \left[ a_h \cdot w_1 + \text{net\_flows}_{h,1} \right]
+v_{h,k} = v_{h,k-1} + \zeta_k \, \big( a_h - e_{h,k} - r_h + \text{net\_flows}_{h,k} \big)
 $$
 
-where $\zeta_1 = 0.0036 \times \tau_1$ is the time conversion for block 1.
+Block $k$ receives $\zeta_k\,a_h = w_k\,\zeta\,a_h$ of the stage's inflow and the share $w_k \zeta \sigma_{m(t)} \varepsilon_t$ of its innovation. Each block chains its storage from the previous block's end storage $v_{h,k-1}$, so the per-block boundaries $v_{h,0} = \hat{v}_h, v_{h,1}, \ldots, v_{h,|\mathcal{K}|}$ form a within-stage storage trajectory.
 
-### 2.3 Subsequent Blocks Water Balance
+### 2.3 Summing the Block Rows
 
-For $k = 2, \ldots, |\mathcal{K}|$:
+Summing the block rows over $k \in \mathcal{K}$ gives:
 
 $$
-v_{h,k} = v_{h,k-1} + \zeta_k \left[ a_h \cdot w_k + \text{net\_flows}_{h,k} \right]
+v_h = v^{in}_h + \zeta \, (a_h - r_h) - \sum_{k \in \mathcal{K}} \zeta_k \, e_{h,k} + \sum_{k \in \mathcal{K}} \zeta_k \, \text{net\_flows}_{h,k}
 $$
 
-Each block chains its storage from the previous block's end storage $v_{h,k-1}$, so the per-block boundaries $v_{h,0} = \hat{v}_h, v_{h,1}, \ldots, v_{h,|\mathcal{K}|}$ form a within-stage storage trajectory.
+This is the §1.1 row with the per-block evaporation $\sum_{k \in \mathcal{K}} \zeta_k\,e_{h,k}$ in place of $\zeta\,e_h$ and, on a travel-time arc, per-block same-stage shares of the upstream release (see [LP Formulation, Summing the Block Rows](/math/lp-formulation#summing-the-block-rows)).
 
 :::note[Pre-commissioning hydros]
 A hydro that has not yet entered service freezes each block's storage identity in chronological mode — $v_{h,k} - v_{h,k-1} = 0$ for every block — holding storage constant while the site does not yet exist. See [system elements](/math/system-elements) for the full commissioning lifecycle.
@@ -77,6 +82,8 @@ A hydro that has not yet entered service freezes each block's storage identity i
 ### 2.4 Per-Block Production and Evaporation
 
 Each block's hydro production (FPHA) and evaporation are evaluated on **that block's own average storage** $(v_{h,k-1} + v_{h,k})/2$, rather than the single stage-average storage that parallel mode shares across all blocks. A storage-dependent production or evaporation coefficient $\gamma_v$ therefore enters the block-$k$ constraint as $-\gamma_v/2$ on **both** bounding storage columns $v_{h,k-1}$ and $v_{h,k}$, so the block sees the mean of its entry and exit storage. This lets a chronological stage capture the head and evaporative-area variation that tracks the within-stage storage trajectory.
+
+On a parallel stage the plant keeps one stage-level evaporation on $(v^{in}_h + v_h)/2$ whatever its block count; per-block evaporation exists only on a chronological stage.
 
 ### 2.5 State Variable Definition
 
@@ -105,7 +112,7 @@ By the LP envelope theorem, this reduced cost automatically captures all downstr
 
 | Aspect           | Description                                                                       |
 | ---------------- | --------------------------------------------------------------------------------- |
-| LP size          | Larger ($N_{hydro} \times (\lvert\mathcal{K}\rvert - 1)$ additional vars/cons)    |
+| LP size          | Larger: $N_{hydro} \times (\lvert\mathcal{K}\rvert - 1)$ more storage columns and water-balance rows, and $\lvert\mathcal{K}\rvert$ evaporation rows (each with its evaporation column and two slack columns) per evaporating hydro instead of one |
 | Storage dynamics | Intra-stage cycling modeled                                                       |
 | Use case         | Short-term planning with storage cycling                                          |
 | Configuration    | `block_mode: "chronological"` configured per stage via the `block_mode` parameter |

@@ -45,7 +45,7 @@ These provide slack for physical or operational constraints that may be impossib
 
 | Penalty                  | Symbol       | Units       | Violated Constraint                                      |
 | ------------------------ | ------------ | ----------- | -------------------------------------------------------- |
-| Storage below minimum    | $c^{sv-}_h$  | \$/hm³      | $v_h \geq \underline{V}_h$                               |
+| Storage below minimum    | $c^{sv-}_h$  | \$/hm³      | $v_h \geq \underline{V}_h$ (filling hydro, from its entry stage) |
 | Filling target shortfall | $c^{fill}_h$ | \$/hm³      | $v_h \geq V^{\text{target}}_t$ (per-stage filling floor) |
 | Turbined flow minimum    | $c^{tv-}_h$  | \$/(m³/s·h) | $q_{h,b,k} \geq \underline{Q}_{h,b}$ (per cell)          |
 | Outflow minimum          | $c^{ov-}_h$  | \$/(m³/s·h) | $o_{h,k} \geq \underline{O}_h$                           |
@@ -82,7 +82,7 @@ $$
 
 with the filling-target penalty pinned **below deficit** on a separate rung: $c^{def} > c^{fill}$.
 
-1. **Storage violation** ($c^{sv-}$): Highest penalty — reservoir below dead volume risks dam safety, so it must exceed deficit
+1. **Storage violation** ($c^{sv-}$): Highest penalty — it prices the soft dead-volume floor of a filling hydro once it operates (every other operating hydro's dead volume is a hard bound), so it must exceed deficit
 2. **Deficit** ($c^{def}$): Value of lost load; exceeds any generation cost
 3. **Constraint violations** ($c^{tv-}$, $c^{ov\pm}$, $c^{gv-}$, $c^{ev\pm}$, $c^{wv\pm}$): Exceed typical marginal cost but allow violation when physically necessary
 4. **Resource costs** ($c^{th}$, $c^{ctr}$): Market-based or fuel-based
@@ -148,7 +148,7 @@ $$
 $$
 
 :::note[Note on storage violation penalties]
-Storage violation penalties ($\sigma^{v-}_h$, $\sigma^{fill}_h$) are **not** multiplied by $\tau_k$ because they apply to end-of-stage storage (hm³), not to per-block flow rates. All other penalty terms are per-block and carry the $\tau_k$ weighting. Contract prices $c^{ctr}_c$ are positive for imports and negative for exports, so a single sum handles both.
+Storage violation penalties ($\sigma^{v-}_h$, $\sigma^{fill}_h$) are **not** multiplied by $\tau_k$ because they apply to end-of-stage storage (hm³), not to per-block flow rates. All other penalty terms are per-block and carry the $\tau_k$ weighting. Contract prices $c^{ctr}_c$ are positive for imports and negative for exports, so a single sum handles both. $\sigma^{v-}_h$ exists only for a filling hydro from its entry stage on and $\sigma^{fill}_h$ only during its filling window; for every other hydro both are absent.
 :::
 
 ## 3. Load Balance Constraint
@@ -180,45 +180,89 @@ For the physical meaning of each element in the balance, see [system elements](/
 
 ## 4. Hydro Water Balance
 
-For each hydro $h \in \mathcal{H}$ (parallel blocks formulation):
+Every hydro $h \in \mathcal{H}$ has one water-balance row on a parallel stage and one per block on a chronological stage ([Block Formulations](/math/block-formulations)); every LP variable is on the left-hand side.
+
+### Parallel-Stage Row
 
 $$
-v_h = v^{in}_h + b^{\mathrm{in}}_{h,1} + \zeta \Bigg[ a_h + \sum_{k \in \mathcal{K}} w_k \Big(
-  \underbrace{\sum_{h' \in \mathcal{U}_h} (q_{h',k} + s_{h',k} + u_{h',k})}_{\text{Inflow from upstream}}
-  + \underbrace{\sum_{h': \text{div}=h} u_{h',k}}_{\text{Diverted inflow}}
-  + \underbrace{\sum_{y: \text{dest}=h} p_{y,k}}_{\text{Pumped inflow}}
+\begin{aligned}
+& v_h - v^{in}_h - b^{\mathrm{in}}_{h,1}
+  - \zeta \big( z_h + \sigma^{inf}_h + \sigma^{w-}_h - \sigma^{w+}_h - e_h \big) \\
+& \quad + \sum_{k \in \mathcal{K}} \zeta_k \Big( q_{h,k} + s_{h,k} + u_{h,k}
+  - \sum_{h' \in \mathcal{U}_h} \nu_{h',t,0} \, (q_{h',k} + s_{h',k})
+  - \sum_{h':\,\text{div}=h} u_{h',k} \\
+& \qquad + \sum_{y:\,\text{src}=h} p_{y,k} - \sum_{y:\,\text{dest}=h} p_{y,k} \Big) = -\zeta \, r_h
+\end{aligned}
 $$
 
+### Chronological-Stage Rows
+
+For each block $k \in \mathcal{K}$, with $v_{h,0} = v^{in}_h$ and $v_{h,\lvert\mathcal{K}\rvert} = v_h$:
+
 $$
-  - \underbrace{q_{h,k} - s_{h,k} - u_{h,k}}_{\text{Outflows}}
-  - \underbrace{e_{h,k}}_{\text{Evaporation}}
-  - \underbrace{\sum_{y: \text{src}=h} p_{y,k}}_{\text{Pumped outflow}}
-\Big) - \underbrace{r_h}_{\text{Withdrawal (signed target)}} \Bigg]
+\begin{aligned}
+& v_{h,k} - v_{h,k-1} - \phi_{h,k} \, b^{\mathrm{in}}_{h,1}
+  - \zeta_k \big( z_h + \sigma^{inf}_h + \sigma^{w-}_h - \sigma^{w+}_h - e_{h,k} \big)
+  + \zeta_k \big( q_{h,k} + s_{h,k} + u_{h,k} \big) \\
+& \quad - \sum_{h' \in \mathcal{U}_h} \sum_{k' \le k} \nu^{k' \to k}_{h',t} \, \zeta_{k'} \, (q_{h',k'} + s_{h',k'})
+  - \zeta_k \sum_{h':\,\text{div}=h} u_{h',k}
+  + \zeta_k \Big( \sum_{y:\,\text{src}=h} p_{y,k} - \sum_{y:\,\text{dest}=h} p_{y,k} \Big) = -\zeta_k \, r_h
+\end{aligned}
 $$
 
-where:
+### Row Terms
 
-- $v^{in}_h$ = incoming storage LP variable, pinned to the previous stage's value via column bounds (§4a)
-- $b^{\mathrm{in}}_{h,1}$ = in-transit volume maturing at the current stage on a declared travel-time arc into $h$ (hm³), added directly as a stage-level inflow (already a volume, so it sits **outside** the $\zeta$ conversion). When a cascade arc carries a travel time, the upstream release is delayed through this term instead of entering the same-stage upstream inflow sum above; see §5d. Absent (zero) for instantaneous arcs
-- $q_{h,k} = \sum_{b \in \mathcal{B}_h} q_{h,b,k}$ = the plant's total turbined flow, summed over its (hydro, bus) cells (§3). Each cell's own column $q_{h,b,k}$ is bounded independently (§8) and, for an FPHA hydro, feeds that cell's own generation constraint (§6); storage, spillage, diversion, and inflow stay single per-plant quantities regardless of cell count. A single-cell plant has $q_{h,k} \equiv q_{h,b,k}$
-- $a_h$ = incremental inflow (from AR model, see [PAR(p) inflow model](/math/par-inflow-model)); equivalently $z_h$ from the z-inflow constraint (§5b)
-- $r_h$ = water withdrawal target (m³/s), a **signed fixed RHS parameter** from `water_withdrawal_m3s` (not a per-block LP decision variable). $r_h > 0$ schedules a consumptive removal; $r_h < 0$ schedules an inter-basin return/addition that adds water to the reservoir. The realized withdrawal removed from the reservoir is $R_h = r_h - \sigma^{w-}_h + \sigma^{w+}_h$; see §9 for the slack bounds that prevent the realized flow from flipping sign. Withdrawal is applied at the stage level, outside the per-block summation. Matches [notation conventions §3.3](/overview/notation-conventions#33-hydro-parameters) for $r_h$ and [§4.3](/overview/notation-conventions#43-slack-variables) for $\sigma^{w-}_h, \sigma^{w+}_h$
-- $e_{h,k}$ = signed net evaporation flow (m³/s): positive values represent net evaporative loss subtracted from storage; negative values represent net rainfall input on the lake surface that adds to storage through the same coefficient (the leading $-$ sign on $e_{h,k}$ flips the contribution automatically — see [penalty system §5](/math/penalty-system))
-- $w_k = \tau_k / \sum_{k' \in \mathcal{K}} \tau_{k'}$ = block weight
-- $\zeta = 0.0036 \times \sum_k \tau_k$ = time conversion factor
+- $v_h$ and $v^{in}_h$ = outgoing and incoming storage; $v^{in}_h$ is pinned to the trial value by its column bounds (§4a). On a chronological stage $v_{h,k}$ is the storage at the end of block $k$
+- $b^{\mathrm{in}}_{h,1}$ = in-transit volume maturing at this stage on the travel-time arcs into $h$, in hm³ and therefore outside the conversion (§5d); a chronological stage spreads it over its blocks by the arrival density $\phi_{h,k}$, $\sum_k \phi_{h,k} = 1$. Absent when no travel-time arc enters $h$
+- $z_h = a_h$ = realized incremental inflow (§5b), so block $k$ of a chronological stage receives the share $w_k\,\zeta\,\sigma_{m(t)}\,\varepsilon_t$ of the innovation
+- $\sigma^{inf}_h$ = inflow non-negativity slack, present under the penalty-based methods, which adds water (see [Inflow Non-Negativity](/math/inflow-nonnegativity))
+- $r_h$, $\sigma^{w-}_h$, $\sigma^{w+}_h$ = signed stage-level withdrawal target ($r_h < 0$ adds water) and its stage-level under- and over-delivery slacks; the realized withdrawal is $R_h = r_h - \sigma^{w-}_h + \sigma^{w+}_h$, with the slack caps in §9
+- $e_h$ / $e_{h,k}$ = signed net evaporation of a hydro with an evaporation model (a negative value is net rainfall on the lake and adds water): one stage-level column on a parallel stage of any block count, one per block on a chronological stage, each a bounded column tied to storage by its evaporation row (see [Evaporation Row](#evaporation-row))
+- $q_{h,k} = \sum_{b \in \mathcal{B}_h} q_{h,b,k}$, $s_{h,k}$, $u_{h,k}$ = the plant's own turbined, spilled and diverted flow in block $k$; every (hydro, bus) cell's turbined column carries the same coefficient, and spillage and diversion are single per-plant columns
+- Upstream release: only the turbined and spilled flow of each $h' \in \mathcal{U}_h$ reaches $h$; a plant's diverted flow reaches only its diversion target (the $\text{div}$ sum)
+- $\nu_{h',t,0} = (H_t - \Delta^{tt}_{h'})^+ / H_t$ = same-stage share of the release of $h'$ on a parallel stage, with $H_t$ the duration of stage $t$ and $\Delta^{tt}_{h'}$ the travel time of $h'$'s main cascade arc ($0$ when none is declared, so the share is $1$); the remaining $1 - \nu_{h',t,0}$ is deposited into the in-transit buckets (§5d)
+- $\nu^{k' \to k}_{h',t}$ = within-stage routing share on a chronological stage: the fraction of $h'$'s block-$k'$ release that reaches $h$'s block-$k$ row in the same stage, $k \ge k'$. Without a travel time $\nu^{k \to k}_{h',t} = 1$ and $\nu^{k' \to k}_{h',t} = 0$ for $k' < k$; the rest of the release is deposited into the buckets (§5d)
+- $p_{y,k}$ = pumped flow of station $y$, out of its source plant's row and into its destination plant's row (see [Equipment Formulations](/math/equipment-formulations)); on a parallel stage every block's pumped flow enters the single stage row
+- $\zeta = 0.0036 \sum_{k \in \mathcal{K}} \tau_k$ and $\zeta_k = 0.0036\,\tau_k = w_k\,\zeta$ = stage and block flow-to-volume conversions, with $\tau_k$ the duration of block $k$ in hours and $w_k = \tau_k / \sum_{k' \in \mathcal{K}} \tau_{k'}$ its weight, so $\sum_k \zeta_k = \zeta$
+
+### PreFilling Pass-Through
+
+A PreFilling hydro (see [System Elements](/math/system-elements#not-yet-commissioned-hydros-prefilling) for the phase) has the frozen identity row $v_h - v^{in}_h = 0$, and on a chronological stage $v_{h,k} - v_{h,k-1} = 0$ per block, with right-hand side $0$. Its local inflow $z_h$, the releases of its upstream plants and the flows diverted into it enter the row of the first non-PreFilling plant downstream with the coefficients they would carry on the PreFilling plant's own row ($-\zeta$ on $z_h$ on a parallel stage and $-\zeta_k$ on each block row of a chronological stage, $-\zeta_k$ on every block-$k$ flow) and no travel-time share, and its withdrawal target moves to that plant's right-hand side. With no such plant downstream the water leaves the system.
+
+### Summing the Block Rows
+
+Summing a chronological stage's block rows over $k \in \mathcal{K}$ telescopes the storage terms to $v_h - v^{in}_h$, returns $b^{\mathrm{in}}_{h,1}$ ($\sum_k \phi_{h,k} = 1$), and returns the parallel coefficients of $z_h$, $\sigma^{inf}_h$, $\sigma^{w-}_h$, $\sigma^{w+}_h$ and the right-hand side ($\sum_k \zeta_k = \zeta$); the per-block flows keep their $\zeta_k$. The sum has the parallel row's form with two mode differences: $\sum_k \zeta_k\,e_{h,k}$ in place of $\zeta\,e_h$, and each upstream block-$k'$ release carrying its own same-stage share $\sum_{k \ge k'} \nu^{k' \to k}_{h',t}$ in place of $\nu_{h',t,0}$, whose duration-weighted average over $k'$ is $\nu_{h',t,0}$: $\sum_{k' \in \mathcal{K}} w_{k'} \sum_{k \ge k'} \nu^{k' \to k}_{h',t} = \nu_{h',t,0}$. With one block, or no travel time on the arc, the shares coincide.
 
 :::note[Dimensional Consistency]
 (see [Variable Units Convention](/math/system-elements)):
 
-- LHS: $v_h$ [hm³]
-- RHS: $v^{in}_h$ [hm³] + $\zeta$ [hm³/(m³/s)] × (flow terms [m³/s])
-- The factor $\zeta$ converts all flow rates (m³/s) to volumes (hm³) accumulated over the stage
-- Block weights $w_k$ are dimensionless and sum to 1
-- The AR inflow $a_h$ is in m³/s (average rate over the stage)
-- All flow decision variables use rate units (m³/s) — the conversion to volume happens only through $\zeta$ in this constraint
-  :::
+- Storage ($v_h$, $v^{in}_h$, $v_{h,k}$) and $b^{\mathrm{in}}_{h,1}$ are in hm³
+- $\zeta$ and $\zeta_k$ are in hm³/(m³/s)
+- Every flow, every slack and $r_h$ are in m³/s
+- The conversion to volume happens only through $\zeta$ and $\zeta_k$
+:::
 
-**Dual variable**: $\pi^{wb}_h$ (water value — captures the marginal value of incoming storage as seen through the hydro balance, but is **not** used directly as a cut coefficient; the cut coefficient comes from the reduced cost of the pinned incoming-storage column, see §4a and [cut management](/math/cut-management))
+**Dual variable**: $\pi^{wb}_h$ for the parallel row; on a chronological stage each block row has its own dual $\pi^{wb}_{h,k}$ (water value — captures the marginal value of incoming storage as seen through the hydro balance, but is **not** used directly as a cut coefficient; the cut coefficient comes from the reduced cost of the pinned incoming-storage column, see §4a and [cut management](/math/cut-management))
+
+### Evaporation Row
+
+Every hydro with an evaporation model has an evaporation row that ties its net evaporation to storage. A parallel stage, of any block count, has one row per such hydro, on the stage's incoming and outgoing storage:
+
+$$
+e_h - \tfrac{\gamma^{ev}_{v,h}}{2} \, \big( v^{in}_h + v_h \big) - \sigma^{e+}_h + \sigma^{e-}_h = \gamma^{ev}_{0,h}
+$$
+
+A chronological stage has one row per block $k \in \mathcal{K}$, on the block's own storages, with $v_{h,0} = v^{in}_h$ and $v_{h,\lvert\mathcal{K}\rvert} = v_h$:
+
+$$
+e_{h,k} - \tfrac{\gamma^{ev}_{v,h}}{2} \, \big( v_{h,k-1} + v_{h,k} \big) - \sigma^{e+}_{h,k} + \sigma^{e-}_{h,k} = \gamma^{ev}_{0,h}
+$$
+
+- $\gamma^{ev}_{v,h}$ and $\gamma^{ev}_{0,h}$ = slope and intercept, at a reference volume, of the tangent of the evaporation flux of $h$: the evaporation coefficient of the stage's calendar month times the reservoir surface area from its area–volume curve, converted to a monthly-average rate in m³/s. Both are recomputed at every stage; the row's target is the tangent evaluated at the average of the two storages the row reads. The flux, and so $e_h$ or $e_{h,k}$, can be negative (net rainfall on the lake)
+- $e_h$ / $e_{h,k}$ = net evaporation (Row Terms above), bounded symmetrically about zero by a fixed safety margin times $\lvert \gamma^{ev}_{0,h} + \gamma^{ev}_{v,h} \bar{V}_h \rvert$, the magnitude of the target at the maximum storage $\bar{V}_h$, recomputed at every stage; it is not a free column. It enters the parallel water-balance row as $\zeta \, e_h$ and the block-$k$ row of a chronological stage as $\zeta_k \, e_{h,k}$
+- $\sigma^{e+}_h$ / $\sigma^{e+}_{h,k}$ and $\sigma^{e-}_h$ / $\sigma^{e-}_{h,k}$ = evaporation above and below the target, priced at $c^{ev+}_h$ and $c^{ev-}_h$: the row sets the evaporation to the target plus $\sigma^{e+}$ minus $\sigma^{e-}$. On a parallel stage the one pair is priced over the stage hours $H_t$, on a chronological stage each block's pair over its duration $\tau_k$ (§9)
+
+With one block the parallel and chronological forms coincide, rows and pricing alike. A PreFilling hydro has no evaporation row.
 
 ## 4a. Incoming-Storage Pinning
 
@@ -459,7 +503,7 @@ Equivalently, $b^{\mathrm{in}}_{h,1}$ is a stage-level inflow added to the reser
 
 Under the parallel-blocks formulation the maturing bucket is a single stage-level entry. Under the [chronological-blocks formulation](/math/block-formulations), the same volume is delivered across the arrival stage's own blocks, weighted by a fixed **arrival density** $\phi_{h,k} \ge 0$ with $\sum_k \phi_{h,k} = 1$, resolved against the arrival stage's block partition. The arrival density is a single fixed split per maturing bucket — it does not depend on which source block released the water, an accepted modeling bound when the release and arrival stages partition their hours differently.
 
-Once a travel-time arc is declared for an upstream plant, that plant's release no longer enters the downstream water balance as the same-stage upstream term of §4; it is routed into the buckets at release and re-enters only as this delayed-arrival term at maturity.
+On a declared travel-time arc the share $\nu_{h',t,0}$ of each release ($\nu^{k' \to k}_{h',t}$ on a chronological stage) reaches the downstream row in the release stage (§4); the remaining share is deposited into the buckets at release and reaches the downstream plant as this delayed-arrival term at maturity.
 
 ### Ring advance (DeliveryRing)
 
@@ -469,7 +513,7 @@ $$
 b^{\mathrm{out}}_{h,d} \equiv b^{\mathrm{in}}_{h,d+1}
 $$
 
-(one row per interior slot), together with the cross-stage identity that carries the outgoing state into the next stage's incoming state — never an out-of-LP shift. The outgoing bucket state $b^{\mathrm{out}}_{h,d}$ is resolved by identity — it is a genuine LP column, part of $n_{\text{state}}$ — and its freshest slots receive the current stage's upstream releases through per-arc **deposit** entries: each release, scaled by the fraction of it maturing at each reachable lag, is written into the corresponding outgoing bucket slots. This is the direct analogue of the anticipated ring's decision-write, reusing the same skeleton.
+(one row per interior slot), together with the cross-stage identity that carries the outgoing state into the next stage's incoming state — never an out-of-LP shift. The outgoing bucket state $b^{\mathrm{out}}_{h,d}$ is resolved by identity — it is a genuine LP column, part of $n_{\text{state}}$ — and its freshest slots receive the current stage's upstream releases through per-arc **deposit** entries: each release, scaled by the fraction of it maturing at each reachable lag (these fractions sum to $1 - \nu_{h',t,0}$, §4), is written into the corresponding outgoing bucket slots. This is the direct analogue of the anticipated ring's decision-write, reusing the same skeleton.
 
 ### Cut coefficient
 
@@ -555,10 +599,10 @@ $$
 ### Storage Bounds (per hydro $h$)
 
 $$
-\underline{V}_h - \sigma^{v-}_h \leq v_h \leq \bar{V}_h
+\underline{V}_h \leq v_h \leq \bar{V}_h
 $$
 
-The lower bound (dead volume) is soft — the slack $\sigma^{v-}_h$ has a very high penalty above deficit cost. The upper bound (reservoir capacity) is hard; excess water is handled by emergency spillage. During the filling period, this $\underline{V}_h$ lower bound is inactive (storage can be anywhere in $[0, \bar{V}_h]$); the per-stage filling floor below takes its place.
+The dead volume $\underline{V}_h$ is a hard lower bound for every hydro except two cases: a hydro with a filling configuration has a floor of $0$ in every phase, the per-stage filling floor below taking its place while it fills, and from its entry stage on the dead volume returns as the soft floor $v_h + \sigma^{v-}_h \geq \underline{V}_h$, the only storage-below-minimum slack of the LP, priced above deficit; a hydro without a filling configuration has a floor of $0$ while PreFilling, where its frozen identity (§4) holds the storage at its incoming value. On a chronological stage the block-end storages $v_{h,k}$ carry the same column bounds, and the soft floor applies to the end-of-stage storage $v_h$ only. The upper bound is hard; excess water leaves through spillage.
 
 **Filling floors** (for filling hydros, at every stage $t \in [\text{start\_stage\_id}, \text{entry\_stage\_id})$):
 
@@ -569,7 +613,7 @@ V^{\text{target}}_t = \min\!\Big( V^{\text{target}}_{t+1} - \zeta_{t+1}\,\text{r
 \quad V^{\text{target}}_{L} = \underline{V}_h
 $$
 
-The minimum end-of-stage storage $V^{\text{target}}_t$ ramps up at the configured accumulation rate `filling_min_rate_m3s` (= $\text{rate}_t$) and reaches the dead volume $\underline{V}_h$ at the last filling stage $L = \text{entry\_stage\_id} - 1$; $\zeta_t$ converts the rate over the stage duration into hm³. The slack $\sigma^{fill}_h$ is priced at $c^{fill}_h$, which is pinned **below deficit** (not the system maximum). This replaces the earlier single terminal constraint at `entry_stage_id - 1`. See [Penalty System §6](/math/penalty-system).
+The minimum end-of-stage storage $V^{\text{target}}_t$ ramps up at the configured accumulation rate `filling_min_rate_m3s` (= $\text{rate}_t$) and reaches the dead volume $\underline{V}_h$ at the last filling stage $L = \text{entry\_stage\_id} - 1$; $\zeta_t$ converts the rate over the stage duration into hm³. The slack $\sigma^{fill}_h$ is priced at $c^{fill}_h$, which is pinned **below deficit** (not the system maximum). See [Penalty System §6](/math/penalty-system).
 
 ### Turbined Flow Bounds (per cell $(h, b)$, block $k$)
 
@@ -608,17 +652,20 @@ The per-block constraint violation penalties in the objective (referenced from �
 $$
 \sum_{k \in \mathcal{K}} \tau_k \sum_{h \in \mathcal{H}} \Big[
   c^{tv-}_h \sum_{b \in \mathcal{B}_h} \sigma^{q-}_{h,b,k} + c^{ov-}_h \sigma^{o-}_{h,k} + c^{ov+}_h \sigma^{o+}_{h,k} + c^{gv-}_h \sum_{b \in \mathcal{B}_h} \sigma^{g-}_{h,b,k}
-  + c^{ev+}_h \sigma^{e+}_{h,k} + c^{ev-}_h \sigma^{e-}_{h,k}
 \Big]
 $$
 
-The turbined- and generation-minimum slacks are **per cell** — each of a split plant's cells carries its own slack column and its own row, priced at the plant's penalty at full magnitude, never divided across cells. The outflow and evaporation slacks stay per-plant: outflow has no per-cell column to attribute a floor to.
+The turbined- and generation-minimum slacks are **per cell** — each of a split plant's cells carries its own slack column and its own row, priced at the plant's penalty at full magnitude, never divided across cells. The outflow slacks stay per plant: outflow has no per-cell column to attribute a floor to. The evaporation slacks are per plant too, stage-level on a parallel stage and per block on a chronological stage ([Evaporation Row](#evaporation-row)).
 
 $$
 + \sum_{h \in \mathcal{H}} H_t \cdot \bigl(c^{wv-}_h \sigma^{w-}_h + c^{wv+}_h \sigma^{w+}_h\bigr)
 $$
 
-where $H_t = \sum_k \tau_k$ is the total stage duration in hours. Withdrawal violation slacks ($\sigma^{w-}_h$, $\sigma^{w+}_h$) are stage-level (not per-block) and bidirectional: $\sigma^{w-}_h$ penalizes under-delivery (the realized withdrawal $R_h = r_h - \sigma^{w-}_h + \sigma^{w+}_h$ falls short of the target), and $\sigma^{w+}_h$ penalizes over-delivery. The **withdrawal target $r_h$ is signed** (§4), and the slack bounds ensure the realized withdrawal cannot flip sign relative to the target:
+$$
++ \sum_{h \in \mathcal{H}} H_t \cdot \bigl(c^{ev+}_h \sigma^{e+}_h + c^{ev-}_h \sigma^{e-}_h\bigr) \;\; \text{(parallel stage)}, \qquad + \sum_{k \in \mathcal{K}} \tau_k \sum_{h \in \mathcal{H}} \bigl(c^{ev+}_h \sigma^{e+}_{h,k} + c^{ev-}_h \sigma^{e-}_{h,k}\bigr) \;\; \text{(chronological stage)}
+$$
+
+where $H_t = \sum_k \tau_k$ is the total stage duration in hours, and the evaporation sums run over the hydros that model evaporation. Withdrawal violation slacks ($\sigma^{w-}_h$, $\sigma^{w+}_h$) are stage-level (not per-block) and bidirectional: $\sigma^{w-}_h$ penalizes under-delivery (the realized withdrawal $R_h = r_h - \sigma^{w-}_h + \sigma^{w+}_h$ falls short of the target), and $\sigma^{w+}_h$ penalizes over-delivery. The **withdrawal target $r_h$ is signed** (§4), and the slack bounds ensure the realized withdrawal cannot flip sign relative to the target:
 
 - $r_h > 0$ (scheduled removal): $\sigma^{w-}_h \leq r_h$ (under-delivery slack capped at the target magnitude; floors $R_h \geq 0$), $\sigma^{w+}_h$ unbounded.
 - $r_h < 0$ (scheduled inter-basin return/addition): $\sigma^{w+}_h \leq |r_h|$ (over-delivery slack capped at $|r_h|$; caps $R_h \leq 0$), $\sigma^{w-}_h$ unbounded.
@@ -689,9 +736,33 @@ A constraint may optionally carry a slack, penalized per unit of violation, so t
 
 The reported violation is the **signed net** $\sigma^{gc+}_g - \sigma^{gc-}_g$: positive when the row sits below its floor, negative when it sits above its cap, matching the sign of the underlying deviation rather than reading as an unsigned magnitude. The objective charges both columns, $\sigma^{gc+}_g + \sigma^{gc-}_g$, which coincides with the net's magnitude whenever only one direction is active — the case at any optimum, since paying for both directions on the same row at once is strictly dominated by paying for neither of the excess.
 
-**Row materialization**: a constraint bound declared with `block_id = None` over a **block-independent** expression — one whose every term references a stock variable (incoming storage $v^{in}_h$, outgoing storage $v_h$, evaporation outflow $e_{h,k}$ collapsed to its stage average, or an anticipated-thermal commitment) — is materialized as a **single stage-level row** priced by the total stage hours $H_t$, since per-block rows would be identical, **provided its endpoints are block-independent too**: an endpoint drawn from the per-(stage, block) parameter kind above varies within the stage, which forces the per-block row set even when the expression alone would otherwise qualify for the collapse. A `block_id = None` bound on a block-level expression, or any `block_id = Some(k)` bound, still produces one row per relevant block. This is an LP row-count optimization that is cost- and parity-neutral.
+**Row materialization**: a constraint bound declared with `block_id = None` over a **block-independent** expression — one whose every term references a stock variable (incoming storage $v^{in}_h$, outgoing storage $v_h$, evaporation (the stage-level $e_h$ on a parallel stage, a named block's $e_{h,k}$ on a chronological stage), or an anticipated-thermal commitment) — is materialized as a **single stage-level row** priced by the total stage hours $H_t$, since per-block rows would be identical, **provided its endpoints are block-independent too**: an endpoint drawn from the per-(stage, block) parameter kind above varies within the stage, which forces the per-block row set even when the expression alone would otherwise qualify for the collapse. A `block_id = None` bound on a block-level expression, or any `block_id = Some(k)` bound, still produces one row per relevant block. This is an LP row-count optimization that is cost- and parity-neutral.
 
 See [Generic Constraints](/reference/generic-constraints) for the authoring grammar, the activation grid, and the per-file field tables this formulation implements.
+
+### Hydro Inflow
+
+A `hydro_inflow` term reads the inflow $I_{h,k}$ of hydro $h$ in block $k$, a rate in m³/s built from LP columns:
+
+$$
+I_{h,k} = z_h + \sum_{h':\,\text{div}=h} u_{h',k} + \sum_{h' \in \mathcal{U}_h} o^{arr}_{h' \to h,k} + \frac{\phi_{h,k}}{\zeta_k} \, b^{\mathrm{in}}_{h,1} + \sum_{h' \in \mathcal{U}^{pre}_h(t)} \Big( z_{h'} + \sum_{h'':\,\text{div}=h'} u_{h'',k} + \sum_{h'' \in \mathcal{U}_{h'}} o_{h'',k} \Big)
+$$
+
+Each upstream release is credited to block $k$ by the travel time of its arc:
+
+$$
+o^{arr}_{h' \to h,k} = \begin{cases} o_{h',k} & \text{arc without a travel time} \\ \nu_{h',t,0} \, o_{h',k} & \text{travel-time arc, parallel stage} \\ \sum_{k' \le k} \nu^{k' \to k}_{h',t} \, \dfrac{\zeta_{k'}}{\zeta_k} \, o_{h',k'} & \text{travel-time arc, chronological stage} \end{cases}
+$$
+
+- $o_{h',k} = q_{h',k} + s_{h',k}$ = turbined plus spilled outflow of $h'$ (§7), credited with the same-stage share $\nu_{h',t,0}$ or the within-stage shares $\nu^{k' \to k}_{h',t}$ of §4
+- $\phi_{h,k}$ = arrival density of §5d on a chronological stage and $\tau_k / H_t$ on a parallel stage: the share of the maturing in-transit volume $b^{\mathrm{in}}_{h,1}$ that arrives in block $k$, which the division by $\zeta_k$ turns into a rate
+- $\mathcal{U}^{pre}_h(t)$ = PreFilling plants at stage $t$ whose first non-PreFilling downstream plant is $h$ (see [PreFilling Pass-Through](#prefilling-pass-through)); the local inflow of each, the flows diverted into it and the releases of its upstream plants enter whole, with no travel-time share
+
+The term excludes pumping, the inflow non-negativity slack, the plant's own outflows, evaporation and withdrawal.
+
+For a hydro that is not PreFilling at stage $t$, the term mirrors the inflow side of its water balance (§4). On a chronological stage $\zeta_k I_{h,k}$ equals the inflow terms of block $k$'s water-balance row: the local inflow, the flows diverted in, the credited releases, the maturing transit volume and the PreFilling pass-through. On a parallel stage $\sum_{k} \zeta_k I_{h,k}$ equals the same terms of the stage row, and only the duration-weighted stage total matches the balance; the split across blocks is a convention.
+
+$I_{h,k}$ reads per-block columns, so a bound without a block expands to one row per block (see row materialization in [§10](#10-generic-constraints)).
 
 ## 11. Benders Cuts
 

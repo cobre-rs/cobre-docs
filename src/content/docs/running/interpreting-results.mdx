@@ -354,10 +354,12 @@ print(deficit_prob)
 
 ### (d) Water value (shadow price) from hydro output
 
-The `water_value_per_hm3` column in `simulation/hydros/` records the shadow
-price of reservoir storage at each stage — the marginal value of having one
-additional hm³ of stored water. This is the water value, a key output of
-the SDDP policy.
+The `water_value_per_hm3` column in `simulation/hydros/` is the dual of the
+plant's water-balance row, in monetary units per hm³: the change in cost from
+one more hm³ of water in the reservoir. On a parallel stage every block row
+carries the stage row's value; on a chronological stage each block row carries
+its own block's value, so to aggregate a chronological stage weight the blocks
+by their duration (the block hours in `stages.json`).
 
 ```python
 hydros = pl.read_parquet("results/simulation/hydros/")
@@ -370,10 +372,13 @@ water_value = (
 print(water_value)
 ```
 
-A high water value at a given stage means the reservoir is scarce relative
-to expected future demand — the solver is conserving water for later stages.
-A water value near zero means the reservoir is abundant and water has little
-marginal value at that point in time.
+The value is zero or negative wherever one more hm³ lowers the cost, because
+the water displaces thermal generation or deficit now or later; a larger
+magnitude means scarcer water, which the solver conserves for later stages. A
+value near zero means the reservoir is abundant and water has little marginal
+value at that point in time. A positive value appears where extra water can only
+leave the reservoir at a cost, for example through a spillage penalty: one more
+hm³ then raises the cost.
 
 ### (e) Per-bus dispatch for a hydro plant split across buses
 

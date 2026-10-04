@@ -380,22 +380,21 @@ Most plants are in $\mathcal{H}^{op}$. Filling hydros have per-stage target-stor
 | $q_{h,b,k}$  | m³/s  | Turbined flow at cell $(h,b)$ (§ Unit Groups above), block $k$; the plant total $q_{h,k} = \sum_b q_{h,b,k}$ is what enters the water balance |
 | $s_{h,k}$    | m³/s  | Spillage (released without generation), block $k$                      |
 | $u_{h,k}$    | m³/s  | Diversion flow (bypassed to separate channel), block $k$               |
-| $e_{h,k}$    | m³/s  | Evaporation (see note below), block $k$                                |
-| $r_{h,k}$    | m³/s  | Water withdrawal (see note below), block $k$                           |
+| $e_h$ / $e_{h,k}$ | m³/s  | Signed net evaporation, a bounded column tied to storage by its evaporation row: one stage-level $e_h$ on a parallel stage, one per block on a chronological stage |
 | $g_{h,b,k}$  | MW    | Hydro generation at cell $(h,b)$, block $k$; injects at bus $b$ (§ Unit Groups above) |
 | $o_{h,k}$    | m³/s  | Total outflow: $o_{h,k} = q_{h,k} + s_{h,k}$ (downstream channel flow) |
 
 **State variables** ($v_h$ and $a_{h,\ell}$) link stages through the Bellman recursion. The storage $v_h$ tracks reservoir volume and is a true decision variable within each stage (the optimizer chooses its end-of-stage value). The AR lags $a_{h,\ell}$ carry inflow history for the PAR(p) model: they are _state variables_ in the SDDP sense (passed between stages and subject to Benders cuts), but are **fixed at the beginning of each stage** to the realized inflow values — they are not free for the optimizer to choose. All other variables are **control variables** determined within each stage.
 
 :::note[Evaporation and withdrawal]
-$e_{h,k}$ and $r_{h,k}$ are parameter-driven quantities computed from input data (reservoir surface area, withdrawal schedules). They appear in the LP as fixed contributions to the water balance, with slack variables to ensure feasibility when the computed values cannot be physically sustained (e.g., drought reducing available water below the withdrawal commitment).
+Evaporation is a bounded LP column tied to storage by an evaporation row that linearizes the reservoir's surface flux. Withdrawal is the stage-level target $r_h$ on the right-hand side of the water balance; the stage-level slacks $\sigma^{w-}_h$ and $\sigma^{w+}_h$ relax the target when the reservoir cannot sustain it (for example, in a drought). See [LP Formulation §4](/math/lp-formulation#4-hydro-water-balance).
 :::
 
 ### Connections to Other Elements
 
-- **Bus connection**: Each of a plant's cells connects to its own bus for energy delivery; a single-cell plant connects to exactly one bus, as before (§ Unit Groups above)
-- **Cascade topology**: Upstream plants' outflows ($q + s + u$, with $q$ the plant's total turbined flow summed over its cells) become downstream plants' inflows, either instantaneously or, on a declared main-cascade arc, delayed by a **water travel time** (see _Cascade Travel Time_ below)
-- **Diversion targets**: Some plants can divert water to a separate downstream plant (not the immediate cascade successor), bounded by $\bar{U}_h$
+- **Bus connection**: Each of a plant's cells connects to its own bus for energy delivery; a single-cell plant connects to exactly one bus (§ Unit Groups above)
+- **Cascade topology**: Upstream plants' turbined and spilled flow ($q + s$, with $q$ the plant's total turbined flow summed over its cells) becomes the downstream plant's inflow, within the release stage or, on a declared travel-time arc, partly in later stages (see _Cascade Travel Time_ below)
+- **Diversion targets**: Some plants can divert water to a separate downstream plant (not the immediate cascade successor), bounded by $\bar{U}_h$; a plant's diverted flow reaches only its diversion target and is never part of its release to the plant downstream
 - **Pumping stations**: May receive pumped water (increasing storage) or supply water to pumps (decreasing storage)
 
 ### Key Parameters
@@ -410,6 +409,7 @@ $e_{h,k}$ and $r_{h,k}$ are parameter-driven quantities computed from input data
 | $\rho_h$                                         | MW/(m³/s) | Productivity (constant model)                           |
 | $\gamma^m_0, \gamma^m_v, \gamma^m_q, \gamma^m_s$ | —         | FPHA hyperplane coefficients for plane $m$              |
 | $a_h$                                            | m³/s      | Incremental inflow (stochastic, from PAR model)         |
+| $r_h$                                            | m³/s      | Signed water-withdrawal target of the stage (negative = inter-basin return), relaxed by the stage-level slacks $\sigma^{w-}_h$, $\sigma^{w+}_h$ |
 | $\hat{v}_h$, $\hat{a}_{h,\ell}$                  | hm³, m³/s | Incoming state (from previous stage)                    |
 
 ### Water Balance Phenomena
@@ -420,13 +420,17 @@ The reservoir dynamics account for all water flows in and out of the plant:
 | --------------------------------------------- | --------- | --------------------------------------------------------------------------- |
 | $\hat{v}_h$                                   | Initial   | Incoming storage from previous stage                                        |
 | $a_h$                                         | Inflow    | Incremental inflow (lateral catchment, stochastic)                          |
-| $\sum_{h' \in \mathcal{U}_h}(q_{h'} + s_{h'} + u_{h'})$ | Inflow    | Upstream cascade outflows (with travel time delay)                          |
+| $\sum_{h' \in \mathcal{U}_h} \nu_{h',t,0}\,(q_{h'} + s_{h'})$ | Inflow    | Turbined and spilled release of the upstream plants; the share $\nu_{h',t,0}$ (defined in _Cascade Travel Time_ below) arrives in the release stage ($1$ without a travel time) |
+| In-transit arrival                            | Inflow    | Upstream release maturing at this stage after its travel time               |
 | $\sum_{h':\text{div}=h} u_{h'}$                   | Inflow    | Diverted water received from other plants                                   |
 | $\sum_{y:\text{dest}=h} p_y$                  | Inflow    | Pumped water received from pumping stations                                 |
-| $q_h + s_h + u_h$                             | Outflow   | Turbined + spillage + diversion (released downstream)                       |
-| $e_h$                                         | Outflow   | Evaporation (reservoir surface loss; can be negative for net precipitation) |
-| $r_h$                                         | Outflow   | Water withdrawal (consumptive use, removed from system)                     |
+| $q_h + s_h$                                   | Outflow   | Turbined and spilled flow, released to the downstream plant                 |
+| $u_h$                                         | Outflow   | Diverted flow, sent to the diversion target                                 |
+| $e_h$                                         | Outflow   | Evaporation (reservoir surface loss; can be negative for net precipitation; stage-level on a parallel stage, per block on a chronological stage) |
+| $r_h$                                         | Outflow   | Water withdrawal (stage-level target, relaxed by $\sigma^{w-}_h$, $\sigma^{w+}_h$) |
 | $\sum_{y:\text{src}=h} p_y$                   | Outflow   | Pumped water extracted by pumping stations                                  |
+
+The canonical row with every term is [LP Formulation §4](/math/lp-formulation#4-hydro-water-balance).
 
 :::note[Note on outflow]
 Outflow $o_h = q_h + s_h$ is the water released to the downstream channel (affects tailrace level). Withdrawal $r_h$ and diversion $u_h$ exit through different paths and do not affect the main tailrace.
@@ -434,11 +438,11 @@ Outflow $o_h = q_h + s_h$ is the water released to the downstream channel (affec
 
 ### Cascade Travel Time
 
-In a cascade, an upstream plant's outflow ($q + s + u$) becomes a downstream plant's inflow. By default this transfer is **instantaneous** — water released this stage reaches the downstream reservoir within the same stage. When the reach between two plants is long enough that travel is not negligible, a plant may declare a **water travel time** on its main cascade arc, and the release is then delivered to the downstream reservoir a number of stages later instead of immediately.
+In a cascade, an upstream plant's outflow ($q + s$) becomes a downstream plant's inflow. By default this transfer is **instantaneous** — water released this stage reaches the downstream reservoir within the same stage. When the reach between two plants is long enough that travel is not negligible, a plant $h'$ may declare a **water travel time** on its main cascade arc: a release made during stage $t$ delivers the share $\nu_{h',t,0} = (H_t - \Delta^{tt}_{h'})^+ / H_t$ to the downstream reservoir within the stage, with $\Delta^{tt}_{h'}$ the travel time and $H_t$ the stage duration, both in hours, and the rest reaches it in later stages.
 
 Cobre carries the water in transit on such an arc as additional **in-transit state** through the Bellman recursion, discretized into maturity lags — one aggregated in-transit bucket per receiving plant per lag. The bucket maturing at a given stage enters the receiving plant's water balance as a delayed inflow; the remaining in-transit volume is carried forward to later stages. Under the [chronological-blocks formulation](/math/block-formulations) the delayed arrival is spread across the arrival stage's blocks by a fixed density; under parallel blocks it is a single stage-level inflow. Because this is a genuine state augmentation — it changes the state vector and the Benders cuts, exactly as reservoir storage and AR lags do — it is formulated at the LP level in [LP formulation §5d](/math/lp-formulation). Confluent arcs feeding one plant are summed into that plant's single in-transit block.
 
-**Scope.** Travel time applies to the **main cascade arc only** — the arc to `downstream_id`. Diversion and pumping transfers remain instantaneous. A travel time that is absent or zero is treated as an instantaneous transfer, adding no state.
+**Scope.** Travel time applies to the **main cascade arc only** — the arc to `downstream_id`. Diversion and pumping transfers are instantaneous. A travel time that is absent or zero is treated as an instantaneous transfer, adding no state.
 
 **Not-yet-operating downstream.** A release into a downstream plant that has not yet reached operating status — still filling its dead volume, or before its commissioning entry stage — is rejected at load time: the water would arrive at a reservoir that does not yet exist in the dispatch. The receiving plant must be operating over the arrival window.
 
@@ -472,16 +476,16 @@ Several hydro constraints are enforced as **soft constraints** with slack variab
 
 | Constraint                                     | Meaning                                       | Slack Variable        |
 | ---------------------------------------------- | --------------------------------------------- | --------------------- |
-| $v_h \geq \underline{V}_h$                     | Minimum storage (dead volume)                 | $\sigma^{v-}_{h}$     |
+| $v_h \geq \underline{V}_h$ (filling hydro, from its entry stage) | Minimum storage once filled                   | $\sigma^{v-}_{h}$     |
 | $q_{h,b,k} \geq \underline{Q}_{h,b}$ (per cell) | Minimum turbined flow (equipment limits)     | $\sigma^{q-}_{h,b,k}$ |
 | $o_{h,k} \geq \underline{O}_h$                 | Minimum outflow (environmental flow)          | $\sigma^{o-}_{h,k}$   |
 | $o_{h,k} \leq \bar{O}_h$                       | Maximum outflow (flood control)               | $\sigma^{o+}_{h,k}$   |
 | $g_{h,b,k} \geq \underline{G}_{h,b}$ (per cell) | Minimum generation (grid services)           | $\sigma^{g-}_{h,b,k}$ |
-| $e_{h,k}$ feasible                             | Evaporation within physical limits            | $\sigma^{e\pm}_{h,k}$ |
-| $r_{h,k}$ met                                  | Water withdrawal commitment                   | $\sigma^{r}_{h,k}$    |
+| $e_{h,k}$ feasible                             | Evaporation within physical limits            | $\sigma^{e\pm}_{h,k}$ (stage-level on a parallel stage, per block on a chronological stage) |
+| realized withdrawal meets $r_h$                | Water withdrawal commitment                   | $\sigma^{w-}_h$, $\sigma^{w+}_h$ (stage-level) |
 | $v_h \geq V^{\text{target}}_t$ (filling floor) | Per-stage filling target during commissioning | $\sigma^{fill}_{h}$   |
 
-Soft constraints allow the optimizer to violate bounds when physically necessary (e.g., drought conditions preventing minimum outflow), with high penalty costs signaling undesirable operation. Maximum storage ($\bar{V}_h$) is a **hard** physical limit — excess water is handled by emergency spillage, not a slack variable. For the penalty priority ordering and cost magnitudes, see [Penalty System](/math/penalty-system). For the complete constraint formulations, see [equipment formulations](/math/equipment-formulations).
+Soft constraints allow the optimizer to violate bounds when physically necessary (e.g., drought conditions preventing minimum outflow), with high penalty costs signaling undesirable operation. Maximum storage ($\bar{V}_h$) is a **hard** physical limit — excess water is handled by emergency spillage, not a slack variable. The dead volume is a hard bound too, except for a filling hydro once it operates and a plant that is not in service (see [LP formulation §8](/math/lp-formulation#8-variable-bounds-and-minimum-constraints)). For the penalty priority ordering and cost magnitudes, see [Penalty System](/math/penalty-system). For the complete constraint formulations, see [equipment formulations](/math/equipment-formulations).
 
 ### Not-Yet-Commissioned Hydros (PreFilling)
 
@@ -489,7 +493,7 @@ A hydro is **PreFilling** whenever it does not yet exist in the dispatch — a f
 
 - **Turbine, spillage, and diversion are pinned to zero** ($q_{h,k} = s_{h,k} = u_{h,k} = 0$) — a dam that does not yet exist can neither generate nor spill.
 - **Storage is decoupled** by a frozen identity $v_h = v^{in}_h$: the reservoir volume is held constant, injecting no phantom storage and trapping no water.
-- **Natural inflow is passed through** to the first active downstream plant (or the network sink if none), so incremental inflow and upstream releases reach the cascade below without being lost at the un-built site.
+- **Natural inflow is passed through** to the first active downstream plant (or the network sink if none), so incremental inflow, upstream releases and the flows diverted into the plant reach the cascade below without being lost at the un-built site.
 
 The defining contrast with the filling phase below is **spillage**: it is frozen to zero while PreFilling (there is no reservoir to shed from), and becomes a free decision once filling begins.
 
@@ -503,7 +507,7 @@ Cobre models the commissioning of new hydro plants with a **filling period** (`[
 - Outflow is limited to spillage (turbines not operational), with the `outflow_violation_below` slack if environmental flow cannot be met. Spillage is a **free** decision during filling — a real impounding reservoir can shed inflow it cannot yet hold — in contrast to the PreFilling state, where spillage is frozen to zero
 - A **per-stage filling floor** $v_h \geq V^{\text{target}}_t$ requires the reservoir to stay on a minimum-accumulation schedule set by `filling_min_rate_m3s`. The floor ramps up to $\underline{V}_h$ at the last filling stage; its slack $\sigma^{fill}_h$ is priced **below** deficit (a fill schedule is not defended as hard as load serving)
 
-When the plant enters service at `entry_stage_id`, the ordinary soft minimum-storage floor takes over. For the per-stage floor trajectory and the penalty ordering, see [Penalty System](/math/penalty-system).
+When the plant enters service at `entry_stage_id`, its dead volume returns as a soft floor with slack $\sigma^{v-}_h$. For the per-stage floor trajectory and the penalty ordering, see [Penalty System](/math/penalty-system).
 
 ### Role in Objective Function
 
@@ -514,7 +518,7 @@ $$
 - **Spillage cost**: Small regularization to prefer turbining over spilling
 - **FPHA turbined cost**: Regularization applied **only** to hydros using the FPHA production model. Must be > `spillage_cost` for the same plant to prevent interior FPHA solutions. See [Penalty System](/math/penalty-system).
 - **Diversion cost**: Small regularization, typically higher than spillage (water leaves main cascade)
-- **Slack penalties**: High costs for constraint violations — storage below dead volume, outflow violations, generation violations, evaporation violations, water withdrawal shortfall. See [Penalty System](/math/penalty-system) for the full penalty taxonomy and priority ordering.
+- **Slack penalties**: High costs for constraint violations — storage below a filled plant's dead volume, outflow violations, generation violations, evaporation violations, water withdrawal under- or over-delivery. See [Penalty System](/math/penalty-system) for the full penalty taxonomy and priority ordering.
 - **No generation cost**: Hydro generation has zero marginal fuel cost — its "cost" is the opportunity cost of depleting storage, captured through the value function $V_{t+1}(v_h)$
 
 ### LP Constraint Preview
@@ -522,10 +526,10 @@ $$
 **Water balance** (reservoir dynamics):
 
 $$
-v_h = \hat{v}_h + \zeta \cdot \left[ a_h + \sum_{k} w_k \cdot \text{net\_flows}_{h,k} \right]
+v_h = v^{in}_h + \zeta \Big( a_h - e_h - r_h + \sum_{k \in \mathcal{K}} w_k \, \text{net\_flows}_{h,k} \Big)
 $$
 
-where $\text{net\_flows}_{h,k}$ includes all inflow and outflow terms listed above.
+where $\zeta$ is the stage flow-to-volume conversion, $w_k$ the block weight, and $\text{net\_flows}_{h,k}$ the per-block flow terms of [Block Formulations §1.1](/math/block-formulations#11-water-balance-parallel), which also defines these symbols; slacks and in-transit arrivals are omitted here, and the canonical row is [LP Formulation §4](/math/lp-formulation#4-hydro-water-balance).
 
 **AR lag pinning** (inflow history): $a_{h,\ell} = \hat{a}_{h,\ell}$ for all $\ell \in \{1, \ldots, P_h\}$, enforced by equal column bounds (not a constraint row)
 
@@ -649,7 +653,7 @@ Pumping stations do **not** have a direct cost term in the objective function. T
 
 **Flow bounds**: $\underline{P}_y \leq p_{y,k} \leq \bar{P}_y$
 
-**Water balance impact**: Source hydro: $-p_{y,k}$ (water removed); Destination hydro: $+p_{y,k}$ (water added).
+**Water balance impact**: the pumped flow leaves the source plant and enters the destination plant, $\mp\zeta_k \, p_{y,k}$ on each block row of a chronological stage and $\mp\sum_{k \in \mathcal{K}} \zeta_k \, p_{y,k}$ on the single row of a parallel stage (storage-change signs; see [equipment formulations §4](/math/equipment-formulations#4-pumping-stations)).
 
 **Load balance impact** at connected bus: $-\rho^{pump}_y \cdot p_{y,k}$ (power consumed).
 

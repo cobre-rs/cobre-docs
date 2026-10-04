@@ -35,13 +35,13 @@ with:
 
 **Per-stage productivity**: the productivity coefficient is authored **per (hydro, stage)** rather than per plant. A plant can therefore carry a stage-varying constant productivity — useful when the reference head differs between near-term and far-future stages of the same study, or when the constant model is being used as a coarse approximation that needs different operating points across the horizon. Section 5.1 describes how that per-(hydro, stage) value is resolved at load time.
 
-**LP treatment**: 1 equality constraint per hydro per block. The generation variable $g_{h,k}$ is fully determined by $q_{h,k}$ — no free generation variable is needed. Simple and fast, but ignores head variation with storage **within a stage**.
+**LP treatment**: constant productivity adds no generation column and no row: the turbined-flow column of each (hydro, bus) cell (§2.9) enters its bus's load balance with coefficient $\rho_{h,t}$ in every block, so $g_{h,k} = \rho_{h,t} \cdot q_{h,k}$ holds by construction. Simple and fast, but ignores head variation with storage **within a stage**.
 
 **Data requirements**: a per-stage productivity scalar per hydro plant. No geometry or hyperplane data needed.
 
 ## 2. FPHA (Função de Produção Hidrelétrica Aproximada)
 
-For accurate modeling of hydroelectric generation, FPHA (Aproximate Hydropower Production Function) captures the nonlinear relationship between storage, flow, spillage, and generation through a piecewise-linear approximation. The approach follows the piecewise-linear hydro production model of Diniz & Maceira (2008); that model is four-dimensional (forebay/head, turbined flow, and tailrace/spillage), whereas Cobre fits a reduced variant over storage and turbined flow at spillage = 0, capturing the spillage effect through the per-plane lateral-flow secant of §2.7 rather than an explicit spillage axis.
+For accurate modeling of hydroelectric generation, FPHA (Approximate Hydropower Production Function) captures the nonlinear relationship between storage, flow, spillage, and generation through a piecewise-linear approximation. The approach follows the piecewise-linear hydro production model of Diniz & Maceira (2008); that model is four-dimensional (forebay/head, turbined flow, and tailrace/spillage), whereas Cobre fits a reduced variant over storage and turbined flow at spillage = 0, capturing the spillage effect through the per-plane lateral-flow secant of §2.7 rather than an explicit spillage axis.
 
 ### 2.1 Notation Mapping
 
@@ -164,7 +164,7 @@ FPHA plants author $\rho_{esp}$ directly — not a single scalar productivity $\
 
 ### 2.5 FPHA Hyperplanes
 
-The FPHA approximation replaces the nonlinear production function $\phi(v, q, s)$ with a set of $M$ linear hyperplanes that form a **concave outer approximation** of the exact surface. Each hyperplane $m$ defines an upper bound on generation:
+The FPHA approximation replaces the nonlinear production function $\phi(v, q, s)$ with a set of $M$ linear hyperplanes that form a **concave approximation** of the exact surface (outer before the $k_{FPHA}$ correction of §2.6.3). Each hyperplane $m$ defines an upper bound on generation:
 
 $$
 g_{h,k} \leq \gamma_0^m + \gamma_v^m \cdot v_h^{avg} + \gamma_q^m \cdot q_{h,k} + \gamma_s^m \cdot s_{h,k}
@@ -176,7 +176,7 @@ The plane is fitted once per plant (§2.1–§2.8); a plant split across buses e
 
 | Coefficient | Sign | Meaning                                           |
 | ----------- | ---- | ------------------------------------------------- |
-| $\gamma_0$  | > 0  | Intercept (MW at zero storage, flow, spillage)    |
+| $\gamma_0$  | —    | Intercept (MW at zero storage, flow, spillage); its sign is not validated |
 | $\gamma_v$  | ≥ 0  | Higher storage → higher forebay → more generation |
 | $\gamma_q$  | ≥ 0  | More turbined flow → more generation              |
 | $\gamma_s$  | ≤ 0  | More spillage → higher tailrace → less net head   |
@@ -196,13 +196,15 @@ The fitter evaluates the exact production function $\phi = \rho_{esp} \cdot q \c
 
 Each cloud point is capped at the plant's installed capacity $\bar{G}_h$. Spillage is not a cloud dimension — it is fixed at zero throughout.
 
+**Plants without turbine capacity**: when $q_{max} = 0$ the flow axis collapses onto $q = 0$, where generation is zero, so the cloud carries no production and no plane survives the hull. Such a plant is modelled with zero productivity at every stage instead of a plane set; the [implementation notes](#implementation-in-cobre) give the capacity threshold and how the plant is reported.
+
 **Run-of-river plants**: when the plant has a single fitting volume ($v_{min} \approx v_{max}$), two volume samples ~1% of useful storage apart are synthesized to keep the 3-D hull non-degenerate. The resulting $\gamma_v$ residual is then **snapped to exactly 0**, enforcing the correct run-of-river semantics ($\gamma_v = 0$).
 
 **Determinism**: the cloud points and the hull output are canonically sorted, so the fitted hyperplanes are bit-identical regardless of input ordering and MPI rank count.
 
 #### 2.6.2 Convex Hull
 
-The 3-D convex hull of the $(V, Q, \text{generation})$ cloud is computed via the qhull library. The **upper-envelope facets** — those whose outward normal has a positive generation component — are selected. Each is read as $\text{generation} = \gamma_0 + \gamma_v V + \gamma_q Q$. The result is a **concave outer approximation** (the smallest concave function lying above $\phi$); non-concave regions of $\phi$ fall inside the hull and their facets drop out. Near-parallel coplanar facets arising from hull triangulation are deduplicated by exact coefficient comparison.
+The 3-D convex hull of the $(V, Q, \text{generation})$ cloud is computed via the qhull library. The **upper-envelope facets** — those whose outward normal has a positive generation component — are selected. Each is read as $\text{generation} = \gamma_0 + \gamma_v V + \gamma_q Q$. Before the $k_{FPHA}$ correction of §2.6.3, the result is a **concave outer approximation** (the smallest concave function lying above $\phi$); non-concave regions of $\phi$ fall inside the hull and their facets drop out. Near-parallel coplanar facets arising from hull triangulation are deduplicated by exact coefficient comparison.
 
 #### 2.6.3 Least-Squares $k_{FPHA}$ Correction
 
@@ -216,13 +218,13 @@ Key properties:
 
 - The regression uses the **pointwise minimum** over the raw hull planes as $FPHA_0(V_i, Q_j)$, because the LP applies planes as $g \le \gamma_0^m + \gamma_v^m V + \gamma_q^m Q$ for every $m$, so the binding cap is the minimum, not the maximum.
 - The regression is over the spill$=0$ grid only — adding a spillage axis would pull $k_{FPHA}$ toward the larger-deviation spill region and degrade the no-spill operating region.
-- $k_{FPHA}$ scales the **whole affine function** ($\gamma_0, \gamma_v, \gamma_q$ alike), not just the intercept. This is why $k_{FPHA} \ne \kappa$ (the old intercept-only shrink).
+- $k_{FPHA}$ scales the **whole affine function** ($\gamma_0, \gamma_v, \gamma_q$ alike), not just the intercept. It therefore differs from the factor $\kappa$ of precomputed planes, which scales the intercept only.
 - $k_{FPHA}$ may be **greater or less than 1** (an MSE balance, not a one-sided shrink). Validation requires $k_{FPHA} > 0$. A degenerate denominator (all-zero production) yields the neutral $k_{FPHA} = 1$.
 - Validation also requires $\gamma_v \ge 0$, $\gamma_q \ge 0$, $\gamma_s \le 0$.
 
 **Fit-quality diagnostic**: after the full pipeline, the relative mean-absolute-deviation of the emitted min-envelope vs the exact $\phi$ over the spill$=0$ grid is computed. A warning is emitted (in canonical plant/stage order) when it exceeds **5%** — typically indicating a strongly non-concave surface that no single $k_{FPHA}$ can track well.
 
-**Precomputed input**: when using `source: "precomputed"`, hyperplanes are read directly from `fpha_hyperplanes.parquet`. That file retains a `kappa` column (defaulting to 1.0); for precomputed planes it is still applied as an intercept-only scale ($\gamma_0 \leftarrow \gamma_0 \cdot \kappa$) and is validated to lie in $(0, 1]$. Only the **computed** path retired $\kappa$ — there the whole-affine $k_{FPHA}$ correction above replaces it.
+**Precomputed input**: when using `source: "precomputed"`, hyperplanes are read directly from `fpha_hyperplanes.parquet`. Its `kappa` column (default 1.0) scales each plane's intercept only ($\gamma_0 \leftarrow \gamma_0 \cdot \kappa$) and must lie in $(0, 1]$. The computed path does not use $\kappa$; its whole-affine $k_{FPHA}$ correction plays that role.
 
 ### 2.7 Lateral-Flow Secant
 
@@ -258,8 +260,10 @@ A hydro plant is partitioned into one or more **(hydro, bus) cells** — one per
 For each cell $(h, b)$ of a hydro $h$ using FPHA, block $k$, and plane $m \in \mathcal{M}_h$:
 
 $$
-g_{h,b,k} \leq \lambda_{h,b} \big( \gamma_0^m + \gamma_v^m \cdot v_h^{avg} + \gamma_s^m \cdot s_{h,k} \big) + \gamma_q^m \cdot q_{h,b,k}
+g_{h,b,k} - \lambda_{h,b} \, \gamma_v^m \cdot v_h^{avg} - \gamma_q^m \cdot q_{h,b,k} - \lambda_{h,b} \, \gamma_s^m \cdot s_{h,k} \leq \lambda_{h,b} \, \gamma_0^m
 $$
+
+Every variable sits on the left with its plane coefficient negated, and the apportioned intercept is the row's upper bound; the row is the cap $g_{h,b,k} \leq \lambda_{h,b} \big( \gamma_0^m + \gamma_v^m \cdot v_h^{avg} + \gamma_s^m \cdot s_{h,k} \big) + \gamma_q^m \cdot q_{h,b,k}$.
 
 The coefficients are already $k_{FPHA}$-scaled — there is no separate pre-scaling step. These are **hard constraints** — no slack variables. Feasibility is ensured through the `turbined_cost` regularization mechanism (see section 2.10).
 
@@ -279,7 +283,9 @@ $$
 v^{avg}_h = \frac{v^{in}_h + v_h}{2}
 $$
 
-where $v^{in}_h$ is the incoming storage LP variable (pinned to $\hat{v}_h$ via column bounds — see [LP Formulation §4a](/math/lp-formulation)) and $v_h$ is end-of-stage storage — a single plant-level quantity shared by every cell, since storage is not partitioned. Both are LP variables, so $v^{in}_h$ appears in every cell's FPHA constraint with coefficient $\lambda_{h,b} \cdot \gamma_v^m / 2$. The LP solver automatically accounts for this in the reduced cost of the pinned $v^{in}_h$ column.
+where $v^{in}_h$ is the incoming storage LP variable (pinned to $\hat{v}_h$ via column bounds — see [LP Formulation §4a](/math/lp-formulation)) and $v_h$ is end-of-stage storage — a single plant-level quantity shared by every cell, since storage is not partitioned. Both are LP variables, so $v^{in}_h$ appears in every cell's FPHA constraint with coefficient $-\lambda_{h,b} \, \gamma_v^m / 2$ on the left-hand side, as does $v_h$. The LP solver automatically accounts for this in the reduced cost of the pinned $v^{in}_h$ column.
+
+On a chronological stage the row of block $k$ uses that block's own average storage $(v_{h,k-1} + v_{h,k})/2$ in place of $v^{avg}_h$, with $v_{h,0} = v^{in}_h$ (see [Block Formulations](/math/block-formulations)).
 
 #### Generation as Independent Variable
 
@@ -318,21 +324,13 @@ $$
 \beta^v_h = \bar{c}^{in}_h / d^{col}_h
 $$
 
-This dual implicitly includes the water balance contribution ($\pi^{wb}_h$), the FPHA contribution summed over every cell of the plant ($\frac{1}{2} \sum_{b \in \mathcal{B}_h} \lambda_{h,b} \sum_m \pi_{h,b,m}^{fpha} \cdot \gamma_v^m$), and any generic constraint contributions — all resolved by the LP solver without explicit dual combination.
+This reduced cost implicitly includes the water balance contribution ($\pi^{wb}_h$), the FPHA contribution summed over every cell of the plant ($\frac{1}{2} \sum_{b \in \mathcal{B}_h} \lambda_{h,b} \sum_m \pi_{h,b,m}^{fpha} \cdot \gamma_v^m$), and any generic constraint contributions — all resolved by the LP solver without explicit dual combination.
 
 For the complete cut coefficient computation, see [cut management](/math/cut-management).
 
-#### Model Transition Considerations
+#### Production Model and Cut Validity
 
-When a hydro transitions between production models across stages:
-
-| Transition                     | Cut Interpretation                      | Action                            |
-| ------------------------------ | --------------------------------------- | --------------------------------- |
-| Constant → FPHA                | Cuts at stage $t$ use constant model    | Cut valid but conservative        |
-| FPHA → Constant                | Stage $t+1$ backward pass uses constant | May overestimate value            |
-| FPHA → FPHA (different params) | Parameters change                       | Cuts remain valid if conservative |
-
-**Recommendation**: When using stage-dependent FPHA configuration, ensure the FPHA at stage $t$ is at least as conservative as stage $t+1$ for cut validity.
+A production model that varies by stage or season is part of the model the policy is trained on: its cuts lower-approximate that model's cost-to-go whichever production model each stage uses ([Cut Management §4](/math/cut-management#4-cut-validity)). A policy simulated under a different production model than the one it was trained on is a heuristic, with no bound guarantee: the trained lower bound need not bound the simulated model's optimal value, and the gap between the two certifies nothing.
 
 ## 3. Linearized Head Model (Reserved — Resolves to Constant Productivity)
 
@@ -365,6 +363,8 @@ During simulation, `constant_productivity` and `fpha` behave as they do in train
 | Plants trained with constant, low head variation         | Constant productivity               | No benefit from head correction                                                                          |
 | Plants selecting `linearized_head`                       | Constant productivity (equivalent)  | `linearized_head` resolves to the same constant-productivity source (§3); no head correction is applied  |
 | Post-optimization validation                             | Compare all models                  | Verify approximation quality                                                                             |
+
+Simulating a plant under another production model than the one it was trained with evaluates the policy heuristically (§2.11).
 
 The production model may vary by stage or by season per hydro, configured via the `stage_ranges` and `seasonal` selection modes in `hydro_production_models.json`.
 
@@ -541,7 +541,7 @@ The full FPHA production function (section 2) is multi-dimensional and concave; 
 | Hydro production models input   | FPHA fitting configuration and optional `fpha_plane_reduction` block                                     | Grid sizes, plane reduction method (§2.6–§2.8)                                                           |
 | Hydro energy productivity input | Per-(hydro, stage) `equivalent_productivity_mw_per_m3s` and specific productivity                        | $\rho_{eq,h,t}$ override for both evaluators (§5.1 authoring source 2 + FPHA override path); $\rho_{esp,h,t}$ for both evaluators' head-derived value (§5.1, §5.3) |
 | Hydro geometry                  | volume_hm3, height_m                                                                                     | $h_{fore}(v)$ interpolation (§2.3); mean forebay level $\bar h_{fore,h}$ (§5.3)                           |
-| Pre-fitted FPHA planes          | $\gamma_0, \gamma_v, \gamma_q, \gamma_s$ (plus `kappa` column retained for back-compat, defaults to 1.0) | Optional alternative to in-process fitting                                                               |
+| Pre-fitted FPHA planes          | $\gamma_0, \gamma_v, \gamma_q, \gamma_s$ (plus the `kappa` intercept factor, default 1.0)                | Optional alternative to in-process fitting                                                               |
 
 For non-FPHA hydros, the per-(hydro, stage) productivity coefficient is resolved from exactly one of the two authoring sources listed in §5.1: range-level productivity in the production-models input, or per-stage productivity in the energy-productivity input. Supplying a value from both for the same $(h, t)$ is rejected at load time; supplying neither for any study stage of a non-FPHA hydro is also rejected at load time.
 

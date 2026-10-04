@@ -82,7 +82,7 @@ A glyph takes a second meaning only on pages that never carry its first; each su
 - $p(\omega)$ is the probability of opening $\omega$; in [Hydro Production Models](/math/hydro-production-models) $p$ is the security-curve fraction of the maximum stored energy, and in [LP Formulation](/math/lp-formulation), [System Elements](/math/system-elements) and [Equipment Formulations](/math/equipment-formulations) $p_{y,k}$ is the pumped flow of station $y$.
 - $Q_t$ is the optimal value of the stage-$t$ LP as a function of its incoming state; in [Hydro Production Models](/math/hydro-production-models) $Q$ is the turbined-flow coordinate of the FPHA fitting grid, and in [Multi-Resolution Studies](/math/multi-resolution-studies) a quarter of the duration-weighted aggregation.
 - $q_{h,k}$ is the turbined flow of hydro $h$; in [Upper Bound Evaluation](/math/upper-bound-evaluation) $q_{n \to n'}$ is the conditional probability of reaching child node $n'$ from node $n$ of an enumerated scenario tree.
-- $r_h$ is the water-withdrawal target of hydro $h$ in [LP Formulation](/math/lp-formulation) and [System Elements](/math/system-elements); in [PAR(p) Inflow Model](/math/par-inflow-model) and [Scenario Generation](/math/scenario-generation) $r_m$ is the standardized innovation scale of season $m$.
+- $r_h$ is the water-withdrawal target of hydro $h$ in [LP Formulation](/math/lp-formulation), [System Elements](/math/system-elements) and [Block Formulations](/math/block-formulations); in [PAR(p) Inflow Model](/math/par-inflow-model) and [Scenario Generation](/math/scenario-generation) $r_m$ is the standardized innovation scale of season $m$.
 - $u_{h,k}$ is the diversion flow of hydro $h$, and $u$ indexes the unit groups of a (hydro, bus) cell, in the System Modelling chapters; in [SDDP Algorithm](/math/sddp-algorithm), [Risk Measures](/math/risk-measures), [Upper Bound Evaluation](/math/upper-bound-evaluation), [Horizon Modes](/math/horizon-modes), [Discount Rate](/math/discount-rate), [The SDDP Framework in One Page](/overview/sddp-framework-overview) and the [Glossary](/reference/glossary) $u_t$ is the control vector of the stage problem.
 - $w_k$ is the weight of block $k$ in the System Modelling chapters; in [Upper Bound Evaluation](/math/upper-bound-evaluation) $w_m$ is the census weight of simulation scenario $m$, and in [PAR(p) Inflow Model](/math/par-inflow-model) $w$ indexes the rolling windows of a season bucket.
 - $Z$ is the random cost a risk measure applies to; in [PAR(p) Inflow Model](/math/par-inflow-model) it is the standardised series on which the PAR(p)-A conditional partial autocorrelation conditions.
@@ -98,6 +98,7 @@ A glyph takes a second meaning only on pages that never carry its first; each su
 - $\mathcal{P}$ is the pumping-station set, with per-bus subsets $\mathcal{P}_b$, in the System Modelling chapters; in [Risk Measures](/math/risk-measures) it is the probability simplex of the scenario probabilities.
 - $\mathcal{M}_h$ is the FPHA hyperplane set of hydro $h$; in [Risk Measures](/math/risk-measures) $\mathcal{M}(p)$, $\mathcal{M}_\alpha(p)$ and $\mathcal{M}^{EAVaR}(p)$ are risk sets of the dual representation of a convex risk measure.
 - $\mathcal{X}_t(x_{t-1}, \omega_t)$ is the feasible set of the stage-$t$ state and control; in [Cut Management](/math/cut-management) $\mathcal{X}_t$ is the feasible state set on which a cut is valid.
+- $I_t$ is the number of vertices stored at stage $t$ in [Upper Bound Evaluation](/math/upper-bound-evaluation); in [LP Formulation](/math/lp-formulation) $I_{h,k}$ is the inflow of hydro $h$ in block $k$ that a `hydro_inflow` term reads.
 
 ### Stage Indexing
 
@@ -161,6 +162,7 @@ Every operational entity index set above ($\mathcal{B}$, $\mathcal{H}$, $\mathca
 | $H_t = \sum_{k \in \mathcal{K}} \tau_k$ | hours | Total duration of stage $t$ |
 | $w_k = \tau_k / H_t$ | - | Block weight (fraction of stage) |
 | $\zeta$                        | hm³/(m³/s) | Time conversion: m³/s over stage → hm³ |
+| $\zeta_k = 0.0036 \times \tau_k$ | hm³/(m³/s) | Block conversion: m³/s over block $k$ → hm³; $\zeta_k = w_k\,\zeta$ and $\sum_{k \in \mathcal{K}} \zeta_k = \zeta$ |
 | $d_{t \to t+1}$ | - | Discount factor of the transition from stage $t$ to $t+1$, applied to $\theta_t$ in the stage-$t$ objective |
 | $d_{\text{cycle}}$ | - | Cumulative discount around one cycle of a cyclic policy graph, $d_{\text{cycle}} = \prod_{t \in \text{cycle}} d_{t \to t+1} < 1$ |
 
@@ -231,7 +233,11 @@ Cost coefficients use $c$ with a superscript naming the cost type.
 | $\text{rate}_t$ | m³/s | Minimum accumulation rate of a filling hydro at stage $t$ |
 | $V^{\text{target}}_t$ | hm³ | Minimum end-of-stage storage of a filling hydro at stage $t$ (the filling floor), reaching $\underline{V}_h$ at stage $L$ |
 | $L_h$ | stages | Bucket depth of receiving plant $h$: the deepest maturity lag any travel-time arc into $h$ reaches on the stage calendar |
-| $\phi_{h,k}$ | - | Arrival density of plant $h$'s maturing in-transit volume over the blocks $k$ of a chronological stage, $\phi_{h,k} \geq 0$, $\sum_k \phi_{h,k} = 1$ |
+| $\phi_{h,k}$ | - | Arrival density of plant $h$'s maturing in-transit volume over the blocks $k$ of a chronological stage, $\phi_{h,k} \geq 0$, $\sum_k \phi_{h,k} = 1$; on a parallel stage $\tau_k / H_t$ in a `hydro_inflow` term ([LP Formulation §10](/math/lp-formulation#hydro-inflow)) |
+| $\Delta^{tt}_{h'}$ | hours | Travel time of the main cascade arc of upstream hydro $h'$, $0$ when none is declared |
+| $\nu_{h',t,0}$ | - | Same-stage share of $h'$'s release on the downstream water balance at stage $t$, $(H_t - \Delta^{tt}_{h'})^+ / H_t$ |
+| $\nu^{k' \to k}_{h',t}$ | - | Within-stage routing share on a chronological stage, from $h'$'s block $k'$ to the downstream block $k \ge k'$ |
+| $\gamma^{ev}_{0,h}$, $\gamma^{ev}_{v,h}$ | m³/s, (m³/s)/hm³ | Linearized net-evaporation intercept and storage slope of hydro $h$ at the current stage |
 
 ### 3.4 Thermal, Network and Equipment Parameters
 
@@ -313,11 +319,11 @@ Per-block variables are indexed by $k \in \mathcal{K}$:
 | $s_{h,k}$        | $\geq 0$                       | m³/s  | Spillage at hydro $h$                                                                                                                         |
 | $g_{h,b,k}$ | $[0, \bar{G}_{h,b}]$ | MW | Hydro generation of cell $(h, b)$, injected at bus $b$; its minimum $\underline{G}_{h,b}$ is a soft floor (slack $\sigma^{g-}_{h,b,k}$) |
 | $g_{h,k}$ | - | MW | Plant hydro generation, $g_{h,k} = \sum_{b \in \mathcal{B}_h} g_{h,b,k}$ |
-| $v_{h,k}$ | $[\underline{V}_h, \bar{V}_h]$ | hm³ | Storage at the end of block $k$ on a chronological stage, $v_{h,0} = \hat{v}_h$; only $v_{h,\lvert\mathcal{K}\rvert}$ is state |
+| $v_{h,k}$ | $[\underline{V}_h, \bar{V}_h]$ | hm³ | Storage at the end of block $k$ on a chronological stage, $v_{h,0} = \hat{v}_h$; only $v_{h,\lvert\mathcal{K}\rvert}$ is state; the lower bound is $0$, not $\underline{V}_h$, for a filling hydro and for a hydro not in service (see [LP Formulation §8](/math/lp-formulation#8-variable-bounds-and-minimum-constraints)) |
 | $u_{h,k}$        | $[0, \bar{U}_h]$               | m³/s  | Diversion/bypass flow (to separate channel)                                                                                                   |
 | $o_{h,k}$        | -                              | m³/s  | Total downstream outflow: $o_{h,k} = q_{h,k} + s_{h,k}$                                                                                       |
 | $e_{h,k}$ | bounded | m³/s | Net evaporation flow (negative for net rainfall input): one stage-level value $e_h$ on a parallel stage, one per block $k$ on a chronological stage; its magnitude has a per-stage bound |
-| $\text{net\_flows}_{h,k}$ | - | m³/s | Net intra-stage flow into the water balance of hydro $h$ in block $k$: upstream inflows minus outflows, evaporation and withdrawal |
+| $\text{net\_flows}_{h,k}$ | - | m³/s | Net per-block flow terms of hydro $h$'s water balance in block $k$: the turbined and spilled release credited from upstream and the flows diverted and pumped in, minus the plant's own turbined, spilled and diverted flow and its pumped-out flow |
 | $p_{y,k}$        | $[\underline{P}_y, \bar{P}_y]$ | m³/s  | Pumped flow at station $y$                                                                                                                    |
 | $\chi_{c,k}$     | $[\underline{C}_c, \bar{C}_c]$ | MW    | Contract dispatch (import if $c \in \mathcal{C}^{imp}$, export if $c \in \mathcal{C}^{exp}$); $\underline{C}_c > 0$ is a take-or-pay floor    |
 | $g^{nc}_{r,k}$ | $[0, A_r]$ | MW | Generation of non-controllable source $r$ |
@@ -327,7 +333,7 @@ Per-block variables are indexed by $k \in \mathcal{K}$:
 
 | Variable                 | Domain                         | Units | Description                                                                                                                        |
 | ------------------------ | ------------------------------ | ----- | ---------------------------------------------------------------------------------------------------------------------------------- |
-| $v_h$                    | $[\underline{V}_h, \bar{V}_h]$ | hm³   | End-of-stage storage                                                                                                               |
+| $v_h$                    | $[\underline{V}_h, \bar{V}_h]$ | hm³   | End-of-stage storage; the lower bound is $0$, not $\underline{V}_h$, for a filling hydro and for a hydro not in service (see [LP Formulation §8](/math/lp-formulation#8-variable-bounds-and-minimum-constraints)) |
 | $v^{in}_h$ | fixed | hm³ | Incoming-storage variable of the stage LP, fixed at the incoming storage $\hat{v}_h$ |
 | $v^{avg}_h$              | -                              | hm³   | Average storage during stage: $(\hat{v}_h + v_h)/2$                                                                                |
 | $a_{h,\ell}$             | fixed                          | m³/s  | AR lag $\ell$ (fixed by state transition)                                                                                          |
@@ -345,7 +351,7 @@ Slack variables for soft constraints:
 
 | Variable                                 | Domain   | Units | Constraint                                                                                                                                        |
 | ---------------------------------------- | -------- | ----- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
-| $\sigma^{v-}_h$                          | $\geq 0$ | hm³   | Storage below minimum                                                                                                                             |
+| $\sigma^{v-}_h$                          | $\geq 0$ | hm³   | Storage below the dead volume of a filling hydro, from its entry stage on (every other operating hydro's dead volume is a hard bound)             |
 | $\sigma^{fill}_h$                        | $\geq 0$ | hm³   | Per-stage filling-floor shortfall                                                                                                                 |
 | $\sigma^{q-}_{h,b,k}$                    | $\geq 0$ | m³/s  | Turbined flow below minimum — one per (hydro, bus) cell $b \in \mathcal{B}_h$ of a split plant                                                    |
 | $\sigma^{o-}_{h,k}$                      | $\geq 0$ | m³/s  | Outflow below minimum (per plant — no per-cell outflow column to attribute a floor to)                                                            |
@@ -365,7 +371,7 @@ Sign convention: more incoming storage lowers the cost-to-go wherever the extra 
 | Symbol           | Row                              | Meaning                                                 |
 | ---------------- | -------------------------------- | ------------------------------------------------------- |
 | $\pi^{lb}_{b,k}$ | Load balance, bus $b$, block $k$ | Marginal cost of energy                                 |
-| $\pi^{wb}_h$     | Water balance, hydro $h$         | Water value                                             |
+| $\pi^{wb}_h$     | Water balance, hydro $h$ (block $k$ on a chronological stage, $\pi^{wb}_{h,k}$) | Water value                                             |
 | $\pi_m^{fpha}$   | FPHA hyperplane $m$              | Marginal value of the generation limit set by plane $m$ |
 
 ## Cross-References

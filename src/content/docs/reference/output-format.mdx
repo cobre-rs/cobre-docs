@@ -728,10 +728,10 @@ every plant that uses an FPHA production model. Always written. Top-level object
 
 | Field                    | Type    | Nullable | Description                                                             |
 | ------------------------ | ------- | -------- | ----------------------------------------------------------------------- |
-| `n_constant`             | integer | No       | Number of hydro plants using a constant-productivity production model.  |
-| `n_fpha`                 | integer | No       | Number of hydro plants using an FPHA production model.                  |
-| `total_planes`           | integer | No       | Total number of hyperplanes across all FPHA hydro plants.               |
-| `fpha_details`           | array   | No       | Per-hydro detail for each FPHA hydro plant (see below).                 |
+| `n_constant`             | integer | No       | Number of hydro plants with constant productivity at every stage: plants whose production-model entries select no FPHA model, and computed-FPHA plants with no turbine capacity (modelled with zero productivity). |
+| `n_fpha`                 | integer | No       | Number of hydro plants with precomputed or computed FPHA hyperplanes in at least one production-model entry; a computed-FPHA plant with no turbine capacity is counted in `n_constant` instead. |
+| `total_planes`           | integer | No       | Sum of `n_planes` over `fpha_details`: each FPHA plant's hyperplanes at the first study stage. |
+| `fpha_details`           | array   | No       | Per-hydro detail for each plant counted in `n_fpha` (see below).        |
 | `n_evaporation`          | integer | No       | Number of hydro plants with a linearized evaporation model.             |
 | `n_no_evaporation`       | integer | No       | Number of hydro plants with no evaporation model.                       |
 | `n_user_supplied_ref`    | integer | No       | Number of evaporation plants that used user-supplied reference volumes. |
@@ -743,8 +743,8 @@ every plant that uses an FPHA production model. Always written. Top-level object
 | ---------- | ------- | -------- | ----------------------------------------------------------------------------------------------------------------- |
 | `hydro_id` | integer | No       | Entity identifier of the hydro plant.                                                                             |
 | `name`     | string  | No       | Human-readable name of the hydro plant.                                                                           |
-| `source`   | string  | No       | Origin of the FPHA hyperplanes: `"default_constant"`, `"precomputed_hyperplanes"`, or `"computed_from_geometry"`. |
-| `n_planes` | integer | No       | Number of hyperplanes in the FPHA approximation for this plant.                                                  |
+| `source`   | string  | No       | Origin of the plant's hyperplanes: `"precomputed_hyperplanes"` or `"computed_from_geometry"`.                     |
+| `n_planes` | integer | No       | Number of the plant's hyperplanes at the first study stage (`0` when that stage uses constant productivity).      |
 
 ### `training/model_provenance.json`
 
@@ -771,7 +771,7 @@ sub-objects, `inflow` and `hydro_production`.
 
 | Field                                | Type    | Nullable | Description                                                                     |
 | ------------------------------------ | ------- | -------- | ------------------------------------------------------------------------------- |
-| `n_fpha_computed_from_geometry`      | integer | No       | Hydro plants whose FPHA hyperplanes were computed from reservoir geometry.      |
+| `n_fpha_computed_from_geometry`      | integer | No       | Hydro plants whose FPHA hyperplanes were computed from reservoir geometry; a computed-FPHA plant with no turbine capacity is not counted. |
 | `n_fpha_precomputed_hyperplanes`     | integer | No       | Hydro plants whose FPHA hyperplanes were supplied precomputed.                  |
 | `n_evaporation_ref_user_supplied`    | integer | No       | Hydro plants whose evaporation reference level was user-supplied.               |
 | `n_evaporation_ref_default_midpoint` | integer | No       | Hydro plants whose evaporation reference level defaulted to the curve midpoint. |
@@ -1172,13 +1172,13 @@ the reference-point pair and the useful-range mean (`integrated_*`) pair.
 | `turbined_m3s`                        | Float64 | No       | Turbined flow in cubic metres per second (m³/s).                                                                                                                                                     |
 | `spillage_m3s`                        | Float64 | No       | Spilled flow in m³/s.                                                                                                                                                                                |
 | `outflow_m3s`                         | Float64 | No       | Total outflow (turbined + spilled) in m³/s.                                                                                                                                                          |
-| `evaporation_m3s`                     | Float64 | Yes      | Net evaporation flow in m³/s; signed. Positive values are net evaporative loss; negative values are net rainfall input on the lake surface. `null` if evaporation is not modelled for this plant.    |
-| `diverted_inflow_m3s`                 | Float64 | Yes      | Diverted inflow to this reservoir in m³/s. `null` if no diversion is configured.                                                                                                                     |
-| `diverted_outflow_m3s`                | Float64 | Yes      | Diverted outflow from this reservoir in m³/s. `null` if no diversion is configured.                                                                                                                  |
+| `evaporation_m3s`                     | Float64 | Yes      | Net evaporation flow in m³/s; signed. Positive values are net evaporative loss; negative values are net rainfall on the lake surface. On a parallel stage the stage-level value, repeated on every block row; on a chronological stage the block's own value. `0.0` for a plant that models no evaporation. Never null in written output. |
+| `diverted_inflow_m3s`                 | Float64 | Yes      | Flow diverted into this reservoir by other plants' diversions, in m³/s; `0.0` when none. Never null in written output.                                                                               |
+| `diverted_outflow_m3s`                | Float64 | Yes      | Flow this plant diverts, in m³/s; `0.0` when it has no diversion. Never null in written output.                                                                                                      |
 | `incremental_inflow_m3s`              | Float64 | No       | Natural incremental inflow to this reservoir in m³/s (excluding upstream contributions).                                                                                                             |
-| `inflow_m3s`                          | Float64 | No       | Total inflow to this reservoir in m³/s (including upstream contributions).                                                                                                                           |
-| `storage_initial_hm3`                 | Float64 | No       | Reservoir storage at the start of the stage in hectare-metres cubed (hm³).                                                                                                                           |
-| `storage_final_hm3`                   | Float64 | No       | Reservoir storage at the end of the stage in hm³.                                                                                                                                                    |
+| `inflow_m3s`                          | Float64 | No       | Equal to `incremental_inflow_m3s`: the plant's incremental (local) inflow in m³/s, the stage value repeated on every block row; upstream releases are not included (`variables.csv` describes the column as "Total inflow including upstream contributions"). |
+| `storage_initial_hm3`                 | Float64 | No       | Reservoir storage at the start of the row's interval in cubic hectometres (hm³): the stage's incoming storage on a parallel stage (the same on every block row), the block's starting boundary storage on a chronological stage. |
+| `storage_final_hm3`                   | Float64 | No       | Reservoir storage at the end of the row's interval in hm³: the stage's end storage on a parallel stage, the block's ending boundary storage on a chronological stage.                                |
 | `generation_mw`                       | Float64 | No       | Average power generation over the block in megawatts (MW).                                                                                                                                           |
 | `generation_mwh`                      | Float64 | No       | Total energy generated over the block in megawatt-hours (MWh).                                                                                                                                       |
 | `equivalent_productivity_mw_per_m3s`  | Float64 | No       | Equivalent productivity ρ_eq [MW/(m³/s)] at the reference operating point for this stage.                                                                                                            |
@@ -1187,17 +1187,17 @@ the reference-point pair and the useful-range mean (`integrated_*`) pair.
 | `stored_energy_initial_mwh`           | Float64 | No       | Energy content of usable storage at stage start: (storage_initial_hm3 − V_min) × integrated_accumulated_productivity_mw_per_m3s × 1e6/3600 [MWh], where `V_min` is the plant's physical `reservoir.min_storage_hm3` (never a `hydro_bounds` storage override) and `storage_initial_hm3` is the row's own value (the per-block boundary storage on a chronological stage). |
 | `stored_energy_final_mwh`             | Float64 | No       | Energy content of usable storage at stage end: (storage_final_hm3 − V_min) × integrated_accumulated_productivity_mw_per_m3s × 1e6/3600 [MWh], where `V_min` is the plant's physical `reservoir.min_storage_hm3` (never a `hydro_bounds` storage override) and `storage_final_hm3` is the row's own value (the per-block boundary storage on a chronological stage). |
 | `spillage_cost`                       | Float64 | No       | Monetary cost attributed to spillage.                                                                                                                                                                |
-| `water_value_per_hm3`                 | Float64 | No       | Shadow price of the reservoir water balance constraint (monetary units per hm³).                                                                                                                     |
+| `water_value_per_hm3`                 | Float64 | No       | Dual of the plant's own water-balance row, in monetary units per hm³: each block's own row on a chronological stage; the stage row, repeated on every block row, on a parallel stage. Negative values mean one more hm³ lowers the cost; see [Interpreting Results](/running/interpreting-results/) for the sign. |
 | `storage_binding_code`                | Int8    | No       | Whether the storage bounds were binding (see `codes.json` `storage_binding` mapping).                                                                                                                |
 | `operative_state_code`                | Int8    | No       | Operative state code (see `codes.json` `operative_state` mapping).                                                                                                                                   |
 | `turbined_slack_m3s`                  | Float64 | No       | Turbined flow slack variable (non-negativity enforcement). Zero under normal operation.                                                                                                              |
 | `outflow_slack_below_m3s`             | Float64 | No       | Outflow lower-bound slack in m³/s.                                                                                                                                                                   |
 | `outflow_slack_above_m3s`             | Float64 | No       | Outflow upper-bound slack in m³/s.                                                                                                                                                                   |
 | `generation_slack_mw`                 | Float64 | No       | Generation bound slack in MW.                                                                                                                                                                        |
-| `storage_violation_below_hm3`         | Float64 | No       | Reservoir storage below-minimum violation in hm³. Zero under feasible operation.                                                                                                                     |
+| `storage_violation_below_hm3`         | Float64 | No       | Storage below the dead volume of a filling hydro at its Operating stages, in hm³ (the soft floor of [Penalty System](/math/penalty-system)); `0` for every other plant, whose dead volume is a hard bound. |
 | `filling_target_violation_hm3`        | Float64 | No       | Filling target miss in hm³. Zero when the target is met.                                                                                                                                             |
-| `evaporation_violation_pos_m3s`       | Float64 | No       | Slack absorbing a positive deviation of the signed evaporation flow from the linearised target in m³/s (solver chose a less-negative net flux than the model predicts). Zero under normal operation. |
-| `evaporation_violation_neg_m3s`       | Float64 | No       | Slack absorbing a negative deviation of the signed evaporation flow from the linearised target in m³/s (solver chose a less-positive net flux than the model predicts). Zero under normal operation. |
+| `evaporation_violation_pos_m3s`       | Float64 | No       | Slack of the evaporation row above its linearised target (evaporation exceeds the target), in m³/s; on a parallel stage the stage-level value, repeated on every block row; on a chronological stage the block's own. Zero under normal operation. |
+| `evaporation_violation_neg_m3s`       | Float64 | No       | Slack of the evaporation row below its linearised target (evaporation falls short of the target), in m³/s; on a parallel stage the stage-level value, repeated on every block row; on a chronological stage the block's own. Zero under normal operation. |
 | `inflow_nonnegativity_slack_m3s`      | Float64 | No       | Inflow non-negativity slack in m³/s. Zero under normal operation.                                                                                                                                    |
 | `water_withdrawal_violation_pos_m3s`  | Float64 | No       | Water withdrawal over-target violation in m³/s. Zero when withdrawal is at or below target.                                                                                                          |
 | `water_withdrawal_violation_neg_m3s`  | Float64 | No       | Water withdrawal under-target violation in m³/s. Zero when withdrawal is at or above target.                                                                                                         |
@@ -1624,16 +1624,16 @@ are `null` on a term-less constraint's placeholder row, and `slack_penalty` is
 
 ## Hydro Model Artifacts
 
-The `hydro_models/` directory is written when at least one of the following
-conditions holds: any hydro plant uses `fpha_config.source: "computed"` in
-`system/hydro_production_models.json`, any hydro plant has an evaporation model,
-or `exports.fpha_deviation_points` is `true`. The directory is omitted when none
-of these conditions are met.
+The `hydro_models/` directory holds the files below. Each is written only when
+it has rows — fitted FPHA planes, evaporation models, or, with
+`exports.fpha_deviation_points` set to `true`, deviation points — and the
+directory is absent when none is written.
 
 ### `hydro_models/fpha_hyperplanes.parquet`
 
-Fitted FPHA hyperplane coefficients for all hydros that used `source: "computed"`
-in the current run. The schema is identical to the input file
+Fitted FPHA hyperplane coefficients for every hydro whose computed fit produced
+planes in the current run; a computed-FPHA plant with no turbine capacity has
+none. The schema is identical to the input file
 `system/fpha_hyperplanes.parquet`: 11 columns, all with the same names, types,
 and nullability.
 
@@ -1654,7 +1654,12 @@ and nullability.
 The file is written atomically (via a `.tmp` rename) and uses the same
 `(hydro_id, stage_id, plane_id)`-sorted row order as the input schema. It can
 be used directly as a future `source: "precomputed"` input by copying it to
-`system/fpha_hyperplanes.parquet`.
+`system/fpha_hyperplanes.parquet`. A computed-FPHA plant with no turbine capacity
+has no rows in the file. Once the file is in `system/`, every plant on the FPHA
+model needs rows, whatever its `source`; before the copy, give the no-capacity
+plant the constant-productivity model in both `hydros.json` (`generation.model`)
+and its `hydro_production_models.json` entries (see
+[Hydro Production Models — Implementation notes](/math/hydro-production-models#implementation-in-cobre)).
 
 See [Case Directory Format — `system/fpha_hyperplanes.parquet`](/reference/case-directory-format/#systemfpha_hyperplanesparquet)
 for the full column definitions and validity constraints.

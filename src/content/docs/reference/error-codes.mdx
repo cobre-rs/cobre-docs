@@ -721,6 +721,62 @@ families above and `ncs_bounds`, but accepts such rows in
 files, where they have no effect. These pages follow the binary.
 :::
 
+#### Per-block generic-constraint references
+
+**When it occurs:** A generic-constraint term names a block that its stage
+cannot expose. The check runs only for a (constraint, stage) pair that has a row
+in `constraints/generic_constraint_bounds.parquet`. An evaporation reference is a
+`hydro_evaporation` term; a storage reference is a `hydro_storage_initial`,
+`hydro_storage_final`, `hydro_useful_volume_initial`, or
+`hydro_useful_volume_final` term. With `K` the number of blocks the stage
+declares, the check rejects four conditions:
+
+- A block index of `K` or more in an evaporation or storage reference, on any
+  stage.
+- An evaporation reference to a block from 1 to `K - 1` on a
+  [parallel stage](/reference/case-directory-format/#stagesjson) with `K > 1`.
+- An evaporation reference with no block on a chronological stage with `K > 1`.
+- A storage reference to an interior block boundary, a boundary between two
+  blocks, on a parallel stage with `K > 1`.
+
+The rule for each stage mode is stated under
+[`hydro_evaporation` block references](/reference/generic-constraints/#hydro_evaporation-block-references).
+
+**Kind, file, entity:** `BusinessRuleViolation`,
+`constraints/generic_constraints.json`, and the entity `constraint[id=N]`, where
+`N` is the constraint's `id`.
+
+**Messages:** `cobre validate` prints one `error:` line per rejection. The five
+lines below show one message per template, in this order:
+
+1. An evaporation block of `K` or more.
+2. An evaporation block from 1 to `K - 1` on a parallel stage.
+3. An interior storage boundary on a parallel stage.
+4. A storage block of `K` or more.
+5. An evaporation reference with no block on a chronological stage.
+
+{/* capture: cobre validate case 2>&1 | cobre   v0.17.0 | binary: cobre-cli sha256 23916b46 | case: temporary 1dtoy derivative (cobre init --template 1dtoy; stages.json: stages 0 and 1 carry two blocks PEAK and OFFPEAK with hours h // 2 and h - h // 2 of the single block's hours h, stage 0 block_mode parallel, stage 1 block_mode chronological; constraints/generic_constraints.json added with five constraints on hydro 0, slack disabled: id 0 evap_out_of_range hydro_evaporation(0, 5), id 1 evap_parallel_block hydro_evaporation(0, 1), id 2 storage_interior hydro_storage_final(0, 0), id 3 storage_out_of_range hydro_storage_initial(0, 5), id 4 evap_chronological_bare hydro_evaporation(0); constraints/generic_constraint_bounds.parquet added with compression zstd and one row per activation, constraints 0-3 at stage 0 and constraint 4 at stage 1, block_id and bound_lower null, bound_upper 1e9; run with NO_COLOR=1; the Validation summary line, which carries the temporary path, is not quoted) */}
+
+```text
+error: [BusinessRuleViolation] constraints/generic_constraints.json (constraint[id=0]): Constraint "evap_out_of_range": per-block evaporation reference `hydro_evaporation(5)` at stage 0 references block 5 which does not exist at stage 0 (K = 2)
+error: [BusinessRuleViolation] constraints/generic_constraints.json (constraint[id=1]): Constraint "evap_parallel_block": per-block evaporation reference `hydro_evaporation(1)` at stage 0 names a block past the stage-level evaporation, which requires chronological block mode (stage 0 is parallel with 2 blocks); use block 0 or no block
+error: [BusinessRuleViolation] constraints/generic_constraints.json (constraint[id=2]): Constraint "storage_interior": per-block storage reference `hydro_storage_final(0)` at stage 0 resolves to an interior boundary, which requires chronological block mode (stage 0 is parallel with 2 blocks)
+error: [BusinessRuleViolation] constraints/generic_constraints.json (constraint[id=3]): Constraint "storage_out_of_range": per-block storage reference `hydro_storage_initial(5)` at stage 0 references block 5 which does not exist at stage 0 (K = 2)
+error: [BusinessRuleViolation] constraints/generic_constraints.json (constraint[id=4]): Constraint "evap_chronological_bare": stage-level `hydro_evaporation` at chronological stage 1 is ambiguous — evaporation is per-block there (K = 2); name a block, e.g. `hydro_evaporation(<hydro>, 0)`
+```
+
+In the first four messages the number inside the quoted reference is the block
+index, not the hydro id.
+
+**Resolution:** Name a block that exists on the stage: block indices run from 0
+to `K - 1`. On a parallel stage, address evaporation with block 0 or with no
+block, and address a storage reference only at the stage's start or end: block 0
+or no block for an initial reference, the last block or no block for a final
+reference. To address per-block quantities, set `block_mode` to `"chronological"`
+on the stage in [`stages.json`](/reference/case-directory-format/#stagesjson); a
+chronological stage requires a named block for evaporation, as in
+`hydro_evaporation(<hydro>, 0)`.
+
 ---
 
 ### `PolicyIncompatible`
@@ -925,6 +981,9 @@ and
 under `ConstraintError`. The undeclared-`stage_id` bound-override rule is
 also reported this way — see
 [Undeclared `stage_id` in bound-override parquet](#undeclared-stage_id-in-bound-override-parquet)
+under `ConstraintError`.
+The per-block generic-constraint references are also reported this way — see
+[Per-block generic-constraint references](#per-block-generic-constraint-references)
 under `ConstraintError`.
 
 ---
