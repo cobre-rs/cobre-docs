@@ -25,11 +25,13 @@ it in automatically. (`compare` does not use the bindings: it reads Cobre's
 simulation-output parquet files directly.)
 
 A cobre-bridge release `X.Y.Z` targets cobre `X.Y.Z`: the converted case
-follows that cobre release's input contract, and the `cobre-python` version
-floor is the oldest cobre the converted output loads on. A packaging test
-keeps the two versions in lockstep. If the installed `cobre-python` is older
-than that floor, `convert --validate` skips its validation step (printing a
-note) instead of failing.
+follows that release's input contract. The bridge records its minimum cobre
+version (`0.17.0`) in the conversion manifest and uses it to decide whether the
+installed `cobre-python` can run `convert --validate`; a packaging test keeps
+that minimum in lockstep with the `cobre-python>=0.17.0,<0.18` pin. If the
+installed `cobre-python` is older than the minimum cobre version,
+`convert --validate` skips its validation step (printing a note) instead of
+failing.
 
 ---
 
@@ -95,6 +97,16 @@ cobre pass. This import is slow and requires `cobre-python`. It is always
 skipped under `--dry-run`, and is skipped — with an informational note, not
 an error — when the deck declares no cut files. Pass **`--no-fcf`** to skip
 the boundary-FCF import for a quicker conversion with no terminal FCF.
+
+:::caution
+An imported boundary loads only under a cobre whose version equals that of the
+`cobre-python` that converted the deck, patch included (`pip show cobre-python`
+prints it). Any other cobre version refuses the boundary, and the refusal names
+both versions (see the [version gate](/running/policy-management/#version-gate)).
+To run the case under another cobre release, install that release's
+`cobre-python` and convert the deck again. The cobre-bridge DECOMP guide covers
+[running a case with an imported boundary](https://github.com/cobre-rs/cobre-bridge/blob/v0.17.0/docs/decomp.md#running-a-case-with-an-imported-boundary).
+:::
 
 ### What Gets Converted
 
@@ -352,7 +364,9 @@ merged with sequential integer IDs, and per-stage right-hand-side bounds in
 constant: cobre-bridge 0.17.0 requires `cobre-python>=0.17.0,<0.18`, kept in
 lockstep with the pin above by a packaging test. As stated under
 [Installation](#installation), a cobre-bridge release `X.Y.Z` always targets
-cobre `X.Y.Z`.
+cobre `X.Y.Z`. The minimum does not make versions interchangeable: an imported
+boundary needs an exact version match (see the caution under
+[Converting a DECOMP Deck](#converting-a-decomp-deck)).
 
 ---
 

@@ -1,11 +1,12 @@
 ---
 title: Error Codes
-description: The `LoadError` and `ErrorKind` taxonomy cobre-io returns during case loading and layered validation, with causes and resolutions.
+description: The `LoadError` and `ErrorKind` taxonomy cobre-io returns during case loading and layered validation, and the policy-load errors a checkpoint refusal raises, with causes and resolutions.
 ---
 
 `cobre-io` reports two kinds of errors: `LoadError` variants (returned during
 case loading) and `ErrorKind` values (diagnostic categories collected during
-layered validation).
+layered validation). The page also lists the policy-load errors a checkpoint
+refusal raises.
 
 ## How these errors reach you
 
@@ -14,7 +15,9 @@ Cobre surfaces errors through four user-facing channels:
 - **`cobre validate` human report** — errors print as `error:` prefixed lines; warnings (after a successful validation) print as `warning:` prefixed lines.
 - **`cobre validate --json`** — on success, one JSON object on stdout: `{ configured, boundary_date, report }`; on failure: `{ configured: null, boundary_date: null, report: null, error: { phase, message } }`. The **`phase`** field carries the stable kind string (a `LoadError` variant name, a prep-phase kind, or an `ErrorKind` value).
 - **`cobre.io.validate(...)` (Python)** — returns `{ valid, errors: [{ kind, message, ... }], warnings: [{ kind, message, file, entity }] }`. The `kind` field carries the same stable string.
-- **`cobre.errors` Python exception classes** — case loading raises `ValidationError`, `CaseIoError`, or `PolicyIncompatibleError`; see [Python Quickstart — Error Handling](/getting-started/python-quickstart/#error-handling) for the full hierarchy.
+- **`cobre.errors` Python exception classes** — case loading raises `ValidationError` or `CaseIoError`; a policy-load refusal raises `PolicyIncompatibleError`, or `SolverError` for a boundary-load refusal other than a version mismatch (see [Policy-load errors](#policy-load-errors)). See [Python Quickstart — Error Handling](/getting-started/python-quickstart/#error-handling) for the full hierarchy.
+
+Policy-load failures use different exit codes and exception classes; see [How a policy-load failure reaches you](#how-a-policy-load-failure-reaches-you).
 
 :::note
 The release notes and earlier spec drafts name this field `kind`; the current cobre binary serialises it as **`phase`** (the value is still the stable kind string below). These pages follow the binary.
@@ -722,51 +725,10 @@ files, where they have no effect. These pages follow the binary.
 
 ### `PolicyIncompatible`
 
-**When it occurs:** After all five validation layers pass, when `policy.mode` is
-`"warm_start"` or `"resume"` and the stored policy checkpoint is structurally
-incompatible with the current case. Policy load enforces:
-
-- **State-dimension match:** policy and current system must agree on state dimension (a lag-state depth mismatch is a common cause).
-- **Stage-count match:** policy and current system must have the same number of stages.
-- **Pool-count match:** policy and current system must have the same number of pools.
-- **Graph-manifest node/edge identity:** when present, the policy's graph manifest must match the current study's node count, per-node `(id, stage_id, pool_id)`, edge count, and per-edge `(source_id, target_id)`.
-- **Entity-manifest length match:** policy and current system must have the same number of state slots.
-- **Per-slot entity-identity match:** each slot's `(entity_type, entity_id, subindex)` triple must match exactly — the cut coefficient at each slot must attach to the same state variable.
-
-A `manifest.bin` whose `format_version` is not exactly `2` fails earlier, as a
-checkpoint read error, not as `PolicyIncompatible` (see
-[Policy Management](/running/policy-management/)).
-
-These checks apply to warm-start and resume modes, which require an **exact**
-state-dimension match. **Boundary injection** (a different feature) instead
-**reconciles** a differing source by entity identity + delivery date and loads
-with a per-family drop summary, rather than rejecting.
-
-**Display format:**
-
-The `PolicyIncompatible` display format shown for the variant is
-retained for completeness, but the variant is **effectively reserved** — the
-compatibility rejections a user actually encounters carry the messages listed
-above (e.g., `policy state_dimension mismatch: policy has 42, current system has 43 (a lag-state depth mismatch is a common cause)`).
-
-```
-policy incompatible: {check} mismatch — policy has {policy_value}, system has {system_value}
-```
-
-**Fields:**
-
-| Field          | Type     | Description                                                     |
-| -------------- | -------- | --------------------------------------------------------------- |
-| `check`        | `String` | Name of the failing compatibility check (e.g., `"hydro count"`) |
-| `policy_value` | `String` | Value recorded in the policy file                               |
-| `system_value` | `String` | Value present in the current system                             |
-
-**Resolution:** The stored policy was produced by a run with a different system
-configuration. Options:
-
-- Set `policy.mode` to `"fresh"` to start from scratch without loading the policy.
-- Revert the system change that caused the mismatch (adjust stage count, entity count, or lag depth).
-- Delete the policy directory and start fresh.
+**Status:** Reserved. Cobre declares this variant and case loading never
+returns it. A checkpoint that does not fit the study is reported as a
+[policy-load error](#policy-load-errors). Not to be confused with the Python
+class `PolicyIncompatibleError`, which policy-load refusals raise.
 
 ---
 
@@ -780,8 +742,12 @@ with the `ErrorKind` in debug format (e.g., `[FileNotFound]`).
 The `ErrorKind` values are listed below. Each diagnostic entry carries its own
 severity. The warning kinds (`UnusedEntity`, `ModelQuality`, `SemanticAmbiguity`)
 are reported without blocking execution; all other kinds must be resolved before
-the case loads. One value, `NotImplemented`, is reserved and never emitted
-by the current validator, so it is not documented in detail below.
+the case loads.
+
+Three values are reserved and never emitted by the current validator:
+`NotImplemented`, `WarmStartIncompatible` and `ResumeIncompatible`.
+`NotImplemented` is not documented in detail below; the other two keep an entry
+that points to [Policy-load errors](#policy-load-errors).
 
 ### `FileNotFound`
 
@@ -965,34 +931,19 @@ under `ConstraintError`.
 
 ### `WarmStartIncompatible`
 
-**Severity:** Error
-
-**What triggers it:** A warm-start policy is structurally incompatible with the
-current system: it fails one of the policy-load checks listed under
-[`PolicyIncompatible`](#policyincompatible). The policy was produced by a run with a
-different system configuration. This `ErrorKind` is the validation diagnostic
-counterpart to the `PolicyIncompatible` load error.
-
-**Example message:** `warm-start policy has 42 hydros but current system has 43`
-
-**Resolution:** See `PolicyIncompatible` under `LoadError` above.
+**Status:** Reserved. The validator declares this `ErrorKind` and does not emit
+it. A warm-start run is a full-FCF load of the checkpoint at `policy.path`, and
+a checkpoint that does not fit the current study is refused at policy load; see
+[Policy-load errors](#policy-load-errors).
 
 ---
 
 ### `ResumeIncompatible`
 
-**Severity:** Error
-
-**What triggers it:** A resume state (checkpoint) is incompatible with the current
-run configuration. The checkpoint may have been produced by a run with a different
-`config.json` or a different system, making it impossible to resume from that
-state consistently.
-
-**Example message:** `resume checkpoint iteration 150 is beyond current iteration_limit 100`
-
-**Resolution:** Either adjust `config.json` to be consistent with the checkpoint
-(e.g., increase the iteration limit), or set `policy.mode` to `"fresh"` to
-discard the checkpoint and start a new run.
+**Status:** Reserved. The validator declares this `ErrorKind` and does not emit
+it. A resume run is a full-FCF load of the checkpoint at `policy.path`, and a
+checkpoint that does not fit the current study is refused at policy load; see
+[Policy-load errors](#policy-load-errors).
 
 ---
 
@@ -1149,7 +1100,167 @@ These pages follow the binary.
 **What triggers it:** A failure when reconciling an injected boundary policy with
 the current study. File label: `policy.boundary`.
 
-**Example:** A boundary policy with a state-dimension mismatch that prevents injection.
+**Example:** A boundary checkpoint written by another cobre version reports its
+message prefixed with the file label:
+`policy.boundary: policy was written by cobre {policy_version}, but this is cobre {running}; …`
+(see [`PolicyVersionMismatch`](#policyversionmismatch)).
+
+The phase reports a refusal from any of the boundary checks listed under
+[Compatibility requirements](/running/policy-management/#compatibility-requirements)
+once the checkpoint is read. A checkpoint that cannot be read fails before this
+phase, and `cobre validate --json` then prints no JSON object; see
+[How a policy-load failure reaches you](#how-a-policy-load-failure-reaches-you).
+
+---
+
+## Policy-load errors
+
+A policy load refuses a checkpoint that does not fit the study loading it. Two
+loads raise these errors: a **full-FCF load** of the checkpoint at `policy.path`
+(warm-start, resume, and simulation-only runs) and a **boundary load** of the
+checkpoint at `policy.boundary.path`. `cobre run` and the Python entry points
+raise them before training or simulation starts. `cobre validate` runs the
+boundary load only: it does not read the checkpoint at `policy.path`, so it exits
+0 on a case whose full-FCF checkpoint `cobre run` refuses. These errors are not
+`LoadError` variants, and case loading does not return them.
+
+A full-FCF load runs its checks in the order given under
+[Check order](/running/policy-management/#check-order). The checks of a boundary
+load are listed under
+[Compatibility requirements](/running/policy-management/#compatibility-requirements).
+A `manifest.bin` with an unsupported `format_version` fails before these checks,
+as an unreadable checkpoint (exit 4 in `cobre run` for `policy.path`); the
+message is quoted under [Check order](/running/policy-management/#check-order).
+
+### How a policy-load failure reaches you
+
+| Channel | Refusal | Unreadable or missing checkpoint |
+| --- | --- | --- |
+| `cobre run`, full-FCF load | Exit 1. `error: {message}` and a hint line on stderr. | Exit 4. `error: Policy directory not found: {path}. {requirement}` or `error: failed to read policy checkpoint: {e}`, with two hint lines, on stderr. |
+| `cobre run` and `cobre validate`, boundary load | Exit 1. `cobre run` prints `error: {message}` and a hint line. `cobre validate` labels the message `policy.boundary: `; under `--json` it reports phase `BoundaryReconciliationError`. | Exit 1. `error: failed to read boundary policy checkpoint at {path}: {e}` and a hint line on stderr. Under `cobre validate --json`, stdout carries no JSON object. |
+| Python, full-FCF load (`cobre.run.run`, `Study.train`, `Study.load_policy`) | `PolicyIncompatibleError`. The message starts `policy validation error: `. | `SolverError`. The message is `Policy directory not found: {path}. {requirement}` or `failed to read policy checkpoint: {e}`, with no prefix. |
+| Python, boundary load (`cobre.run.run`, `Study`, `Study.train`) | `cobre.run.run` and `Study.train` raise `PolicyIncompatibleError` for a version mismatch, with the message prefix `policy validation error: `, and `SolverError` for every other refusal, with the message prefix `boundary cut error: `. `Study(...)` constructs without error on a checkpoint it can read. | `ValidationError`. The message starts `setup validation error: `. It is raised when the study is built, before training. |
+| `cobre.results.load_policy` | No refusal: it reads a checkpoint of any cobre version without comparing it with a study. | `FileNotFoundError` for a missing directory or a missing `manifest.bin`. `OutputError` for a file that cannot be deserialized. |
+
+`{requirement}` names the run mode: `Cannot warm-start without a prior policy.`,
+`Cannot resume without a prior checkpoint.`, or
+`Cannot run simulation-only mode without a trained policy.` The two hint lines of
+an exit-4 failure read `this may indicate a software or environment problem` and
+`report this at https://github.com/cobre-rs/cobre/issues`.
+
+:::note
+Some messages carry the extra prefix `configuration validation error: ` after the channel prefix:
+
+- In Python and in the `cobre validate` boundary phase, the structural, cost-scale and boundary messages carry it, as in `policy validation error: configuration validation error: policy num_stages mismatch: policy has 4, current system has 3`.
+- `cobre run` prints it on no message.
+- The version-gate and stored-basis messages carry it in no channel.
+:::
+
+### `PolicyVersionMismatch`
+
+**When it occurs:** A full-FCF load or a boundary load reads a checkpoint whose
+`manifest.bin` records a cobre version other than the running one. The
+comparison is exact, so a different patch or pre-release build is refused as
+well. [Version gate](/running/policy-management/#version-gate) states the rule.
+
+**Message:**
+
+{/* quoted from source: crates/cobre-sddp/src/error.rs:103-108 at cobre v0.17.0 — not capturable (needs a checkpoint written by another cobre version) */}
+
+```text
+policy was written by cobre {policy_version}, but this is cobre {running}; a policy loads only in the cobre version that wrote it: retrain it, or re-export it, with cobre {running}
+```
+
+`{policy_version}` is the cobre version recorded in the checkpoint and
+`{running}` is the version of the cobre that loads it.
+
+**Exit code and Python class:** `cobre run` exits 1. Python raises
+`PolicyIncompatibleError` with the message prefix `policy validation error: `,
+for a full-FCF load and for a boundary load. Under `cobre validate --json`, a
+boundary checkpoint written by another version reports phase
+`BoundaryReconciliationError` and the message prefixed `policy.boundary: `;
+`cobre validate` exits 1.
+
+**Resolution:** Train the policy again with the running cobre version, or
+re-export it under the running version. [Version gate](/running/policy-management/#version-gate)
+describes both routes.
+
+### `StoredBasisDimensionMismatch`
+
+**When it occurs:** A full-FCF load finds a stored LP basis that does not fit the
+stage LP it would warm-start. A boundary load reads no stored bases, so it does
+not raise this error. [Stored-basis gate](/running/policy-management/#stored-basis-gate)
+states the fit rule and shows a captured instance.
+
+**Message:**
+
+{/* quoted from source: crates/cobre-sddp/src/error.rs:116-119 at cobre v0.17.0 */}
+
+```text
+stored basis for node {node_id} does not match its LP: the LP has {expected_cols} columns and {expected_template_rows} template rows, the stored basis has {found_cols} columns and {found_rows} rows with {found_cut_rows} recorded cut rows; retrain the policy
+```
+
+**Exit code and Python class:** `cobre run` exits 1. Python raises
+`PolicyIncompatibleError` with the message prefix `policy validation error: `.
+
+**Resolution:** Retrain the policy on the study that loads it. Block mode, block
+count, and the entity set each shape the stage LPs: a change to any of them that
+alters a stage LP's column count refuses a full-FCF load of a policy trained on
+the other structure.
+
+### Structural mismatch
+
+**When it occurs:** A full-FCF load finds that the checkpoint records no cost
+scale, or that it describes a different state space or study graph than the
+current study. The cost-scale check is step 2 of the
+[check order](/running/policy-management/#check-order) and the state and graph
+checks are step 4. The entity-identity and graph checks run only when both sides
+carry the manifest.
+
+**Messages:**
+
+Cost scale (step 2):
+
+{/* quoted from source: crates/cobre-sddp/src/policy/policy_load.rs:140-154 at cobre v0.17.0 */}
+
+```text
+policy checkpoint predates self-describing cuts (its resolved cuts/<pool>.bin carries no cost_scale_factor); re-export it with a current Cobre
+```
+
+State and graph (step 4):
+
+{/* quoted from source: crates/cobre-sddp/src/policy/policy_load.rs:270-290, 329-368 and 586-608 at cobre v0.17.0 */}
+
+```text
+policy state_dimension mismatch: policy has {n}, current system has {n} (a lag-state depth mismatch is a common cause)
+policy num_stages mismatch: policy has {n}, current system has {n}
+policy n_pools mismatch: policy has {n}, current system has {n}
+entity manifest length mismatch: source has {n} slots, current study has {n}
+entity-identity mismatch at slot {i}: source (entity_type={t}, entity_id={id}, subindex={s}) != current (entity_type={t}, entity_id={id}, subindex={s}); the cut coefficient at this slot would attach to the wrong state variable
+graph manifest n_pools mismatch: source has {n}, current study has {n}
+graph manifest node-count mismatch: source has {n} nodes, current study has {n}
+graph manifest node {i} mismatch: source (id={id}, stage_id={id}, pool_id={id}) != current (id={id}, stage_id={id}, pool_id={id})
+graph manifest edge-count mismatch: source has {n} edges, current study has {n}
+graph manifest edge {i} mismatch: source ({source_id} -> {target_id}) != current ({source_id} -> {target_id})
+```
+
+A boundary load refuses a resolved pool without a `cost_scale_factor` with its
+own message:
+
+{/* quoted from source: crates/cobre-sddp/src/policy/policy_load.rs:686-692 at cobre v0.17.0 */}
+
+```text
+boundary policy checkpoint at {path} predates self-describing cuts (its resolved cuts/<pool>.bin carries no cost_scale_factor); re-export it with a current Cobre
+```
+
+**Exit code and Python class:** `cobre run` exits 1. Python raises
+`PolicyIncompatibleError` with the message prefix `policy validation error: ` for
+the full-FCF messages, and `SolverError` with the message prefix
+`boundary cut error: ` for the boundary message.
+
+**Resolution:** Train a new policy for the changed study or restore the matching
+inputs; see [Check order](/running/policy-management/#check-order). Re-export the
+checkpoint for a cost-scale refusal, as its message states.
 
 ---
 

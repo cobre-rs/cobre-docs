@@ -131,18 +131,10 @@ To run training without simulation, set `simulation.enabled` to `false` in
 
 ### Simulation Against a Saved Policy
 
-To evaluate a previously trained policy without re-training:
-
-```json
-{
-  "training": { "enabled": false },
-  "policy": { "mode": "warm_start", "path": "./policy" }
-}
-```
-
-Cobre loads the policy cuts, skips training entirely, and runs simulation.
-See [Policy Management](/running/policy-management/) for details on warm-start
-and resume modes.
+Set `training.enabled` to `false` to simulate a saved policy without
+re-training. `training.selection` and `training.stopping_rules` are still
+required. The complete config and the policy load checks are in
+[Policy Management — Simulation-Only Mode](/running/policy-management/#simulation-only-mode).
 
 ### Multi-threading
 
@@ -186,7 +178,7 @@ Suppresses banner and progress output, suitable for batch scripts.
 | Exit Code | Meaning          | Action                                         |
 | --------- | ---------------- | ---------------------------------------------- |
 | `0`       | Success          | Results are available in the output directory  |
-| `1`       | Validation error | Fix the input data and re-run `cobre validate` |
+| `1`       | Validation error | Fix the input data and re-run `cobre validate`. If the policy is refused at load, retrain it ([Policy Load Contract](/running/policy-management/#policy-load-contract)) |
 | `2`       | I/O error        | Check file paths and permissions               |
 | `3`       | Solver error     | Check constraint bounds in the case data       |
 | `4`       | Internal error   | Check environment; report at the issue tracker |

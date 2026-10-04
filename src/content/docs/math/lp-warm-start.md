@@ -65,8 +65,11 @@ necessarily cold-starts, and is populated with a valid optimal basis from that
 point onward. A **warm-start or resume run is the exception**: it loads a saved
 policy whose stored LP bases seed the cache up front, so even the first training
 iteration warm-starts — by reconstructing the checkpoint basis (§4) — rather
-than cold-starting. The same checkpoint reconstruction also speeds up
-simulation-only (`cobre simulate`) runs.
+than cold-starting. Reconstruction presumes a stored basis captured against the
+same stage-LP shape, and the load refuses a stored basis that does not fit the
+current stage LP (see
+[Stored-basis gate](/running/policy-management/#stored-basis-gate)). The same
+reconstruction serves simulation-only runs, in which training is disabled.
 
 Because warm-starting is confined to the first-solved opening, the basis a
 solve begins from is a function of the order in which the trial point's openings
@@ -165,6 +168,12 @@ generated it. To reconstruct a basis for the current LP:
 This single mechanism handles all three churn cases — drops, reorders, and
 additions — and serves both within-run reactivation and the cross-run
 checkpoint reconstruction used on warm-start/resume (§2).
+For a checkpoint basis, the stored cut-row statuses are recovered only when the
+pool's active cuts are exactly its first populated slots, in slot order, with
+none deactivated since the capture, and are at least as many as the stored cut
+rows; otherwise every current cut row starts BASIC while the template rows and
+the columns keep their stored statuses. The choice changes only the basis the
+warm start begins from, never the optimal value of the stage LP.
 
 :::note[Basis status is not predicted]
 Basis reconstruction keys purely on slot identity, so a re-introduced cut's

@@ -114,7 +114,7 @@ more specific categories, making sensitivity analysis and debugging tractable.
 
 ## 4. What Is Not Promised
 
-Three quantities are explicitly outside the reproducibility commitment.
+Four quantities are explicitly outside the reproducibility commitment.
 
 **Bit-for-bit binary equality of output files.** Timestamps embedded in output
 files, schema-version fields added by a newer library, and platform-specific
@@ -132,6 +132,12 @@ of the computed result.
 **System-load-dependent variation.** Background processes, thermal throttling,
 NUMA topology, and other system-state effects influence timing but not
 numerical outputs. They are not recorded and are not part of the commitment.
+
+**Policy reuse across software versions.** A stored policy loads only in the
+software version that wrote it: every load of a stored policy into a run
+compares the producing version recorded with the policy against the running one
+and refuses any difference. The commitment covers re-deriving a policy from the
+recorded inputs, not loading a stored checkpoint in another version.
 
 ## 5. Pairing with Determinism
 

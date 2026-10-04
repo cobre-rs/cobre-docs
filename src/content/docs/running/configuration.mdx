@@ -630,7 +630,7 @@ Controls policy persistence (checkpoint saving and warm-start loading).
 
 | Field                    | Type                                     | Default      | Description                                                                                                                                 |
 | ------------------------ | ---------------------------------------- | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------- |
-| `path`                   | string                                   | `"./policy"` | Directory where policy data (cuts, states) is stored.                                                                                       |
+| `path`                   | string                                   | `"./policy"` | Policy directory, resolved against the run's output directory (`<case>/output` by default); training writes the checkpoint there and warm-start, resume and simulation-only read it. |
 | `mode`                   | `"fresh"`, `"warm_start"`, or `"resume"` | `"fresh"`    | Initialization mode. `"fresh"` starts from scratch; `"warm_start"` loads cuts from a previous run; `"resume"` continues an interrupted run. |
 | `boundary`               | object or null                           | `null`       | Terminal boundary cut configuration for coupling with an outer model's FCF. See below.                                                      |
 
@@ -650,7 +650,7 @@ pages follow the binary.
 | `enabled`             | boolean | `false` | Accepted; currently inert — no periodic checkpointing is performed. |
 | `initial_iteration`   | integer | `null`  | First iteration to write a checkpoint.                              |
 | `interval_iterations` | integer | `null`  | Iterations between checkpoints.                                     |
-| `store_basis`         | boolean | `false` | Accepted; currently inert — basis output is not gated by this key.  |
+| `store_basis`         | boolean | `false` | Accepted; has no effect — bases are always written.                 |
 | `compress`            | boolean | `false` | Compress checkpoint files.                                          |
 
 ### `boundary`
@@ -672,7 +672,7 @@ models.
 
 | Field    | Type    | Default | Description                                                                                                                                                        |
 | -------- | ------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `path`   | string  | —       | Path to the source policy checkpoint directory.                                                                                                                    |
+| `path`   | string  | —       | Path to the source checkpoint directory, resolved against this case directory (an absolute path is used as is), so a sibling study's checkpoint is `../<study>/output/policy`. |
 | `strict` | boolean | `false` | Reject the load when the source prices an entity or commitment this study does not model. `false` drops the surplus (recorded in the reconciliation report) and loads. |
 
 Example — load a monthly policy as the terminal boundary:
@@ -682,7 +682,7 @@ Example — load a monthly policy as the terminal boundary:
   "policy": {
     "mode": "fresh",
     "boundary": {
-      "path": "../monthly_study/policy",
+      "path": "../monthly_study/output/policy",
       "strict": false
     }
   }

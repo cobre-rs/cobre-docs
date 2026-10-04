@@ -211,6 +211,20 @@ violation exits with code 1. An unreadable case directory is reported as an I/O
 error on stderr, without the summary. See [Exit Codes](#exit-codes) for the full
 mapping.
 
+When `config.json` configures `policy.boundary`, `cobre validate` loads and
+reconciles that boundary policy, including the
+[version gate](/running/policy-management/#version-gate). A refusal exits `1`,
+as does a boundary checkpoint that cannot be read. Under `--json`, a refusal
+reports phase `BoundaryReconciliationError` and an unreadable checkpoint prints
+no JSON object; see
+[Policy-load errors](/reference/error-codes/#policy-load-errors).
+
+`cobre validate` does not read `policy.path`, so a warm-start, resume, or
+simulation-only checkpoint is checked only when `cobre run` loads it. For a
+`policy.path` checkpoint that `cobre run` refuses, `cobre validate` reports the
+case valid and exits `0`, although the hint printed with the refusal suggests running
+`cobre validate`.
+
 ### Arguments
 
 | Argument     | Type | Description                            |
@@ -307,25 +321,25 @@ None.
 | Code | Category   | Cause                                                                                                                |
 | ---- | ---------- | -------------------------------------------------------------------------------------------------------------------- |
 | `0`  | Success    | The command completed without errors                                                                                 |
-| `1`  | Validation | A parse, schema, or semantic-constraint error in any case file — including `config.json` — collected into the validation report (both subcommands); `cobre run` also exits `1` for every other non-I/O load failure |
+| `1`  | Validation | A parse, schema, or semantic-constraint error in any case file, `config.json` included, collected into the validation report, or a refused or unreadable `policy.boundary` checkpoint (both subcommands). `cobre run` also exits `1` for every other non-I/O load failure, and when a policy load is refused (another cobre version, or a stored basis or state that does not fit the study) |
 | `2`  | I/O        | File not found, permission denied, disk full, or write failure during loading or output (both subcommands)           |
 | `3`  | Solver     | LP infeasible subproblem or numerical solver failure during training or simulation                                   |
-| `4`  | Internal   | Communication failure, unexpected channel closure, or other software/environment problem. `cobre validate` also maps the rare load errors that escape the validation report — a scenario-assembly schema error (an AR-coefficient count mismatch) or a policy-incompatibility error — to this code, where `cobre run` exits `1` |
+| `4`  | Internal   | Communication failure, unexpected channel closure, or other software/environment problem. Under `cobre run`, exit `4` also covers a missing `policy.path` directory or a checkpoint that cannot be read. `cobre validate` also maps the rare load error that escapes the validation report — a scenario-assembly schema error (an AR-coefficient count mismatch) — to this code, where `cobre run` exits `1` |
 
 A dangling reference (an entity ID that refers to a non-existent entity) surfaces
 as an `InvalidReference` line inside a semantic-constraint violation (exit code 1).
 
 Error messages are printed to stderr with `error:` prefix and hint lines. See
-[Error Codes](/reference/error-codes/) for a detailed catalog.
+[Error Codes](/reference/error-codes/) for a detailed catalog, including
+[Policy-load errors](/reference/error-codes/#policy-load-errors).
 
 :::note
 `cobre validate` and `cobre run` do not share one exit code for every load
 failure. Parse, schema, and semantic-constraint errors found while reading the
 case files are collected into the validation report and exit `1` under both
-subcommands. The load errors that surface only after that report is complete —
-a scenario-assembly schema error or a policy-incompatibility error — exit `4`
-under `cobre validate` but `1` under `cobre run`. These pages follow the binary
-as executed.
+subcommands. The load error that surfaces only after that report is complete —
+a scenario-assembly schema error — exits `4` under `cobre validate` but `1`
+under `cobre run`.
 :::
 
 ---

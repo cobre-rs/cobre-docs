@@ -22,17 +22,15 @@ reader in any language `flatc` supports.
 study-global file with no id. The reader derives identity from inside each
 buffer, never from the file name. The `CheckpointManifest` root carries the
 study graph (`nodes`/`edges`), the stage count, the producer provenance, and
-the `format_version` marker; it replaces the hand-editable `policy/metadata.json`
-of earlier releases.
+the `format_version` marker.
 
 The schema lives at
 [`crates/cobre-io/schemas/policy.fbs`](https://github.com/cobre-rs/cobre/blob/v0.17.0/crates/cobre-io/schemas/policy.fbs)
 under namespace `Cobre.IO.Policy`. It declares `file_identifier "CBVF"`
-and `file_extension "bin"`, but still no `root_type` — `--root-type` is
-still required per file to select the entry point for `flatc`. The reader
-rejects any buffer whose leading identifier is not `CBVF`, so a buffer
-written by an earlier release (which carries no identifier at all) is
-refused before decoding, not silently misparsed.
+and `file_extension "bin"` but no `root_type`, so `--root-type` is required
+per file to select the entry point for `flatc`. The reader refuses any buffer
+whose leading identifier is not `CBVF` before decoding it, so a buffer without
+the identifier is never misparsed.
 
 ## Quick start: dumping a `.bin` to JSON
 
@@ -49,10 +47,9 @@ flatc -t --strict-json \
 ```
 
 For the basis or states files, swap the `--root-type` argument for
-`StageBasis` or `StageStates`. `--raw-binary` is only needed to force
-`flatc` to read a buffer written by an earlier release, which carries no
-`CBVF` identifier — a current buffer is self-describing and `flatc -t`
-verifies the identifier on its own.
+`StageBasis` or `StageStates`. `--raw-binary` forces `flatc` to read a buffer
+that carries no `CBVF` identifier. A buffer written by Cobre carries the
+identifier, so `flatc -t` verifies it on its own.
 
 ## Generating a typed reader
 
@@ -112,38 +109,39 @@ for reading on the web.
 
 ### Reserved slots
 
-This release renamed the `Cut` table to `AffinePiece` and, in the same
-breaking change, reclaimed one field id and permanently burned three others:
+The schema reuses one field id and permanently burns three others:
 
-- **`AffinePiece.intercept` (id 4)** now occupies the slot formerly held by
-  the pre-`v0.5.0` `domination_count` field. This id reclaim is the
-  exceptional case in this page's [versioning policy](#versioning-policy) —
-  ordinarily a burned id is never reused.
-- **`AffinePiece.reserved_7` (id 7)** is marked `deprecated`. It held a
-  former always-empty vector field, deleted in this release. The vtable
-  slot number is permanently burned so no future field can reuse it.
-- **`EntitySlot.delivery_anchor` (id 4)** is marked `deprecated`. It held a
-  former month-integer anchor (`year * 12 + (month - 1)`).
-- **`EntitySlot.delivery_date` (id 5)** is **also** marked `deprecated`. It held
-  a former single `YYYYMMDD` calendar date, replaced by a per-family triple:
+- **`AffinePiece.intercept` (id 4)** reuses the vtable slot of the retired
+  `domination_count` field. This id reuse is the exceptional case in this
+  page's [versioning policy](#versioning-policy) — ordinarily a burned id is
+  never reused.
+- **`AffinePiece.reserved_7` (id 7)** is marked `deprecated`. It is a retired,
+  always-empty vector field. The vtable slot number is permanently burned so
+  no future field can reuse it.
+- **`EntitySlot.delivery_anchor` (id 4)** is marked `deprecated`. It is a
+  retired month-integer anchor (`year * 12 + (month - 1)`).
+- **`EntitySlot.delivery_date` (id 5)** is **also** marked `deprecated`. It is
+  a retired single `YYYYMMDD` calendar date; the live date fields are per-family:
   **`reference_date` (id 6)** — the reference past-stage `start_date`
   (`YYYYMMDD`) of a `HydroInflowLag` slot; **`interval_start` (id 7)** /
   **`interval_end` (id 8)** — the half-open forward-family window (a
   `HydroTransitBucket` arrival window or an `AnticipatedThermalState` delivery
   window). Each date field reads sentinel `-2147483648` (the int32 minimum) where a
-  slot's family carries no such date. The burn rule is **per-table**:
-  `EntitySlot`'s id 7 (`interval_start`) is a **live** field, distinct from the
-  burned `AffinePiece.reserved_7` (also id 7).
+  slot's family carries no such date. An `AnticipatedThermalState` ring slot
+  carries its delivery window only while it holds a live commitment at the
+  pool's stage. Both interval fields read the sentinel otherwise, and also when
+  the delivery lands past the study calendar extended by the post-study stages.
+  The burn rule is **per-table**: `EntitySlot`'s id 7 (`interval_start`) is a
+  **live** field, distinct from the burned `AffinePiece.reserved_7` (also id 7).
 
-Unlike an ordinary appended field, none of this is wire-backward-compatible:
-a checkpoint written by an earlier release used field id 4 on `AffinePiece`
-for `domination_count`, not `intercept`, so it is **rejected outright** on
-load rather than read with graceful-absence defaults — see
-[Versioning policy](#versioning-policy) below.
+Unlike an ordinary appended field, reusing or burning an id is not
+wire-backward-compatible: a reader built for another layout misreads the slot.
+A buffer with no `CBVF` identifier or a `format_version` other than `2` is
+therefore rejected outright on load rather than read with graceful-absence
+defaults — see [Versioning policy](#versioning-policy) below.
 
-Generated readers emit no accessor for either `deprecated` field; generated
-writers cannot emit them. The Cobre runtime's own writer never sets them in
-policy files written by the current release.
+Generated readers emit no accessor for a `deprecated` field; generated writers
+cannot emit them. The Cobre runtime's own writer never sets them.
 
 ## How drift is prevented
 
@@ -181,18 +179,24 @@ the schema file.
 
 ## Versioning policy
 
-This format carries a hard version gate on top of the field-level rules
-below. `policy/manifest.bin`'s `CheckpointManifest` carries a required
-`format_version` marker, read **first** — before any `.bin` payload is
-parsed — and every `.bin` payload (the manifest included) carries the `CBVF`
-`file_identifier` described above. A checkpoint written by an earlier release
-has no `manifest.bin` at all, so it is rejected at that first read as a missing
-file — surfaced as `cobre.errors.OutputError` in Python, and as a CLI message
-prefixed `failed to read policy checkpoint: …`. A `manifest.bin` present but
-stamped with a different `format_version` fails the version gate instead
-(`FORMAT_VERSION` is `2`). Either way there is **no conversion path**: the only
-remedy for a checkpoint written by an earlier release is to re-export or
-retrain.
+Two separate rules govern a policy checkpoint, on top of the field-level rules
+below.
+
+**Wire readability.** A reader parses `policy/manifest.bin` **first**, before any
+`.bin` payload. Every `.bin` buffer, the manifest included, carries the `CBVF`
+`file_identifier` described above, and a reader refuses a buffer without it
+before decoding. The manifest's `CheckpointManifest` carries a required
+`format_version` marker, which must equal `2` (`FORMAT_VERSION`); a missing
+`manifest.bin` or another `format_version` stops the read before any payload is
+parsed. There is **no conversion between format versions**;
+[Policy-load errors](/reference/error-codes/#policy-load-errors) lists what a
+refused load raises.
+
+**Load admission.** A checkpoint that reads is not thereby admitted. Every load
+path requires the `cobre_version` recorded in `manifest.bin` to equal the
+running cobre version exactly; the
+[version gate](/running/policy-management/#version-gate) states the rule, the
+message, and the remedy.
 
 FlatBuffers' graceful-absence rule lets us add new fields to any table
 without breaking older readers, **as long as** new fields are appended
@@ -207,17 +211,16 @@ change that does not require an output-format version bump — the
   imply the *values* are safe to consume: a field can change what existing
   fields mean (the `cost_scale_factor` provenance marker marks cut
   coefficients as canonical currency units, which a reader that ignores it
-  silently misinterprets — no error, wrong numbers). Cross-release policy
-  compatibility is governed by the one-directional contract in
-  [Cost-Scale Canonicalization](/running/policy-management/#cost-scale-canonicalization),
-  not by this wire-level rule.
+  silently misinterprets — no error, wrong numbers). Whether a checkpoint
+  loads is governed by the
+  [version gate](/running/policy-management/#version-gate), not by this
+  wire-level rule.
 - **Removing a field** → mark it `deprecated`, never reuse the id. See
   `AffinePiece.reserved_7`, `EntitySlot.delivery_anchor`, and
   `EntitySlot.delivery_date` for worked examples. `AffinePiece.intercept`
-  reclaiming id 4 from the former
-  `domination_count` field is the one exception this page documents — a
-  sanctioned part of this release's breaking format change, not a
-  precedent for reusing a burned id under the ordinary rule.
+  reusing id 4, the slot of the retired `domination_count` field, is the one
+  exception this page documents, not a precedent for reusing a burned id under
+  the ordinary rule.
 - **Changing a field's type** → breaking. Bumps the major output
   format version.
 - **Renaming a field** → breaking for `flatc`-generated code (the

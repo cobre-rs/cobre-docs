@@ -801,9 +801,8 @@ Python, C++, TypeScript, and other languages with `flatc`.
 FlatBuffers binary file encoding all cuts for a single pool. **Pool-keyed**:
 one file per pool (`cuts/<pool_id>.bin`), zero-padded to three digits (e.g.
 `000.bin`, `012.bin`); a pool shared by several leaf nodes appears once. On a
-plain stage chain, pool id equals stage index, so file names look the same as
-before — the general node -> pool mapping (for a branching policy graph) is
-resolved through the `graph_manifest` in
+plain stage chain, pool id equals stage index. The general node -> pool mapping
+(for a branching policy graph) is resolved through the `graph_manifest` in
 [`policy/manifest.bin`](#policymanifestbin), never trusted from the file name.
 
 Each `cuts/<pool>.bin` is **self-describing**: alongside its cuts it carries its
@@ -822,14 +821,13 @@ contained in the file is:
 | `iteration`          | uint32    | Training iteration that generated this cut.                                                                                          |
 | `forward_pass_index` | uint32    | Forward pass index within the generating iteration.                                                                                  |
 | `intercept`          | float64   | Pre-computed cut intercept $\beta_0 = \bar{Q}_t - \beta^\top \hat{x}_{t-1}$, where $\hat{x}_{t-1}$ is the state at the generating forward pass node and $\bar{Q}_t$ the aggregated stage value there. |
-| `coefficients`       | float64[] | Gradient coefficient vector. Length equals the state dimension — the number of entries in the embedded entity manifest below, also the pool's own `state_dimension` (per-pool, not a `policy/manifest.bin` field). |
+| `coefficients`       | float64[] | The cut's slope: one coefficient per state dimension, the sensitivity of the future cost to each incoming state value (see [Cut Management](/math/cut-management/)). Length equals the state dimension — the number of entries in the embedded entity manifest below, also the pool's own `state_dimension` (per-pool, not a `policy/manifest.bin` field). |
 | `is_active`          | bool      | Whether this cut is currently active in the LP. Inactive cuts are retained for potential reactivation by the cut selection strategy. |
 
 Each `NNN.bin` also embeds a **per-slot entity manifest** — one entry per
 state-vector dimension, in canonical cut-coefficient order — recording which
-entity each coefficient position belongs to. It is the self-describing
-replacement for the former `state_dictionary.json` sidecar, and it is what
-policy-load validation checks (see [policy management](/running/policy-management)):
+entity each coefficient position belongs to. It is what policy-load
+validation checks (see [policy management](/running/policy-management)):
 a policy whose dimensions match the current study by count but bind to different
 entities is rejected.
 
@@ -840,27 +838,31 @@ entities is rejected.
 | `subindex`      | uint32 | Secondary index within the entity: the inflow-lag order, anticipated-commitment ring slot, or transit maturity lag.  |
 | `was_active`    | bool   | Whether the owning entity was operationally active at this stage (excluded from the load-time identity check).       |
 | `reference_date` | int32  | The `HydroInflowLag` reference past-stage `start_date`, encoded `YYYYMMDD` (`year*10000 + month*100 + day`); sentinel `-2147483648` (the int32 minimum) for every other family. |
-| `interval_start` | int32  | Forward-family half-open window inclusive start, encoded `YYYYMMDD`: a `HydroTransitBucket` arrival start or an `AnticipatedThermalState` delivery start; sentinel `-2147483648` for `HydroStorage` and `HydroInflowLag`. |
-| `interval_end`   | int32  | The half-open window exclusive end, paired with `interval_start`; sentinel `-2147483648` for `HydroStorage` and `HydroInflowLag`. |
+| `interval_start` | int32  | Inclusive start of the forward-family half-open window, encoded `YYYYMMDD`: a `HydroTransitBucket` arrival start or an `AnticipatedThermalState` delivery start. Sentinel `-2147483648` for `HydroStorage` and `HydroInflowLag`, and for an `AnticipatedThermalState` ring slot that holds no live commitment at the pool's stage or whose delivery lands past the study calendar extended by the post-study stages. |
+| `interval_end`   | int32  | Exclusive end of the window, paired with `interval_start`; reads the sentinel `-2147483648` wherever `interval_start` does. |
 
 The encoding uses the FlatBuffers runtime builder API (little-endian, no
 reflection, no generated code). Field order in the binary matches the
 declaration order above.
 
-Policy checkpoints written by an earlier release are rejected outright: the
-`format_version` marker in `policy/manifest.bin` is read before any payload is
-decoded, and a checkpoint with no `manifest.bin` (every pre-0.15 checkpoint,
-whose study-global metadata lived in a now-removed `policy/metadata.json`) fails
-with a named error rather than being read positionally. There is no converter —
-retrain from scratch, re-export, or resume from a checkpoint written by this
-release.
+**Wire readability.** A reader parses `policy/manifest.bin` first, requires the
+`CBVF` file identifier and a `format_version` of `2`, and only then decodes the
+payloads. There is no conversion between format versions; see
+[Versioning policy](/reference/flatbuffers-schema/#versioning-policy).
+
+**Load admission.** Every policy load requires the `cobre_version` recorded in
+`manifest.bin` to equal the running cobre version exactly (see the
+[version gate](/running/policy-management/#version-gate)).
 
 ### `policy/basis/NNN.bin`
 
 FlatBuffers binary file encoding the LP simplex basis checkpoint for a single
 stage. **Stage-keyed**: one file per stage (`basis/<stage_id>.bin`),
-zero-padded to three digits. Used to warm-start LP solves when resuming a
-study.
+zero-padded to three digits. Bases are always written with the end-of-training
+checkpoint. Warm-start, resume, and simulation-only loads read them to
+warm-start the stage LP solves, subject to the
+[stored-basis gate](/running/policy-management/#stored-basis-gate); boundary
+loads read none.
 
 The logical record structure is:
 
@@ -892,15 +894,15 @@ Like the cut files, each `NNN.bin` embeds the per-slot entity manifest
 describing its state dimensions.
 
 Trial points are the state vectors observed at each forward-pass scenario
-during training. They are always collected in memory regardless of the cut
-selection method, but persisted to disk only when this export flag is set.
-Dominated cut selection uses these states at pruning time; for other methods
-they serve as a diagnostic and analysis artifact.
+during training. The file is an export of them for diagnostics and analysis,
+written only when this flag is set; no policy load uses its contents. Cut
+selection scores cuts against an in-memory record of the visited states that
+training keeps, not against this file.
 
 | Field             | Type      | Description                                                                                                                                                                            |
 | ----------------- | --------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `stage_id`        | uint32    | Stage index (0-based).                                                                                                                                                                 |
-| `node_id`         | int32     | Policy-graph node identity — the declared node id on a branching graph. Sentinel `-1` when absent (a caller that never resolved one, or a pre-`id:5` checkpoint). Distinct from `stage_id` the moment a graph carries more than one node per stage. |
+| `node_id`         | int32     | Policy-graph node identity — the declared node id on a branching graph. Sentinel `-1` when absent (a writer that never resolved one, or a buffer that omits the field). Distinct from `stage_id` the moment a graph carries more than one node per stage. |
 | `state_dimension` | uint32    | Length of each state vector; equals the writing pool's own `state_dimension` (per-pool, not a `policy/manifest.bin` field).                                                          |
 | `count`           | uint32    | Number of state vectors stored for this stage.                                                                                                                                          |
 | `data`            | float64[] | Flat array of `count * state_dimension` elements, row-major (one state per row).                                                                                                       |
@@ -910,27 +912,26 @@ they serve as a diagnostic and analysis artifact.
 The study-global checkpoint manifest: a FlatBuffers root (the
 `CheckpointManifest` table, `file_identifier "CBVF"`) describing the checkpoint
 at a high level, written **last** as the commit signal and read **first** behind
-the `format_version` gate. It replaces the hand-editable `policy/metadata.json`
-of earlier releases; every study-global fact a load needs — the study graph, the
-stage count, and the producer provenance — lives here. Structured around a
+the `format_version` gate. Every study-global fact a load needs — the study graph,
+the stage count, and the producer provenance — lives here. Structured around a
 neutral core (format/provenance/graph descriptors) plus a namespaced `producer`
 block for the training algorithm's own recorded state, so a reader that does not
 know the producer can still read the core from the core's own vocabulary. The
 Python bindings read and write it as a dict of the shape below (see
-[`load_policy`](/getting-started/python-quickstart/)); the field names are the
+[`load_policy`](/running/policy-management/#load-a-policy)); the field names are the
 dict keys.
 
 **Top-level fields:**
 
 | Field            | Type    | Nullable | Description                                                                                                                             |
 | ----------------- | ------- | -------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
-| `format_version` | integer | No       | On-disk format version; must equal `2` on read. A checkpoint from an earlier release has no `manifest.bin` at all and is rejected at the first read, before any payload is parsed. |
-| `cobre_version`  | string  | No       | Version of the cobre binary that wrote this checkpoint.                                                                                 |
+| `format_version` | integer | No       | On-disk format version; must equal `2` on read, before any payload is parsed (wire readability). Admission is the separate `cobre_version` check. |
+| `cobre_version`  | string  | No       | The cobre version that wrote this checkpoint. Every policy load requires it to equal the running cobre version exactly (see [Version gate](/running/policy-management/#version-gate)); `cobre.write_policy_checkpoint` stamps the running version. |
 | `created_at`     | string  | No       | ISO 8601 timestamp when the checkpoint was written.                                                                                     |
 | `num_stages`     | integer | No       | Number of stages the graph manifest spans. Must match the case configuration on resume.                                                 |
 | `graph_manifest` | object  | No       | Graph manifest: node list, edge list, node -> pool map, and pool-set size. Defaults to empty on a plain stage chain.                    |
 | `producer`       | object  | No       | Producer-namespaced metadata — the training algorithm's own recorded state. See below.                                                 |
-| `season_manifest` | object | No       | Study-global season / periodic-AR compatibility descriptor: `cycle_code` (`255` = absent / non-periodic), `n_seasons`, and per-hydro AR orders (ascending by hydro id). Compared across studies by the boundary/warm-start gate — see [Compatibility requirements](/running/policy-management/#compatibility-requirements). |
+| `season_manifest` | object | No       | Study-global season / periodic-AR compatibility descriptor: `cycle_code` (`255` = absent / non-periodic), `n_seasons`, and per-hydro AR orders (ascending by hydro id). Compared on boundary loads only — see [Compatibility requirements](/running/policy-management/#compatibility-requirements); full-FCF loads do not compare it. |
 
 **`graph_manifest` fields:**
 
@@ -966,7 +967,7 @@ dict keys.
 | `max_iterations`                  | integer   | No       | Maximum iterations configured for the run.                                                                                              |
 | `forward_passes`                  | integer   | No       | Number of forward passes per iteration configured for the run.                                                                          |
 | `warm_start_cuts`                 | integer   | No       | Number of cuts loaded from a previous policy at run start. `0` for fresh runs.                                                          |
-| `warm_start_counts[]`             | integer[] | No       | Per-pool warm-start cut counts, in pool-id order. Empty in old checkpoints; supersedes `warm_start_cuts` for per-pool accuracy when non-empty. |
+| `warm_start_counts[]`             | integer[] | No       | Per-pool warm-start cut counts, in pool-id order. Supersedes `warm_start_cuts` for per-pool accuracy when non-empty. |
 | `rng_seed`                        | integer   | No       | RNG seed used by the scenario sampler. Required for reproducibility.                                                                     |
 | `total_visited_states`            | integer   | No       | Total number of visited state vectors across all nodes. `0` when `exports.states` is off.                                                |
 | `training_block_mode`             | string    | No       | Block mode the artifact was trained under: the shared lowercase mode (`"parallel"`/`"chronological"`) when every stage agrees, else `"mixed"`. |

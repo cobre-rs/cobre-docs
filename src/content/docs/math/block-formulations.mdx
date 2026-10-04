@@ -3,6 +3,9 @@ title: Block Formulation Variants
 description: Parallel and chronological block formulations — how intra-stage time periods are handled in the LP, with water balance constraints, LP size, and storage dynamics.
 ---
 
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+import { Content as BlocksNotes } from './_impl/_blocks.notes.mdx';
+
 ## Purpose
 
 This spec defines the two block formulations supported by Cobre — parallel and chronological — which determine how intra-stage time periods (e.g., peak, off-peak, or hourly resolution) are handled in the LP. The choice of block formulation affects water balance constraints, LP size, and the ability to model intra-stage storage dynamics.
@@ -118,28 +121,21 @@ By the LP envelope theorem, this reduced cost automatically captures all downstr
 | LP constraints       | Fewer                 | More                                          |
 | Intra-stage dynamics | None                  | Full                                          |
 
-## 4. Cross-Mode Policy Portability
+## 4. Cut Portability Across Block Structures
 
-A policy (the set of Benders cuts) trained under one block formulation can be loaded and simulated under the other — parallel-trained cuts drive a chronological simulation, and vice versa — and a policy trained with one block count can be simulated with a different one. This is a **guarantee**, not a coincidence: it follows directly from the state-variable definition in §2.5.
+The block structure of a stage (its block set $\mathcal{K}$, the durations $\tau_k$, and the parallel or chronological formulation) shapes the stage LP but not the state that links consecutive stages. A cut trained under one block structure is therefore written in coordinates that every other block structure shares (§4.1), but it keeps its meaning only for the model it was trained on (§4.2).
 
-### 4.1 Why cuts are block-count- and block-mode-independent
+### 4.1 Why cuts are block-structure-independent coordinates
 
-Only end-of-stage storage is carried as state (§2.5); the interior block storages are internal LP columns. A cut approximates the future-cost function over the **incoming state vector**, whose dimension — end-of-stage storage plus any inflow lags and augmented slots — does not depend on how many blocks a stage carries or whether they are parallel or chronological. The storage cut coefficient is the reduced cost of the pinned incoming-state storage column (§2.6), whose identity is likewise block-structure-independent. The resulting cut coefficients are therefore **identical** across block modes and block counts, and loading them into a differently-blocked LP is exact, not approximate.
+Only end-of-stage storage $v_h$ is carried as storage state (§2.5); the interior block storages $v_{h,k}$ for $k < |\mathcal{K}|$ are internal LP variables. A cut is an affine function of the incoming state vector, whose coordinates (end-of-stage storage plus any inflow lags and augmented state slots) do not depend on how many blocks a stage carries or on whether they are parallel or chronological. The storage cut coefficient $\beta^v_h$ is the reduced cost of the pinned incoming-storage column $v^{in}_h$ (§2.6), and that column pins the same coordinate, the incoming storage $\hat{v}_h$, under every block structure. A cut trained under one partition is therefore an affine function of the same state vector under another, and it loads into the other partition's stage LP without transformation: each coefficient multiplies the coordinate it was computed for.
 
-This is what unlocks a **coarse-train / fine-simulate** workflow: train the policy with a cheap block partition (a few parallel blocks) and simulate it with a finer chronological partition that resolves intra-stage cycling — the trained cost-to-go is reused unchanged.
+### 4.2 What a cut means under another partition
 
-### 4.2 What policy load validates
+A cut is a valid lower approximation of the cost-to-go of the model it was trained on ([Cut Management §4](/math/cut-management#4-cut-validity)). A different block partition, different block durations, or the other formulation defines a different stage model, with its own stage costs and feasible sets and therefore its own cost-to-go. The trained cuts need not lie below that cost-to-go; depending on how the two models differ, they can underestimate or overestimate it.
 
-Policy load is validated unconditionally against the current study (the check cannot be disabled), but on **state identity, not block structure**:
+A policy evaluated under another partition is therefore a heuristic with no bound guarantee. The lower bound reached in training bounds the optimal value of the trained model; it need not bound the other model's optimal value from below, and the [optimality gap](/math/stopping-rules#optimality-gap) between it and a cost simulated under the other partition certifies nothing. The simulated cost estimates what the policy costs in the other model, and nothing bounds how far that lies from the other model's optimum. Training under a coarse partition and simulating under a finer one is a use of this kind.
 
-- The **state-vector dimension** must match.
-- A **per-slot entity manifest** embedded in each policy file must match — every state coordinate must attach to the same entity (same type, id, and sub-index) it was trained on, which rejects a policy that matches by dimension count but binds its coordinates to different plants.
-
-There is **no** `block_mode`, block-count, or block-duration check anywhere in policy validation. See [output format](/reference/output-format) for the embedded manifest.
-
-### 4.3 Training provenance
-
-For traceability, the block mode a policy was trained under is recorded as provenance in its checkpoint (per stage when it varies across stages). This is descriptive only — it does not gate loading, and a policy stays portable across block modes and counts.
+Cuts injected as a terminal boundary ([Post-Study Boundary](/math/post-study-boundary)) from a study trained under another partition have the same status: they lower-approximate the source model's cost-to-go and carry no bound guarantee for a continuation modeled under the current partition.
 
 ## 5. Note on Fine-Grained Temporal Resolution
 
@@ -157,6 +153,14 @@ This extension is out of scope for the current formulation because it requires:
 - Separation of the objective time-weighting (day weight × block duration) from the water balance conversion (block duration only)
 - Research into how day types chain within a stage (sequential vs. independent with weighted-average storage)
 - Validation against reference implementations
+
+## Implementation in Cobre
+
+The methodology above defines the two block formulations and what a cut means across them; the tab below covers how Cobre's policy loads treat a change of block structure.
+
+<Tabs>
+  <TabItem label="Implementation notes"><BlocksNotes /></TabItem>
+</Tabs>
 
 ## Cross-References
 
