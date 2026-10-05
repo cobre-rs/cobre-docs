@@ -89,27 +89,23 @@ For a glossary of domain terms used throughout the book, see
   _Background reference for [PAR Inflow Model](/math/par-inflow-model), [Scenario Generation](/math/scenario-generation)._
 
 - **Hipel, K.W. & McLeod, A.I.** (1994). _Time Series Modelling of Water Resources and Environmental Systems_. Elsevier, Amsterdam.
-  Chapter 14 is the canonical presentation of periodic models: the PAR model definition, the periodic autocovariance/ACF conventions (the more recent observation names the season), the periodic Yule-Walker equations, the lag-0 variance identity, the periodic PACF with its $\pm 1.96/\sqrt{N}$ significance band, and the periodic-stationarity condition. Cobre's fitting procedure is this formulation written in correlation form over the $s_m$-standardized series.
-  _Cited in [PAR Inflow Model](/math/par-inflow-model) §5.4._
+  Chapter 14 is the canonical presentation of periodic models: the PAR model definition, the periodic autocovariance/ACF conventions (the more recent observation names the season), the periodic Yule-Walker equations, the lag-0 variance identity, the periodic PACF with its $\pm 1.96/\sqrt{N_m}$ significance band, and the periodic-stationarity condition. Cobre's fitting procedure is this formulation written in correlation form over the $s_m$-standardized series.
+  _Cited in [PAR Inflow Model](/math/par-inflow-model) §3.4–§3.6._
 
 - **Maceira, M.E.P. & Damázio, J.M.** (2006). Use of the PAR(p) model in the stochastic dual dynamic programming optimization scheme used in the operation planning of the Brazilian hydropower system. _Probability in the Engineering and Informational Sciences_, 20(1), 143–156. [doi:10.1017/S0269964806060098](https://doi.org/10.1017/S0269964806060098)
   The periodic autoregressive PAR(p) model as fitted inside SDDP for the Brazilian system. Source of the population-divisor seasonal-statistics convention and the iterative AR-order-reduction procedure that keeps composed lag contributions non-negative.
-  _Cited in [PAR Inflow Model](/math/par-inflow-model) §4.1, §5.2, §9.6._
+  _Cited in [PAR Inflow Model](/math/par-inflow-model) §3.2, §3.6, §7.6._
 
-- **Akaike, H.** (1974). A new look at the statistical model identification. _IEEE Transactions on Automatic Control_, 19(6), 716–723. [doi:10.1109/TAC.1974.1100705](https://doi.org/10.1109/TAC.1974.1100705)
-  Akaike Information Criterion (AIC) used for AR-order selection in the PAR(p) model.
-  _Cited in [PAR Inflow Model](/math/par-inflow-model) §4.2._
-
-- **Schwarz, G.** (1978). Estimating the dimension of a model. _The Annals of Statistics_, 6(2), 461–464. [doi:10.1214/aos/1176344136](https://doi.org/10.1214/aos/1176344136)
-  Bayesian Information Criterion (BIC) used as an alternative AR-order selection criterion.
-  _Cited in [PAR Inflow Model](/math/par-inflow-model) §4.3._
+- **Treistman, F., Maceira, M.E.P., Damázio, J.M. & Cruz, C.B.** (2020). Periodic time series model with annual component applied to operation planning of hydrothermal systems. In _2020 International Conference on Probabilistic Methods Applied to Power Systems (PMAPS)_, Liège, Belgium, 1–6. [doi:10.1109/PMAPS47429.2020.9183472](https://doi.org/10.1109/PMAPS47429.2020.9183472)
+  The PAR(p)-A model: the periodic autoregressive model augmented with an annual component, a regression term on the rolling annual average (the mean of the twelve previous monthly inflows), which extends the model's memory to long dry and wet periods.
+  _Cited in [PAR Inflow Model](/math/par-inflow-model) §7._
 
 - **Larroyd, P.V., Pedrini, R., Beltran, F., Teixeira, G., Finardi, E.C. & Picarelli, L.B.** (2022). Dealing with Negative Inflows in the Long-Term Hydrothermal Scheduling Problem. _Energies_, 15(3), 1115. [doi:10.3390/en15031115](https://doi.org/10.3390/en15031115)
   Inflow non-negativity treatment for PAR(p) models in hydrothermal dispatch — the reference design that motivates the clamp-plus-slack formulation.
   _Cited in [Inflow Non-Negativity](/math/inflow-nonnegativity) §8._
 
 - **Maceira, M.E.P., Terry, L.A., Costa, F.S., Damázio, J.M. & Melo, A.C.G.** (2002). Chain of optimization models for setting the energy dispatch and spot price in the Brazilian system. In _Proceedings of the 14th Power Systems Computation Conference (PSCC)_, Seville, Spain.
-  The NEWAVE / DECOMP / GEVAZP optimization chain for the Brazilian system. Source of the DECOMP-style scenario tree — a deterministic trunk with branching at the final stage — modelled in complete-tree mode.
+  The NEWAVE / DECOMP / GEVAZP optimization chain for the Brazilian system. Source of the DECOMP-style scenario tree — a deterministic trunk with branching at the final stage — expressed as a terminal fan of sibling nodes traversed by enumerated selection.
   _Cited in [Scenario Generation](/math/scenario-generation) §6._
 
 ---
@@ -126,7 +122,7 @@ For a glossary of domain terms used throughout the book, see
 
 - **Dowson, O. & Kapelevich, L.** (2021). SDDP.jl: A Julia Package for Stochastic Dual Dynamic Programming. _INFORMS Journal on Computing_, 33(1), 27–33. [doi:10.1287/ijoc.2020.0987](https://doi.org/10.1287/ijoc.2020.0987). Documentation: [sddp.dev](https://sddp.dev/stable/).
   Reference SDDP implementation in Julia. Influenced cut-management patterns, sampling-scheme abstractions, the state-pinning cut-extraction technique (realised in Cobre via column bounds and reduced costs), and notation conventions in Cobre.
-  _Cited in [Notation Conventions](/overview/notation-conventions), [LP Formulation](/math/lp-formulation) §11, [Cut Management](/math/cut-management) §2, [Scenario Generation](/math/scenario-generation) §10, [Risk Measures](/math/risk-measures) §3._
+  _Cited in [Notation Conventions](/overview/notation-conventions), [LP Formulation](/math/lp-formulation) §11, [Cut Management](/math/cut-management) §2, [Scenario Generation](/math/scenario-generation) §3, [Risk Measures](/math/risk-measures) §3._
 
 - **Huangfu, Q. & Hall, J.A.J.** (2018). Parallelizing the dual revised simplex method. _Mathematical Programming Computation_, 10(1), 119–142. [doi:10.1007/s12532-017-0130-5](https://doi.org/10.1007/s12532-017-0130-5)
   HiGHS dual simplex implementation. HiGHS is Cobre's default LP solver.
@@ -141,7 +137,7 @@ For a glossary of domain terms used throughout the book, see
 
 - **Higham, N.J.** (2002). Computing the nearest correlation matrix — a problem from finance. _IMA Journal of Numerical Analysis_, 22(3), 329–343. [doi:10.1093/imanum/22.3.329](https://doi.org/10.1093/imanum/22.3.329)
   The nearest positive-semidefinite / correlation-matrix problem underlying the clip-negative-eigenvalues projection used when factorising the spatial correlation matrix.
-  _Background reference for [PAR Inflow Model](/math/par-inflow-model) §8._
+  _Background reference for [PAR Inflow Model](/math/par-inflow-model) §6._
 
 ---
 

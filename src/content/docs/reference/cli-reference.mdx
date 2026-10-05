@@ -324,7 +324,7 @@ None.
 | `1`  | Validation | A parse, schema, or semantic-constraint error in any case file, `config.json` included, collected into the validation report, or a refused or unreadable `policy.boundary` checkpoint (both subcommands). `cobre run` also exits `1` for every other non-I/O load failure, and when a policy load is refused (another cobre version, or a stored basis or state that does not fit the study) |
 | `2`  | I/O        | File not found, permission denied, disk full, or write failure during loading or output (both subcommands)           |
 | `3`  | Solver     | LP infeasible subproblem or numerical solver failure during training or simulation                                   |
-| `4`  | Internal   | Communication failure, unexpected channel closure, or other software/environment problem. Under `cobre run`, exit `4` also covers a missing `policy.path` directory or a checkpoint that cannot be read. `cobre validate` also maps the rare load error that escapes the validation report — a scenario-assembly schema error (an AR-coefficient count mismatch) — to this code, where `cobre run` exits `1` |
+| `4`  | Internal   | Communication failure, unexpected channel closure, or other software/environment problem. Under `cobre run`, exit `4` also covers a missing `policy.path` directory or a checkpoint that cannot be read, and a stochastic-preparation failure that is a stochastic-model error (`cobre validate` reports it as `StochasticPreparationError`, exit `1`, with `stochastic error:` after the file label). `cobre validate` also maps the rare load error that escapes the validation report — a scenario-assembly schema error (an AR-coefficient count mismatch) — to this code, where `cobre run` exits `1` |
 
 A dangling reference (an entity ID that refers to a non-existent entity) surfaces
 as an `InvalidReference` line inside a semantic-constraint violation (exit code 1).
@@ -339,7 +339,9 @@ failure. Parse, schema, and semantic-constraint errors found while reading the
 case files are collected into the validation report and exit `1` under both
 subcommands. The load error that surfaces only after that report is complete —
 a scenario-assembly schema error — exits `4` under `cobre validate` but `1`
-under `cobre run`.
+under `cobre run`. A refusal of the fitted inflow model that arrives as a load
+error exits `1` under both subcommands. Message texts and renderings are under
+[`StochasticPreparationError`](/reference/error-codes/#stochasticpreparationerror).
 :::
 
 ---

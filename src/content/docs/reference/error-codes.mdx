@@ -330,15 +330,21 @@ for the full addressing grammar.
 
 #### Deterministic external inflow column under an autoregressive model
 
-**When it occurs:** Under the `external` inflow sampling scheme, a class's mean
-and standard deviation are derived from its external scenario file itself. A
-constant (σ = 0) column is accepted for load, NCS, and an order-0 inflow model,
-but **rejected** for an inflow whose model is autoregressive of order `> 0`: a
-single deterministic value cannot stand in for such a model, since it would have
-to equal that model's own stage-by-stage deterministic PAR output, which the
-loader does not reconstruct from a flat column. (Earlier releases reported this
-as "requires a positive standard deviation"; the message now states the real
-reason.)
+**When it occurs:** Under the `external` inflow sampling scheme, an inflow's
+seasonal mean and standard deviation are replaced by the sample moments of its
+external scenario file only for a hydro of autoregressive order 0 with no annual
+component; a hydro whose files declare a lag coefficient or an annual component
+keeps the statistics its own files declare. The substitution is per class: a
+load or non-controllable-source class takes its moments from its external file
+only when that class is itself `external`.
+
+A constant (σ = 0) column is accepted for load, NCS, and a hydro of order 0
+with no annual component, but **rejected** for a hydro whose files declare an
+autoregressive order above 0 or an annual component: a single deterministic
+value cannot stand in for such a model, since it would have to equal that
+model's own stage-by-stage deterministic PAR output, which the loader does not
+reconstruct from a flat column. (Earlier releases reported this as "requires a
+positive standard deviation"; the message now states the real reason.)
 
 **Fields:**
 
@@ -366,8 +372,8 @@ scheme configuration.
 **When it occurs:** A catch-all for all validation diagnostics collected
 across any validation layer, for system assembly rejections, and for guards
 raised directly by loaders after assembly (for example, a non-finite
-closure-derived innovation scale — a non-stationary fitted inflow model — is
-rejected here naming the hydro and season). The `description` field contains
+closure-derived innovation scale is rejected here naming the hydro and
+season). The `description` field contains
 every collected error message joined by newlines, each prefixed with its
 `[ErrorKind]`, source file, optional entity identifier, and message text.
 
@@ -1113,11 +1119,114 @@ outside its accepted range).
 
 **What triggers it:** A failure during stochastic model preparation — scenario
 generation, inflow-model setup, or external scenario validation. File label:
-`scenarios/` or `scenarios/inflow_history.parquet` (the latter when the error is
-specifically an inflow-history issue).
+`scenarios/inflow_history.parquet` for a stochastic-model error (after the label,
+its message begins `stochastic error:`) and `scenarios/` for every other failure
+in this phase, such as a load error (after the label, its message begins
+`I/O error:`). The label depends on how the error is classified, not on the file
+it traces to.
 
-**Example:** A non-stationary fitted inflow model (non-finite innovation scale),
-or a deterministic external inflow column under an autoregressive model of order > 0.
+**Example:** A historical library that holds no complete window, a
+non-stationary fitted inflow model (non-finite innovation scale), or an
+autoregressive stage whose standard deviation is zero.
+[Historical-library refusals](#historical-library-refusals) and
+[Inflow-model refusals](#inflow-model-refusals) quote the messages.
+
+#### Historical-library refusals
+
+**When it occurs:** Three refusals of the historical window pool are reachable
+from a case. The pool serves the forward `historical` scheme and the stages that
+use the `historical_residuals` sampling method (see
+[Historical Window Pool](/math/scenario-generation/#historical-window-pool) and
+[Historical-Residual Openings](/math/scenario-generation/#25-historical-residual-openings)).
+Each message is `insufficient data: ` followed by the text below:
+
+- No year is admissible, so the pool is empty:
+  {/* quoted from source: crates/cobre-stochastic/src/sampling/window.rs:145-150 at cobre v0.17.0 */}
+  ```text
+  no valid historical windows found: ensure that inflow history covers the required seasons for at least one starting year
+  ```
+- A study stage has no season:
+  {/* quoted from source: crates/cobre-stochastic/src/sampling/historical.rs:494-503 at cobre v0.17.0 — reproduced with the binary of record at inflow-model order 1, so not quoted as a capture */}
+  ```text
+  V2.1: stage {stage_id} (index {index}) has season_id: None; all study stages must have a season_id assigned
+  ```
+- A residual of the pool is not finite:
+  {/* quoted from source: crates/cobre-stochastic/src/sampling/historical.rs:525-538 at cobre v0.17.0 */}
+  ```text
+  V2.3: historical library contains non-finite eta (NEG_INFINITY or NaN) at window {w}, stage {t}, hydro {h} — sigma=0 with non-matching historical observation or numerical failure
+  ```
+
+V2.1 names the stage id, then the stage's 0-based index. A stage has no season
+when it declares none and the case either has no season definitions or has a
+`custom` season map that leaves the stage's start date uncovered. For example,
+with an inflow model of order 1 and a `custom` season map that covers the first
+stage and its lag season but leaves one later stage's start date uncovered,
+`cobre validate` reports V2.1.
+
+In V2.3, `window`, `stage` and `hydro` are 0-based positions (in the window
+pool, the study's stages and the case's hydros), not a year, a stage id or a
+hydro id.
+
+**Rendering under `cobre validate`:** the phase is `StochasticPreparationError`
+and the exit code is `1`. The `error:` line carries the file label and the
+`stochastic error:` prefix. This excerpt omits the `Validation:` summary line,
+which carries the case path.
+
+{/* capture: cobre validate case 2>&1 | cobre   v0.17.0 | binary: cobre-cli sha256 23916b46 | case: temporary 1dtoy derivative (cobre init --template 1dtoy; stages.json: season_definitions added with cycle_type monthly and twelve seasons, season_id 0 to 3 on the four stages, sampling_method historical_residuals on every stage; scenarios/inflow_history.parquet added with compression zstd, hydro 0, three monthly windows 2020-01-01 to 2020-04-01, values 41, 42 and 43; scenarios/inflow_ar_coefficients.parquet added with compression zstd and zero rows; run with NO_COLOR=1; the Validation summary line, which carries the temporary path, is not quoted) */}
+
+```text
+error: scenarios/inflow_history.parquet: stochastic error: insufficient data: no valid historical windows found: ensure that inflow history covers the required seasons for at least one starting year
+```
+
+`cobre run` on the same case reports an internal error and exits `4`. The line
+has no file label and no `stochastic error:` prefix, and two hint lines follow
+it. This excerpt omits the banner, the `Execution` block and the
+`Loading case:` line.
+
+{/* capture: cobre run case 2>&1 | cobre   v0.17.0 | binary: cobre-cli sha256 23916b46 | case: the same temporary 1dtoy derivative as the cobre validate capture above; run with NO_COLOR=1; the banner, the Execution block and the Loading case line, which carry the hostname and the temporary path, are not quoted */}
+
+```text
+error: insufficient data: no valid historical windows found: ensure that inflow history covers the required seasons for at least one starting year
+  -> this may indicate a software or environment problem
+  -> report this at https://github.com/cobre-rs/cobre/issues
+```
+
+`cobre run` builds the forward `historical` scheme's library during setup;
+`cobre validate` builds it only when `policy.boundary` is configured. Without
+`policy.boundary`, a refusal of that library passes `cobre validate` and is
+reported by `cobre run`, which exits `4`. The exception is a case in which a
+stage also uses `historical_residuals`: `cobre validate` builds that stage's
+opening-tree library from the same window pool and reports the refusal itself.
+
+#### Inflow-model refusals
+
+**When it occurs:** The inflow model, declared by the case's autoregressive and
+statistics files or fitted from `inflow_history.parquet`, cannot support the
+study. Two refusals carry a fixed message:
+
+- An autoregressive stage has a standard deviation of zero. The message names
+  the hydro id and the stage id, and `ar_order` is the stage's autoregressive
+  order:
+  {/* quoted from source: crates/cobre-stochastic/src/par/validation.rs:54-70 at cobre v0.17.0 */}
+  ```text
+  invalid PAR parameters for hydro {hydro_id} at stage {stage_id}: zero standard deviation with ar_order={ar_order}: AR model requires nonzero variance to normalize coefficients
+  ```
+  This is a stochastic-model error. `cobre validate` prints it after the
+  `scenarios/inflow_history.parquet: stochastic error: ` prefix and exits `1`.
+  `cobre run` prints it without that prefix, followed by the two hint lines of
+  an internal error, and exits `4`.
+- The coefficients fitted from the history imply a non-stationary process, so a
+  derived residual standard-deviation ratio is not finite. The message names the
+  hydro id and the season id:
+  {/* quoted from source: crates/cobre-io/src/scenarios/residual_derivation.rs:144-152, crates/cobre-io/src/error.rs:61 and crates/cobre-sddp/src/error.rs:43-44 at cobre v0.17.0 */}
+  ```text
+  I/O error: constraint violation: derived residual_std_ratio is non-finite for hydro_id={hydro_id} season={season}: the coefficients imply a non-stationary process (implied residual variance 1 - sum(psi*rho) is negative)
+  ```
+  This is a [`ConstraintError`](#constrainterror) raised while the model is
+  fitted, so it reaches the command as a load error. `cobre validate` prints it
+  with the `scenarios/` file label and exits `1`. `cobre run` prints it without
+  the `I/O error: ` prefix, followed by a hint to run `cobre validate`, and also
+  exits `1`.
 
 ---
 

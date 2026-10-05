@@ -527,7 +527,7 @@ For the fully assembled constraints, see [LP formulation](/math/lp-formulation).
 
 ### Physical Meaning
 
-A **non-controllable source** represents intermittent generation (wind farms, solar plants, small run-of-river hydros, etc.) whose available output depends on external conditions (weather, river flow) rather than dispatch decisions. The solver receives a stochastic availability value per scenario from the scenario pipeline, and can only curtail generation below that availability — it cannot dispatch upward beyond what nature provides.
+A **non-controllable source** represents intermittent generation (wind farms, solar plants, small run-of-river hydros, etc.) whose available output depends on external conditions (weather, river flow) rather than dispatch decisions. The solver receives the availability as data, a per-scenario draw of the source's availability model ([Scenario Generation §5.4](/math/scenario-generation#54-non-controllable-source-availability)) when it has one and its stage's available generation otherwise, and can only curtail generation below that availability — it cannot dispatch upward beyond what nature provides.
 
 Non-controllable sources have near-zero marginal cost. The cost of curtailing available generation is a **regularization penalty** (Category 3 in the [Penalty System](/math/penalty-system)), analogous to `spillage_cost` for hydros — curtailment discards available "free" energy.
 

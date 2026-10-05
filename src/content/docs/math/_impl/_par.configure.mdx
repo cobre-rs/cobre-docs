@@ -23,13 +23,13 @@ The `estimation` block is a top-level key of `config.json` (a sibling of
 
 | Field                          | Type            | Default  | Description |
 | ------------------------------ | --------------- | -------- | ----------- |
-| `max_order`                    | integer          | `6`      | Maximum lag order `p_max` considered by PACF order selection (methodology §4.1). |
-| `order_selection`               | string          | `"pacf"` | Order-selection criterion. Exactly two values are accepted: `"pacf"` (classical PAR(p), methodology §1–§8) and `"pacf_annual"` (PAR(p)-A, methodology §9). |
+| `max_order`                    | integer          | `6`      | Maximum lag order `p_max` considered by PACF order selection (methodology §3.6). |
+| `order_selection`               | string          | `"pacf"` | Order-selection criterion. Exactly two values are accepted: `"pacf"` (classical PAR(p), methodology §1–§6) and `"pacf_annual"` (PAR(p)-A, methodology §7). |
 | `min_observations_per_season`  | integer          | `30`     | Recommended minimum number of fully-covered stage occurrences of each season per hydro. Below this count, estimation still proceeds — see Implementation notes. |
 | `max_coefficient_magnitude`    | float or `null`  | `null`   | Optional safety net on fitted coefficient magnitude — see Implementation notes for the exact effect. |
 
 Setting `"order_selection": "pacf_annual"` activates the PAR(p)-A annual
-component (methodology §9): the periodic Yule-Walker system is extended with
+component (methodology §7): the periodic Yule-Walker system is extended with
 the annual cross-correlation term, per-season sample statistics of the
 rolling 12-month average are computed, and the fitted triple
 ($\psi^{A*}_m$, annual mean, annual std) is written to `inflow_annual_component.parquet`
@@ -67,6 +67,14 @@ always overwrite it with fitted values.
 
 Cases with `R = 1` but `H = 0` and `S = 0` collapse to row 1 — AR coefficients
 alone cannot drive estimation.
+
+An estimated correlation (rows 4–6, when no `correlation.json` is provided)
+holds a pooled `"default"` profile. In a cycle of more than one season it also
+holds one `season_<id>` profile for each season whose every hydro pair has
+at least 30 residual pairs — the season `id` zero-padded to the width of the
+largest id, as in `season_03` for a twelve-season cycle — and a schedule that
+maps each stage of such a season to its profile. Every other stage uses the
+pooled profile (methodology §6.1).
 
 **Practical recipes:**
 
@@ -163,7 +171,7 @@ correlation matrix, plus an optional stage-to-profile schedule:
 
 | Field       | Required | Description |
 | ----------- | -------- | ----------- |
-| `method`    | Yes      | Correlation decomposition method. Accepts only `"spectral"` (eigendecomposition + clipped square root, methodology §8.2); `"cholesky"` is rejected as an unknown method. |
+| `method`    | Yes      | Correlation decomposition method. Accepts only `"spectral"` (eigendecomposition + clipped square root, methodology §6.3); `"cholesky"` is rejected as an unknown method. |
 | `profiles`  | Yes      | Named profiles, each holding one or more `correlation_groups`. Must not be empty. |
 | `schedule`  | No       | Optional array of `{ stage_id, profile_name }` entries activating a named profile for a specific stage. Absent means the `"default"` profile (or the sole profile) applies to every stage. Every `profile_name` referenced must exist in `profiles`. |
 
@@ -183,3 +191,11 @@ share the same `type`. Mixing types in one group is rejected at case-load
 time. Correlation is modelled **independently per entity class** — inflow,
 load, and NCS each carry their own spatial correlation structure, and there is
 **no** cross-class correlation term.
+
+### Out-of-sample fallback
+
+Under the `out_of_sample` forward scheme, a stage whose `sampling_method` is
+`historical_residuals` or `selective` draws plain Monte Carlo noise, and the run
+logs a warning that names the entity class and the affected stage ids. For the
+message, see
+[Scenario Generation, Implementation notes tab, Warnings](/math/scenario-generation/#implementation-in-cobre).

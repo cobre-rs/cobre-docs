@@ -77,9 +77,9 @@ by the fraction of the month's duration each week covers.
 ## 3. PAR Fitting on Aggregated Statistics
 
 After duration-weighted aggregation, the aggregated series has the same form as
-a homogeneous-resolution series at the coarser resolution. The standard
-five-step PAR fitting procedure described in
-[PAR(p) Inflow Model](/math/par-inflow-model) section 5 applies without
+a homogeneous-resolution series at the coarser resolution. The PAR
+estimation procedure of
+[PAR(p) Inflow Model §3](/math/par-inflow-model#3-estimation) applies without
 modification.
 
 For stages that run at the fine resolution (e.g., the monthly head of a
@@ -89,8 +89,8 @@ normal way. For stages that run at the coarse resolution (e.g., the quarterly
 tail), the statistics and coefficients are derived from the duration-weighted
 quarterly aggregates. The two sets of parameters co-exist in the same parameter
 files; the system resolves the appropriate set for each stage when building the
-stage-indexed preprocessing arrays described in
-[Scenario Generation](/math/scenario-generation) section 1.
+runtime PAR quantities
+([PAR(p) Inflow Model §4.2](/math/par-inflow-model#42-runtime-quantities)).
 
 No separate fitting pipeline exists for multi-resolution studies: the aggregation
 step is a preprocessing transformation that produces a coarser-resolution
@@ -155,6 +155,6 @@ aggregated distribution matches expectations before running training.
 
 ## Cross-References
 
-- [PAR(p) Inflow Model](/math/par-inflow-model) — The fitting procedure (section 5) that applies to aggregated statistics; the parameter set that the aggregated statistics populate; the LP-ready form that quarterly stages use at runtime.
-- [Scenario Generation](/math/scenario-generation) — Opening-tree generation (section 2.3) that produces per-stage noise vectors; the PAR preprocessing pipeline (section 1) that resolves seasonal statistics into stage-indexed arrays at the native resolution.
+- [PAR(p) Inflow Model](/math/par-inflow-model) — The fitting procedure (§3) that applies to aggregated statistics; the parameter set that the aggregated statistics populate; the LP-ready form that quarterly stages use at runtime.
+- [Scenario Generation](/math/scenario-generation) — Opening-tree generation (section 2.3) that produces per-stage noise vectors.
 - [Weekly+Monthly Coupled Studies](/math/weekly-monthly-coupled-studies) — The boundary chapter: two studies coupled at a handoff point rather than one study with mixed stages; sub-monthly lag accumulation and terminal boundary cuts live there, not here.

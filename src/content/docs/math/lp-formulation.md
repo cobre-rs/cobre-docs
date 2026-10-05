@@ -394,7 +394,7 @@ $$
 where:
 
 - $z_h$ = LP variable representing the realized inflow for hydro $h$ (free column, zero cost)
-- $b_{h,m(t)}$ = deterministic base (precomputed from seasonal means and AR coefficients — see [PAR(p) model §7.4](/math/par-inflow-model))
+- $b_{h,m(t)}$ = deterministic base (precomputed from seasonal means and AR coefficients — see [PAR(p) model §2.4](/math/par-inflow-model#24-deterministic-base))
 - $\psi_{m(t),\ell}$ = original-unit AR coefficients (constraint matrix entries, set once at LP construction)
 - $a_{h,\ell}$ = LP variables for lagged inflows (state variables, fixed by §5a)
 - $\sigma_{m(t)} \cdot \varepsilon_t$ = noise innovation (patched into the constraint RHS per scenario)

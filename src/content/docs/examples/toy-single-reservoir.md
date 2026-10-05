@@ -440,7 +440,7 @@ illustrate:
 - **Spatial inflow correlation**: when multiple plants share a wet/dry
   signal, their innovations $\varepsilon$ must be drawn from a
   correlated multivariate normal via the spectral factorisation
-  described in [PAR Inflow Model](/math/par-inflow-model) section 8.
+  described in [PAR Inflow Model §6](/math/par-inflow-model#6-spatial-correlation-factorisation).
 - **Autoregressive inflow memory**: a PAR(p) model with $p \geq 1$ adds
   one lag state variable per lag and one cut coefficient per lag; the
   cut becomes a hyperplane in storage _and_ lag state space. See

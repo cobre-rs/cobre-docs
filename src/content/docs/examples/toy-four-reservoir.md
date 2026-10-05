@@ -194,7 +194,7 @@ this walkthrough preserves that property.
 If a `correlation.json` file were supplied, the spatial structure
 $C$ between innovations would be applied via the spectral
 factorisation $\varepsilon = C^{1/2} z$ with $C^{1/2} = U \Lambda^{1/2} U^{\top}$ — see
-[PAR Inflow Model](/math/par-inflow-model) section 8 for the
+[PAR Inflow Model §6](/math/par-inflow-model#6-spatial-correlation-factorisation) for the
 multivariate case. For this walkthrough the four innovations are
 drawn independently.
 
@@ -481,7 +481,7 @@ no transmission. It does not cover:
 - **Spatial inflow correlation**: when a `correlation.json` file is
   supplied, the per-hydro innovations are drawn from a correlated
   multivariate normal via spectral factorisation. See
-  [PAR Inflow Model](/math/par-inflow-model) section 8.
+  [PAR Inflow Model §6](/math/par-inflow-model#6-spatial-correlation-factorisation).
 - **Autoregressive inflow memory**: a PAR(p) model with $p \geq 1$
   adds one lag state variable per hydro per lag and one AR-lag cut
   coefficient per lag; the cut becomes a hyperplane in storage _and_

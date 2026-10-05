@@ -9,12 +9,21 @@ and [Output Format](/reference/output-format/) pages).
 
 | File | Role |
 | ---- | ---- |
-| `scenarios/inflow_history.parquet` | Windowed historical inflow observations per (hydro, `[start_date, end_date)`) — drives the estimation path (H) when present, and is the base layer for the derived inflow-lag seed on every path (see the Configure tab). |
+| `scenarios/inflow_history.parquet` | Windowed historical inflow observations per (hydro, `[start_date, end_date)`). It has four roles, from estimation to the historical-residual openings (listed below the table). |
 | `scenarios/inflow_seasonal_stats.parquet` | User-supplied or fitted seasonal statistics per (hydro, stage). The `std_m3s` column is the **stored sample standard deviation** of the historical series — not the innovation standard deviation used for noise scaling (see Implementation notes). |
 | `scenarios/inflow_ar_coefficients.parquet` | User-supplied or fitted standardized AR coefficients, one row per (hydro, stage, lag) — schema `[hydro_id, stage_id, lag, coefficient]`. The AR order is derived from the row count, not stored explicitly. |
 | `scenarios/inflow_annual_component.parquet` | Optional user-supplied PAR(p)-A annual triple (coefficient, mean, std of the rolling 12-month average). Honored only on the pass-through paths — the estimation paths overwrite it with fitted values (see the Configure tab). |
 | `scenarios/correlation.json` | Named spatial-correlation profiles and optional stage schedule. Wins over estimated or identity correlation on every inflow-source path when present. |
-| `initial_conditions.json` (`recent_observations` rows) | Conditioning layer over the windowed `inflow_history` record: observed inflow for partial periods before the study start, shadowing `inflow_history` day-wise wherever the two overlap. Feeds the derived inflow-lag seed consumed by the opening study stages' lag terms and mid-period accumulator (methodology §7.5, and the Configure tab). |
+| `initial_conditions.json` (`recent_observations` rows) | Conditioning layer over the windowed `inflow_history` record: observed inflow for partial periods before the study start, shadowing `inflow_history` day-wise wherever the two overlap. Feeds the derived inflow-lag seed consumed by the opening study stages' lag terms and mid-period accumulator (methodology §2.5, and the Configure tab). |
+
+`scenarios/inflow_history.parquet` has four roles:
+
+1. It drives the estimation path (H) when present.
+2. It is the base layer for the derived inflow-lag seed on every path (see the Configure tab).
+3. It supplies the historical replay windows of the `historical` forward scheme.
+4. It supplies the historical-residual openings of the stages whose `sampling_method` is `historical_residuals`.
+
+The last two are described in [Scenario Generation](/math/scenario-generation).
 
 For the complete field-by-field schema of each file above, see the
 [Case Directory Format](/reference/case-directory-format/) reference page in
@@ -58,11 +67,11 @@ Rules Cobre enforces (or that silently mis-scale the model if broken):
 - **Cobre hard-rejects a coefficient set that fails its stationarity gate.**
   The gate runs the [periodic-ACF closure](/math/par-inflow-model) on your
   supplied $\psi^*$ and rejects the whole load when the closure system is
-  singular, the implied innovation variance is not strictly positive for any
+  singular, the implied innovation variance is at or below a numerical floor for any
   season, any implied autocorrelation magnitude exceeds 1, or a conservative
   spectral-radius estimate of the periodic monodromy reaches 1. The gate runs
   only on directly-supplied coefficients; internally-fitted coefficients are
-  guarded during the fit itself (order reduction) and, like every load path, by
+  not tested for stationarity but, like every load path, are guarded by
   the closure derivation's own backstop — a non-finite derived $r_m$ is a hard
   load error naming the hydro and season.
 - Lags must be contiguous $1, 2, \ldots, p$; the **AR order $p$ is implicit** in

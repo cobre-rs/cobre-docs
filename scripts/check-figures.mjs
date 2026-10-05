@@ -34,16 +34,27 @@
 // checks naturally — it is not special-cased. pt-br/ is excluded to mirror
 // check-math-parity.mjs (a future locale; only the root English corpus is gated).
 //
+// A second, independent check enforces the tested-compute contract behind every
+// Observable Plot island (E07 ticket-084, R86 / ADR-023): each
+// `src/components/*Plot.astro` must import a `src/figures/<name>.ts` module that
+// has a sibling `<name>.test.ts`, and carry `role="img"` with a non-empty
+// `aria-label`. It also fails when no island is found at all (a vacuous pass).
+//
 // Run any time (no build needed — it reads source content, not dist/). Exits 0
 // with a one-line summary when clean; exits 1 listing each violation, or with a
 // clear message if the content root is missing or a file cannot be read.
 
 import { readFileSync, readdirSync, existsSync } from "node:fs";
+import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 const contentRoot = fileURLToPath(
   new URL("../src/content/docs/", import.meta.url),
 );
+const componentsRoot = fileURLToPath(
+  new URL("../src/components/", import.meta.url),
+);
+const figuresRoot = fileURLToPath(new URL("../src/figures/", import.meta.url));
 
 // --- Retired figure stems ---------------------------------------------------
 // The exact hyphenated filename stems of the 10 retired assets (9 matplotlib +
@@ -176,6 +187,96 @@ export function collectSourceFiles(dir) {
   return files;
 }
 
+// --- Plot-island contract (E07 ticket-084, R86 / ADR-023) --------------------
+// An Observable Plot island is a thin render shell over a tested compute module.
+// Given the text of one `*Plot.astro` and a Set of the basenames present in
+// `src/figures/`, return { rule, match } for each broken clause: no
+// `../figures/<m>` (or `<m>.ts`) import, an imported `<m>.ts` or its sibling
+// `<m>.test.ts` absent from `src/figures/`, no `role="img"`, and no `aria-label`
+// or one that is blank. The `aria-label` must be a quoted literal: a computed
+// value cannot be checked statically. Pure and synchronous like
+// detectFigureViolations; a clean island returns [].
+const FIGURE_IMPORT = /from\s+["']\.\.\/figures\/([A-Za-z0-9_]+)(?:\.ts)?["']/g;
+const ROLE_IMG = /(?<![\w-])role\s*=\s*(["'])img\1/;
+const ARIA_LABEL = /(?<![\w-])aria-label\s*=\s*(["'])(.*?)\1/gs;
+
+export function detectPlotIslandViolations(source, figureFiles) {
+  const violations = [];
+
+  const imports = [...source.matchAll(FIGURE_IMPORT)];
+  if (imports.length === 0) {
+    violations.push({
+      rule: "no src/figures module import (an island must import a tested ../figures/<name>.ts)",
+      match: "(no ../figures/<name> import found)",
+    });
+  }
+  for (const found of imports) {
+    const name = found[1];
+    const match = extractContext(source, found.index, found[0].length);
+    if (!figureFiles.has(`${name}.ts`)) {
+      violations.push({
+        rule: `imported module absent from src/figures ('${name}.ts')`,
+        match,
+      });
+    }
+    if (!figureFiles.has(`${name}.test.ts`)) {
+      violations.push({
+        rule: `imported module has no sibling test ('${name}.test.ts' absent from src/figures)`,
+        match,
+      });
+    }
+  }
+
+  if (!ROLE_IMG.test(source)) {
+    violations.push({
+      rule: 'no role="img" attribute',
+      match: "(attribute not found)",
+    });
+  }
+
+  const labels = [...source.matchAll(ARIA_LABEL)];
+  const blank = labels.find((label) => label[2].trim() === "");
+  if (labels.length === 0 || blank) {
+    violations.push({
+      rule: "no aria-label attribute with a non-empty value",
+      match: blank ? blank[0] : "(no literal aria-label found; a computed {expression} value is not accepted)",
+    });
+  }
+
+  return violations;
+}
+
+// Walk the islands directly under `componentsDir`: the `Plot.astro` suffix selects
+// an island (Footer.astro, VersionPicker.astro and the rest are ignored by name).
+// Returns the island basenames (sorted, so reports are stable) and every failure
+// as { file, rule, match }; an unreadable island is a failure, never a skip.
+export function checkPlotIslands(componentsDir, figuresDir) {
+  const figureFiles = new Set(readdirSync(figuresDir));
+  const islands = readdirSync(componentsDir)
+    .filter((name) => /Plot\.astro$/.test(name))
+    .sort();
+  const failures = [];
+
+  for (const file of islands) {
+    let source;
+    try {
+      source = readFileSync(join(componentsDir, file), "utf8");
+    } catch (error) {
+      failures.push({
+        file,
+        rule: `unreadable file (${error.code ?? error.name}: ${error.message})`,
+        match: "(could not read file)",
+      });
+      continue;
+    }
+    for (const violation of detectPlotIslandViolations(source, figureFiles)) {
+      failures.push({ file, ...violation });
+    }
+  }
+
+  return { islands, failures };
+}
+
 // --- Main (run only when invoked directly, not when imported by a test) ------
 // Walk the corpus, collect violations + scope evidence, print, and exit. Kept
 // behind a direct-run guard so importing this module for `detectFigureViolations`
@@ -249,8 +350,25 @@ function main() {
     );
   }
 
+  // --- Plot-island contract -------------------------------------------------
+  // Zero islands is a vacuous pass (a renamed suffix or directory would silence
+  // the check), so it fails like a scope assertion.
+  const { islands, failures: islandFailures } = checkPlotIslands(
+    componentsRoot,
+    figuresRoot,
+  );
+  if (islands.length === 0) {
+    scopeErrors.push(
+      "scope: expected at least one src/components/*Plot.astro island, but none was found.",
+    );
+  }
+
   // --- Report ---------------------------------------------------------------
-  if (failures.length > 0 || scopeErrors.length > 0) {
+  if (
+    failures.length > 0 ||
+    scopeErrors.length > 0 ||
+    islandFailures.length > 0
+  ) {
     if (failures.length > 0) {
       console.error(
         `check:figures: ${failures.length} retired-figure reference(s) across ${sourceFiles.length} content file(s):\n`,
@@ -268,12 +386,23 @@ function main() {
       }
       console.error("");
     }
+    if (islandFailures.length > 0) {
+      console.error(
+        `check:figures: ${islandFailures.length} Plot-island violation(s) across ${islands.length} island(s) in src/components/:\n`,
+      );
+      for (const f of islandFailures) {
+        console.error(
+          `  ${f.file}\n    rule:  ${f.rule}\n    found: ${f.match}\n`,
+        );
+      }
+    }
     process.exit(1);
   }
 
   console.log(
     `check:figures: ${sourceFiles.length} content files checked, 0 retired-figure references; ` +
-      `d07/d08/d09 absent, ConvergencePlot (d21) present in ${convergencePlotHost}.`,
+      `d07/d08/d09 absent, ConvergencePlot (d21) present in ${convergencePlotHost}; ` +
+      `${islands.length} Plot islands import a tested src/figures module with role=img and a non-empty aria-label.`,
   );
   process.exit(0);
 }

@@ -68,7 +68,7 @@ npm test              # tested-compute layer + script unit tests (node --test)
 npm run check         # astro check (types)
 npm run check:math    # KaTeX $$-block render parity
 npm run check:links   # internal link integrity
-npm run check:figures # every plot island has a paired tested compute module
+npm run check:figures # every Plot island imports a tested src/figures module and carries an aria-label
 npm run check:voice   # hype / unpinned-number gate (two-voice methodology)
 npm run check:counts  # stated column/field counts match the adjacent table
 npm run check:version # cobre-version references vs the Synced-to anchor

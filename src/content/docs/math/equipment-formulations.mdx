@@ -182,7 +182,7 @@ For hydro decision variables and physical meaning, see [system elements](/math/s
 
 ## 6. Non-Controllable Generation Sources
 
-Non-controllable sources (wind farms, solar plants, small run-of-river hydros) have stochastic availability determined by the scenario pipeline. The solver can only curtail generation below the available amount — it cannot dispatch upward beyond what nature provides.
+Non-controllable sources (wind farms, solar plants, small run-of-river hydros) have an available generation the solver takes as given: drawn per scenario from the source's availability model when it has one ([Scenario Generation §5.4](/math/scenario-generation#54-non-controllable-source-availability)), and otherwise its stage's available generation. The solver can only curtail generation below the available amount — it cannot dispatch upward beyond what nature provides.
 
 **Decision Variables:**
 

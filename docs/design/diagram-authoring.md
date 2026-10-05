@@ -412,8 +412,10 @@ Observable Plot components do not need a numeric prefix — name by semantic rol
 
 Before committing a diagram change:
 
-- `npm run check:figures` — asserts every `.astro` island has a paired `src/figures/<name>.ts`
-  and `src/figures/<name>.test.ts`.
+- `npm run check:figures` — asserts every `src/components/*Plot.astro` island imports a
+  `src/figures/<name>.ts` that has a sibling `src/figures/<name>.test.ts`, and carries
+  `role="img"` with a non-empty `aria-label`; it also asserts the content corpus references
+  no retired figure.
 - `npm run check:d2` — asserts all ` ```d2 ` fences use ELK layout (no TALA).
 - `npm run check:math` — asserts math rendering parity (remark-math + rehype-katex).
 - `npm test` — runs the full test suite including `src/figures/*.test.ts`; the

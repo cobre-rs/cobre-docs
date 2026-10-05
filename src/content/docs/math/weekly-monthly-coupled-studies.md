@@ -89,11 +89,12 @@ forward from these values at each stage of the weekly run.
 
 **The knob**: the depth of the observation buffer is bounded by the AR model
 order $p$, which is itself a per-hydro, per-season parameter fitted from
-historical data (see [PAR Inflow Model](/math/par-inflow-model) §4). When the
+historical data (see
+[PAR Inflow Model §3.6](/math/par-inflow-model#36-order-selection)). When the
 historical record does not extend far enough back to fill all $p$ lags — for
 example, when the study start date falls very close to the beginning of the
 available history — earlier lags are filled from the seasonal mean, preserving
-the AR structure while gracefully handling data gaps. (This is runtime lag-buffer seeding from the seasonal mean — distinct from the fitting-time estimation of out-of-window lag-season statistics from history described in [PAR Inflow Model §5.8](/math/par-inflow-model#58-partial-year-studies-and-the-pre-study-lag-window).)
+the AR structure while gracefully handling data gaps. (This is runtime lag-buffer seeding from the seasonal mean — distinct from the fitting-time estimation of out-of-window lag-season statistics from history described in [PAR Inflow Model §3.8](/math/par-inflow-model#38-partial-year-studies-and-the-pre-study-lag-window).)
 
 **The guarantee**: the AR dynamics at each stage of the weekly run are
 consistent with the PAR model parameters. The recent-observation initialization

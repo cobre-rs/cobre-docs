@@ -72,7 +72,7 @@ openings instead of drawing a fixed count):
 | Field           | Type               | Default | Description                                                                                                                                                                                             |
 | --------------- | ------------------ | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `enabled`       | boolean            | `true`  | Set to `false` to skip training and proceed directly to simulation (requires a pre-trained policy).                                                                                                     |
-| `tree_seed`     | integer            | `null`  | Random seed for the opening scenario tree. When `null`, a default seed of 42 is used (deterministic but arbitrary). See [Seed resolution](/reference/case-directory-format/#seed-resolution) for how it relates to `scenario_source.seed`. |
+| `tree_seed`     | integer            | `null`  | Seed of the opening tree and of the in-sample opening draws. When `null`, the default seed 42 is used (deterministic but arbitrary), with no warning; a negative value is used by absolute value. See [Seed resolution](/reference/case-directory-format/#seed-resolution) for how it relates to `scenario_source.seed`. |
 | `stopping_mode` | `"any"` or `"all"` | `"any"` | How multiple stopping rules combine: `"any"` stops when the first rule is satisfied; `"all"` requires all rules to be satisfied simultaneously.                                                         |
 | `cut_selection`   | object             | row selection disabled                | Row-management (cut-selection) pipeline, nested at `training.cut_selection` (not a root key). See [`cut_selection`](#cut_selection). |
 | `solver`          | object             | retry policy, no per-phase overrides  | LP solver retry policy plus optional per-phase profile overrides. See [`training.solver`](#trainingsolver). |
@@ -91,11 +91,11 @@ pre-generated opening tree).
 
 | Field              | Type              | Default       | Description                                                                                             |
 | ------------------ | ----------------- | ------------- | ------------------------------------------------------------------------------------------------------- |
-| `seed`             | integer or `null` | `null`        | Shared forward-pass seed; **required when any class is not `in_sample`** (`out_of_sample`, `historical`, or `external`). |
+| `seed`             | integer or `null` | `null`        | Forward seed of the out-of-sample draws, in training and in simulation; **required when any class is not `in_sample`** (`out_of_sample`, `historical`, or `external`). Historical-window and external-scenario selection use no seed. See [Seed resolution](/reference/case-directory-format/#seed-resolution). |
 | `inflow`           | object            | `in_sample`   | Sampling scheme for hydro inflow. Object with `"scheme"` key.                                           |
 | `load`             | object            | `in_sample`   | Sampling scheme for bus load. Object with `"scheme"` key.                                               |
 | `ncs`              | object            | `in_sample`   | Sampling scheme for NCS availability. Object with `"scheme"` key.                                       |
-| `historical_years` | array or object   | auto-discover | Restrict the pool of historical windows. List (`[1940, 1953]`) or range (`{"from": 1940, "to": 2010}`). |
+| `historical_years` | array or object   | auto-discover | Restrict the pool of historical windows. List (`[1940, 1953]`) or range (`{"from": 1940, "to": 2010}`). Each listed year names the window whose first study stage falls in that year's occurrence of its season; eligibility follows [Historical Window Pool](/math/scenario-generation/#historical-window-pool), and a year that fails it is dropped without a message. An empty result is the "no valid historical windows found" error ([Error Codes](/reference/error-codes/#stochasticpreparationerror)). The same pool supplies the `historical_residuals` openings. |
 | `openings`         | object            | `{"source": "generated"}` | Backward opening-tree source. `{"source": "generated"}` builds the tree internally; `{"source": "file"}` reads a user-supplied tree from `scenarios/noise_openings.parquet` (sampled selection and chain-dialect `stages.json` only). Training only. |
 
 Valid values for `"scheme"`: `"in_sample"`, `"out_of_sample"`, `"external"` for every class;
@@ -111,13 +111,27 @@ Admission rules (checked at load; the exact messages are listed under
 - `openings` is accepted under `training.scenario_source` only; under
   `simulation.scenario_source` it is rejected.
 
-Under the `"external"` scheme a class's mean and standard deviation are derived
-from its external scenario file itself, so that class's seasonal-statistics
-input (`scenarios/inflow_seasonal_stats.parquet`, `load_seasonal_stats.parquet`,
-or `non_controllable_stats.parquet`) is **optional** — it is not consulted when
-the class is external everywhere. A constant (σ = 0) external column is accepted
-for load, NCS, and an order-0 inflow model; for an autoregressive inflow model
-of order `> 0` it is rejected (see [Error Codes](/reference/error-codes)).
+For a class on the `"external"` scheme in training, these entities take the mean
+and standard deviation of the external file, per entity and stage:
+
+- the load buses of an external load class;
+- the NCS sources of an external NCS class;
+- the hydros of an external inflow class whose inflow model has AR order 0 and no
+  annual component.
+
+For an external class, `load_seasonal_stats.parquet` and
+`non_controllable_stats.parquet` are therefore optional; a load stats file that
+is present keeps its own rule of a row for every bus at every study stage.
+`scenarios/inflow_seasonal_stats.parquet` still requires, when present, a row
+for every hydro in service at each study stage, and an AR-order-0 hydro's rows
+in `inflow_seasonal_stats.parquet` are not used to sample.
+A hydro with AR order above 0 or an annual component
+keeps the mean, standard deviation and coefficients its files declare
+(or the ones estimated from `inflow_history.parquet` when the files omit them).
+An external column with σ = 0 is accepted for load, NCS and an inflow model of
+AR order 0 with no annual component, and rejected for an inflow model whose
+files declare an AR order above 0 or an annual component (see
+[Error Codes](/reference/error-codes/#deterministic-external-inflow-column-under-an-autoregressive-model)).
 
 Example — out-of-sample inflow with in-sample load and NCS:
 
@@ -474,7 +488,11 @@ Controls where the forward-pass noise comes from during the simulation phase.
 When absent, simulation falls back to the scheme configured under
 `training.scenario_source`. This allows you to train with in-sample noise and
 simulate with a different scheme (for example, out-of-sample or historical)
-without modifying the training configuration.
+without changing the training schemes. A simulation class on `out_of_sample`
+draws with `training.scenario_source.seed`, so the training `scenario_source`
+carries a seed even when every training class is `in_sample`. In-sample
+simulation draws use `training.tree_seed`, and `simulation.scenario_source.seed`
+is still required for admission when a simulation class is not `in_sample`.
 
 The fields are those of `training.scenario_source` except `openings`, which is
 training-only. When `simulation.scenario_source` is present it replaces the training
@@ -483,21 +501,24 @@ value:
 
 | Field              | Type              | Default       | Description                                                                                             |
 | ------------------ | ----------------- | ------------- | ------------------------------------------------------------------------------------------------------- |
-| `seed`             | integer or `null` | `null`        | Shared forward-pass seed; **required when any class is not `in_sample`** (`out_of_sample`, `historical`, or `external`). |
+| `seed`             | integer or `null` | `null`        | **Required for admission when a class of `simulation.scenario_source` is not `in_sample`**; no draw reads its value. The simulation's out-of-sample draws use `training.scenario_source.seed`. See [Seed resolution](/reference/case-directory-format/#seed-resolution). |
 | `inflow`           | object            | `in_sample`   | Sampling scheme for hydro inflow. Object with `"scheme"` key.                                           |
 | `load`             | object            | `in_sample`   | Sampling scheme for bus load. Object with `"scheme"` key.                                               |
 | `ncs`              | object            | `in_sample`   | Sampling scheme for NCS availability. Object with `"scheme"` key.                                       |
-| `historical_years` | array or object   | auto-discover | Restrict the pool of historical windows. List (`[1940, 1953]`) or range (`{"from": 1940, "to": 2010}`). |
+| `historical_years` | array or object   | auto-discover | Restrict the pool of historical windows. List (`[1940, 1953]`) or range (`{"from": 1940, "to": 2010}`); each listed year is read as under [`training.scenario_source`](#scenario_source). Takes effect only when the training inflow scheme is not `historical`: when training is also `historical`, the simulation replays the training pool and this key has no effect. |
 
 The scheme values and admission rules are those of [`training.scenario_source`](#scenario_source); `openings` is rejected here.
 
-Example — simulate with out-of-sample inflow while training uses in-sample:
+Example — simulate with out-of-sample inflow while training uses in-sample. The
+training `seed` (77) is the one the simulation's draws use. The simulation `seed`
+is required by admission, and any integer satisfies it because no draw reads it:
 
 ```json
 {
   "training": {
     "selection": { "method": "sampled", "forward_passes": 50 },
-    "stopping_rules": [{ "type": "iteration_limit", "limit": 200 }]
+    "stopping_rules": [{ "type": "iteration_limit", "limit": 200 }],
+    "scenario_source": { "seed": 77 }
   },
   "simulation": {
     "enabled": true,
