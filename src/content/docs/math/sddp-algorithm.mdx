@@ -36,7 +36,7 @@ $$
 V_t(x_{t-1}) = \mathbb{E}_{\omega_t}\left[ \min_{x_t, u_t} \left\{ c_t(x_t, u_t) + V_{t+1}(x_t) : (x_t, u_t) \in \mathcal{X}_t(x_{t-1}, \omega_t) \right\} \right]
 $$
 
-with terminal condition $V_{T+1}(x) = 0$.
+with terminal condition $V_{T+1}(x) = 0$, which a study may replace with an imported terminal function (§7).
 
 **Key insight**: The value function $V_t(x)$ is convex and piecewise linear (for LP subproblems), enabling outer approximation via Benders cuts.
 
@@ -281,17 +281,11 @@ An alternative multi-cut formulation creates one cut per scenario per iteration,
 
 ## 7. Terminal Boundary Cuts
 
-A **terminal boundary cut** is a Benders cut on the terminal future-cost function that originates from an external Cobre run rather than from the current run's backward pass. Terminal boundary cuts couple a downstream run's policy with an upstream run's value function at the time-horizon boundary.
+By default the recursion ends with the terminal condition $V_{T+1}(x) = 0$ of §2. A study may replace it with a fixed terminal function defined by cuts imported from one pool of an upstream policy, the **terminal boundary cuts**, which form the terminal stage's cut pool. The backward pass generates no cut for that pool and none is removed from it, so the function stays fixed for the whole run.
 
-**What they represent**: In a chained study, the upstream run builds a policy over a longer or earlier horizon. The future-cost function approximation at the upstream run's terminal stage — a set of Benders cuts — captures the expected cost of continuing from any state at that stage boundary. When the downstream run imports these cuts, they serve as the initial approximation of the cost-to-go at the downstream run's terminal stage $T$.
+The imported cuts are valid for the upstream model's cost-to-go, so the study's lower bound and policy are valid relative to the imported function. A downstream model that differs from the upstream one is not corrected by training, and the difference biases the policy near the horizon. The imported cuts only bound the future-cost variable from below, so such a difference never makes a stage subproblem infeasible; it changes the value.
 
-**The methodology guarantee**: Imported terminal cuts are valid Benders cuts — they satisfy the same lower-bound and convexity conditions as any cut generated internally. Adding them to the initial cut set at stage $T$ is equivalent to seeding the outer approximation with information from the upstream run. The backward pass then generates additional cuts as usual, tightening the approximation from that informed starting point. The append-only property of the cut pool ensures the lower-bound estimate remains non-decreasing throughout training, whether cuts were imported or generated internally. Under distributed execution, every rank injects the identical imported terminal cut set, so the seeded outer approximation — and therefore the trained policy and its lower bound — is independent of rank count.
-
-**The use case**: Chaining Cobre runs for studies that span different horizons or temporal resolutions — for example, a long-horizon strategic study feeding a shorter-horizon detailed study — without re-running the upstream model. The downstream run starts with an already-informed terminal cost, which typically reduces the number of iterations needed for the lower bound to reach the convergence threshold.
-
-**Trade-off**: The imported cuts reflect the upstream run's stochastic model and state discretization. If the downstream run uses a different inflow model, a different set of reservoirs, or a different penalty structure, the imported cuts may be inconsistent with the downstream subproblems. Inconsistencies do not cause infeasibility (the backward pass will generate corrective cuts) but they may slow convergence or produce a looser initial approximation than a consistent import would provide.
-
-For the full treatment of chained studies and horizon coupling, see [Horizon Modes](/math/horizon-modes) in Coupling & Boundary Conditions.
+The source pool, the compatibility conditions, the carried state and the calendar reconciliation are owned by [Post-Study Boundary & Chained Studies](/math/post-study-boundary).
 
 ## Implementation in Cobre
 
@@ -311,6 +305,7 @@ The methodology above defines the forward/backward pass structure and the execut
 - [PAR Inflow Model](/math/par-inflow-model) — Stochastic inflow model driving uncertainty in the forward pass
 - [Discount Rate](/math/discount-rate) — Discounted Bellman equation, stage-dependent rates, discount factor on θ
 - [Horizon Modes](/math/horizon-modes) — The reserved cyclic policy-graph target design (season function, cycle convergence inequality, season-indexed cut pool, fixed-point Bellman operator) that the finite-horizon-only restriction in [Policy Graphs](/math/policy-graphs) anticipates
+- [Post-Study Boundary & Chained Studies](/math/post-study-boundary) — the imported terminal function: source pool, compatibility conditions, carried state and calendar reconciliation
 - [Upper Bound Evaluation](/math/upper-bound-evaluation) — Upper bound estimation methods
 - [Stopping Rules](/math/stopping-rules) — Convergence criteria that terminate the iterative process
 - [Risk Measures](/math/risk-measures) — CVaR and risk-averse extensions to the Bellman recursion

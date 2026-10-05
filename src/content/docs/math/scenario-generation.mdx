@@ -111,6 +111,10 @@ Each node's opening count $|\Omega_n|$ is configured per study — the
 per-stage branching factor $N_t$ on the implicit chain. Uniform branching
 ($N_t = N$ for all $t$) is the common case in standard SDDP, but per-node
 variable counts are supported.
+The backward pass solves one subproblem per opening at each node it visits, so
+its cost grows in proportion to $|\Omega_n|$; every count yields valid cuts, so
+the choice affects the cost of an iteration and the speed of convergence, not
+the validity of the lower bound.
 
 **Tree generation:**
 
@@ -820,5 +824,5 @@ The methodology above defines how scenarios are generated and sampled; the tabs 
 - [Policy Graphs](/math/policy-graphs) — The node/transition/pool structure the opening tree's per-node opening set $\Omega_n$ (section 2.3) is scoped to
 - [Cut Management](/math/cut-management) — Cut generation, storage, and selection; uses opening tree branchings as the backward pass input
 - [Multi-Resolution Studies](/math/multi-resolution-studies) — Multi-resolution modeling configurations; uses scenario generation with varied stage counts
-- [Weekly+Monthly Coupled Studies](/math/weekly-monthly-coupled-studies) — Coupled weekly/monthly study configurations
+- [Post-Study Boundary & Chained Studies](/math/post-study-boundary) — a study chained to an upstream policy; each study draws its own scenario tree
 - [Determinism Guarantees](/math/determinism-guarantees) — Formal guarantees of bit-identical reproduction across ranks, restarts, and platform variants; grounded in the seed derivation architecture of section 2.2

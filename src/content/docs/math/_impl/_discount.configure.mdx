@@ -8,13 +8,14 @@ above. The full file reference is
 
 ### Discount Rate Fields
 
-| Field                                                      | Required | Description                                                                                                                                                                                                                                             |
-| ---------------------------------------------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `policy_graph.annual_discount_rate`                        | Yes      | The global annual rate, `>= 0.0`; a negative value is rejected at load. It is the rate of every stage without its own rate and of every post-study stage.                                                                                               |
-| `stages[].annual_discount_rate_override`                   | No       | The stage's own annual rate; absent uses the global rate.                                                                                                                                                                                               |
-| `policy_graph.transitions[].annual_discount_rate_override` | No       | Stage-chain dialect only (no `policy_graph.nodes[]`): the rate folds onto the edge's source stage, and the stage field wins when both are set. Under `policy_graph.nodes[]` it is rejected with an `InvalidValue` error that points to the stage field. |
+| Field                                                      | Type           | Required | Description                                                                                                                                                                                                                                             |
+| ---------------------------------------------------------- | -------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `policy_graph.annual_discount_rate`                        | number         | Yes      | The global annual rate, `>= 0.0`; a negative value is rejected at load. It is the rate of every stage without its own rate and of every post-study stage.                                                                                               |
+| `stages[].annual_discount_rate_override`                   | number or null | No       | The stage's own annual rate; an absent or null value uses the global rate.                                                                                                                                                                              |
+| `policy_graph.transitions[].annual_discount_rate_override` | number or null | No       | Stage-chain dialect only (no `policy_graph.nodes[]`): the rate folds onto the edge's source stage, and the stage field wins when both are set. Under `policy_graph.nodes[]` it is rejected with an `InvalidValue` error that points to the stage field. |
 
-The global rate is a required key of the `policy_graph` object:
+The global rate is a required key of the `policy_graph` object (excerpt of
+`stages.json`):
 
 ```json
 {
@@ -29,8 +30,9 @@ The global rate is a required key of the `policy_graph` object:
 }
 ```
 
-The canonical spelling of a per-stage rate is the stage's own key. Stage 1
-below takes the annual rate `0.1` in place of the global rate:
+The canonical spelling of a per-stage rate is the stage's own key. In this
+`stages` excerpt, stage 1 takes the annual rate `0.1` in place of the global
+rate:
 
 ```json
 {
@@ -47,8 +49,9 @@ below takes the annual rate `0.1` in place of the global rate:
 }
 ```
 
-In the stage-chain dialect, a `policy_graph.transitions` entry may carry the
-same rate for the stage it leaves; this entry gives stage 1 the rate `0.1`:
+As an alternative to the stage key, a `policy_graph.transitions` entry in
+the stage-chain dialect may carry the same rate for the stage it leaves;
+this entry gives stage 1 the rate `0.1`:
 
 ```json
 {
@@ -60,4 +63,6 @@ same rate for the stage it leaves; this entry gives stage 1 the rate `0.1`:
 ```
 
 A rate of `0.0` means no discounting for the stages it governs; the post-study
-stages of `post_study_stages.json` declare no rate and use the global rate.
+stages of
+[`post_study_stages.json`](/reference/case-directory-format#post_study_stagesjson)
+declare no rate and use the global rate.

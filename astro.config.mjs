@@ -128,7 +128,7 @@ export default defineConfig({
     "/specs/math/multi-resolution-studies.html":
       "/math/multi-resolution-studies/",
     "/specs/math/weekly-monthly-coupled-studies.html":
-      "/math/weekly-monthly-coupled-studies/",
+      "/math/post-study-boundary/",
     "/specs/math/scenario-generation.html": "/math/scenario-generation/",
     // Part 4 — The SDDP Algorithm
     "/specs/math/sddp-algorithm.html": "/math/sddp-algorithm/",
@@ -182,6 +182,8 @@ export default defineConfig({
     "/guide/water-travel-time.html": "/math/lp-formulation/",
     "/examples/1dtoy.html": "/examples/toy-single-reservoir/",
     "/examples/4ree.html": "/examples/toy-four-reservoir/",
+    // Retired site slugs (merged chapters; R8): one hop to the survivor
+    "/math/weekly-monthly-coupled-studies": "/math/post-study-boundary/",
   },
   // D4: manual math renderer — remark-math parses $…$ / $$…$$, rehype-katex
   // renders to static .katex HTML at build time (zero client JS). NOT
@@ -313,7 +315,6 @@ export default defineConfig({
             "math/policy-graphs",
             "math/par-inflow-model",
             "math/multi-resolution-studies",
-            "math/weekly-monthly-coupled-studies",
             "math/scenario-generation",
           ],
         },
