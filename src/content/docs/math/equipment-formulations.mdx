@@ -18,42 +18,30 @@ For variable definitions and index sets, see [notation conventions](/overview/no
 
 ### 1.1 Standard Thermals
 
-Thermal generation cost is modeled as a **piecewise-linear convex function** of dispatched power. Each cost segment represents a generation tranche with its own marginal cost — for example, a 200 MW plant might have its first 50 MW at \$100/MWh, the next 50 MW at \$150/MWh, and the final 100 MW at \$200/MWh. Because the segment costs are non-decreasing (convex), the LP solver naturally fills cheaper segments first.
+Each thermal plant has one marginal cost per MWh of generation, $c^{th}_j$, and one generation column per block, $g_{j,k}$.
 
 **Decision Variables:**
 
-- $g_{j,k,s}$ = generation at thermal $j$, block $k$, cost segment $s$
+- $g_{j,k}$ = generation at thermal $j$, block $k$ (MW)
 
 **Constraints:**
 
-Total generation:
-
-$$
-g_{j,k} = \sum_{s} g_{j,k,s}
-$$
-
-Segment bounds:
-
-$$
-0 \leq g_{j,k,s} \leq \bar{g}_{j,s} \quad \forall s
-$$
-
-Total generation bounds:
+Generation bounds:
 
 $$
 \underline{G}_j \leq g_{j,k} \leq \bar{G}_j
 $$
 
-Both bounds are **hard** constraints with no slack variables — thermal dispatch is directly controllable (unlike hydro, which depends on exogenous inflows).
+Both bounds are **hard** constraints with no slack variables — thermal dispatch is directly controllable (unlike hydro, which depends on exogenous inflows). The bounds may vary by stage and by block; $c^{th}_j$ varies by stage only.
 
 **Objective Contribution:**
 
 $$
-\sum_{k} \tau_k \sum_{s} c^{th}_{j,s} \cdot g_{j,k,s}
+\sum_{k} \tau_k \, c^{th}_j \, g_{j,k}
 $$
 
 :::note[Continuous relaxation]
-Cobre does not include binary commitment variables in the training LP. The minimum generation bound $\underline{G}_j$ is enforced as a simple lower bound, meaning the LP may dispatch a thermal at an intermediate level between zero and $\underline{G}_j$ — a region that is physically infeasible for most thermal units (below minimum stable load). This is a deliberate modeling choice: the continuous relaxation is acceptable for the long-term planning horizon targeted by SDDP, and stepped enforcement can be applied during simulation.
+Cobre does not include binary commitment variables in the training LP. The minimum generation bound $\underline{G}_j$ is enforced as a simple lower bound, meaning the LP may dispatch a thermal at an intermediate level between zero and $\underline{G}_j$ — a region that is physically infeasible for most thermal units (below minimum stable load). This is a deliberate modeling choice: the continuous relaxation is acceptable for the long-term planning horizon targeted by SDDP.
 :::
 
 ## 2. Transmission Lines
@@ -203,10 +191,10 @@ Non-controllable sources (wind farms, solar plants, small run-of-river hydros) h
 **Bounds (hard):**
 
 $$
-0 \leq g^{nc}_{r,k} \leq A_r
+0 \leq g^{nc}_{r,k} \leq A_{r,k}, \qquad A_{r,k} = \bar{G}_r \, \xi_r \, f_{r,k}
 $$
 
-where $A_r$ is the stochastic available generation for the current (stage, scenario), bounded by $[0, \bar{G}_r]$ (installed capacity).
+where $\bar{G}_r$ is the installed capacity, $\xi_r$ the availability ratio of the stage and scenario ([System Elements §6](/math/system-elements#curtailable-vs-must-run)) and $f_{r,k}$ the block factor of block $k$ ($1$ when none is given); a must-run source has $g^{nc}_{r,k} = A_{r,k}$; a source without stochastic availability takes its stage's available generation, the installed capacity unless the stage sets it, in place of $\bar{G}_r \xi_r$.
 
 **Load Balance Contribution:**
 
@@ -215,17 +203,19 @@ At connected bus: $+g^{nc}_{r,k}$ (generation injected)
 **Objective Contribution:**
 
 $$
-\sum_{k} \tau_k \sum_{r \in \mathcal{R}} c^{curt}_r \cdot (A_r - g^{nc}_{r,k})
+- \sum_{k} \tau_k \sum_{r \in \mathcal{R}} c^{curt}_r \, g^{nc}_{r,k}
 $$
+
+The LP prices curtailment as a reward on dispatched generation. The term equals the curtailment penalty $\sum_k \tau_k \sum_r c^{curt}_r \kappa_{r,k}$ minus the constant $\sum_k \tau_k \sum_r c^{curt}_r A_{r,k}$: it leads to the same decisions, and the stage objective can therefore be negative. A must-run source contributes the constant $-\tau_k c^{curt}_r A_{r,k}$.
 
 The curtailment cost $c^{curt}_r$ is a **regularization** penalty (Category 3 in the [Penalty System](/math/penalty-system)), analogous to `spillage_cost` for hydros — curtailment discards available "free" energy.
 
 :::note[Note on curtailment not separate]
-Curtailment is **not** a separate LP decision variable — it is derived as $\kappa_{r,k} = A_r - g^{nc}_{r,k}$. Both bounds are hard constraints with no slack variables, since the available generation is always non-negative and output can always be curtailed to zero.
+Curtailment is **not** a separate LP decision variable — it is derived as $\kappa_{r,k} = A_{r,k} - g^{nc}_{r,k}$. Both bounds are hard constraints with no slack variables, since the available generation is always non-negative and output can always be curtailed to zero.
 :::
 
-:::note[Block distribution of available generation]
-The scenario pipeline produces a single available generation value $A_r$ per (stage, scenario). This value is used identically across all blocks within the stage — NCS generation is distributed proportionally to block duration. An alternative would be per-block factors (analogous to load demand and exchange capacity), trading uniform treatment for finer intra-stage granularity. Cobre does not currently support NCS block factors.
+:::note[Block factors]
+The availability ratio is one value per stage and scenario, and the block factors $f_{r,k}$ shape it across the blocks of the stage, as block load factors shape the load ([Scenario Generation](/math/scenario-generation)).
 :::
 
 ## Implementation in Cobre

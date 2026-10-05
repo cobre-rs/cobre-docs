@@ -230,15 +230,13 @@ For detailed constraints, see [equipment formulations](/math/equipment-formulati
 
 ### Physical Meaning
 
-A **thermal plant** represents dispatchable generation using fuel (natural gas, coal, oil, biomass, nuclear). Thermal plants have fuel costs modeled with piecewise-linear cost curves.
+A **thermal plant** represents dispatchable generation using fuel (natural gas, coal, oil, biomass, nuclear). Each plant has one marginal cost per MWh of generation.
 
 ### Decision Variables
 
 | Variable    | Units | Description                                                  |
 | ----------- | ----- | ------------------------------------------------------------ |
-| $g_{j,k,s}$ | MW    | Generation at thermal plant $j$, block $k$, cost segment $s$ |
-
-The total generation is $g_{j,k} = \sum_s g_{j,k,s}$.
+| $g_{j,k}$ | MW | Generation at thermal plant $j$, block $k$ |
 
 ### Connections to Other Elements
 
@@ -250,22 +248,19 @@ The total generation is $g_{j,k} = \sum_s g_{j,k,s}$.
 | Parameter                      | Units  | Description                                       |
 | ------------------------------ | ------ | ------------------------------------------------- |
 | $\bar{G}_j$, $\underline{G}_j$ | MW     | Generation bounds (capacity, minimum stable load) |
-| $c^{th}_{j,s}$                 | \$/MWh | Marginal cost for segment $s$ (fuel + O&M)        |
-| $\bar{g}_{j,s}$                | MW     | Segment $s$ capacity                              |
+| $c^{th}_j$                     | \$/MWh | Marginal cost of generation (fuel + O&M)          |
 
 ### Role in Objective Function
 
 $$
-\sum_{k \in \mathcal{K}} \tau_k \sum_{j \in \mathcal{T}} \sum_{s} c^{th}_{j,s} \cdot g_{j,k,s}
+\sum_{k \in \mathcal{K}} \tau_k \sum_{j \in \mathcal{T}} c^{th}_j \cdot g_{j,k}
 $$
 
 Thermal costs represent actual operating expenses, which vary by fuel type, and constitute the primary controllable cost in the objective function.
 
 ### LP Constraint Preview
 
-**Segment bounds** (cost curve linearization): $0 \leq g_{j,k,s} \leq \bar{g}_{j,s}$ for all $s$.
-
-**Total generation bounds**: $\underline{G}_j \leq \sum_s g_{j,k,s} \leq \bar{G}_j$
+**Generation bounds**: $\underline{G}_j \leq g_{j,k} \leq \bar{G}_j$
 
 :::note[Note on continuous LP relaxation]
 Cobre uses a continuous LP relaxation — there are no binary commitment variables. The minimum generation bound $\underline{G}_j$ represents either "fully off" (0) or "minimum stable" operation. This is a deliberate modeling choice: the LP may dispatch a thermal at an intermediate level between zero and $\underline{G}_j$, which is physically unrealistic but acceptable for the long-term planning horizon targeted by SDDP.
@@ -498,11 +493,11 @@ When the plant enters service at `entry_stage_id`, its dead volume returns as a 
 ### Role in Objective Function
 
 $$
-\sum_{k \in \mathcal{K}} \tau_k \sum_{h \in \mathcal{H}} \left[ c^{spill}_h \cdot s_{h,k} + c^{fpha}_h \cdot q_{h,k} + c^{div}_h \cdot u_{h,k} \right] + \text{(slack penalties)}
+\sum_{k \in \mathcal{K}} \tau_k \sum_{h \in \mathcal{H}} \left[ c^{spill}_h \cdot s_{h,k} + c^{tc}_h \cdot q_{h,k} + c^{div}_h \cdot u_{h,k} \right] + \text{(slack penalties)}
 $$
 
-- **Spillage cost**: Small regularization to prefer turbining over spilling
-- **FPHA turbined cost**: Regularization applied **only** to hydros using the FPHA production model. Must be > `spillage_cost` for the same plant to prevent interior FPHA solutions. See [Penalty System](/math/penalty-system).
+- **Spillage cost**: Small regularization that makes storing water preferable to spilling it when the solver is otherwise indifferent
+- **Turbined cost**: Small regularization on the turbined flow of every hydro; above the spillage cost, it makes spilling preferable to turbining water that produces no value ([Penalty System — Category 3](/math/penalty-system#category-3-regularization-costs-solution-guidance)).
 - **Diversion cost**: Small regularization, typically higher than spillage (water leaves main cascade)
 - **Slack penalties**: High costs for constraint violations — storage below a filled plant's dead volume, outflow violations, generation violations, evaporation violations, water withdrawal under- or over-delivery. See [Penalty System](/math/penalty-system) for the full penalty taxonomy and priority ordering.
 - **No generation cost**: Hydro generation has zero marginal fuel cost — its "cost" is the opportunity cost of depleting storage, captured through the value function $V_{t+1}(v_h)$
@@ -538,12 +533,12 @@ Non-controllable sources have near-zero marginal cost. The cost of curtailing av
 
 ### Curtailable vs. Must-Run
 
-A per-source flag $\chi^{curt}_r \in \{\text{curtailable}, \text{must-run}\}$ selects between two LP behaviours for the realized availability $A_r$:
+A per-source flag $\chi^{curt}_r \in \{\text{curtailable}, \text{must-run}\}$ selects between two LP behaviours for the realized availability $A_{r,k}$:
 
-- **Curtailable** (default): the generation column has bounds $[0, A_r]$, the LP is free to curtail any amount below $A_r$, and curtailment is regularised by `curtailment_cost`. This is the standard model for stand-alone wind and solar plants where ramping down is physically feasible and economically justified by the regularisation cost.
-- **Must-run**: the generation column is pinned to the realized availability, $g^{nc}_{r,k} = A_r$, by setting both lower and upper bounds to $A_r$ on every scenario. The curtailment penalty is unused because the curtailment slack is zero by construction. This model is required when the scenario pipeline feeds the LP with an aggregate that has already been pre-netted from demand by an upstream model — for example, a non-simulated-generation total (small hydro, distributed thermal, wind, solar, distributed micro-generation) that the upstream model already subtracted from the gross demand series. Allowing the LP to curtail such an aggregate double-discounts the must-run contribution and understates the hydrothermal cost; pinning it as must-run avoids the double count while keeping per-source observability in the simulation outputs.
+- **Curtailable** (default): the generation column has bounds $[0, A_{r,k}]$, the LP is free to curtail any amount below $A_{r,k}$, and curtailment is regularised by `curtailment_cost`. This is the standard model for stand-alone wind and solar plants where ramping down is physically feasible and economically justified by the regularisation cost.
+- **Must-run**: the generation column is pinned to the realized availability, $g^{nc}_{r,k} = A_{r,k}$, by setting both lower and upper bounds to $A_{r,k}$ on every scenario. The curtailment penalty is unused because the curtailment slack is zero by construction. This model is required when the scenario pipeline feeds the LP with an aggregate that has already been pre-netted from demand by an upstream model — for example, a non-simulated-generation total (small hydro, distributed thermal, wind, solar, distributed micro-generation) that the upstream model already subtracted from the gross demand series. Allowing the LP to curtail such an aggregate double-discounts the must-run contribution and understates the hydrothermal cost; pinning it as must-run avoids the double count while keeping per-source observability in the simulation outputs.
 
-The pin is applied per scenario by overwriting the upper and lower bounds on the NCS column with $A_r$ before each stage solve. The availability ratio $\xi_r = \mathrm{clamp}(\mu^{nc}_r + s^{nc}_r \cdot \varepsilon^{nc}_r,\,0,\,1)$ and the per-(stage, block) shape factor multiply the installed capacity exactly as in the curtailable case — only the lower bound differs.
+The pin is applied per scenario by overwriting the upper and lower bounds on the NCS column with $A_{r,k}$ before each stage solve. The availability ratio $\xi_r = \mathrm{clamp}(\mu^{nc}_r + s^{nc}_r \cdot \varepsilon^{nc}_r,\,0,\,1)$ and the block factor $f_{r,k}$ multiply the installed capacity exactly as in the curtailable case, $A_{r,k} = \bar{G}_r \, \xi_r \, f_{r,k}$; only the lower bound differs.
 
 ### Operative States
 
@@ -561,7 +556,7 @@ Non-controllable sources follow the generic commissioning window (§1, _Entity C
 | -------------- | ----- | ---------------------------------------------------- |
 | $g^{nc}_{r,k}$ | MW    | Generation at non-controllable source $r$, block $k$ |
 
-**Curtailment** is **not** a separate LP decision variable — it is derived as $\kappa_{r,k} = A_{r} - g^{nc}_{r,k}$, where $A_r$ is the stochastic available generation for the current (stage, scenario). The implementation may equivalently formulate curtailment as a reward for dispatching (negative cost on $g^{nc}_{r,k}$) rather than a penalty on $(A_r - g^{nc}_{r,k})$; either is valid. For must-run sources, $\kappa_{r,k} \equiv 0$ by construction (the lower bound on the generation column equals $A_r$), so the regularisation term contributes zero to the objective regardless of how it is signed.
+**Curtailment** is **not** a separate LP decision variable — it is derived as $\kappa_{r,k} = A_{r,k} - g^{nc}_{r,k}$, with $A_{r,k}$ the block's available generation for the current stage and scenario; the LP prices it through a negative cost on $g^{nc}_{r,k}$ ([Equipment Formulations §6](/math/equipment-formulations#6-non-controllable-generation-sources)). For a must-run source $\kappa_{r,k} = 0$ by construction and its term is the constant $-\tau_k c^{curt}_r A_{r,k}$.
 
 ### Connections to Other Elements
 
@@ -572,16 +567,17 @@ Non-controllable sources follow the generic commissioning window (§1, _Entity C
 | Parameter    | Units  | Description                                                                                             |
 | ------------ | ------ | ------------------------------------------------------------------------------------------------------- |
 | $\bar{G}_r$  | MW     | Installed capacity (hard physical upper bound)                                                          |
-| $A_r$        | MW     | Available generation for current (stage, scenario), from scenario pipeline. Bounded by $[0, \bar{G}_r]$ |
+| $A_{r,k}$ | MW | Available generation of block $k$ for the current (stage, scenario), $\bar{G}_r \, \xi_r \, f_{r,k}$ |
+| $f_{r,k}$ | — | Block factor of block $k$ ($1$ when none is given) |
 | $c^{curt}_r$ | \$/MWh | Curtailment cost (regularization penalty)                                                               |
 
 ### Role in Objective Function
 
 $$
-\sum_{k \in \mathcal{K}} \tau_k \sum_{r \in \mathcal{R}} c^{curt}_r \cdot (A_r - g^{nc}_{r,k})
+-\sum_{k \in \mathcal{K}} \tau_k \sum_{r \in \mathcal{R}} c^{curt}_r \cdot g^{nc}_{r,k}
 $$
 
-The curtailment cost is a small regularization term that incentivizes the solver to use all available generation before curtailing.
+The curtailment cost is a small regularization term that rewards dispatching the available generation; [Equipment Formulations §6](/math/equipment-formulations#6-non-controllable-generation-sources) relates it to the curtailment penalty.
 
 ### LP Constraint Preview
 
@@ -590,15 +586,15 @@ The curtailment cost is a small regularization term that incentivizes the solver
 $$
 g^{nc}_{r,k} \in
 \begin{cases}
-[\,0,\ A_r\,]   & \text{if } \chi^{curt}_r = \text{curtailable} \\
-[\,A_r,\ A_r\,] & \text{if } \chi^{curt}_r = \text{must-run}
+[\,0,\ A_{r,k}\,]   & \text{if } \chi^{curt}_r = \text{curtailable} \\
+[\,A_{r,k},\ A_{r,k}\,] & \text{if } \chi^{curt}_r = \text{must-run}
 \end{cases}
 $$
 
 **Load balance contribution** at connected bus: $+g^{nc}_{r,k}$ (generation injected).
 
-:::note[Note on NCS stage-varying bounds]
-Unlike hydro and thermal plants, non-controllable sources have **no stage-varying operational bounds** beyond the stochastic availability. Their output is entirely determined by the scenario model.
+:::note[Note on NCS bounds]
+A source's generation is bounded only by $0$ (by $A_{r,k}$ for a must-run source) and by $A_{r,k}$; the cap follows the scenario's availability ratio, and a source without stochastic availability may set its available generation per stage.
 :::
 
 For detailed constraints, see [equipment formulations](/math/equipment-formulations).
@@ -699,8 +695,8 @@ The following table maps each physical system element to its LP representation:
 | ------------------------- | ------------------------ | ------------------------------------------ | ------------------------------------------- | -------------------------------------------- |
 | **Bus**                   | —                        | $\delta_{b,k,s}$, $\epsilon_{b,k}$         | Load balance                                | Deficit penalty (high), Excess penalty (low) |
 | **Transmission Line**     | —                        | $f^+_{n,k}$, $f^-_{n,k}$                   | Capacity bounds                             | Exchange cost (regularization)               |
-| **Thermal Plant**         | —                        | $g_{j,k,s}$                                | Generation bounds, Segment limits           | Fuel cost                                    |
-| **Thermal (anticipated)** | $x^{\mathrm{a}}_{s,i}$   | $g^{\mathrm{a}}_{i,t}$, $g_{j,k,s}$                       | Ring deposit, carry and fish rows           | Commitment cost at the decision stage, discounted from the delivery stage |
+| **Thermal Plant**         | —                        | $g_{j,k}$                                  | Generation bounds                           | Fuel cost                                    |
+| **Thermal (anticipated)** | $x^{\mathrm{a}}_{s,i}$   | $g^{\mathrm{a}}_{i,t}$, $g_{j,k}$                       | Ring deposit, carry and fish rows           | Commitment cost at the decision stage, discounted from the delivery stage |
 | **Hydro Plant**           | $v_h$, $a_{h,\ell}$      | $q_{h,k}$, $s_{h,k}$, $u_{h,k}$, $g_{h,k}$ | Water balance, Generation function          | Spillage/diversion cost (regularization)     |
 | **Non-Controllable**      | —                        | $g^{nc}_{r,k}$                             | Availability bound                          | Curtailment penalty (regularization)         |
 | **Pumping Station**       | —                        | $p_{y,k}$                                  | Flow bounds (min/max)                       | None (cost via energy consumption)           |

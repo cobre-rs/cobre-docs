@@ -379,8 +379,10 @@ before the plant can generate.
 | `start_stage_id`       | Yes      | Stage index at which filling begins (inclusive); filling runs through the stage before `entry_stage_id`. |
 | `filling_min_rate_m3s` | No       | Per-stage minimum accumulation rate [m³/s], defaulting to `0.0` when omitted: anchors a per-stage minimum end-of-stage storage target that ramps to `min_storage_hm3` by the last filling stage. It is **not** an applied inflow and **not** a cap — natural inflow and upstream cascade releases still flow through the ordinary water balance; there is no retention or impound mechanism that diverts inflow into storage. |
 
-The target trajectory, its soft-floor penalty, and the load-time
-filling-sufficiency check are covered in [Penalty System §6](/math/penalty-system#dead-volume-filling-specifics).
+The target trajectory and its soft-floor penalty are covered in
+[Penalty System §6](/math/penalty-system#dead-volume-filling-specifics); the
+load-time filling-sufficiency check is listed in that page's
+[Configure tab](/math/penalty-system#implementation-in-cobre).
 
 **Penalties** — the `penalties` block overrides the global defaults from
 `penalties.json` for one plant; when absent, the plant uses the global

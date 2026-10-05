@@ -79,11 +79,11 @@ A glyph takes a second meaning only on pages that never carry its first; each su
 - $M$ is the number of seasons in the cycle of the inflow model and of a cyclic policy graph; in [Hydro Production Models](/math/hydro-production-models) it is the number of FPHA hyperplanes of a plant, and in [SDDP Algorithm](/math/sddp-algorithm), [Discount Rate](/math/discount-rate) and [Upper Bound Evaluation](/math/upper-bound-evaluation) the number of forward-pass trajectories of an iteration.
 - $m$ indexes the seasons of the inflow model, with $m(t)$ the season of stage $t$, and, in $\gamma^m$ and $\pi^{fpha}_m$, the planes $m \in \mathcal{M}_h$ of an FPHA model; in [SDDP Algorithm](/math/sddp-algorithm), [Discount Rate](/math/discount-rate) and [Upper Bound Evaluation](/math/upper-bound-evaluation) it indexes trajectories, forward-pass or simulated.
 - $N$ is the number of hydro plants; in [Scenario Generation](/math/scenario-generation) it is the uniform branching factor of the scenario tree ($N_t = N$), in [SDDP Algorithm](/math/sddp-algorithm) the number of threads, and in [Upper Bound Evaluation](/math/upper-bound-evaluation) the number of out-of-sample simulation scenarios.
-- $n$ is a node of a policy graph or of an enumerated scenario tree; in [Horizon Modes](/math/horizon-modes) and [Discount Rate](/math/discount-rate) it counts cycle repetitions, in [LP Formulation](/math/lp-formulation), [System Elements](/math/system-elements) and [Equipment Formulations](/math/equipment-formulations) it is the transmission-line index, in [PAR(p) Inflow Model](/math/par-inflow-model) it is the dimension of the correlation matrix with eigenvalues $\lambda_1, \ldots, \lambda_n$, and in [Hydro Production Models](/math/hydro-production-models) the superscript of $h_{tail}^{(n)}$ indexes the segments of a piecewise-quartic tailrace curve.
+- $n$ is a node of a policy graph or of an enumerated scenario tree; in [Horizon Modes](/math/horizon-modes) and [Discount Rate](/math/discount-rate) it counts cycle repetitions, in [LP Formulation](/math/lp-formulation), [System Elements](/math/system-elements), [Equipment Formulations](/math/equipment-formulations) and [Penalty System](/math/penalty-system) it is the transmission-line index, in [PAR(p) Inflow Model](/math/par-inflow-model) it is the dimension of the correlation matrix with eigenvalues $\lambda_1, \ldots, \lambda_n$, and in [Hydro Production Models](/math/hydro-production-models) the superscript of $h_{tail}^{(n)}$ indexes the segments of a piecewise-quartic tailrace curve.
 - $p(\omega)$ is the probability of opening $\omega$; in [Hydro Production Models](/math/hydro-production-models) $p$ is the security-curve fraction of the maximum stored energy, and in [LP Formulation](/math/lp-formulation), [System Elements](/math/system-elements) and [Equipment Formulations](/math/equipment-formulations) $p_{y,k}$ is the pumped flow of station $y$.
 - $Q_t$ is the optimal value of the stage-$t$ LP as a function of its incoming state; in [Hydro Production Models](/math/hydro-production-models) $Q$ is the turbined-flow coordinate of the FPHA fitting grid, and in [Multi-Resolution Studies](/math/multi-resolution-studies) a quarter of the duration-weighted aggregation.
 - $q_{h,k}$ is the turbined flow of hydro $h$; in [Upper Bound Evaluation](/math/upper-bound-evaluation) $q_{n \to n'}$ is the conditional probability of reaching child node $n'$ from node $n$ of an enumerated scenario tree.
-- $r_h$ is the water-withdrawal target of hydro $h$ in [LP Formulation](/math/lp-formulation), [System Elements](/math/system-elements) and [Block Formulations](/math/block-formulations); in [PAR(p) Inflow Model](/math/par-inflow-model) and [Scenario Generation](/math/scenario-generation) $r_m$ is the standardized innovation scale of season $m$, and in [Discount Rate](/math/discount-rate) $r_t$ is the annual discount rate that applies to stage $t$.
+- $r_h$ is the water-withdrawal target of hydro $h$ in [LP Formulation](/math/lp-formulation), [System Elements](/math/system-elements), [Block Formulations](/math/block-formulations) and [Penalty System](/math/penalty-system); in [PAR(p) Inflow Model](/math/par-inflow-model) and [Scenario Generation](/math/scenario-generation) $r_m$ is the standardized innovation scale of season $m$, and in [Discount Rate](/math/discount-rate) $r_t$ is the annual discount rate that applies to stage $t$.
 - $u_{h,k}$ is the diversion flow of hydro $h$, and $u$ indexes the unit groups of a (hydro, bus) cell, in the System Modelling chapters; in [SDDP Algorithm](/math/sddp-algorithm), [Risk Measures](/math/risk-measures), [Upper Bound Evaluation](/math/upper-bound-evaluation), [Horizon Modes](/math/horizon-modes), [Discount Rate](/math/discount-rate), [The SDDP Framework in One Page](/overview/sddp-framework-overview) and the [Glossary](/reference/glossary) $u_t$ is the control vector of the stage problem.
 - $w_k$ is the weight of block $k$ in the System Modelling chapters; in [Upper Bound Evaluation](/math/upper-bound-evaluation) $w_m$ is the census weight of simulation scenario $m$, and in [PAR(p) Inflow Model](/math/par-inflow-model) $w$ indexes the rolling windows of a season bucket.
 - $Z$ is the random cost a risk measure applies to; in [PAR(p) Inflow Model](/math/par-inflow-model) it is the standardised series on which the PAR(p)-A conditional partial autocorrelation conditions.
@@ -92,14 +92,15 @@ A glyph takes a second meaning only on pages that never carry its first; each su
 - $\varepsilon$ with an entity, stage or source index is a noise innovation ($\varepsilon_t$, $\varepsilon^{\text{load}}_{b,t}$, $\varepsilon^{nc}_r$) and with a text subscript a tolerance ($\varepsilon_{\text{viol}}$, $\varepsilon_{\text{stall}}$, $\varepsilon_{\text{abs}}$, $\varepsilon_{\text{rel}}$); in [Hydro Production Models](/math/hydro-production-models) the bare $\varepsilon$ is the merge tolerance of FPHA plane reduction.
 - $\eta$ with an entity index is an efficiency ($\eta_h$ of a turbine, $\eta_n$ of a transmission line); in [Risk Measures](/math/risk-measures) and [The SDDP Framework in One Page](/overview/sddp-framework-overview) $\eta$ is the threshold variable of the CVaR minimization formula.
 - $\theta_t$ is the future-cost epigraph variable, approximating $V_{t+1}(x_t)$; in [Hydro Production Models](/math/hydro-production-models) $\theta$ is the angle between the normals of two FPHA planes.
-- $\kappa_{r,k}$ is the curtailment of non-controllable source $r$ in [System Elements](/math/system-elements) and [Equipment Formulations](/math/equipment-formulations); in [Hydro Production Models](/math/hydro-production-models) $\kappa$ is the intercept-only correction factor of precomputed FPHA planes.
+- $\kappa_{r,k}$ is the curtailment of non-controllable source $r$ in [System Elements](/math/system-elements) and [Equipment Formulations](/math/equipment-formulations); in [Hydro Production Models](/math/hydro-production-models) $\kappa$ is the intercept-only correction factor of precomputed FPHA planes, and in [Penalty System](/math/penalty-system) $\kappa = 10^6/3600$ is the number of (m³/s)·h in one hm³.
 - $\mu$ with a season, bus or source index is a mean ($\mu_m$, $\mu^A_m$, $\mu^{\text{load}}_{b,t}$, $\mu^{nc}_r$); in [Risk Measures](/math/risk-measures) $\mu$ is a risk-adjusted probability vector.
-- $\epsilon_{b,k}$ is the excess generation at bus $b$, block $k$, in [LP Formulation](/math/lp-formulation) and [System Elements](/math/system-elements); in [Cut Management](/math/cut-management) $\epsilon$ is the cut-activity tolerance of periodic pruning.
+- $\epsilon_{b,k}$ is the excess generation at bus $b$, block $k$, in [LP Formulation](/math/lp-formulation), [System Elements](/math/system-elements) and [Penalty System](/math/penalty-system); in [Cut Management](/math/cut-management) $\epsilon$ is the cut-activity tolerance of periodic pruning.
 - $\mathcal{C}$ is the contract set, with $\mathcal{C}^{imp}$, $\mathcal{C}^{exp}$ and their per-bus subsets, in the System Modelling chapters; in [Horizon Modes](/math/horizon-modes) $\mathcal{C}_\tau$ is the set of stages that occupy season $\tau$ of a cyclic policy graph.
 - $\mathcal{P}$ is the pumping-station set, with per-bus subsets $\mathcal{P}_b$, in the System Modelling chapters; in [Risk Measures](/math/risk-measures) it is the probability simplex of the scenario probabilities.
 - $\mathcal{M}_h$ is the FPHA hyperplane set of hydro $h$; in [Risk Measures](/math/risk-measures) $\mathcal{M}(p)$, $\mathcal{M}_\alpha(p)$ and $\mathcal{M}^{EAVaR}(p)$ are risk sets of the dual representation of a convex risk measure.
 - $\mathcal{X}_t(x_{t-1}, \omega_t)$ is the feasible set of the stage-$t$ state and control; in [Cut Management](/math/cut-management) $\mathcal{X}_t$ is the feasible state set on which a cut is valid.
 - $I_t$ is the number of vertices stored at stage $t$ in [Upper Bound Evaluation](/math/upper-bound-evaluation); in [LP Formulation](/math/lp-formulation) $I_{h,k}$ is the inflow of hydro $h$ in block $k$ that a `hydro_inflow` term reads.
+- $\xi_r$ is the availability ratio of non-controllable source $r$ in [System Elements](/math/system-elements) and [Equipment Formulations](/math/equipment-formulations); in [Inflow Non-Negativity](/math/inflow-nonnegativity) $\xi_h$ is the noise-adjustment slack of the reference design.
 
 ### Stage Indexing
 
@@ -193,15 +194,18 @@ Cost coefficients use $c$ with a superscript naming the cost type.
 | $c^{def}_{b,s}$ | \$/MWh      | Deficit cost at bus $b$, segment $s$                     |
 | $\bar{d}_{b,s}$ | MW          | Deficit segment depth                                    |
 | $c^{exc}_b$     | \$/MWh      | Excess generation cost                                   |
-| $c^{th}_{j,s}$  | \$/MWh      | Thermal cost at plant $j$, segment $s$                   |
+| $c^{th}_j$ | \$/MWh | Marginal cost of thermal plant $j$ |
 | $c^{spill}_h$   | \$/(m³/s·h) | Spillage cost                                            |
 | $c^{div}_h$     | \$/(m³/s·h) | Diversion cost                                           |
-| $c^{fpha}_h$ | \$/(m³/s·h) | Turbined-flow regularization cost of hydro $h$, charged on the turbined flow of every cell |
+| $c^{tc}_h$ | \$/(m³/s·h) | Turbined-flow regularization cost of hydro $h$, charged on the turbined flow of every cell |
+| $c^{sv-}_h$ | \$/hm³ | Storage-below-minimum penalty, pricing the soft dead-volume floor of a filling hydro once it operates |
+| $c^{fill}_h$ | \$/hm³ | Filling-target shortfall penalty |
 | $c^{tv-}_h$ | \$/(m³/s·h) | Turbined-flow-minimum violation penalty, charged on every cell of hydro $h$ |
 | $c^{ov-}_h$, $c^{ov+}_h$ | \$/(m³/s·h) | Outflow below-minimum and above-maximum violation penalties |
 | $c^{gv-}_h$ | \$/MWh | Generation-minimum violation penalty, charged on every cell of hydro $h$ |
 | $c^{ev+}_h$, $c^{ev-}_h$ | \$/(m³/s·h) | Evaporation above-target and below-target violation penalties |
 | $c^{wv+}_h$, $c^{wv-}_h$ | \$/(m³/s·h) | Water-withdrawal over-delivery and under-delivery penalties |
+| $c^{inf}_h$ | \$/(m³/s·h) | Inflow non-negativity penalty (penalty-based inflow methods) |
 | $c^{exch}_n$ | \$/MWh | Exchange (transmission) cost |
 | $c^{curt}_r$ | \$/MWh | Curtailment regularization cost of non-controllable source $r$ |
 | $c^{ctr}_c$     | \$/MWh      | Contract price (signed: + import cost, − export revenue) |
@@ -247,7 +251,6 @@ Cost coefficients use $c$ with a superscript naming the cost type.
 | Symbol                              | Units | Description                                                              |
 | ----------------------------------- | ----- | ------------------------------------------------------------------------ |
 | $\bar{G}_j$, $\underline{G}_j$ | MW | Thermal generation bounds: capacity and minimum stable load |
-| $\bar{g}_{j,s}$ | MW | Capacity of cost segment $s$ of thermal $j$ |
 | $K_i$ | - | Ring depth of anticipated thermal $i$; the lead for a stage-count lead |
 | $k_{max} = \max_i K_i$ | - | Number of slots in every anticipated thermal's commitment ring |
 | $t_i(m)$ | - | Decision stage of anticipated thermal $i$'s delivery at stage $m$: $m - K_i$ under a stage-count lead, and under a physical lead the stage containing the instant one lead time before the end of stage $m$ (an instant on a stage boundary belongs to the earlier stage); a delivery decided before the study has none |
@@ -259,7 +262,9 @@ Cost coefficients use $c$ with a superscript naming the cost type.
 | $\rho^{pump}_y$ | MW/(m³/s) | Power consumption rate of pumping station $y$ |
 | $\bar{P}_y$, $\underline{P}_y$ | m³/s | Pumped-flow bounds of station $y$ |
 | $\bar{G}_r$ | MW | Installed capacity of non-controllable source $r$ |
-| $A_r$ | MW | Available generation of non-controllable source $r$ for the current stage and scenario, $0 \leq A_r \leq \bar{G}_r$ |
+| $A_{r,k}$ | MW | Available generation of non-controllable source $r$ in block $k$ for the current stage and scenario, $\bar{G}_r \, \xi_r \, f_{r,k}$ |
+| $\xi_r$ | - | Availability ratio of non-controllable source $r$ for the current stage and scenario, in $[0, 1]$ |
+| $f_{r,k}$ | - | Block factor of non-controllable source $r$ in block $k$ |
 
 ### 3.5 Inflow Model Parameters
 
@@ -317,8 +322,7 @@ Per-block variables are indexed by $k \in \mathcal{K}$:
 | $\epsilon_{b,k}$ | $\geq 0$                       | MW    | Excess generation at bus $b$                                                                                                                  |
 | $f^+_{n,k}$   | $[0, \bar{F}^+_n]$          | MW    | Direct flow on line $n$                                                                                                                    |
 | $f^-_{n,k}$   | $[0, \bar{F}^-_n]$          | MW    | Reverse flow on line $n$                                                                                                                   |
-| $g_{j,k,s}$      | $[0, \bar{g}_{j,s}]$           | MW    | Thermal generation at plant $j$, segment $s$                                                                                                  |
-| $g_{j,k}$ | - | MW | Total thermal generation of plant $j$, $g_{j,k} = \sum_s g_{j,k,s}$ |
+| $g_{j,k}$ | $[\underline{G}_j, \bar{G}_j]$ | MW | Generation of thermal plant $j$ |
 | $q_{h,b,k}$ | $[0, \bar{Q}_{h,b}]$ | m³/s | Turbined flow of cell $(h, b)$; its minimum $\underline{Q}_{h,b}$ is a soft floor (slack $\sigma^{q-}_{h,b,k}$) |
 | $q_{h,k}$ | - | m³/s | Plant turbined flow, $q_{h,k} = \sum_{b \in \mathcal{B}_h} q_{h,b,k}$ |
 | $s_{h,k}$        | $\geq 0$                       | m³/s  | Spillage at hydro $h$                                                                                                                         |
@@ -331,8 +335,8 @@ Per-block variables are indexed by $k \in \mathcal{K}$:
 | $\text{net\_flows}_{h,k}$ | - | m³/s | Net per-block flow terms of hydro $h$'s water balance in block $k$: the turbined and spilled release credited from upstream and the flows diverted and pumped in, minus the plant's own turbined, spilled and diverted flow and its pumped-out flow |
 | $p_{y,k}$        | $[\underline{P}_y, \bar{P}_y]$ | m³/s  | Pumped flow at station $y$                                                                                                                    |
 | $\chi_{c,k}$     | $[\underline{C}_c, \bar{C}_c]$ | MW    | Contract dispatch (import if $c \in \mathcal{C}^{imp}$, export if $c \in \mathcal{C}^{exp}$); $\underline{C}_c > 0$ is a take-or-pay floor    |
-| $g^{nc}_{r,k}$ | $[0, A_r]$ | MW | Generation of non-controllable source $r$ |
-| $\kappa_{r,k}$ | - | MW | Curtailment of non-controllable source $r$, $\kappa_{r,k} = A_r - g^{nc}_{r,k}$ (derived) |
+| $g^{nc}_{r,k}$ | $[0, A_{r,k}]$ | MW | Generation of non-controllable source $r$ |
+| $\kappa_{r,k}$ | - | MW | Curtailment of non-controllable source $r$, $\kappa_{r,k} = A_{r,k} - g^{nc}_{r,k}$ (derived) |
 
 ### 4.2 Stage-Level State Variables
 

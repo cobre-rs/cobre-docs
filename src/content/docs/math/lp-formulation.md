@@ -21,7 +21,7 @@ Resource costs represent actual generation or contractual expenditures:
 
 | Cost               | Symbol         | Units  | Objective Term                                           |
 | ------------------ | -------------- | ------ | -------------------------------------------------------- |
-| Thermal generation | $c^{th}_{j,s}$ | \$/MWh | $\sum_{j,k,s} \tau_k \cdot c^{th}_{j,s} \cdot g_{j,k,s}$ |
+| Thermal generation | $c^{th}_j$ | \$/MWh | $\sum_{j,k} \tau_k \cdot c^{th}_j \cdot g_{j,k}$ |
 | Contract dispatch  | $c^{ctr}_c$    | \$/MWh | $\sum_{c,k} \tau_k \cdot c^{ctr}_c \cdot \chi_{c,k}$     |
 
 Contract prices are positive for imports (cost) and negative for exports (revenue), so a single summation naturally handles both directions. See [system elements §8](/math/system-elements) for the unidirectional contract model.
@@ -38,6 +38,7 @@ These ensure the SDDP algorithm has relatively complete recourse — every subpr
 | ----------------- | --------------- | ------ | ------------------------------------ |
 | Deficit           | $c^{def}_{b,s}$ | \$/MWh | Value of unserved energy (piecewise) |
 | Excess generation | $c^{exc}_b$     | \$/MWh | Absorb uncontrollable surplus        |
+| Inflow non-negativity | $c^{inf}_h$ | \$/(m³/s·h) | Water added to keep the water balance feasible under a negative inflow (penalty-based inflow methods) |
 
 ### 1.3 Category 2: Constraint Violation Penalties (Policy Shaping)
 
@@ -62,32 +63,19 @@ Small costs that guide the solver toward physically preferred solutions when the
 
 | Cost               | Symbol          | Units       | Purpose                                         |
 | ------------------ | --------------- | ----------- | ----------------------------------------------- |
-| Spillage           | $c^{spill}_h$   | \$/(m³/s·h) | Prefer turbining over spilling when indifferent |
-| FPHA turbined flow | $c^{fpha}_h$    | \$/(m³/s·h) | Prevent interior FPHA solutions (FPHA-only)     |
+| Spillage           | $c^{spill}_h$   | \$/(m³/s·h) | Prefer storing over spilling when indifferent   |
+| Turbined flow | $c^{tc}_h$ | \$/(m³/s·h) | Prefer spilling over turbining water that produces no value |
 | Diversion          | $c^{div}_h$     | \$/(m³/s·h) | Prefer main channel flow                        |
 | Curtailment        | $c^{curt}_r$    | \$/MWh      | Prioritize using available NCS generation       |
 | Exchange           | $c^{exch}_n$ | \$/MWh      | Prevent unnecessary power flows                 |
 
 :::note[Note]
-Regularization costs should be at least 2-3 orders of magnitude smaller than economic costs to avoid distorting the optimal solution.
+Regularization costs are set well below every economic cost, so that they only break ties and do not distort the optimal solution.
 :::
 
 ### 1.5 Penalty Priority Ordering
 
-The following ordering must be maintained (from highest to lowest):
-
-$$
-c^{sv-} > c^{def} > c^{tv-}, c^{ov\pm}, c^{gv-}, c^{ev\pm}, c^{wv\pm} > c^{th}, c^{ctr} > c^{spill}, c^{fpha}, c^{div}, c^{curt}, c^{exch}
-$$
-
-with the filling-target penalty pinned **below deficit** on a separate rung: $c^{def} > c^{fill}$.
-
-1. **Storage violation** ($c^{sv-}$): Highest penalty — it prices the soft dead-volume floor of a filling hydro once it operates (every other operating hydro's dead volume is a hard bound), so it must exceed deficit
-2. **Deficit** ($c^{def}$): Value of lost load; exceeds any generation cost
-3. **Constraint violations** ($c^{tv-}$, $c^{ov\pm}$, $c^{gv-}$, $c^{ev\pm}$, $c^{wv\pm}$): Exceed typical marginal cost but allow violation when physically necessary
-4. **Resource costs** ($c^{th}$, $c^{ctr}$): Market-based or fuel-based
-5. **Regularization** ($c^{spill}$, $c^{fpha}$, $c^{div}$, $c^{curt}$, $c^{exch}$): Near-zero
-6. **Filling target** ($c^{fill}$): Pinned below deficit — a commissioning fill schedule is not defended as hard as load serving. Its position relative to the operational-constraint tier (item 3) is left to study calibration.
+[Penalty System — Penalty Priority Ordering](/math/penalty-system#penalty-priority-ordering) orders these tiers; it compares each cost in energy-equivalent units (\$/MWh), converting the storage and flow costs first: storage violation above deficit, deficit above the constraint-violation tier, that tier above the resource costs and the resource costs above regularization, with the filling target pinned below deficit. The storage-violation cost, which prices the soft dead-volume floor of a filling hydro from its entry stage on, stands above deficit because a reservoir below its dead volume risks dam safety and equipment damage. Cobre checks the configured costs against this ordering when the case loads and warns, without rejecting the case, when they break it ([Penalty System — Penalty Ordering Validation](/math/penalty-system#penalty-ordering-validation)).
 
 For the full penalty specification, cascade resolution, and stage-varying overrides, see [Penalty System](/math/penalty-system).
 
@@ -96,7 +84,7 @@ Thermal bounds ($\underline{G}_j$, $\bar{G}_j$) are hard constraints with no sla
 :::
 
 :::note[FPHA validation rule]
-For each hydro using the `fpha` production model, $c^{fpha}_h > c^{spill}_h$ must hold. See [Penalty System](/math/penalty-system).
+A hydro using the FPHA production model requires $c^{tc}_h \geq 0$; $c^{tc}_h > c^{spill}_h$ is advised for every hydro. See [Penalty System — Category 3](/math/penalty-system#category-3-regularization-costs-solution-guidance).
 :::
 
 ### 1.6 Objective Function Structure
@@ -119,7 +107,7 @@ The coefficient of $\theta$ is the one-step discount factor $d_{t \to t+1}$ of [
 
 $$
 \min \sum_{k \in \mathcal{K}} \tau_k \Bigg[
-  \underbrace{\sum_{j \in \mathcal{T}} \sum_s c^{th}_{j,s} g_{j,k,s}}_{\text{Thermal cost}}
+  \underbrace{\sum_{j \in \mathcal{T}} c^{th}_j g_{j,k}}_{\text{Thermal cost}}
   + \underbrace{\sum_{c \in \mathcal{C}} c^{ctr}_c \chi_{c,k}}_{\text{Contract cost}}
 $$
 
@@ -130,12 +118,12 @@ $$
 
 $$
   + \underbrace{\sum_{h \in \mathcal{H}} c^{spill}_h s_{h,k}
-  + \sum_{h \in \mathcal{H}^{fpha}} c^{fpha}_h q_{h,k}
+  + \sum_{h \in \mathcal{H}} c^{tc}_h q_{h,k}
   + \sum_{h \in \mathcal{H}} c^{div}_h u_{h,k}}_{\text{Hydro regularization}}
 $$
 
 $$
-  + \underbrace{\sum_{r \in \mathcal{R}} c^{curt}_r (A_r - g^{nc}_{r,k})}_{\text{Curtailment (regularization)}}
+  - \underbrace{\sum_{r \in \mathcal{R}} c^{curt}_r \, g^{nc}_{r,k}}_{\text{Curtailment (regularization)}}
   + \underbrace{\sum_{n \in \mathcal{L}} c^{exch}_n (f^+_{n,k} + f^-_{n,k})}_{\text{Exchange (regularization)}}
 $$
 
@@ -146,14 +134,19 @@ $$
 
 $$
 + \underbrace{\sum_{h \in \mathcal{H}} \Big[ c^{sv-}_h \sigma^{v-}_h + c^{fill}_h \sigma^{fill}_h \Big]}_{\text{Storage violations (not per-block)}}
++ \underbrace{\sum_{h \in \mathcal{H}} c^{inf}_h H_t \, \sigma^{inf}_h}_{\text{Inflow non-negativity (not per-block)}}
 + \; d_{t \to t+1} \, \theta
 $$
 
 :::note[Note on storage violation penalties]
-Storage violation penalties ($\sigma^{v-}_h$, $\sigma^{fill}_h$) are **not** multiplied by $\tau_k$ because they apply to end-of-stage storage (hm³), not to per-block flow rates. All other penalty terms are per-block and carry the $\tau_k$ weighting. Contract prices $c^{ctr}_c$ are positive for imports and negative for exports, so a single sum handles both. $\sigma^{v-}_h$ exists only for a filling hydro from its entry stage on and $\sigma^{fill}_h$ only during its filling window; for every other hydro both are absent.
+Storage violation penalties ($\sigma^{v-}_h$, $\sigma^{fill}_h$) are **not** multiplied by $\tau_k$ because they apply to end-of-stage storage (hm³), not to per-block flow rates. All other penalty terms are per-block and carry the $\tau_k$ weighting, except the stage-level withdrawal and inflow non-negativity slacks and, on a parallel stage, the evaporation slacks, which are priced over $H_t$ (§9 and the display above). Contract prices $c^{ctr}_c$ are positive for imports and negative for exports, so a single sum handles both. $\sigma^{v-}_h$ exists only for a filling hydro from its entry stage on and $\sigma^{fill}_h$ only during its filling window; for every other hydro both are absent. The inflow non-negativity slack $\sigma^{inf}_h$ is present only under the penalty-based inflow methods ([Inflow Non-Negativity](/math/inflow-nonnegativity)).
 :::
 
 Anticipated thermals (§5c) add one stage-level commitment-cost term per plant with a commitment decided at the stage — not a per-block term: the commitment column times the plant's unit cost at the delivery stage, the delivery stage's total hours $H_m$ (the sum of its block durations, or a post-study stage's declared duration past the horizon) and the delivery discount $d_{t \to m}$. Their per-block generation carries no thermal cost at a stage where their delivery is fished.
+
+:::note[Note on curtailment]
+Curtailment is priced as a reward on dispatched non-controllable generation ([Equipment Formulations §6](/math/equipment-formulations#6-non-controllable-generation-sources)), so the stage objective can be negative.
+:::
 
 ## 3. Load Balance Constraint
 
@@ -162,7 +155,7 @@ Each hydro plant $h$ is partitioned into one or more **(hydro, bus) cells** — 
 For each bus $b \in \mathcal{B}$ and block $k \in \mathcal{K}$:
 
 $$
-\sum_{h \in \mathcal{H}_b} g_{h,b,k} + \sum_{j \in \mathcal{T}_b} \sum_s g_{j,k,s}
+\sum_{h \in \mathcal{H}_b} g_{h,b,k} + \sum_{j \in \mathcal{T}_b} g_{j,k}
 + \sum_{r \in \mathcal{R}_b} g^{nc}_{r,k}
 + \sum_{c \in \mathcal{C}^{imp}_b} \chi_{c,k}
 $$
@@ -620,11 +613,10 @@ The dead volume $\underline{V}_h$ is a hard lower bound for every hydro except t
 $$
 v_h + \sigma^{fill}_h \geq V^{\text{target}}_t,
 \qquad
-V^{\text{target}}_t = \min\!\Big( V^{\text{target}}_{t+1} - \zeta_{t+1}\,\text{rate}_{t+1},\ \underline{V}_h \Big),
-\quad V^{\text{target}}_{L} = \underline{V}_h
+V^{\text{target}}_t = \min\!\Big( \underline{V}_{h,L} - \sum_{t'=t+1}^{L} \zeta_{t'} \, \text{rate}_{t'},\ \underline{V}_{h,t} \Big)
 $$
 
-The minimum end-of-stage storage $V^{\text{target}}_t$ ramps up at the configured accumulation rate `filling_min_rate_m3s` (= $\text{rate}_t$) and reaches the dead volume $\underline{V}_h$ at the last filling stage $L = \text{entry\_stage\_id} - 1$; $\zeta_t$ converts the rate over the stage duration into hm³. The slack $\sigma^{fill}_h$ is priced at $c^{fill}_h$, which is pinned **below deficit** (not the system maximum). See [Penalty System §6](/math/penalty-system).
+$\underline{V}_{h,t}$ is the dead volume in force at stage $t$ (a stage may override it), $L = \text{entry\_stage\_id} - 1$ is the last filling stage and $\text{rate}_{t'}$ the minimum accumulation rate of stage $t'$, which $\zeta_{t'}$ converts into hm³. The floor at stage $t$ is the dead volume of stage $L$ minus the accumulation the schedule still owes after $t$, never above the dead volume of stage $t$ itself; it reaches $\underline{V}_{h,L}$ at $L$. Every filling stage carries its floor. The slack $\sigma^{fill}_h$ is priced at $c^{fill}_h$, which is pinned **below deficit**. See [Penalty System §6](/math/penalty-system#dead-volume-filling-specifics).
 
 ### Turbined Flow Bounds (per cell $(h, b)$, block $k$)
 
