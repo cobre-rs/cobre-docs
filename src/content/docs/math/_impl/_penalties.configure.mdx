@@ -9,7 +9,7 @@ Cobre runs on the configured costs; the penalty-priority ordering itself is in
 
 ### `penalties.json` — Global Penalty Defaults
 
-[Case Format](/reference/case-format/penalties/#penaltiesjson) owns
+[Penalty Files](/reference/case-format/penalties/#penaltiesjson) owns
 the field table for `penalties.json` (every field, its type and the load rules).
 The example below sets the required costs only; the optional ones (the four
 directional costs and `inflow_nonnegativity_cost`) are omitted.
@@ -55,7 +55,7 @@ and a chronological stage each block's pair over the block hours
 
 The entity-level `hydros[].penalties` block that overrides these defaults per
 plant is documented in the
-[System Elements Configure tab](/math/system-elements#implementation-in-cobre);
+[System Element Modeling Overview](/math/system-elements#implementation-in-cobre) Configure tab;
 the directional-cost fallback is described under
 [Directional evaporation and withdrawal costs](#directional-evaporation-and-withdrawal-costs).
 
@@ -115,7 +115,7 @@ tiers differ per field, so this is a lookup table, not a single uniform rule:
 | `bus.deficit_segments`                          | not supported                                     | `buses[].deficit_segments`                                                          | `penalties.json` → `bus.deficit_segments`                     |
 | `bus.excess_cost`                                | `penalty_overrides_bus.parquet`                   | not supported                                                                       | `penalties.json` → `bus.excess_cost`                          |
 | `line.exchange_cost`                             | `penalty_overrides_line.parquet`                  | `lines[].exchange_cost`                                                             | `penalties.json` → `line.exchange_cost`                       |
-| `hydro.*`                       | `penalty_overrides_hydro.parquet`        | `hydros[].penalties` — see the [System Elements Configure tab](/math/system-elements#implementation-in-cobre) | `penalties.json` → `hydro.*`                                  |
+| `hydro.*`                       | `penalty_overrides_hydro.parquet`        | `hydros[].penalties` — see the [System Element Modeling Overview](/math/system-elements#implementation-in-cobre) Configure tab | `penalties.json` → `hydro.*`                                  |
 | `non_controllable_source.curtailment_cost`      | `penalty_overrides_ncs.parquet`                   | `non_controllable_sources[].curtailment_cost`                                                                       | `penalties.json` → `non_controllable_source.curtailment_cost` |
 
 #### Resolution example
@@ -238,7 +238,7 @@ raise the cost on the left or lower the one on the right, and for
 numeric `id`.
 
 Two rules reject the case as a `BusinessRuleViolation` error (see
-[`BusinessRuleViolation` in Error Codes](/reference/error-codes/#businessruleviolation)):
+[Error Codes — `BusinessRuleViolation`](/reference/error-codes/#businessruleviolation)):
 
 {/* quoted from source: crates/cobre-io/src/validation/semantic/scenarios.rs:223-226, 1202-1208 at cobre v0.17.0 */}
 

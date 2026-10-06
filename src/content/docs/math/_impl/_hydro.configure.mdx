@@ -3,7 +3,7 @@ selection the methodology above describes, and the `generation` block of
 `system/hydros.json` supplies each plant's default model and its turbine and
 generation bounds. The equations these fields feed are in the sections above.
 The rest of the plant registry is on
-[System Elements — Configure](/math/system-elements#implementation-in-cobre).
+[System Element Modeling Overview — Configure](/math/system-elements#implementation-in-cobre).
 
 ### `system/hydros.json` — `generation` block
 
@@ -167,7 +167,7 @@ This source requires `tailrace`, `hydraulic_losses`, and `efficiency` models
 in `hydros.json`, plus geometry rows in `system/hydro_geometry.parquet` for the
 plant. An FPHA-configured plant needs at least 1 row — a single row is valid for
 run-of-river plants (a constant forebay, so `gamma_v = 0`). A plant configured
-with `linearized_head` needs at least 2 rows; that higher minimum is a load-time
+with `linearized_head` needs at least 2 rows when the file holds any row; that higher minimum is a load-time
 validation rule keyed on the configured model name, not a runtime head fit —
 `linearized_head` resolves to constant productivity (methodology §3).
 
@@ -307,7 +307,7 @@ planned-outage stage, as
 
 | Rule                            | Error Class          | Description |
 | -------------------------------- | --------------------- | ----------- |
-| FPHA geometry coverage            | Dimensional error      | Every `fpha` plant must have at least 1 row in `system/hydro_geometry.parquet` (a single row is valid for run-of-river plants); every `linearized_head` plant needs at least 2 rows. |
+| FPHA geometry coverage            | Dimensional error      | When `system/hydro_geometry.parquet` holds any row, every `fpha` plant must have at least 1 row of its own (a single row is valid for run-of-river plants) and every `linearized_head` plant at least 2 rows; with no row in the file this rule does not run. |
 | FPHA plane coverage               | Dimensional error      | Every `(hydro_id, stage_id)` group in `system/fpha_hyperplanes.parquet` must have at least 1 plane. |
 | FPHA coefficient signs            | Semantic error         | `gamma_v` must be non-negative (`>= 0`; run-of-river plants have `gamma_v = 0`); `gamma_s` must be non-positive. |
 | Geometry monotonicity             | Semantic error         | `volume_hm3` must be strictly increasing; `height_m` and `area_km2` must be non-decreasing. |

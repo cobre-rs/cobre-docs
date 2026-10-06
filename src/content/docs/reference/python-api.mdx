@@ -463,7 +463,7 @@ print(report)
 
 ## `cobre.results`
 
-Loaders for the artifacts a run writes under its output directory. Every function takes `output_dir`, the directory that holds `training/`, `simulation/`, `policy/` and `stochastic/`. A relative path resolves from the process working directory, and a missing `output_dir` raises `FileNotFoundError`. NumPy and pyarrow are optional dependencies, imported only by the functions that return their types. To read the numbers, see [Interpreting Results](/running/interpreting-results/).
+Loaders for the artifacts a run writes under its output directory. Every function takes `output_dir`, the directory that holds `training/`, `simulation/`, `policy/` and `stochastic/`. A relative path resolves from the process working directory, and a missing `output_dir` raises `FileNotFoundError`. NumPy and pyarrow are optional dependencies, imported only by the functions that return their types. To read the numbers, see [Convergence & Diagnostics](/running/interpreting-results/).
 
 ### `cobre.results.load_results`
 

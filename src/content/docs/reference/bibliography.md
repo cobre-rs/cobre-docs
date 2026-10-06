@@ -83,8 +83,8 @@ For domain terms, see [Glossary](/reference/glossary).
 ## Hydro Production
 
 - **Diniz, A.L. & Maceira, M.E.P.** (2008). A four-dimensional model of hydro generation for the short-term hydrothermal dispatch problem considering head and spillage effects. _IEEE Transactions on Power Systems_, 23(3), 1298–1308. [doi:10.1109/TPWRS.2008.922253](https://doi.org/10.1109/TPWRS.2008.922253)
-  The piecewise-linear hydro production model (FPHA) relating storage/head, turbined flow, and spillage to generation. Origin of the approach fitted in [Hydro Production Models](/math/hydro-production-models) §2 — Cobre fits a reduced storage-and-flow variant at spillage = 0, capturing the spillage effect through a lateral-flow secant rather than an explicit spillage axis.
-  _Cited in [Hydro Production Models](/math/hydro-production-models) §2._
+  The piecewise-linear hydro production model (FPHA) relating storage/head, turbined flow, and spillage to generation. Origin of the approach fitted in [Hydro Production Function Models](/math/hydro-production-models) §2 — Cobre fits a reduced storage-and-flow variant at spillage = 0, capturing the spillage effect through a lateral-flow secant rather than an explicit spillage axis.
+  _Cited in [Hydro Production Function Models](/math/hydro-production-models) §2._
 
 ---
 
@@ -92,23 +92,23 @@ For domain terms, see [Glossary](/reference/glossary).
 
 - **Box, G.E.P. & Jenkins, G.M.** (1976). _Time Series Analysis: Forecasting and Control_, revised edition. Holden-Day, San Francisco.
   Foundational textbook for ARMA / autoregressive time-series modelling and the Yule-Walker estimation method that underlies the PAR(p) fitting procedure.
-  _Background reference for [PAR Inflow Model](/math/par-inflow-model), [Scenario Generation](/math/scenario-generation)._
+  _Background reference for [PAR(p) Inflow Model](/math/par-inflow-model), [Scenario Generation](/math/scenario-generation)._
 
 - **Hipel, K.W. & McLeod, A.I.** (1994). _Time Series Modelling of Water Resources and Environmental Systems_. Elsevier, Amsterdam.
   Chapter 14 is the canonical presentation of periodic models: the PAR model definition, the periodic autocovariance/ACF conventions (the more recent observation names the season), the periodic Yule-Walker equations, the lag-0 variance identity, the periodic PACF with its $\pm 1.96/\sqrt{N_m}$ significance band, and the periodic-stationarity condition. Cobre's fitting procedure is this formulation written in correlation form over the $s_m$-standardized series.
-  _Cited in [PAR Inflow Model](/math/par-inflow-model) §3.4–§3.6._
+  _Cited in [PAR(p) Inflow Model](/math/par-inflow-model) §3.5._
 
 - **Maceira, M.E.P. & Damázio, J.M.** (2006). Use of the PAR(p) model in the stochastic dual dynamic programming optimization scheme used in the operation planning of the Brazilian hydropower system. _Probability in the Engineering and Informational Sciences_, 20(1), 143–156. [doi:10.1017/S0269964806060098](https://doi.org/10.1017/S0269964806060098)
   The periodic autoregressive PAR(p) model as fitted inside SDDP for the Brazilian system. Source of the population-divisor seasonal-statistics convention and the iterative AR-order-reduction procedure that keeps composed lag contributions non-negative.
-  _Cited in [PAR Inflow Model](/math/par-inflow-model) §3.2, §3.6, §7.6._
+  _Cited in [PAR(p) Inflow Model](/math/par-inflow-model) §3.2, §3.6, §7.6._
 
 - **Treistman, F., Maceira, M.E.P., Damázio, J.M. & Cruz, C.B.** (2020). Periodic time series model with annual component applied to operation planning of hydrothermal systems. In _2020 International Conference on Probabilistic Methods Applied to Power Systems (PMAPS)_, Liège, Belgium, 1–6. [doi:10.1109/PMAPS47429.2020.9183472](https://doi.org/10.1109/PMAPS47429.2020.9183472)
   The PAR(p)-A model: the periodic autoregressive model augmented with an annual component, a regression term on the rolling annual average (the mean of the twelve previous monthly inflows), which extends the model's memory to long dry and wet periods.
-  _Cited in [PAR Inflow Model](/math/par-inflow-model) §7._
+  _Cited in [PAR(p) Inflow Model](/math/par-inflow-model) §7._
 
 - **Larroyd, P.V., Pedrini, R., Beltran, F., Teixeira, G., Finardi, E.C. & Picarelli, L.B.** (2022). Dealing with Negative Inflows in the Long-Term Hydrothermal Scheduling Problem. _Energies_, 15(3), 1115. [doi:10.3390/en15031115](https://doi.org/10.3390/en15031115)
   Inflow non-negativity treatment for PAR(p) models in hydrothermal dispatch — the reference design that motivates the clamp-plus-slack formulation.
-  _Cited in [Inflow Non-Negativity](/math/inflow-nonnegativity) §8._
+  _Cited in [Inflow Non-Negativity Solution Methods](/math/inflow-nonnegativity) §8._
 
 - **Maceira, M.E.P., Terry, L.A., Costa, F.S., Damázio, J.M. & Melo, A.C.G.** (2002). Chain of optimization models for setting the energy dispatch and spot price in the Brazilian system. In _Proceedings of the 14th Power Systems Computation Conference (PSCC)_, Seville, Spain.
   The NEWAVE / DECOMP / GEVAZP optimization chain for the Brazilian system. Source of the DECOMP-style scenario tree — a deterministic trunk with branching at the final stage — expressed as a terminal fan of sibling nodes traversed by enumerated selection.
@@ -127,8 +127,8 @@ For domain terms, see [Glossary](/reference/glossary).
 ## Software References
 
 - **Dowson, O. & Kapelevich, L.** (2021). SDDP.jl: A Julia Package for Stochastic Dual Dynamic Programming. _INFORMS Journal on Computing_, 33(1), 27–33. [doi:10.1287/ijoc.2020.0987](https://doi.org/10.1287/ijoc.2020.0987). Documentation: [sddp.dev](https://sddp.dev/stable/)
-  Reference SDDP implementation in Julia. Influenced the sampling-scheme abstractions, the convex-combination risk-measure convention and the notation conventions in Cobre.
-  _Cited in [Notation Conventions](/overview/notation-conventions), [Scenario Generation](/math/scenario-generation) §3, [Risk Measures](/math/risk-measures) §3, [Policy Graphs](/math/policy-graphs) §4, [SDDP Algorithm](/math/sddp-algorithm) §4._
+  Reference SDDP implementation in Julia. Influenced the sampling-scheme abstractions, the convex-combination risk-measure structure and the notation conventions in Cobre.
+  _Cited in [Notation Conventions](/overview/notation-conventions), [Scenario Generation](/math/scenario-generation) §3, [Risk Measures](/math/risk-measures) §3, [Policy Graphs](/math/policy-graphs) §4._
 
 - **Huangfu, Q. & Hall, J.A.J.** (2018). Parallelizing the dual revised simplex method. _Mathematical Programming Computation_, 10(1), 119–142. [doi:10.1007/s12532-017-0130-5](https://doi.org/10.1007/s12532-017-0130-5)
   HiGHS dual simplex implementation. HiGHS is Cobre's default LP solver.
@@ -144,12 +144,12 @@ For domain terms, see [Glossary](/reference/glossary).
 
 - **Higham, N.J.** (2002). Computing the nearest correlation matrix — a problem from finance. _IMA Journal of Numerical Analysis_, 22(3), 329–343. [doi:10.1093/imanum/22.3.329](https://doi.org/10.1093/imanum/22.3.329)
   The nearest positive-semidefinite / correlation-matrix problem underlying the clip-negative-eigenvalues projection used when factorising the spatial correlation matrix.
-  _Cited in [PAR Inflow Model](/math/par-inflow-model) §6._
+  _Cited in [PAR(p) Inflow Model](/math/par-inflow-model) §6._
 
 ---
 
 ## Brazilian Power-System Context
 
 - **CEPEL — Centro de Pesquisas de Energia Elétrica** (n.d.). _Documentação Técnica dos modelos para Planejamento da Operação do SIN – Ambiente Libs_. Online manual: [see.cepel.br/manual/libs/latest/](https://see.cepel.br/manual/libs/latest/)
-  Official documentation of the NEWAVE / DECOMP / DESSEM suite of stochastic-dispatch models operated for the Brazilian system. Cited only for practitioner terms and notation: the equivalent-terms tables of the glossary, the GEVAZP residual distribution (section _Distribuição Lognormal 3 parâmetros_), the PAR(p) notation (section _Modelo Autorregressivo Periódico - Par(p)_) and the term "Tendência hidrológica" (section _Geração de Séries Sintéticas Condicionadas_). The methods those models implement are credited to their primary articles above: FPHA → Diniz & Maceira (2008); PAR(p) and iterative order reduction → Maceira & Damázio (2006); PAR(p)-A → Treistman et al. (2020); DECOMP-style scenario tree → Maceira et al. (2002). Cobre's dead-volume filling model is its own and is not attributed here.
-  _Cited in [Glossary](/reference/glossary/#equivalent-terms-in-other-planning-tools)._
+  Official documentation of the NEWAVE / DECOMP / DESSEM suite of stochastic-dispatch models operated for the Brazilian system. Cited only for practitioner terms and notation: the equivalent-terms tables of the glossary, the GEVAZP residual distribution (section _Distribuição Lognormal 3 parâmetros_) and the PAR(p) notation (section _Modelo Autorregressivo Periódico - Par(p)_). The methods those models implement are credited to their primary articles above: FPHA → Diniz & Maceira (2008); PAR(p) and iterative order reduction → Maceira & Damázio (2006); PAR(p)-A → Treistman et al. (2020); DECOMP-style scenario tree → Maceira et al. (2002). Cobre's dead-volume filling model is its own and is not attributed here.
+  _Cited in [Glossary — Brazilian Power-System Ecosystem](/reference/glossary/#brazilian-power-system-ecosystem) and [Glossary — Equivalent terms in other planning tools](/reference/glossary/#equivalent-terms-in-other-planning-tools)._

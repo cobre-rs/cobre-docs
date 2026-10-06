@@ -124,7 +124,7 @@ Every backward LP solve must be feasible. This is guaranteed by the recourse sla
 :::
 
 :::note[Discount factor]
-When discount rates are active, the discount factor is applied to the $\theta$ variable in the stage $t-1$ objective (i.e., $d_{t-1 \to t} \cdot \theta$), not to the cut coefficients. The cuts themselves remain unmodified. See [Discount Rate](/math/discount-rate).
+When discount rates are active, the discount factor is applied to the $\theta$ variable in the stage $t-1$ objective (i.e., $d_{t-1 \to t} \cdot \theta$), not to the cut coefficients. The cuts themselves remain unmodified. See [Discount Rate Formulation](/math/discount-rate).
 :::
 
 Scenario tree under a sampled forward pass — the forward pass samples M sparse
@@ -189,7 +189,7 @@ $$
 \bar{z}^k = \frac{1}{M} \sum_{m=1}^{M} \sum_{t=1}^{T} d_{1 \to t}\, c_t(x_t^{(m)}, u_t^{(m)})
 $$
 
-where $d_{1 \to t}$ is the cumulative discount factor of stage $t$ ([Discount Rate §5](/math/discount-rate#5-cumulative-discounting)). With an imported terminal function (§7), each trajectory's cost also includes the discounted value of that function at the trajectory's final state.
+where $d_{1 \to t}$ is the cumulative discount factor of stage $t$ ([Discount Rate Formulation §5](/math/discount-rate#5-cumulative-discounting)). With an imported terminal function (§7), each trajectory's cost also includes the discounted value of that function at the trajectory's final state.
 
 **Optimality Gap**: the distance between the upper and the lower bound, reported in percent of the lower bound; [Stopping Rules](/math/stopping-rules#optimality-gap) defines it and the gap-based stopping rule that consumes it.
 
@@ -239,7 +239,7 @@ $$
 
 where $\hat{a}_{h,\ell}$ is the lag $\ell$ inflow value passed from the previous stage. The reduced costs of these pinned columns, each divided by its column's scale factor, give the lag coefficients $\beta^{lag}_{h,\ell}$, which enter the cut when the stage's cut projection keeps the inflow-lag components, capturing the marginal value of inflow history — see [Cut Management §2](/math/cut-management#2-reduced-cost-extraction).
 
-See [PAR Inflow Model](/math/par-inflow-model) for the complete autoregressive formulation and [State Augmentation §4](/math/state-augmentation#4-inflow-lags) for how these constraints appear in the stage LP.
+See [PAR(p) Inflow Model](/math/par-inflow-model) for the complete autoregressive formulation and [State Augmentation §4](/math/state-augmentation#4-inflow-lags) for how these constraints appear in the stage LP.
 
 ### 5.2 Travel-Time and Anticipated-Thermal State Expansion
 
@@ -262,7 +262,7 @@ to its delivery stage. The ring slots are Markov state so that the cut at each
 stage prices the commitments already in flight.
 
 Both expansions are optional and instance-specific; see
-[System Elements](/math/system-elements) for the entity configuration and
+[System Element Modeling Overview](/math/system-elements) for the entity configuration and
 [State Augmentation §6](/math/state-augmentation#6-water-travel-time) for the in-transit bucket rows and
 [State Augmentation §5](/math/state-augmentation#5-anticipated-thermal-commitments) for the anticipated-thermal delivery gating in the stage LP.
 
@@ -304,14 +304,14 @@ The methodology above defines the forward/backward pass structure and the execut
 - [Policy Graphs](/math/policy-graphs) — The node/transition/pool generalisation of the stage chain; two probability axes, discount-separate convention, and structural limitations (finite-horizon only, cyclic reserved)
 - [Cut Management](/math/cut-management) — Cut generation, aggregation, selection, validity conditions, and the append-only monotonicity guarantee
 - [Determinism & Provenance](/math/determinism-guarantees) — Read-back canonicalization of the trial-point values onto admissible bounds, and the reproducibility mechanisms (canonical state-block ordering, pinned solve order) it rests on
-- [PAR Inflow Model](/math/par-inflow-model) — Stochastic inflow model driving uncertainty in the forward pass
-- [Discount Rate](/math/discount-rate) — Discounted Bellman equation, stage-dependent rates, discount factor on θ
+- [PAR(p) Inflow Model](/math/par-inflow-model) — Stochastic inflow model driving uncertainty in the forward pass
+- [Discount Rate Formulation](/math/discount-rate) — Discounted Bellman equation, stage-dependent rates, discount factor on θ
 - [Horizon Modes](/math/horizon-modes) — The reserved cyclic policy-graph target design (season function, cycle convergence inequality, season-indexed cut pool, fixed-point Bellman operator) that the finite-horizon-only restriction in [Policy Graphs](/math/policy-graphs) anticipates
 - [Post-Study Boundary & Chained Studies](/math/post-study-boundary) — the imported terminal function: source pool, compatibility conditions, carried state and calendar reconciliation
 - [Upper Bound Evaluation](/math/upper-bound-evaluation) — Upper bound estimation methods
 - [Stopping Rules](/math/stopping-rules) — Convergence criteria that terminate the iterative process
 - [Risk Measures](/math/risk-measures) — CVaR and risk-averse extensions to the Bellman recursion
 - [Penalty System](/math/penalty-system) — Recourse slacks guaranteeing feasibility (relatively complete recourse)
-- [Equipment Formulations](/math/equipment-formulations) — Thermal equipment modelling
+- [Equipment-Specific Formulations](/math/equipment-formulations) — Thermal equipment modelling
 - [Scenario Generation](/math/scenario-generation) — Fixed opening tree, sampling scheme abstraction, enumerated scenario trees
 - **Running Cobre:** [Running Studies](/running/running-studies/) — the software workflow that trains and runs this algorithm.

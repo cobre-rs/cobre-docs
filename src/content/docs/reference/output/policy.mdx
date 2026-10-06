@@ -12,7 +12,7 @@ written last.
 :::note[Wire format]
 The wire format of the binary files below is described by the canonical
 `policy.fbs` schema of the cobre repository. See
-[FlatBuffers Schema (`policy/*.bin`)](/reference/flatbuffers-schema/) for
+[FlatBuffers Policy Schema](/reference/flatbuffers-schema/) for
 recipes on dumping a `.bin` to JSON and on generating typed readers in
 Python, C++, TypeScript, and other languages with `flatc`.
 :::
@@ -70,7 +70,7 @@ The binary is not human-readable. The logical record structure of each cut
 Each `NNN.bin` also embeds a **per-slot entity manifest** — one entry per
 state-vector dimension, in canonical cut-coefficient order — recording which
 entity each coefficient position belongs to. It is what policy-load
-validation checks (see [policy management](/running/policy-management)):
+validation checks (see [Policy Management](/running/policy-management)):
 a policy whose dimensions match the current study by count but bind to different
 entities is rejected.
 
@@ -181,6 +181,8 @@ follow that grouping, with the same field names.
 
 **Methodology:** [Policy Graphs](/math/policy-graphs)
 
+## Python view of the manifest
+
 **Python dict top-level fields:**
 
 | Name              | Type    | Nullable | Units | Description                                                                                                                                                                                                                                                                                                                                                                       |
@@ -229,7 +231,7 @@ follow that grouping, with the same field names.
 | `producer.warm_start_cuts`                 | integer | No       | —     | Largest per-pool warm-start cut count: the maximum of `warm_start_counts[]`, not their sum. `0` for fresh runs.                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
 | `producer.warm_start_counts[]`             | array   | No       | —     | Per-pool warm-start cut counts, in pool-id order. Supersedes `warm_start_cuts` for per-pool accuracy when non-empty.                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
 | `producer.rng_seed`                        | integer | No       | —     | RNG seed used by the scenario sampler. Required for reproducibility.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
-| `producer.total_visited_states`            | integer | No       | —     | Total number of visited state vectors across all nodes. `0` when `exports.states` is off.                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| `producer.total_visited_states`            | integer | No       | —     | Total number of visited state vectors across all nodes, recorded whenever training keeps the visited-state record — when `exports.states` is `true` or a `training.cut_selection` method is set; `0` when neither is.                                                                                                                                                                                                                                                                                                                                                  |
 | `producer.training_block_mode`             | string  | No       | —     | Block mode the artifact was trained under: the shared lowercase mode (`"parallel"`/`"chronological"`) when every stage agrees, else `"mixed"`.                                                                                                                                                                                                                                                                                                                                                                                                                         |
 | `producer.training_block_mode_per_stage[]` | array   | No       | —     | Per-study-stage training block modes, in study-stage order. Empty when uniform; populated only for mixed-mode studies.                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
 | `producer.cost_scale_factor`               | number  | Yes      | —     | Objective cost-scale factor the writing study resolved (`modeling.cost_scale_factor`), recorded here as study-global provenance. The authoritative load-time value is carried **per pool** in each `cuts/<pool>.bin` (see the cuts payload above), which marks that pool's cut coefficients/intercepts as canonical currency units; every load path requires it, and a resolved pool missing it is rejected ("predates self-describing cuts … re-export"). See [Cost-Scale Canonicalization](/running/policy-management/#cost-scale-canonicalization) for the details. |

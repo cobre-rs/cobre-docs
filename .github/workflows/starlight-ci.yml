@@ -138,9 +138,17 @@ jobs:
       - name: Check doc narration (change-narration ratchet, both zones)
         run: npm run check:narration
 
+      # E13 ticket-218 (GRD-07): static source read, pre-build; ratchet: scripts/doc-lint-allow.txt.
+      - name: Check glossary (no software tokens; index complete)
+        run: npm run check:glossary
+
       # E13 ticket-214 (GRD-08): every emitted ErrorKind/LoadError variant has an error-codes section; vendored copy, no cobre checkout (ADR-020).
       - name: Check error coverage (error-codes vs vendored error kinds)
         run: npm run check:error-coverage
+
+      # E13 ticket-215 (GRD-03): vendored input schemas vs the case-format tables, both directions (R87); static, pre-build.
+      - name: Check input schemas (vendored schemas vs case-format tables)
+        run: npm run check:input-schemas
 
       # GRD-04 (R87): every public cobre-python stub symbol has an anchor in reference/python-api; reads the vendored scripts/pystubs/ (refresh:pystubs), no cobre checkout.
       - name: Check python-api coverage (vendored stubs vs reference/python-api)
@@ -178,6 +186,10 @@ jobs:
       # CI has no cobre checkout, so the tape blob prints "tape not checked" (D-198-4); never drop --check here.
       - name: Check recordings provenance (quickstart.gif sha256)
         run: npm run refresh:recordings -- --check
+
+      # ticket-244c (XD-128): every reference Type cell uses the reference-conventions §4 vocabulary of its file kind; static source read, pre-build.
+      - name: Check reference type spelling (§4 vocabulary)
+        run: npm run check:type-spelling
 
       # E10 ticket-032 (licensing.md item 3): assert D2 uses ELK, never the
       # proprietary TALA engine (unlicensed TALA watermarks output). A static

@@ -81,7 +81,7 @@ Because state is pinned by column bounds ([State Augmentation §2](/math/state-a
 
 The other row families follow the z-inflow rows in this order: water balance, in-transit bucket definition ([State Augmentation §6](/math/state-augmentation#bucket-definition-rows)), load balance, FPHA planes, evaporation, the operational rows (minimum outflow, maximum outflow, minimum turbined flow, minimum generation), the filling floor and the soft dead-volume floor, the commitment fish, deposit and carry rows ([State Augmentation §5](/math/state-augmentation#ring-rows)), and the generic constraints; [Stage LP at a Glance](/math/lp-formulation#stage-lp-at-a-glance) counts each family. The Benders cut rows are appended after them ([LP Formulation §11](/math/lp-formulation#11-benders-cuts)).
 
-Each incoming-state coordinate is pinned on its own LP column — the incoming storage column for storage, the lag column for each AR lag, the incoming bucket column for each in-transit bucket, the incoming ring-slot column for each commitment-ring slot — and its cut coefficient is the **reduced cost** of that column ([State Augmentation §2](/math/state-augmentation#2-pinning-by-column-bounds), [cut management](/math/cut-management)). The map from a state coordinate to its pinned column is fixed, and each of these incoming-state column regions is contiguous, so all storage, inflow-lag, in-transit bucket, and commitment-ring slot coefficients are gathered by reading a few contiguous slices of the reduced-cost vector.
+Each incoming-state coordinate is pinned on its own LP column — the incoming storage column for storage, the lag column for each AR lag, the incoming bucket column for each in-transit bucket, the incoming ring-slot column for each commitment-ring slot — and its cut coefficient is the **reduced cost** of that column ([State Augmentation §2](/math/state-augmentation#2-pinning-by-column-bounds), [Cut Management](/math/cut-management)). The map from a state coordinate to its pinned column is fixed, and each of these incoming-state column regions is contiguous, so all storage, inflow-lag, in-transit bucket, and commitment-ring slot coefficients are gathered by reading a few contiguous slices of the reduced-cost vector.
 
 **Worked example** ($N = 3$, $P^{\max} = 2$, no anticipated thermal and no travel-time arc): the storage region holds 3 columns, the AR lag region holds 6 (3 hydros × 2 lags), the z-inflow region holds 3, and the incoming-storage region holds 3, so $\theta$ is the 16th column. The state count (outgoing storage + AR lags) is $N(1 + P^{\max}) = 9$.
 
@@ -97,11 +97,11 @@ $$
 \tilde{c}_j = \frac{c_j}{K} \quad \text{for all } j \neq \theta
 $$
 
-The $\theta$ variable keeps an unscaled coefficient, the one-step discount factor $d_{t \to t+1}$: each stored cut is $\theta \geq \beta_0^{scaled} + \sum_j \beta_j^{scaled} x_j$ over the outgoing-state columns $j$ of the cut row, its intercept and every coefficient being the original-unit value divided by $K$, so $\theta$ is already in scaled cost space. The LP objective is $\sum_j \tilde{c}_j x_j + d_{t \to t+1} \, \theta$, and the total scaled objective equals $(C_{stage} + d_{t \to t+1} \, C_{future}) / K$. Each stage's factor carries every later stage's cost to stage 1 exactly once ([Discount Rate](/math/discount-rate#consistency-with-the-bellman-recursion)). All cost-domain outputs (objective values, duals, cost breakdowns) are multiplied by $K$ at the reporting boundary to recover original units.
+The $\theta$ variable keeps an unscaled coefficient, the one-step discount factor $d_{t \to t+1}$: each stored cut is $\theta \geq \beta_0^{scaled} + \sum_j \beta_j^{scaled} x_j$ over the outgoing-state columns $j$ of the cut row, its intercept and every coefficient being the original-unit value divided by $K$, so $\theta$ is already in scaled cost space. The LP objective is $\sum_j \tilde{c}_j x_j + d_{t \to t+1} \, \theta$, and the total scaled objective equals $(C_{stage} + d_{t \to t+1} \, C_{future}) / K$. Each stage's factor carries every later stage's cost to stage 1 exactly once ([Discount Rate Formulation](/math/discount-rate#consistency-with-the-bellman-recursion)). All cost-domain outputs (objective values, duals, cost breakdowns) are multiplied by $K$ at the reporting boundary to recover original units.
 
 ### 2.2 Column Scaling (Geometric Mean)
 
-After cost scaling, each column $j$ is assigned a geometric-mean scale factor — a one-pass geometric-mean matrix equilibration (cf. [Curtis & Reid, 1972](/reference/bibliography/#numerical-methods)):
+After cost scaling, each column $j$ is assigned a scale factor by one-pass geometric-mean matrix equilibration (cf. [Curtis & Reid, 1972](/reference/bibliography/#numerical-methods)):
 
 $$
 d_j^{col} = \frac{1}{\sqrt{\max_i |A_{ij}| \cdot \min_i |A_{ij}|}}
@@ -143,6 +143,6 @@ State cut coefficients are read as the **reduced costs** of the pinned incoming-
 - [LP Formulation](/math/lp-formulation) — the stage LP whose columns and rows this chapter orders
 - [State Augmentation](/math/state-augmentation) — the state vector, its pinning by column bounds and the cut row over the outgoing state
 - [Cut Management](/math/cut-management) — cut coefficients, aggregation and selection
-- [Discount Rate](/math/discount-rate) — the one-step discount factor that is the coefficient of $\theta$
+- [Discount Rate Formulation](/math/discount-rate) — the one-step discount factor that is the coefficient of $\theta$
 - [LP Warm-Start](/math/lp-warm-start) — basis reuse across the solves of the stage LP
 - [Notation Conventions](/overview/notation-conventions) — symbols and the canonical entity order

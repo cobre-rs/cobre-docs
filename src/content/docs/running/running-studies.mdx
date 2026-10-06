@@ -215,7 +215,7 @@ Each phase prints a summary to stderr with:
 
 The scaffold runs one forward pass per iteration, so each upper bound is the cost of
 a single sampled trajectory and the gap can read below zero.
-[Interpreting Results](/running/interpreting-results/) covers reading the bounds.
+[Convergence & Diagnostics](/running/interpreting-results/) covers reading the bounds.
 
 ---
 
@@ -251,7 +251,7 @@ jq -r '.convergence.termination_reason' /path/to/my_study/output/training/metada
 From Python, `cobre.results.load_results("/path/to/my_study/output")` returns
 both metadata files as dicts, and `cobre.results.load_convergence` /
 `cobre.results.load_simulation` load the Parquet tables. See
-[Interpreting Results](/running/interpreting-results/) for reading the
+[Convergence & Diagnostics](/running/interpreting-results/) for reading the
 convergence trajectory and simulation outputs, and [Output Format](/reference/output/) for every field
 of [`training/metadata.json`](/reference/output/metadata/#trainingmetadatajson) and
 [`simulation/metadata.json`](/reference/output/metadata/#simulationmetadatajson).
@@ -337,12 +337,12 @@ integer of at least `1` and defaults to `1`. The pool solves the forward-pass,
 backward-pass, and simulation LPs in parallel, so speedup is bounded by the
 parallel work available: the forward passes per iteration, the trial points of the
 backward pass, and the simulation scenarios. In the excerpt, simulation time does not fall with the thread count: the solves run in parallel, but each process writes the scenario results through a single writer, which bounds the wall time of a case this small. See
-[Performance](/running/performance/) for the execution model.
+[Performance Accelerators](/running/performance/) for the execution model.
 
 ### Communication Backend
 
 A single `cobre run` uses the local (single-process) backend; launching under an
-MPI launcher (`mpiexec`, `mpirun`, or `srun`) distributes the work across ranks when the binary is built with MPI support (the `cobre-mpi` binary of [HPC Deployment](/running/hpc-deployment/)); the standard `cobre` binary offers only the local backend, so under a launcher `auto` runs every process as its own single-process study.
+MPI launcher (`mpiexec`, `mpirun`, or `srun`) distributes the work across ranks when the binary is built with MPI support (the `cobre-mpi` binary of [HPC & Cluster Deployment](/running/hpc-deployment/)); the standard `cobre` binary offers only the local backend, so under a launcher `auto` runs every process as its own single-process study.
 By default (`--comm-backend auto`) cobre detects the launcher and selects the
 backend accordingly, so no flag is needed in either case. Pass
 `--comm-backend mpi` to force the MPI backend — it fails with a clear message on a
@@ -384,7 +384,7 @@ preprocessing artifacts to `output/stochastic/` before training begins:
 ```
 
 The export holds the stochastic model the run used.
-[Output Format — Stochastic Artifacts](/reference/output/stochastic/)
+[Stochastic Artifacts](/reference/output/stochastic/)
 lists each file, the condition under which it is written, and its schema.
 
 ### Round-trip workflow
@@ -441,7 +441,7 @@ from `inflow_history.parquet`, and reads the opening tree from
 hold `num_openings` openings for every stage, or the load fails; a tree that
 the first run clamped to fewer openings, with a warning, fails this check. The
 other conditions on the file are in
-[Case Format](/reference/case-format/scenarios/#scenariosnoise_openingsparquet).
+[Scenario Files](/reference/case-format/scenarios/#scenariosnoise_openingsparquet).
 
 ---
 

@@ -1,71 +1,32 @@
-# Doc-lint baseline allowlist (Epic 04 ticket-015; burned down in ticket-028,
-# reopened by ticket-001, burned down again by ticket-008).
+# Doc-lint baseline allowlist.
 #
-# Grandfathers PRE-EXISTING strict-zone hits found by check-doc-voice.mjs and
-# check-doc-version.mjs on the committed corpus, so those two gates land GREEN
-# while still failing on any NEW violation with no entry here — a ratchet,
-# mirroring cobre's own `scripts/ci/allow-rationale-allowlist.txt` convention.
-#
-# check-doc-counts.mjs does NOT read this file (a stated column/field count
-# disagreeing with its own adjacent table is a plain factual bug, not a
-# voice/version judgement call — it has no grandfather path).
+# Grandfathers pre-existing hits of the doc gates that read it, so each gate
+# fails on every NEW violation while a hit under editorial review stays
+# recorded with its rationale. The readers:
+#   - check-doc-voice.mjs      (npm run check:voice)
+#   - check-doc-version.mjs    (npm run check:version)
+#   - check-doc-narration.mjs  (npm run check:narration)
+#   - check-glossary.mjs       (npm run check:glossary)
+# check-doc-counts.mjs does not read this file: a stated column or field count
+# that disagrees with its adjacent table is a plain factual error, with no
+# grandfather path.
 #
 # Format: one entry per line, `<relpath>:<line>  <rule-id>  # rationale`.
-# `<relpath>` is relative to src/content/docs/. An entry grandfathers only the
-# rule it names, and only for the gate that owns that rule; each gate fails by
-# name on its own entries that match no hit (STALE) — see
-# scripts/doc-lint-allowlist.mjs.
+# `<relpath>` is relative to src/content/docs/ and `<line>` is the 1-based line
+# of the hit. Blank lines and lines starting with `#` are comments; a malformed
+# entry fails the gate by name.
 #
-# ── HISTORY: burned down to empty by ticket-028, reopened by ticket-001,
-#    burned down again by ticket-008 ───────────────────────────────────────
-# ticket-028 first burned the grandfather set down to zero: the three
-# categories of pre-existing hit were resolved at the source rather than
-# tolerated —
-#   • Category 1 (cobre-version-annotation narration) — the offending prose was
-#     rewritten in present tense with no version reference.
-#   • Category 2 (unpinned "typical" instance magnitudes) — the hedged numbers
-#     were scrubbed to qualitative descriptions, preserving all methodology.
-#   • Category 3 (hype false positives on legitimate math prose) — the detector
-#     was calibrated instead of the prose ("zero cost" dropped from the
-#     superlative list; the "not just"/"not merely" logical-contrast family
-#     dropped from the contrasting-affirmative list — see check-doc-voice.mjs).
-#   • The lone self-referential false positive (the "Code as ground truth"
-#     sentence that STATES the no-version rule and thereby tripped the bare
-#     "migration" pattern) is now excluded structurally by the self-reference
-#     guard in check-doc-version.mjs, not grandfathered here.
+# Reading: an entry grandfathers only the rule it names, and only for the gate
+# that owns that rule. Each gate reports every one of its own entries that
+# matches no hit as STALE and fails, so a line shift fails on both sides: the
+# unlisted hit at its new line and the entry left at the old one. The reader
+# is scripts/doc-lint-allowlist.mjs.
 #
-# ticket-001 (Epic 01 batch 0, RI-5/ADR-006) then added the `instance-magnitude`
-# rule to check-doc-voice.mjs, closing the table-cell scanning gap: a bare
-# monetary-rate magnitude (e.g. a "Typical Range" column cell) carries no hedge
-# word, so the older unpinned-number check never saw it. It grandfathered 14
-# pre-existing SYS-03 magnitudes in math/penalty-system.mdx pending the scrub.
-#
-# ticket-008 (Epic 02 batch 9) then burned that set back down to zero: the
-# three "Typical Range" columns in math/penalty-system.mdx were dropped (the
-# methodological orderings they encoded — storage violation > deficit >
-# filling target, turbined_cost > spillage_cost, etc. — already live as prose
-# in "Penalty Priority Ordering" and were not duplicated), the line-44
-# "excess_cost" note was rewritten qualitatively, and the parallel
-# instance-specific magnitudes in math/system-elements.mdx (SYS-06 — the
-# \$100/MWh and 500 MW examples, the named-region SIN aside, and four more
-# \$/MWh penalty examples) were scrubbed or genericized. All 14 entries below
-# are removed; check:voice reports zero grandfathered hits for both files.
-#
-# The gate remains active: any genuinely NEW hit must be fixed at the source, or
-# marked with an inline `<!-- doc-voice-ok: reason -->` for a real exception, or
-# (for a hit under editorial review) added below with a rationale.
-#
-# ── CHANGE-NARRATION RATCHET (check-doc-narration.mjs, both zones) ──────────
-# The change-narration gate reads this file too. Each grandfathered hit is one
-# entry whose rationale names the epic that will reword it as a neutral
-# statement of current behaviour:
-#   # owner: E<NN> <ledger-id|page> — <matched phrase>
-#   • Owners DELETE their entries when they rewrite the prose. No entry is
-#     added for new prose; a new hit is reworded at the source.
-#   • An edit that shifts a grandfathered line re-keys its entry in the same
-#     change, or the gate fails on both sides: the unlisted hit at its new line
-#     and the stale entry at the old one.
-#   • Each owning epic's acceptance asserts
-#     `grep -c '# owner: E<NN> ' scripts/doc-lint-allow.txt` = 0.
-#   • Epic 15 ticket-248 confirms the residue is zero.
+# Removing an entry: reword the prose it grandfathers and delete the entry in
+# the same change. An edit that only shifts the line re-keys the entry in that
+# change.
+# Adding an entry: only for a genuine exception under review, with a rationale
+# that names the exception. New prose is fixed at the source, never listed
+# here. The voice gate also accepts an inline `<!-- doc-voice-ok: reason -->`
+# marker on the line of a real exception.
 

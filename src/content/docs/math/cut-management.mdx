@@ -91,7 +91,7 @@ The per-pair cuts $\beta_0(n', \omega)$, $\beta(n', \omega)$ correspond to the o
 The aggregated cut $(\bar{\beta}_0, \bar{\beta})$ is added to node $n$'s cut pool, which on the stage chain is the cut pool of stage $t-1$.
 
 :::note[Discount factor]
-When the problem uses stage-dependent discount rates, discounting is applied to the $\theta$ variable in the stage $t-1$ objective function (i.e., $d_{t-1 \to t} \cdot \theta$), rather than scaling the cut coefficients directly. This is simpler — the cuts remain unmodified and the discount factor appears only in the objective. See [Discount Rate](/math/discount-rate) for the discounted Bellman equation and how discount factors interact with cut generation.
+When the problem uses stage-dependent discount rates, discounting is applied to the $\theta$ variable in the stage $t-1$ objective function (i.e., $d_{t-1 \to t} \cdot \theta$), rather than scaling the cut coefficients directly. This is simpler — the cuts remain unmodified and the discount factor appears only in the objective. See [Discount Rate Formulation](/math/discount-rate) for the discounted Bellman equation and how discount factors interact with cut generation.
 :::
 
 :::note[Multi-cut formulation]
@@ -129,7 +129,7 @@ Three guarantees attach to the bounds SDDP reports, each under its own hypothese
 
 At every iteration $k$, $\underline{z}^k$ is at most the optimal value of the model as trained, under the nested risk-adjusted objective of [Risk Measures](/math/risk-measures). It rests on these hypotheses:
 
-- **Convexity.** The cost-to-go of every stage is convex in the incoming state: the incoming state enters each stage problem affinely, through the bounds of its pinned columns. The truncation methods of [Inflow Non-Negativity](/math/inflow-nonnegativity) break this in the inflow-lag components under a PAR(p > 0) model, because the noise floor they impose is solved from the trial point's lags; keeping the lag components in the cut does not restore it. Without a non-negativity method, or with the penalty method, the inflow stays affine in the lags.
+- **Convexity.** The cost-to-go of every stage is convex in the incoming state: the incoming state enters each stage problem affinely, through the bounds of its pinned columns. The truncation methods of [Inflow Non-Negativity Solution Methods](/math/inflow-nonnegativity) break this in the inflow-lag components under a PAR(p > 0) model, because the noise floor they impose is solved from the trial point's lags; keeping the lag components in the cut does not restore it. Without a non-negativity method, or with the penalty method, the inflow stays affine in the lags.
 - **Relatively complete recourse.** Every stage problem is feasible for every incoming state and realization, which the penalty slacks of [Penalty System](/math/penalty-system) provide.
 - **Exact cuts.** Every cut is exact at its trial point and below the risk-adjusted cost-to-go everywhere: the backward pass solves the stage problem of every successor–opening pair to optimality and combines their cuts with probabilities from the risk set of the stage's coherent risk measure that attain that measure at the trial point.
 - **Full state span.** The cuts span every state component the cost-to-go depends on. When a component the cost-to-go depends on is projected out of the cut ([State Augmentation §7](/math/state-augmentation#7-cut-state-projection)), the cut is guaranteed to lie below the cost-to-go only where that component equals its trial value.
@@ -324,13 +324,13 @@ The methodology above defines the complete Benders cut lifecycle; the tabs below
 - [LP Formulation](/math/lp-formulation) — Benders cut constraints in the LP
 - [State Augmentation](/math/state-augmentation) — Column-bound state pinning whose reduced costs give cut coefficients; cut-state projection onto the state components each stage selects
 - [LP Warm-Start](/math/lp-warm-start) — Stored-basis warm-start of stage solves; a DCS solve does not apply it (§8.4)
-- [PAR Inflow Model](/math/par-inflow-model) — AR lag state variables that appear in cut coefficients
+- [PAR(p) Inflow Model](/math/par-inflow-model) — AR lag state variables that appear in cut coefficients
 - [SDDP Algorithm](/math/sddp-algorithm) — Forward/backward pass structure that drives cut generation
 - [Scenario Generation](/math/scenario-generation) — Fixed opening tree that defines backward pass branchings; sampling scheme abstraction
 - [Penalty System](/math/penalty-system) — Recourse slacks that guarantee relatively complete recourse (cut validity condition)
 - [Stopping Rules](/math/stopping-rules) — Convergence criteria that depend on cut quality
-- [Discount Rate](/math/discount-rate) — Discount factor scaling in cut aggregation
+- [Discount Rate Formulation](/math/discount-rate) — Discount factor scaling in cut aggregation
 - [Risk Measures](/math/risk-measures) — Risk-averse cut generation (CVaR modifies aggregation weights)
-- [Block Formulations](/math/block-formulations) — Block structure that affects how per-block duals contribute to cut coefficients
+- [Block Formulation Variants](/math/block-formulations) — Block structure that affects how per-block duals contribute to cut coefficients
 - [Determinism & Provenance](/math/determinism-guarantees) — Bit-identical results across thread and MPI-rank counts, including DCS resident-set seeding
 - **Running Cobre:** [Policy Management](/running/policy-management/) — the software guide for persisting and reloading this cut pool across runs.

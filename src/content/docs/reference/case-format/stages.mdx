@@ -30,12 +30,12 @@ and policy graph horizon type.
 
 **`policy_graph` sub-object:**
 
-| Name                                | Type   | Required | Default | Units | Description                                                                                                                                                           |
-| ----------------------------------- | ------ | -------- | ------- | ----- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `policy_graph.type`                 | string | Yes      | —       | —     | One of `"finite_horizon"`, `"cyclic"`. Horizon type. Only `"finite_horizon"` is supported; `"cyclic"` is **reserved** and rejected at load (no engine consumer today) |
-| `policy_graph.annual_discount_rate` | number | Yes      | —       | —     | Global annual discount rate (>= 0.0)                                                                                                                                  |
-| `policy_graph.nodes`                | array  | No       | —       | —     | Policy-graph nodes (see below). Absent ⇒ the graph is a stage chain and `transitions[]` endpoints are read directly as stage ids                                      |
-| `policy_graph.transitions`          | array  | No       | —       | —     | Stage transitions (see below). Defaults to an empty array                                                                                                             |
+| Name                                | Type   | Required | Default | Units | Description                                                                                                                                |
+| ----------------------------------- | ------ | -------- | ------- | ----- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| `policy_graph.type`                 | string | Yes      | —       | —     | One of `"finite_horizon"`, `"cyclic"`. Horizon type. Only `"finite_horizon"` is supported; `"cyclic"` is **reserved** and rejected at load |
+| `policy_graph.annual_discount_rate` | number | Yes      | —       | —     | Global annual discount rate (>= 0.0)                                                                                                       |
+| `policy_graph.nodes`                | array  | No       | —       | —     | Policy-graph nodes (see below). Absent ⇒ the graph is a stage chain and `transitions[]` endpoints are read directly as stage ids           |
+| `policy_graph.transitions`          | array  | No       | —       | —     | Stage transitions (see below). Defaults to an empty array                                                                                  |
 
 **`policy_graph.nodes[]` entry fields:**
 
@@ -57,9 +57,8 @@ and policy graph horizon type.
 
 :::caution[No top-level `scenario_source` in `stages.json`]
 Scenario sampling is configured per-pass in `config.json` —
-`training.scenario_source` for the training forward pass and
-`simulation.scenario_source` for post-training simulation (see
-[`config.json`](/reference/case-format/#configjson)). A top-level `scenario_source` key in
+[`training.scenario_source`](/running/configuration/#trainingscenario_source) for the training forward pass and
+[`simulation.scenario_source`](/running/configuration/#simulationscenario_source) for post-training simulation. A top-level `scenario_source` key in
 `stages.json` with a value other than `null` is rejected at load (`cobre validate`
 reports a `[SchemaViolation]` error on the field `scenario_source`; see
 [Error Codes](/reference/error-codes/#schemaviolation)).
@@ -87,7 +86,7 @@ reports a `[SchemaViolation]` error on the field `scenario_source`; see
 | `stages[].risk_measure.cvar.alpha`       | number           | Yes         | —            | —     | Tail fraction, in `(0, 1]`; a value outside the range is rejected.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
 | `stages[].risk_measure.cvar.lambda`      | number           | Yes         | —            | —     | Risk-aversion weight, in `[0, 1]`; a value outside the range is rejected.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
 | `stages[].sampling_method`               | string           | No          | `"saa"`      | —     | One of `"saa"`, `"lhs"`, `"qmc_sobol"`, `"qmc_halton"`, `"selective"`, `"historical_residuals"`. Noise-generation method for the stage: `"saa"` (default), `"lhs"`, `"qmc_sobol"`, `"qmc_halton"`, `"selective"` or `"historical_residuals"`. `"selective"` needs a supplied opening tree (`training.scenario_source.openings` `{"source": "file"}`, `scenarios/noise_openings.parquet`); `"historical_residuals"` needs `scenarios/inflow_history.parquet` and a `season_id` on every study stage. For a class on `out_of_sample`, `"selective"` and `"historical_residuals"` each draw plain Monte Carlo noise in the forward pass, with a warning. See [Scenario Generation](/math/scenario-generation/#23a-sampling-method-and-opening-tree-generation) |
-| `stages[].annual_discount_rate_override` | number \| null   | No          | `null`       | —     | The stage's own annual discount rate; absent uses `policy_graph.annual_discount_rate`. See [Discount Rate](/math/discount-rate#implementation-in-cobre).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| `stages[].annual_discount_rate_override` | number \| null   | No          | `null`       | —     | The stage's own annual discount rate; absent uses `policy_graph.annual_discount_rate`. See [Discount Rate Formulation](/math/discount-rate#implementation-in-cobre).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
 
 **`pre_study_stages[]` entry fields:**
 
@@ -126,11 +125,11 @@ on every study stage.
 | `season_definitions.seasons[].month_start` | integer         | Yes      | —       | —     | Calendar month where the season starts (1–12)                                                                                  |
 | `season_definitions.seasons[].day_start`   | integer \| null | No       | `null`  | —     | Calendar day where the season starts (1–31). Read only for the `custom` cycle type; an omitted value is read as `1`.           |
 | `season_definitions.seasons[].month_end`   | integer \| null | No       | `null`  | —     | Calendar month where the season ends (1–12). Read only for the `custom` cycle type; an omitted value is read as `month_start`. |
-| `season_definitions.seasons[].day_end`     | integer \| null | No       | `null`  | —     | Calendar day where the season ends (1–31). Read only for the `custom` cycle type; an omitted value is read as `31`.            |
+| `season_definitions.seasons[].day_end`     | integer \| null | No       | `null`  | —     | Calendar day where the season ends, inclusive (1–31). Read only for the `custom` cycle type; an omitted value is read as `31`. |
 
 **Cycle types:**
 
-- `"monthly"` — seasons map to calendar months (12 seasons, 0 = January, ..., 11 = December).
+- `"monthly"` — seasons map to calendar months (12 seasons); each entry's `month_start` names its month (1 = January, ..., 12 = December), independent of its `id`.
   Only `id`, `label`, and `month_start` are needed per entry.
 - `"weekly"` — seasons map to ISO calendar weeks (52 seasons). Only `id`, `label`,
   and `month_start` are needed per entry.
@@ -150,56 +149,56 @@ on every study stage.
         "label": "January",
         "month_start": 1,
         "day_start": 1,
-        "month_end": 2,
-        "day_end": 1
+        "month_end": 1,
+        "day_end": 31
       },
       {
         "id": 1,
         "label": "February",
         "month_start": 2,
         "day_start": 1,
-        "month_end": 3,
-        "day_end": 1
+        "month_end": 2,
+        "day_end": 29
       },
       {
         "id": 11,
         "label": "December",
         "month_start": 12,
         "day_start": 1,
-        "month_end": 1,
-        "day_end": 1
+        "month_end": 12,
+        "day_end": 31
       },
       {
         "id": 12,
         "label": "Q1",
         "month_start": 1,
         "day_start": 1,
-        "month_end": 4,
-        "day_end": 1
+        "month_end": 3,
+        "day_end": 31
       },
       {
         "id": 13,
         "label": "Q2",
         "month_start": 4,
         "day_start": 1,
-        "month_end": 7,
-        "day_end": 1
+        "month_end": 6,
+        "day_end": 30
       },
       {
         "id": 14,
         "label": "Q3",
         "month_start": 7,
         "day_start": 1,
-        "month_end": 10,
-        "day_end": 1
+        "month_end": 9,
+        "day_end": 30
       },
       {
         "id": 15,
         "label": "Q4",
         "month_start": 10,
         "day_start": 1,
-        "month_end": 1,
-        "day_end": 1
+        "month_end": 12,
+        "day_end": 31
       }
     ]
   }
@@ -227,7 +226,7 @@ it carries). Optional
 and inert when absent; **required** once any anticipated thermal's lead reaches
 a post-study stage — a missing cell for a reached stage is rejected at load,
 naming the plant and the post-study stage index. See
-[Post-Study Boundary](/math/post-study-boundary) for the boundary formulation
+[Post-Study Boundary & Chained Studies](/math/post-study-boundary) for the boundary formulation
 this file feeds.
 
 **`stages[]`** — the post-horizon calendar:
@@ -288,8 +287,3 @@ discounted from the post-study stage to the decision stage.
   ]
 }
 ```
-
-The vendored JSON Schema is at
-[`/schemas/post_study_stages.schema.json`](/schemas/post_study_stages.schema.json) —
-see [JSON Schemas](/reference/json-schemas) for the full schema-to-file table
-(this file's row lives there).

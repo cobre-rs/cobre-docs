@@ -31,7 +31,7 @@ training file also records the configuration.
 ### Stochastic-model provenance
 
 [`training/model_provenance.json`](/reference/output/metadata/#trainingmodel_provenancejson)
-is written when an estimation path ran. Its `inflow` object records the
+is written on every run. Its `inflow` object records the
 `estimation_path` taken and the source of each part of the inflow model in
 `seasonal_stats_source`, `ar_coefficients_source`, `correlation_source` and
 `opening_tree_source`, each `estimated`, `user_file` or `n/a`. For an estimated
@@ -64,5 +64,5 @@ or source commit: `cobre_version` is the crate version string, and the
 `cobre version` banner shows the architecture and operating system of the
 binary in hand and whether it is a release or a debug build. `slurm_job_id` is
 written only by builds with NUMA-aware topology support
-([HPC Deployment](/running/hpc-deployment/)) and is absent from the metadata of
+([HPC & Cluster Deployment](/running/hpc-deployment/)) and is absent from the metadata of
 the `cobre-mpi` release asset, even in a SLURM job.

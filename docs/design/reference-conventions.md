@@ -4,13 +4,13 @@ Status: decided (E11 ticket-160, 2026-10-05)
 
 This document fixes the table schemas, type vocabulary, anchor scheme and fence meta of the reference pages. Its
 consumers are the E11 reference tickets 161-180 (they write to it), the E13 tickets 201a, 202-215 and 221 (their
-checkers parse it) and the E15 check GRD-05 (`check:gc-examples`). It is a design document, not site content; no gate
-reads it.
+checkers parse it) and the E15 check GRD-05 (`check:gc-examples`). It is a design document, not site content;
+`check:type-spelling` reads its section 4 at run time.
 
 ## 1. Scope and consumers
 
-The conventions cover the six pages under `src/content/docs/reference/`: `case-directory-format`, `output-format`,
-`error-codes`, `generic-constraints`, `cli-reference` and `json-schemas`, and the pages E13 splits out of them.
+The conventions cover the twenty pages under `src/content/docs/reference/`: the nine pages of `case-format/`, the seven
+pages of `output/`, `error-codes`, `generic-constraints`, `cli-reference` and `json-schemas`.
 
 | Consumer                                                  | Reads                                                                                    | Section    |
 | --------------------------------------------------------- | ---------------------------------------------------------------------------------------- | ---------- |
@@ -20,6 +20,7 @@ The conventions cover the six pages under `src/content/docs/reference/`: `case-d
 | E13 ticket-214 (`check:error-coverage`, GRD-08)           | error-codes headings                                                                     | 6          |
 | E13 tickets 202-202a, 215 (`check:input-schemas`, GRD-03) | input tables against the 17 bound vendored schemas (`config.json` is not bound, D-215-1) | 2, 4, 5, 8 |
 | E15 GRD-05 (`check:gc-examples`)                          | generic-constraint fences                                                                | 7          |
+| E15 ticket-244b (`check:type-spelling`)                   | the Type cell of every input and output table, against the vocabulary of section 4       | 2-5        |
 
 The pages own their facts (field lists, messages). This document owns only the shape in which the pages state them.
 
@@ -102,20 +103,24 @@ Column rules:
 
 Parquet columns use the Arrow type names that the loader's wrong-type message and the writer schemas print.
 
-| Name      | Parquet physical type | pyarrow        | polars       | Read or written by                                                                                                            |
-| --------- | --------------------- | -------------- | ------------ | ----------------------------------------------------------------------------------------------------------------------------- |
-| `Int8`    | INT32                 | `pa.int8()`    | `pl.Int8`    | written (output schemas)                                                                                                      |
-| `Int32`   | INT32                 | `pa.int32()`   | `pl.Int32`   | read (`extract_required_int32`, `extract_optional_int32`) and written                                                         |
-| `Int64`   | INT64                 | `pa.int64()`   | `pl.Int64`   | written                                                                                                                       |
-| `UInt32`  | INT32                 | `pa.uint32()`  | `pl.UInt32`  | read (`extract_required_uint32`) and written                                                                                  |
-| `UInt64`  | INT64                 | `pa.uint64()`  | `pl.UInt64`  | written                                                                                                                       |
-| `Float64` | DOUBLE                | `pa.float64()` | `pl.Float64` | read (`extract_required_float64`, `extract_optional_float64`) and written                                                     |
-| `Utf8`    | BYTE_ARRAY (string)   | `pa.string()`  | `pl.String`  | read (`extract_required_string`, `crates/cobre-io/src/extensions/evaporation_models.rs:150`, the `source` column) and written |
-| `Boolean` | BOOLEAN               | `pa.bool_()`   | `pl.Boolean` | written                                                                                                                       |
-| `Date32`  | INT32 (date)          | `pa.date32()`  | `pl.Date`    | read (`extract_required_date32`) and written                                                                                  |
+| Name                 | Parquet physical type | pyarrow        | polars       | Read or written by                                                                                                            |
+| -------------------- | --------------------- | -------------- | ------------ | ----------------------------------------------------------------------------------------------------------------------------- |
+| `Int32 (nullable)`   | INT32                 | `pa.int32()`   | `pl.Int32`   | optional input column, null cells allowed; read (`extract_optional_int32`, `crates/cobre-io/src/parquet_helpers.rs:67-80`)    |
+| `Float64 (nullable)` | DOUBLE                | `pa.float64()` | `pl.Float64` | optional input column, null cells allowed; read (`extract_optional_float64`, `crates/cobre-io/src/parquet_helpers.rs:82-95`)  |
+| `Int8`               | INT32                 | `pa.int8()`    | `pl.Int8`    | written (output schemas)                                                                                                      |
+| `Int32`              | INT32                 | `pa.int32()`   | `pl.Int32`   | read (`extract_required_int32`, `extract_optional_int32`) and written                                                         |
+| `Int64`              | INT64                 | `pa.int64()`   | `pl.Int64`   | written                                                                                                                       |
+| `UInt32`             | INT32                 | `pa.uint32()`  | `pl.UInt32`  | read (`extract_required_uint32`) and written                                                                                  |
+| `UInt64`             | INT64                 | `pa.uint64()`  | `pl.UInt64`  | written                                                                                                                       |
+| `Float64`            | DOUBLE                | `pa.float64()` | `pl.Float64` | read (`extract_required_float64`, `extract_optional_float64`) and written                                                     |
+| `Utf8`               | BYTE_ARRAY (string)   | `pa.string()`  | `pl.String`  | read (`extract_required_string`, `crates/cobre-io/src/extensions/evaporation_models.rs:150`, the `source` column) and written |
+| `Boolean`            | BOOLEAN               | `pa.bool_()`   | `pl.Boolean` | written                                                                                                                       |
+| `Date32`             | INT32 (date)          | `pa.date32()`  | `pl.Date`    | read (`extract_required_date32`) and written                                                                                  |
 
 Parquet physical names are not used in tables. They cannot tell `Int32` from `UInt32` or `Date32` (all physical INT32)
 and differ from the names a user sees in the load error.
+
+The `(nullable)` suffix is for input tables only, which have no Nullable column; an output table writes the plain name and states nullability in its Nullable column.
 
 JSON fields use JSON Schema type keywords, as the 18 vendored input schemas (`public/schemas/*.schema.json`) do. The
 nullable form below applies to input tables only; output tables state nullability in the Nullable column.
@@ -129,6 +134,8 @@ nullable form below applies to input tables only; output tables state nullabilit
 | `object`          | JSON object                                                                                                                                                                               |
 | `array`           | JSON array                                                                                                                                                                                |
 | `integer \| null` | A nullable field of an input table: append `\| null` to the keyword. The vendored schemas encode it two ways: `"type": ["integer", "null"]`, and `anyOf` with a `{"type": "null"}` branch |
+| `a \| b`          | A field that accepts any one of two or more JSON keywords (a `oneOf` or `anyOf` of typed branches), as in `string \| object`; each part is a keyword of this table                        |
+| `—`               | No schema `type`: a detection key, and the Description states its only accepted value (`scenario_source`, `public/schemas/stages.schema.json`, `crates/cobre-io/src/stages.rs:480-489`)   |
 
 CSV columns (`training/dictionaries/*.csv`) use the JSON keywords (D-208-2), and `check:type-spelling` reads the three tables of this section.
 
@@ -184,64 +191,10 @@ There are no custom heading ids and no heading-id plugin (R95); every anchor is 
 occurs once across the reference pages (the checker reports a second occurrence as `DUPSECTION`). A heading that has
 inbound links keeps its text. Renaming one requires every inbound link to change in the same batch (R7).
 
-### Anchor inventory
-
-Snapshot taken at 2026-10-05T18:12:11Z on the working tree, with this command from the repository root (40 distinct
-targets with a current link, plus 3 planned-inbound rows with none):
-
-```bash
-/usr/bin/grep -rhoE --exclude-dir=pt-br '/reference/(case-directory-format|output-format|error-codes|generic-constraints|cli-reference|json-schemas)/?#[A-Za-z0-9_-]+' src/content/docs | sed -E 's#/?\##\##' | sort | uniq -c
-```
-
-The counts are links from `src/content/docs`, including links between the reference pages themselves, and include
-uncommitted edits in the working tree. The table is a snapshot; E13 ticket-201's anchor map is recomputed at E13 time. E11 and E13 keep each target or re-point every link in
-the same batch (R7). The gate of record is `check:links`.
-
-| Target                                                                           | Inbound links | Note                                                                                                                                     |
-| -------------------------------------------------------------------------------- | ------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
-| `case-directory-format#configjson`                                               | 1             | keep, or re-point every link in the same batch                                                                                           |
-| `case-directory-format#constraintsgeneric_constraintsjson`                       | 1             | keep, or re-point every link in the same batch                                                                                           |
-| `case-directory-format#constraintsgeneric_parametersjson`                        | 1             | keep, or re-point every link in the same batch                                                                                           |
-| `case-directory-format#post_study_stagesjson`                                    | 3             | keep, or re-point every link in the same batch                                                                                           |
-| `case-directory-format#scenariosnoise_openingsparquet`                           | 1             | keep, or re-point every link in the same batch                                                                                           |
-| `case-directory-format#seed-resolution`                                          | 4             | moves to `running/configuration#seed-resolution` (E12 tickets 185 and 185a, XD-129); re-point every link in the same batch               |
-| `case-directory-format#stagesjson`                                               | 5             | planned inbound (ticket-138, ticket-155) in addition to the current links                                                                |
-| `case-directory-format#systemfpha_hyperplanesparquet`                            | 1             | keep, or re-point every link in the same batch                                                                                           |
-| `case-directory-format#systemhydrosjson`                                         | 2             | keep, or re-point every link in the same batch                                                                                           |
-| `cli-reference#cobre-validate`                                                   | 1             | keep, or re-point every link in the same batch                                                                                           |
-| `cli-reference#exit-codes`                                                       | 2             | keep, or re-point every link in the same batch                                                                                           |
-| `cli-reference#output-format`                                                    | 2             | keep, or re-point every link in the same batch                                                                                           |
-| `error-codes#businessruleviolation`                                              | 2             | keep, or re-point every link in the same batch                                                                                           |
-| `error-codes#cycledetected`                                                      | 1             | keep, or re-point every link in the same batch                                                                                           |
-| `error-codes#deterministic-external-inflow-column-under-an-autoregressive-model` | 1             | keep, or re-point every link in the same batch                                                                                           |
-| `error-codes#duplicateid`                                                        | 1             | keep, or re-point every link in the same batch                                                                                           |
-| `error-codes#genericconstraintvalidationerror`                                   | 1             | keep, or re-point every link in the same batch                                                                                           |
-| `error-codes#invalidreference`                                                   | 1             | keep, or re-point every link in the same batch                                                                                           |
-| `error-codes#invalidvalue`                                                       | 2             | keep, or re-point every link in the same batch                                                                                           |
-| `error-codes#modelquality`                                                       | 2             | keep, or re-point every link in the same batch                                                                                           |
-| `error-codes#per-block-generic-constraint-references`                            | 1             | keep, or re-point every link in the same batch                                                                                           |
-| `error-codes#policy-load-errors`                                                 | 6             | owner of the policy-load messages (ADR-044); keep                                                                                        |
-| `error-codes#schemaviolation`                                                    | 1             | keep, or re-point every link in the same batch                                                                                           |
-| `error-codes#semanticambiguity`                                                  | 2             | keep, or re-point every link in the same batch                                                                                           |
-| `error-codes#solver-profile-validation-sddperror`                                | 1             | E13 ticket-212 renames it to `#solver-profile-validation` and re-points every link; planned inbound (ticket-136), may already be counted |
-| `error-codes#stochasticpreparationerror`                                         | 6             | keep (E07 links)                                                                                                                         |
-| `generic-constraints#generic_parametersjson-the-five-parameter-kinds`            | 1             | keep, or re-point every link in the same batch                                                                                           |
-| `generic-constraints#hydro_evaporation-block-references`                         | 1             | keep, or re-point every link in the same batch                                                                                           |
-| `generic-constraints#interval-and-shape-derivation`                              | 1             | keep, or re-point every link in the same batch                                                                                           |
-| `generic-constraints#the-activation-grid`                                        | 1             | keep, or re-point every link in the same batch                                                                                           |
-| `generic-constraints#variable-catalog`                                           | 1             | keep, or re-point every link in the same batch                                                                                           |
-| `generic-constraints#worked-example-a-security-curve`                            | 1             | keep, or re-point every link in the same batch                                                                                           |
-| `output-format#anticipatedfixed_deliveriesparquet`                               | 1             | keep, or re-point every link in the same batch                                                                                           |
-| `output-format#metadata-files`                                                   | 2             | keep, or re-point every link in the same batch                                                                                           |
-| `output-format#node-axis-and-policy-graph-outputs`                               | 1             | keep, or re-point every link in the same batch                                                                                           |
-| `output-format#policymanifestbin`                                                | 4             | planned inbound (ticket-134) in addition to the current links                                                                            |
-| `output-format#simulationcosts`                                                  | 1             | keep, or re-point every link in the same batch                                                                                           |
-| `output-format#simulationhydro_bus_generation`                                   | 1             | keep, or re-point every link in the same batch                                                                                           |
-| `output-format#simulationmetadatajson`                                           | 0             | planned inbound (ticket-134)                                                                                                             |
-| `output-format#stochastic-artifacts`                                             | 1             | keep, or re-point every link in the same batch                                                                                           |
-| `output-format#trainingconvergenceparquet`                                       | 1             | keep, or re-point every link in the same batch                                                                                           |
-| `output-format#trainingmetadatajson`                                             | 0             | planned inbound (ticket-126, ticket-134)                                                                                                 |
-| `output-format#trainingmodel_provenancejson`                                     | 0             | planned inbound (ticket-134)                                                                                                             |
+The reference pages are the nine pages under `reference/case-format/`, the seven pages under `reference/output/`,
+`error-codes`, `generic-constraints`, `cli-reference` and `json-schemas`. `npm run check:links` checks every inbound
+link and fragment into them on the built site in every pull-request CI run. A change that renames or moves a heading re-points its inbound links in the
+same batch (R7).
 
 **Door**: one-way.
 **Revisit trigger**: none known.
@@ -296,6 +249,6 @@ tables are not read. The binding covers the 17 case-format JSON files; `config.j
 
 - E11 writes every new table, heading and fence to these conventions and corrects existing tables in their current
   column layout.
-- Ticket-167 converts the case-directory-format Type cells and ticket-173 the output-format Type cells to section 4.
+- Ticket-167 converts the `case-format/` Type cells and ticket-173 the `output/` Type cells to section 4.
 - E13's splits convert the remaining table layouts behind the row-parity check (ADR-035).
 - Page placement is E13 ticket-201's gate (R96), not this document's.

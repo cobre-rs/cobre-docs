@@ -33,9 +33,6 @@ travel-time arcs, and recent observations at the start of the study.
 | `filling_storage[].hydro_id`  | integer | Yes      | —       | —     | Hydro plant identifier of a filling hydro; unique within `filling_storage` and absent from `storage`    |
 | `filling_storage[].value_hm3` | number  | Yes      | —       | hm³   | Initial reservoir volume of the filling hydro; `>= 0`                                                   |
 
-Each `hydro_id` must be unique within its array and must not appear in both
-`storage` and `filling_storage`. All `value_hm3` values must be non-negative.
-
 The PAR lag chain and the mid-period accumulator are seeded from
 `scenarios/inflow_history.parquet`'s windowed record, shadowed day-wise by
 `recent_observations` wherever the two overlap.
@@ -78,8 +75,7 @@ natural flow minus its upstream plants'), so a negative window is real
 hydrology, and the LP prices it through the inflow non-negativity slack.
 Semantic validation reports one warning per file naming the negative count
 and the most-negative value's hydro, so a genuinely sign-flipped series still
-stands out. Optional; defaults to an empty array when absent. Existing cases
-without this field are unaffected.
+stands out. Optional; defaults to an empty array when absent.
 
 **`past_anticipated_commitments`** supplies the externally-decided committed MW
 rate for an anticipated thermal plant — every delivery the plant **decided
@@ -113,12 +109,11 @@ The values are **sunk cost**: their fuel never enters the study objective. With
 a boundary loaded, a post-horizon window's state contribution is folded once,
 at load, into every boundary cut's intercept, and the window is echoed at its
 real delivery date in `anticipated/fixed_deliveries.parquet`.
-Windows for the same `thermal_id` must not overlap (adjacent ranges where
-`start_date == previous end_date` are accepted). Optional; defaults to an empty
+Optional; defaults to an empty
 array when no anticipated thermals are present.
 
-Each entry is an explicit dated window. See
-[system elements §4](/math/system-elements#anticipated-thermal-plants) for
+See
+[System Element Modeling Overview §4](/math/system-elements#anticipated-thermal-plants) for
 the delivery-stage mechanics the windows tile against.
 
 ```json
@@ -141,7 +136,7 @@ bounded and costed **solely** by a `thermal_bounds[]` cell in
 decides the MW, so only its price and capability need declaring. A commitment
 **decided before the study** and delivered past the horizon is instead a
 `past_anticipated_commitments` window extending past the horizon end (above).
-See [Post-Study Boundary](/math/post-study-boundary) for the boundary
+See [Post-Study Boundary & Chained Studies](/math/post-study-boundary) for the boundary
 formulation both feed.
 :::
 

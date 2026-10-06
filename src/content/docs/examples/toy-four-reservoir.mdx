@@ -198,7 +198,7 @@ this walkthrough preserves that property.
 If a `correlation.json` file were supplied, the spatial structure
 $C$ between innovations would be applied via the spectral
 factorisation $\varepsilon = C^{1/2} z$ with $C^{1/2} = U \Lambda^{1/2} U^{\top}$ — see
-[PAR Inflow Model §6](/math/par-inflow-model#6-spatial-correlation-factorisation) for the
+[PAR(p) Inflow Model §6](/math/par-inflow-model#6-spatial-correlation-factorisation) for the
 multivariate case. For this walkthrough the four innovations are
 drawn independently.
 
@@ -496,17 +496,17 @@ no transmission. It does not cover:
   $v_h = v^{in}_h + a_h - q_h - s_h + \sum_{h' \in \mathcal{U}_h}(q_{h'} + s_{h'})$;
   the storage cut coefficient at upstream plants then carries the
   expected downstream value of released water. See
-  [System Elements](/math/system-elements) for cascade topology
+  [System Element Modeling Overview](/math/system-elements) for cascade topology
   and [Cut Management](/math/cut-management) for how cascade
   sensitivities propagate through the pinned-column reduced cost.
 - **FPHA production model**: nonlinear head-dependent productivity
   approximated by piecewise-linear hyperplanes; one of the planes
   binds at the optimum and contributes to the storage cut
-  coefficient. See [Hydro Production Models](/math/hydro-production-models).
+  coefficient. See [Hydro Production Function Models](/math/hydro-production-models).
 - **Spatial inflow correlation**: when a `correlation.json` file is
   supplied, the per-hydro innovations are drawn from a correlated
   multivariate normal via spectral factorisation. See
-  [PAR Inflow Model §6](/math/par-inflow-model#6-spatial-correlation-factorisation).
+  [PAR(p) Inflow Model §6](/math/par-inflow-model#6-spatial-correlation-factorisation).
 - **Autoregressive inflow memory**: a PAR(p) model with $p \geq 1$
   adds one lag state variable per hydro per lag; whether a stage's cuts
   carry a coefficient for each lag is that stage's cut-state projection
@@ -534,9 +534,9 @@ no transmission. It does not cover:
 - [LP Formulation](/math/lp-formulation) — Complete stage LP
 - [LP Layout and Scaling](/math/lp-layout-and-scaling) — Column and row layout
 - [State Augmentation](/math/state-augmentation) — Column-bound state pinning, reduced-cost extraction
-- [System Elements](/math/system-elements) — Hydro plant element, cascade topology (not exercised here), water-balance convention, FPHA overview
-- [Hydro Production Models](/math/hydro-production-models) — Constant-productivity (used here) and FPHA hyperplane fitting; impact on Benders cut coefficients
-- [PAR Inflow Model](/math/par-inflow-model) — Inflow model definition; the $p = 0$ degenerate case (white noise) used here; spatial correlation factorisation for multivariate cases
+- [System Element Modeling Overview](/math/system-elements) — Hydro plant element, cascade topology (not exercised here), water-balance convention, FPHA overview
+- [Hydro Production Function Models](/math/hydro-production-models) — Constant-productivity (used here) and FPHA hyperplane fitting; impact on Benders cut coefficients
+- [PAR(p) Inflow Model](/math/par-inflow-model) — Inflow model definition; the $p = 0$ degenerate case (white noise) used here; spatial correlation factorisation for multivariate cases
 - [Cut Management](/math/cut-management) — Dual extraction, per-opening intercepts, single-cut aggregation; sign convention $\beta^v = \partial Q/\partial \hat v$
 - [Risk Measures](/math/risk-measures) — CVaR definition, EAVaR convex combination, risk-adjusted aggregation weights
 - [Horizon Modes](/math/horizon-modes) — Finite (supported) vs. reserved cyclic policy graphs and the season-indexed cut pool

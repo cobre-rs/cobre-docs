@@ -267,7 +267,7 @@ any cut, basis, or state payload is parsed (step 1 of the
 `manifest.bin` records the study graph, the number of stages, the producing
 cobre version, and the producer provenance (completed iterations, lower- and
 upper-bound values, forward passes per iteration, and the RNG seed) — see
-[Output Format](/reference/output/policy/#policymanifestbin) for the full
+[Policy Checkpoint](/reference/output/policy/#policymanifestbin) for the full
 field-by-field table. Whether a checkpoint loads into the current study is
 decided by the [Policy Load Contract](#policy-load-contract).
 
@@ -330,11 +330,11 @@ To load the policy, retrain it with the running version. Alternatively,
 re-export it by re-running the pipeline that wrote the checkpoint under the
 running version: the script that calls
 [`cobre.write_policy_checkpoint`](#read-and-write-checkpoints-from-python),
-or the boundary import of [Case Conversion](/running/case-conversion/).
+or the boundary import of [Case Conversion (cobre-bridge)](/running/case-conversion/).
 
 A manifest that parses (step 1) is not thereby accepted: this gate decides
 whether the running version may load it.
-[FlatBuffers Schema Versioning](/reference/flatbuffers-schema/#versioning-policy)
+[FlatBuffers Policy Schema — Versioning policy](/reference/flatbuffers-schema/#versioning-policy)
 covers the wire level.
 
 ### Stored-basis gate
@@ -373,7 +373,7 @@ whose checkpoint is refused this way, because it does not read the checkpoint at
 
 :::note
 The cuts themselves do not depend on the block structure
-([Block Formulations](/math/block-formulations/)). The same cuts therefore still
+([Block Formulation Variants](/math/block-formulations/)). The same cuts therefore still
 load through [`policy.boundary`](#boundary-cuts) across block modes and block
 counts, while a full-FCF load refuses the change.
 :::
@@ -398,7 +398,7 @@ representation at rest:
   study's internal scaled space.
 
 Each `cuts/<pool>.bin` (see the field table in
-[Output Format](/reference/output/policy/#policymanifestbin)) carries its **own**
+[Policy Checkpoint](/reference/output/policy/#policymanifestbin)) carries its **own**
 `cost_scale_factor` provenance field recording the writing study's factor — the
 checkpoint is self-describing per pool. Every load path — warm-start, resume,
 simulation-only, and boundary-cut injection — **requires** each resolved pool to
@@ -579,7 +579,7 @@ source is rejected when its `season_manifest`:
   `boundary policy at {path}: hydro {id} PAR order mismatch at season {season} (study has order {n}, source has order {n})`.
 
 The `season_manifest` field shape is documented in
-[Output Format](/reference/output/policy/#policymanifestbin).
+[Policy Checkpoint](/reference/output/policy/#policymanifestbin).
 
 **Subset rejects.** If the source prices _less_ than this study needs, the load
 is rejected regardless of `strict`:
@@ -637,7 +637,7 @@ paths:
   line `N copied, N fanned out, N defaulted to 0.0, N dropped`.
 - **`cobre validate --json`** emits a boundary object with `configured`,
   `boundary_date`, and `report` fields carrying the full per-family report
-  (worked example under [Configuration → boundary](/running/configuration/#policyboundary)).
+  (worked example under [Configuration — boundary](/running/configuration/#policyboundary)).
 - **`cobre validate`** (human mode) prints `boundary policy priced at {date}`
   followed by the one-line summary
   `boundary reconciliation: N copied, N fanned out, N defaulted to 0.0, N source slots dropped`.

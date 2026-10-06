@@ -558,7 +558,7 @@ instead, as in `thermals[id=0]`.
 least 1, or `lead_time_hours` a number above 0. For a lead longer than the study
 horizon, shorten the lead, or declare, in `post_study_stages.json`, a post-study stage that the lead
 reaches. See
-[System Elements §4](/math/system-elements#anticipated-thermal-plants) for the
+[System Element Modeling Overview §4](/math/system-elements#anticipated-thermal-plants) for the
 anticipated-thermal model and
 [`system/thermals.json`](/reference/case-format/system/#systemthermalsjson)
 for the file's fields.
@@ -757,12 +757,14 @@ the override before it ever reaches the LP.
 
 **Example:**
 
-```
-constraint violation: [InvalidValue] constraints/hydro_bounds.parquet (Hydro 3): Hydro 3: hydro_bounds row at stage_id=5 sets min_diversion_m3s=2.0, but the hydro declares no diversion channel; diversion is pinned [0, 0] with no channel, making a positive floor infeasible
+{/* capture: cobre validate divfloor | cobre   v0.17.0 | binary: cobre-cli sha256 23916b46 | case: temporary 1dtoy derivative (cobre init --template 1dtoy divfloor; constraints/hydro_bounds.parquet added with one row: hydro_id 0, stage_id 1, min_diversion_m3s 2.0, and the 1dtoy hydro declares no diversion channel; run with NO_COLOR=1, exit code 1; the Validation summary line is not quoted and the error: prefix is not quoted) */}
+
+```text
+[InvalidValue] constraints/hydro_bounds.parquet (Hydro 0): Hydro 0: hydro_bounds row at stage_id=1 sets min_diversion_m3s=2, but the hydro declares no diversion channel; diversion is pinned [0, 0] with no channel, making a positive floor infeasible
 ```
 
 **Resolution:** Either declare a `diversion` channel on the hydro in
-`system/hydros.json` (see [System Elements](/math/system-elements)), or remove
+`system/hydros.json` (see [System Element Modeling Overview](/math/system-elements)), or remove
 the `min_diversion_m3s` override for that `(hydro, stage)` in
 `constraints/hydro_bounds.parquet`.
 
@@ -950,7 +952,7 @@ constraint violation: [BusinessRuleViolation] initial_conditions.json (initial_c
 **Resolution:** Either set `anticipated_config` on thermal `<id>` in
 `system/thermals.json`, or remove/correct the `thermal_id` in the offending
 `past_anticipated_commitments` entry. See
-[System Elements §4](/math/system-elements#anticipated-thermal-plants) for anticipated-thermal configuration and [Case Format](/reference/case-format/)
+[System Element Modeling Overview §4](/math/system-elements#anticipated-thermal-plants) for anticipated-thermal configuration and [Case Format](/reference/case-format/)
 for `initial_conditions.json`'s schema.
 
 #### Missing commitment window on an anticipated thermal
@@ -992,7 +994,7 @@ with a
 message (see
 [Invalid anticipated-thermal lead](#invalid-anticipated-thermal-lead)); to clear
 it, shorten the lead or declare a post-study stage the lead reaches — see
-[System Elements §4](/math/system-elements#anticipated-thermal-plants).)
+[System Element Modeling Overview §4](/math/system-elements#anticipated-thermal-plants).)
 The post-study failures, keyed to `post_study_stages.json`:
 
 - The post-study calendar's first stage does not start exactly at the study
@@ -1052,7 +1054,7 @@ plant's in-study-decided lead reaches. Tile every post-study stage that a
 `past_anticipated_commitments` window for a commitment decided before the study
 covers, at coverage `1.0`, never covering a stage the study decides or one past the plant's reach,
 and keep a non-zero fixed commitment inside the plant's commissioning window.
-See [Post-Study Boundary](/math/post-study-boundary) for the boundary model and
+See [Post-Study Boundary & Chained Studies](/math/post-study-boundary) for the boundary model and
 [Case Format](/reference/case-format/) for
 `post_study_stages.json`'s schema.
 
@@ -1100,7 +1102,7 @@ straddling it. Those are the in-study delivery stages whose decision falls
 before the first study stage: the first `lead_stages` stages, or, for
 `lead_time_hours`, every stage whose decision instant — one lead before the
 stage's end — is at or before the study start. See
-[System Elements §4](/math/system-elements).
+[System Element Modeling Overview §4](/math/system-elements).
 
 #### Undeclared `stage_id` in bound-override parquet
 
@@ -1723,7 +1725,7 @@ at the same step — a forebay (VHA) table in `system/hydro_geometry.parquet` th
 fails to build, or a non-positive useful-range mean equivalent head — for any
 plant with VHA geometry and a specific productivity, independent of its
 generation model and of whether the case declares generic constraints (see
-[Hydro Production Models §5.3](/math/hydro-production-models#53-useful-range-mean-productivity)).
+[Hydro Production Function Models §5.3](/math/hydro-production-models#53-useful-range-mean-productivity)).
 
 A plant whose geometry and losses leave a negative head:
 
@@ -2083,7 +2085,7 @@ A stage-LP failure in simulation exits `3`, and every other simulation failure e
 
 | Message                                                                                                                                                                                                                                                                                                                                                                                                               | Exit code | When it occurs                                                                                                                                                                                                                                                                                                                                     | Resolution                                                                                                                                            |
 | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `communication backend error: communication backend 'mpi' is not available in this build (available: local)`                                                                                                                                                                                                                                                                                                          | `4`       | `--comm-backend mpi` is set on a binary built without MPI support, which offers only the `local` backend.                                                                                                                                                                                                                                          | Run the `cobre-mpi` build under an MPI launcher (see [HPC Deployment](/running/hpc-deployment/)), or drop `--comm-backend mpi` to run on one process. |
+| `communication backend error: communication backend 'mpi' is not available in this build (available: local)`                                                                                                                                                                                                                                                                                                          | `4`       | `--comm-backend mpi` is set on a binary built without MPI support, which offers only the `local` backend.                                                                                                                                                                                                                                          | Run the `cobre-mpi` build under an MPI launcher (see [HPC & Cluster Deployment](/running/hpc-deployment/)), or drop `--comm-backend mpi` to run on one process. |
 | `communication backend error: 'mpi' backend initialization failed: {source}`                                                                                                                                                                                                                                                                                                                                          | `4`       | The MPI runtime fails to initialise in an MPI build; `{source}` carries the MPI library's message.                                                                                                                                                                                                                                                 | Check that the MPI runtime is installed and that the job starts under `mpiexec`, `mpirun` or `srun`.                                                  |
 | `collective operation '{operation}' failed with MPI error code {code}: {message}`                                                                                                                                                                                                                                                                                                                                     | `4`       | An MPI collective operation (broadcast, barrier, allreduce or allgatherv) fails during the run. The text follows a label that names the step, such as `broadcast error (data): `, `post-training barrier error: ` or `simulation path gather error: `, or follows `training error: communication error: ` inside a training iteration.             | Read the MPI library's message and the output of the other processes to find the process that failed first.                                           |
 | `training error: configuration validation error: cut_wire: unsupported version {version}`                                                                                                                                                                                                                                                                                                                             | `4`       | In the backward pass of a training iteration, a process reads a cut record whose version byte is not the one its own binary writes, which happens when the processes of one job run builds with different cut wire-format versions. `{version}` is the byte the sending process wrote.                                                             | Restart every process with the same cobre binary.                                                                                                     |

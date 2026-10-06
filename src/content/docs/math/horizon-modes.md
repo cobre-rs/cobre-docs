@@ -23,7 +23,7 @@ season function, the cycle convergence inequality, the season-indexed
 cut pool, and the fixed-point Bellman operator); section 4 describes the
 forward-pass termination logic the reserved design anticipates; section 5
 compares the supported and reserved modes as a reference. The per-transition
-discount factor is defined in [Discount-Rate Handling](/math/discount-rate);
+discount factor is defined in [Discount Rate Formulation](/math/discount-rate);
 its role in cycle convergence is set out in section 3.
 
 ## 1. Finite (Acyclic) Mode
@@ -59,7 +59,7 @@ supported remedy for it, and the reserved cyclic design (section 2) the other.
 
 ## 2. Cyclic (Infinite-Periodic) Mode
 
-:::caution[Status: Reserved — Not Yet Implemented]
+:::caution[Status: Reserved Design]
 Cobre supports only the finite mode of section 1. A cyclic policy graph is a
 reserved design that the case loader rejects. Sections 2 to 4 document that
 design; its mathematics is valid on its own terms.
@@ -84,7 +84,7 @@ section 3.
 policy graph type as cyclic and supply an annual discount rate; the discount
 rate, together with each transition's duration, determines the
 per-transition factor, and the product of factors around one cycle must be
-strictly below one (see [Discount-Rate Handling](/math/discount-rate) for
+strictly below one (see [Discount Rate Formulation](/math/discount-rate) for
 the conversion mechanics).
 
 **Trade-off.** Cyclic mode eliminates the end-of-world effect by representing
@@ -146,7 +146,7 @@ $$
 
 so contributions from far-future cycles become negligible. The reserved design
 requires this inequality of every cyclic graph. See
-[Discount-Rate Handling](/math/discount-rate) for the conversion from the
+[Discount Rate Formulation](/math/discount-rate) for the conversion from the
 annual rate to the per-transition factors.
 
 ### Season-Indexed Cut Pool
@@ -251,7 +251,7 @@ unconditionally.
 The forward pass would terminate when either condition is met, whichever comes
 first. The discount mechanics underlying the cumulative-discount condition —
 the formula relating the annual rate to the per-transition factor and the
-running product — are described in [Discount-Rate Handling](/math/discount-rate).
+running product — are described in [Discount Rate Formulation](/math/discount-rate).
 
 ## 5. Choosing Between Modes
 
@@ -311,7 +311,7 @@ argument.
 
 ## Cross-References
 
-- [Discount-Rate Handling](/math/discount-rate) — Annual-rate-to-factor
+- [Discount Rate Formulation](/math/discount-rate) — Annual-rate-to-factor
   conversion, per-transition discount mechanics, and cumulative discounting.
 - [Cut Management](/math/cut-management) — Cut generation and aggregation
   mechanics that produce the cuts filling the per-stage or per-season pools.

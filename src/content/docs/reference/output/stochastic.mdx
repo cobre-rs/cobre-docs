@@ -7,8 +7,7 @@ When `exports.stochastic: true` is set in `config.json`, Cobre writes the
 stochastic preprocessing artifacts to `output/stochastic/` before training
 begins.
 
-The directory is not written when the config field is not set. Export is off
-by default.
+Export is off by default.
 
 ---
 
@@ -40,7 +39,7 @@ To reuse an exported model as input on a later run, follow [Exporting Stochastic
 
 The opening tree used during the training run, written in the same schema as
 the input file `scenarios/noise_openings.parquet`. See the
-[Case Format](/reference/case-format/scenarios/#scenariosnoise_openingsparquet)
+[Scenario Files](/reference/case-format/scenarios/#scenariosnoise_openingsparquet)
 for the 4-column schema (`stage_id`, `opening_index`, `entity_index`, `value`).
 The exported `stage_id` is the 0-based stage position, while the input file
 requires the declared stage id, so a copy loads only when the declared stage
@@ -53,7 +52,7 @@ ids are 0, 1, 2, ….
 ## `stochastic/inflow_annual_component.parquet`
 
 The per-`(hydro, stage)` annual inflow component of the model the run used,
-whether Cobre fitted it or read it from `scenarios/`. Written whenever `exports.stochastic` is `true`. The file has no rows unless an inflow model carries an annual component. The schema has 5 columns, all non-nullable.
+whether Cobre fitted it or read it from `scenarios/`. The file has no rows unless an inflow model carries an annual component. The schema has 5 columns, all non-nullable.
 
 **Methodology:** [PAR(p) Inflow Model](/math/par-inflow-model)
 

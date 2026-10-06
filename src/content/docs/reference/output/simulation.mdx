@@ -23,10 +23,6 @@ the node's declared id and
 identifies which branch a scenario actually visited at that stage, and joins
 back to the node's `stage_id`/`pool_id` via the `nodes` of the policy
 checkpoint's manifest (see [`policy/manifest.bin`](/reference/output/policy/#policymanifestbin)).
-`scenario_id` duplicates the Hive partition directory
-(`scenario_id=NNNN/`) as an explicit in-file column, so a join on the axis is
-a join rather than a directory-name parse (see
-[Hive Partitioning](/reference/output/#hive-partitioning)).
 
 **Methodology:** [Policy Graphs](/math/policy-graphs)
 
@@ -72,8 +68,8 @@ Per-stage cost breakdown. One row per stage. 29 columns.
 | `block_id`                     | Int32   | Yes      | —     | Always `null`: costs are reported per stage.                                                                                                                                                                                                                                        |
 | `total_cost`                   | Float64 | No       | USD   | The stage objective, `immediate_cost` + `future_cost`, in this stage's monetary units (not discounted to the first stage).                                                                                                                                                          |
 | `immediate_cost`               | Float64 | No       | USD   | The stage objective without the future-cost term, in this stage's monetary units.                                                                                                                                                                                                   |
-| `future_cost`                  | Float64 | No       | USD   | The future-cost term of the stage objective: the future-cost variable times this stage's one-step discount factor (the single-stage factor, not the cumulative `discount_factor`). See [Discount Rate](/math/discount-rate#5-cumulative-discounting).                               |
-| `discount_factor`              | Float64 | No       | —     | Cumulative discount factor of this stage: multiplying a cost of this stage by it gives its present value at the first stage. See [Discount Rate](/math/discount-rate#5-cumulative-discounting).                                                                                     |
+| `future_cost`                  | Float64 | No       | USD   | The future-cost term of the stage objective: the future-cost variable times this stage's one-step discount factor (the single-stage factor, not the cumulative `discount_factor`). See [Discount Rate Formulation](/math/discount-rate#5-cumulative-discounting).                   |
+| `discount_factor`              | Float64 | No       | —     | Cumulative discount factor of this stage: multiplying a cost of this stage by it gives its present value at the first stage. See [Discount Rate Formulation](/math/discount-rate#5-cumulative-discounting).                                                                         |
 | `thermal_cost`                 | Float64 | No       | USD   | Thermal generation cost component.                                                                                                                                                                                                                                                  |
 | `anticipated_thermal_cost`     | Float64 | No       | USD   | Fuel cost of the anticipated commitments decided at this stage, in this stage's monetary units — each commitment's delivery-stage cost discounted from its delivery stage to this stage; multiply by `discount_factor` for its present value. Zero when no anticipated units exist. |
 | `contract_cost`                | Float64 | No       | USD   | Energy contract cost component (positive for imports, negative for exports).                                                                                                                                                                                                        |
@@ -107,7 +103,7 @@ Hydro plant dispatch results. One row per (stage, block, hydro) triplet. 41 colu
 The nine energy-conversion columns
 (`equivalent_productivity_mw_per_m3s` … `stored_energy_final_mwh`, plus the four
 tail columns below) report the two evaluators defined in
-[Hydro Production Models §5](/math/hydro-production-models#5-energy-conversion-quantities):
+[Hydro Production Function Models §5](/math/hydro-production-models#5-energy-conversion-quantities):
 the reference-point pair and the useful-range mean (`integrated_*`) pair.
 
 | Name                                             | Type    | Nullable | Units     | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
@@ -135,9 +131,9 @@ the reference-point pair and the useful-range mean (`integrated_*`) pair.
 | `stored_energy_initial_mwh`                      | Float64 | No       | MWh       | Energy content of usable storage at stage start: (storage_initial_hm3 − V_min) × integrated_accumulated_productivity_mw_per_m3s × 1e6/3600 [MWh], where `V_min` is the plant's physical `reservoir.min_storage_hm3` (never a `hydro_bounds` storage override) and `storage_initial_hm3` is the row's own value (the per-block boundary storage on a chronological stage).                                                                                                                        |
 | `stored_energy_final_mwh`                        | Float64 | No       | MWh       | Energy content of usable storage at stage end: (storage_final_hm3 − V_min) × integrated_accumulated_productivity_mw_per_m3s × 1e6/3600 [MWh], where `V_min` is the plant's physical `reservoir.min_storage_hm3` (never a `hydro_bounds` storage override) and `storage_final_hm3` is the row's own value (the per-block boundary storage on a chronological stage).                                                                                                                              |
 | `spillage_cost`                                  | Float64 | No       | USD       | Monetary cost attributed to spillage.                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
-| `water_value_per_hm3`                            | Float64 | No       | USD/hm³   | Dual of the plant's own water-balance row, in monetary units per hm³: each block's own row on a chronological stage; the stage row, repeated on every block row, on a parallel stage. Negative values mean one more hm³ lowers the cost; see [Interpreting Results](/running/interpreting-results/) for the sign.                                                                                                                                                                                |
+| `water_value_per_hm3`                            | Float64 | No       | USD/hm³   | Dual of the plant's own water-balance row, in monetary units per hm³: each block's own row on a chronological stage; the stage row, repeated on every block row, on a parallel stage. Negative values mean one more hm³ lowers the cost; see [Convergence & Diagnostics](/running/interpreting-results/) for the sign.                                                                                                                                                                           |
 | `storage_binding_code`                           | Int8    | No       | —         | Storage-binding code (see `codes.json` `storage_binding` mapping); always `0` in written output.                                                                                                                                                                                                                                                                                                                                                                                                 |
-| `operative_state_code`                           | Int8    | No       | —         | Operative state code (see `codes.json` `operative_state` mapping).                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| `operative_state_code`                           | Int8    | No       | —         | Operative state code (see `codes.json` `operative_state` mapping); always `1` in written output.                                                                                                                                                                                                                                                                                                                                                                                                 |
 | `turbined_slack_m3s`                             | Float64 | No       | m³/s      | Turbined flow slack variable (non-negativity enforcement). Zero under normal operation.                                                                                                                                                                                                                                                                                                                                                                                                          |
 | `outflow_slack_below_m3s`                        | Float64 | No       | m³/s      | Outflow lower-bound slack in m³/s.                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
 | `outflow_slack_above_m3s`                        | Float64 | No       | m³/s      | Outflow upper-bound slack in m³/s.                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
@@ -196,7 +192,7 @@ multi-cell plant's total is `(Σ_c q_c)·ρ` — its cells' turbined flow summed
 then multiplied by the productivity once — while each cell row is `q_c·ρ`
 computed independently. The sum of a plant's cell rows can therefore differ
 from its plant total by a rounding-scale amount (see
-[Determinism & Provenance → Out of Scope](/math/determinism-guarantees#4-out-of-scope)).
+[Determinism & Provenance — Out of Scope](/math/determinism-guarantees#4-out-of-scope)).
 
 ---
 
@@ -219,7 +215,7 @@ Thermal unit dispatch results. One row per (stage, block, thermal) triplet. 12 c
 | `is_anticipated`           | Boolean | No       | —     | `true` if this unit is configured for anticipated dispatch.                                                         |
 | `anticipated_committed_mw` | Float64 | Yes      | MW    | Committed capacity under anticipated dispatch in MW. `null` for non-anticipated units.                              |
 | `anticipated_decision_mw`  | Float64 | Yes      | MW    | Dispatch decision under anticipated dispatch in MW. `null` for non-anticipated units.                               |
-| `operative_state_code`     | Int8    | No       | —     | Operative state code (see `codes.json` `operative_state` mapping).                                                  |
+| `operative_state_code`     | Int8    | No       | —     | Operative state code (see `codes.json` `operative_state` mapping); always `1` in written output.                    |
 
 ---
 
@@ -243,7 +239,7 @@ Transmission line flow results. One row per (stage, block, line) triplet. 13 col
 | `losses_mw`            | Float64 | No       | MW    | Transmission losses in MW.                                                                                          |
 | `losses_mwh`           | Float64 | No       | MWh   | Transmission losses in MWh over the block.                                                                          |
 | `exchange_cost`        | Float64 | No       | USD   | Monetary cost attributed to this line's exchange.                                                                   |
-| `operative_state_code` | Int8    | No       | —     | Operative state code (see `codes.json` `operative_state` mapping).                                                  |
+| `operative_state_code` | Int8    | No       | —     | Operative state code (see `codes.json` `operative_state` mapping); always `2` in written output.                    |
 
 ---
 
@@ -288,7 +284,7 @@ Pumping station results. One row per (stage, block, pumping station) triplet. 11
 | `power_consumption_mw`   | Float64 | No       | MW    | Power consumed by the pumping station in MW.                                                                        |
 | `energy_consumption_mwh` | Float64 | No       | MWh   | Energy consumed over the block in MWh.                                                                              |
 | `pumping_cost`           | Float64 | No       | USD   | Always `0`: pumping carries no objective cost; its power enters the bus balance.                                    |
-| `operative_state_code`   | Int8    | No       | —     | Operative state code (see `codes.json` `operative_state` mapping).                                                  |
+| `operative_state_code`   | Int8    | No       | —     | Operative state code (see `codes.json` `operative_state` mapping); always `1` in written output.                    |
 
 ---
 
@@ -333,7 +329,7 @@ storage, etc.). One row per (stage, block, non-controllable) triplet. 12 columns
 | `curtailment_mw`       | Float64 | No       | MW    | Generation curtailed in MW. Zero when all available generation is dispatched.                                       |
 | `curtailment_mwh`      | Float64 | No       | MWh   | Curtailed energy over the block in MWh.                                                                             |
 | `curtailment_cost`     | Float64 | No       | USD   | Monetary cost attributed to curtailment.                                                                            |
-| `operative_state_code` | Int8    | No       | —     | Operative state code (see `codes.json` `operative_state` mapping).                                                  |
+| `operative_state_code` | Int8    | No       | —     | Operative state code (see `codes.json` `operative_state` mapping); always `1` in written output.                    |
 
 ---
 
@@ -456,8 +452,8 @@ folded into the boundary cuts' intercepts.
 
 ## `simulation/violations/generic/`
 
-Generic user-defined constraint violations. One row per (stage, block,
-constraint) triplet where a violation occurred. 7 columns.
+Generic user-defined constraint slacks. One row per active generic-constraint row at each stage — one per (stage, block,
+constraint) triplet, or one stage-level row (`block_id` null) for a block-independent constraint — whether or not it is violated; `slack_value` and `slack_cost` are `0` where it is not and on every row of a constraint with slack disabled. 7 columns.
 
 **Methodology:** [Penalty System](/math/penalty-system)
 
@@ -514,7 +510,7 @@ simulation outcome). 13 columns.
 
 `bound_lower`/`bound_upper` are the resolved interval endpoints (lower before
 upper), each `null` where unbounded on that side; `derived_shape` labels the
-shape those endpoints imply (e.g. a one-sided vs. range constraint). The
+shape those endpoints imply: `floor`, `cap`, `band` or `equality`. The
 per-term columns (`term_index`, `variable_kind`, `variable`, `coefficient`)
 are `null` on a term-less constraint's placeholder row, and `slack_penalty` is
 `null` when slack is disabled for the constraint.
@@ -531,6 +527,6 @@ are `null` on a term-less constraint's placeholder row, and `slack_penalty` is
 | `coefficient`     | Float64 | Yes      | —     | Linear coefficient applied to this term. `null` on a term-less placeholder row.                      |
 | `bound_lower`     | Float64 | Yes      | —     | Resolved lower bound of the constraint's interval. `null` when unbounded below.                      |
 | `bound_upper`     | Float64 | Yes      | —     | Resolved upper bound of the constraint's interval. `null` when unbounded above.                      |
-| `derived_shape`   | Utf8    | No       | —     | Shape implied by the resolved bounds (e.g. one-sided or range).                                      |
+| `derived_shape`   | Utf8    | No       | —     | Shape implied by the resolved bounds: `floor`, `cap`, `band` or `equality`.                          |
 | `slack_enabled`   | Boolean | No       | —     | Whether a slack variable is enabled for this constraint.                                             |
 | `slack_penalty`   | Float64 | Yes      | —     | Penalty cost per unit of slack. `null` when slack is disabled.                                       |

@@ -3,7 +3,7 @@ title: Hydro Model Artifacts
 description: The hydro-model files cobre run writes — the production- and evaporation-model summary and the fitted hyperplane, evaporation and deviation-point tables.
 ---
 
-`training/hydro_models.json` summarizes the production and evaporation models in use; the three files after it are the tables Cobre writes to the `hydro_models/` directory.
+`training/hydro_models.json` summarizes the production and evaporation models in use.
 
 The `hydro_models/` directory holds the three files that follow `training/hydro_models.json`. Each is written only when
 it has rows — fitted FPHA planes, evaporation models, or, with
@@ -78,7 +78,7 @@ with `Hydro … is configured with FPHA model but has no FPHA hyperplanes`. Befo
 the copy, switch the no-capacity plant to `"constant_productivity"` in both
 `hydros.json` (`generation.model`) and its `hydro_production_models.json`
 entries (see
-[Hydro Production Models — Implementation notes](/math/hydro-production-models#implementation-in-cobre)).
+[Hydro Production Function Models — Implementation in Cobre](/math/hydro-production-models#implementation-in-cobre)).
 Give the plant a productivity value from exactly one source: `productivity_mw_per_m3s`
 on the production-model entry, or an `equivalent_productivity_mw_per_m3s` row of
 `system/hydro_energy_productivity.parquet` (`0` marks a planned outage). With
@@ -86,7 +86,7 @@ none, the case is rejected with
 `no productivity_mw_per_m3s available for (hydro_id=…, stage_id=…)`; supplying
 both sources is also rejected.
 
-See [Case Format — `system/fpha_hyperplanes.parquet`](/reference/case-format/production-models/#systemfpha_hyperplanesparquet)
+See [Production Model Files — `system/fpha_hyperplanes.parquet`](/reference/case-format/production-models/#systemfpha_hyperplanesparquet)
 for the full column definitions and validity constraints.
 
 ---

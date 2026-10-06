@@ -26,7 +26,7 @@ carry the same optional pair of fields:
 Outside its window, an entity's decision columns remain present in the LP but
 are pinned to zero: it injects no power, withdraws no power, moves no water,
 and draws no bus power. `entry_stage_id` must fall within the stage range
-declared in `stages.json`. See [system elements §1](/math/system-elements#entity-commissioning-windows)
+declared in `stages.json`. See [System Element Modeling Overview §1](/math/system-elements#entity-commissioning-windows)
 for the shared methodology statement — methodology §3–4 above cover how the
 window interacts with contract take-or-pay bounds and pumping flow.
 
@@ -102,7 +102,7 @@ outright, since the delivered commitment is bounded at a single stage.
 #### Anticipated Dispatch Configuration (`anticipated_config`)
 
 The optional `anticipated_config` block flags a thermal as anticipated,
-attaching the per-plant lead described in [system elements §4](/math/system-elements#4-thermal-plants). The lead is given in **exactly one** of two mutually exclusive forms — a stage count or a physical duration:
+attaching the per-plant lead described in [System Element Modeling Overview §4](/math/system-elements#4-thermal-plants). The lead is given in **exactly one** of two mutually exclusive forms — a stage count or a physical duration:
 
 ```json
 "anticipated_config": { "lead_stages": 2 }
@@ -117,11 +117,11 @@ attaching the per-plant lead described in [system elements §4](/math/system-ele
 | `lead_stages`     | integer | Number of stages of dispatch anticipation, calendar-free. A value of `2` means the commitment for stage `t` must be decided at stage `t - 2`. Must be `>= 1`. |
 | `lead_time_hours` | number  | Physical anticipation lead in hours; must be finite and `> 0`. Each delivery stage's commitment is decided at the stage containing the instant one lead before the delivery stage's end (an instant on a stage boundary belongs to the earlier stage); a delivery whose instant is at or before the study start is decided before the study. When the instant falls inside the delivery stage itself, the delivery is not anticipated: the plant dispatches as an ordinary thermal at that stage, and the study setup logs a warning naming the plant and the stage. |
 
-Supplying both keys, or neither, is a load error. A lead that reaches past the study horizon — `lead_stages` exceeding the stage count, or `lead_time_hours` exceeding the summed horizon — is rejected at load **unless** the plant's lead reaches a **declared post-study stage** (both lead modes are gated identically): such a commitment is delivered past the horizon, whether decided in the study or before it. With no post-study stage to reach, the plant can never deliver within the study horizon and the over-horizon lead is rejected. A `lead_time_hours` lead coarse enough that one decision stage would decide more than one delivery stage is rejected when the study is set up; a `lead_stages` lead never does this. See [Post-Study Boundary](/math/post-study-boundary) and [`post_study_stages.json`](/reference/case-format/stages/#post_study_stagesjson) for the boundary a post-horizon delivery is priced against.
+Supplying both keys, or neither, is a load error. A lead that reaches past the study horizon — `lead_stages` exceeding the stage count, or `lead_time_hours` exceeding the summed horizon — is rejected at load **unless** the plant's lead reaches a **declared post-study stage** (both lead modes are gated identically): such a commitment is delivered past the horizon, whether decided in the study or before it. With no post-study stage to reach, the plant can never deliver within the study horizon and the over-horizon lead is rejected. A `lead_time_hours` lead coarse enough that one decision stage would decide more than one delivery stage is rejected when the study is set up; a `lead_stages` lead never does this. See [Post-Study Boundary & Chained Studies](/math/post-study-boundary) and [`post_study_stages.json`](/reference/case-format/stages/#post_study_stagesjson) for the boundary a post-horizon delivery is priced against.
 
 An anticipated plant also declares, in `initial_conditions.json`'s
 `past_anticipated_commitments`, every commitment it decided before the study
-([system elements §4](/math/system-elements#anticipated-thermal-plants),
+([System Element Modeling Overview §4](/math/system-elements#anticipated-thermal-plants),
 "Commitments decided before the study"). Each entry is a **dated,
 delivery-anchored window** — a committed MW rate held constant over
 `[start_date, end_date)`:
@@ -191,7 +191,7 @@ commitment decided before the study is sunk: its fuel enters no objective, and
 with a boundary loaded its state contribution enters the boundary cuts'
 intercepts. Without a boundary, a post-horizon window with a non-zero rate
 raises the same setup warning; an all-zero window raises none. See
-[Post-Study Boundary](/math/post-study-boundary) for the
+[Post-Study Boundary & Chained Studies](/math/post-study-boundary) for the
 formulation and [Case Format](/reference/case-format/) for
 the file shapes.
 
@@ -264,12 +264,15 @@ in `system/non_controllable_sources.json`:
 | `bus_id`             | integer | Yes     | Bus to which this source's generation is injected. |
 | `operational_start_date` | string (ISO-8601 date) | Yes | Calendar date (`YYYY-MM-DD`) the source enters the registry's operational history — see [Shared Operational Start Date](#shared-operational-start-date) above. |
 | `max_generation_mw`  | number  | Yes     | Installed capacity, in MW. It scales the stochastic availability described in methodology §6 and does not cap the available generation. |
-| `allow_curtailment`  | boolean | No      | Defaults to `true` (curtailable). Set `false` for must-run sources that pin generation to the realized availability every scenario — see [system elements §6](/math/system-elements#curtailable-vs-must-run) for when this is required (e.g. already-netted aggregate NCS totals). |
+| `allow_curtailment`  | boolean | No      | Defaults to `true` (curtailable). Set `false` for must-run sources that pin generation to the realized availability every scenario — see [System Element Modeling Overview §6](/math/system-elements#curtailable-vs-must-run) for when this is required (e.g. already-netted aggregate NCS totals). |
 | `curtailment_cost`   | number or null | No | Entity-level override of `non_controllable_source.curtailment_cost` in `penalties.json`. |
 
-The stochastic available generation itself comes from the scenario pipeline
-(`constraints/ncs_bounds.parquet` and the scenario factors/stats files), not
-from this entity file — see the Inputs & Outputs tab.
+The availability ratio comes from `scenarios/non_controllable_stats.parquet`
+(or `scenarios/external_ncs_scenarios.parquet` under the `external` scheme) and
+the block factors from `scenarios/non_controllable_factors.json`; a source with
+no availability model takes its stage's available generation from
+`constraints/ncs_bounds.parquet`, `max_generation_mw` where no row applies — see
+the Inputs & Outputs tab.
 
 ### `system/pumping_stations.json` — Pumping Station Registry
 

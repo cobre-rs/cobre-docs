@@ -98,7 +98,7 @@ In this arrow form, $d_{t \to t+1}$ is the one-step factor of §3 and $d_{1 \to 
 
 ### Post-Study Extension
 
-Past the last study stage $T$, the cumulative factor continues over the declared post-study stages, at the global rate $r_{annual}$ on each post-study stage's duration. The horizon is bridged by the last study stage's one-step factor, $d_{1 \to T+1} = d_{1 \to T} \, d_{T \to T+1}$, so the continuation equals the factor a horizon covering the post-study stages would give. [Post-Study Boundary](/math/post-study-boundary) prices deliveries past the horizon with this extended factor.
+Past the last study stage $T$, the cumulative factor continues over the declared post-study stages, at the global rate $r_{annual}$ on each post-study stage's duration. The horizon is bridged by the last study stage's one-step factor, $d_{1 \to T+1} = d_{1 \to T} \, d_{T \to T+1}$, so the continuation equals the factor a horizon covering the post-study stages would give. [Post-Study Boundary & Chained Studies](/math/post-study-boundary) prices deliveries past the horizon with this extended factor.
 
 ### Consistency with the Bellman Recursion
 
@@ -126,7 +126,7 @@ Both the lower bound $\underline{z}$ and upper bound $\bar{z}$ represent total e
 
 - A cost $c_t$ incurred at stage $t$ enters both bounds as $d_{1 \to t}\, c_t$
 - Comparisons between bounds and between iterations are valid because they use consistent discounting
-- The simulation output records each stage's immediate cost in that stage's own monetary units (not discounted to stage 1) together with its cumulative factor $d_{1 \to t}$ ([Output Format](/reference/output-format/#simulationcosts))
+- The simulation output records each stage's immediate cost in that stage's own monetary units (not discounted to stage 1) together with its cumulative factor $d_{1 \to t}$ ([Simulation Output](/reference/output/simulation/#simulationcosts))
 
 ## Implementation in Cobre
 

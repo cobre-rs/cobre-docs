@@ -3,7 +3,7 @@ title: Scenario Files
 description: The input files in scenarios/ — the inflow history and PAR(p) model inputs, the external scenario libraries, the load and non-controllable-source statistics and factors, the noise correlation, and the user-supplied opening tree.
 ---
 
-The `scenarios/` directory holds the stochastic inputs of a case: the inflow history and the inputs of the PAR(p) inflow model, the external scenario libraries, the load and non-controllable-source statistics and factors, the noise correlation, and the user-supplied noise openings. The sections follow the directory tree, and each opens with a link to the methodology page that uses the file. The Parquet column types, the compression rule and the `$schema` key are described under [Conventions](/reference/case-format/#conventions).
+The `scenarios/` directory holds the stochastic inputs of a case: the inflow history and the inputs of the PAR(p) inflow model, the external scenario libraries, the load and non-controllable-source statistics and factors, the noise correlation, and the user-supplied noise openings. The Parquet column types, the compression rule and the `$schema` key are described under [Conventions](/reference/case-format/#conventions).
 
 ---
 
@@ -129,8 +129,8 @@ is honoured and when estimation overwrites it.
 
 **Methodology:** [Scenario Generation](/math/scenario-generation/)
 
-Pre-computed inflow realizations, read when the inflow `scheme` is `"external"` in `training.scenario_source` or
-`simulation.scenario_source` (see [`config.json`](/reference/case-format/#configjson)). Realizations are numbered per stage by
+Pre-computed inflow realizations, read when the inflow `scheme` is `"external"` in [`training.scenario_source`](/running/configuration/#trainingscenario_source) or
+[`simulation.scenario_source`](/running/configuration/#simulationscenario_source). Realizations are numbered per stage by
 `scenario_id`; how the passes draw from them is described in
 [Scenario Generation §4](/math/scenario-generation/#4-external-scenario-integration), and which classes take
 their mean and standard deviation from the file is stated under
@@ -186,8 +186,8 @@ their mean and standard deviation from the file is stated under
 
 **Methodology:** [Scenario Generation](/math/scenario-generation/)
 
-Pre-computed load realizations, read when the load `scheme` is `"external"` in `training.scenario_source` or
-`simulation.scenario_source` (see [`config.json`](/reference/case-format/#configjson)). Realizations are numbered per stage by
+Pre-computed load realizations, read when the load `scheme` is `"external"` in [`training.scenario_source`](/running/configuration/#trainingscenario_source) or
+[`simulation.scenario_source`](/running/configuration/#simulationscenario_source). Realizations are numbered per stage by
 `scenario_id`; how the passes draw from them is described in
 [Scenario Generation §4](/math/scenario-generation/#4-external-scenario-integration), and which classes take
 their mean and standard deviation from the file is stated under
@@ -211,7 +211,7 @@ is inflow-only.
 **Methodology:** [Scenario Generation](/math/scenario-generation/)
 
 Pre-computed non-controllable-source availability realizations, read when the NCS `scheme` is `"external"` in
-`training.scenario_source` or `simulation.scenario_source` (see [`config.json`](/reference/case-format/#configjson)). Realizations are
+[`training.scenario_source`](/running/configuration/#trainingscenario_source) or [`simulation.scenario_source`](/running/configuration/#simulationscenario_source). Realizations are
 numbered per stage by `scenario_id`; how the passes draw from them is described in
 [Scenario Generation §4](/math/scenario-generation/#4-external-scenario-integration), and which classes take
 their mean and standard deviation from the file is stated under
@@ -382,7 +382,7 @@ stage. The availability ratio of a stage and scenario is
 `max_generation_mw` × that ratio × the block factor from
 `scenarios/non_controllable_factors.json` (the factor is 1 when none is
 given); a `constraints/ncs_bounds.parquet` row does not change this available generation (see
-[Equipment Formulations §6](/math/equipment-formulations#6-non-controllable-generation-sources)).
+[Equipment-Specific Formulations §6](/math/equipment-formulations#6-non-controllable-generation-sources)).
 
 | Name       | Type    | Required | Default | Units | Description                                      |
 | ---------- | ------- | -------- | ------- | ----- | ------------------------------------------------ |
@@ -404,7 +404,7 @@ Spatial correlation of the noise: named profiles of correlation groups and an op
 group holds entities of one class (`inflow`, `load` or `ncs`), and each class is correlated separately. The
 decomposition of the matrices and the treatment of negative eigenvalues are in
 [Scenario Generation §2.1](/math/scenario-generation/#21-correlated-noise-generation); the
-[PAR(p) Inflow Model Configure tab](/math/par-inflow-model#implementation-in-cobre) gives a worked example and the
+[PAR(p) Inflow Model](/math/par-inflow-model#implementation-in-cobre) Configure tab gives a worked example and the
 per-path use of the file.
 
 | Name                                                   | Type          | Required | Default | Units | Description                                                                                                                                                                                                                                                             |
@@ -449,7 +449,7 @@ User-supplied backward-pass opening tree, read **only** when `config.json`
 declares `training.scenario_source.openings = {"source": "file"}` (an undeclared
 file is ignored; a declared but absent file is an error). Not admitted with a
 `nodes[]` policy graph or under enumerated forward selection (see
-[`config.json`](/reference/case-format/#configjson)). This enables cross-tool comparison, sensitivity
+[`training.scenario_source`](/running/configuration/#trainingscenario_source)). This enables cross-tool comparison, sensitivity
 analysis, and round-trip replay of a previously exported opening tree.
 
 | Name            | Type    | Required | Default | Units | Description                                                                   |

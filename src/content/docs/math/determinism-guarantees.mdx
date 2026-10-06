@@ -222,7 +222,7 @@ The lower bound is evaluated on one rank from the first stage's openings in
 canonical order and broadcast, and simulation costs are likewise gathered in
 canonical scenario order and reduced there. None of these reductions therefore
 depends on how work is partitioned. See
-[Performance Accelerators → Parallel Execution Model](/running/performance/#parallel-execution-model)
+[Performance Accelerators — Parallel Execution Model](/running/performance/#parallel-execution-model)
 for the rank partition and the collectives.
 
 **Deterministic seed derivation across MPI ranks.** Each draw is produced by a
@@ -254,7 +254,7 @@ cross-platform stability.
 terminal function from a boundary policy, the imported cut set is reconciled
 onto the study's own terminal state **once** — the dated, hour-weighted fan-out
 and per-family reconciliation described in
-[Post-Study Boundary §4](/math/post-study-boundary) — and the single reconciled
+[Post-Study Boundary & Chained Studies §4](/math/post-study-boundary) — and the single reconciled
 result is injected identically at the terminal stage on **every** rank. That
 reconciliation is a pure function of globally known inputs: the imported source
 policy, together with the current study's own stage calendar and state layout —
@@ -294,7 +294,7 @@ models are a function of the inputs alone — independent of how many threads ru
 or how the entities are distributed. Two supporting disciplines keep the fits
 bit-identical: the convex-hull stage sorts its input cloud and output facets into
 a canonical order, so the emitted hyperplanes do not depend on point ordering or
-MPI rank count (see [Hydro Production Models](/math/hydro-production-models)); and
+MPI rank count (see [Hydro Production Function Models](/math/hydro-production-models)); and
 the optional similar-hyperplane reduction draws its samples from a generator
 seeded only from stable entity/plane identity, never from the wall clock, the
 thread, or the rank. A single-threaded fit and a fully parallel fit therefore

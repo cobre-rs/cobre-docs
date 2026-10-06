@@ -356,6 +356,76 @@ test("a nullable form needs a JSON keyword, the exact spacing and a JSON-kind bi
   );
 });
 
+test("a union of JSON keywords is valid in an unbound or .json table", () => {
+  assert.deepEqual(
+    problemsOf(inputPage(JSON_FILE, "string \\| object", "integer \\| number")),
+    [],
+  );
+  assert.deepEqual(problemsOf(inputPage("# Page", "string \\| object")), []);
+});
+
+test("a union with a part outside the JSON keywords or with other spacing is NOT-IN-VOCABULARY", () => {
+  assert.deepEqual(
+    problemsOf(
+      inputPage(
+        JSON_FILE,
+        "string \\| bogus",
+        "Int32 \\| string",
+        "string\\|object",
+        "string \\| object \\| bogus",
+      ),
+    ),
+    [
+      problem("NOT-IN-VOCABULARY", 5, "string \\| bogus"),
+      problem("NOT-IN-VOCABULARY", 6, "Int32 \\| string"),
+      problem("NOT-IN-VOCABULARY", 7, "string\\|object"),
+      problem("NOT-IN-VOCABULARY", 8, "string \\| object \\| bogus"),
+    ],
+  );
+});
+
+test("a union is WRONG-KIND under a .parquet heading and flagged under a .bin heading", () => {
+  assert.deepEqual(problemsOf(inputPage(PARQUET_FILE, "string \\| object")), [
+    problem("WRONG-KIND", 5, "string \\| object"),
+  ]);
+  assert.deepEqual(
+    problemsOf(
+      outputPage(
+        "### `policy/x.bin`",
+        "string \\| object",
+        "string \\| uint32",
+      ),
+    ),
+    [
+      problem("WRONG-KIND", 5, "string \\| object"),
+      problem("NOT-IN-VOCABULARY", 6, "string \\| uint32"),
+    ],
+  );
+});
+
+test("a backticked union is BACKTICKED", () => {
+  assert.deepEqual(problemsOf(inputPage(JSON_FILE, "`string \\| object`")), [
+    problem("BACKTICKED", 5, "`string \\| object`"),
+  ]);
+});
+
+test("a union beside a nullable cell leaves the nullable rule unchanged", () => {
+  assert.deepEqual(
+    problemsOf(
+      inputPage(
+        JSON_FILE,
+        "string \\| object",
+        "integer \\| null",
+        "Int32 \\| null",
+      ),
+    ),
+    [problem("NOT-IN-VOCABULARY", 7, "Int32 \\| null")],
+  );
+  assert.deepEqual(problemsOf(outputPage(JSON_FILE, "integer \\| null")), [
+    problem("NULLABLE-IN-OUTPUT", 5, "integer \\| null"),
+  ]);
+});
+
 test("a .csv heading takes JSON keywords", () => {
   const csv = "### `training/dictionaries/entities.csv`";
   assert.deepEqual(problemsOf(inputPage(csv, "integer", "string")), []);
@@ -729,6 +799,17 @@ test("CLI: an unreadable vocabulary or one without the three tables exits 2", ()
 
 test("CLI: the default vocabulary is the committed convention document", () => {
   withRoot({ "docs/p.md": inputPage(PARQUET_FILE, "Int32") }, (root) => {
+    const result = cli(["--root", join(root, "docs")]);
+    assert.equal(result.status, 0, result.stdout + result.stderr);
+  });
+});
+
+test("CLI: the committed section 4 admits the nullable-suffix, untyped and union spellings", () => {
+  const page = [
+    inputPage(PARQUET_FILE, "Int32 (nullable)", "Float64 (nullable)"),
+    inputPage(JSON_FILE, "\u2014", "string \\| object"),
+  ].join("\n");
+  withRoot({ "docs/p.md": page }, (root) => {
     const result = cli(["--root", join(root, "docs")]);
     assert.equal(result.status, 0, result.stdout + result.stderr);
   });

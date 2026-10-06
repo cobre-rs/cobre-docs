@@ -20,8 +20,8 @@ storage and commitment-ring state variables do carry a cut term. A non-zero
 `min_mw` at a contract's active stages is a hard take-or-pay floor: the LP
 must dispatch at least that quantity at the contract price regardless of
 cheaper alternatives elsewhere in the system. All contract cost — the import
-cost or the (negative) export revenue — is booked inside the `resource_cost`
-component of the per-stage cost breakdown, alongside thermal fuel cost.
+cost or the (negative) export revenue — has its own `contract_cost` column in
+the per-stage cost breakdown of `simulation/costs/`, next to `thermal_cost`.
 
 ### Pumping stations carry no explicit objective cost
 
@@ -60,7 +60,7 @@ commitment that settles a hair outside its cap is clamped back in-box before it
 is carried forward, so training continues normally instead of surfacing a
 spurious infeasible LP. This is the single read-back canonicalization seam the
 methodology states once — see
-[SDDP algorithm §3.1](/math/sddp-algorithm#31-forward-pass) and
+[SDDP Algorithm §3.1](/math/sddp-algorithm#31-forward-pass) and
 [Determinism & Provenance §3](/math/determinism-guarantees#3-methodology-mechanisms).
 
 A commitment **genuinely** beyond the plant's generation bounds is not a solver

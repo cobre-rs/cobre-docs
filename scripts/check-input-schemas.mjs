@@ -70,7 +70,7 @@ const scriptDir = dirname(fileURLToPath(import.meta.url));
 const schemasDir = join(scriptDir, "..", "public", "schemas");
 
 // Case path of each bound JSON file -> vendored schema basename. `config.json`
-// is not bound (ticket-215 decides).
+// is not bound (D-215-1, ticket-215; revisit when configuration adopts full-Name input tables).
 export const BINDINGS = {
   "penalties.json": "penalties",
   "stages.json": "stages",
@@ -397,9 +397,7 @@ export function checkFile(schema, text, file) {
 }
 
 // ---------------------------------------------------------------------------
-// Main (run only when invoked directly). Kept behind a direct-run guard so
-// importing this module for the node:test fixture does NOT trigger the
-// filesystem reads or process.exit.
+// Main (direct run only).
 // ---------------------------------------------------------------------------
 const DEFAULT_DIR = join(
   scriptDir,

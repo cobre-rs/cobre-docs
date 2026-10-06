@@ -23,9 +23,12 @@
 //   NOT-IN-VOCABULARY   a name in none of the sets
 //
 // `<keyword> \| null` is the nullable form of an input table and takes a JSON
-// keyword. A `.bin` table also accepts a vector `[T]` of a FlatBuffers spelling
-// or schema name, and a schema name: a CamelCase identifier that is not a name
-// of section 4 (`EntityType`, `[EntitySlot]`).
+// keyword. A cell `a \| b` whose parts are all JSON keywords is a union; it
+// takes the same bindings as the nullable form (unbound, `.json` or `.csv`),
+// and a part outside the JSON set is NOT-IN-VOCABULARY. A `.bin` table also
+// accepts a vector `[T]` of a FlatBuffers spelling or schema name, and a schema
+// name: a CamelCase identifier that is not a name of section 4 (`EntityType`,
+// `[EntitySlot]`).
 //
 // Exports `loadVocabulary(markdown)`, `findTables(text)` and
 // `checkPage(text, label, vocab)` behind a direct-run guard, mirroring
@@ -243,6 +246,11 @@ function classify(cell, tableKind, bound, vocab) {
   const keyword = /^(\S+) \\\| null$/.exec(cell)?.[1];
   if (keyword !== undefined && vocab.json.has(keyword)) {
     if (tableKind === "output") return "NULLABLE-IN-OUTPUT";
+    return bound === null || bound === "json" ? null : "WRONG-KIND";
+  }
+
+  const parts = cell.split(" \\| ");
+  if (parts.length > 1 && parts.every((part) => vocab.json.has(part))) {
     return bound === null || bound === "json" ? null : "WRONG-KIND";
   }
 

@@ -104,21 +104,21 @@ where $\beta(n', \omega)$ is the coefficient vector read from child $n'$'s subpr
 
 ## 3. Discount Is Stage-Separate, Not Edge-Separate
 
-The discount factor $d_{t \to t+1}$ defined in [Discount Rate](/math/discount-rate) is a property of the **stage transition** $t \to t+1$, not of a policy-graph edge. The stage-$t$ template carries it once, as the objective coefficient of $\theta$, and carries the delivery discount of [Discount Rate](/math/discount-rate#arrow-form-and-delivery-discount) on each anticipated decision column ([State Augmentation](/math/state-augmentation#objective-contributions)); both are fixed per stage.
+The discount factor $d_{t \to t+1}$ defined in [Discount Rate Formulation](/math/discount-rate) is a property of the **stage transition** $t \to t+1$, not of a policy-graph edge. The stage-$t$ template carries it once, as the objective coefficient of $\theta$, and carries the delivery discount of [Discount Rate Formulation](/math/discount-rate#arrow-form-and-delivery-discount) on each anticipated decision column ([State Augmentation](/math/state-augmentation#objective-contributions)); both are fixed per stage.
 
 An explicit node graph keeps this stage-level convention: a discount override applies to a stage, and a transition between two declared nodes may not carry its own discount override. The reason is structural, not incidental — because the discount factors are fixed in the stage template once per stage, an edge-level (and therefore potentially per-node) override would force a separate template per node, which the single shared stage template does not support. A future-proof declaration point exists per transition precisely because the implicit stage chain has one transition per stage, so a per-edge spelling there is equivalent to a per-stage one; once a stage can hold several nodes, that equivalence breaks and only the per-stage declaration remains meaningful.
 
 ## 4. Mapping onto the SDDP.jl Family
 
-The node/transition/pool structure above is the same abstraction [Dowson (2020)](/reference/bibliography/#sddp-foundations) defines as a **policy graph** and the SDDP.jl package implements ([Dowson & Kapelevich, 2021](/reference/bibliography/#software-references)): nodes each carry a local subproblem and their own cut pool, connected by probability-weighted arcs, with the backward pass aggregating successor pools into a parent's cut exactly as §1 describes. Cobre's graph is the finite, acyclic, leaf-terminated member of that family — every trajectory starts at a root and ends at a leaf after a bounded number of stages, with no cycle back to an earlier stage. §5 states the further restrictions Cobre currently imposes within that member.
+The node/transition/pool structure above is the same abstraction [Dowson (2020)](/reference/bibliography/#sddp-foundations) defines as a **policy graph** and the SDDP.jl package implements ([Dowson & Kapelevich, 2021](/reference/bibliography/#software-references)): nodes each carry a local subproblem and their own cut pool, connected by probability-weighted arcs, with the backward pass aggregating successor pools into a parent's cut exactly as §1 describes. Cobre's graph is the finite, acyclic, leaf-terminated member of that family — every trajectory starts at a root and ends at a leaf after a bounded number of stages, with no cycle back to an earlier stage. §5 states the further restrictions Cobre imposes within that member.
 
 ## 5. Known Limitations
 
-The policy graph as implemented today carries three structural limitations beyond the finite/acyclic/leaf-terminated shape itself:
+Cobre's policy graph carries three structural limitations beyond the finite/acyclic/leaf-terminated shape itself:
 
 - **A single initial node.** A case supplies one initial-conditions record for the whole graph, so the incoming state that anchors the graph is shared by construction — the graph is anchored at one root even where the schema would structurally permit more than one node at stage 0.
 - **A single terminal value shared across leaves.** Every leaf, regardless of which node or path reaches it, resolves to the same shared terminal pool, to which the backward pass adds no cut. This generalises the terminal condition of [SDDP Algorithm §2](/math/sddp-algorithm): there is one terminal future-cost value for the whole graph, not one per leaf, either zero, $V_{T+1}(x) = 0$, or the fixed imported terminal function of [SDDP Algorithm §7](/math/sddp-algorithm#7-terminal-boundary-cuts).
-- **Finite-horizon only.** Only the acyclic, leaf-terminated graph shape is currently accepted; the cyclic (infinite periodic horizon) variant is reserved and rejected when the case is loaded. See [Horizon Modes](/math/horizon-modes) for the cyclic target design this reservation anticipates.
+- **Finite-horizon only.** Only the acyclic, leaf-terminated graph shape is accepted; the cyclic (infinite periodic horizon) variant is reserved and rejected when the case is loaded. See [Horizon Modes](/math/horizon-modes) for the cyclic target design this reservation anticipates.
 
 ## 6. The Enumerated-Tree Structural Requirement
 
@@ -145,11 +145,11 @@ The methodology above defines nodes, transitions and their probabilities; the ta
 
 - [SDDP Algorithm](/math/sddp-algorithm) — the forward/backward pass structure and terminal condition this chapter generalises to a graph
 - [Cut Management](/math/cut-management) — the append-only cut pool this chapter generalises from per-stage to per-node
-- [Discount Rate](/math/discount-rate) — the per-stage discount factor referenced in §3
+- [Discount Rate Formulation](/math/discount-rate) — the per-stage discount factor referenced in §3
 - [Scenario Generation](/math/scenario-generation) — the within-node opening set referenced in §2
 - [Horizon Modes](/math/horizon-modes) — the cyclic graph variant reserved in §5
-- [Case Directory Format](/reference/case-directory-format) — the `stages.json` field-level reference for the node/transition shape introduced conceptually in §1
-- [Running Cobre → Configuration](/running/configuration) — how a study selects an enumerated versus a sampled pass (§6)
+- [Stage Files](/reference/case-format/stages/#stagesjson) — the `stages.json` field-level reference for the node/transition shape introduced conceptually in §1
+- [Configuration](/running/configuration) — how a study selects an enumerated versus a sampled pass (§6)
 - [Glossary](/reference/glossary) — term definitions for node, transition, and policy graph
 
 ## References

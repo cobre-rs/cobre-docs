@@ -4,7 +4,7 @@
 // cobre's book is single-voiced (software prose); cobre-docs is two-voiced
 // (Epic 03: methodology math vs the software-layer partials/pages). The gate
 // therefore keys every file off the shared `zoneOf()` predicate
-// (scripts/doc-zones.mjs) and runs two checks with different scope:
+// (scripts/doc-zones.mjs) and runs three checks with different scope:
 //
 //   1. Hype phrases — a curated list of marketing superlatives and
 //      contrasting-affirmative constructs. Runs in BOTH zones: a sober
@@ -15,6 +15,8 @@
 //      zone ONLY: the methodology states the invariant, not a transient
 //      number, while the lenient software-layer pages may legitimately carry
 //      concrete config/CLI numbers.
+//   3. Instance magnitudes — the `instance-count`, `instance-approx` and
+//      `instance-span` rules described below.
 //
 // Scans PROSE only: fenced code blocks (``` / ~~~), inline `code` spans, and
 // HTML comments are blanked before matching (shared preprocessing:
@@ -38,8 +40,9 @@
 // carry concrete instance numbers by design. Matching runs per paragraph block
 // over the blanked prose, so a phrase split by a hard wrap is found and a hit
 // is reported at the line it starts on; an inline
-// `<!-- doc-voice-ok: reason -->` on that line exempts it. The detector is
-// separate from `detectVoiceViolations`, and its ids are not in `RULE_IDS`.
+// `<!-- doc-voice-ok: reason -->` on that line exempts it.
+// `detectVoiceViolations` appends the detector's hits, and `RULE_IDS` includes
+// its ids.
 //
 // Exports `detectVoiceViolations(text, zone)` — the pure per-file detector —
 // and `RULE_IDS` (the rule ids this gate can emit) behind a direct-run guard,
@@ -169,14 +172,6 @@ const OK_MARKER = /<!--\s*doc-voice-ok/;
 const UNPINNED_NUMBER_RULE = "unpinned-number";
 const INSTANCE_MAGNITUDE_RULE = "instance-magnitude";
 
-// Every rule id this gate can emit (except `unreadable`); the allowlist applies
-// and reports only these.
-export const RULE_IDS = new Set([
-  ...HYPE_PATTERNS.map(([label]) => label),
-  UNPINNED_NUMBER_RULE,
-  INSTANCE_MAGNITUDE_RULE,
-]);
-
 // Return a short description of the first unpinned-number hit, else null —
 // port of `_typical_number_hit`.
 function typicalNumberHit(prose) {
@@ -222,6 +217,15 @@ export const MAGNITUDE_RULE_IDS = new Set(
   MAGNITUDE_PATTERNS.map(([rule]) => rule),
 );
 
+// Every rule id this gate can emit (except `unreadable`); the allowlist applies
+// and reports only these.
+export const RULE_IDS = new Set([
+  ...HYPE_PATTERNS.map(([label]) => label),
+  UNPINNED_NUMBER_RULE,
+  INSTANCE_MAGNITUDE_RULE,
+  ...MAGNITUDE_RULE_IDS,
+]);
+
 // Pure strict-zone detector for the instance-magnitude rules. Non-prose lines
 // are blanked, not dropped, so a hit keeps its physical line number; each
 // paragraph block is then matched as one joined string. Returns
@@ -251,8 +255,9 @@ export function detectMagnitudeViolations(text, zone) {
 // Pure per-file detector (exported for the node:test fixture and for main()).
 //
 // `zone` is the file's `zoneOf()` result ("strict" | "lenient"). The hype
-// check always runs; the unpinned-number check runs only when zone === strict.
-// Returns an array of { lineno, rule, text } violations (allowlist NOT applied
+// check always runs; the unpinned-number check and the magnitude detector run
+// only when zone === strict. Returns an array of { lineno, rule, text }
+// violations sorted by line (allowlist NOT applied
 // here — that is layered on by the caller so the pure detector stays testable
 // without touching the filesystem).
 // ---------------------------------------------------------------------------
@@ -291,7 +296,8 @@ export function detectVoiceViolations(text, zone) {
     }
   }
 
-  return violations;
+  violations.push(...detectMagnitudeViolations(text, zone));
+  return violations.sort((a, b) => a.lineno - b.lineno);
 }
 
 // ---------------------------------------------------------------------------
@@ -350,7 +356,7 @@ function main() {
   if (failing.length === 0 && stale.length === 0) {
     console.log(
       `OK: ${linesChecked} prose lines scanned across ${relFiles.length} files; ` +
-        `no NEW promotional voice or unpinned 'typical' numbers found` +
+        `no NEW promotional voice, unpinned 'typical' numbers or instance magnitudes found` +
         (grandfathered.length > 0
           ? ` (${grandfathered.length} pre-existing hit(s) grandfathered via scripts/doc-lint-allow.txt).`
           : "."),
@@ -368,7 +374,9 @@ function main() {
   }
   console.log(
     `FAIL: ${failing.length} prose violation(s), ${stale.length} stale allowlist entry(ies). ` +
-      `Rewrite per the Methodology Authoring Standards, mark a genuine exception with an inline ` +
+      `Rewrite per the Methodology Authoring Standards (instance-count, instance-approx and ` +
+      `instance-span flag instance magnitudes, which belong in a worked example or the software layer), ` +
+      `mark a genuine exception with an inline ` +
       `'<!-- doc-voice-ok: reason -->', or (for a pre-existing hit under editorial review) add a ` +
       `rationale to scripts/doc-lint-allow.txt; delete or re-key a stale entry there.`,
   );

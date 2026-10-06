@@ -88,7 +88,7 @@ Stochastic artifact export is controlled by `exports.stochastic` in `config.json
 | ---------------- | ------- | -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `--output <DIR>` | Path    | `<CASE_DIR>/output/` | Output directory for results                                                                                                                                           |
 | `--threads <N>`  | integer | `1`                  | Number of worker threads per MPI rank. Each thread solves its own LP instances; scenarios are distributed across threads. Must be `1` or more. |
-| `--comm-backend <WHICH>` | `auto` \| `local` \| `mpi` | `auto` | Communication backend. `auto` selects the MPI backend when the process is launched under an MPI launcher (`mpiexec`/`mpirun`/`srun`) and the local backend otherwise; `local` forces a single process; `mpi` forces the MPI backend and fails with a clear message on a binary built without MPI support. |
+| `--comm-backend <WHICH>` | `auto` \| `local` \| `mpi` | `auto` | Communication backend. `auto` selects the MPI backend when a binary built with MPI support (the `cobre-mpi` release asset) is launched under an MPI launcher (`mpiexec`/`mpirun`/`srun`), and the local backend otherwise; `local` forces a single process; `mpi` forces the MPI backend and fails with a clear message on a binary built without MPI support. |
 | `--quiet`        | flag    | off                  | Suppress the banner and progress bars. Errors still go to stderr                                                                                                       |
 
 ### Config-First Principle
@@ -123,8 +123,8 @@ cobre run /data/cases/hydro_study --quiet
 # Force color output when running under mpiexec
 cobre --color always run /data/cases/hydro_study
 
-# Run with MPI across 4 ranks
-mpiexec -np 4 cobre run /data/cases/hydro_study
+# Run across 4 MPI ranks (requires the MPI build; see HPC & Cluster Deployment)
+mpiexec -np 4 cobre-mpi run /data/cases/hydro_study
 ```
 
 ### Output format
@@ -178,7 +178,7 @@ jq -r '.convergence.termination_reason' /data/cases/hydro_study/output/training/
 
 From Python, `cobre.results.load_results(output_dir)` returns both metadata
 files as dicts. Every field is documented in
-[Output Format → Metadata Files](/reference/output/metadata/).
+[Metadata Files](/reference/output/metadata/).
 
 ### SLURM clusters
 

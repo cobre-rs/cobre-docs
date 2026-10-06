@@ -1,11 +1,24 @@
 // Unit fixture for the check:voice detector (Epic 04 ticket-015).
 //
 // Pins detectVoiceViolations(text, zone)'s behaviour: hype fires in BOTH
-// zones; the unpinned-number check fires in STRICT only; the doc-voice-ok
-// escape hatch and fenced-code blanking both suppress a hit.
+// zones; the unpinned-number and instance-magnitude checks fire in STRICT
+// only; the doc-voice-ok escape hatch and fenced-code blanking both suppress
+// a hit.
 
 import test from "node:test";
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
+import {
+  copyFileSync,
+  mkdirSync,
+  mkdtempSync,
+  rmdirSync,
+  unlinkSync,
+  writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import {
   detectVoiceViolations,
   detectMagnitudeViolations,
@@ -195,6 +208,69 @@ test("flags a unit-first span ('1 month - 5 years')", () => {
   );
 });
 
+test("flags a number-first span with each dash form ('–', '—', '--')", () => {
+  for (const sep of ["–", "—", "--"]) {
+    assert.deepEqual(
+      detectMagnitudeViolations(
+        `Convergence takes 5${sep}10 iterations.`,
+        ZONE_STRICT,
+      ),
+      [{ lineno: 1, rule: "instance-span", text: `5${sep}10 iterations` }],
+      sep,
+    );
+  }
+});
+
+test("flags a number-first span of stages, months and years", () => {
+  for (const unit of ["stages", "months", "years"]) {
+    assert.deepEqual(
+      detectMagnitudeViolations(`The horizon covers 2-6 ${unit}.`, ZONE_STRICT),
+      [{ lineno: 1, rule: "instance-span", text: `2-6 ${unit}` }],
+      unit,
+    );
+  }
+});
+
+test("flags a unit-first span written without spaces ('1 month–5 years')", () => {
+  assert.deepEqual(
+    detectMagnitudeViolations("The horizon runs 1 month–5 years.", ZONE_STRICT),
+    [{ lineno: 1, rule: "instance-span", text: "1 month–5 years" }],
+  );
+});
+
+test("flags an open-ended count of every counted noun", () => {
+  for (const noun of [
+    "hydros",
+    "reservoirs",
+    "plants",
+    "thermals",
+    "buses",
+    "stages",
+    "iterations",
+    "scenarios",
+  ]) {
+    assert.deepEqual(
+      detectMagnitudeViolations(`The study covers 160+ ${noun}.`, ZONE_STRICT),
+      [{ lineno: 1, rule: "instance-count", text: `160+ ${noun}` }],
+      noun,
+    );
+  }
+});
+
+test("flags a count or span written with thousands separators or decimals", () => {
+  for (const [text, hit] of [
+    ["The study covers 10,000+ scenarios.", "10,000+ scenarios"],
+    ["Convergence takes 1,000-10,000 iterations.", "1,000-10,000 iterations"],
+    ["The horizon covers 0.5-1.5 years.", "0.5-1.5 years"],
+  ]) {
+    assert.equal(
+      detectMagnitudeViolations(text, ZONE_STRICT)[0]?.text,
+      hit,
+      text,
+    );
+  }
+});
+
 test("flags a phrase split by a hard wrap, at the line it starts on", () => {
   assert.deepEqual(
     detectMagnitudeViolations(
@@ -225,6 +301,10 @@ for (const text of [
   "Indexing is 1-based across the API.",
   "The subproblem spans $t+1$ stages.",
   "The shift is ~ 12 percent of the demand.",
+  "The reserved cyclic design (sections 2–3) is not supported.",
+  "The sample PACF at lags 2 to 6 lies inside the band.",
+  "The proof needs ≈ 3 statements.",
+  "Pinning keeps $N(1+P^{\\max})$ redundant equality rows out of the model.",
 ]) {
   test(`does NOT flag the near miss '${text}'`, () => {
     assert.deepEqual(detectMagnitudeViolations(text, ZONE_STRICT), []);
@@ -266,19 +346,171 @@ test("returns the hits of one block sorted by line, not by rule", () => {
   );
 });
 
-test("MAGNITUDE_RULE_IDS holds the three magnitude rules, none in RULE_IDS", () => {
+test("MAGNITUDE_RULE_IDS holds the three magnitude rules, all in RULE_IDS", () => {
   assert.deepEqual([...MAGNITUDE_RULE_IDS].sort(), [
     "instance-approx",
     "instance-count",
     "instance-span",
   ]);
-  for (const id of MAGNITUDE_RULE_IDS) assert.ok(!RULE_IDS.has(id));
+  for (const id of MAGNITUDE_RULE_IDS) assert.ok(RULE_IDS.has(id));
 });
 
-test("detectVoiceViolations does not run the magnitude rules", () => {
-  const v = detectVoiceViolations(
-    "Convergence takes every 5-10 iterations.",
-    ZONE_STRICT,
+test("RULE_IDS holds the seven rule ids of the gate", () => {
+  assert.deepEqual([...RULE_IDS].sort(), [
+    "hype-contrasting-affirmative",
+    "hype-superlative",
+    "instance-approx",
+    "instance-count",
+    "instance-magnitude",
+    "instance-span",
+    "unpinned-number",
+  ]);
+});
+
+// detectVoiceViolations runs the magnitude detector: the strict zone reports
+// its hits, the lenient zone none, and the result is sorted by line.
+
+test("detectVoiceViolations reports an instance span in the STRICT zone", () => {
+  assert.deepEqual(
+    detectVoiceViolations("every 5-10 iterations", ZONE_STRICT),
+    [{ lineno: 1, rule: "instance-span", text: "5-10 iterations" }],
   );
-  assert.ok(!v.some((x) => MAGNITUDE_RULE_IDS.has(x.rule)));
+});
+
+test("detectVoiceViolations reports no instance magnitude in the LENIENT zone", () => {
+  assert.deepEqual(
+    detectVoiceViolations("every 5-10 iterations", ZONE_LENIENT),
+    [],
+  );
+});
+
+test("detectVoiceViolations sorts the hits of both detectors by line", () => {
+  const text =
+    "The study covers 160+ hydro plants.\nThis is blazing-fast.\nConvergence takes 5-10 iterations.";
+  assert.deepEqual(
+    detectVoiceViolations(text, ZONE_STRICT).map((v) => [v.lineno, v.rule]),
+    [
+      [1, "instance-count"],
+      [2, "hype-superlative"],
+      [3, "instance-span"],
+    ],
+  );
+});
+
+test("detectVoiceViolations keeps a line-loop hit before a magnitude hit on the same line", () => {
+  const text = "It typically takes 10+ iterations.";
+  assert.deepEqual(
+    detectVoiceViolations(text, ZONE_STRICT).map((v) => [v.lineno, v.rule]),
+    [
+      [1, "unpinned-number"],
+      [1, "instance-count"],
+    ],
+  );
+});
+
+// main() through the CLI: it resolves the corpus and the allowlist relative to
+// its own location, so each test runs a copy of the gate inside a throwaway
+// tree.
+
+const SCRIPTS_DIR = dirname(fileURLToPath(import.meta.url));
+const GATE_FILES = [
+  "check-doc-voice.mjs",
+  "doc-text.mjs",
+  "doc-zones.mjs",
+  "doc-lint-allowlist.mjs",
+];
+
+function runGate(pages, allowlist = "") {
+  const root = mkdtempSync(join(tmpdir(), "check-voice-"));
+  const files = [];
+  const dirs = new Set();
+  const put = (rel, write) => {
+    mkdirSync(dirname(join(root, rel)), { recursive: true });
+    write(join(root, rel));
+    files.push(join(root, rel));
+    for (let dir = dirname(rel); dir !== "."; dir = dirname(dir)) {
+      dirs.add(join(root, dir));
+    }
+  };
+  try {
+    for (const name of GATE_FILES) {
+      put(`scripts/${name}`, (path) =>
+        copyFileSync(join(SCRIPTS_DIR, name), path),
+      );
+    }
+    put("scripts/doc-lint-allow.txt", (path) => writeFileSync(path, allowlist));
+    for (const [rel, text] of Object.entries(pages)) {
+      put(`src/content/docs/${rel}`, (path) => writeFileSync(path, text));
+    }
+    return spawnSync(
+      process.execPath,
+      [join(root, "scripts", "check-doc-voice.mjs")],
+      { encoding: "utf8" },
+    );
+  } finally {
+    for (const file of files) unlinkSync(file);
+    for (const dir of [...dirs].sort((a, b) => b.length - a.length)) {
+      rmdirSync(dir);
+    }
+    rmdirSync(root);
+  }
+}
+
+const SPAN_PAGE = "# T\n\nRun 5-10 iterations of burn-in.\n";
+
+test("CLI: a clean strict page prints the OK line naming instance magnitudes and exits 0", () => {
+  const result = runGate({ "math/a.md": "# T\n\nClean prose.\n" });
+  assert.equal(result.status, 0);
+  assert.match(
+    result.stdout,
+    /^OK: \d+ prose lines scanned across \d+ files; no NEW promotional voice, unpinned 'typical' numbers or instance magnitudes found\.\n$/,
+  );
+});
+
+test("CLI: a strict instance span prints its VIOLATION line, names the rules in the hint and exits 1", () => {
+  const result = runGate({ "math/b.md": SPAN_PAGE });
+  assert.equal(result.status, 1);
+  assert.match(
+    result.stdout,
+    /^VIOLATION \[instance-span\]: math\/b\.md:3: "5-10 iterations"$/m,
+  );
+  const hint = result.stdout.trim().split("\n").at(-1);
+  for (const rule of ["instance-count", "instance-approx", "instance-span"]) {
+    assert.ok(hint.includes(rule), rule);
+  }
+});
+
+test("CLI: the same instance span on a lenient page exits 0", () => {
+  assert.equal(runGate({ "reference/c.md": SPAN_PAGE }).status, 0);
+});
+
+test("CLI: an allowlist entry grandfathers an instance-span hit", () => {
+  const result = runGate(
+    { "math/b.md": SPAN_PAGE },
+    "math/b.md:3  instance-span  # fixture\n",
+  );
+  assert.equal(result.status, 0);
+  assert.match(result.stdout, /\(1 pre-existing hit\(s\) grandfathered /);
+});
+
+test("CLI: an instance-span allowlist entry that matches no hit is STALE and fails", () => {
+  const result = runGate(
+    { "math/a.md": "# T\n\nClean prose.\n" },
+    "math/a.md:3  instance-span  # fixture\n",
+  );
+  assert.equal(result.status, 1);
+  assert.match(result.stdout, /^STALE \[instance-span\]: math\/a\.md:3 /m);
+});
+
+test("CLI: the report lists the hits of both detectors in line order", () => {
+  const page =
+    "# T\n\nRun 5-10 iterations of burn-in.\n\nThis is blazing-fast.\n\nThe study covers 160+ hydro plants.\n";
+  const result = runGate({ "math/h.md": page });
+  assert.equal(result.status, 1);
+  assert.deepEqual(
+    [...result.stdout.matchAll(/^VIOLATION .*math\/h\.md:(\d+):/gm)].map((m) =>
+      Number(m[1]),
+    ),
+    [3, 5, 7],
+  );
 });

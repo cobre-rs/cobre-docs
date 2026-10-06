@@ -69,7 +69,7 @@ Thermal plant registry. Each entry defines a dispatchable generation unit.
 | `thermals[].operational_start_date`             | string          | Yes         | —       | —       | Required on every entity; see [Shared entity fields](/reference/case-format/#shared-entity-fields).                                                                                                                                                                        |
 | `thermals[].entry_stage_id`                     | integer \| null | No          | `null`  | —       | Stage when the unit enters service (`null` = present from stage 0)                                                                                                                                                                                                         |
 | `thermals[].exit_stage_id`                      | integer \| null | No          | `null`  | —       | Stage when the unit is decommissioned (`null` = never)                                                                                                                                                                                                                     |
-| `thermals[].anticipated_config`                 | object \| null  | No          | —       | —       | Anticipated-dispatch lead: an object with exactly one of `lead_stages` (integer `>= 1`) or `lead_time_hours` (finite and `> 0`); both or neither is rejected at load. See the [Equipment Formulations Configure tab](/math/equipment-formulations#implementation-in-cobre) |
+| `thermals[].anticipated_config`                 | object \| null  | No          | —       | —       | Anticipated-dispatch lead: an object with exactly one of `lead_stages` (integer `>= 1`) or `lead_time_hours` (finite and `> 0`); both or neither is rejected at load. See the [Equipment-Specific Formulations](/math/equipment-formulations#implementation-in-cobre) Configure tab |
 | `thermals[].anticipated_config.lead_stages`     | integer         | Conditional | —       | —       | Anticipated-dispatch lead in stages (integer `>= 1`). Exactly one of `lead_stages` or `lead_time_hours` is set; both or neither is rejected at load.                                                                                                                       |
 | `thermals[].anticipated_config.lead_time_hours` | number          | Conditional | —       | h       | Anticipated-dispatch lead in hours (finite and `> 0`). Exactly one of `lead_stages` or `lead_time_hours` is set; both or neither is rejected at load.                                                                                                                      |
 
@@ -103,12 +103,6 @@ Per-scenario availability is supplied by the
 | `non_controllable_sources[].curtailment_cost`       | number \| null  | No       | `null`  | USD/MWh | Entity-level curtailment cost override [USD/MWh]; falls back to `non_controllable_source.curtailment_cost` in `penalties.json` when absent                                                                                  |
 | `non_controllable_sources[].entry_stage_id`         | integer \| null | No       | `null`  | —       | Stage when the source enters service; `null` or absent = present from stage 0                                                                                                                                               |
 | `non_controllable_sources[].exit_stage_id`          | integer \| null | No       | `null`  | —       | Stage when the source is decommissioned; `null` or absent = never                                                                                                                                                           |
-
-A curtailable source (`allow_curtailment: true`) contributes a dispatch variable
-bounded by `[0, max_generation_mw × availability]`, with curtailed energy priced
-at `curtailment_cost` (or the global default). A must-run source
-(`allow_curtailment: false`) is pinned to its realized availability every
-scenario, injecting a fixed amount with no curtailment freedom.
 
 **Minimal valid example:**
 

@@ -65,6 +65,8 @@ my_case/
 
 ## File summary
 
+**Required** is **Yes** for a file that every case must contain; a file marked **No** can still be required by a particular configuration, and its section on the linked page states the condition or its use.
+
 | File                                            | Format  | Required | Page                                                                                               | Description                                                                             |
 | ----------------------------------------------- | ------- | -------- | -------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
 | `config.json`                                   | JSON    | Yes      | [Case Format](#configjson)                                                                         | Solver configuration                                                                    |
@@ -116,7 +118,7 @@ my_case/
 
 - **Stage ids.** Every non-null `stage_id` column or field names a declared `id` of `stages.json`, never a position,
   except `schedule[].stage_id` of [`scenarios/correlation.json`](/reference/case-format/scenarios/#scenarioscorrelationjson), which out-of-sample
-  forward and simulation sampling match by 0-based position among the study stages. Study stage ids are non-negative and may be gapped or start above `0`;
+  forward and simulation sampling match by 0-based position among the study stages, and the stage keys of a `per_stage` `values` pair or a `per_stage_block` `block_values` triple in [`constraints/generic_parameters.json`](/reference/case-format/constraints/#constraintsgeneric_parametersjson), which are 0-based positions among the study stages. Study stage ids are non-negative and may be gapped or start above `0`;
   `pre_study_stages[]` ids are negative.
 - **Block ids.** `block_id` is the 0-based index of a block within its stage; a stage's `blocks[].id` values run `0..n-1`.
 - **Parquet column types.** Each Parquet column must have exactly the type its table lists. A column of another type
@@ -147,7 +149,7 @@ my_case/
 `operational_start_date` is required on every entity of the seven registry files: [`system/buses.json`](/reference/case-format/system/#systembusesjson), [`system/lines.json`](/reference/case-format/system/#systemlinesjson), [`system/hydros.json`](/reference/case-format/hydros/#systemhydrosjson), [`system/thermals.json`](/reference/case-format/system/#systemthermalsjson), [`system/non_controllable_sources.json`](/reference/case-format/system/#systemnon_controllable_sourcesjson), [`system/pumping_stations.json`](/reference/case-format/system/#systempumping_stationsjson), and [`system/energy_contracts.json`](/reference/case-format/system/#systemenergy_contractsjson).
 It is an ISO 8601 date (`YYYY-MM-DD`) that records when the entity enters the registry's operational history.
 
-The date is provenance and the first key of the canonical entity order `(operational_start_date, id)`. Entities are ordered by date and then by id, never by name, so renaming an entity leaves its position unchanged, while a new id or date can move it. The date does not gate commissioning: for the entities that carry a commissioning window, `entry_stage_id` and `exit_stage_id` alone decide it (`system/buses.json` has no window). [System Elements — Operational Start Date](/math/system-elements/#operational-start-date) states the ordering and the independence from the commissioning window.
+The date is provenance and the first key of the canonical entity order `(operational_start_date, id)`. Entities are ordered by date and then by id, never by name, so renaming an entity leaves its position unchanged, while a new id or date can move it. The date does not gate commissioning: for the entities that carry a commissioning window, `entry_stage_id` and `exit_stage_id` alone decide it (`system/buses.json` has no window). [System Element Modeling Overview — Operational Start Date](/math/system-elements/#operational-start-date) states the ordering and the independence from the commissioning window.
 
 ## `config.json`
 

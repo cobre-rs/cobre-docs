@@ -398,7 +398,7 @@ Example — `by_node` with an explicit `block_size`:
 }
 ```
 
-For the backward pass this schedules work within, see [SDDP Algorithm §3.4 (Execution Model and Performance Considerations)](/math/sddp-algorithm#34-execution-model-and-performance-considerations).
+For the backward pass this schedules work within, see [SDDP Algorithm §3.4](/math/sddp-algorithm#34-execution-model-and-performance-considerations).
 
 ---
 
@@ -563,7 +563,7 @@ template is built — and every rank resolves the same profile from the broadcas
 :::caution[`scale: "solver_scaling"` compromises single-unscaling exactness]
 Setting `scale` to `"solver_scaling"` re-enables solver-side (Curtis–Reid)
 scaling on top of Cobre's own offline prescaler. Dual and cut-coefficient
-unscaling (see [LP Layout and Scaling §2.3 (Row Scaling)](/math/lp-layout-and-scaling#23-row-scaling-geometric-mean))
+unscaling (see [LP Layout and Scaling §2.3](/math/lp-layout-and-scaling#23-row-scaling-geometric-mean))
 is exact only when the solve applies no scaling beyond that prescaler —
 enabling `solver_scaling` introduces a second scaling factor the
 single-unscaling identity does not account for.
@@ -749,7 +749,7 @@ Controls physical modeling options.
   a bounded slack variable penalised by `penalties.json::hydro.inflow_nonnegativity_cost`,
   providing a smooth backstop for extreme tail realisations.
 
-The four methods are defined in [Inflow Non-Negativity](/math/inflow-nonnegativity/).
+The four methods are defined in [Inflow Non-Negativity Solution Methods](/math/inflow-nonnegativity/).
 
 Example:
 
@@ -794,7 +794,7 @@ Example:
 ```
 
 For the methodology, see
-[LP Layout and Scaling §2.1 (Cost Scaling)](/math/lp-layout-and-scaling#21-cost-scaling).
+[LP Layout and Scaling §2.1](/math/lp-layout-and-scaling#21-cost-scaling).
 
 ---
 
@@ -842,7 +842,7 @@ Controls policy persistence (checkpoint saving and warm-start loading).
 
 | Field                    | Type                                     | Default      | Description                                                                                                                                 |
 | ------------------------ | ---------------------------------------- | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------- |
-| `path`                   | string                                   | `"./policy"` | Policy directory, resolved against the run's output directory (`<case>/output` by default); training writes the checkpoint there and warm-start, resume and simulation-only read it. The checkpoint's files are listed under [Output Format — Policy Checkpoint](/reference/output/policy/). |
+| `path`                   | string                                   | `"./policy"` | Policy directory, resolved against the run's output directory (`<case>/output` by default); training writes the checkpoint there and warm-start, resume and simulation-only read it. The checkpoint's files are listed under [Policy Checkpoint](/reference/output/policy/). |
 | `mode`                   | string                                   | `"fresh"`    | One of `"fresh"`, `"warm_start"`, `"resume"`. Initialization mode. `"fresh"` starts from scratch; `"warm_start"` loads cuts from a previous run; `"resume"` continues an interrupted run. |
 | `boundary`               | object \| null                           | `null`       | Terminal boundary cut configuration for coupling with an outer model's FCF. See below.                                                      |
 

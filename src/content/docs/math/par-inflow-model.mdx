@@ -114,7 +114,7 @@ Other PAR(p) implementations may follow different conventions:
 
 - they often write the autoregressive coefficients as $\phi$, which this chapter writes $\psi$ (original units) and $\psi^*$ (standardized);
 - some store the innovation standard deviation, while this model stores the seasonal sample standard deviation $s_m$ and derives the innovation standard deviation $\sigma_m = s_m\, r_m$ at load (§4);
-- some draw residuals from a lognormal distribution, while this model's innovations are Gaussian and negative realizations are treated as in [Inflow Non-Negativity](/math/inflow-nonnegativity).
+- some draw residuals from a lognormal distribution, while this model's innovations are Gaussian and negative realizations are treated as in [Inflow Non-Negativity Solution Methods](/math/inflow-nonnegativity).
 
 For equivalent terms in other planning tools, see the [Glossary](/reference/glossary).
 :::
@@ -216,7 +216,7 @@ Whether the lagged inflows enter a stage's cuts is a per-stage choice; a cut tha
 
 ## 3. Estimation
 
-For multi-resolution studies (monthly→quarterly aggregation), the same fitting procedure applies after duration-weighted aggregation; see [Multi-resolution studies](/math/multi-resolution-studies).
+For multi-resolution studies (monthly→quarterly aggregation), the same fitting procedure applies after duration-weighted aggregation; see [Multi-Resolution Studies](/math/multi-resolution-studies).
 
 This section documents the procedure for fitting PAR(p) parameters from historical inflow data. The fitting is performed when the system derives parameters from the inflow history. When pre-computed seasonal statistics and AR coefficients are provided directly, this procedure is not executed. The innovation scale is deliberately **not** part of the fitting: it is derived from the stored coefficients at load (§4.1), identically for fitted and user-supplied models (§4.2).
 
@@ -797,6 +797,6 @@ The methodology above defines the PAR(p) inflow model; the tabs below cover how 
 
 - [LP Formulation](/math/lp-formulation) — The realized-inflow rows of the stage LP
 - [State Augmentation](/math/state-augmentation) — AR inflow dynamics: state expansion, lag column pinning, reduced-cost extraction
-- [Inflow Non-Negativity](/math/inflow-nonnegativity) — Methods for handling negative realizations produced by the PAR(p) model
+- [Inflow Non-Negativity Solution Methods](/math/inflow-nonnegativity) — Methods for handling negative realizations produced by the PAR(p) model
 - [Scenario Generation](/math/scenario-generation) — When external inflow scenarios are used in training, the backward pass turns the opening tree's noise into inflows with the applied PAR model, in which hydros of AR order 0 and no annual component take the external samples' mean and standard deviation.
 - [Notation Conventions](/overview/notation-conventions) — Defines inflow symbols ($a_{h,t}$, $\mu_m$, $\psi_{m,\ell}$, $\sigma_m$) and unit conventions

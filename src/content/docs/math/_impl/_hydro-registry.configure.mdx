@@ -3,7 +3,7 @@
 The sections below configure the hydro plants of
 [§5 Hydro Plants](#5-hydro-plants). The plant's `generation` block and the
 production-model selection (`system/hydro_production_models.json`) are on the
-[Hydro Production Models Configure tab](/math/hydro-production-models#implementation-in-cobre).
+[Hydro Production Function Models](/math/hydro-production-models#implementation-in-cobre) Configure tab.
 
 ### `system/hydros.json` — Hydro Plant Registry
 
@@ -105,7 +105,7 @@ absent.
 | `downstream_id`  | integer or null | No       | Identifier of the plant that receives this plant's outflow. Absent or `null` means the plant is at the bottom of its cascade — outflow leaves the system. |
 | `operational_start_date` | string (ISO-8601 date) | Yes | Calendar date (`YYYY-MM-DD`) the plant enters the registry's operational history. Provenance and the canonical `(operational_start_date, id)` ordering key (see [Notation Conventions](/overview/notation-conventions)) — independent of `entry_stage_id`/`exit_stage_id` below, which alone gate commissioning. |
 | `entry_stage_id` | integer or null | No       | Stage index at which the plant enters service (inclusive). `null` means the plant is available from stage 0. |
-| `exit_stage_id`  | integer or null | No       | Stage index at which the plant is decommissioned. The commissioning window is **half-open** `[entry_stage_id, exit_stage_id)`: the plant is active through `exit_stage_id - 1`, and outside the window it is not in service. For a hydro the out-of-service state is **PreFilling** — turbine, spillage, and diversion pinned to zero, storage frozen, and natural inflow routed past the site (see [Hydro Production Models — Implementation notes](/math/hydro-production-models#implementation-in-cobre) and [Not-Yet-Commissioned Hydros (PreFilling)](#not-yet-commissioned-hydros-prefilling)) — rather than a bare column zero-pin. `null` means the plant is never decommissioned. |
+| `exit_stage_id`  | integer or null | No       | Stage index at which the plant is decommissioned. The commissioning window is **half-open** `[entry_stage_id, exit_stage_id)`: the plant is active through `exit_stage_id - 1`, and outside the window it is not in service. For a hydro the out-of-service state is **PreFilling** — turbine, spillage, and diversion pinned to zero, storage frozen, and natural inflow routed past the site (see [Hydro Production Function Models — Implementation in Cobre](/math/hydro-production-models#implementation-in-cobre) and [Not-Yet-Commissioned Hydros (PreFilling)](#not-yet-commissioned-hydros-prefilling)) — rather than a bare column zero-pin. `null` means the plant is never decommissioned. |
 
 #### Reservoir
 
@@ -124,7 +124,7 @@ Storage is tracked in **hm³** (cubic hectometres; 1 hm³ = 10⁶ m³).
 | `max_storage_hm3` | number | Physical maximum storage. Must be greater than or equal to `min_storage_hm3` (equal is allowed — a fixed-storage plant). |
 
 This is the plant's physical, stage-invariant range: stored-energy outputs and the
-useful-range mean productivity ([Hydro Production Models §5.3](/math/hydro-production-models#53-useful-range-mean-productivity))
+useful-range mean productivity ([Hydro Production Function Models §5.3](/math/hydro-production-models#53-useful-range-mean-productivity))
 read it, while `constraints/hydro_bounds.parquet` storage overrides (for example a
 flood-control ceiling) tighten only the per-stage operative bounds of the LP storage
 variable.
@@ -197,7 +197,7 @@ the sum of every group's minima must be able to reach the plant's own
 declared minimum.
 
 Stage-varying, optionally per-block overrides of a group's four bounds are
-supplied by `constraints/hydro_unit_group_bounds.parquet` — see the [Hydro Production Models Inputs & Outputs tab](/math/hydro-production-models#implementation-in-cobre).
+supplied by `constraints/hydro_unit_group_bounds.parquet` — see the [Hydro Production Function Models](/math/hydro-production-models#implementation-in-cobre) Inputs & Outputs tab.
 
 #### Cascade Topology (`downstream_id`)
 
@@ -237,7 +237,7 @@ cascade arc only — diversion and pumping transfers are always instantaneous.
 Declaring an arc requires seeding the pre-study releases already in transit via
 `initial_conditions.past_defluences`, and the downstream plant must have
 entered service by the first study stage — see
-[Hydro Production Models — Implementation notes](/math/hydro-production-models#implementation-in-cobre).
+[Hydro Production Function Models — Implementation in Cobre](/math/hydro-production-models#implementation-in-cobre).
 
 #### Advanced Fields
 
@@ -315,7 +315,7 @@ input.
 
 A hydro that declares `coefficients_mm` but has no usable area-volume curve to
 convert it into a flux — see
-[Hydro Production Models — Implementation notes](/math/hydro-production-models#implementation-in-cobre) for exactly what "no usable
+[Hydro Production Function Models — Implementation in Cobre](/math/hydro-production-models#implementation-in-cobre) for exactly what "no usable
 curve" means and what Cobre does about it.
 
 **Diversion channel** — the `diversion` block models a diversion that routes
@@ -405,7 +405,7 @@ spillage band with `min_spillage_m3s > max_spillage_m3s`. An absent row
 leaves that hydro's diversion floor and spillage band unset for the
 stage/block it would have covered (no floor; spillage bounded only by the
 plant's other outflow constraints). See
-[Case Format → `constraints/hydro_bounds.parquet`](/reference/case-format/constraints/#constraintshydro_boundsparquet)
+[Constraint Files — `constraints/hydro_bounds.parquet`](/reference/case-format/constraints/#constraintshydro_boundsparquet)
 for the complete column table, including the turbined, storage, outflow,
 generation, diversion-maximum, filling and withdrawal override columns this
 file also carries.
@@ -423,5 +423,5 @@ file also carries.
 | Outflow bounds ordering           | Physical feasibility   | When `max_outflow_m3s` is present, it must be `>= min_outflow_m3s`. |
 | Turbine bounds ordering           | Physical feasibility   | `min_turbined_m3s` must be `<= max_turbined_m3s`. |
 | Generation bounds consistency     | Physical feasibility   | `min_generation_mw` must be `<= max_generation_mw`. |
-| Initial conditions completeness   | Reference error        | Every hydro plant must have exactly one entry in `initial_conditions.json` (`storage` or `filling_storage`, not both). |
+| Initial conditions exclusivity    | Schema error           | A hydro appears at most once in `storage`, at most once in `filling_storage`, and never in both, in `initial_conditions.json`; a hydro with no entry is not rejected at load. |
 | Evaporation array length          | Schema error           | `coefficients_mm` must have exactly 12 values; `reference_volumes_hm3`, when present, must also have exactly 12 values within `[min_storage_hm3, max_storage_hm3]`. |

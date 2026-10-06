@@ -7,7 +7,7 @@ description: The state the stage LP carries between stages — the state vector 
 
 This chapter defines the state the stage LP carries from one stage to the next: the state vector and its four families, the pinning of the incoming state by column bounds, the outgoing state and the cut row written over it, the mechanics of the families beyond storage — the inflow lags, the commitments of anticipated thermals and the water in transit on travel-time arcs — and the projection of each stage's cuts onto the state components it selects.
 
-**Reading order**: [LP Formulation](/math/lp-formulation) → **this chapter** → [Block Formulations](/math/block-formulations)
+**Reading order**: [LP Formulation](/math/lp-formulation) → **this chapter** → [Block Formulation Variants](/math/block-formulations)
 
 ## 1. State Vector
 
@@ -45,7 +45,7 @@ where:
 The incoming state is pinned by **column bounds**, not by an explicit equality _constraint row_ $v^{in}_h = \hat{v}_h$ whose dual would be read: the LP has no such row ([LP Layout and Scaling §1](/math/lp-layout-and-scaling#1-column-and-row-layout)). Pinning by bounds keeps $N(1+P^{\max})$ redundant equality rows per stage out of the model (plus one per in-transit bucket and commitment-ring slot, §6, §5); the two formulations are KKT-equivalent — see below.
 :::
 
-**Cut coefficient**: the storage cut coefficient $\beta^v_h$ is the **reduced cost** of the pinned incoming-storage column (unscaled by its prescaler column factor — see [LP Layout and Scaling §2](/math/lp-layout-and-scaling#2-lp-scaling) and [cut management](/math/cut-management)). No fixing-constraint dual is involved.
+**Cut coefficient**: the storage cut coefficient $\beta^v_h$ is the **reduced cost** of the pinned incoming-storage column (unscaled by its prescaler column factor — see [LP Layout and Scaling §2](/math/lp-layout-and-scaling#2-lp-scaling) and [Cut Management](/math/cut-management)). No fixing-constraint dual is involved.
 
 **Why this design**: By LP duality, when a column is pinned at $\underline{x} = \bar{x}$ its reduced cost equals the sensitivity $\partial Q_t / \partial \hat{v}_h$ of the optimal value to the pinned bound — exactly the multiplier the equivalent equality row $v^{in}_h = \hat{v}_h$ would have carried (KKT parity). This sensitivity automatically accounts for all downstream effects through water balance, FPHA, evaporation and generic constraints, so a single reduced-cost value suffices — no combination of duals from multiple constraint types is needed. The AR lags (§4), in-transit buckets (§6) and commitment-ring slots (§5) are pinned the same way.
 
@@ -90,19 +90,19 @@ where:
 
 **Column count**: $N \times P^{\max}$ pinned lag columns, where $N = |\mathcal{H}|$ is the number of hydros, whatever their lifecycle phase, and $P^{\max}$ is the lag depth of the state defined above. All hydros store $P^{\max}$ lags regardless of their individual AR order $P_h$; a hydro whose inflow model has no annual component reads only its first $P_h$ lags, so its slots $\ell > P_h$ carry zero coefficients in the dynamics row, while a hydro with the annual component ([PAR(p) Inflow Model §7](/math/par-inflow-model#7-annual-component-extension-parp-a)) reads every slot; every lag column is still present and pinned. This uniform layout keeps the lag columns contiguous, so all lag cut coefficients are read in a single slice of the reduced-cost vector ([LP Layout and Scaling §1](/math/lp-layout-and-scaling#1-column-and-row-layout)).
 
-The lag slots a hydro does not read are structurally zero and are left out of the cut row, like a ring slot no stage holds; with a terminal boundary loaded, the cut row keeps every hydro's slots up to the boundary depth, the deepest lag any boundary cut references, to which the lag state is widened ([Post-Study Boundary — Compatibility Conditions](/math/post-study-boundary#52-compatibility-conditions)).
+The lag slots a hydro does not read are structurally zero and are left out of the cut row, like a ring slot no stage holds; with a terminal boundary loaded, the cut row keeps every hydro's slots up to the boundary depth, the deepest lag any boundary cut references, to which the lag state is widened ([Post-Study Boundary & Chained Studies — Compatibility Conditions](/math/post-study-boundary#52-compatibility-conditions)).
 
-**Cut coefficient**: $\beta^{lag}_{h,\ell}$ (marginal value of inflow history at lag $\ell$ for hydro $h$) is the reduced cost of the pinned lag column, unscaled by its prescaler column factor ([LP Layout and Scaling §2](/math/lp-layout-and-scaling#2-lp-scaling)) — see [cut management](/math/cut-management).
+**Cut coefficient**: $\beta^{lag}_{h,\ell}$ (marginal value of inflow history at lag $\ell$ for hydro $h$) is the reduced cost of the pinned lag column, unscaled by its prescaler column factor ([LP Layout and Scaling §2](/math/lp-layout-and-scaling#2-lp-scaling)) — see [Cut Management](/math/cut-management).
 
 ## 5. Anticipated Thermal Commitments
 
-An anticipated thermal plant decides the commitment of each delivery before its delivery stage and holds every decided, undelivered commitment as state in a per-plant commitment ring (see [System Elements §4](/math/system-elements#anticipated-thermal-plants)). Its lead is a stage count or a physical lead time. The decision stage of the delivery at stage $m$ is $t_i(m) = m - K_i$ for a stage-count lead; for a physical lead it is the stage containing the instant one lead time before the end of stage $m$, where an instant on a stage boundary belongs to the earlier stage. A delivery whose decision falls before the study ($m \leq K_i$ under a stage-count lead, an instant at or before the study start under a physical lead) is decided before the study and has no decision stage. A delivery with $t_i(m) = m$ is not anticipated: at that stage the plant dispatches as an ordinary thermal. Every commitment is bounded, costed, and commissioning-gated at its delivery stage, not at its decision stage.
+An anticipated thermal plant decides the commitment of each delivery before its delivery stage and holds every decided, undelivered commitment as state in a per-plant commitment ring (see [System Element Modeling Overview §4](/math/system-elements#anticipated-thermal-plants)). Its lead is a stage count or a physical lead time. The decision stage of the delivery at stage $m$ is $t_i(m) = m - K_i$ for a stage-count lead; for a physical lead it is the stage containing the instant one lead time before the end of stage $m$, where an instant on a stage boundary belongs to the earlier stage. A delivery whose decision falls before the study ($m \leq K_i$ under a stage-count lead, an instant at or before the study start under a physical lead) is decided before the study and has no decision stage. A delivery with $t_i(m) = m$ is not anticipated: at that stage the plant dispatches as an ordinary thermal. Every commitment is bounded, costed, and commissioning-gated at its delivery stage, not at its decision stage.
 
 ### Hold Ring
 
 The ring depth $K_i$ of plant $i$ is the lead for a stage-count lead; for a physical lead it is the largest number of commitments the plant's ring holds at the start of any stage, the first stage after the study included, counting the deliveries at or after that stage whose commitment was decided at an earlier stage, with the deliveries decided before the study held from the first stage. Every ring has $k_{max} = \max_i K_i$ slots, labelled by the residues $s \in \{0, \ldots, k_{max} - 1\}$.
 
-The ring position $r_i(m)$ of the delivery at stage $m$ is $m$ on the study stages. Past the horizon, the plant's deliveries decided before the study come first and hold no ring position (they are fixed commitments, see [Post-Study Boundary](/math/post-study-boundary)), and $r_i$ continues from $T + 1$ over the later deliveries. The delivery at stage $m$ holds slot $s_i(m) = r_i(m) \bmod k_{max}$, so the slot maturing at study stage $t$ is $t \bmod k_{max}$.
+The ring position $r_i(m)$ of the delivery at stage $m$ is $m$ on the study stages. Past the horizon, the plant's deliveries decided before the study come first and hold no ring position (they are fixed commitments, see [Post-Study Boundary & Chained Studies](/math/post-study-boundary)), and $r_i$ continues from $T + 1$ over the later deliveries. The delivery at stage $m$ holds slot $s_i(m) = r_i(m) \bmod k_{max}$, so the slot maturing at study stage $t$ is $t \bmod k_{max}$.
 
 Each slot is two LP columns: the outgoing slot $x^{\mathrm{a}}_{s,i}$, the state carried to the next stage, and the incoming slot $x^{\mathrm{a,in}}_{s,i}$, pinned by equal column bounds to its trial value like all incoming state (§2):
 
@@ -110,7 +110,7 @@ $$
 \underline{x}^{\mathrm{a,in}}_{s,i} = \bar{x}^{\mathrm{a,in}}_{s,i} = \hat{x}^{\mathrm{a}}_{s,i}
 $$
 
-The trial value is the previous stage's outgoing slot. At the first stage it is the committed rate of the delivery, decided before the study, that the slot holds (see [System Elements §4](/math/system-elements#anticipated-thermal-plants)), and $0$ in a slot that holds none.
+The trial value is the previous stage's outgoing slot. At the first stage it is the committed rate of the delivery, decided before the study, that the slot holds (see [System Element Modeling Overview §4](/math/system-elements#anticipated-thermal-plants)), and $0$ in a slot that holds none.
 
 ### Ring Rows
 
@@ -134,7 +134,7 @@ $$
 
 at every study stage $t$ whose delivery was decided at an earlier stage or before the study, whether or not the plant is commissioned there; $\tau_k$ is the duration of block $k$ and $H_t = \sum_{k \in \mathcal{K}} \tau_k$.
 
-A commitment keeps one slot from its deposit row to its delivery. An outgoing slot that no deposit or carry row holds at the stage is frozen at $0$ by its bounds, and every held slot is free in sign. The decision column $g^{\mathrm{a}}_{i,t}$ of the delivery $m$ with $t_i(m) = t$ lies in $[\underline{G}_i(m), \bar{G}_i(m)]$, the plant's generation bounds at the delivery stage inside the study or its declared post-study capability past it ($0$ where none is declared), and is fixed at $0$ when the deposit row is absent; a delivery to a stage where the plant is not commissioned therefore matures as $0$, and inside the study its fish row pins that stage's generation to $0$. A delivery past the horizon that the study decides is carried, never fished, into the terminal stage's outgoing state, where the terminal boundary prices it (see [Post-Study Boundary](/math/post-study-boundary)). A plant has at most one deposit row per stage, and the decision column enters the ring only through it.
+A commitment keeps one slot from its deposit row to its delivery. An outgoing slot that no deposit or carry row holds at the stage is frozen at $0$ by its bounds, and every held slot is free in sign. The decision column $g^{\mathrm{a}}_{i,t}$ of the delivery $m$ with $t_i(m) = t$ lies in $[\underline{G}_i(m), \bar{G}_i(m)]$, the plant's generation bounds at the delivery stage inside the study or its declared post-study capability past it ($0$ where none is declared), and is fixed at $0$ when the deposit row is absent; a delivery to a stage where the plant is not commissioned therefore matures as $0$, and inside the study its fish row pins that stage's generation to $0$. A delivery past the horizon that the study decides is carried, never fished, into the terminal stage's outgoing state, where the terminal boundary prices it (see [Post-Study Boundary & Chained Studies](/math/post-study-boundary)). A plant has at most one deposit row per stage, and the decision column enters the ring only through it.
 
 ### Objective contributions
 
@@ -144,7 +144,7 @@ $$
 c_i(m) \, H_m \, d_{t \to m} \, g^{\mathrm{a}}_{i,t}, \qquad d_{t \to m} = d_{1 \to m} / d_{1 \to t}
 $$
 
-for the commitment the plant decides at stage $t$ for its delivery stage $m$, $t_i(m) = t$. Here $c_i(m)$ is the plant's unit cost at the delivery stage (the delivery stage's cost inside the study, the declared post-study cost past it), $H_m$ is the delivery stage's hours (a post-study stage's declared duration past the horizon), and $d_{t \to m}$ is the discount from the delivery stage back to the decision stage ([Discount Rate §5](/math/discount-rate#5-cumulative-discounting)). Like every objective coefficient other than that of $\theta$, the term is scaled as [LP Layout and Scaling §2.1](/math/lp-layout-and-scaling#21-cost-scaling) states. The one-step factor on $\theta$ at every stage carries a cost entered at stage $t$ to stage 1 multiplied by $d_{1 \to t}$, so the commitment cost reaches stage 1 as $c_i(m) H_m d_{1 \to m}$, discounted exactly once ([Discount Rate](/math/discount-rate#consistency-with-the-bellman-recursion)).
+for the commitment the plant decides at stage $t$ for its delivery stage $m$, $t_i(m) = t$. Here $c_i(m)$ is the plant's unit cost at the delivery stage (the delivery stage's cost inside the study, the declared post-study cost past it), $H_m$ is the delivery stage's hours (a post-study stage's declared duration past the horizon), and $d_{t \to m}$ is the discount from the delivery stage back to the decision stage ([Discount Rate Formulation §5](/math/discount-rate#5-cumulative-discounting)). Like every objective coefficient other than that of $\theta$, the term is scaled as [LP Layout and Scaling §2.1](/math/lp-layout-and-scaling#21-cost-scaling) states. The one-step factor on $\theta$ at every stage carries a cost entered at stage $t$ to stage 1 multiplied by $d_{1 \to t}$, so the commitment cost reaches stage 1 as $c_i(m) H_m d_{1 \to m}$, discounted exactly once ([Discount Rate Formulation](/math/discount-rate#consistency-with-the-bellman-recursion)).
 
 The plant's per-block generation carries no cost at a stage where its delivery is fished, so the energy of a commitment is priced once, on its decision column; at a stage where the plant dispatches as an ordinary thermal, its generation is priced per block like that of any thermal. The ring columns carry no cost.
 
@@ -172,7 +172,7 @@ $$
 \underline{b}^{\,\mathrm{in}}_{h,d} = \bar{b}^{\,\mathrm{in}}_{h,d} = \hat{b}_{h,d}
 $$
 
-where $\hat{b}_{h,d}$ is the incoming in-transit volume, the previous stage's outgoing bucket (or, at the first stage, the seed derived from the in-transit releases declared before the study — see [System Elements — Cascade Travel Time](/math/system-elements#cascade-travel-time) and [Hydro Production Models — Implementation notes](/math/hydro-production-models#implementation-in-cobre)). The **reduced cost** of the pinned bucket column is the cut coefficient for that in-transit dimension (see below) — the same regime used for storage (§2) and AR lags (§4).
+where $\hat{b}_{h,d}$ is the incoming in-transit volume, the previous stage's outgoing bucket (or, at the first stage, the seed derived from the in-transit releases declared before the study — see [System Element Modeling Overview — Cascade Travel Time](/math/system-elements#cascade-travel-time) and [Hydro Production Function Models — Implementation in Cobre](/math/hydro-production-models#implementation-in-cobre)). The **reduced cost** of the pinned bucket column is the cut coefficient for that in-transit dimension (see below) — the same regime used for storage (§2) and AR lags (§4).
 
 ### Delayed-arrival water-balance entry
 
@@ -226,19 +226,19 @@ A stage need not project the cuts it generates onto the full state of §1. Each 
 
 The dimension of a stage's cut pool is set by the selection of its **successor** stage, since the pool holds the cuts the successor generates; the terminal pool, which has no successor, carries the full state whatever the selection.
 
-Because a boundary loads into the terminal pool, a study's selection does not change what its boundary must carry: a counterpart for every storage and inflow-lag component of the study's terminal state ([Post-Study Boundary §5.2](/math/post-study-boundary#52-compatibility-conditions), condition (c)), where the study's lag state extends to the deepest lag that any pool of the boundary policy references (condition (d)). A pool whose cuts project out the inflow lags, as under a storage-only projection, prices no inflow-lag component, so it is admitted as a boundary source only by a study whose terminal state holds no inflow lag. The terminal pool of a policy produced by training carries every inflow lag of the policy's state, which extends the loading study's lag state by condition (d); the pools of such a policy that project out the inflow lags are therefore refused as boundary sources whenever its state holds inflow lags.
+Because a boundary loads into the terminal pool, a study's selection does not change what its boundary must carry: a counterpart for every storage and inflow-lag component of the study's terminal state ([Post-Study Boundary & Chained Studies §5.2](/math/post-study-boundary#52-compatibility-conditions), condition (c)), where the study's lag state extends to the deepest lag that any pool of the boundary policy references (condition (d)). A pool whose cuts project out the inflow lags, as under a storage-only projection, prices no inflow-lag component, so it is admitted as a boundary source only by a study whose terminal state holds no inflow lag. The terminal pool of a policy produced by training carries every inflow lag of the policy's state, which extends the loading study's lag state by condition (d); the pools of such a policy that project out the inflow lags are therefore refused as boundary sources whenever its state holds inflow lags.
 
 A cut that projects out a component the cost-to-go depends on is guaranteed to lie below the cost-to-go only on the slice through its trial point; the consequence for the lower bound is [Cut Management — condition 4](/math/cut-management#4-cut-validity), and the case of the inflow lags under a PAR(p) model is in the [storage-only cut projection](/math/cut-management#storage-only-cut-projection) note. Each stage's selection is set in [the cut-management Configure tab](/math/cut-management#stagesstate_variables--cut-projection).
 
 ## Cross-References
 
 - [LP Formulation](/math/lp-formulation) — the stage LP that pins the incoming state and whose cut row reads the outgoing state
-- [Block Formulations](/math/block-formulations) — chronological stages and the spread of a maturing bucket over their blocks
+- [Block Formulation Variants](/math/block-formulations) — chronological stages and the spread of a maturing bucket over their blocks
 - [PAR(p) Inflow Model](/math/par-inflow-model) — the inflow model whose lags the state carries
 - [Multi-Resolution Studies](/math/multi-resolution-studies) — lag periods and the lag state at a resolution change
-- [System Elements](/math/system-elements) — anticipated thermal plants and travel-time arcs as physical elements
-- [Post-Study Boundary](/math/post-study-boundary) — the terminal boundary that prices the outgoing state of the last stage
-- [Discount Rate](/math/discount-rate) — the delivery discount of the commitment cost
+- [System Element Modeling Overview](/math/system-elements) — anticipated thermal plants and travel-time arcs as physical elements
+- [Post-Study Boundary & Chained Studies](/math/post-study-boundary) — the terminal boundary that prices the outgoing state of the last stage
+- [Discount Rate Formulation](/math/discount-rate) — the delivery discount of the commitment cost
 - [LP Layout and Scaling](/math/lp-layout-and-scaling) — the column layout of the state and the unscaling of its reduced costs
 - [Cut Management](/math/cut-management) — cut coefficients, aggregation and selection
 - [Notation Conventions](/overview/notation-conventions) — symbols and the canonical entity order

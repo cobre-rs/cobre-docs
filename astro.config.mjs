@@ -6,6 +6,7 @@ import astroD2 from "astro-d2";
 import { unified } from "@astrojs/markdown-remark";
 import remarkMath from "remark-math";
 import rehypeKatex from "rehype-katex";
+import { createKatexStrict } from "./scripts/rehype-katex-strict.mjs";
 
 // Wrap each astro-d2 inline SVG in a <div class="d2-fig"> (scroll box + native
 // sizing — see src/styles/diagrams.css and Footer.astro `sizeD2Figures`).
@@ -53,6 +54,9 @@ function rehypeWrapD2() {
   };
   return (/** @type {any} */ tree) => walk(tree);
 }
+
+// KaTeX strict-mode errors fail the build (scripts/rehype-katex-strict.mjs).
+const katexStrict = createKatexStrict();
 
 // astro-d2 is registered before starlight. d2 is the SINGLE diagram tool
 // (schematics, flowcharts, network one-lines); Observable-Plot islands cover
@@ -167,9 +171,9 @@ export default defineConfig({
     "/guide/interpreting-results.html": "/running/interpreting-results/",
     "/tutorial/understanding-results.html": "/running/interpreting-results/",
     "/guide/cli-reference.html": "/reference/cli-reference/",
-    "/guide/scalar-parameters.html": "/reference/case-directory-format/",
-    "/reference/case-format.html": "/reference/case-directory-format/",
-    "/reference/output-format.html": "/reference/output-format/",
+    "/guide/scalar-parameters.html": "/reference/case-format/constraints/",
+    "/reference/case-format.html": "/reference/case-format/",
+    "/reference/output-format.html": "/reference/output/",
     "/reference/flatbuffers-schema.html": "/reference/flatbuffers-schema/",
     "/reference/error-codes.html": "/reference/error-codes/",
     "/reference/schemas.html": "/reference/json-schemas/",
@@ -182,9 +186,11 @@ export default defineConfig({
     "/guide/water-travel-time.html": "/math/state-augmentation/",
     "/examples/1dtoy.html": "/examples/toy-single-reservoir/",
     "/examples/4ree.html": "/examples/toy-four-reservoir/",
-    // Retired site slugs (merged chapters; R8): one hop to the survivor
+    // Retired site slugs (merged or split chapters; R8): one hop to the survivor or the split's index
     "/math/weekly-monthly-coupled-studies": "/math/post-study-boundary/",
     "/math/reproducibility-and-provenance": "/math/determinism-guarantees/",
+    "/reference/case-directory-format": "/reference/case-format/",
+    "/reference/output-format": "/reference/output/",
   },
   // D4: manual math renderer — remark-math parses $…$ / $$…$$, rehype-katex
   // renders to static .katex HTML at build time (zero client JS). NOT
@@ -192,12 +198,17 @@ export default defineConfig({
   // `markdown.processor` via `unified({...})` from @astrojs/markdown-remark;
   // the legacy top-level `markdown.remarkPlugins`/`rehypePlugins` keys are
   // deprecated in 6.4 and intentionally NOT used. `unified()` keeps GFM + smart
-  // punctuation on by default — we only extend it with the two math plugins.
+  // punctuation on by default — we only extend it with the math plugins below.
   // remark runs before rehype, so parse-then-render ordering is automatic.
+  // rehype-katex runs with `strict: "error"`, and the katex-strict recorder
+  // after it collects every KaTeX error rehype-katex records. Its
+  // `astro:build:done` hook then fails the build listing them
+  // (scripts/rehype-katex-strict.mjs).
   markdown: {
     processor: unified({
       remarkPlugins: [remarkMath],
-      rehypePlugins: [rehypeKatex, rehypeWrapD2],
+      // prettier-ignore
+      rehypePlugins: [[rehypeKatex, { strict: "error" }], katexStrict.rehypeKatexStrict, rehypeWrapD2],
     }),
   },
   integrations: [
@@ -274,7 +285,7 @@ export default defineConfig({
       // ticket-013) lands between Coupling & Boundary Conditions and Worked
       // Examples: these `running/*` pages have no methodology twin, so they are
       // standalone MDX (no `<Tabs>`, no `_impl/` partials). The I/O reference
-      // entries (case-directory-format, output-format, error-codes,
+      // entries (the Case Format and Output Format groups, error-codes,
       // flatbuffers-schema) landed in the Reference group below (ticket-012);
       // `reference/cli-reference` (ticket-013) is the resolved borderline
       // decision — CLI reference lives in Reference, not Running Cobre. The
@@ -361,9 +372,35 @@ export default defineConfig({
         {
           label: "Reference",
           items: [
-            "reference/case-directory-format",
+            {
+              label: "Case Format",
+              collapsed: true,
+              items: [
+                { slug: "reference/case-format", label: "Overview" },
+                "reference/case-format/stages",
+                "reference/case-format/system",
+                "reference/case-format/hydros",
+                "reference/case-format/production-models",
+                "reference/case-format/scenarios",
+                "reference/case-format/constraints",
+                "reference/case-format/penalties",
+                "reference/case-format/initial-conditions",
+              ],
+            },
             "reference/generic-constraints",
-            "reference/output-format",
+            {
+              label: "Output Format",
+              collapsed: true,
+              items: [
+                { slug: "reference/output", label: "Overview" },
+                "reference/output/training",
+                "reference/output/simulation",
+                "reference/output/policy",
+                "reference/output/metadata",
+                "reference/output/stochastic",
+                "reference/output/hydro-models",
+              ],
+            },
             "reference/json-schemas",
             "reference/error-codes",
             "reference/flatbuffers-schema",
@@ -419,5 +456,6 @@ export default defineConfig({
       },
       pagefind: false,
     }),
+    katexStrict.integration,
   ],
 });

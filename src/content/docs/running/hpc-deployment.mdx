@@ -27,7 +27,7 @@ Cobre parallelises on two levels, and they compose:
 The parallel model — how work is partitioned across ranks and threads, which
 collectives tie the ranks together, the thread rules, and memory and case
 access — is summarised in
-[Performance Accelerators → Parallel Execution Model](/running/performance/#parallel-execution-model);
+[Performance Accelerators — Parallel Execution Model](/running/performance/#parallel-execution-model);
 the scheduler and communication internals live in the
 [`cobre-sddp` README](https://github.com/cobre-rs/cobre/blob/main/crates/cobre-sddp/README.md).
 This page is the operational counterpart: how to build and launch it.
@@ -344,7 +344,7 @@ Check what your cluster offers with `srun --mpi=list`.
 
 No measured scaling data is published, so these rules relate ranks, threads,
 forward passes and memory to one another instead of giving node or core counts;
-[Performance Accelerators → Parallel Execution Model](/running/performance/#parallel-execution-model)
+[Performance Accelerators — Parallel Execution Model](/running/performance/#parallel-execution-model)
 holds the facts behind them.
 
 1. Run one rank per node, with `--threads` equal to the cores allocated to the rank
@@ -362,7 +362,7 @@ holds the facts behind them.
    each extra rank on a node adds another, and the cut pool scales with the
    iteration budget and the forward passes.
 5. Before adding ranks or threads, read the printed `Time split` and the knob table in
-   [Performance Accelerators → Diagnosing Performance](/running/performance/#diagnosing-performance).
+   [Performance Accelerators — Diagnosing Performance](/running/performance/#diagnosing-performance).
    The lower-bound evaluation runs serially on rank 0, and under a sampled
    forward pass every rank waits on the per-stage cut exchange, so neither
    shrinks with more ranks or threads.

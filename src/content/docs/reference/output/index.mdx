@@ -259,10 +259,9 @@ All major columnar data tools understand this layout and can read an entire
 `scenario_id` from the partition directory names or reading it directly from
 the in-file column — both agree by construction.
 Reading recipes for Polars and pandas are in
-[Convergence & Diagnostics → Reading a whole table](/running/interpreting-results/#reading-a-whole-table);
+[Convergence & Diagnostics — Reading a whole table](/running/interpreting-results/#reading-a-whole-table);
 the R and DuckDB scenario filters are in
 [Filtering to a single scenario](/running/interpreting-results/#filtering-to-a-single-scenario).
 
 Scenario IDs are zero-based integers. The number of `scenario_id=NNNN/`
-partitions written is `scenarios.completed` in `simulation/metadata.json`;
-`scenarios.failed` counts the scenarios whose partition could not be written.
+partitions written is `scenarios.completed` in `simulation/metadata.json`.

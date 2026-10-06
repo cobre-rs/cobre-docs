@@ -166,14 +166,14 @@ $$
 
 with $\mu = 30$ and $\sigma = 10$ for every stage in this walkthrough.
 The draws across stages are independent. This is the degenerate $p = 0$
-case of the [PAR Inflow Model](/math/par-inflow-model): no lag
+case of the [PAR(p) Inflow Model](/math/par-inflow-model): no lag
 terms, no AR coefficients, no initial-lag state. A cobre case expresses
 it by supplying `scenarios/inflow_seasonal_stats.parquet` ($\mu_t$ and
 $\sigma_t$ per hydro and per stage) with neither
 `inflow_history.parquet` nor `inflow_ar_coefficients.parquet`: cobre
 then applies the seasonal statistics as white noise, $p_m = 0$ for
 every season, and runs no order selection (the order selection of
-[PAR Inflow Model §3.6](/math/par-inflow-model#36-order-selection) needs
+[PAR(p) Inflow Model §3.6](/math/par-inflow-model#36-order-selection) needs
 an inflow history). The shipped `1dtoy` is built this way, and
 `cobre run` reports its estimation path as `user_stats_white_noise`.
 
@@ -591,16 +591,16 @@ illustrate:
 - **Spatial inflow correlation**: when multiple plants share a wet/dry
   signal, their innovations $\varepsilon$ must be drawn from a
   correlated multivariate normal via the spectral factorisation
-  described in [PAR Inflow Model §6](/math/par-inflow-model#6-spatial-correlation-factorisation).
+  described in [PAR(p) Inflow Model §6](/math/par-inflow-model#6-spatial-correlation-factorisation).
 - **Autoregressive inflow memory**: a PAR(p) model with $p \geq 1$ adds
   one lag state variable per lag; whether a stage's cuts carry a
   coefficient for each lag is that stage's cut-state projection
   ([State Augmentation §7](/math/state-augmentation#7-cut-state-projection)).
-  See [PAR Inflow Model](/math/par-inflow-model).
+  See [PAR(p) Inflow Model](/math/par-inflow-model).
 - **FPHA production model**: nonlinear head-dependent efficiency
   approximated by piecewise-linear hyperplanes; one of the planes can
   bind, contributing to the storage cut coefficient. See
-  [Hydro Production Models](/math/hydro-production-models).
+  [Hydro Production Function Models](/math/hydro-production-models).
 - **Risk-measure effects**: CVaR weighting that shifts cut aggregation
   probabilities away from uniform $p = 1/N_t$. See
   [Risk Measures](/math/risk-measures).
@@ -618,7 +618,7 @@ dispatch mechanics scale up.
 - [LP Formulation](/math/lp-formulation) — Complete stage LP: load balance, water balance, objective taxonomy
 - [State Augmentation](/math/state-augmentation) — Column-bound state pinning
 - [Cut Management](/math/cut-management) — Dual extraction, per-opening intercepts, single-cut aggregation, cut validity, sign convention
-- [PAR Inflow Model](/math/par-inflow-model) — Inflow model definition; the $p = 0$ degenerate case (white noise) used in this walkthrough; stored vs computed quantities
+- [PAR(p) Inflow Model](/math/par-inflow-model) — Inflow model definition; the $p = 0$ degenerate case (white noise) used in this walkthrough; stored vs computed quantities
 - [Stopping Rules](/math/stopping-rules) — Iteration limit, gap threshold, bound-stalling criteria
 - [Upper Bound Evaluation](/math/upper-bound-evaluation) — Simulation-based and inner-approximation upper bounds
 - [Toy Four-Reservoir Walkthrough](/examples/toy-four-reservoir) — Multi-reservoir extension at 4 buses with no transmission and independent 0-order inflows

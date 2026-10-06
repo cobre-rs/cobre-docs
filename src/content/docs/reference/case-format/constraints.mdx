@@ -49,13 +49,13 @@ Stage-varying operational bound overrides for hydro plants.
 | ---------------------- | ---------------- | -------- | ------- | ----- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `hydro_id`             | Int32            | Yes      | —       | —     | Hydro plant ID                                                                                                                                                                                                                                                                                                                                                         |
 | `stage_id`             | Int32            | Yes      | —       | —     | Stage ID                                                                                                                                                                                                                                                                                                                                                               |
-| `min_turbined_m3s`     | Float64          | No       | —       | m³/s  | Minimum turbined flow (m³/s)                                                                                                                                                                                                                                                                                                                                           |
+| `min_turbined_m3s`     | Float64          | No       | —       | m³/s  | Plant-level minimum turbined flow (m³/s); written to `training/dictionaries/bounds.parquet`, but no LP row reads it: the minimum turbined-flow rows read the unit groups' resolved minima (`constraints/hydro_unit_group_bounds.parquet`)                                                                                                                              |
 | `max_turbined_m3s`     | Float64          | No       | —       | m³/s  | Maximum turbined flow (m³/s)                                                                                                                                                                                                                                                                                                                                           |
 | `min_storage_hm3`      | Float64          | No       | —       | hm³   | Minimum reservoir storage (hm³)                                                                                                                                                                                                                                                                                                                                        |
 | `max_storage_hm3`      | Float64          | No       | —       | hm³   | Maximum reservoir storage (hm³)                                                                                                                                                                                                                                                                                                                                        |
 | `min_outflow_m3s`      | Float64          | No       | —       | m³/s  | Minimum total outflow (m³/s)                                                                                                                                                                                                                                                                                                                                           |
 | `max_outflow_m3s`      | Float64          | No       | —       | m³/s  | Maximum total outflow (m³/s)                                                                                                                                                                                                                                                                                                                                           |
-| `min_generation_mw`    | Float64          | No       | —       | MW    | Minimum generation (MW)                                                                                                                                                                                                                                                                                                                                                |
+| `min_generation_mw`    | Float64          | No       | —       | MW    | Plant-level minimum generation (MW); written to `training/dictionaries/bounds.parquet`, but no LP row reads it: the minimum-generation rows read the unit groups' resolved minima (`constraints/hydro_unit_group_bounds.parquet`)                                                                                                                                      |
 | `max_generation_mw`    | Float64          | No       | —       | MW    | Maximum generation (MW)                                                                                                                                                                                                                                                                                                                                                |
 | `max_diversion_m3s`    | Float64          | No       | —       | m³/s  | Maximum diversion flow (m³/s)                                                                                                                                                                                                                                                                                                                                          |
 | `min_diversion_m3s`    | Float64          | No       | —       | m³/s  | Minimum diversion flow (m³/s); requires a declared `diversion` channel                                                                                                                                                                                                                                                                                                 |
@@ -90,8 +90,8 @@ declared unit groups (`hydros[].unit_groups[]`; see
 [`system/hydros.json`](/reference/case-format/hydros/#systemhydrosjson)). A row overrides one of a
 group's four declared bounds for one `(hydro_id, hydro_unit_group_id,
 stage_id)`, optionally narrowed to a single block; a group with no override
-row reads its declared value. Group `id` is dense and 0-based within its
-plant, so `hydro_unit_group_id` addresses the group by that declared id.
+row reads its declared value. Group `id` is unique within its
+plant, not necessarily dense or 0-based, and `hydro_unit_group_id` addresses the group by that declared id.
 
 | Name                  | Type             | Required | Default | Units | Description                                                                                                                                            |
 | --------------------- | ---------------- | -------- | ------- | ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -145,6 +145,11 @@ Stage-varying flow bounds for pumping stations.
 | `max_m3s`            | Float64          | No       | —       | m³/s  | Maximum pumping flow (m³/s)                                                                                                     |
 | `block_id`           | Int32 (nullable) | No       | —       | —     | Zero-based block index within the stage, selecting one block's `min_m3s`/`max_m3s` override. `null` applies at the stage level. |
 
+**Validation:**
+
+- Every override value must be finite and `>= 0`.
+- A row's `min_m3s` must not exceed its `max_m3s`.
+
 ---
 
 ## `constraints/contract_bounds.parquet`
@@ -172,9 +177,7 @@ per-block contract price — deliberately asymmetric with
 
 **Methodology:** [Equipment-Specific Formulations](/math/equipment-formulations/)
 
-Stage-varying available generation bounds for non-controllable sources. Uses
-sparse storage: only `(ncs_id, stage_id)` pairs that differ from the base
-entity-level value need rows. Absent rows keep the entity's
+Stage-varying available generation bounds for non-controllable sources. Absent rows keep the entity's
 declared `max_generation_mw` unchanged; a present row overrides that entity
 capacity with its per-stage `available_generation_mw` for the `(ncs_id, stage_id)` cell.
 The rows apply to a source with no stochastic availability model. A source with rows in
@@ -182,7 +185,7 @@ The rows apply to a source with no stochastic availability model. A source with 
 availability from
 [`scenarios/external_ncs_scenarios.parquet`](/reference/case-format/scenarios/#scenariosexternal_ncs_scenariosparquet) under the `external` scheme,
 ignores its rows here: its available generation follows the model or the realizations (see
-[Equipment Formulations §6](/math/equipment-formulations#6-non-controllable-generation-sources)).
+[Equipment-Specific Formulations §6](/math/equipment-formulations#6-non-controllable-generation-sources)).
 
 | Name                      | Type    | Required | Default | Units | Description                                                     |
 | ------------------------- | ------- | -------- | ------- | ----- | --------------------------------------------------------------- |
@@ -339,7 +342,7 @@ load error.
 | `max_stored_energy`                   | `integrated_accumulated_productivity` × (`max_storage_hm3` − `min_storage_hm3`) over the physical range, in MW/(m³/s)·hm³ — **not** MWh |
 
 The productivity and stored-energy quantities these tags resolve to are defined in
-[Hydro Production Models §5](/math/hydro-production-models#5-energy-conversion-quantities).
+[Hydro Production Function Models §5](/math/hydro-production-models#5-energy-conversion-quantities).
 
 **Validation:**
 

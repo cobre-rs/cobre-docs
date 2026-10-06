@@ -107,7 +107,7 @@ slots and mid-period inflow accumulator. `initial_conditions.json`'s optional
 `inflow_history.parquet` and shadow it **day-wise** wherever the two overlap
 (the two series are never blended). `value_m3s` accepts negative values in
 both files: the quantity is incremental inflow, so a negative window is real
-hydrology (see [Inflow Non-Negativity](/math/inflow-nonnegativity)).
+hydrology (see [Inflow Non-Negativity Solution Methods](/math/inflow-nonnegativity)).
 
 When `scenarios/inflow_ar_coefficients.parquet` is supplied, the record must
 fully cover each lag slot up to the maximum AR order and, with an annual
@@ -183,4 +183,4 @@ Under the `out_of_sample` forward scheme, a stage whose `sampling_method` is
 `historical_residuals` or `selective` draws plain Monte Carlo noise, and the run
 logs a warning that names the entity class and the affected stage ids. For the
 message, see
-[Scenario Generation, Implementation notes tab, Warnings](/math/scenario-generation/#implementation-in-cobre).
+[Scenario Generation — Implementation notes tab, Warnings](/math/scenario-generation/#implementation-in-cobre).

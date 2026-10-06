@@ -10,7 +10,7 @@ This chapter defines Cobre's upper-bound mechanisms: an overview of the bounds o
 For notation conventions (index sets, parameters, decision variables, dual variables), see [Notation Conventions](/overview/notation-conventions).
 
 :::note[Symbol convention]
-This chapter uses $d$ for the discount factor. See [Discount Rate](/math/discount-rate).
+This chapter uses $d$ for the discount factor. See [Discount Rate Formulation](/math/discount-rate).
 :::
 
 ## 1 Overview
@@ -40,7 +40,7 @@ $$
 C(\ell) = \sum_{t=1}^{T} d_{1 \to t} \cdot c_t(\ell)
 $$
 
-its realized total discounted cost (see [Discount Rate](/math/discount-rate)). The exact upper bound is the probability-weighted expectation over the full enumeration:
+its realized total discounted cost (see [Discount Rate Formulation](/math/discount-rate)). The exact upper bound is the probability-weighted expectation over the full enumeration:
 
 $$
 \bar{z}_{\text{exact}} = \sum_{\ell} P(\ell)\, C(\ell)
@@ -160,7 +160,7 @@ $$
 C_m = \sum_{t=1}^{T} d_{1 \to t} \cdot c_t^{(m)}
 $$
 
-where $c_t^{(m)}$ is the immediate cost at stage $t$ of scenario $m$, and $d_{1 \to t}$ is the cumulative discount factor from stage 1 to stage $t$ (see [Discount Rate](/math/discount-rate)).
+where $c_t^{(m)}$ is the immediate cost at stage $t$ of scenario $m$, and $d_{1 \to t}$ is the cumulative discount factor from stage 1 to stage $t$ (see [Discount Rate Formulation](/math/discount-rate)).
 
 The **sample mean** is the Monte Carlo estimator of expected total cost:
 
@@ -224,7 +224,7 @@ Raising $N$ narrows the sampled confidence interval as $1/\sqrt{N}$, while the c
 
 This simulation estimator is independent of the training loop: it is not consumed by any stopping rule and does not gate training termination. Training termination is governed by the gap-based stopping rule (see [Stopping Rules](/math/stopping-rules), section 5), which compares the training-phase upper bound — the statistical or exact forward-pass estimator, sections 1–2 — against the lower bound at every iteration, using the training forward pass rather than the post-training simulation.
 
-This section's estimator instead reports the trained policy's simulated cost distribution once training has finished: the sampled mean/standard-deviation/confidence-interval (sections 4.5.2–4.5.3), or the census weighted mean/population variance (section 4.5.4). See [Running Cobre → Convergence & Diagnostics](/running/interpreting-results/) for how this output is consumed operationally.
+This section's estimator instead reports the trained policy's simulated cost distribution once training has finished: the sampled mean/standard-deviation/confidence-interval (sections 4.5.2–4.5.3), or the census weighted mean/population variance (section 4.5.4). See [Convergence & Diagnostics](/running/interpreting-results/) for how this output is consumed operationally.
 
 :::note[Boundary]
 This chapter owns the methodology of both the training-phase forward-pass bound (sections 1–2) and the post-training simulation estimator (this section); the scenario seed derivation and the distribution of scenarios across compute resources are implementation detail outside this chapter's scope.
@@ -270,7 +270,7 @@ The Lipschitz constants would bound the rate of change of the value function wit
 - **Storage component.** A hm³ of stored water is priced in the stage by the energy it displaces (the penalty bound in \$/MWh times the energy that hm³ yields through the productivities of the plants it reaches, in MWh/hm³), by the penalties charged per hm³ of storage (the storage-floor and filling-target shortfall costs of [Penalty System](/math/penalty-system)), and by the cost of spilling water that cannot be stored (converted from \$/(m³/s·h) to \$/hm³). Its constant $L_{t,j}$, in \$/hm³, bounds that price from above.
 - **Inflow-lag component.** Its constant carries the units of its own lag: it bounds, in \$ per unit of that lag, the change in cost through the inflows that the lag enters.
 
-**Backward accumulation**, per storage component $j$: at the terminal stage, $L_{T,j}$ is the stage's own bound, whose energy term is built from the largest penalty coefficient $c_{max}^{penalty}$ of that stage; at each earlier stage $t$, $L_{t,j}$ adds the stage's own bound, whose energy term is built from the largest stage-$t$ penalty coefficient $c_{max}^{penalty,t}$ (in \$/MWh), to the discounted next-stage constant $d_{t \to t+1} \cdot L_{t+1,j}$, where $d_{t \to t+1}$ is the discount factor for transition $t \to t+1$ (see [Discount Rate](/math/discount-rate)).
+**Backward accumulation**, per storage component $j$: at the terminal stage, $L_{T,j}$ is the stage's own bound, whose energy term is built from the largest penalty coefficient $c_{max}^{penalty}$ of that stage; at each earlier stage $t$, $L_{t,j}$ adds the stage's own bound, whose energy term is built from the largest stage-$t$ penalty coefficient $c_{max}^{penalty,t}$ (in \$/MWh), to the discounted next-stage constant $d_{t \to t+1} \cdot L_{t+1,j}$, where $d_{t \to t+1}$ is the discount factor for transition $t \to t+1$ (see [Discount Rate Formulation](/math/discount-rate)).
 
 :::note[Note]
 The discount factor $d$ appears in the Lipschitz accumulation because the future cost would be discounted. Without discounting ($d = 1$), $L_t$ would grow with the remaining horizon.
@@ -378,7 +378,7 @@ The convergence guarantee would still hold: with $d_{\text{cycle}} < 1$, both th
 
 - [SDDP Algorithm](/math/sddp-algorithm) — Core algorithm providing the outer approximation (lower bound) that this chapter complements
 - [Notation Conventions](/overview/notation-conventions) — Standard symbols for state variables, value functions, and cost-to-go
-- [Discount Rate](/math/discount-rate) — Discount factor $d$ used in the exact bound's discounted cost (section 2) and in the reserved vertex value computation and Lipschitz accumulation (appendix)
+- [Discount Rate Formulation](/math/discount-rate) — Discount factor $d$ used in the exact bound's discounted cost (section 2) and in the reserved vertex value computation and Lipschitz accumulation (appendix)
 - [Policy Graphs](/math/policy-graphs) — The enumerated-versus-sampled forward-pass distinction that selects between the statistical and exact upper-bound mechanisms (sections 1–2)
 - [Horizon Modes](/math/horizon-modes) — The reserved cyclic policy-graph target design and the season-indexed pool structure the appendix's reserved inner approximation would mirror
 - [Cut Management](/math/cut-management) — Outer approximation cuts that provide the lower bound counterpart

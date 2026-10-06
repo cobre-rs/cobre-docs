@@ -13,7 +13,7 @@ import { Content as HydroNotes } from "./_impl/_hydro.notes.mdx";
 
 This chapter defines the hydro generation constraint models supported by Cobre, which relate turbined flow and reservoir storage to electrical output. Two production functions shape dispatch: constant productivity and FPHA. A third model name — linearized head — is a reserved alias for constant productivity (see §3). The choice between constant productivity and FPHA trades off accuracy vs. computational cost, and can vary by stage per hydro.
 
-All decision variables use **rate units** (MW, m³/s) — see the Variable Units Convention in [system elements](/math/system-elements). For variable definitions see [notation conventions](/overview/notation-conventions); for LP integration see [LP formulation](/math/lp-formulation); for hydro element descriptions see [system elements](/math/system-elements).
+All decision variables use **rate units** (MW, m³/s) — see the Variable Units Convention in [System Element Modeling Overview](/math/system-elements). For variable definitions see [Notation Conventions](/overview/notation-conventions); for LP integration see [LP Formulation](/math/lp-formulation); for hydro element descriptions see [System Element Modeling Overview](/math/system-elements).
 
 ## 1. Constant Productivity Model
 
@@ -46,7 +46,7 @@ For accurate modeling of hydroelectric generation, FPHA (Approximate Hydroelectr
 
 ### 2.1 Notation
 
-This section uses the notation of the [LP formulation](/math/lp-formulation); for equivalent terms in other planning tools, see the [Glossary](/reference/glossary#equivalent-terms-in-other-planning-tools).
+This section uses the notation of the [LP Formulation](/math/lp-formulation); for equivalent terms in other planning tools, see the [Glossary](/reference/glossary#equivalent-terms-in-other-planning-tools).
 
 :::note[Note on lateral flow]
 The tailrace level depends on the outflow below the plant, which this model takes as $q_{out} = q + s$ (the plant's own turbined and spilled flow). The lateral-flow secant (§2.7) captures the spillage effect, and upstream releases or other inflows below the dam do not enter $q_{out}$.
@@ -239,7 +239,7 @@ Reduction is optional and applies only when selected (Configure tab).
 
 ### 2.9 LP Integration
 
-A hydro plant is partitioned into one or more **(hydro, bus) cells** — one per distinct bus among its declared unit groups (see [system elements §5](/math/system-elements)) — and FPHA is evaluated **per cell**, not per plant: a plant's fitted hyperplane set (§2.1–§2.8) is fitted once per plant and consumed by every one of its cells, apportioned as described below. For a single-cell plant the per-cell constraint is the plant-level constraint.
+A hydro plant is partitioned into one or more **(hydro, bus) cells** — one per distinct bus among its declared unit groups (see [System Element Modeling Overview §5](/math/system-elements)) — and FPHA is evaluated **per cell**, not per plant: a plant's fitted hyperplane set (§2.1–§2.8) is fitted once per plant and consumed by every one of its cells, apportioned as described below. For a single-cell plant the per-cell constraint is the plant-level constraint.
 
 #### Final FPHA Constraint
 
@@ -271,7 +271,7 @@ $$
 
 where $v^{in}_h$ is the incoming storage LP variable (pinned to $\hat{v}_h$ via column bounds — see [State Augmentation §2](/math/state-augmentation#2-pinning-by-column-bounds)) and $v_h$ is end-of-stage storage — a single plant-level quantity shared by every cell, since storage is not partitioned. Both are LP variables, so $v^{in}_h$ appears in every cell's FPHA constraint with coefficient $-\lambda_{h,b} \, \gamma_v^m / 2$ on the left-hand side, as does $v_h$, on a parallel stage; on a chronological stage, in block 1's rows, and $v_h$ in block $|\mathcal{K}|$'s. The LP solver automatically accounts for this in the reduced cost of the pinned $v^{in}_h$ column.
 
-On a chronological stage the row of block $k$ uses that block's own average storage $(v_{h,k-1} + v_{h,k})/2$ in place of $v^{avg}_h$, with $v_{h,0} = v^{in}_h$ (see [Block Formulations](/math/block-formulations)).
+On a chronological stage the row of block $k$ uses that block's own average storage $(v_{h,k-1} + v_{h,k})/2$ in place of $v^{avg}_h$, with $v_{h,0} = v^{in}_h$ (see [Block Formulation Variants](/math/block-formulations)).
 
 #### Generation as Independent Variable
 
@@ -306,9 +306,9 @@ $$
 \beta^v_h = \bar{c}^{in}_h / d^{col}_h
 $$
 
-This reduced cost implicitly includes the water balance contribution (that of the row reading $v^{in}_h$: $\pi^{wb}_h$ on a parallel stage, $\pi^{wb}_{h,1}$ on a chronological stage), the FPHA contribution summed over every cell of the plant ($\frac{1}{2} \sum_{b \in \mathcal{B}_h} \lambda_{h,b} \sum_m \pi_{h,b,m}^{fpha} \cdot \gamma_v^m$, with $\pi_{h,b,m}^{fpha}$ summed over the blocks whose rows read $v^{in}_h$: every block on a parallel stage, block 1 on a chronological stage), the dual of the evaporation row ([LP Formulation, Evaporation Row](/math/lp-formulation#evaporation-row)) weighted by $\gamma^{ev}_{v,h}/2$ for a hydro with an evaporation model (block 1's row only on a chronological stage), and any generic constraint contributions — all resolved by the LP solver without explicit dual combination.
+This reduced cost implicitly includes the water balance contribution (that of the row reading $v^{in}_h$: $\pi^{wb}_h$ on a parallel stage, $\pi^{wb}_{h,1}$ on a chronological stage), the FPHA contribution summed over every cell of the plant ($\frac{1}{2} \sum_{b \in \mathcal{B}_h} \lambda_{h,b} \sum_m \pi_{h,b,m}^{fpha} \cdot \gamma_v^m$, with $\pi_{h,b,m}^{fpha}$ summed over the blocks whose rows read $v^{in}_h$: every block on a parallel stage, block 1 on a chronological stage), the dual of the evaporation row ([LP Formulation — Evaporation Row](/math/lp-formulation#evaporation-row)) weighted by $\gamma^{ev}_{v,h}/2$ for a hydro with an evaporation model (block 1's row only on a chronological stage), and any generic constraint contributions — all resolved by the LP solver without explicit dual combination.
 
-For the complete cut coefficient computation, see [cut management](/math/cut-management).
+For the complete cut coefficient computation, see [Cut Management](/math/cut-management).
 
 #### Production Model and Cut Validity
 
@@ -378,7 +378,7 @@ $$
 \rho_{acum,h,t} \;=\; \rho_{eq,h,t} \;+\; \sum_{h' \,\in\, \text{downstream}(h)} \rho_{eq,h',t}
 $$
 
-The sum is taken in topological order over the cascade (see [system elements](/math/system-elements) for the cascade topology). Plants with no downstream successors have $\rho_{acum} = \rho_{eq}$. The accumulation is per-stage because each summand can vary by stage.
+The sum is taken in topological order over the cascade (see [System Element Modeling Overview](/math/system-elements) for the cascade topology). Plants with no downstream successors have $\rho_{acum} = \rho_{eq}$. The accumulation is per-stage because each summand can vary by stage.
 
 ### 5.3 Useful-Range Mean Productivity
 
@@ -490,9 +490,9 @@ The methodology above defines the hydro production models; the tabs below cover 
 
 ## Cross-References
 
-- [Notation conventions](/overview/notation-conventions) — variable and set definitions ($g_h$, $q_h$, $v_h$, $s_h$, $\rho_h$)
-- [System elements](/math/system-elements) — hydro plant element description, decision variables, Variable Units Convention
-- [LP formulation](/math/lp-formulation) — how production constraints integrate into the assembled LP
-- [Penalty system](/math/penalty-system) — turbined-cost regularization, penalty priority ordering
-- [Cut management](/math/cut-management) — Benders cut generation affected by FPHA dual variables
-- [Equipment formulations](/math/equipment-formulations) — thermal and hydro equipment constraint patterns
+- [Notation Conventions](/overview/notation-conventions) — variable and set definitions ($g_h$, $q_h$, $v_h$, $s_h$, $\rho_h$)
+- [System Element Modeling Overview](/math/system-elements) — hydro plant element description, decision variables, Variable Units Convention
+- [LP Formulation](/math/lp-formulation) — how production constraints integrate into the assembled LP
+- [Penalty System](/math/penalty-system) — turbined-cost regularization, penalty priority ordering
+- [Cut Management](/math/cut-management) — Benders cut generation affected by FPHA dual variables
+- [Equipment-Specific Formulations](/math/equipment-formulations) — thermal and hydro equipment constraint patterns

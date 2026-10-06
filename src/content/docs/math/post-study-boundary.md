@@ -39,14 +39,14 @@ horizon edge instead of being carried forward and priced:
   it is then a genuine decision, bounded and costed by the post-study stage's
   declared capability and cost, and carried in its ring slot to the terminal
   stage (see
-  [System Elements §4](/math/system-elements#anticipated-thermal-plants) and
+  [System Element Modeling Overview §4](/math/system-elements#anticipated-thermal-plants) and
   [State Augmentation — Ring Rows](/math/state-augmentation#ring-rows)). A delivery
   past $T$ outside that calendar has no decision. Without a loaded boundary
   the carried commitment has zero terminal value while its fuel is still
   charged on its decision column, and the study setup warns about it.
 - **Terminal deep-lag in-transit buckets.** Water released late in the horizon
   may still be in transit at $T$ (see
-  [System Elements — Cascade Travel Time](/math/system-elements#cascade-travel-time)).
+  [System Element Modeling Overview — Cascade Travel Time](/math/system-elements#cascade-travel-time)).
   With a boundary loaded, every lag a stage's releases reach is held live to
   the terminal stage; without one, a lag that would mature past the horizon is
   capped away and its water is dropped (see
@@ -120,7 +120,7 @@ a post-horizon commitment is booked on its decision column at its decision
 stage, at the post-study stage's declared cost and discounted from the
 delivery stage
 ([State Augmentation — Objective contributions](/math/state-augmentation#objective-contributions);
-[Discount Rate — Post-Study Extension](/math/discount-rate#post-study-extension)),
+[Discount Rate Formulation — Post-Study Extension](/math/discount-rate#post-study-extension)),
 while $\beta^{\top} x_T$ prices the _state_ the commitment leaves behind in
 its ring slot. State valuation and fuel booking are disjoint columns: one is a
 term in $\beta^{\top} x_T$ on the outgoing slot column, the other is the
@@ -139,7 +139,7 @@ at load, to the intercept $\beta_0$ of every boundary cut; no coefficient
 changes. With no boundary loaded it enters no term, and the study setup warns
 about it when its committed rate is non-zero. Either way it is reported at its
 real delivery date
-([Output Format](/reference/output-format/#anticipatedfixed_deliveriesparquet)).
+([Simulation Output](/reference/output/simulation/#anticipatedfixed_deliveriesparquet)).
 
 ## 4. Calendar Reconciliation (Fan-Out)
 
@@ -374,13 +374,13 @@ see
   (hold ring, ring rows, ring-slot cut coefficient, objective contributions);
   §6 in-transit bucket state, pinning, and the horizon-limitation cap that a
   right boundary lifts.
-- [System Elements](/math/system-elements) — §4 the anticipated-thermal
+- [System Element Modeling Overview](/math/system-elements) — §4 the anticipated-thermal
   commitment ring and §5 cascade travel time, the element-level source of the
   two carried families.
 - [Horizon Modes](/math/horizon-modes) — the zero terminal value a right
   boundary replaces, and the finite-horizon context the post-study segment
   attaches to.
-- [Discount Rate](/math/discount-rate) — the cumulative factor extended over
+- [Discount Rate Formulation](/math/discount-rate) — the cumulative factor extended over
   the post-study stages.
 - [SDDP Algorithm](/math/sddp-algorithm) — §7 the terminal-boundary summary.
 - [Multi-Resolution Studies](/math/multi-resolution-studies) — one study with

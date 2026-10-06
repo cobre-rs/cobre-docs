@@ -67,13 +67,13 @@ These are small costs inserted into the objective function to guide the solver t
 | Curtailment ($c^{curt}_r$) | \$/MWh | Curtailed non-controllable gen | Prioritize using available non-controllable generation over curtailing it |
 | Exchange ($c^{exch}_n$) | \$/MWh | Power flow on lines | Prefer local supply; avoid unnecessary inter-bus power flows |
 
-**Turbined cost**: the cost $c^{tc}_h$ is charged on the turbined flow of every cell of every hydro, whatever its production model. Where energy has no marginal value, turbined water produces nothing, so the LP is indifferent between turbining it and spilling it; $c^{tc}_h > c^{spill}_h$ tips it toward spilling. On an FPHA plane with $\gamma_q^m = 0$ (the installed-capacity plane, [Hydro Production Models §2.6](/math/hydro-production-models#26-computed-fpha-fitting-pipeline)) more turbined flow adds no generation either, but spillage lowers the plane through its coefficient $\gamma_s^m \leq 0$ ([§2.7](/math/hydro-production-models#27-lateral-flow-secant)), so where that plane binds the LP weighs the generation that spilling would lose against $c^{tc}_h - c^{spill}_h$. A hydro using FPHA requires $c^{tc}_h \geq 0$, since a negative cost would reward turbining water that generates nothing; $c^{tc}_h > c^{spill}_h$ is advised for every hydro and not enforced ([Configure tab](#implementation-in-cobre)).
+**Turbined cost**: the cost $c^{tc}_h$ is charged on the turbined flow of every cell of every hydro, whatever its production model. Where energy has no marginal value, turbined water produces nothing, so the LP is indifferent between turbining it and spilling it; $c^{tc}_h > c^{spill}_h$ tips it toward spilling. On an FPHA plane with $\gamma_q^m = 0$ (the installed-capacity plane, [Hydro Production Function Models §2.6](/math/hydro-production-models#26-computed-fpha-fitting-pipeline)) more turbined flow adds no generation either, but spillage lowers the plane through its coefficient $\gamma_s^m \leq 0$ ([§2.7](/math/hydro-production-models#27-lateral-flow-secant)), so where that plane binds the LP weighs the generation that spilling would lose against $c^{tc}_h - c^{spill}_h$. A hydro using FPHA requires $c^{tc}_h \geq 0$, since a negative cost would reward turbining water that generates nothing; $c^{tc}_h > c^{spill}_h$ is advised for every hydro and not enforced ([Configure tab](#implementation-in-cobre)).
 
 ### Penalty Priority Ordering
 
 The costs carry different units: \$/hm³ for the storage-violation and filling-target slacks; \$/(m³/s·h) for the turbined, outflow, evaporation, withdrawal and inflow non-negativity slacks and the spillage, turbined and diversion costs; and \$/MWh for deficit, excess, the generation-minimum slack and every non-hydro cost. The ordering compares them as energy-equivalent costs in \$/MWh.
 
-Water at hydro $h$ in stage $t$ produces energy at its accumulated productivity $\bar\rho_{acum,h,t}$, the sum of the useful-range mean productivities of the plant and of every plant downstream ([Hydro Production Models §5.3](/math/hydro-production-models#53-useful-range-mean-productivity)). One hm³ is $\kappa = 10^6/3600$ (m³/s)·h, so, for a plant with $\bar\rho_{acum,h,t} > 0$, a storage cost $c$ is worth $c/(\kappa\,\bar\rho_{acum,h,t})$ \$/MWh and a flow cost $c$ is worth $c/\bar\rho_{acum,h,t}$ \$/MWh. In these units the tiers are ordered from highest to lowest:
+Water at hydro $h$ in stage $t$ produces energy at its accumulated productivity $\bar\rho_{acum,h,t}$, the sum of the useful-range mean productivities of the plant and of every plant downstream ([Hydro Production Function Models §5.3](/math/hydro-production-models#53-useful-range-mean-productivity)). One hm³ is $\kappa = 10^6/3600$ (m³/s)·h, so, for a plant with $\bar\rho_{acum,h,t} > 0$, a storage cost $c$ is worth $c/(\kappa\,\bar\rho_{acum,h,t})$ \$/MWh and a flow cost $c$ is worth $c/\bar\rho_{acum,h,t}$ \$/MWh. In these units the tiers are ordered from highest to lowest:
 
 $$
 \begin{aligned}
@@ -102,7 +102,7 @@ Cobre checks the configured costs when the case loads. The checks compare the va
 
 ## 3. Penalty Defaults and Overrides
 
-Each cost has a case-level default and may be overridden per entity and per stage. The evaporation and withdrawal slacks are priced by directional costs whose defaults follow the symmetric costs; the [Configure tab](#implementation-in-cobre) lists the fields, the tiers and the fallback order. [Inflow Non-Negativity](/math/inflow-nonnegativity) covers the penalty method of the inflow slack.
+Each cost has a case-level default and may be overridden per entity and per stage. The evaporation and withdrawal slacks are priced by directional costs whose defaults follow the symmetric costs; the [Configure tab](#implementation-in-cobre) lists the fields, the tiers and the fallback order. [Inflow Non-Negativity Solution Methods](/math/inflow-nonnegativity) covers the penalty method of the inflow slack.
 
 ### Piecewise Deficit
 
@@ -157,7 +157,7 @@ User-defined generic constraints can optionally have slack variables with user-s
 
 ### Non-Controllable Sources
 
-**Non-controllable generation bounds**: a source's generation is bounded above by its available generation in the block, and below by it as well for a must-run source ([System Elements §6](/math/system-elements#curtailable-vs-must-run)). Both bounds are hard, with no slack variables. The curtailment cost $c^{curt}_r$ is a regularization term (Category 3), analogous to the hydro spillage cost: it makes dispatching available non-controllable generation cheaper than curtailing it ([Equipment Formulations §6](/math/equipment-formulations#6-non-controllable-generation-sources) gives the objective term).
+**Non-controllable generation bounds**: a source's generation is bounded above by its available generation in the block, and below by it as well for a must-run source ([System Element Modeling Overview §6](/math/system-elements#curtailable-vs-must-run)). Both bounds are hard, with no slack variables. The curtailment cost $c^{curt}_r$ is a regularization term (Category 3), analogous to the hydro spillage cost: it makes dispatching available non-controllable generation cheaper than curtailing it ([Equipment-Specific Formulations §6](/math/equipment-formulations#6-non-controllable-generation-sources) gives the objective term).
 
 ## 5. Bidirectional Slacks
 
@@ -174,7 +174,7 @@ On a parallel stage a plant has one evaporation row and one slack pair for the w
 :::
 
 :::note[Evaporation needs the reservoir area curve]
-The linearised target needs the reservoir's area–volume curve. A plant that declares evaporation without that curve is rejected when the case loads, and a curve whose area is zero throughout disables evaporation for the plant; the [Hydro Production Models](/math/hydro-production-models/) Implementation notes cover both cases.
+The linearised target needs the reservoir's area–volume curve. A plant that declares evaporation without that curve is rejected when the case loads, and a curve whose area is zero throughout disables evaporation for the plant; the [Hydro Production Function Models](/math/hydro-production-models/) Implementation notes cover both cases.
 :::
 
 ### Withdrawal Slacks
@@ -223,4 +223,4 @@ The methodology above defines the penalty taxonomy and priority ordering; the ta
 ## Cross-References
 
 - [LP Formulation](/math/lp-formulation) — Cost taxonomy (§1) and penalty terms (§9)
-- [Inflow Non-Negativity](/math/inflow-nonnegativity) — Penalty method for inflow non-negativity
+- [Inflow Non-Negativity Solution Methods](/math/inflow-nonnegativity) — Penalty method for inflow non-negativity

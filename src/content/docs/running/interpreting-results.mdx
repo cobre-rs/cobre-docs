@@ -3,7 +3,7 @@ title: Convergence & Diagnostics
 description: Practical analysis patterns for assessing convergence, extracting generation and cost statistics, and troubleshooting simulation results.
 ---
 
-The [Output Format Reference](/reference/output/) documents what each
+The [Output Format](/reference/output/) documents what each
 output file contains. This page goes one level deeper: it provides practical
 analysis patterns for answering domain questions from the data. It assumes you
 are comfortable loading Parquet files in your preferred tool.
@@ -380,7 +380,7 @@ adds `bus_id`. `costs` is one row per (`scenario_id`, `stage_id`) with a null
 Aggregate within a (scenario, stage) first — sum energy and cost over blocks,
 weight a per-block rate such as `water_value_per_hm3` by block hours — and only then take statistics across
 scenarios. Each table's columns are listed in the
-[Output Format Reference](/reference/output/).
+[Output Format](/reference/output/).
 :::
 
 The printed outputs in this section and in
@@ -868,5 +868,5 @@ Possible causes:
 ## Related Pages
 
 - **Theory:** [Upper Bound Evaluation](/math/upper-bound-evaluation/) — the statistical upper-bound estimator behind the convergence metrics this page analyzes.
-- [Output Format Reference](/reference/output/) — complete field-by-field schema for all output files
+- [Output Format](/reference/output/) — complete field-by-field schema for all output files
 - [Configuration](/running/configuration/) — all `config.json` fields including stopping rules and seed

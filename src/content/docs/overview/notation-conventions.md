@@ -9,7 +9,7 @@ This chapter defines the complete mathematical notation used across the Cobre me
 
 ## 1. General Notation Conventions
 
-This document follows [SDDP.jl](https://sddp.dev/stable/) notation conventions for consistency with the broader SDDP literature:
+This document follows the SDDP.jl notation conventions of [Dowson & Kapelevich (2021)](/reference/bibliography/#software-references) for consistency with the broader SDDP literature:
 
 | Convention               | Meaning                                   |
 | ------------------------ | ----------------------------------------- |

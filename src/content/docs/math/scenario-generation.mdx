@@ -693,7 +693,7 @@ The cross-scheme implications are:
   non-negativity methods that pass the noise through. Under the truncation
   methods, a hydro's first negative observation replays as zero inflow, and
   from that stage on the hydro's replayed lag chain departs from the observed
-  one (see [Inflow Non-Negativity](/math/inflow-nonnegativity)).
+  one (see [Inflow Non-Negativity Solution Methods](/math/inflow-nonnegativity)).
 - **Historical-residual openings.** When training replays history, the openings
   of a historical-residual stage (§2.5) come from the same window pool, applied
   PAR model and derived seed as the replay. At a trial point whose lags are
@@ -709,7 +709,7 @@ The cross-scheme implications are:
   standard deviation alone. Under the truncation methods, a hydro's first
   negative target value replays as zero inflow, and from that stage on the
   hydro's replayed lag chain departs from the supplied series (see
-  [Inflow Non-Negativity](/math/inflow-nonnegativity)).
+  [Inflow Non-Negativity Solution Methods](/math/inflow-nonnegativity)).
 - **InSample / OutOfSample.** Unaffected — their forward pass replays no
   observed series, so it has no reconstruction to keep consistent. An
   OutOfSample pass draws fresh noise (§3.2), plain Monte Carlo even at a
@@ -783,7 +783,7 @@ unclamped availability factor at the stage and $\varepsilon^{nc}_r \sim N(0,1)$ 
 noise. The ratio is a dimensionless fraction of the installed capacity: the
 source's generation cap in a block is the installed capacity times $\xi_r$
 times the block factor
-([Equipment Formulations §6](/math/equipment-formulations#6-non-controllable-generation-sources)
+([Equipment-Specific Formulations §6](/math/equipment-formulations#6-non-controllable-generation-sources)
 states that bound and curtailment). With $s^{nc}_r > 0$ the clamp raises the
 mean of $\xi_r$ above $\mu^{nc}_r$ when $\mu^{nc}_r < 1/2$ and lowers it when
 $\mu^{nc}_r > 1/2$. NCS noise is correlated only with the other sources of its
@@ -826,7 +826,7 @@ The methodology above defines how scenarios are generated and sampled; the tabs 
 ## Cross-References
 
 - [PAR(p) Inflow Model](/math/par-inflow-model) — Mathematical definition, parameter set, stored vs. computed quantities, fitting procedure, spectral factorisation rationale, validation invariants
-- [Inflow Non-Negativity](/math/inflow-nonnegativity) — Handling of negative inflow realizations from PAR sampling
+- [Inflow Non-Negativity Solution Methods](/math/inflow-nonnegativity) — Handling of negative inflow realizations from PAR sampling
 - [SDDP Algorithm](/math/sddp-algorithm) — Forward/backward pass structure, cut generation, convergence; references sampling scheme abstraction (sections 3.1–3.2)
 - [Policy Graphs](/math/policy-graphs) — The node/transition/pool structure the opening tree's per-node opening set $\Omega_n$ (section 2.3) is scoped to
 - [Cut Management](/math/cut-management) — Cut generation, storage, and selection; uses opening tree branchings as the backward pass input

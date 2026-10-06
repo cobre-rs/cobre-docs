@@ -15,6 +15,7 @@ import { spawnSync } from "node:child_process";
 import {
   mkdirSync,
   mkdtempSync,
+  readdirSync,
   rmdirSync,
   unlinkSync,
   writeFileSync,
@@ -444,6 +445,13 @@ test("BINDINGS binds the 17 case-format JSON files to the vendored schema of the
   const files = Object.keys(BINDINGS);
   assert.equal(files.length, 17);
   assert.ok(!("config.json" in BINDINGS));
+  // D-215-1: every vendored schema but config is bound, so a schema a refresh adds cannot go unchecked.
+  const vendored = readdirSync(SCHEMAS)
+    .filter((name) => name.endsWith(".schema.json"))
+    .map((name) => name.slice(0, -".schema.json".length))
+    .filter((stem) => stem !== "config")
+    .sort();
+  assert.deepEqual(Object.values(BINDINGS).sort(), vendored);
   for (const [file, name] of Object.entries(BINDINGS)) {
     const stem = file
       .split("/")
@@ -1195,4 +1203,352 @@ test("pageRows reads a CRLF page as it reads the LF page, fences included", () =
 
 test("schemaPaths throws on a schema that declares no properties", () => {
   assert.throws(() => schemaPaths({}), /declares no properties/);
+});
+
+// ---------------------------------------------------------------------------
+// Seeded fixtures (ticket-215, GRD-03): each test seeds one class or row of
+// design/e11-case-format-diff.md section 3 or 4 into an inline mini-schema
+// that keeps the report row's real path names. Titles read
+// `seed: <report section> <row or class>`. Root arrays and nested objects are
+// seeded by the hydros and buses schemas, the oneOf union by
+// fpha_plane_reduction, the root scalar by correlation `method`.
+// ---------------------------------------------------------------------------
+
+const rowsOf = (...specs) =>
+  Object.fromEntries(
+    specs.map(([name, ...cells]) => [name, row(name, ...cells)]),
+  );
+const setRow = (rows, name, ...cells) => ({
+  ...rows,
+  [name]: row(name, ...cells),
+});
+const seedCheck = (schema, file) => (rows) =>
+  checkFile(schema, pageOf(rows, file), file);
+
+const checkHydros = seedCheck(
+  {
+    type: "object",
+    properties: {
+      hydros: {
+        type: "array",
+        items: {
+          type: "object",
+          properties: {
+            id: { type: "integer" },
+            reservoir: {
+              type: "object",
+              properties: {
+                min_storage_hm3: { type: "number" },
+                max_storage_hm3: { type: "number" },
+              },
+              required: ["min_storage_hm3", "max_storage_hm3"],
+            },
+            penalties: {
+              type: "object",
+              properties: {
+                water_withdrawal_violation_cost: { type: "number" },
+              },
+            },
+          },
+          required: ["id", "reservoir"],
+        },
+      },
+    },
+    required: ["hydros"],
+  },
+  "system/hydros.json",
+);
+const hydroRows = () =>
+  rowsOf(
+    ["hydros[].id"],
+    ["hydros[].reservoir.min_storage_hm3"],
+    ["hydros[].reservoir.max_storage_hm3"],
+    ["hydros[].penalties.water_withdrawal_violation_cost", "No"],
+  );
+
+const checkBuses = seedCheck(
+  {
+    type: "object",
+    properties: {
+      buses: {
+        type: "array",
+        items: {
+          type: "object",
+          properties: {
+            id: { type: "integer" },
+            deficit_segments: {
+              type: "array",
+              items: {
+                type: "object",
+                properties: {
+                  depth_mw: { type: ["number", "null"] },
+                  cost: { type: "number" },
+                },
+                required: ["cost"],
+              },
+            },
+          },
+          required: ["id"],
+        },
+      },
+    },
+    required: ["buses"],
+  },
+  "system/buses.json",
+);
+
+const checkPlane = seedCheck(
+  {
+    type: "object",
+    properties: {
+      fpha_plane_reduction: {
+        oneOf: [
+          {
+            type: "object",
+            properties: {
+              method: { type: "string", const: "angle" },
+              tolerance_deg: { type: "number" },
+            },
+            required: ["method", "tolerance_deg"],
+          },
+          {
+            type: "object",
+            properties: {
+              method: { type: "string", const: "distance" },
+              tolerance_pct: { type: "number" },
+              n_samples: { type: "integer" },
+            },
+            required: ["method", "tolerance_pct", "n_samples"],
+          },
+        ],
+      },
+    },
+  },
+  "system/hydro_production_models.json",
+);
+const planeRows = () =>
+  rowsOf(
+    [
+      "fpha_plane_reduction.method",
+      "Yes",
+      'One of `"angle"`, `"distance"`. Method.',
+    ],
+    ["fpha_plane_reduction.tolerance_deg", "Conditional"],
+    ["fpha_plane_reduction.tolerance_pct", "Conditional"],
+    ["fpha_plane_reduction.n_samples", "Conditional"],
+  );
+
+const GROUPS = "profiles.<name>.correlation_groups[]";
+const checkCorrelation = seedCheck(
+  {
+    type: "object",
+    properties: {
+      method: { $ref: "#/$defs/CorrelationMethod" },
+      profiles: {
+        type: "object",
+        additionalProperties: {
+          type: "object",
+          properties: {
+            correlation_groups: {
+              type: "array",
+              items: {
+                type: "object",
+                properties: {
+                  name: { type: "string" },
+                  entities: {
+                    type: "array",
+                    items: {
+                      type: "object",
+                      properties: { type: { type: "string" } },
+                      required: ["type"],
+                    },
+                  },
+                },
+                required: ["name", "entities"],
+              },
+            },
+          },
+          required: ["correlation_groups"],
+        },
+      },
+    },
+    required: ["method", "profiles"],
+    $defs: {
+      CorrelationMethod: { oneOf: [{ type: "string", const: "spectral" }] },
+    },
+  },
+  "scenarios/correlation.json",
+);
+const correlationRows = () =>
+  rowsOf(
+    ["method", "Yes", 'One of `"spectral"`. Method.'],
+    [`${GROUPS}.name`],
+    [`${GROUPS}.entities[].type`],
+  );
+
+const checkStages = seedCheck(
+  {
+    type: "object",
+    properties: {
+      $schema: { type: ["string", "null"] },
+      scenario_source: {
+        default: null,
+        description: "Detection field: present when the old key is written.",
+      },
+      stages: {
+        type: "array",
+        items: {
+          type: "object",
+          properties: { id: { type: "integer" } },
+          required: ["id"],
+        },
+      },
+    },
+    required: ["stages"],
+  },
+  "stages.json",
+);
+const stagesRows = () =>
+  rowsOf(
+    ["scenario_source", "No", "Not accepted: a value other than `null` fails."],
+    ["stages[].id"],
+  );
+
+test("seed: §3 map key profiles.<name>.correlation_groups[].entities[].type: the key is written <name>, a concrete profile name is a PHANTOM", () => {
+  assert.deepEqual(checkCorrelation(correlationRows()), {
+    rows: 3,
+    problems: [],
+  });
+  const concrete = "profiles.default.correlation_groups[].name";
+  const rows = setRow(without(correlationRows(), `${GROUPS}.name`), concrete);
+  assert.deepEqual(checkCorrelation(rows).problems, [
+    ["MISSING", `${GROUPS}.name`],
+    ["PHANTOM", concrete],
+  ]);
+});
+
+test("seed: §3 root scenario_source of stages.json: a key the schema lists and the loader rejects still needs its row, with no exemption", () => {
+  assert.deepEqual(checkStages(stagesRows()), { rows: 2, problems: [] });
+  assert.deepEqual(
+    checkStages(without(stagesRows(), "scenario_source")).problems,
+    [["MISSING", "scenario_source"]],
+  );
+});
+
+test("seed: §4 page-only hydros[].penalties.water_withdrawal_violation_pos_cost: a key the schema does not list is a PHANTOM", () => {
+  assert.deepEqual(checkHydros(hydroRows()), { rows: 4, problems: [] });
+  const phantom = "hydros[].penalties.water_withdrawal_violation_pos_cost";
+  assert.deepEqual(checkHydros(setRow(hydroRows(), phantom, "No")).problems, [
+    ["PHANTOM", phantom],
+  ]);
+});
+
+test("seed: §4 code-only hydros[].reservoir.min_storage_hm3: a required nested leaf without its row is MISSING, a sibling row covers only the object", () => {
+  const rows = without(hydroRows(), "hydros[].reservoir.min_storage_hm3");
+  assert.deepEqual(checkHydros(rows).problems, [
+    ["MISSING", "hydros[].reservoir.min_storage_hm3"],
+  ]);
+});
+
+test("seed: §4 required buses[].deficit_segments[].cost: a required leaf of an optional array written No", () => {
+  const cost = "buses[].deficit_segments[].cost";
+  const rows = rowsOf(
+    ["buses[].id"],
+    ["buses[].deficit_segments[].depth_mw", "No"],
+    [cost],
+  );
+  assert.deepEqual(checkBuses(rows), { rows: 3, problems: [] });
+  assert.deepEqual(checkBuses(setRow(rows, cost, "No")).problems, [
+    ["REQUIRED", cost, "page=No", "schema=required"],
+  ]);
+});
+
+test("seed: §4 required fpha_plane_reduction.n_samples: a variant-scoped key is Conditional at the union level, Yes is a mismatch, and the tag lists both variants", () => {
+  assert.deepEqual(checkPlane(planeRows()), { rows: 4, problems: [] });
+  const samples = "fpha_plane_reduction.n_samples";
+  assert.deepEqual(checkPlane(setRow(planeRows(), samples, "Yes")).problems, [
+    ["REQUIRED", samples, "page=Yes", "schema=optional"],
+  ]);
+  const tag = "fpha_plane_reduction.method";
+  const rows = setRow(planeRows(), tag, "Yes", 'One of `"angle"`. Method.');
+  assert.deepEqual(checkPlane(rows).problems, [
+    ["ENUM", tag, 'page="angle"', 'schema="angle","distance"'],
+  ]);
+});
+
+test("seed: §4 enum correlation.json method: a value the schema lacks, and a Description that lists none", () => {
+  const added = setRow(
+    correlationRows(),
+    "method",
+    "Yes",
+    'One of `"spectral"`, `"cholesky"`. Method.',
+  );
+  assert.deepEqual(checkCorrelation(added).problems, [
+    ["ENUM", "method", 'page="cholesky","spectral"', 'schema="spectral"'],
+  ]);
+  const unlisted = setRow(correlationRows(), "method", "Yes", "Method.");
+  assert.deepEqual(checkCorrelation(unlisted).problems, [
+    ["ENUM", "method", "page=-", 'schema="spectral"'],
+  ]);
+});
+
+const checkStageModes = seedCheck(
+  {
+    type: "object",
+    properties: {
+      stages: {
+        type: "array",
+        items: {
+          type: "object",
+          properties: {
+            id: { type: "integer" },
+            block_mode: { $ref: "#/$defs/RawBlockMode", default: "parallel" },
+          },
+          required: ["id"],
+        },
+      },
+    },
+    required: ["stages"],
+    $defs: {
+      RawBlockMode: {
+        oneOf: [
+          { type: "string", const: "parallel" },
+          { type: "string", const: "chronological" },
+        ],
+      },
+    },
+  },
+  "stages.json",
+);
+
+test("seed: §4 enum stages.json stages[].block_mode: an optional enumerated field (Required No) is held to its value set", () => {
+  const mode = "stages[].block_mode";
+  const rows = rowsOf(
+    ["stages[].id"],
+    [mode, "No", 'One of `"parallel"`, `"chronological"`. Block layout.'],
+  );
+  assert.deepEqual(checkStageModes(rows), { rows: 2, problems: [] });
+  const short = setRow(rows, mode, "No", 'One of `"parallel"`. Block layout.');
+  assert.deepEqual(checkStageModes(short).problems, [
+    ["ENUM", mode, 'page="parallel"', 'schema="chronological","parallel"'],
+  ]);
+});
+
+test("seed: §3 map key profiles.<name>: a misspelt field under <name> is a PHANTOM, and a map-value field keeps its own Required", () => {
+  const type = `${GROUPS}.entities[].type`;
+  const typo = `${GROUPS}.entities[].kind`;
+  const misspelt = setRow(without(correlationRows(), type), typo);
+  assert.deepEqual(checkCorrelation(misspelt).problems, [
+    ["MISSING", type],
+    ["PHANTOM", typo],
+  ]);
+  const groups = "profiles.<name>.correlation_groups";
+  assert.deepEqual(checkCorrelation(setRow(correlationRows(), groups)), {
+    rows: 4,
+    problems: [],
+  });
+  assert.deepEqual(
+    checkCorrelation(setRow(correlationRows(), groups, "No")).problems,
+    [["REQUIRED", groups, "page=No", "schema=required"]],
+  );
 });

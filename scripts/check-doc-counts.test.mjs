@@ -4,7 +4,8 @@
 // adjacent table's data-row count is drift; a matching count is clean; a
 // "must be present" back-reference is skipped (it points at a table ABOVE,
 // not below); a count with no adjacent table (mid-prose subset mention) is
-// skipped; fenced code is ignored.
+// skipped; a count binds to the table after the rest of its own paragraph and
+// at most one further prose paragraph; fenced code is ignored.
 //
 // Also pins checkVariableCatalogCount() (an "N variables" statement against
 // the first table of the `## Variable catalog` section, with prose between
@@ -13,6 +14,18 @@
 
 import test from "node:test";
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmdirSync,
+  unlinkSync,
+  writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import {
   checkText,
   checkVariableCatalogCount,
@@ -51,6 +64,25 @@ test("flags numeric drift", () => {
   assert.match(problems[0], /10 data rows/);
 });
 
+test("a backtick line inside a tilde fence does not close the fence", () => {
+  const text = [
+    "~~~text",
+    "```",
+    "~~~",
+    "The file has 3 columns.",
+    "",
+    "| a | b |",
+    "| - | - |",
+    "| 1 | 2 |",
+  ].join("\n");
+  const problems = checkText(text, "test.mdx");
+  assert.equal(problems.length, 1);
+  assert.match(
+    problems[0],
+    /states "3 columns" but the adjacent table has 1 data rows/,
+  );
+});
+
 test("skips a 'must be present' back-reference (points at a table above)", () => {
   const text = `${table(["a", "b", "c"])}\n\nAll three columns must be present with the correct types.\n`;
   assert.deepEqual(checkText(text, "test.mdx"), []);
@@ -61,9 +93,62 @@ test("skips a count with no adjacent table (a mid-prose subset mention)", () => 
   assert.deepEqual(checkText(text, "test.mdx"), []);
 });
 
-test("skips a count separated from its table by intervening prose (not immediately adjacent)", () => {
-  const text = `Eight columns.\n\nSome unrelated intervening prose paragraph.\n\n${table(["a", "b", "c", "d", "e", "f", "g"])}\n`;
+test("skips a count separated from its table by two intervening prose paragraphs (not adjacent)", () => {
+  const text = `Eight columns.\n\nSome unrelated intervening prose paragraph.\n\nAnother unrelated paragraph.\n\n${table(["a", "b", "c", "d", "e", "f", "g"])}\n`;
   assert.deepEqual(checkText(text, "test.mdx"), []);
+});
+
+test("reads the table past the rest of the count's own paragraph", () => {
+  const rows = ["a", "b", "c"];
+  const drift = checkText(
+    `Four columns, all non-nullable.\nMore prose in the same paragraph.\n\n${table(rows)}\n`,
+    "test.mdx",
+  );
+  assert.equal(drift.length, 1);
+  assert.match(drift[0], /test\.mdx:1/);
+  assert.match(drift[0], /3 data rows/);
+  const clean = checkText(
+    `Three columns, all non-nullable.\nMore prose in the same paragraph.\n\n${table(rows)}\n`,
+    "test.mdx",
+  );
+  assert.deepEqual(clean, []);
+});
+
+test("reads the table past one intervening prose paragraph and a '**Methodology:**' line", () => {
+  const rows = ["a", "b", "c", "d"];
+  const drift = checkText(
+    `Five columns.\n\n**Methodology:** [X](/math/x)\n\nOne intervening paragraph.\n\n${table(rows)}\n`,
+    "test.mdx",
+  );
+  assert.equal(drift.length, 1);
+  assert.match(drift[0], /test\.mdx:1/);
+  assert.match(drift[0], /4 data rows/);
+  const clean = checkText(
+    `Four columns, in a paragraph\nthat runs on.\n\nOne intervening paragraph.\n\n${table(rows)}\n`,
+    "test.mdx",
+  );
+  assert.deepEqual(clean, []);
+});
+
+test("does not read past a heading, a fence or a thematic break", () => {
+  const rows = table(["a", "b", "c"]);
+  for (const stop of ["## Next", "```\ncode\n```", "---"]) {
+    const text = `Five columns.\n\n${stop}\n\n${rows}\n`;
+    assert.deepEqual(checkText(text, "test.mdx"), [], stop);
+  }
+});
+
+test("does not bind a count inside a table row to a later table", () => {
+  const text = `| Name | Note |\n| --- | --- |\n| a | 5 columns |\n| b | x |\n\nOne paragraph.\n\n${table(["a", "b", "c"])}\n`;
+  assert.deepEqual(checkText(text, "test.mdx"), []);
+});
+
+test("reads the table past a '**Methodology:**' line between the count and the table", () => {
+  const text = `Five columns.\n\n**Methodology:** [Scenario Generation](/math/scenario-generation)\n\n${table(["a", "b", "c", "d"])}\n`;
+  const problems = checkText(text, "test.mdx");
+  assert.equal(problems.length, 1);
+  assert.match(problems[0], /test\.mdx:1/);
+  assert.match(problems[0], /4 data rows/);
 });
 
 test("ignores a count inside a fenced code block", () => {
@@ -312,4 +397,172 @@ test("schemas: reads the first non-fenced table under the non-fenced heading", (
   ].join("\n");
   const result = checkSchemaCount(text, "js.mdx", 18);
   assert.deepEqual(result, { statements: 1, tableRows: 18, problems: [] });
+});
+
+test("a page without the claim reports zero statements (the vacuous case main() refuses)", () => {
+  const catalog = checkVariableCatalogCount(
+    `## Variable catalog\n\nThe variables are listed below.\n\n${table(names(3))}\n`,
+    "gc.mdx",
+  );
+  assert.deepEqual(catalog, { statements: 0, catalogRows: 3, problems: [] });
+  const schemas = checkSchemaCount(
+    `## Available schemas\n\nThe schemas are listed below.\n\n${table(names(18))}\n`,
+    "js.mdx",
+    18,
+  );
+  assert.deepEqual(schemas, { statements: 0, tableRows: 18, problems: [] });
+});
+
+// ---------------------------------------------------------------------------
+// main(): the real script run against a scratch tree. The script resolves its
+// pages and public/schemas from its own location, so each run copies it into
+// a temporary root and executes it with the working directory elsewhere.
+// ---------------------------------------------------------------------------
+
+const SCRIPT = join(
+  dirname(fileURLToPath(import.meta.url)),
+  "check-doc-counts.mjs",
+);
+const SCRIPT_SOURCE = readFileSync(SCRIPT, "utf8");
+const TARGETS = SCRIPT_SOURCE.match(/"reference\/[a-z-]+\/[a-z-]+\.mdx"/g).map(
+  (s) => s.slice(1, -1),
+);
+const DOCS = "src/content/docs/";
+const CATALOG = `${DOCS}reference/generic-constraints.mdx`;
+const SCHEMA_PAGE = `${DOCS}reference/json-schemas.mdx`;
+const gcPage = (claim) =>
+  `## Variable catalog\n\n${claim}\n\n${table(["a", "b", "c"])}\n`;
+const jsPage = (claim) =>
+  `---\ndescription: ${claim}\n---\n\n## Available schemas\n\n${table(["a", "b"])}\n`;
+
+// `edit` maps a root-relative path to its content, or to null to omit it.
+// `schemas` lists the files under public/schemas, or null to omit the directory.
+function gate(
+  edit = {},
+  schemas = ["a.schema.json", "b.schema.json", "notes.txt"],
+) {
+  const files = {
+    "scripts/check-doc-counts.mjs": SCRIPT_SOURCE,
+    [CATALOG]: gcPage("There are 3 LP variable types."),
+    [SCHEMA_PAGE]: jsPage("The 2 vendored JSON Schema files."),
+    ...Object.fromEntries(
+      TARGETS.map((rel) => [`${DOCS}${rel}`, "No count here.\n"]),
+    ),
+    ...Object.fromEntries(
+      (schemas ?? []).map((f) => [`public/schemas/${f}`, "{}"]),
+    ),
+    ...edit,
+  };
+  const root = mkdtempSync(join(tmpdir(), "doc-counts-"));
+  const dirs = new Set();
+  const written = [];
+  try {
+    for (const [rel, content] of Object.entries(files)) {
+      if (content === null) continue;
+      const path = join(root, rel);
+      mkdirSync(dirname(path), { recursive: true });
+      writeFileSync(path, content);
+      written.push(path);
+      for (let dir = dirname(rel); dir !== "."; dir = dirname(dir))
+        dirs.add(dir);
+    }
+    if (schemas !== null)
+      mkdirSync(join(root, "public/schemas"), { recursive: true });
+    return spawnSync(
+      process.execPath,
+      [join(root, "scripts/check-doc-counts.mjs")],
+      {
+        encoding: "utf8",
+        cwd: tmpdir(),
+      },
+    );
+  } finally {
+    for (const path of written) unlinkSync(path);
+    for (const dir of [...dirs, "public/schemas"].sort(
+      (a, b) => b.length - a.length,
+    )) {
+      try {
+        rmdirSync(join(root, dir));
+      } catch {}
+    }
+    rmdirSync(root);
+  }
+}
+
+test("main() is green on a consistent tree and prints the counts it verified", () => {
+  const result = gate();
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(
+    result.stdout.trim(),
+    `OK: column/field counts in ${TARGETS.length} doc files match their adjacent tables; reference/generic-constraints.mdx states 3 LP variables (3 catalog rows); reference/json-schemas.mdx states 2 vendored schemas (2 table rows, 2 files in public/schemas).`,
+  );
+});
+
+test("main() fails on a seeded drift in a target page, the catalog and the schema page", () => {
+  const page = gate({
+    [`${DOCS}${TARGETS[0]}`]: `Three columns.\n\n${table(["a", "b"])}\n`,
+  });
+  assert.equal(page.status, 1);
+  assert.match(
+    page.stdout,
+    new RegExp(
+      `${TARGETS[0]}:1: states "Three columns" but the adjacent table has 2 data rows`,
+    ),
+  );
+  const catalog = gate({ [CATALOG]: gcPage("There are 4 LP variable types.") });
+  assert.equal(catalog.status, 1);
+  assert.match(
+    catalog.stdout,
+    /generic-constraints\.mdx:3: states "4 LP variable types" but the catalog table has 3 data rows/,
+  );
+  const schema = gate({
+    [SCHEMA_PAGE]: jsPage("The 3 vendored JSON Schema files."),
+  });
+  assert.equal(schema.status, 1);
+  assert.match(
+    schema.stdout,
+    /json-schemas\.mdx:2: states "3 vendored JSON Schema files" but public\/schemas holds 2 vendored schema files/,
+  );
+});
+
+test("main() counts only *.schema.json files, resolved from the script's location", () => {
+  const extra = gate({}, [
+    "a.schema.json",
+    "b.schema.json",
+    "c.schema.json",
+    "notes.txt",
+  ]);
+  assert.equal(extra.status, 1);
+  assert.match(extra.stdout, /public\/schemas holds 3 vendored schema files/);
+  assert.match(
+    extra.stdout,
+    /table has 2 data rows but public\/schemas holds 3/,
+  );
+});
+
+test("main() exits 2 on a missing page, a missing schema directory or a page without the claim", () => {
+  for (const edit of [{ [CATALOG]: null }, { [SCHEMA_PAGE]: null }]) {
+    const result = gate(edit);
+    assert.equal(result.status, 2);
+    assert.match(result.stderr, /target file not found/);
+  }
+  const noDir = gate({}, null);
+  assert.equal(noDir.status, 2);
+  assert.match(noDir.stderr, /check:counts: could not read/);
+  const vacuousCatalog = gate({
+    [CATALOG]: gcPage("The variables are listed below."),
+  });
+  assert.equal(vacuousCatalog.status, 2);
+  assert.match(
+    vacuousCatalog.stderr,
+    /no count statement found in reference\/generic-constraints\.mdx/,
+  );
+  const vacuousSchema = gate({
+    [SCHEMA_PAGE]: jsPage("The schemas are listed below."),
+  });
+  assert.equal(vacuousSchema.status, 2);
+  assert.match(
+    vacuousSchema.stderr,
+    /no count statement found in reference\/json-schemas\.mdx/,
+  );
 });

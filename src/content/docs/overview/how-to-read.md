@@ -33,7 +33,7 @@ The site is organised into the groups shown in the sidebar. Each group is an on-
 
 Cobre runs from the `cobre` command-line program and from the `cobre-python` package. [What Cobre Solves §4](/overview/what-cobre-solves#4-how-cobre-is-used) describes both interfaces and the files a run writes. The methodology chapters use "case directory" and "configuration" as concrete terms for the artefacts a user manages; these map directly to both interfaces.
 
-Readers interested in the design commitments that underpin these interfaces — reproducibility, determinism, declaration order invariance and agent-readability — should read [section 5 of What Cobre Solves](/overview/what-cobre-solves#5-methodology-principles).
+Readers interested in the design commitments that underpin these interfaces — reproducibility, determinism, declaration order invariance and agent-readability — should read [What Cobre Solves §5](/overview/what-cobre-solves#5-methodology-principles).
 
 ## 3. Reading Paths
 
@@ -41,7 +41,7 @@ Different readers enter this site from different directions. Find the row that m
 
 | Reader | Reading path |
 | ------ | ------------ |
-| Run studies | [Installation](/getting-started/installation), then the [Quickstart](/getting-started/quickstart), then the Running Cobre group, starting with [Running Studies](/running/running-studies) and [interpreting the results](/running/interpreting-results). |
+| Run studies | [Installation](/getting-started/installation), then the [Quickstart](/getting-started/quickstart), then the Running Cobre group, starting with [Running Studies](/running/running-studies) and [Convergence & Diagnostics](/running/interpreting-results). |
 | Coming from other software? | [What Cobre Solves §6](/overview/what-cobre-solves#6-coming-from-other-software), then [Converting an existing case](/running/case-conversion); for equivalent terms in other planning tools, see the [Glossary](/reference/glossary). |
 | Work in Python | The [Python Quickstart](/getting-started/python-quickstart), then the [Python API](/reference/python-api) reference. |
 | New to SDDP | Read [What Cobre Solves](/overview/what-cobre-solves) and all of Introduction, then read System Modelling to understand the LP, then read The SDDP Algorithm for the algorithm itself. The worked examples in Worked Examples reinforce the concepts. |
@@ -53,7 +53,7 @@ Different readers enter this site from different directions. Find the row that m
 - [What Cobre Solves](/overview/what-cobre-solves) — the problem statement, algorithm name, methodology guarantees, user-facing capability summary, and an orientation for readers coming from other software
 - [The SDDP Framework in One Page](/overview/sddp-framework-overview) — one-page algorithmic framing for readers new to stochastic dynamic programming
 - [Notation Conventions](/overview/notation-conventions) — complete symbol table for index sets, parameters, decision variables, and dual variables
-- [System Elements](/math/system-elements) — the elements of the system and their variables: System Modelling entry point
-- [PAR Inflow Model](/math/par-inflow-model) — periodic autoregressive inflow model: Stochastic Modelling entry point
+- [System Element Modeling Overview](/math/system-elements) — the elements of the system and their variables: System Modelling entry point
+- [PAR(p) Inflow Model](/math/par-inflow-model) — periodic autoregressive inflow model: Stochastic Modelling entry point
 - [SDDP Algorithm](/math/sddp-algorithm) — forward pass, backward pass, cut generation, convergence: The SDDP Algorithm entry point
 - [Horizon Modes](/math/horizon-modes) — boundary conditions and horizon-mode design: Coupling & Boundary Conditions entry point
