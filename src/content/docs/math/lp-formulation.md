@@ -65,7 +65,7 @@ Incoming-state pinning and the lifecycle pins are column bounds, not rows: each 
 
 | Category | Cost symbols |
 | --- | --- |
-| Resource costs | $c^{th}_j$, $c^{ctr}_c$ |
+| Thermal and contract costs | $c^{th}_j$, $c^{ctr}_c$ |
 | [Recourse slacks](/math/penalty-system#category-1-recourse-slacks-lp-feasibility) | $c^{def}_{b,s}$, $c^{exc}_b$, $c^{inf}_h$ |
 | [Constraint violation penalties](/math/penalty-system#category-2-constraint-violation-penalties-policy-shaping) | $c^{sv-}_h$, $c^{fill}_h$, $c^{tv-}_h$, $c^{ov-}_h$, $c^{ov+}_h$, $c^{gv-}_h$, $c^{ev+}_h$, $c^{ev-}_h$, $c^{wv+}_h$, $c^{wv-}_h$ |
 | [Regularization costs](/math/penalty-system#category-3-regularization-costs-solution-guidance) | $c^{spill}_h$, $c^{tc}_h$, $c^{div}_h$, $c^{curt}_r$, $c^{exch}_n$ |
@@ -484,7 +484,7 @@ See [Generic Constraints](/reference/generic-constraints) for the authoring gram
 
 ### Hydro Inflow
 
-A `hydro_inflow` term reads the inflow $I_{h,k}$ of hydro $h$ in block $k$, a rate in m³/s built from LP columns:
+A hydro-inflow term reads the inflow $I_{h,k}$ of hydro $h$ in block $k$, a rate in m³/s built from LP columns:
 
 $$
 I_{h,k} = z_h + \sum_{h':\,\text{div}=h} u_{h',k} + \sum_{h' \in \mathcal{U}_h} o^{arr}_{h' \to h,k} + \frac{\phi_{h,k}}{\zeta_k} \, b^{\mathrm{in}}_{h,1} + \sum_{h' \in \mathcal{U}^{pre}_h(t)} \Big( z_{h'} + \sum_{h'':\,\text{div}=h'} u_{h'',k} + \sum_{h'' \in \mathcal{U}_{h'}} o_{h'',k} \Big)

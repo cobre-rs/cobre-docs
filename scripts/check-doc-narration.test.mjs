@@ -7,11 +7,20 @@
 
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import {
+  copyFileSync,
+  mkdirSync,
+  mkdtempSync,
+  writeFileSync,
+  rmSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import {
   detectNarrationViolations,
+  unclosedFenceLine,
   NARRATION_RULE_IDS,
 } from "./check-doc-narration.mjs";
 import { loadAllowlist, partitionByAllowlist } from "./doc-lint-allowlist.mjs";
@@ -131,6 +140,27 @@ test("flags 'migration' (narration-migration)", () => {
   ]);
 });
 
+test("flags a status 'currently' and 'as implemented today' (narration-currently)", () => {
+  for (const sentence of [
+    "The load check currently accepts one file per hydro.",
+    "The option does not currently accept a list.",
+    "Only the acyclic shape is currently accepted.",
+    "Cobre does not currently support a cyclic graph.",
+    "The backend currently supports one solver.",
+    "Currently supports one solver.",
+    "Only a currently supported combination loads.",
+    "The graph currently imposes three limits.",
+    "The graph does not currently impose a bound.",
+    "A limit currently imposed on the graph.",
+    "The option does not currently trim the plane set.",
+    "The option currently trims the plane set.",
+    "The key is currently inert.",
+    "Cuts are exchanged as implemented today.",
+  ]) {
+    assert.deepEqual(rules(sentence), ["narration-currently"], sentence);
+  }
+});
+
 test("flags a Before/After example heading with its line number (narration-before-after-heading)", () => {
   const text =
     "### Before (v0.13.0): two constraints\n\nbody\n\n### After (v0.14.0): one\n";
@@ -143,8 +173,8 @@ test("flags a Before/After example heading with its line number (narration-befor
   );
 });
 
-test("NARRATION_RULE_IDS lists the 14 rule ids", () => {
-  assert.equal(NARRATION_RULE_IDS.size, 14);
+test("NARRATION_RULE_IDS lists the 15 rule ids", () => {
+  assert.equal(NARRATION_RULE_IDS.size, 15);
   assert.ok(NARRATION_RULE_IDS.has("narration-before-after-heading"));
   assert.ok(!NARRATION_RULE_IDS.has("unreadable"));
 });
@@ -198,6 +228,20 @@ test("class 6: the sentence stating the no-annotations rule is not narration", (
   const text =
     "The methodology describes current Cobre as fact; it does not carry version annotations, deprecation notices, or migration notes. Readers who find a discrepancy should treat the observed behaviour as authoritative.";
   assert.deepEqual(rules(text), []);
+});
+
+test("class 7: a run-state 'currently', 'today' and 'concurrently' are prose", () => {
+  for (const sentence of [
+    "Positions in the pool of the cuts currently active in the LP.",
+    "A selected cut that is currently inactive is reactivated and an active cut not selected anywhere is deactivated.",
+    "These strategies evaluate every populated cut, including cuts currently flagged inactive.",
+    "Each template bakes in the currently active cut set.",
+    "The archive keeps the currently trimmed window.",
+    "Water saved today is available tomorrow.",
+    "Ranks that concurrently accept a cut never block each other.",
+  ]) {
+    assert.deepEqual(rules(sentence), [], sentence);
+  }
 });
 
 test("'fixed in advance' and 'fixed in the current implementation' are not narration", () => {
@@ -354,4 +398,95 @@ test("re-keyed narration entry passes", () => {
   assert.deepEqual(failing, []);
   assert.equal(grandfathered.length, 2);
   assert.deepEqual(stale, []);
+});
+
+// ---- a fence still open at the end of a page ---------------------------------
+
+test("unclosedFenceLine returns the opening line of a fence still open at the end of the text", () => {
+  assert.equal(unclosedFenceLine("text\n```js\nis no longer accepted\n"), 2);
+  assert.equal(unclosedFenceLine("~~~\ncode"), 1);
+  assert.equal(unclosedFenceLine("```\nA\n```\n~~~\nB"), 4);
+});
+
+test("unclosedFenceLine is null when every fence closes, nested fences included", () => {
+  assert.equal(unclosedFenceLine("text\n```js\ncode\n```\nmore"), null);
+  assert.equal(unclosedFenceLine("~~~\ncode\n~~~\n"), null);
+  assert.equal(unclosedFenceLine("````md\n```\ncode\n```\n````\n"), null);
+  assert.equal(unclosedFenceLine("no fence at all"), null);
+});
+
+test("unclosedFenceLine: a shorter or other-character fence line does not close an open fence", () => {
+  assert.equal(unclosedFenceLine("````\n```\ncode"), 1);
+  assert.equal(unclosedFenceLine("```\n~~~\ncode"), 1);
+});
+
+// main() through the CLI: it resolves the corpus and the allowlist relative to
+// its own location, so each run uses a copy of the gate inside a throwaway tree.
+
+const SCRIPTS_DIR = dirname(fileURLToPath(import.meta.url));
+const GATE_FILES = [
+  "check-doc-narration.mjs",
+  "doc-text.mjs",
+  "doc-zones.mjs",
+  "doc-lint-allowlist.mjs",
+];
+
+function runGate(pages) {
+  const root = mkdtempSync(join(tmpdir(), "check-narration-"));
+  try {
+    mkdirSync(join(root, "scripts"));
+    for (const name of GATE_FILES) {
+      copyFileSync(join(SCRIPTS_DIR, name), join(root, "scripts", name));
+    }
+    writeFileSync(join(root, "scripts", "doc-lint-allow.txt"), "");
+    for (const [rel, text] of Object.entries(pages)) {
+      const path = join(root, "src", "content", "docs", rel);
+      mkdirSync(dirname(path), { recursive: true });
+      writeFileSync(path, text);
+    }
+    return spawnSync(
+      process.execPath,
+      [join(root, "scripts", "check-doc-narration.mjs")],
+      { encoding: "utf8" },
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+}
+
+test("CLI: a fence that never closes is reported as UNCLOSED-FENCE <page>:<line> and exits 1", () => {
+  const result = runGate({
+    "math/u.md":
+      "# T\n\n```js\nconst x = 1;\n\nThe key is no longer accepted.\n",
+  });
+  assert.equal(result.status, 1);
+  assert.match(result.stdout, /^UNCLOSED-FENCE math\/u\.md:3$/m);
+  assert.match(
+    result.stdout,
+    /^FAIL: 0 narration violation\(s\), 0 stale allowlist entry\(ies\), 1 unclosed fence\(s\)\. /m,
+  );
+});
+
+test("CLI: the same page with the fence closed reports its violation and no UNCLOSED-FENCE", () => {
+  const result = runGate({
+    "math/u.md":
+      "# T\n\n```js\nconst x = 1;\n```\n\nThe key is no longer accepted.\n",
+  });
+  assert.equal(result.status, 1);
+  assert.match(
+    result.stdout,
+    /^VIOLATION \[narration-no-longer\]: math\/u\.md:7: /m,
+  );
+  assert.doesNotMatch(result.stdout, /UNCLOSED-FENCE/);
+});
+
+test("CLI: a clean page with a closed fence prints the OK line and exits 0", () => {
+  const result = runGate({
+    "math/u.md": "# T\n\n~~~\ncode\n~~~\n\nClean prose.\n",
+  });
+  assert.equal(result.status, 0);
+  assert.match(
+    result.stdout,
+    /^OK: \d+ files scanned; no NEW change narration found\.\n$/,
+  );
 });

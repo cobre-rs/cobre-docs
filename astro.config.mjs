@@ -55,7 +55,6 @@ function rehypeWrapD2() {
   return (/** @type {any} */ tree) => walk(tree);
 }
 
-// KaTeX strict-mode errors fail the build (scripts/rehype-katex-strict.mjs).
 const katexStrict = createKatexStrict();
 
 // astro-d2 is registered before starlight. d2 is the SINGLE diagram tool
@@ -69,18 +68,20 @@ export default defineConfig({
   // Custom domain for absolute URLs (canonical links + sitemap). Cutover target;
   // methodology.cobre-rs.dev 301-redirects in. Env-overridable for a versioned build.
   site: process.env.DOCS_SITE ?? "https://docs.cobre-rs.dev",
-  // D5: mdBook→Starlight URL preservation (ticket-027). mdBook served each
-  // chapter at `/specs/<group>/<chapter>.html` (and the intro at
+  // D5: mdBook→Starlight URL preservation. Each key is an old mdBook (or
+  // retired-site) path and each destination is a live page slug, one hop. mdBook
+  // served each chapter at `/specs/<group>/<chapter>.html` (and the intro at
   // `/introduction.html`); Starlight serves the SAME chapters at clean
   // directory URLs with the `specs/` segment dropped: `/<group>/<chapter>/`
-  // (and the landing page at `/`). The mapping is therefore fully mechanical:
+  // (and the landing page at `/`). The mapping is therefore mechanical:
   //   `/specs/<group>/<chapter>.html`  ->  `/<group>/<chapter>/`
   //   `/introduction.html`             ->  `/`
-  // The `<group>/<chapter>` stems below are the 29 slugs from the starlight
-  // `sidebar` block (the single source of truth for the new slugs); this map is
+  // except that a chapter whose content lives on another page points at that
+  // page. Every destination other than `/` is a slug from the starlight
+  // `sidebar` block (the single source of truth for the page slugs); this map is
   // a hand-written static object literal (NOT computed from the sidebar at
-  // config-eval time) so it stays greppable and reviewable, ordered Part 1 →
-  // Part 7 to mirror src/SUMMARY.md.
+  // config-eval time) so it stays greppable and reviewable, and its entries are
+  // grouped by part, as the group comments mark.
   //
   // GitHub Pages serves static files only — no `_redirects`, no server-side
   // rewrites — so each entry must materialise as a static HTML page at the OLD
@@ -90,10 +91,15 @@ export default defineConfig({
   // ships in the same `dist/` the deploy serves and needs NO new dependency.
   //
   // base-awareness: keys AND destinations are written as site-absolute paths
-  // starting with "/" — do NOT hand-prefix `base`/`DOCS_BASE`; Astro applies
-  // `base` to both sides of `redirects` itself, so a versioned ("/vX.Y/")
-  // build resolves these correctly. Destinations are directory-style with a
-  // trailing slash to match Starlight's emitted URLs and avoid an extra hop.
+  // starting with "/" — do NOT hand-prefix `base`/`DOCS_BASE`: one map serves
+  // every build. Astro writes each stub at its key's path under the build's
+  // output root and its destination exactly as written (refresh target, title,
+  // link text, canonical link), prefixing neither with `base`. build-versions.mjs
+  // copies a versioned ("/vX.Y/") build under its `base` and prefixes each
+  // stub's refresh target there (scripts/version-snapshot.mjs); the title, link
+  // text and canonical link keep the unprefixed path. Destinations are
+  // directory-style with a trailing slash to match Starlight's emitted URLs and
+  // avoid an extra hop.
   //
   // TODO(D5, traffic data): the migration plan deferred the *policy* of URL
   // preservation to "decide with traffic data" — the entries below are the
@@ -101,8 +107,8 @@ export default defineConfig({
   // intentionally NOT pre-populated here. Pull inbound-link / referrer / 404
   // data for methodology.cobre-rs.dev, then decide:
   //   (a) Keep redirects at all? The site is young / blast radius is low, so the
-  //       plan's default is to SHIP these 30 (cheap, static, no downside) —
-  //       confirm or drop.
+  //       plan's default is to SHIP every entry below (cheap, static, no
+  //       downside) — confirm or drop.
   //   (b) Any NON-chapter inbound URLs to add? e.g. old asset paths, deep
   //       `#fragment` targets (note: <meta refresh> cannot preserve a fragment —
   //       such links land on the page top), or pre-revamp slugs that no longer

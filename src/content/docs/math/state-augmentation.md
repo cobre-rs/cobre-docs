@@ -210,7 +210,7 @@ $$
 \beta^{b}_{h,d} = \bar{c}^{\,b}_{h,d} / d^{col}_{h,d}
 $$
 
-Transit buckets are always in the cut projection, whatever the stage's selection for the storage and inflow-lag dimensions ([§7](#7-cut-state-projection)). Each cut therefore carries one coefficient per bucket dimension, contiguous with the storage, lag, and anticipated coefficients and read from the same reduced-cost mechanism ([LP Formulation §11](/math/lp-formulation#11-benders-cuts)). In the policy manifest a bucket dimension is tagged with the **downstream** hydro as its entity and the maturity lag as its sub-index.
+Transit buckets are always in the cut projection, whatever the stage's selection for the storage and inflow-lag dimensions ([§7](#7-cut-state-projection)). Each cut therefore carries one coefficient per bucket dimension, contiguous with the storage, lag, and anticipated coefficients and read from the same reduced-cost mechanism ([LP Formulation §11](/math/lp-formulation#11-benders-cuts)).
 
 ### Horizon limitation
 

@@ -12,32 +12,41 @@
 // not exist yet (a non-empty target exits 2); the committed overlay
 // scripts/fixtures/gc-overlay/ (ticket-242a, root README.md excluded) is copied over it
 // and must validate on its own; then each fence is spliced ALONE into a fresh copy of
-// that case, replacing the file at its `title` path (D-179-2).
+// that case, replacing the file at its `title` path (D-179-2). A `title` that names
+// no file of that assembled case is a BAD-META problem: a file written to an unknown
+// path is read by no `validate` step, so its verdict would say nothing about the fence.
 //
 // A verdict is the exit status plus the presence of an `error` object in the
 // `validate --json` stdout: the success object has no `error` key, and `phase` alone
 // cannot attribute a refusal to the spliced fence (it is the same for a malformed
 // hydros.json), which is why the overlay is validated first. The refusal's kind and
 // message are not compared. The pinned binary is identified by `cobre version` line 1,
-// which must carry the tag in scripts/cobre-ref.mjs DEFAULT_COBRE_REF.
+// which must carry the tag in scripts/cobre-ref.mjs DEFAULT_COBRE_REF. A development
+// build prints the same line, so a binary whose real path (a bare `cobre` resolved
+// through PATH, symlinks followed) lies inside `/target/release/` or `/target/debug/`
+// is refused before it is run.
 //
 // Usage: node scripts/check-gc-examples.mjs
 // Exit 0 when every fence behaves as marked; 1 listing each problem; 2 on a setup error
-// (binary missing or of another version, fixture directory missing, `init` failing,
-// page unreadable). Reads source files only (no build).
+// (binary missing, of another version or inside a cargo build tree, fixture directory
+// missing, `init` failing, page unreadable). Reads source files only (no build).
 
 import { spawnSync } from "node:child_process";
 import {
+  accessSync,
+  constants,
   cpSync,
+  existsSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  realpathSync,
   rmSync,
   statSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { delimiter, dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { DEFAULT_COBRE_REF } from "./cobre-ref.mjs";
 
@@ -175,6 +184,28 @@ export function classifyOutcome(check, { status, stdout }) {
   };
 }
 
+const CARGO_BUILD_TREE = /\/target\/(?:release|debug)\//;
+
+// Real path of the executable `bin` names (a bare name is looked up on `env.PATH`),
+// or null when there is none; the spawn then reports the missing binary.
+function resolveBinary(bin, env) {
+  const candidates = bin.includes("/")
+    ? [bin]
+    : (env.PATH ?? "")
+        .split(delimiter)
+        .filter((dir) => dir !== "")
+        .map((dir) => join(dir, bin));
+  for (const candidate of candidates) {
+    try {
+      accessSync(candidate, constants.X_OK);
+      return realpathSync(candidate);
+    } catch (error) {
+      if (!["ENOENT", "ENOTDIR", "EACCES"].includes(error.code)) throw error;
+    }
+  }
+  return null;
+}
+
 // null when line 1 of `cobre version` names `defaultRef`, else the setup-error message.
 export function checkCobreVersion(versionStdout, defaultRef) {
   const match = /^cobre\s+(v\S+)/.exec(versionStdout.split(/\r?\n/, 1)[0]);
@@ -207,6 +238,12 @@ export function runGcExamples({
     at: line === null ? pageLabel : `${pageLabel}:${line}`,
   });
   const result = { setupError: null, problems: [], accepted: 0, rejected: 0 };
+
+  const real = resolveBinary(cobreBin, childEnv);
+  if (real !== null && CARGO_BUILD_TREE.test(real)) {
+    result.setupError = `cobre binary ${real} lies inside a cargo build tree (/target/release/ or /target/debug/); set COBRE_BIN or PATH to the pinned release binary`;
+    return result;
+  }
 
   const version = cobre(["version"]);
   if (version.error) {
@@ -265,6 +302,17 @@ export function runGcExamples({
     }
 
     for (const fence of fences) {
+      const target = join(base, fence.title);
+      if (!existsSync(target) || !statSync(target).isFile()) {
+        result.problems.push(
+          locate({
+            code: "BAD-META",
+            line: fence.line,
+            detail: `title ${fence.title} names no file of the assembled case; a checked fence replaces an existing file`,
+          }),
+        );
+        continue;
+      }
       const caseDir = join(tmp, `case-${fence.line}`);
       cpSync(base, caseDir, { recursive: true });
       const file = join(caseDir, fence.title);

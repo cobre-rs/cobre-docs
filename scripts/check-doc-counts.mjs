@@ -16,7 +16,9 @@
 // columns must be present", or a count that merely describes a SUBSET, e.g.
 // "five energy columns") are skipped — the `_COUNT_RE` requires the number to
 // be immediately followed by "columns"/"fields", and the `must be present`
-// back-reference form is explicitly skipped. Fenced code is skipped entirely.
+// back-reference form is explicitly skipped. A count whose number and noun a
+// hard wrap splits across two lines is read like the unwrapped form and
+// reported at the line its number is on. Fenced code is skipped entirely.
 //
 // UNLIKE check-doc-voice.mjs / check-doc-version.mjs, this gate does NOT
 // consult scripts/doc-lint-allow.txt: a column/field-count claim disagreeing
@@ -39,7 +41,10 @@
 // `public/schemas/` (resolved from this script's location, so the working
 // directory does not matter). A missing page, a missing `public/schemas/`, or
 // a detector that finds no statement to check exits 2: a gate that reads
-// nothing must not pass.
+// nothing must not pass; the problems collected before that point are printed
+// first. A fence still open at the end of any of these pages hides every count
+// after its opener, so it is reported as `UNCLOSED-FENCE <page>:<line>` (the
+// opener's line) and fails the gate.
 //
 // Run any time (no build needed — reads source content, not dist/):
 //   node scripts/check-doc-counts.mjs   |   npm run check:counts
@@ -53,8 +58,7 @@ const contentRoot = join(scriptDir, "..", "src", "content", "docs");
 
 // Reference pages that use the "N columns/fields" + adjacent-table
 // convention — the cobre-docs analogs of cobre's `output-format.md` /
-// `case-format.md`. Crate/perf pages are NOT ported into this repo (they are
-// relocated-domain content per CLAUDE.md), so they are correctly absent here.
+// `case-format.md`.
 const TARGET_FILES = [
   "reference/output/index.mdx",
   "reference/output/training.mdx",
@@ -105,10 +109,13 @@ const WORD_TO_INT = {
   twenty: 20,
 };
 
-// A count token: digits or a spelled cardinal, then "columns"/"fields".
-// The negative lookbehind rejects "4-column" and mid-word matches.
+// A count token: digits or a spelled cardinal.
+const NUMBER = `\\d+|${Object.keys(WORD_TO_INT).join("|")}`;
+
+// A count token, then "columns"/"fields". The negative lookbehind rejects
+// "4-column" and mid-word matches.
 const COUNT_RE = new RegExp(
-  `(?<![\\w-])(\\d+|${Object.keys(WORD_TO_INT).join("|")})\\s+(?:columns|fields)\\b`,
+  `(?<![\\w-])(${NUMBER})\\s+(?:columns|fields)\\b`,
   "i",
 );
 
@@ -123,6 +130,13 @@ function isTableSeparator(line) {
   if (!/^[|:\- ]+$/.test(s)) return false;
   return s.includes("-");
 }
+
+// A table starts at `lines[i]`: a `|` line over a `|---|` separator. A caller
+// that tracks fences passes its per-line `fenced` flags to skip fenced lines.
+const startsTable = (lines, i, fenced = []) =>
+  !fenced[i] &&
+  isTableSeparator(lines[i + 1] ?? "") &&
+  lines[i].trimStart().startsWith("|");
 
 // Count data rows of the table whose header is at `headerIdx`. `headerIdx +
 // 1` is its `|---|` separator; data rows are the contiguous `|`-prefixed
@@ -165,11 +179,7 @@ function tableRowsAfter(lines, start, mayCrossParagraph = true) {
       /^\*\*Methodology:\*\*/.test(lines[idx].trim()))
   )
     idx += 1;
-  if (
-    idx + 1 < lines.length &&
-    lines[idx].trimStart().startsWith("|") &&
-    isTableSeparator(lines[idx + 1])
-  ) {
+  if (startsTable(lines, idx)) {
     return countTableRows(lines, idx);
   }
   return mayCrossParagraph ? tableRowsAfter(lines, idx - 1, false) : null;
@@ -192,12 +202,20 @@ export function checkText(text, label = "<text>") {
     const line = lines[i];
     if (fenced[i]) continue;
 
+    // A hard wrap can split a count from its noun ("has 5" / "columns"): a
+    // prose line with no count of its own is read with the next line appended,
+    // and the count must start on this line.
+    const statement =
+      !COUNT_RE.test(line) && !NOT_PROSE.test(line.trimStart())
+        ? `${line} ${lines[i + 1] ?? ""}`
+        : line;
+
     // Back-reference forms ("all N columns must be present") point at a
     // table ABOVE, not below — skip them.
-    if (line.toLowerCase().includes("must be present")) continue;
+    if (statement.toLowerCase().includes("must be present")) continue;
 
-    const match = COUNT_RE.exec(line);
-    if (match === null) continue;
+    const match = COUNT_RE.exec(statement);
+    if (match === null || match.index >= line.length) continue;
     const stated = parseCount(match[1]);
     if (stated === null) continue;
 
@@ -213,9 +231,8 @@ export function checkText(text, label = "<text>") {
   return problems;
 }
 
-// A count token (digits or a spelled cardinal) followed by the noun phrase
-// each detector reads; `g` so one line can hold several statements.
-const NUMBER = `\\d+|${Object.keys(WORD_TO_INT).join("|")}`;
+// A count token followed by the noun phrase each detector reads; `g` so one
+// line can hold several statements.
 const VARIABLE_COUNT_RE = new RegExp(
   `(?<![\\w-])(${NUMBER})\\s+(?:LP\\s+)?variable(?:s|\\s+types)\\b`,
   "gi",
@@ -225,15 +242,19 @@ const SCHEMA_COUNT_RE = new RegExp(
   "gi",
 );
 
-// Per-line flags: true for a fence delimiter and every line inside a fence. A
-// closing fence repeats the opening character at least as many times.
-function fencedLines(lines) {
+// `fenced` holds per-line flags: true for a fence delimiter and every line
+// inside a fence. A closing fence repeats the opening character at least as
+// many times. `unclosedLine` is the 1-based opening line of a fence still open
+// at the end, else null.
+function scanFences(lines) {
   let open = null;
-  return lines.map((line) => {
+  let openLine = 0;
+  const fenced = lines.map((line, i) => {
     const fence = /^\s*(`{3,}|~{3,})(.*)$/.exec(line);
     if (open === null) {
       if (fence === null) return false;
       open = fence[1];
+      openLine = i + 1;
       return true;
     }
     if (
@@ -246,7 +267,15 @@ function fencedLines(lines) {
     }
     return true;
   });
+  return { fenced, unclosedLine: open === null ? null : openLine };
 }
+
+const fencedLines = (lines) => scanFences(lines).fenced;
+
+// 1-based line of the opener of a fence still open at the end of the text, else
+// null. Such a fence hides every count and table after it from the detectors.
+export const unclosedFenceLine = (text) =>
+  scanFences(text.split("\n")).unclosedLine;
 
 /**
  * Compare every variable-count statement in the `## Variable catalog`
@@ -277,11 +306,7 @@ export function checkVariableCatalogCount(text, label = "<text>") {
 
   let catalogRows = null;
   for (let i = heading + 1; i < end; i++) {
-    if (
-      !fenced[i] &&
-      lines[i].trimStart().startsWith("|") &&
-      isTableSeparator(lines[i + 1] ?? "")
-    ) {
+    if (startsTable(lines, i, fenced)) {
       catalogRows = countTableRows(lines, i);
       break;
     }
@@ -349,11 +374,7 @@ export function checkSchemaCount(text, label, vendoredCount) {
 
   let tableRows = null;
   for (let i = heading + 1; i < end; i++) {
-    if (
-      !fenced[i] &&
-      lines[i].trimStart().startsWith("|") &&
-      isTableSeparator(lines[i + 1] ?? "")
-    ) {
+    if (startsTable(lines, i, fenced)) {
       tableRows = countTableRows(lines, i);
       break;
     }
@@ -392,7 +413,18 @@ function main() {
       process.exit(2);
     }
   }
+  for (const rel of Object.keys(texts)) {
+    const openFence = unclosedFenceLine(texts[rel]);
+    if (openFence !== null) problems.push(`UNCLOSED-FENCE ${rel}:${openFence}`);
+  }
   for (const rel of TARGET_FILES) problems.push(...checkText(texts[rel], rel));
+
+  const printProblems = () => {
+    console.log(
+      "FAIL: doc count drift (a pinned column/field count disagrees with its adjacent table). Fix the number or the table:",
+    );
+    for (const p of problems) console.log(`  ${p}`);
+  };
 
   let vendored;
   try {
@@ -400,6 +432,7 @@ function main() {
       f.endsWith(".schema.json"),
     ).length;
   } catch (error) {
+    if (problems.length > 0) printProblems();
     console.error(
       `check:counts: could not read ${schemaDir}: ${error.message}`,
     );
@@ -416,6 +449,7 @@ function main() {
     [SCHEMA_LIST_FILE, schemas],
   ]) {
     if (result.statements === 0) {
+      if (problems.length > 0) printProblems();
       console.error(
         `check:counts: no count statement found in ${rel}; the gate would check nothing`,
       );
@@ -426,10 +460,7 @@ function main() {
   problems.push(...catalog.problems, ...schemas.problems);
 
   if (problems.length > 0) {
-    console.log(
-      "FAIL: doc count drift (a pinned column/field count disagrees with its adjacent table). Fix the number or the table:",
-    );
-    for (const p of problems) console.log(`  ${p}`);
+    printProblems();
     process.exit(1);
   }
 

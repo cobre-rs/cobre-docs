@@ -14,7 +14,7 @@ emits its output rows, zeroed rather than absent, with the same
 
 An energy contract contributes exactly one LP column per block per direction
 and carries **no state variable** — it is not part of the Bellman recursion
-and contributes no term to the Benders cuts (methodology §3). This is a
+and contributes no term to the Benders cuts ([Equipment-Specific Formulations §3](/math/equipment-formulations#3-importexport-contracts)). This is a
 structural difference from hydro plants and anticipated thermals, whose
 storage and commitment-ring state variables do carry a cut term. A non-zero
 `min_mw` at a contract's active stages is a hard take-or-pay floor: the LP
@@ -26,7 +26,7 @@ the per-stage cost breakdown of `simulation/costs/`, next to `thermal_cost`.
 ### Pumping stations carry no explicit objective cost
 
 A pumping station's flow variable has **no direct term in the objective
-function** (methodology §4). The cost of pumping is entirely implicit:
+function** ([Equipment-Specific Formulations §4](/math/equipment-formulations#4-pumping-stations)). The cost of pumping is entirely implicit:
 pumping draws power at the connected bus in proportion to pumped flow, and
 that draw is priced by whatever the bus's marginal cost happens to be at
 that stage and scenario — cheap when hydro/renewable surplus is on the
@@ -41,7 +41,7 @@ stage `t` depends only on that stage's own bounds and price. An anticipated
 thermal (`anticipated_config`) is the one exception — its commitment, decided
 at an earlier stage or before the study, is held as commitment-ring state until
 its delivery stage,
-where the plant's generation must deliver it (system elements §4). The
+where the plant's generation must deliver it ([System Element Modeling Overview §4](/math/system-elements#anticipated-thermal-plants)). The
 `anticipated_decision(N)` generic-constraint expression lets a case author
 cap or floor that forward commitment directly; referencing a non-anticipated
 thermal with this expression is a hard load-time error, and referencing an

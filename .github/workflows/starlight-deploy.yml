@@ -93,7 +93,6 @@ jobs:
         run: npm ci
 
       # ── Checks, fail-closed before the Pages upload ──
-      # starlight-ci.yml owns the doc-lint gates; this workflow does not repeat them.
 
       # E10 ticket-031: regenerate the third-party notices file and fail if
       # the committed copy is stale (drift guard). Uses permissions: contents: read
@@ -126,8 +125,8 @@ jobs:
         run: npm run build:versions
 
       # `npm test` MUST run AFTER the build: the scripts/*.test.mjs glob includes
-      # dist-gated tests (i18n-locale, version-assembly) that read dist/index.html
-      # and exit non-zero ("run npm run build first") when dist/ is absent. On a
+      # a dist-gated test (i18n-locale) that reads dist/index.html and exits
+      # non-zero ("run npm run build first") when dist/ is absent. On a
       # clean runner there is no dist/ until build:versions runs. (check:figures
       # stays pre-build — it reads src/, not dist/.) Keep the single glob'd
       # invocation so new tests are picked up automatically.

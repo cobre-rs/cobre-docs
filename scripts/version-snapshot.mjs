@@ -11,8 +11,9 @@
 // snapshot's picker lists every version and marks its own entry selected.
 //
 // Astro applies a build's `base` to the URLs it manages (assets, sidebar,
-// favicon, the path of each redirect stub), but two kinds of root-relative URL
-// are emitted verbatim and would leave a versioned snapshot for latest: a link
+// favicon), and build-versions.mjs nests each build's output, redirect stubs
+// included, under dist/<base>/. Two kinds of root-relative URL are emitted
+// verbatim and would leave a versioned snapshot for latest: a link
 // an author writes in markdown as [x](/math/x), emitted as href="/math/x", and
 // the destination of a redirect stub, <meta http-equiv="refresh"
 // content="0;url=/math/x/">. prefixRootRelative gives every href/src value and

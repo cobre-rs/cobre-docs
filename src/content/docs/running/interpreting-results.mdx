@@ -520,6 +520,8 @@ read only the matching partition instead of every scenario's file.
 
 ```python
 # Polars — lazy scan; the scenario_id filter selects the scenario 0 partition
+import polars as pl
+
 costs_s0 = (
     pl.scan_parquet("results/simulation/costs/", hive_partitioning=True)
     .filter(pl.col("scenario_id") == 0)
@@ -602,6 +604,8 @@ shape: (1, 2)
 ### (b) Expected thermal generation cost
 
 ```python
+import polars as pl
+
 thermals = pl.read_parquet("results/simulation/thermals/")
 
 # Sum over stages and blocks within each scenario, then average over scenarios
@@ -659,6 +663,8 @@ this occurs. Dropping `bus_id` from both `group_by` key lists gives the
 probability that any bus has a deficit.
 
 ```python
+import polars as pl
+
 buses = pl.read_parquet("results/simulation/buses/")
 
 # A (scenario, stage, bus) has a deficit if any of its blocks does;
@@ -701,6 +707,8 @@ by their duration (the block hours in `stages.json`).
 
 ```python
 import json
+
+import polars as pl
 
 # Block hours from the case's stages.json, keyed like the output rows
 with open("stages.json") as f:
@@ -767,6 +775,8 @@ by bus, read `simulation/hydro_bus_generation/`, keyed by (`scenario_id`,
 `stage_id`, `block_id`, `hydro_id`, `bus_id`):
 
 ```python
+import polars as pl
+
 bus_gen = pl.read_parquet("results/simulation/hydro_bus_generation/")
 
 # Sum the blocks within each (scenario, stage), then average over scenarios

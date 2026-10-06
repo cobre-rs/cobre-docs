@@ -18,11 +18,9 @@
 //     re-rendered with the current renderer settings):
 //       git worktree add --force .src-<slug> <ref>
 //       astro build --root .src-<slug> --outDir <abs .dist-<slug>>
-//     NB: this is a repo-root checkout but the Astro project lives in site/, so
-//     --root points at `.src-<slug>` (not the worktree root), and --outDir
-//     must be ABSOLUTE — astro resolves a relative --outDir against --root, which
-//     would otherwise land the output inside the worktree instead of beside this
-//     script where the copy step reads it.
+//     --outDir must be ABSOLUTE — astro resolves a relative --outDir against
+//     --root, which would otherwise land the output inside the worktree instead
+//     of beside this script where the copy step reads it.
 //     Each ref worktree also receives the current versions.json (over the ref's
 //     own copy) so its version picker lists every version.
 //
@@ -108,6 +106,7 @@ for (const v of builds) {
       "node_modules/.bin/astro",
       [
         "build",
+        "--force",
         ...(v.ref ? ["--root", `.src-${v.slug}`] : []),
         "--outDir",
         v.ref ? resolve(tmp) : tmp,

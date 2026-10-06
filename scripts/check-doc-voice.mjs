@@ -15,8 +15,13 @@
 //      zone ONLY: the methodology states the invariant, not a transient
 //      number, while the lenient software-layer pages may legitimately carry
 //      concrete config/CLI numbers.
-//   3. Instance magnitudes — the `instance-count`, `instance-approx` and
-//      `instance-span` rules described below.
+//   3. Instance magnitudes — `instance-count` ("160+ hydro"),
+//      `instance-approx` ("≈ 2000 states", also KaTeX `\approx`) and
+//      `instance-span` ("5-10 iterations", "1 month - 5 years"). Runs in the
+//      STRICT zone ONLY: worked examples (`examples/*`) and the software layer
+//      carry concrete instance numbers by design. Matching runs per paragraph
+//      block, so a phrase split by a hard wrap is found; a hit is reported,
+//      and exempted by a doc-voice-ok marker, at the line it starts on.
 //
 // Scans PROSE only: fenced code blocks (``` / ~~~), inline `code` spans, and
 // HTML comments are blanked before matching (shared preprocessing:
@@ -24,7 +29,10 @@
 // config defaults are never flagged. A line carrying an inline
 // `<!-- doc-voice-ok: reason -->` marker is exempted (checked against the RAW
 // source line, since the marker itself is an HTML comment that would
-// otherwise be blanked out of the prose).
+// otherwise be blanked out of the prose). A fence still open at the end of a
+// page would blank the rest of it, so it is reported as `UNCLOSED-FENCE
+// <page>:<line>` (the opener's line) and fails the gate; no allowlist entry
+// applies.
 //
 // A committed baseline allowlist (scripts/doc-lint-allow.txt, R4) grandfathers
 // pre-existing strict-zone hits so the gate lands green and blocks only NEW
@@ -32,21 +40,10 @@
 // An entry grandfathers only the rule id it names, and an entry of this gate's
 // that matches no hit is reported as STALE and fails the gate.
 //
-// Instance-magnitude rules (`detectMagnitudeViolations(text, zone)`, ids in
-// `MAGNITUDE_RULE_IDS`): `instance-count` ("160+ hydro", "10+ iterations"),
-// `instance-approx` ("≈ 2000 states", also KaTeX `\approx`) and
-// `instance-span` ("5-10 iterations", "1 month - 5 years"). They run in the
-// STRICT zone only; worked examples (`examples/*`) and the software layer
-// carry concrete instance numbers by design. Matching runs per paragraph block
-// over the blanked prose, so a phrase split by a hard wrap is found and a hit
-// is reported at the line it starts on; an inline
-// `<!-- doc-voice-ok: reason -->` on that line exempts it.
-// `detectVoiceViolations` appends the detector's hits, and `RULE_IDS` includes
-// its ids.
-//
 // Exports `detectVoiceViolations(text, zone)` — the pure per-file detector —
-// and `RULE_IDS` (the rule ids this gate can emit) behind a direct-run guard,
-// mirroring check-figures.mjs / check-spdx.mjs.
+// `detectMagnitudeViolations(text, zone)` (rule 3 alone), `RULE_IDS` (the rule
+// ids this gate can emit) and `MAGNITUDE_RULE_IDS` (rule 3's ids) behind a
+// direct-run guard, mirroring check-figures.mjs / check-spdx.mjs.
 //
 // Run any time (no build needed — reads source content, not dist/):
 //   node scripts/check-doc-voice.mjs   |   npm run check:voice
@@ -56,7 +53,12 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { join, dirname } from "node:path";
 import { zoneOf, ZONE_STRICT, collectZonedSourceFiles } from "./doc-zones.mjs";
 import { loadAllowlist, partitionByAllowlist } from "./doc-lint-allowlist.mjs";
-import { proseLines, buildBlocks, lineForOffset } from "./doc-text.mjs";
+import {
+  proseLines,
+  unclosedFenceLine,
+  buildBlocks,
+  lineForOffset,
+} from "./doc-text.mjs";
 
 const scriptDir = dirname(fileURLToPath(import.meta.url));
 const contentRoot = join(scriptDir, "..", "src", "content", "docs") + "/";
@@ -323,6 +325,7 @@ function main() {
   const relFiles = collectZonedSourceFiles(contentRoot).sort();
 
   const violations = [];
+  const unclosed = [];
   let linesChecked = 0;
 
   for (const rel of relFiles) {
@@ -340,6 +343,9 @@ function main() {
       continue;
     }
 
+    const openFence = unclosedFenceLine(text);
+    if (openFence !== null) unclosed.push({ rel, lineno: openFence });
+
     linesChecked += proseLines(text).filter(([, prose]) => prose.trim()).length;
 
     for (const v of detectVoiceViolations(text, zone)) {
@@ -353,7 +359,7 @@ function main() {
     (id) => RULE_IDS.has(id),
   );
 
-  if (failing.length === 0 && stale.length === 0) {
+  if (failing.length === 0 && stale.length === 0 && unclosed.length === 0) {
     console.log(
       `OK: ${linesChecked} prose lines scanned across ${relFiles.length} files; ` +
         `no NEW promotional voice, unpinned 'typical' numbers or instance magnitudes found` +
@@ -372,8 +378,9 @@ function main() {
       `STALE [${s.ruleId}]: ${s.key} — doc-lint-allow.txt:${s.fileLine} matches no voice hit`,
     );
   }
+  for (const u of unclosed) console.log(`UNCLOSED-FENCE ${u.rel}:${u.lineno}`);
   console.log(
-    `FAIL: ${failing.length} prose violation(s), ${stale.length} stale allowlist entry(ies). ` +
+    `FAIL: ${failing.length} prose violation(s), ${stale.length} stale allowlist entry(ies), ${unclosed.length} unclosed fence(s). ` +
       `Rewrite per the Methodology Authoring Standards (instance-count, instance-approx and ` +
       `instance-span flag instance magnitudes, which belong in a worked example or the software layer), ` +
       `mark a genuine exception with an inline ` +

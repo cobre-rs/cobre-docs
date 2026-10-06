@@ -331,6 +331,48 @@ test("integer \\| null is valid in an input table and NULLABLE-IN-OUTPUT in an o
   ]);
 });
 
+const NULLABLE_PARQUET_TABLE = `${PARQUET_TABLE}
+| \`Int32 (nullable)\` | INT32 | \`pa.int32()\` |`;
+const nullableVocab = loadVocabulary(
+  section4(NULLABLE_PARQUET_TABLE, JSON_TABLE, FLATBUFFERS_TABLE),
+);
+const nullableProblemsOf = (text) =>
+  checkPage(text, "p.md", nullableVocab).problems;
+
+test("a (nullable) suffix is valid in an input table and NULLABLE-IN-OUTPUT in an output table", () => {
+  assert.deepEqual(
+    nullableProblemsOf(inputPage(PARQUET_FILE, "Int32 (nullable)")),
+    [],
+  );
+  assert.deepEqual(
+    nullableProblemsOf(outputPage(PARQUET_FILE, "Int32 (nullable)")),
+    [problem("NULLABLE-IN-OUTPUT", 5, "Int32 (nullable)")],
+  );
+  assert.deepEqual(
+    nullableProblemsOf(outputPage("# Page", "Int32 (nullable)")),
+    [problem("NULLABLE-IN-OUTPUT", 5, "Int32 (nullable)")],
+  );
+  assert.deepEqual(nullableProblemsOf(outputPage(PARQUET_FILE, "Int32")), []);
+  assert.deepEqual(
+    nullableProblemsOf(outputPage(PARQUET_FILE, "Int32(nullable)")),
+    [problem("NOT-IN-VOCABULARY", 5, "Int32(nullable)")],
+  );
+});
+
+test("CLI: the committed section 4 refuses the (nullable) suffix in an output table", () => {
+  withRoot(
+    { "docs/p.md": outputPage(PARQUET_FILE, "Int32 (nullable)") },
+    (root) => {
+      const result = cli(["--root", join(root, "docs")]);
+      assert.equal(result.status, 1);
+      assert.equal(
+        result.stdout,
+        "FAIL: 1 problem(s)\ncheck:type-spelling: NULLABLE-IN-OUTPUT p.md:5 Int32 (nullable)\n",
+      );
+    },
+  );
+});
+
 test("a nullable form needs a JSON keyword, the exact spacing and a JSON-kind binding", () => {
   assert.deepEqual(
     problemsOf(
@@ -868,4 +910,54 @@ test("CLI: an unknown option, an option without a value or an unreadable root ex
       assert.equal(result.stdout, "", args.join(" "));
     }
   });
+});
+
+test("a fence that never closes is UNCLOSED-FENCE at its opening line, not a silent blank of the tables after it", () => {
+  const text = `\`\`\`text\ncode\n${inputPage(JSON_FILE, "INT32")}`;
+  assert.deepEqual(checkPage(text, "p.md", vocab), {
+    tables: 0,
+    cells: 0,
+    problems: ["check:type-spelling: UNCLOSED-FENCE p.md:1"],
+  });
+  const tilde = `# Page\n\n~~~\n${inputPage(JSON_FILE, "INT32")}`;
+  assert.deepEqual(problemsOf(tilde), [
+    "check:type-spelling: UNCLOSED-FENCE p.md:3",
+  ]);
+});
+
+test("the same page with the fence closed reports its violation and no UNCLOSED-FENCE", () => {
+  const text = `\`\`\`text\ncode\n\`\`\`\n${inputPage(JSON_FILE, "INT32")}`;
+  assert.deepEqual(problemsOf(text), [
+    problem("NOT-IN-VOCABULARY", 8, "INT32"),
+  ]);
+  assert.deepEqual(problemsOf("~~~\ncode\n~~~\n"), []);
+});
+
+test("a ~~~ line inside an open backtick fence does not close it", () => {
+  assert.deepEqual(problemsOf("```\n~~~\ncode\n"), [
+    "check:type-spelling: UNCLOSED-FENCE p.md:1",
+  ]);
+});
+
+test("CLI: a page with a fence that never closes prints UNCLOSED-FENCE <page>:<line> and exits 1", () => {
+  withRoot(
+    {
+      "docs/ok.md": inputPage(PARQUET_FILE, "Int32"),
+      "docs/u.md": `\`\`\`text\ncode\n${inputPage(PARQUET_FILE, "INT32")}`,
+      "vocab.md": VOCAB_MD,
+    },
+    (root) => {
+      const result = cli([
+        "--root",
+        join(root, "docs"),
+        "--vocab",
+        join(root, "vocab.md"),
+      ]);
+      assert.equal(result.status, 1);
+      assert.equal(
+        result.stdout,
+        "FAIL: 1 problem(s)\ncheck:type-spelling: UNCLOSED-FENCE u.md:1\n",
+      );
+    },
+  );
 });

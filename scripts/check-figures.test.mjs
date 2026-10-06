@@ -77,9 +77,9 @@ test("does NOT flag the legitimate /math/system-elements chapter slug", () => {
   assert.deepEqual(detectFigureViolations(text), []);
 });
 
-test("does NOT flag the renderer-demo embeds index.mdx keeps", () => {
-  // ValueFunctionPlot is a component import, ```d2 / ```mermaid are fenced
-  // demos — none are retired-SVG references.
+test("does NOT flag a component import, fenced diagram blocks or a component tag", () => {
+  // A relative component import, fenced diagram blocks and a component tag carry
+  // no image-asset path and no retired stem.
   const text = [
     'import ValueFunctionPlot from "../../components/ValueFunctionPlot.astro";',
     "```mermaid\nflowchart LR\n  A --> B\n```",

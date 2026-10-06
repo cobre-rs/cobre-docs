@@ -31,7 +31,7 @@ $$
 
 with:
 
-- $\eta_h$ = turbine efficiency (a dimensionless factor in $(0, 1]$), from the plant's declared efficiency
+- $\eta_h$ = turbine efficiency (a dimensionless factor in $(0, 1]$)
 - $H^{ref}_{h,t}$ = reference net head (meters), evaluated at the reference storage level and varying by stage
 
 **Per-stage productivity**: the productivity coefficient is authored **per (hydro, stage)** rather than per plant. A plant can therefore carry a stage-varying constant productivity — useful when the reference head differs between near-term and far-future stages of the same study, or when the constant model is being used as a coarse approximation that needs different operating points across the horizon. Section 5.1 describes how that per-(hydro, stage) value is supplied.
@@ -118,7 +118,7 @@ $$
 h_{tail}^{(n)}(q_{jus}) = c_0^{(n)} + c_1^{(n)} q_{jus} + c_2^{(n)} q_{jus}^2 + c_3^{(n)} q_{jus}^3 + c_4^{(n)} q_{jus}^4
 $$
 
-evaluated via Horner's method for numerical stability. C0 continuity between segments is enforced to ~1 mm. These segments are grouped into **backwater families** keyed by the downstream reservoir's reference forebay level ($HrefJus$, in metres). At fitting time, the active family is **linearly interpolated** by the downstream plant's resolved stage reference level — clamped to the calibrated level range, never extrapolated. Plants with a single keyless family (no backwater coupling) evaluate that family directly regardless of the downstream level. Plants without a tailrace table use the entity-level polynomial or piecewise-linear tailrace.
+evaluated via Horner's method for numerical stability. Consecutive segments are contiguous in outflow and agree in level at their shared boundary (C0 continuity) to calibration precision (Implementation notes, "Computed-FPHA fitting behavior"). These segments are grouped into **backwater families** keyed by the downstream reservoir's reference forebay level ($HrefJus$, in metres). At fitting time, the active family is **linearly interpolated** by the downstream plant's resolved stage reference level — clamped to the calibrated level range, never extrapolated. Plants with a single keyless family (no backwater coupling) evaluate that family directly regardless of the downstream level. Plants without a tailrace table use the entity-level polynomial or piecewise-linear tailrace.
 
 #### Hydraulic Losses $h_{loss}$
 
@@ -208,7 +208,7 @@ Key properties:
 
 **Precomputed input**: precomputed planes may carry an intercept factor $\kappa \in (0, 1]$ (Configure tab) that scales each plane's intercept only ($\gamma_0^m \leftarrow \gamma_0^m \cdot \kappa$), unlike the whole-affine $k_{FPHA}$. The computed path does not use $\kappa$; its $k_{FPHA}$ correction plays that role.
 
-The figure below shows a synthetic plant with normalized axes: storage, flow and generation are fractions of $v_{max}$, $q_{max}$ and $\bar{G}_h$. It slices the fit at one grid volume, which the example takes as the reference volume $V^{ref}$ of §5.1, and plots five series against turbined flow: the cloud points at that volume; the exact production $\phi$ capped at $\bar{G}_h$; the raw hull $FPHA_0$, the minimum over the hull planes, which lies on or above every cloud point; the corrected envelope $k_{FPHA} \cdot FPHA_0$, which rescales the hull by the single scalar of this section; and the dashed line $\rho_{eq}\,q$ of §5.1, which meets the uncapped $\phi$ at $q_{max}$, above the capped curve where the capacity binds.
+The figure below shows a synthetic plant with normalized axes: storage, flow and generation are fractions of $v_{max}$, $q_{max}$ and $\bar{G}_h$. It slices the fit at one grid volume, which the example takes as the reference volume $V^{ref}$ of §5.1, and plots five series against turbined flow: the cloud points at that volume; the exact production $\phi$ capped at $\bar{G}_h$; the raw hull $FPHA_0$, the minimum over the hull planes, which lies on or above every cloud point; the corrected envelope $k_{FPHA} \cdot FPHA_0$, which rescales the hull by the single scalar of this section; and the dashed line $\rho_{eq}\,q$ of §5.1, which, as the example sets $\rho_{esp}$ to $9.81\,\eta_h/1000$, meets the uncapped $\phi$ at $q_{max}$, above the capped curve where the capacity binds.
 
 <FphaPlot />
 
@@ -222,7 +222,7 @@ $$
 
 where MLT is the long-term mean inflow (m³/s). The **representative operating point** for each plane is the spill$=0$ grid point where that plane is the active (tightest) upper bound and attains the largest generation — the operating region the plane actually governs. The secant samples the **uncapped** production function $\phi$ (not clipped at installed capacity $\bar{G}_h$), so the spillage sensitivity is read from the raw head curve and is not flattened wherever the capacity ceiling binds — unlike the cloud and the $k_{FPHA}$ regression (§2.6), which both use the capacity-capped output.
 
-**Sign**: $\gamma_s^m \le 0$ (more lateral flow raises the tailrace, reduces generation). Near-zero slopes of either sign are **snapped to exactly 0** (Implementation notes, "Computed-FPHA fitting behavior") to protect LP column scaling from near-zero structural coefficients.
+**Sign**: $\gamma_s^m \le 0$ (more lateral flow raises the tailrace, reduces generation). A slope that is non-negative or negligibly negative is **snapped to exactly 0** (Implementation notes, "Computed-FPHA fitting behavior") to protect LP column scaling from near-zero structural coefficients.
 
 **Lateral axis**: the plant's own spillage ($q_{lat} = s$); upstream releases and post-incremental inflows do not enter it.
 

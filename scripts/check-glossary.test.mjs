@@ -567,6 +567,57 @@ test("punctuation in a heading is dropped from its slug; underscores and digits 
   assert.deepEqual(detectGlossaryViolations(text), []);
 });
 
+// github-slugger 2.0.0: lowercase, drop every character that is not a letter,
+// digit, underscore, space or hyphen, then map each space to a hyphen. Runs of
+// spaces and hyphens are kept, so a dropped "/" between two spaces leaves "--".
+const SLUGGER_2_0_0 = [
+  ["Hydro / Thermal", "hydro--thermal"],
+  ["Cut (Benders)", "cut-benders"],
+  ["State-space", "state-space"],
+  ["Cut_off (x)", "cut_off-x"],
+  ["A  B", "a--b"],
+  ["A - B", "a---b"],
+  ["Cost: Notes, 2", "cost-notes-2"],
+  ["A\tB", "ab"],
+];
+
+const sectionPage = (heading, anchor) =>
+  [
+    "## Index",
+    "",
+    `[Alpha](#${anchor})`,
+    "",
+    `## ${heading}`,
+    "",
+    "| Term | Definition |",
+    "| --- | --- |",
+    "| Alpha | x |",
+  ].join("\n");
+
+test("the section slug is github-slugger 2.0.0's, runs of spaces and hyphens kept", () => {
+  for (const [heading, slug] of SLUGGER_2_0_0) {
+    assert.deepEqual(
+      detectGlossaryViolations(sectionPage(heading, slug)),
+      [],
+      heading,
+    );
+    assert.ok(
+      snippets(sectionPage(heading, "other")).includes(
+        `"Alpha" has no Index entry linking #${slug}`,
+      ),
+      heading,
+    );
+  }
+});
+
+test("an index entry that collapses a run the heading keeps does not match", () => {
+  const text = sectionPage("Hydro / Thermal", "hydro-thermal");
+  assert.deepEqual(hits(text), [
+    [3, "glossary-index"],
+    [9, "glossary-index"],
+  ]);
+});
+
 test("a line that starts with a backtick or two is not a fence", () => {
   assert.deepEqual(hits(lead("`tick at the start of a line, no close.")), []);
   assert.deepEqual(hits(lead("``\nText.")), []);

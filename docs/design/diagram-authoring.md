@@ -270,7 +270,7 @@ it. See §2 for the TALA watermark rationale.
 
 ### 4.4 Reference implementations
 
-- `src/content/docs/math/lp-formulation.md` — inline ` ```d2 ` block (LP
+- `src/content/docs/math/lp-layout-and-scaling.md` — inline ` ```d2 ` block (LP
   column-layout schematic, d24)
 - `src/content/docs/math/par-inflow-model.mdx` — inline ` ```d2 ` block (PAR
   stored-vs-computed schematic, d23 equivalent)

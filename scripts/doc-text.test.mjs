@@ -7,6 +7,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   proseLines,
+  unclosedFenceLine,
   buildBlocks,
   lineForOffset,
   inRuleSelfReference,
@@ -20,6 +21,67 @@ test("proseLines blanks fenced code and keeps the original line numbers", () => 
     [1, "before"],
     [5, "after"],
   ]);
+});
+
+test("proseLines blanks a tilde fence, a clean control for the fence-character rules", () => {
+  const text = ["before", "~~~", "hidden", "~~~", "after"].join("\n");
+  assert.deepEqual(proseLines(text), [
+    [1, "before"],
+    [5, "after"],
+  ]);
+});
+
+test("proseLines blanks an indented fence, as inside a list item", () => {
+  const text = ["- item", "  ```js", "  hidden", "  ```", "after"].join("\n");
+  assert.deepEqual(proseLines(text), [
+    [1, "- item"],
+    [5, "after"],
+  ]);
+  assert.equal(unclosedFenceLine("- item\n  ```js\n  hidden"), 2);
+});
+
+test("proseLines: a ~~~ line inside a backtick fence does not close it, so fenced text is not read as prose", () => {
+  const text = ["```", "~~~", "hidden", "```", "after"].join("\n");
+  assert.deepEqual(
+    proseLines(text).map(([lineno]) => lineno),
+    [5],
+  );
+});
+
+test("proseLines: a ~~~ line inside a backtick fence does not hide the prose after the real closer", () => {
+  const text = ["```", "~~~", "hidden", "```", "after"].join("\n");
+  assert.deepEqual(proseLines(text).at(-1), [5, "after"]);
+});
+
+test("proseLines: a backtick line inside a tilde fence does not close it", () => {
+  const text = ["~~~", "```", "hidden", "~~~", "after"].join("\n");
+  assert.deepEqual(proseLines(text), [[5, "after"]]);
+});
+
+test("proseLines: a closer needs at least the opener's length and an empty info string", () => {
+  const longer = ["````", "```", "hidden", "````", "after"].join("\n");
+  assert.deepEqual(proseLines(longer), [[5, "after"]]);
+  const info = ["```", "```js", "hidden", "```", "after"].join("\n");
+  assert.deepEqual(proseLines(info), [[5, "after"]]);
+});
+
+test("unclosedFenceLine returns the opening line of a fence still open at the end of the text", () => {
+  assert.equal(unclosedFenceLine("text\n```js\ncode\nmore"), 2);
+  assert.equal(unclosedFenceLine("~~~\ncode"), 1);
+  assert.equal(unclosedFenceLine("```\nA\n```\n~~~\nB"), 4);
+});
+
+test("unclosedFenceLine is null when every fence closes, whatever the fence characters", () => {
+  assert.equal(unclosedFenceLine("text\n```js\ncode\n```\nmore"), null);
+  assert.equal(unclosedFenceLine("~~~\ncode\n~~~\n"), null);
+  assert.equal(unclosedFenceLine("```\n~~~\ncode\n```"), null);
+  assert.equal(unclosedFenceLine("````\n```\ncode\n````"), null);
+  assert.equal(unclosedFenceLine("no fence at all"), null);
+});
+
+test("unclosedFenceLine: a ~~~ line inside a backtick fence does not close it", () => {
+  assert.equal(unclosedFenceLine("```\n~~~\ncode"), 1);
+  assert.equal(unclosedFenceLine("````\n```\ncode"), 1);
 });
 
 test("proseLines blanks inline code spans", () => {

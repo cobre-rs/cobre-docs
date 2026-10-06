@@ -514,3 +514,34 @@ test("CLI: the report lists the hits of both detectors in line order", () => {
     [3, 5, 7],
   );
 });
+
+const FENCE_OPEN = "```js";
+const FENCE_CLOSE = "```";
+
+test("CLI: a fence that never closes is reported as UNCLOSED-FENCE <page>:<line> and exits 1", () => {
+  const page = `# T\n\n${FENCE_OPEN}\nconst x = 1;\n\nRun 5-10 iterations of burn-in.\n`;
+  const result = runGate({ "math/u.md": page });
+  assert.equal(result.status, 1);
+  assert.match(result.stdout, /^UNCLOSED-FENCE math\/u\.md:3$/m);
+  assert.match(
+    result.stdout,
+    /^FAIL: 0 prose violation\(s\), 0 stale allowlist entry\(ies\), 1 unclosed fence\(s\)\. /m,
+  );
+});
+
+test("CLI: the same page with the fence closed reports its violation and no UNCLOSED-FENCE", () => {
+  const page = `# T\n\n${FENCE_OPEN}\nconst x = 1;\n${FENCE_CLOSE}\n\nRun 5-10 iterations of burn-in.\n`;
+  const result = runGate({ "math/u.md": page });
+  assert.equal(result.status, 1);
+  assert.match(
+    result.stdout,
+    /^VIOLATION \[instance-span\]: math\/u\.md:7: "5-10 iterations"$/m,
+  );
+  assert.doesNotMatch(result.stdout, /UNCLOSED-FENCE/);
+});
+
+test("CLI: an unclosed fence on a lenient page is reported too", () => {
+  const result = runGate({ "reference/u.md": `# T\n\n~~~\ncode\n` });
+  assert.equal(result.status, 1);
+  assert.match(result.stdout, /^UNCLOSED-FENCE reference\/u\.md:3$/m);
+});

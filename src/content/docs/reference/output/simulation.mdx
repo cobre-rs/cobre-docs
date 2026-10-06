@@ -262,7 +262,7 @@ Bus load balance results. One row per (stage, block, bus) triplet. 12 columns.
 | `deficit_mwh` | Float64 | No       | MWh     | Unserved load energy over the block in MWh.                                                                         |
 | `excess_mw`   | Float64 | No       | MW      | Excess generation at this bus in MW. Zero under feasible dispatch.                                                  |
 | `excess_mwh`  | Float64 | No       | MWh     | Excess generation energy over the block in MWh.                                                                     |
-| `spot_price`  | Float64 | No       | USD/MWh | Locational marginal price (shadow price of the power balance constraint) in monetary units per MWh.                 |
+| `spot_price`  | Float64 | No       | USD/MWh | Locational marginal price (shadow price of the power balance constraint) in USD per MWh.                            |
 
 ---
 
@@ -303,7 +303,7 @@ Energy contract results. One row per (stage, block, contract) triplet. 10 column
 | `contract_id`          | Int32   | No       | —       | Contract ID.                                                                                                                                                            |
 | `power_mw`             | Float64 | No       | MW      | Contracted power in MW, non-negative for both import and export contracts. Direction is carried by the contract type and the price sign, not by the sign of this value. |
 | `energy_mwh`           | Float64 | No       | MWh     | Contracted energy over the block in MWh.                                                                                                                                |
-| `price_per_mwh`        | Float64 | No       | USD/MWh | Contract price in monetary units per MWh.                                                                                                                               |
+| `price_per_mwh`        | Float64 | No       | USD/MWh | Contract price in USD per MWh.                                                                                                                                          |
 | `total_cost`           | Float64 | No       | USD     | Total contract cost for this block: positive for imports (cost), negative for exports (revenue).                                                                        |
 | `operative_state_code` | Int8    | No       | —       | Operative state code (see `codes.json` `operative_state` mapping); always `1` for contracts (a dormant stage emits a zero-`power_mw` row, not a distinct code).         |
 

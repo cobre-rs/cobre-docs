@@ -1,46 +1,36 @@
-// Figure-dependency gate (E4 ticket-020, the epic's Python-independence exit gate).
+// Figure-dependency gate: the content must not reference a retired
+// matplotlib/Excalidraw figure, and every Observable Plot island must be a thin
+// render shell over a tested compute module. The gate needs no dependency beyond
+// Node and is bound to CI, so a retired figure path cannot re-enter the content
+// unnoticed.
 //
-// E4 retooled all 7 referenced figures onto three browser-native renderers
-// (Observable Plot, D2, mermaid) and dropped the 3 HPC figures, so the migrated
-// corpus must no longer reference ANY retired matplotlib/Excalidraw SVG. This
-// script is the durable, CI-bound guardrail that proves — mechanically and with
-// no new dependency — that future content cannot silently re-introduce a
-// Python/Excalidraw-built figure path. (The retired SVGs in `src/images/*.svg`
-// and the `diagrams/` Python still physically exist by design; their deletion is
-// E9/ticket-036, explicitly out of scope here. This gate checks the *content no
-// longer references them*, not that the files are gone.)
+// It makes three checks.
 //
-// It walks every `*.md`/`*.mdx` under `src/content/docs/` (the migrated corpus
-// only — NOT `diagrams/` or `src/images/`, which still exist until E9) and exits
-// non-zero, with a per-file message naming the file + the offending substring +
-// the rule violated, if it finds any of:
+// 1. Retired figure references. It walks every routed `*.md`/`*.mdx` under
+//    `src/content/docs/` (index.mdx included, `pt-br/` excluded, underscore-
+//    prefixed partials skipped) and exits non-zero, with a per-file message
+//    naming the file + the offending substring + the rule violated, if it finds
+//    any of:
 //   (a) an image-asset reference: `../../images/` or `/images/`  (a Python/
 //       Excalidraw SVG would manifest here),
-//   (b) a residual figure-deferral aside: `Figure — retooled in E4`  (the E3
-//       placeholder that 017/018 were to replace),
+//   (b) a residual figure-deferral aside: `Figure — retooled in E4`  (the
+//       placeholder text that a real figure replaces),
 //   (c) a reference to a retired figure stem: the nine matplotlib stems
 //       (d02…d24) plus the Excalidraw `system-element-overview`.
 //
-// It then runs two scope-confirmation checks that encode E4's resolved scope and
-// FAIL if violated (not just informational):
-//   • the three HPC stems (d07/d08/d09) appear in ZERO content files — they were
-//     never ported (scope: drop d07/d08/d09);
-//   • a `ConvergencePanelsPlot` (the re-homed d21) figure IS present in
-//     `math/stopping-rules` (scope: port + re-home d21).
+// 2. Scope assertions, which FAIL the gate when violated:
+//   • the three HPC stems (d07/d08/d09) appear in ZERO content files (no HPC
+//     figure belongs to the corpus);
+//   • a `ConvergencePanelsPlot` embed (the d21 convergence-bounds figure) is
+//     present in `math/stopping-rules`.
 //
-// index.mdx is intentionally IN scope: it keeps the harness/D2/mermaid renderer
-// DEMOS (a `ValueFunctionPlot` component import + fenced ```mermaid / ```d2
-// blocks), none of which are retired-SVG references, so it passes the banned
-// checks naturally — it is not special-cased. pt-br/ is excluded to mirror
-// check-math-parity.mjs (a future locale; only the root English corpus is gated).
+// 3. Plot-island contract: each `src/components/*Plot.astro` must import a
+//    `src/figures/<name>.ts` module that has a sibling `<name>.test.ts`, and
+//    carry `role="img"` with a non-empty `aria-label`. It also fails when no
+//    island is found at all (a vacuous pass).
 //
-// A second, independent check enforces the tested-compute contract behind every
-// Observable Plot island (E07 ticket-084, R86 / ADR-023): each
-// `src/components/*Plot.astro` must import a `src/figures/<name>.ts` module that
-// has a sibling `<name>.test.ts`, and carry `role="img"` with a non-empty
-// `aria-label`. It also fails when no island is found at all (a vacuous pass).
-//
-// Run any time (no build needed — it reads source content, not dist/). Exits 0
+// Run with `npm run check:figures` (or `node scripts/check-figures.mjs`) any
+// time (no build needed — it reads source content, not dist/). Exits 0
 // with a one-line summary when clean; exits 1 listing each violation, or with a
 // clear message if the content root is missing or a file cannot be read.
 
@@ -110,8 +100,9 @@ export function detectFigureViolations(text) {
     }
   }
 
-  // (b) Residual figure-deferral aside (the E3 placeholder text). The em-dash
-  // (—, U+2014) is part of the marker; match it literally.
+  // (b) Residual figure-deferral aside (the placeholder text that a real
+  // figure replaces). The em-dash (—, U+2014) is part of the marker; match it
+  // literally.
   {
     const needle = "Figure — retooled in E4";
     let index = text.indexOf(needle);
@@ -151,22 +142,16 @@ function extractContext(text, index, length) {
 // --- File walk --------------------------------------------------------------
 // Recursively collect every .md/.mdx under src/content/docs/, excluding pt-br/
 // (future locale; mirrors check-math-parity.mjs). index.mdx is intentionally
-// INCLUDED (its renderer demos are not retired-SVG references — see header).
+// INCLUDED (it is walked like every other page, not special-cased).
 //
-// Exported (Epic 04 ticket-015 R5 fold-in) so the underscore-basename
-// exclusion below can be pinned directly by a node:test fixture
-// (check-figures.test.mjs), already safe to import since this module already
-// sits behind a direct-run guard (see main() at the bottom).
+// Exported so check-figures.test.mjs can pin the underscore-basename exclusion
+// below directly; importing this module is safe because main() sits behind a
+// direct-run guard at the bottom.
 //
-// FIXED alongside the export (mirrors the identical fix in
-// check-math-parity.mjs — see that file's comment for the full rationale):
-// the underscore-basename exclusion is scoped to FILES only; a directory is
-// always recursed into regardless of its own name (previously `math/_impl/`
-// the directory was itself skipped, so a hypothetical non-underscore file
-// nested inside it could never be collected). Behaviorally invisible on the
-// committed tree today (every file under _impl/ already has its own
-// underscore basename) — verified check:figures reports byte-identical
-// output before/after.
+// The underscore-basename exclusion is scoped to FILES only (the same rule as
+// check-math-parity.mjs): a directory is always recursed into regardless of its
+// own name, so a non-underscore file nested inside `math/_impl/` is still
+// collected.
 export function collectSourceFiles(dir) {
   const files = [];
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
@@ -187,7 +172,7 @@ export function collectSourceFiles(dir) {
   return files;
 }
 
-// --- Plot-island contract (E07 ticket-084, R86 / ADR-023) --------------------
+// --- Plot-island contract ----------------------------------------------------
 // An Observable Plot island is a thin render shell over a tested compute module.
 // Given the text of one `*Plot.astro` and a Set of the basenames present in
 // `src/figures/`, return { rule, match } for each broken clause: no
@@ -335,7 +320,8 @@ function main() {
   }
 
   // --- Scope-confirmation assertions ----------------------------------------
-  // These encode E4's resolved scope and FAIL the gate if violated.
+  // These assert the content scope (no HPC figure stem, the d21 embed in
+  // math/stopping-rules) and FAIL the gate if violated.
   const scopeErrors = [];
 
   for (const hit of hpcHits) {

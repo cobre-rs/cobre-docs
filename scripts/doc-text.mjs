@@ -1,6 +1,7 @@
 // Shared prose-preprocessing helpers for the doc gates (ticket-008).
 //
-// Pure ESM, no filesystem access. `proseLines` is used by check-doc-voice.mjs;
+// Pure ESM, no filesystem access. `proseLines` and `unclosedFenceLine` are used by
+// check-doc-voice.mjs;
 // `buildBlocks`, `lineForOffset` and `inRuleSelfReference` are used by
 // check-doc-version.mjs. They were extracted here, unchanged, so a further gate
 // can reuse the same preprocessing instead of carrying a third private copy.
@@ -11,21 +12,36 @@ const HTML_COMMENT = /<!--[\s\S]*?-->/g;
 // ---------------------------------------------------------------------------
 // Blank fenced code, inline code spans, and HTML comments; return
 // (lineno, prose) pairs, preserving line numbers for reporting — port of
-// `_prose_lines`.
+// `_prose_lines`. A fence closes on a line of the same character, at least as
+// long as the opener, with an empty info string (CommonMark), so a `~~~` line
+// inside a backtick fence is fenced text. A fence still open at the end of the
+// text blanks every line after its opener; `unclosedFenceLine` reports it.
 // ---------------------------------------------------------------------------
-export function proseLines(text) {
+const FENCE = /^\s*(`{3,}|~{3,})(.*)$/;
+
+function scanProse(text) {
   const out = [];
-  let inFence = false;
+  let open = null;
   const lines = text.split("\n");
   for (let i = 0; i < lines.length; i++) {
     const lineno = i + 1;
     const line = lines[i];
-    const stripped = line.replace(/^\s+/, "");
-    if (stripped.startsWith("```") || stripped.startsWith("~~~")) {
-      inFence = !inFence;
+    const fence = FENCE.exec(line);
+    if (open !== null) {
+      if (
+        fence !== null &&
+        fence[2].trim() === "" &&
+        fence[1][0] === open.marker[0] &&
+        fence[1].length >= open.marker.length
+      ) {
+        open = null;
+      }
       continue;
     }
-    if (inFence) continue;
+    if (fence !== null) {
+      open = { marker: fence[1], lineno };
+      continue;
+    }
     let prose = line.replace(INLINE_CODE, " ");
     prose = prose.replace(HTML_COMMENT, " ");
     // Strip markdown bold markers ("**"): a hedge/hype phrase is routinely
@@ -37,8 +53,13 @@ export function proseLines(text) {
     prose = prose.replace(/\*\*/g, "");
     out.push([lineno, prose]);
   }
-  return out;
+  return { lines: out, unclosedFenceLine: open === null ? null : open.lineno };
 }
+
+export const proseLines = (text) => scanProse(text).lines;
+
+// 1-based line of the opener of a fence still open at the end of the text, else null.
+export const unclosedFenceLine = (text) => scanProse(text).unclosedFenceLine;
 
 // ---------------------------------------------------------------------------
 // Split text into paragraph BLOCKS (contiguous non-blank lines), each with a

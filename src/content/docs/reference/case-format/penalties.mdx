@@ -11,7 +11,8 @@ the `constraints/` directory with the bounds files on [Constraint Files](/refere
 
 All penalty override files use sparse storage. Only rows for `(entity_id, stage_id)`
 pairs where the penalty differs from the entity-level or global default are required.
-All penalty values must be strictly positive (> 0.0) and finite.
+Every override value must be strictly positive (> 0.0) and finite, `turbined_cost` included: unlike the
+`penalties.json` default, an override of `0.0` is rejected.
 
 ---
 
@@ -20,7 +21,7 @@ All penalty values must be strictly positive (> 0.0) and finite.
 **Methodology:** [Penalty System](/math/penalty-system/)
 
 Global penalty cost defaults used when no entity-level override is present.
-All four sections are required. Every scalar cost must be strictly positive
+All four sections are required. Every required scalar cost must be strictly positive
 (`> 0.0`), with one exception: the hydro `turbined_cost` regularization cost is
 validated `>= 0.0` (a `0.0` turbined cost — no turbine-flow penalty — is valid).
 The deficit segments must be non-empty, with costs strictly increasing and the last

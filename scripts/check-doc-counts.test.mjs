@@ -30,6 +30,7 @@ import {
   checkText,
   checkVariableCatalogCount,
   checkSchemaCount,
+  unclosedFenceLine,
 } from "./check-doc-counts.mjs";
 
 function table(rows) {
@@ -138,6 +139,34 @@ test("does not read past a heading, a fence or a thematic break", () => {
   }
 });
 
+test("a count on the last line of the text, with no table after it, is skipped", () => {
+  for (const text of [
+    "Five columns.",
+    "Five columns.\n",
+    "Five columns.\n\n",
+  ]) {
+    assert.deepEqual(checkText(text, "test.mdx"), [], JSON.stringify(text));
+  }
+});
+
+test("an indented table header starts a table at each of the three readers", () => {
+  const indented = ["  | a | b |", "  | - | - |", "  | 1 | 2 |"].join("\n");
+  const drift = checkText(`Three columns.\n\n${indented}\n`, "test.mdx");
+  assert.equal(drift.length, 1);
+  assert.match(drift[0], /test\.mdx:1: .* 1 data rows/);
+  const catalog = checkVariableCatalogCount(
+    `## Variable catalog\n\nThe 3 variables.\n\n${indented}\n`,
+    "gc.mdx",
+  );
+  assert.equal(catalog.catalogRows, 1);
+  const schemas = checkSchemaCount(
+    `## Available schemas\n\n${indented}\n`,
+    "js.mdx",
+    1,
+  );
+  assert.equal(schemas.tableRows, 1);
+});
+
 test("does not bind a count inside a table row to a later table", () => {
   const text = `| Name | Note |\n| --- | --- |\n| a | 5 columns |\n| b | x |\n\nOne paragraph.\n\n${table(["a", "b", "c"])}\n`;
   assert.deepEqual(checkText(text, "test.mdx"), []);
@@ -159,6 +188,73 @@ test("ignores a count inside a fenced code block", () => {
 test("does not match a hyphenated 'N-column' mid-word form", () => {
   const text = `The 4-column schema below is fully described.\n\n${table(["a", "b", "c"])}\n`;
   assert.deepEqual(checkText(text, "test.mdx"), []);
+});
+
+test("a count split from its noun by a hard wrap is read like the unwrapped form", () => {
+  const rows = table(["a", "b", "c", "d"]);
+  const wrapped = checkText(
+    `The file has 5\ncolumns.\n\n${rows}\n`,
+    "test.mdx",
+  );
+  assert.equal(wrapped.length, 1);
+  assert.match(wrapped[0], /test\.mdx:1: states "5 columns" .* 4 data rows/);
+  assert.deepEqual(
+    wrapped,
+    checkText(`The file has 5 columns.\n\n${rows}\n`, "test.mdx"),
+  );
+  assert.deepEqual(
+    checkText(`The file has 4\ncolumns.\n\n${rows}\n`, "test.mdx"),
+    [],
+  );
+});
+
+test("a wrapped count is reported at the line its number is on", () => {
+  const text = `Intro line.\nThe record has five\nfields to read.\n\n${table(["a", "b", "c", "d"])}\n`;
+  const problems = checkText(text, "test.mdx");
+  assert.equal(problems.length, 1);
+  assert.match(problems[0], /test\.mdx:2: states "five fields" .* 4 data rows/);
+});
+
+test("a count on the second line of a paragraph is reported once, at its own line", () => {
+  const text = `Intro line.\nThe file has 5 columns.\n\n${table(["a", "b", "c", "d"])}\n`;
+  const problems = checkText(text, "test.mdx");
+  assert.equal(problems.length, 1);
+  assert.match(problems[0], /test\.mdx:2: states "5 columns"/);
+});
+
+test("a wrapped 'must be present' back-reference is skipped like the unwrapped form", () => {
+  const rows = table(["a", "b", "c"]);
+  const text = `All 11\ncolumns must be present with the correct types.\n\n${rows}\n`;
+  assert.deepEqual(checkText(text, "test.mdx"), []);
+  assert.deepEqual(
+    checkText(text.replace("11\ncolumns", "11 columns"), "test.mdx"),
+    [],
+  );
+});
+
+test("a 'must be present' on the next line does not hide a count on its own line", () => {
+  const text = `The table has 5 columns.\nThe key column must be present.\n\n${table(["a", "b", "c", "d"])}\n`;
+  const problems = checkText(text, "test.mdx");
+  assert.equal(problems.length, 1);
+  assert.match(problems[0], /test\.mdx:1: states "5 columns"/);
+});
+
+test("a hard wrap joins the lines of one paragraph only", () => {
+  const rows = table(["a", "b", "c", "d"]);
+  assert.deepEqual(
+    checkText(
+      `The file has 5\n\ncolumns, said later.\n\n${rows}\n`,
+      "test.mdx",
+    ),
+    [],
+  );
+  assert.deepEqual(
+    checkText(
+      `## Layout of 5\ncolumns are listed here.\n\n${rows}\n`,
+      "test.mdx",
+    ),
+    [],
+  );
 });
 
 const names = (n) => Array.from({ length: n }, (_, i) => `v${i}`);
@@ -565,4 +661,116 @@ test("main() exits 2 on a missing page, a missing schema directory or a page wit
     vacuousSchema.stderr,
     /no count statement found in reference\/json-schemas\.mdx/,
   );
+});
+
+// ---------------------------------------------------------------------------
+// A fence still open at the end of a page, and problems collected before an
+// exit-2 setup error.
+// ---------------------------------------------------------------------------
+
+test("unclosedFenceLine returns the opening line of a fence still open at the end of the text", () => {
+  assert.equal(unclosedFenceLine("text\n```js\nThree columns.\n"), 2);
+  assert.equal(unclosedFenceLine("~~~\ncode"), 1);
+  assert.equal(unclosedFenceLine("```\nA\n```\n~~~\nB"), 4);
+});
+
+test("unclosedFenceLine is null when every fence closes, nested fences included", () => {
+  assert.equal(unclosedFenceLine("text\n```js\ncode\n```\nmore"), null);
+  assert.equal(unclosedFenceLine("~~~\ncode\n~~~\n"), null);
+  assert.equal(unclosedFenceLine("````md\n```\ncode\n```\n````\n"), null);
+  assert.equal(unclosedFenceLine("no fence at all"), null);
+});
+
+test("unclosedFenceLine: a ``` line inside an open tilde fence does not close it", () => {
+  assert.equal(unclosedFenceLine("~~~text\n```\ncode"), 1);
+});
+
+const DRIFT = `Three columns.\n\n${table(["a", "b"])}\n`;
+
+test("main() reports a fence that never closes in a target page, the catalog and the schema page", () => {
+  const openerLine = (text) =>
+    text.split("\n").findIndex((line) => line.startsWith("```")) + 1;
+  const target = `\`\`\`text\n${DRIFT}`;
+  const targetResult = gate({ [`${DOCS}${TARGETS[0]}`]: target });
+  assert.equal(targetResult.status, 1);
+  assert.match(
+    targetResult.stdout,
+    new RegExp(`^ {2}UNCLOSED-FENCE ${TARGETS[0]}:1$`, "m"),
+  );
+  assert.doesNotMatch(targetResult.stdout, /states "Three columns"/);
+  const catalog = `${gcPage("There are 3 LP variable types.")}\n\`\`\`text\n`;
+  const catalogResult = gate({ [CATALOG]: catalog });
+  assert.equal(catalogResult.status, 1);
+  assert.match(
+    catalogResult.stdout,
+    new RegExp(
+      `^ {2}UNCLOSED-FENCE reference/generic-constraints\\.mdx:${openerLine(catalog)}$`,
+      "m",
+    ),
+  );
+  const schema = `${jsPage("The 2 vendored JSON Schema files.")}\n\`\`\`\n`;
+  const schemaResult = gate({ [SCHEMA_PAGE]: schema });
+  assert.equal(schemaResult.status, 1);
+  assert.match(
+    schemaResult.stdout,
+    new RegExp(
+      `^ {2}UNCLOSED-FENCE reference/json-schemas\\.mdx:${openerLine(schema)}$`,
+      "m",
+    ),
+  );
+});
+
+test("main() reads the drift after a closed fence and reports no UNCLOSED-FENCE", () => {
+  const result = gate({
+    [`${DOCS}${TARGETS[0]}`]: `\`\`\`text\ncode\n\`\`\`\n${DRIFT}`,
+  });
+  assert.equal(result.status, 1);
+  assert.match(
+    result.stdout,
+    new RegExp(
+      `${TARGETS[0]}:4: states "Three columns" but the adjacent table has 2 data rows`,
+    ),
+  );
+  assert.doesNotMatch(result.stdout, /UNCLOSED-FENCE/);
+});
+
+test("main() prints the problems it collected before an exit-2 setup error", () => {
+  const noDir = gate({ [`${DOCS}${TARGETS[0]}`]: DRIFT }, null);
+  assert.equal(noDir.status, 2);
+  assert.match(noDir.stderr, /check:counts: could not read/);
+  assert.match(
+    noDir.stdout,
+    new RegExp(
+      `^FAIL: doc count drift .*\\n {2}${TARGETS[0]}:1: states "Three columns" but the adjacent table has 2 data rows\\n$`,
+      "s",
+    ),
+  );
+  const vacuous = gate({
+    [`${DOCS}${TARGETS[0]}`]: DRIFT,
+    [CATALOG]: gcPage("The variables are listed below."),
+  });
+  assert.equal(vacuous.status, 2);
+  assert.match(
+    vacuous.stderr,
+    /no count statement found in reference\/generic-constraints\.mdx/,
+  );
+  assert.match(
+    vacuous.stdout,
+    new RegExp(`${TARGETS[0]}:1: states "Three columns"`),
+  );
+});
+
+test("main() prints an UNCLOSED-FENCE collected before an exit-2 setup error", () => {
+  const result = gate({ [`${DOCS}${TARGETS[0]}`]: "```text\ncode\n" }, null);
+  assert.equal(result.status, 2);
+  assert.match(
+    result.stdout,
+    new RegExp(`^ {2}UNCLOSED-FENCE ${TARGETS[0]}:1$`, "m"),
+  );
+});
+
+test("main() prints nothing to stdout on an exit-2 setup error when no problem was collected", () => {
+  const result = gate({}, null);
+  assert.equal(result.status, 2);
+  assert.equal(result.stdout, "");
 });

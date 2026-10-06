@@ -4,9 +4,22 @@
 // sha256Hex, checkRecording (sha256 drift, tape-blob drift, a missing GIF, an
 // unresolved tape), reconcileRecords (both mismatch directions), and
 // assertGifMagic (named throw on non-GIF bytes) directly, with no filesystem or
-// subprocess access.
+// subprocess access, plus two CLI tests that spawn `--check` on a scratch copy.
 import test from "node:test";
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
+import {
+  copyFileSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmdirSync,
+  unlinkSync,
+  appendFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import {
   sha256Hex,
   checkRecording,
@@ -127,5 +140,81 @@ test("assertGifMagic throws a named error on non-GIF bytes (error page / LFS poi
   assert.throws(
     () => assertGifMagic("c.gif", Buffer.from("<!DOCTYPE html>", "latin1")),
     /c\.gif is not a GIF/,
+  );
+});
+
+// ---- CLI: `--check` on a scratch copy ---------------------------------------
+// The script resolves public/ and recordings-provenance.json from its own
+// location, so each run copies it, its ref module, the record and the GIF into
+// a temporary root. `--cobre` names a path that is not a checkout, so the tape
+// blob is never resolved and the run never depends on the developer's cobre.
+
+const SCRIPTS = fileURLToPath(new URL(".", import.meta.url));
+const PUBLIC = fileURLToPath(new URL("../public/", import.meta.url));
+const { dest: GIF_DEST, sha256: RECORDED_SHA } = JSON.parse(
+  readFileSync(join(SCRIPTS, "recordings-provenance.json"), "utf8"),
+).recordings[0];
+
+function checkOnCopy(tamper) {
+  const root = mkdtempSync(join(tmpdir(), "refresh-recordings-"));
+  const gif = join(root, "public", GIF_DEST);
+  const dirs = [join(root, "scripts"), join(root, "public"), dirname(gif)];
+  const files = [
+    ["refresh-recordings.mjs", "scripts/refresh-recordings.mjs"],
+    ["cobre-ref.mjs", "scripts/cobre-ref.mjs"],
+    ["recordings-provenance.json", "scripts/recordings-provenance.json"],
+  ].map(([from, to]) => [join(SCRIPTS, from), join(root, to)]);
+  files.push([join(PUBLIC, GIF_DEST), gif]);
+  const copied = [];
+  try {
+    for (const dir of dirs) mkdirSync(dir, { recursive: true });
+    for (const [from, to] of files) {
+      copyFileSync(from, to);
+      copied.push(to);
+    }
+    if (tamper) appendFileSync(gif, Buffer.from([0]));
+    const run = spawnSync(
+      process.execPath,
+      [
+        join(root, "scripts/refresh-recordings.mjs"),
+        "--check",
+        "--cobre",
+        join(root, "no-cobre"),
+      ],
+      { encoding: "utf8", cwd: tmpdir() },
+    );
+    return { ...run, gifSha: sha256Hex(readFileSync(gif)) };
+  } finally {
+    for (const path of copied) unlinkSync(path);
+    for (const dir of [...dirs].reverse()) rmdirSync(dir);
+    rmdirSync(root);
+  }
+}
+
+test("CLI --check exits 1 and names the drifted sha256 on stderr when the GIF is tampered", () => {
+  const result = checkOnCopy(true);
+  assert.notEqual(result.gifSha, RECORDED_SHA);
+  assert.equal(result.status, 1, result.stderr);
+  assert.ok(
+    result.stderr.includes(
+      `${GIF_DEST} (sha256 ${result.gifSha}, recorded ${RECORDED_SHA})`,
+    ),
+    result.stderr,
+  );
+  assert.match(
+    result.stderr,
+    /^refresh:recordings --check: 1 drift\(s\) across 1 recorded recording\(s\):\n/,
+  );
+  assert.ok(!result.stdout.includes(RECORDED_SHA), result.stdout);
+});
+
+test("CLI --check exits 0 with no drift line when the GIF is untouched", () => {
+  const result = checkOnCopy(false);
+  assert.equal(result.gifSha, RECORDED_SHA);
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(result.stderr, "");
+  assert.match(
+    result.stdout,
+    /refresh:recordings --check: 1 recorded recording\(s\) match recordings-provenance\.json\n$/,
   );
 });

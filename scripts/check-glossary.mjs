@@ -98,12 +98,14 @@ const spanRule = (span) => {
   return span.includes("/") ? "glossary-path" : "glossary-config-key";
 };
 
-// Ticket-216 AC3: the heading slug and the index sort key.
+// Ticket-216 AC3: the heading slug and the index sort key. The slug is
+// github-slugger 2.0.0's: every space becomes a hyphen and runs are kept, so
+// "Hydro / Thermal" is `hydro--thermal`.
 const slugOf = (heading) =>
   heading
     .toLowerCase()
-    .replace(/[^\p{L}\p{N}_\s-]/gu, "")
-    .replace(/\s+/g, "-");
+    .replace(/[^\p{L}\p{N}_ -]/gu, "")
+    .replace(/ /g, "-");
 const sortKey = (term) =>
   term
     .toLowerCase()

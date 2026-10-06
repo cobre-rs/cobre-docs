@@ -267,9 +267,9 @@ on.
 
 Points must be sorted in ascending `outflow_m3s` order; the solver
 interpolates linearly between them. A third, file-level source — the optional
-per-plant piecewise-quartic tailrace curves with backwater families ([Hydro Production Models
-§2.3.1](/math/hydro-production-models#231-piecewise-quartic-tailrace-families-backwater-coupling)) — overrides the entity-level model for any plant that has rows in
-that file.
+per-plant piecewise-quartic tailrace curves with backwater families ([Hydro Production Function Models
+§2.3.1](/math/hydro-production-models#231-piecewise-quartic-tailrace-families-backwater-coupling)) — replaces the entity-level model in the computed-FPHA fit for any plant that has rows in
+that file; the equivalent-productivity derivation keeps reading the entity-level model.
 
 **Hydraulic losses** — the `hydraulic_losses` block models head loss in the
 penstock; absent means lossless.

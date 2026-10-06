@@ -200,7 +200,7 @@ when absent, no contracts are modeled.
 | `contracts[].name`                   | string          | Yes      | —       | —       | Human-readable contract name (string)                                                               |
 | `contracts[].bus_id`                 | integer         | Yes      | —       | —       | Bus where power is injected (import) or withdrawn (export)                                          |
 | `contracts[].type`                   | string          | Yes      | —       | —       | One of `"import"`, `"export"`. Energy flow direction.                                               |
-| `contracts[].price_per_mwh`          | number          | Yes      | —       | USD/MWh | Contract price [monetary units/MWh]. Positive = cost (import); negative = revenue (export)          |
+| `contracts[].price_per_mwh`          | number          | Yes      | —       | USD/MWh | Contract price [USD/MWh]. Positive = cost (import); negative = revenue (export)                     |
 | `contracts[].limits.min_mw`          | number          | Yes      | —       | MW      | Minimum dispatch level [MW]; use `0.0` unless a take-or-pay floor applies                           |
 | `contracts[].limits.max_mw`          | number          | Yes      | —       | MW      | Maximum dispatch level [MW]; must be >= `limits.min_mw`                                             |
 | `contracts[].operational_start_date` | string          | Yes      | —       | —       | Required on every entity; see [Shared entity fields](/reference/case-format/#shared-entity-fields). |

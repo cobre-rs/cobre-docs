@@ -18,7 +18,9 @@
 //
 // Problem codes, one per Type cell at most:
 //   BACKTICKED          the cell is wrapped in backticks
-//   NULLABLE-IN-OUTPUT  `<keyword> \| null` in an output table
+//   NULLABLE-IN-OUTPUT  `<keyword> \| null` or a `(nullable)` suffix in an output table
+//   UNCLOSED-FENCE      a fence still open at the end of the page (one per page,
+//                       no cell; it blanks every table after its opener)
 //   WRONG-KIND          a vocabulary name outside the bound kind's set
 //   NOT-IN-VOCABULARY   a name in none of the sets
 //
@@ -65,16 +67,20 @@ function isSeparator(line) {
   return /^\|[|:\- ]*-[|:\- ]*$/.test(line.trim());
 }
 
-// Per-line flags: true for a fence delimiter and every line inside a fence. A
-// closing fence repeats the opening character at least as many times, so a
-// four-backtick fence can hold a three-backtick line.
-function fencedLines(lines) {
+// `fenced` holds per-line flags: true for a fence delimiter and every line
+// inside a fence. A closing fence repeats the opening character at least as
+// many times, so a four-backtick fence can hold a three-backtick line.
+// `unclosedLine` is the 1-based opening line of a fence still open at the end,
+// else null.
+function scanFences(lines) {
   let open = null;
-  return lines.map((line) => {
+  let openLine = 0;
+  const fenced = lines.map((line, i) => {
     const fence = /^\s*(`{3,}|~{3,})(.*)$/.exec(line);
     if (open === null) {
       if (fence === null) return false;
       open = fence[1];
+      openLine = i + 1;
       return true;
     }
     if (
@@ -87,7 +93,10 @@ function fencedLines(lines) {
     }
     return true;
   });
+  return { fenced, unclosedLine: open === null ? null : openLine };
 }
+
+const fencedLines = (lines) => scanFences(lines).fenced;
 
 // Every table outside fences: `{ line, header, rows }` with 1-based line
 // numbers and trimmed cells.
@@ -242,6 +251,9 @@ function isSchemaName(vocab, name) {
 // is the kind of the governing file heading, null for an unbound table.
 function classify(cell, tableKind, bound, vocab) {
   if (/^`.*`$/.test(cell)) return "BACKTICKED";
+  if (tableKind === "output" && cell.endsWith(" (nullable)")) {
+    return "NULLABLE-IN-OUTPUT";
+  }
 
   const keyword = /^(\S+) \\\| null$/.exec(cell)?.[1];
   if (keyword !== undefined && vocab.json.has(keyword)) {
@@ -283,6 +295,12 @@ function classify(cell, tableKind, bound, vocab) {
 export function checkPage(text, label, vocab) {
   const tables = findTables(text);
   const problems = [];
+  const { unclosedLine } = scanFences(text.split("\n"));
+  if (unclosedLine !== null) {
+    problems.push(
+      `check:type-spelling: UNCLOSED-FENCE ${label}:${unclosedLine}`,
+    );
+  }
   let cells = 0;
   for (const table of tables) {
     const bound = table.binding === null ? null : kindOfPath(table.binding);
@@ -304,7 +322,6 @@ export function checkPage(text, label, vocab) {
 // importing this module for the node:test fixture does NOT trigger the
 // filesystem reads or process.exit.
 // ---------------------------------------------------------------------------
-// Setup and usage errors exit 2, apart from the problem exit 1.
 function fail(message) {
   console.error(`check:type-spelling: ${message}`);
   process.exit(2);

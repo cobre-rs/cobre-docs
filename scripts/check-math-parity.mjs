@@ -27,13 +27,13 @@ const distRoot = fileURLToPath(new URL("../dist/", import.meta.url));
 
 // Recursively collect every .md/.mdx file under src/content/docs/, excluding the
 // pt-br/ subtree (future locale; only the root English corpus is gated here) and
-// index.mdx (the landing page, a renderer smoke-test, not migrated content).
+// every index.mdx (the landing page and the reference section overviews, which
+// carry no display math).
 //
-// Exported (Epic 04 ticket-015 R5 fold-in) so the underscore-basename exclusion
-// (the `if (entry.name.startsWith("_")) continue;` branch below) can be pinned
+// Exported so the underscore-basename exclusion (the
+// `if (entry.name.startsWith("_")) continue;` branch below) can be pinned
 // directly by a node:test fixture (check-math-parity.test.mjs) without
-// depending on dist/ or the rest of the parity-check pipeline. No behavior
-// change — the walk itself is untouched.
+// depending on dist/ or the rest of the parity-check pipeline.
 export function collectSourceFiles(dir) {
   const files = [];
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
@@ -44,19 +44,11 @@ export function collectSourceFiles(dir) {
     // They also carry no display math by the two-layer standard, so excluding
     // them loses no coverage.
     //
-    // FIXED (Epic 04 ticket-015 R5 fold-in): the exclusion is scoped to FILE
-    // basenames only — a directory is always recursed into regardless of its
-    // OWN name. Previously the `_`-prefix check ran before the
-    // isDirectory() branch, so `math/_impl/` itself (the directory) was
-    // never even entered; this was behaviorally invisible on the current
-    // corpus (every file under _impl/ already has its own underscore
-    // basename, e.g. `_hydro.io.mdx`), but did not match the documented
-    // intent above ("skip underscore-prefixed ENTRIES [partials]") and
-    // silently could not collect a hypothetical non-underscore file nested
-    // inside an underscore-named directory (exactly the case
-    // check-math-parity.test.mjs's `_impl/routed.mdx` fixture pins). Verified
-    // this reorder is a no-op on the committed tree: check:math and
-    // check:figures report byte-identical output before/after.
+    // The exclusion is scoped to FILE basenames only — a directory is always
+    // recursed into regardless of its OWN name, so `math/_impl/` itself is
+    // entered and a non-underscore file nested inside an underscore-named
+    // directory is still collected (exactly the case
+    // check-math-parity.test.mjs's `_impl/routed.mdx` fixture pins).
     const full = `${dir}${entry.name}`;
     if (entry.isDirectory()) {
       files.push(...collectSourceFiles(`${full}/`));
@@ -81,13 +73,9 @@ function countOccurrences(text, needle) {
 }
 
 // ---------------------------------------------------------------------------
-// Main (run only when invoked directly). Kept behind a direct-run guard
-// (Epic 04 ticket-015 R5 fold-in — this script had none before; adding one is
-// what makes `import { collectSourceFiles } from "./check-math-parity.mjs"`
-// safe for check-math-parity.test.mjs, mirroring check-figures.mjs /
-// check-spdx.mjs. Behavior when run directly (`node scripts/check-math-parity.mjs`
-// / `npm run check:math`) is unchanged — this only moves the existing
-// top-level statements inside a function).
+// Main (run only when invoked directly). Kept behind a direct-run guard so
+// `import { collectSourceFiles } from "./check-math-parity.mjs"` is safe for
+// check-math-parity.test.mjs, mirroring check-figures.mjs / check-spdx.mjs.
 // ---------------------------------------------------------------------------
 function main() {
   if (!existsSync(distRoot)) {

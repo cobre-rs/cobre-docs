@@ -23,6 +23,13 @@ Lateral-flow slopes above `-1e-10` — a near-zero negative residual or any
 positive one — are set to exactly `0`, so no near-zero coefficient reaches
 the spillage column.
 
+When any plant uses computed FPHA, the families of `system/tailrace_curves.parquet` are checked as the
+production models are built: consecutive segments of a family must meet (the previous
+`outflow_max_m3s` and the next `outflow_min_m3s` differ by at most `1e-6` m³/s) and give the same
+level at the shared boundary, to within the larger of `0.001` m and `1e-4` of the larger of the two
+levels. A gap, an overlap or a level mismatch beyond these bounds is an error that names the plant by
+id and the boundary.
+
 ### Run-of-river support
 
 A plant whose fitting volume range collapses to a single point (constant
@@ -186,7 +193,7 @@ enters no water balance and leaves the modelled system.
 that would mature after the last stage is dropped; with one, it is carried to
 the terminal stage and priced there ([State Augmentation — Horizon
 limitation](/math/state-augmentation#horizon-limitation), [Post-Study
-Boundary](/math/post-study-boundary)).
+Boundary & Chained Studies](/math/post-study-boundary)).
 
 ### Bus-partitioned hydro: cell collapse and the generation-sum caveat
 

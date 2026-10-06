@@ -14,11 +14,13 @@ import {
   mkdtempSync,
   readdirSync,
   readFileSync,
+  realpathSync,
   rmSync,
+  symlinkSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { delimiter, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   checkCobreVersion,
@@ -344,7 +346,7 @@ if (process.env.NO_COLOR !== "1") {
 }
 `;
 
-const OVERLAY = { [GC]: "{}\n" };
+const OVERLAY = { [GC]: "{}\n", [GP]: "{}\n" };
 
 function workspace(overlay = OVERLAY) {
   const root = mkdtempSync(join(tmpdir(), "check-gc-examples-test-"));
@@ -382,7 +384,7 @@ const run = (ws, pageText, env = {}, overrides = {}) =>
     ...overrides,
   });
 
-test("a clean page: accept and reject fences behave as marked, a new directory included", () => {
+test("a clean page: accept and reject fences behave as marked", () => {
   const ws = workspace();
   try {
     const result = run(
@@ -390,7 +392,89 @@ test("a clean page: accept and reject fences behave as marked, a new directory i
       page(
         fence("accept", '{"constraints": []}'),
         fence("reject", "BAD"),
-        fence("accept", "{}", "system/new_file.json"),
+        fence("accept", "{}", GP),
+      ),
+    );
+    assert.deepEqual(result, {
+      setupError: null,
+      problems: [],
+      accepted: 2,
+      rejected: 1,
+    });
+  } finally {
+    ws.cleanup();
+  }
+});
+
+test("BAD-META: an accept fence whose title names no file of the assembled case is not run and not counted", () => {
+  const ws = workspace();
+  const log = join(ws.root, "validate.log");
+  try {
+    const result = run(
+      ws,
+      page(
+        fence("accept", "{}", "constraints/generic_constraint.json"),
+        fence("accept", "{}"),
+      ),
+      { STUB_LOG: log },
+    );
+    assert.equal(result.setupError, null);
+    assert.equal(result.accepted, 1);
+    assert.equal(result.rejected, 0);
+    assert.deepEqual(
+      result.problems.map((p) => [p.code, p.line, p.at]),
+      [["BAD-META", 3, "page.mdx:3"]],
+    );
+    assert.match(
+      result.problems[0].detail,
+      /title constraints\/generic_constraint\.json names no file of the assembled case/,
+    );
+    assert.equal(readFileSync(log, "utf8").trim().split("\n").length, 2);
+  } finally {
+    ws.cleanup();
+  }
+});
+
+test("BAD-META: a reject fence whose title names no file of the assembled case is not counted as rejected", () => {
+  const ws = workspace();
+  try {
+    const result = run(
+      ws,
+      page(fence("reject", "BAD", "system/new_file.json")),
+    );
+    assert.equal(result.rejected, 0);
+    assert.deepEqual(
+      result.problems.map((p) => [p.code, p.line]),
+      [["BAD-META", 3]],
+    );
+  } finally {
+    ws.cleanup();
+  }
+});
+
+test("BAD-META: a title naming a directory of the assembled case is not a file", () => {
+  const ws = workspace({ ...OVERLAY, "system/marker.json/inner.json": "{}\n" });
+  try {
+    const result = run(ws, page(fence("accept", "{}", "system/marker.json")));
+    assert.equal(result.accepted, 0);
+    assert.deepEqual(
+      result.problems.map((p) => [p.code, p.line]),
+      [["BAD-META", 3]],
+    );
+  } finally {
+    ws.cleanup();
+  }
+});
+
+test("a title naming a scaffold file or an overlay file of the assembled case is run", () => {
+  const ws = workspace({ ...OVERLAY, "system/marker.json": "{}\n" });
+  try {
+    const result = run(
+      ws,
+      page(
+        fence("accept", "{}", "config.json"),
+        fence("accept", "{}", "system/marker.json"),
+        fence("reject", "BAD"),
       ),
     );
     assert.deepEqual(result, {
@@ -508,6 +592,134 @@ test("setupError: a binary that cannot be executed names the path and the cause"
     );
     assert.match(result.setupError, /EACCES/);
     assert.deepEqual(result.problems, []);
+  } finally {
+    ws.cleanup();
+  }
+});
+
+// A copy of the stub under `<ws.root>/<dir>/cobre`; `ran` is written by any run of it.
+function stubAt(ws, dir) {
+  const folder = join(ws.root, dir);
+  mkdirSync(folder, { recursive: true });
+  const bin = join(folder, "cobre");
+  writeFileSync(
+    bin,
+    STUB.replace(
+      "const [command, ...args]",
+      'fs.writeFileSync(process.env.STUB_RAN, "ran\\n");\nconst [command, ...args]',
+    ),
+  );
+  chmodSync(bin, 0o755);
+  return bin;
+}
+
+test("setupError: a binary inside a cargo build tree is refused, named by its real path, and never run", () => {
+  const ws = workspace();
+  const ran = join(ws.root, "ran");
+  try {
+    for (const dir of ["target/release", "target/debug", "x/target/release"]) {
+      const bin = stubAt(ws, dir);
+      const result = run(
+        ws,
+        page(fence("accept", "{}")),
+        { STUB_RAN: ran },
+        {
+          cobreBin: bin,
+        },
+      );
+      const real = realpathSync(bin);
+      assert.equal(
+        result.setupError,
+        `cobre binary ${real} lies inside a cargo build tree (/target/release/ or /target/debug/); set COBRE_BIN or PATH to the pinned release binary`,
+        dir,
+      );
+      assert.deepEqual(result.problems, [], dir);
+      assert.equal(existsSync(ran), false, dir);
+    }
+  } finally {
+    ws.cleanup();
+  }
+});
+
+test("setupError: a bare cobre that PATH resolves into a cargo build tree is refused", () => {
+  const ws = workspace();
+  const ran = join(ws.root, "ran");
+  try {
+    const bin = stubAt(ws, "target/release");
+    const result = run(
+      ws,
+      page(fence("accept", "{}")),
+      { STUB_RAN: ran, PATH: `${dirname(bin)}${delimiter}${process.env.PATH}` },
+      { cobreBin: "cobre" },
+    );
+    assert.match(
+      result.setupError,
+      new RegExp(
+        `^cobre binary ${realpathSync(bin)} lies inside a cargo build tree`,
+      ),
+    );
+    assert.equal(existsSync(ran), false);
+  } finally {
+    ws.cleanup();
+  }
+});
+
+test("setupError: a symlink whose real path is inside a cargo build tree is refused", () => {
+  const ws = workspace();
+  const ran = join(ws.root, "ran");
+  try {
+    const bin = stubAt(ws, "target/release");
+    mkdirSync(join(ws.root, "bin"));
+    const link = join(ws.root, "bin", "cobre");
+    symlinkSync(bin, link);
+    const result = run(
+      ws,
+      page(fence("accept", "{}")),
+      { STUB_RAN: ran },
+      {
+        cobreBin: link,
+      },
+    );
+    assert.match(
+      result.setupError,
+      new RegExp(
+        `^cobre binary ${realpathSync(bin)} lies inside a cargo build tree`,
+      ),
+    );
+    assert.equal(existsSync(ran), false);
+  } finally {
+    ws.cleanup();
+  }
+});
+
+test("a binary outside any cargo build tree runs, by path and as a bare cobre on PATH", () => {
+  const ws = workspace();
+  const ran = join(ws.root, "ran");
+  try {
+    for (const dir of ["bin", "mytarget/release", "target/release-notes"]) {
+      const bin = stubAt(ws, dir);
+      const text = page(fence("accept", "{}"), fence("reject", "BAD"));
+      const byPath = run(ws, text, { STUB_RAN: ran }, { cobreBin: bin });
+      assert.deepEqual(
+        byPath,
+        { setupError: null, problems: [], accepted: 1, rejected: 1 },
+        dir,
+      );
+      assert.equal(existsSync(ran), true, dir);
+      rmSync(ran);
+      const bare = run(
+        ws,
+        text,
+        {
+          STUB_RAN: ran,
+          PATH: `${dirname(bin)}${delimiter}${process.env.PATH}`,
+        },
+        { cobreBin: "cobre" },
+      );
+      assert.deepEqual(bare, byPath, dir);
+      assert.equal(existsSync(ran), true, dir);
+      rmSync(ran);
+    }
   } finally {
     ws.cleanup();
   }
@@ -873,6 +1085,33 @@ test("CLI: an unreadable page exits 2", () => {
       result.stderr,
       new RegExp(`^check:gc-examples: could not read ${PAGE_REL}: `),
     );
+  } finally {
+    cw.cleanup();
+  }
+});
+
+test("CLI: COBRE_BIN inside target/release exits 2 naming the real path, and a bare cobre on PATH does too", () => {
+  const cw = cliWorkspace({
+    pageText: page(fence("accept", "{}")),
+    overlay: OVERLAY,
+  });
+  try {
+    const dir = join(cw.root, "target", "release");
+    mkdirSync(dir, { recursive: true });
+    const bin = join(dir, "cobre");
+    copyFileSync(join(cw.root, "cobre"), bin);
+    chmodSync(bin, 0o755);
+    const message = `check:gc-examples: cobre binary ${realpathSync(bin)} lies inside a cargo build tree (/target/release/ or /target/debug/); set COBRE_BIN or PATH to the pinned release binary\n`;
+    const byPath = cw.exec({ COBRE_BIN: bin });
+    assert.equal(byPath.status, 2);
+    assert.equal(byPath.stderr, message);
+    assert.equal(byPath.stdout, "");
+    const bare = cw.exec({
+      COBRE_BIN: "",
+      PATH: `${dir}${delimiter}${process.env.PATH}`,
+    });
+    assert.equal(bare.status, 2);
+    assert.equal(bare.stderr, message);
   } finally {
     cw.cleanup();
   }

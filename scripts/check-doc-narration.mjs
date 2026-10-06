@@ -25,13 +25,22 @@
 //   - `fixed in` requires a release or version target ("fixed in advance" is
 //     prose); `new in` does not fire on "new in-memory ...".
 //   - `BREAKING` is case-sensitive, so "tie-breaking" is prose.
+//   - `currently` fires only before an interface status ("currently accepts",
+//     "does not currently support", "currently inert"), and "as implemented
+//     today" always; the run state of a solve ("cuts currently active in the
+//     LP") and "today" as a time ("water saved today") are prose.
+//
+// A fence still open at the end of a page blanks the rest of it, so it is
+// reported as `UNCLOSED-FENCE <page>:<line>` (the opener's line) and fails the
+// gate; no allowlist entry applies.
 //
 // An entry in scripts/doc-lint-allow.txt grandfathers only the narration rule it
 // names; a narration entry that matches no hit is reported STALE and fails the
-// gate. Exit 0 clean, 1 on violations or stale entries, 2 on a setup error.
+// gate. Exit 0 clean, 1 on violations, stale entries or an unclosed fence, 2 on
+// a setup error.
 //
-// Exports `detectNarrationViolations(text)` and `NARRATION_RULE_IDS` behind a
-// direct-run guard, mirroring check-doc-version.mjs.
+// Exports `detectNarrationViolations(text)`, `unclosedFenceLine(text)` and
+// `NARRATION_RULE_IDS` behind a direct-run guard, mirroring check-doc-version.mjs.
 
 import { readFileSync, existsSync } from "node:fs";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -58,6 +67,11 @@ const NO_LONGER_STATUS = [
   "an?\\s+(?:\\w+\\s+)?(?:column|field|key|option|flag|file|setting)",
 ].join("|");
 
+// What a "currently" must be followed by to narrate the interface: a verb of
+// what is accepted, supported, imposed or trimmed, or "inert".
+const CURRENTLY_STATUS =
+  "(?:accepts?|accepted|supports?|supported|imposes?|imposed|trims?|inert)";
+
 const NARRATION_PATTERNS = [
   [
     "narration-no-longer",
@@ -72,6 +86,13 @@ const NARRATION_PATTERNS = [
     /\b(?:cobre|it|this|that|they|which)\s+used\s+to\b|\bused\s+to\s+be\b/gi,
   ],
   ["narration-formerly", /\bformerly\b/gi],
+  [
+    "narration-currently",
+    new RegExp(
+      `\\bcurrently\\s+${CURRENTLY_STATUS}\\b|\\bas\\s+implemented\\s+today\\b`,
+      "gi",
+    ),
+  ],
   [
     "narration-now-verb",
     /\bnow\s+(?:supports|accepts|rejects|refuses|requires|includes|reports)\b/gi,
@@ -109,15 +130,19 @@ const BARE_URL = /\bhttps?:\/\/\S+/g;
 
 const blankKeepingNewlines = (s) => s.replace(/[^\n]/g, " ");
 
+// `text` is the page with fenced lines blanked; `unclosedFenceLine` is the
+// 1-based line of a fence still open at the end of the page, else null.
 function blankFences(text) {
   let fence = null;
-  return text
+  let fenceLine = 0;
+  const blanked = text
     .split("\n")
-    .map((line) => {
+    .map((line, i) => {
       if (fence === null) {
         const open = OPEN_FENCE.exec(line);
         if (!open) return line;
         fence = open[1] ?? open[2];
+        fenceLine = i + 1;
         return "";
       }
       const close = CLOSE_FENCE.exec(line);
@@ -131,11 +156,17 @@ function blankFences(text) {
       return "";
     })
     .join("\n");
+  return {
+    text: blanked,
+    unclosedFenceLine: fence === null ? null : fenceLine,
+  };
 }
+
+export const unclosedFenceLine = (text) => blankFences(text).unclosedFenceLine;
 
 function blankNonProse(text) {
   return blankFences(text)
-    .replace(/[^\n]+(?:\n[^\n]+)*/g, (paragraph) =>
+    .text.replace(/[^\n]+(?:\n[^\n]+)*/g, (paragraph) =>
       paragraph.replace(INLINE_CODE, blankKeepingNewlines),
     )
     .replace(COMMENT, blankKeepingNewlines)
@@ -198,6 +229,7 @@ function main() {
 
   const relFiles = collectZonedSourceFiles(contentRoot).sort();
   const violations = [];
+  const unclosed = [];
 
   for (const rel of relFiles) {
     let text;
@@ -213,6 +245,9 @@ function main() {
       continue;
     }
 
+    const openFence = unclosedFenceLine(text);
+    if (openFence !== null) unclosed.push({ rel, lineno: openFence });
+
     for (const v of detectNarrationViolations(text)) {
       violations.push({ rel, ...v });
     }
@@ -224,7 +259,7 @@ function main() {
     (id) => NARRATION_RULE_IDS.has(id),
   );
 
-  if (failing.length === 0 && stale.length === 0) {
+  if (failing.length === 0 && stale.length === 0 && unclosed.length === 0) {
     console.log(
       `OK: ${relFiles.length} files scanned; no NEW change narration found` +
         (grandfathered.length > 0
@@ -244,8 +279,9 @@ function main() {
       `STALE [${s.ruleId}]: ${s.key} — doc-lint-allow.txt:${s.fileLine} matches no narration hit`,
     );
   }
+  for (const u of unclosed) console.log(`UNCLOSED-FENCE ${u.rel}:${u.lineno}`);
   console.log(
-    `FAIL: ${failing.length} narration violation(s), ${stale.length} stale allowlist entry(ies). Every page in both layers ` +
+    `FAIL: ${failing.length} narration violation(s), ${stale.length} stale allowlist entry(ies), ${unclosed.length} unclosed fence(s). Every page in both layers ` +
       `states what cobre does now, with no change narration (CLAUDE.md "Current-state voice, both layers"): ` +
       `reword a hit as a neutral statement of current behaviour. Delete or re-key a stale entry in scripts/doc-lint-allow.txt.`,
   );
