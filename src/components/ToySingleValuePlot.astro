@@ -1,0 +1,129 @@
+---
+// Render layer — Observable Plot island for the single-reservoir walkthrough
+// (examples/toy-single-reservoir §8). Reads the theme palette from CSS vars and
+// re-renders on the light/dark toggle. Data comes from the tested compute module
+// (figures/toySingleValue.ts), never hand-typed.
+---
+
+<div
+  id="toy-single-value-plot"
+  class="vf-plot"
+  role="img"
+  aria-label="Cost-to-go V₃ of the single-reservoir walkthrough against the storage left at the end of stage 2, with the two cuts that iterations 1 and 2 add to stage 2 and their upper envelope, which lies on or below V₃ and touches it at the trial points 10 and 20"
+>
+</div>
+
+<script>
+  import * as Plot from "@observablehq/plot";
+  import { figureData } from "../figures/toySingleValue.ts";
+
+  const X_DOMAIN: [number, number] = [0, 50];
+  const CUT_DASH = ["10 4", "4 4"];
+
+  function cssVar(name: string): string {
+    return getComputedStyle(document.documentElement)
+      .getPropertyValue(name)
+      .trim();
+  }
+
+  function render(): void {
+    const el = document.getElementById("toy-single-value-plot");
+    if (!el) return;
+
+    // Cost-to-go and cuts are not water marks -> copper curve and warm accent
+    // (Patina), never Flow Blue (--dgm-hydro). Literals mirror palette.css.
+    const curve = cssVar("--dgm-curve") || "#d4956a";
+    const accent = cssVar("--dgm-accent") || "#4a8b6f";
+    const text = cssVar("--dgm-text") || "#c8c6c2";
+    const bg = cssVar("--dgm-bg") || "#0f1419";
+
+    const { trueCurve, envelope, cutSegments, trialPoints } = figureData();
+    const top = Math.max(...trueCurve.map((p) => p.value));
+    const legend = [
+      { label: "V₃(v)", stroke: curve, width: 2.5, dash: undefined },
+      { label: "iteration-1 cut", stroke: accent, width: 1.6, dash: CUT_DASH[0] },
+      { label: "iteration-2 cut", stroke: accent, width: 1.6, dash: CUT_DASH[1] },
+      { label: "upper envelope", stroke: accent, width: 2.5, dash: undefined },
+    ].map((row, i) => ({ ...row, y: top * (0.95 - 0.09 * i) }));
+    const swatchFrom = X_DOMAIN[1] * 0.6;
+    const swatchTo = X_DOMAIN[1] * 0.68;
+    const labelAt = X_DOMAIN[1] * 0.7;
+
+    el.replaceChildren(
+      Plot.plot({
+        width: 640,
+        height: 420,
+        marginTop: 24,
+        marginRight: 24,
+        marginBottom: 48,
+        marginLeft: 60,
+        style: { background: "transparent", color: text, fontSize: "13px" },
+        x: {
+          label: "storage at the end of stage 2, v",
+          domain: X_DOMAIN,
+        },
+        y: { label: "cost-to-go", grid: true, domain: [0, top] },
+        marks: [
+          Plot.ruleY([0], { stroke: text, strokeOpacity: 0.5 }),
+          Plot.line(trueCurve, {
+            x: "v",
+            y: "value",
+            stroke: curve,
+            strokeWidth: 2.5,
+          }),
+          ...cutSegments.map((segment, i) =>
+            Plot.line([segment.from, segment.to], {
+              x: "v",
+              y: "value",
+              stroke: accent,
+              strokeWidth: 1.6,
+              strokeDasharray: CUT_DASH[i],
+            }),
+          ),
+          Plot.line(envelope, {
+            x: "v",
+            y: "value",
+            stroke: accent,
+            strokeWidth: 2.5,
+          }),
+          Plot.dot(trialPoints, {
+            x: "v",
+            y: "value",
+            fill: accent,
+            stroke: bg,
+            strokeWidth: 1.5,
+            r: 5,
+          }),
+          ...legend.flatMap((row) => [
+            Plot.line(
+              [
+                { v: swatchFrom, value: row.y },
+                { v: swatchTo, value: row.y },
+              ],
+              {
+                x: "v",
+                y: "value",
+                stroke: row.stroke,
+                strokeWidth: row.width,
+                strokeDasharray: row.dash,
+              },
+            ),
+            Plot.text([{ v: labelAt, value: row.y, label: row.label }], {
+              x: "v",
+              y: "value",
+              text: "label",
+              textAnchor: "start",
+              fill: text,
+            }),
+          ]),
+        ],
+      }),
+    );
+  }
+
+  render();
+  new MutationObserver(render).observe(document.documentElement, {
+    attributes: true,
+    attributeFilter: ["data-theme"],
+  });
+</script>

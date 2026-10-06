@@ -179,7 +179,7 @@ export default defineConfig({
     "/guide/thermal-units.html": "/math/equipment-formulations/",
     "/guide/stochastic-modeling.html": "/math/par-inflow-model/",
     "/guide/block-modes.html": "/math/block-formulations/",
-    "/guide/water-travel-time.html": "/math/lp-formulation/",
+    "/guide/water-travel-time.html": "/math/state-augmentation/",
     "/examples/1dtoy.html": "/examples/toy-single-reservoir/",
     "/examples/4ree.html": "/examples/toy-four-reservoir/",
     // Retired site slugs (merged chapters; R8): one hop to the survivor
@@ -269,8 +269,8 @@ export default defineConfig({
       // three `getting-started/*` pages); it also reclaims
       // `overview/what-cobre-solves` from the old first Part group, leaving the
       // renamed Introduction group with the remaining three overview slugs.
-      // Every other group's slug set is unchanged from the old 7-Part scaffold,
-      // just relabelled. The pure-software Running Cobre group (§5 sketch,
+      // The System Modelling, Stochastic Modelling and SDDP Algorithm groups
+      // follow spec §6.3. The pure-software Running Cobre group (§5 sketch,
       // ticket-013) lands between Coupling & Boundary Conditions and Worked
       // Examples: these `running/*` pages have no methodology twin, so they are
       // standalone MDX (no `<Tabs>`, no `_impl/` partials). The I/O reference
@@ -301,13 +301,13 @@ export default defineConfig({
         {
           label: "System Modelling",
           items: [
-            "math/lp-formulation",
             "math/system-elements",
             "math/equipment-formulations",
+            "math/lp-formulation",
+            "math/state-augmentation",
             "math/block-formulations",
             "math/hydro-production-models",
             "math/penalty-system",
-            "math/inflow-nonnegativity",
           ],
         },
         {
@@ -315,8 +315,9 @@ export default defineConfig({
           items: [
             "math/policy-graphs",
             "math/par-inflow-model",
-            "math/multi-resolution-studies",
+            "math/inflow-nonnegativity",
             "math/scenario-generation",
+            "math/multi-resolution-studies",
           ],
         },
         {
@@ -324,6 +325,7 @@ export default defineConfig({
           items: [
             "math/sddp-algorithm",
             "math/cut-management",
+            "math/lp-layout-and-scaling",
             "math/lp-warm-start",
             "math/risk-measures",
             "math/stopping-rules",

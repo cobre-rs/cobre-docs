@@ -11,13 +11,13 @@ import { Content as RiskNotes } from './_impl/_risk.notes.mdx';
 
 ## Purpose
 
-This spec defines the risk-averse SDDP formulation used in Cobre, based on Conditional Value-at-Risk (CVaR). It covers the CVaR definition, the convex combination risk measure, dual representations, the risk-averse subgradient theorem, modified Bellman equation with discount factor, risk-averse cut generation, and when the bounds are valid under a risk measure.
+This chapter defines the risk-averse SDDP formulation used in Cobre, based on Conditional Value-at-Risk (CVaR). It covers the CVaR definition, the convex combination risk measure, dual representations, the risk-averse subgradient theorem, modified Bellman equation with discount factor, risk-averse cut generation, and when the bounds are valid under a risk measure.
 
 For notation conventions (index sets, parameters, decision variables, dual variables), see [Notation Conventions](/overview/notation-conventions).
 
 :::note[Symbol conventions]
 
-- $\alpha$ denotes the **CVaR tail fraction** (matching the `alpha` field in `stages.json`).
+- $\alpha$ denotes the **CVaR tail fraction**.
 - $d$ denotes the **discount factor**. See [Discount Rate](/math/discount-rate).
 - $\mu$ denotes the **risk-adjusted probability measure**.
 - $\psi(p, \mu)$ denotes the **dual penalty function** in the general dual representation.

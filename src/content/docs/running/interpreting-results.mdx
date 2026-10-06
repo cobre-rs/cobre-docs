@@ -164,7 +164,9 @@ of the 1dtoy template:
 | `iterations.converged_at`        | Equal to `iterations.completed` when `achieved` is `true`, `null` otherwise.                             |
 
 **Gap guidelines.** There is no universal threshold — acceptable gap depends
-on the decision being made and the study's time horizon. As rough guidance:
+on the decision being made and the study's time horizon. As rough guidance
+for a gap without sampling noise, from an enumerated forward pass
+(`bounds.final_upper_bound_kind` is `"exact"` and the risk measure is the same at every stage):
 
 - Below 1%: acceptable for most decisions.
 - 1% to 5%: acceptable for long-horizon planning studies where model
@@ -176,7 +178,10 @@ With a sampled upper bound (`bounds.final_upper_bound_kind` is `"statistical"`)
 the [gap](/math/stopping-rules/#optimality-gap) is an estimate, not a
 certificate: it compares the mean cost of the latest iteration's sampled forward
 passes with the lower bound, carries sampling noise, and is negative whenever
-that mean falls below the lower bound, as in the excerpt above. Under an
+that mean falls below the lower bound, as in the excerpt above. The thresholds
+above do not apply to a sampled gap, which changes sign and size from one
+iteration to the next: read a sampled run by whether the lower bound has
+plateaued ([Reading Convergence History](#reading-convergence-history)). Under an
 enumerated forward pass (`"exact"`) the upper bound is exact and the gap carries
 no sampling noise, but the gap certifies the policy only when the risk measure
 is the same at every stage;
@@ -191,9 +196,7 @@ hold](/math/cut-management/#when-bounds-and-certificates-hold).
    ([`training.selection`](/running/configuration/#trainingselection)) to reduce
    the noise of the upper-bound estimate.
 3. Check `training/convergence.parquet` (see next section) to see whether
-   the lower bound is still rising or has plateaued. Under a sampled upper
-   bound the gap is noisy, so the lower bound's plateau is the steadier
-   signal.
+   the lower bound is still rising or has plateaued.
 4. Check `solve_stats.retried` and `solve_stats.failed` in
    `training/metadata.json`: solves that needed retries point to numerically
    difficult stages, and a solve that still fails after its retries ends
@@ -201,7 +204,7 @@ hold](/math/cut-management/#when-bounds-and-certificates-hold).
 
 ### Reading the `Time split` breakdown
 
-`cobre run` prints a live `Time split` block once training finishes,
+`cobre run` prints a `Time split` block in its training summary once training finishes,
 decomposing the total training wall time into three walls — `Forward`,
 `Backward`, and `Serial`. See the [`cobre run` Output format
 sample](/reference/cli-reference/#output-format) for the full block this

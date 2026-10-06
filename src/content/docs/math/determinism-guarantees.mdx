@@ -156,8 +156,9 @@ entity's `id`, by contrast, can move its position and therefore does change all
 three. The in-transit buckets are ordered by `(plant, lag)` — the receiving
 plant in the same canonical entity order every other state block uses, then
 ascending maturity lag — consistent with the storage and inflow-lag block
-orderings. See [LP Formulation](/math/lp-formulation) for the column and row
-layout that this construction produces.
+orderings. See
+[LP Layout and Scaling](/math/lp-layout-and-scaling#1-column-and-row-layout)
+for the column and row layout that this construction produces.
 
 **Trial-point values canonicalized onto bounds.** Canonical layout is only half
 of what makes a trial point reproducible; its values are pinned too. The
@@ -220,8 +221,9 @@ a risk-averse measure, and by a streaming mean and variance for a sampled bound.
 The lower bound is evaluated on one rank from the first stage's openings in
 canonical order and broadcast, and simulation costs are likewise gathered in
 canonical scenario order and reduced there. None of these reductions therefore
-depends on how work is partitioned. See [Performance](/running/performance/) for
-the rank partition and the collectives.
+depends on how work is partitioned. See
+[Performance Accelerators → Parallel Execution Model](/running/performance/#parallel-execution-model)
+for the rank partition and the collectives.
 
 **Deterministic seed derivation across MPI ranks.** Each draw is produced by a
 pseudo-random number generator seeded from a value derived deterministically
@@ -410,7 +412,8 @@ the tab below lists the output files and field names that carry that record.
 - [Cut Management](/math/cut-management) — Append-only cut monotonicity; cut
   order is deterministic across iterations and is a precondition for the
   bit-identical lower-bound sequence guarantee
-- [LP Formulation](/math/lp-formulation) — LP construction determinism; the
-  column and row ordering that the canonical state-block layout preserves
+- [LP Layout and Scaling](/math/lp-layout-and-scaling) — LP construction
+  determinism; the column and row ordering that the canonical state-block layout
+  preserves
 - [LP Warm-Start](/math/lp-warm-start) — The basis store whose chain order §3
   pins

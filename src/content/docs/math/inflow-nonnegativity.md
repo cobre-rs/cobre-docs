@@ -56,7 +56,7 @@ $$
 -\zeta \,\big( a_h + \sigma^{inf}_h \big) \;\; \text{(parallel stage)}, \qquad -\zeta_k \,\big( a_h + \sigma^{inf}_h \big) \;\; \text{(block } k \text{ of a chronological stage)}
 $$
 
-so the slack adds $\zeta\,\sigma^{inf}_h$ hm³ of water over the stage, $\zeta_k\,\sigma^{inf}_h$ in block $k$. The realized-inflow row ([LP Formulation §5b](/math/lp-formulation#5b-realized-inflow-definition-constraints-z-inflow)) is unchanged: the AR equation keeps the realization $a_h$. A PreFilling hydro's frozen identity row carries no slack. **Interpretation**: the water reaching the reservoir is $a_h^{effective} = a_h + \sigma^{inf}_h$. The LP uses the slack whenever the water balance cannot be met otherwise, or whenever the added water is worth more than its cost; nothing ties it to the sign of the realization.
+so the slack adds $\zeta\,\sigma^{inf}_h$ hm³ of water over the stage, $\zeta_k\,\sigma^{inf}_h$ in block $k$. The realized-inflow row ([LP Formulation §5](/math/lp-formulation#5-realized-inflow-definition-rows)) is unchanged: the AR equation keeps the realization $a_h$. A PreFilling hydro's frozen identity row carries no slack. **Interpretation**: the water reaching the reservoir is $a_h^{effective} = a_h + \sigma^{inf}_h$. The LP uses the slack whenever the water balance cannot be met otherwise, or whenever the added water is worth more than its cost; nothing ties it to the sign of the realization.
 
 **Objective Function Addition** (outside block summation):
 

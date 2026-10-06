@@ -8,7 +8,7 @@ import { Content as DiscountConfigure } from './_impl/_discount.configure.mdx';
 
 ## Purpose
 
-This spec defines how discount rates are incorporated into the Cobre SDDP solver: the discounted Bellman equation, stage-dependent discount factors, effect on the future cost variable $\theta$, cumulative discounting, and the effect on lower/upper bound computation.
+This chapter defines how discount rates are incorporated into the Cobre SDDP solver: the discounted Bellman equation, stage-dependent discount factors, effect on the future cost variable $\theta$, cumulative discounting, and the effect on lower/upper bound computation.
 
 For the reserved cyclic-mode formulation (where discounting would be required for convergence), see [Horizon Modes](/math/horizon-modes).
 
@@ -94,7 +94,7 @@ $$
 d_{t_1 \to t_2} = d_{1 \to t_2} / d_{1 \to t_1}
 $$
 
-In this arrow form, $d_{t \to t+1}$ is the one-step factor of §3 and $d_{1 \to t}$ the cumulative factor. A cost incurred at stage $t_2$ and charged in the stage-$t_1$ objective is multiplied by $d_{t_1 \to t_2}$. An anticipated thermal's commitment cost is charged at its decision stage and discounted from its delivery stage in this way ([LP Formulation §5c](/math/lp-formulation#objective-contributions)).
+In this arrow form, $d_{t \to t+1}$ is the one-step factor of §3 and $d_{1 \to t}$ the cumulative factor. A cost incurred at stage $t_2$ and charged in the stage-$t_1$ objective is multiplied by $d_{t_1 \to t_2}$. An anticipated thermal's commitment cost is charged at its decision stage and discounted from its delivery stage in this way ([State Augmentation §5](/math/state-augmentation#objective-contributions)).
 
 ### Post-Study Extension
 

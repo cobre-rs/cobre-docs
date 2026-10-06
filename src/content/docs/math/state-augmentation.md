@@ -78,7 +78,7 @@ where $\cdots$ stands for the bucket and ring-slot terms, each coefficient on it
 
 To maintain the Markov property, lagged inflows $a_{h,\ell}$ are promoted to state variables pinned by column bounds.
 
-The AR dynamics equation ([LP Formulation §5](/math/lp-formulation#5-realized-inflow-definition-rows)) uses lagged inflows $a_{h,\ell}$ as LP variables. To maintain the Markov property in the SDDP decomposition, each lag variable is pinned to its incoming state value via equal lower and upper **column bounds** on its lag column. This binds the lag variables to the known incoming state, and the **reduced cost** of each pinned column provides the cut coefficient $\beta^{lag}_{h,\ell}$ for the corresponding inflow-lag dimension of the Benders cuts ([LP Formulation §11](/math/lp-formulation#11-benders-cuts)). Whether these lag dimensions enter the cut is governed by the stage's cut projection: when it projects out the inflow lags, the lag columns are still pinned for the AR dynamics, but their reduced costs carry no cut coefficient, giving a storage-only cut even under a PAR($p$) fit — see [§7](#7-cut-state-projection).
+The AR dynamics equation ([LP Formulation §5](/math/lp-formulation#5-realized-inflow-definition-rows)) uses lagged inflows $a_{h,\ell}$ as LP variables. To maintain the Markov property in the SDDP decomposition, each lag variable is pinned to its incoming state value via equal lower and upper **column bounds** on its lag column. This binds the lag variables to the known incoming state, and the **reduced cost** of each pinned column provides the cut coefficient $\beta^{lag}_{h,\ell}$ for the corresponding inflow-lag dimension of the Benders cuts ([LP Formulation §11](/math/lp-formulation#11-benders-cuts)). Whether these lag dimensions enter the cut is set by the cut-state projection, which the successor stage configures: when it projects out the inflow lags, the lag columns are still pinned for the AR dynamics, but their reduced costs carry no cut coefficient, giving a storage-only cut even under a PAR($p$) fit — see [§7](#7-cut-state-projection).
 
 For each hydro $h \in \mathcal{H}$ and each lag $\ell \in \{1, \ldots, P^{\max}\}$:
 
@@ -176,7 +176,7 @@ $$
 \underline{b}^{\,\mathrm{in}}_{h,d} = \bar{b}^{\,\mathrm{in}}_{h,d} = \hat{b}_{h,d}
 $$
 
-where $\hat{b}_{h,d}$ is the incoming in-transit volume, the previous stage's outgoing bucket (or, at the first stage, the seed derived from the in-transit releases declared before the study — see [system elements §5](/math/system-elements) and the hydro Implementation notes). The **reduced cost** of the pinned bucket column is the cut coefficient for that in-transit dimension (see below) — the same regime used for storage (§2) and AR lags (§4).
+where $\hat{b}_{h,d}$ is the incoming in-transit volume, the previous stage's outgoing bucket (or, at the first stage, the seed derived from the in-transit releases declared before the study — see [System Elements — Cascade Travel Time](/math/system-elements#cascade-travel-time) and [Hydro Production Models — Implementation notes](/math/hydro-production-models#implementation-in-cobre)). The **reduced cost** of the pinned bucket column is the cut coefficient for that in-transit dimension (see below) — the same regime used for storage (§2) and AR lags (§4).
 
 ### Delayed-arrival water-balance entry
 

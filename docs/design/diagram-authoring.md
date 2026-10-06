@@ -278,7 +278,7 @@ it. See §2 for the TALA watermark rationale.
   (power-system one-line; exercises the semantic node-colour vocabulary in §4.2)
 - `src/content/docs/math/sddp-algorithm.mdx` — inline ` ```d2 ` block (the SDDP
   iteration-cycle **loop/flowchart**; a folded decision diamond)
-- `src/content/docs/examples/toy-single-reservoir.md` — inline ` ```d2 ` block
+- `src/content/docs/examples/toy-single-reservoir.mdx` — inline ` ```d2 ` block
   (network one-line with the semantic `hydro` / `thermal` / `deficit` classes)
 
 ### 4.5 Sizing & readability

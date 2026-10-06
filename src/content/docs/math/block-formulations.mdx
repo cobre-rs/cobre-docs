@@ -26,6 +26,7 @@ $$
 
 where:
 
+- $v^{in}_h$ is the incoming storage, pinned at $\hat{v}_h$
 - $\zeta_k = 0.0036\,\tau_k = w_k\,\zeta$ is the flow-to-volume conversion of block $k$, with $\tau_k$ the duration of block $k$ in hours and $w_k = \tau_k / \sum_{k' \in \mathcal{K}} \tau_{k'}$ the block weight, so the block conversions sum to the stage conversion, $\sum_{k \in \mathcal{K}} \zeta_k = \zeta$
 - $a_h$ is the stage's realized incremental inflow
 - $e_h$ is the net evaporation: one stage-level value on $(v^{in}_h + v_h)/2$, whatever the block count
@@ -41,7 +42,7 @@ This formulation assumes the reservoir can freely redistribute water across bloc
 | LP size          | Smaller: one water-balance row per hydro and one evaporation row per evaporating hydro |
 | Storage dynamics | End-of-stage only                                                            |
 | Use case         | Long-term strategic planning                                                 |
-| Configuration    | `block_mode: "parallel"` configured per stage via the `block_mode` parameter |
+| Configuration    | Selected per stage in the case's stage definitions ([Case Directory Format](/reference/case-directory-format#stagesjson)) |
 
 ## 2. Chronological Blocks
 
@@ -63,6 +64,8 @@ $$
 v_{h,k} = v_{h,k-1} + \zeta_k \, \big( a_h - e_{h,k} - r_h + \text{net\_flows}_{h,k} \big)
 $$
 
+$\text{net\_flows}_{h,k}$ credits the upstream release of block $k$ in full; for an upstream plant on a travel-time arc into $h$, the row of block $k$ instead credits the per-block same-stage shares of that plant's release in blocks $k' \le k$ ([LP Formulation — Chronological-Stage Rows](/math/lp-formulation#chronological-stage-rows)).
+
 Block $k$ receives $\zeta_k\,a_h = w_k\,\zeta\,a_h$ of the stage's inflow and the share $w_k \zeta \sigma_{m(t)} \varepsilon_t$ of its innovation. Each block chains its storage from the previous block's end storage $v_{h,k-1}$, so the per-block boundaries $v_{h,0} = \hat{v}_h, v_{h,1}, \ldots, v_{h,|\mathcal{K}|}$ form a within-stage storage trajectory.
 
 ### 2.3 Summing the Block Rows
@@ -81,7 +84,7 @@ A hydro that has not yet entered service freezes each block's storage identity i
 
 ### 2.4 Per-Block Production and Evaporation
 
-Each block's hydro production (FPHA) and evaporation are evaluated on **that block's own average storage** $(v_{h,k-1} + v_{h,k})/2$, rather than the single stage-average storage that parallel mode shares across all blocks. A storage-dependent production or evaporation coefficient $\gamma_v$ therefore enters the block-$k$ constraint as $-\gamma_v/2$ on **both** bounding storage columns $v_{h,k-1}$ and $v_{h,k}$, so the block sees the mean of its entry and exit storage. This lets a chronological stage capture the head and evaporative-area variation that tracks the within-stage storage trajectory.
+Each block's hydro production (FPHA) and evaporation are evaluated on **that block's own average storage** $(v_{h,k-1} + v_{h,k})/2$, rather than the single stage-average storage that parallel mode shares across all blocks. Each storage coefficient therefore enters the block-$k$ row as minus half its value on **both** bounding storage columns $v_{h,k-1}$ and $v_{h,k}$, so the block sees the mean of its entry and exit storage: the FPHA plane storage coefficient $\gamma_v^m$, apportioned to cell $(h,b)$ by $\lambda_{h,b}$, as $-\lambda_{h,b}\,\gamma_v^m/2$ in that cell's row for the plane, and the evaporation storage slope $\gamma^{ev}_{v,h}$ as $-\gamma^{ev}_{v,h}/2$ in the evaporation row. This lets a chronological stage capture the head and evaporative-area variation that tracks the within-stage storage trajectory.
 
 On a parallel stage the plant keeps one stage-level evaporation on $(v^{in}_h + v_h)/2$ whatever its block count; per-block evaporation exists only on a chronological stage.
 
@@ -100,7 +103,7 @@ Inter-block storages $v_{h,k}$ for $k < |\mathcal{K}|$ are internal LP variables
 
 ### 2.6 Cut Coefficient Extraction
 
-In chronological mode, the incoming storage LP variable $v^{in}_h$ is pinned to its trial value $\hat{v}_h$ by equal column bounds (see [LP formulation §4a](/math/lp-formulation)). The **reduced cost** of that pinned column gives the storage cut coefficient directly:
+In chronological mode, the incoming storage LP variable $v^{in}_h$ is pinned to its trial value $\hat{v}_h$ by equal column bounds (see [State Augmentation §2](/math/state-augmentation#2-pinning-by-column-bounds)). The **reduced cost** of that pinned column gives the storage cut coefficient directly:
 
 $$
 \beta^v_h = \bar{c}^{in}_h / d^{col}_h
@@ -115,9 +118,37 @@ By the LP envelope theorem, this reduced cost automatically captures all downstr
 | LP size          | Larger: $N_{hydro} \times (\lvert\mathcal{K}\rvert - 1)$ more storage columns and water-balance rows, and $\lvert\mathcal{K}\rvert$ evaporation rows (each with its evaporation column and two slack columns) per evaporating hydro instead of one |
 | Storage dynamics | Intra-stage cycling modeled                                                       |
 | Use case         | Short-term planning with storage cycling                                          |
-| Configuration    | `block_mode: "chronological"` configured per stage via the `block_mode` parameter |
+| Configuration    | Selected per stage in the case's stage definitions ([Case Directory Format](/reference/case-directory-format#stagesjson)) |
 
 ## 3. Comparison Summary
+
+The figure contrasts the two modes for one hydro $h$. In the parallel panel one water balance takes the incoming storage $v^{in}_h$ to the end-of-stage storage $v_h$, and FPHA and evaporation are evaluated on $(v^{in}_h + v_h)/2$ (§1.1, §2.4). In the chronological panel the block rows chain $v^{in}_h = v_{h,0} \to v_{h,1} \to \cdots \to v_{h,|\mathcal{K}|} = v_h$, and block $k$ evaluates FPHA and evaporation on its own average $(v_{h,k-1} + v_{h,k})/2$ (§2.2, §2.4). Of the storages in either panel, the cut built at the stage reads only the incoming storage $v^{in}_h$ under both modes: its storage coefficient is the reduced cost of the pinned $v^{in}_h$ column (§2.6), and the interior storages $v_{h,k}$, $k < |\mathcal{K}|$, enter no cut (§4).
+
+```d2
+direction: down
+
+classes: {
+  hydro: {style: {stroke: "#4a90b8"}}
+}
+
+par: "Parallel" {
+  vin: "incoming storage vⁱⁿ" {shape: cylinder; class: hydro}
+  bal: "one balance over all blocks"
+  vout: "end-of-stage storage v" {shape: cylinder; class: hydro}
+  vin -> bal
+  bal -> vout: "FPHA, evaporation on (vⁱⁿ + v)/2"
+}
+
+chrono: "Chronological" {
+  cin: "vⁱⁿ = v₀" {shape: cylinder; class: hydro}
+  b1: "block 1 → v₁"
+  bdots: "…" {shape: text}
+  bK: "block |K| → v"
+  cin -> b1: "on (vₖ₋₁ + vₖ)/2"
+  b1 -> bdots: "on (vₖ₋₁ + vₖ)/2"
+  bdots -> bK: "on (vₖ₋₁ + vₖ)/2"
+}
+```
 
 | Aspect               | Parallel Blocks       | Chronological Blocks                          |
 | -------------------- | --------------------- | --------------------------------------------- |
@@ -158,7 +189,7 @@ The methodology above defines the two block formulations and what a cut means ac
 
 ## Cross-References
 
-- [Notation conventions](/overview/notation-conventions) — variable and set definitions ($v_h$, $\hat{v}_h$, $\mathcal{K}$, $\tau_k$, $w_k$)
+- [Notation conventions](/overview/notation-conventions) — variable and set definitions ($v_h$, $v^{in}_h$, $\hat{v}_h$, $\mathcal{K}$, $\tau_k$, $w_k$, $\zeta_k$)
 - [System elements](/math/system-elements) — hydro plant element description and decision variables
 - [LP formulation](/math/lp-formulation) — how block formulations integrate into the assembled LP
 - [Cut management](/math/cut-management) — cut coefficient extraction from pinned-column reduced costs

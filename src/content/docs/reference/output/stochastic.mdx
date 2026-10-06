@@ -1,0 +1,115 @@
+---
+title: Stochastic Artifacts
+description: The stochastic model cobre run exports with exports.stochastic — which files, when each is written, and the schemas of the files with no input counterpart.
+---
+
+When `exports.stochastic: true` is set in `config.json`, Cobre writes the
+stochastic preprocessing artifacts to `output/stochastic/` before training
+begins.
+
+The directory is not written when the config field is not set. Export is off
+by default.
+
+---
+
+## Exported files
+
+| File path                                    | Export condition              | Schema source                                            |
+| -------------------------------------------- | ----------------------------- | -------------------------------------------------------- |
+| `stochastic/inflow_seasonal_stats.parquet`   | Always                        | Same as input `scenarios/inflow_seasonal_stats.parquet`  |
+| `stochastic/inflow_ar_coefficients.parquet`  | Always                        | Same as input `scenarios/inflow_ar_coefficients.parquet` |
+| `stochastic/inflow_annual_component.parquet` | Always                        | 5-column Parquet schema (see below)                      |
+| `stochastic/correlation.json`                | Always                        | Same as input `scenarios/correlation.json`               |
+| `stochastic/fitting_report.json`             | Estimation ran                | JSON diagnostic report (see below)                       |
+| `stochastic/noise_openings.parquet`          | Always                        | Same schema as `scenarios/noise_openings.parquet`        |
+| `stochastic/load_seasonal_stats.parquet`     | A load model has `std_mw > 0` | Same as input `scenarios/load_seasonal_stats.parquet`    |
+
+The five unconditional files hold the model the run used, whether Cobre
+estimated it from `inflow_history.parquet` or read it from `scenarios/`.
+`fitting_report.json` is written only when Cobre estimated part or all of the
+inflow model (its seasonal statistics, its AR coefficients or both) from
+`inflow_history.parquet`.
+
+If a file cannot be written, Cobre prints a warning such as `warning: stochastic export failed (noise_openings: <error>)` and the run continues with the remaining files and training. `--quiet` suppresses the warning.
+
+To reuse an exported model as input on a later run, follow [Exporting Stochastic Artifacts → Round-trip workflow](/running/running-studies/#round-trip-workflow).
+
+---
+
+## `stochastic/noise_openings.parquet`
+
+The opening tree used during the training run, written in the same schema as
+the input file `scenarios/noise_openings.parquet`. See the
+[Case Directory Format](/reference/case-directory-format/#scenariosnoise_openingsparquet)
+for the 4-column schema (`stage_id`, `opening_index`, `entity_index`, `value`).
+The exported `stage_id` is the 0-based stage position, while the input file
+requires the declared stage id, so a copy loads only when the declared stage
+ids are 0, 1, 2, ….
+
+**Methodology:** [Scenario Generation](/math/scenario-generation)
+
+---
+
+## `stochastic/inflow_annual_component.parquet`
+
+The per-`(hydro, stage)` annual inflow component of the model the run used,
+whether Cobre fitted it or read it from `scenarios/`. Written whenever `exports.stochastic` is `true`. The file has no rows unless an inflow model carries an annual component. The schema has 5 columns, all non-nullable.
+
+**Methodology:** [PAR(p) Inflow Model](/math/par-inflow-model)
+
+| Name                 | Type    | Nullable | Units | Description                                                         |
+| -------------------- | ------- | -------- | ----- | ------------------------------------------------------------------- |
+| `hydro_id`           | Int32   | No       | —     | Entity identifier of the hydro plant.                               |
+| `stage_id`           | Int32   | No       | —     | Stage identifier the component applies to.                          |
+| `annual_coefficient` | Float64 | No       | —     | Fitted annual-component coefficient for this hydro and stage.       |
+| `annual_mean_m3s`    | Float64 | No       | m³/s  | Annual mean inflow for this hydro and stage, in m³/s.               |
+| `annual_std_m3s`     | Float64 | No       | m³/s  | Annual inflow standard deviation for this hydro and stage, in m³/s. |
+
+---
+
+## `stochastic/fitting_report.json`
+
+A JSON diagnostic report for the PAR model fitting. This file is written only
+when Cobre performed estimation from `inflow_history.parquet`.
+
+**Methodology:** [PAR(p) Inflow Model](/math/par-inflow-model)
+
+**Structure:**
+
+```json
+{
+  "hydros": {
+    "<hydro_id>": {
+      "selected_order": 3,
+      "coefficients": [[0.42, -0.11, 0.07]],
+      "contribution_reductions": [
+        {
+          "season_id": 4,
+          "original_order": 3,
+          "reduced_order": 2,
+          "contributions": [0.42, -0.11, 0.07],
+          "reason": "negative_contribution"
+        }
+      ]
+    }
+  }
+}
+```
+
+| Name                                        | Type    | Nullable | Units | Description                                                                                                             |
+| ------------------------------------------- | ------- | -------- | ----- | ----------------------------------------------------------------------------------------------------------------------- |
+| `hydros.<hydro_id>.selected_order`          | integer | No       | —     | Selected AR order for this hydro plant.                                                                                 |
+| `hydros.<hydro_id>.coefficients`            | array   | No       | —     | Array of arrays of numbers: one row per season; each row contains the AR coefficients for that season.                  |
+| `hydros.<hydro_id>.contribution_reductions` | array   | Yes      | —     | Order reductions applied during fitting, one entry per affected season. Optional; omitted when no reduction was needed. |
+
+**`contribution_reductions[]` fields:**
+
+| Name                                                         | Type    | Nullable | Units | Description                                                                                                   |
+| ------------------------------------------------------------ | ------- | -------- | ----- | ------------------------------------------------------------------------------------------------------------- |
+| `hydros.<hydro_id>.contribution_reductions[].season_id`      | integer | No       | —     | Season where the reduction occurred.                                                                          |
+| `hydros.<hydro_id>.contribution_reductions[].original_order` | integer | No       | —     | AR order before reduction.                                                                                    |
+| `hydros.<hydro_id>.contribution_reductions[].reduced_order`  | integer | No       | —     | AR order after reduction.                                                                                     |
+| `hydros.<hydro_id>.contribution_reductions[].contributions`  | array   | No       | —     | Array of numbers: contribution values at the original order that triggered the reduction.                     |
+| `hydros.<hydro_id>.contribution_reductions[].reason`         | string  | No       | —     | Mechanism that triggered the reduction: `"magnitude_bound"`, `"phi1_negative"`, or `"negative_contribution"`. |
+
+This file is diagnostic only. It is not consumed as input on subsequent runs.

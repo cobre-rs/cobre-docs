@@ -40,7 +40,7 @@ horizon edge instead of being carried forward and priced:
   declared capability and cost, and carried in its ring slot to the terminal
   stage (see
   [System Elements §4](/math/system-elements#anticipated-thermal-plants) and
-  [LP Formulation — Ring Rows](/math/lp-formulation#ring-rows)). A delivery
+  [State Augmentation — Ring Rows](/math/state-augmentation#ring-rows)). A delivery
   past $T$ outside that calendar has no decision. Without a loaded boundary
   the carried commitment has zero terminal value while its fuel is still
   charged on its decision column, and the study setup warns about it.
@@ -50,7 +50,7 @@ horizon edge instead of being carried forward and priced:
   With a boundary loaded, every lag a stage's releases reach is held live to
   the terminal stage; without one, a lag that would mature past the horizon is
   capped away and its water is dropped (see
-  [LP Formulation — Horizon limitation](/math/lp-formulation#horizon-limitation)).
+  [State Augmentation — Horizon limitation](/math/state-augmentation#horizon-limitation)).
 
 The two families are gated differently: the post-study calendar decides
 whether a post-horizon commitment is made, and the boundary decides whether a
@@ -109,7 +109,8 @@ coefficient of a ring slot or a bucket multiplies the terminal stage's
 outgoing column for that coordinate, which the commitment's deposit or carry
 row, or the bucket's definition row, ties to the decision or release that
 produced it
-([LP Formulation — Ring-Slot Cut Coefficient](/math/lp-formulation#ring-slot-cut-coefficient)).
+([State Augmentation — Ring-Slot Cut Coefficient](/math/state-augmentation#ring-slot-cut-coefficient);
+[State Augmentation — Bucket definition rows](/math/state-augmentation#bucket-definition-rows)).
 A right boundary adds no second pricing mechanism; it supplies the
 coefficients of the state held live at the terminal stage.
 
@@ -118,7 +119,7 @@ separate from pricing the fuel an anticipated commitment consumes. The fuel of
 a post-horizon commitment is booked on its decision column at its decision
 stage, at the post-study stage's declared cost and discounted from the
 delivery stage
-([LP Formulation — Objective contributions](/math/lp-formulation#objective-contributions);
+([State Augmentation — Objective contributions](/math/state-augmentation#objective-contributions);
 [Discount Rate — Post-Study Extension](/math/discount-rate#post-study-extension)),
 while $\beta^{\top} x_T$ prices the _state_ the commitment leaves behind in
 its ring slot. State valuation and fuel booking are disjoint columns: one is a
@@ -198,7 +199,7 @@ The source state comes from the one upstream pool that §5.1 selects by date.
 
 A delivery past the horizon that the study decides has exactly one decision
 stage $t_i(m)$
-([LP Formulation §5c](/math/lp-formulation#5c-anticipated-thermal-dispatch)).
+([State Augmentation §5](/math/state-augmentation#5-anticipated-thermal-commitments)).
 At that stage each scenario decides it like any other stage decision and
 carries it in its ring slot to the terminal stage, and the boundary prices the
 carried value through the boundary cuts of that scenario's terminal-stage LP.
@@ -300,7 +301,7 @@ study:
   both sides date it, references the same past period; otherwise the load is
   refused. A pool prices a storage or AR-lag dimension only when the cut
   projection that sets its dimension, its successor stage's selection, carries
-  it ([Cut Management — Cut dimension](/math/cut-management#cut-dimension-the-enabled-state-subset));
+  it ([State Augmentation — Cut-state projection](/math/state-augmentation#7-cut-state-projection));
   the terminal pool always does, so an interior source pool chosen under a
   storage-only projection has no AR-lag counterpart.
 - (d) **Lag depth.** The study's lag state is extended to the deepest lag that
@@ -369,9 +370,9 @@ see
 
 ## Cross-References
 
-- [LP Formulation](/math/lp-formulation) — §5c the commitment ring (hold ring,
-  ring rows, ring-slot cut coefficient, objective contributions); §5d
-  in-transit bucket state, pinning, and the horizon-limitation cap that a
+- [State Augmentation](/math/state-augmentation) — §5 the commitment ring
+  (hold ring, ring rows, ring-slot cut coefficient, objective contributions);
+  §6 in-transit bucket state, pinning, and the horizon-limitation cap that a
   right boundary lifts.
 - [System Elements](/math/system-elements) — §4 the anticipated-thermal
   commitment ring and §5 cascade travel time, the element-level source of the

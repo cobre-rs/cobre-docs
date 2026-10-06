@@ -1,37 +1,16 @@
-Cobre's backward-pass work-scheduling knob lives entirely in `config.json`'s
-`training.parallelism` block — there is no per-case data file for it. This tab
-is the field-level configuration reference; the backward pass and execution
-model the scheduler distributes work within stay in the methodology sections
-above ([§3.2 Backward Pass](/math/sddp-algorithm#32-backward-pass),
+Cobre's backward-pass work-scheduling knob lives in `config.json`'s
+`training.parallelism` block. This tab shows how the scheduler is chosen; the
+backward pass and execution model the scheduler distributes work within stay in
+the methodology sections above
+([§3.2 Backward Pass](/math/sddp-algorithm#32-backward-pass),
 [§3.4 Execution Model and Performance Considerations](/math/sddp-algorithm#34-execution-model-and-performance-considerations)).
 
 ### `training.parallelism` — Backward-Pass Scheduler Configuration
 
-`parallelism` groups result-preserving worker-scheduling knobs at the
-`training` root. Its sole member, `backward_scheduler`, selects how
-backward-pass work units are claimed by workers. It is tagged on `method`;
-unknown fields, including a field of another method, are rejected at load.
-
-| `method`        | Default | Work unit                                                                          |
-| ---------------- | :-----: | ----------------------------------------------------------------------------------- |
-| `by_scenario`    |   yes   | One whole trial point.                                                             |
-| `by_node`        |   no    | One `(trial point, opening block)` pair, claimed dynamically off a shared counter. |
-
-```json
-{
-  "training": {
-    "parallelism": {
-      "backward_scheduler": { "method": "by_scenario" }
-    }
-  }
-}
-```
-
-#### `by_node`
-
-| Field        | Type               | Default | Description                                                                                                                                                                                |
-| ------------ | ------------------ | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `block_size` | integer or `null`  | `null`  | Openings per block. Absent resolves per stage to `⌈\|Ω_s\|/2⌉` (half the openings, rounded up); a set value is **silently** clamped to `min(\|Ω_s\|, block_size)` — no error, no warning. |
+The scheduler decides how backward-pass work is split across workers: one trial
+point per work unit by default, or one `(trial point, opening block)` pair per
+work unit with `by_node`. The choice changes neither the cut set nor the
+training lower bound. The example selects `by_node` with four openings per block:
 
 ```json
 {
@@ -43,21 +22,7 @@ unknown fields, including a field of another method, are rejected at load.
 }
 ```
 
-Two configurations are load-time errors, not silently accepted:
-
-- `block_size` supplied under `"by_scenario"` — rejected at load (unknown field).
-- `block_size: 0` — rejected (minimum `1`).
-
-Within a stage, opening-blocks are claimed **hardest-first**: blocks are
-ranked by the previous iteration's mean simplex-pivot cost per `(stage,
-block)`, descending. This claim order changes only which worker processes
-which block, and when — it is **result-neutral**: the produced cut set and
-the training lower bound are identical to canonical-order (whole-trial-point)
-claiming.
-
-If [Dynamic Cut Selection](/math/cut-management#8-dynamic-cut-selection) is
-enabled (`cut_selection.selection.method = "dynamic"` — not the default), the
-`by_node` scheduler falls back to `by_scenario` scheduling from that
-method's `start_iteration` onward, with no warning emitted. See
-[Performance Accelerators](/running/performance/) for the full tuning
-treatment and the fallback mechanism.
+[`training.parallelism`](/running/configuration/#trainingparallelism) lists the
+methods, fields, defaults and load errors;
+[By-node scheduling](/running/performance/#by-node-scheduling) covers when to
+use `by_node` and its interaction with Dynamic Cut Selection.

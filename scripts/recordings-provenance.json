@@ -2,13 +2,13 @@
   "recordings": [
     {
       "dest": "getting-started/quickstart.gif",
-      "sha256": "a963339f8a73af4afd4020a01b656895e7843867bcb44d381c7253c7f58c1836",
+      "sha256": "cbb1acad20e9090d242ac15ed55142bb020eabd030147153cf9bd9ccfe51fb25",
       "tape": "recordings/quickstart.tape",
       "tape_ref": "v0.17.0",
       "tape_blob": "e2fd31bf86e02e35f56f5807ce2449957861d9c4",
-      "cobre_version": null,
-      "hostname_method": null,
-      "note": "The committed GIF is not a blob in cobre's history: cobre-docs commit a45e00e added it, and the cobre version and hostname method of its rendering run were not recorded. Ticket-229 re-renders it and rewrites this record."
+      "cobre_version": "cobre   v0.17.0",
+      "hostname_method": "post-render overlay of the Host: line (no namespace; XD-271)",
+      "note": "Rendered by ticket-229 with vhs 0.11.0 from recordings/quickstart.tape at v0.17.0 and the cobre-cli-x86_64-unknown-linux-gnu release (archive sha256 23916b46…, extracted executable sha256 44af2205…), then the Host: line value was overlaid with cobre-demo in every frame it appears in."
     }
   ]
 }

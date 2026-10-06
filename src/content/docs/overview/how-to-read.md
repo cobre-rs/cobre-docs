@@ -15,11 +15,11 @@ The site is organised into the groups shown in the sidebar. Each group is an on-
 
 **Introduction** (this group) establishes the conceptual and notational foundation for the rest of the site: a one-page framing of the SDDP algorithm for readers new to stochastic dynamic programming ([The SDDP Framework in One Page](/overview/sddp-framework-overview)), the complete notation used throughout ([Notation Conventions](/overview/notation-conventions)), and this navigation guide. Its chapters can be read in order or consulted individually.
 
-**System Modelling** defines the power system entities and the stage LP that Cobre solves at each iteration. This group is the mathematical foundation for everything that follows: hydro plants, thermal units, transmission lines, penalty structures, and the LP column layout that implements them. Readers who want to understand how the physical system is represented in the optimisation should begin here.
+**System Modelling** defines the power system entities and the stage LP that Cobre solves at each iteration. This group is the mathematical foundation for everything that follows: hydro plants, thermal units, transmission lines, penalty structures, the stage LP and the state it carries between stages. Readers who want to understand how the physical system is represented in the optimisation should begin here.
 
 **Stochastic Modelling** covers the inflow uncertainty model. Cobre uses periodic autoregressive models (PAR) to generate scenario trees; this group explains the model structure, the fitting procedure, and the scenario generation pipeline. Readers interested in how uncertainty is handled, without being concerned with the optimisation algorithm, can read this group independently of The SDDP Algorithm.
 
-**The SDDP Algorithm** is the core of the methodology. It covers the forward and backward passes, cut generation and management, warm-start strategies, risk measures, stopping rules, upper-bound evaluation, determinism guarantees, and reproducibility. Readers coming from the SDDP literature will find the connections to standard treatments here; readers new to SDDP should read Introduction and System Modelling first.
+**The SDDP Algorithm** is the core of the methodology. It covers the forward and backward passes, cut generation and management, the LP layout and its scaling, warm-start strategies, risk measures, stopping rules, upper-bound evaluation, and determinism guarantees. Readers coming from the SDDP literature will find the connections to standard treatments here; readers new to SDDP should read Introduction and System Modelling first.
 
 **Coupling & Boundary Conditions** covers how a study's horizon is closed: the horizon mode, the post-study boundary that values the state left at the end of the horizon (chained studies included), and how discounting interacts with the cut approximation. See [Horizon Modes](/math/horizon-modes) for the entry point.
 
@@ -45,7 +45,7 @@ Different readers enter this site from different directions. Find the row that m
 | Coming from other software? | [What Cobre Solves §6](/overview/what-cobre-solves#6-coming-from-other-software), then [Converting an existing case](/running/case-conversion); for equivalent terms in other planning tools, see the [Glossary](/reference/glossary). |
 | Work in Python | The [Python Quickstart](/getting-started/python-quickstart), then the [Python API](/reference/python-api) reference. |
 | New to SDDP | Read [What Cobre Solves](/overview/what-cobre-solves) and all of Introduction, then read System Modelling to understand the LP, then read The SDDP Algorithm for the algorithm itself. The worked examples in Worked Examples reinforce the concepts. |
-| Familiar with SDDP, new to Cobre | Skim What Cobre Solves and Introduction, read [Notation Conventions](/overview/notation-conventions) carefully, then read The SDDP Algorithm. Cross-reference System Modelling for the LP layout when The SDDP Algorithm refers to stage variables. |
+| Familiar with SDDP, new to Cobre | Skim What Cobre Solves and Introduction, read [Notation Conventions](/overview/notation-conventions) carefully, then read The SDDP Algorithm. Cross-reference System Modelling for the stage LP and its state when The SDDP Algorithm refers to stage variables. |
 | Looking for a specific topic | Use the sidebar to navigate to the relevant group. The SDDP Algorithm covers the algorithm; System Modelling covers the LP and system model; Stochastic Modelling covers the inflow uncertainty model; Coupling & Boundary Conditions covers boundary conditions. [Notation Conventions](/overview/notation-conventions) resolves notation questions, and Running Cobre covers the software in use. |
 
 ## Cross-References
@@ -53,7 +53,7 @@ Different readers enter this site from different directions. Find the row that m
 - [What Cobre Solves](/overview/what-cobre-solves) — the problem statement, algorithm name, methodology guarantees, user-facing capability summary, and an orientation for readers coming from other software
 - [The SDDP Framework in One Page](/overview/sddp-framework-overview) — one-page algorithmic framing for readers new to stochastic dynamic programming
 - [Notation Conventions](/overview/notation-conventions) — complete symbol table for index sets, parameters, decision variables, and dual variables
-- [LP Formulation](/math/lp-formulation) — stage LP column layout: System Modelling entry point
+- [System Elements](/math/system-elements) — the elements of the system and their variables: System Modelling entry point
 - [PAR Inflow Model](/math/par-inflow-model) — periodic autoregressive inflow model: Stochastic Modelling entry point
 - [SDDP Algorithm](/math/sddp-algorithm) — forward pass, backward pass, cut generation, convergence: The SDDP Algorithm entry point
 - [Horizon Modes](/math/horizon-modes) — boundary conditions and horizon-mode design: Coupling & Boundary Conditions entry point

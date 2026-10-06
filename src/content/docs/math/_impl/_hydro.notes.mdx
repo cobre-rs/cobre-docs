@@ -10,22 +10,34 @@ starts at `q = 0`; that zero-flow column is generation-zero by construction
 and anchors the lower closure of the cloud, so the fitter needs neither a
 synthetic closing point nor a spillage axis in the cloud itself — spillage
 sensitivity is captured separately by the per-plane lateral-flow secant
-(§2.7), not by adding a third grid dimension.
+(§2.7), not by adding a third grid dimension. That secant uses
+nine evenly spaced samples of the lateral flow.
 
 The 3-D convex hull's upper-envelope facets are corrected by a single
 least-squares $k_{FPHA}$ scalar. That correction scales the **whole affine
 plane** — intercept and both slopes together — not just the intercept, unlike
-the `kappa` factor of precomputed planes, which scales the intercept only and
-is validated in `(0, 1]`; the computed path does not use `kappa`.
+the `kappa` factor of precomputed planes, which scales the intercept only
+(validated in `(0, 1]`).
+
+Lateral-flow slopes above `-1e-10` — a near-zero negative residual or any
+positive one — are set to exactly `0`, so no near-zero coefficient reaches
+the spillage column.
 
 ### Run-of-river support
 
 A plant whose fitting volume range collapses to a single point (constant
 forebay) is fit by synthesizing two nearby volume samples so the 3-D hull
 stays non-degenerate, then snapping the resulting `gamma_v` residual to
-exactly `0`. This enforces the correct run-of-river semantics — generation on
+exactly `0` when its magnitude is at most `1e-6` MW per hm³. This enforces the correct
+run-of-river semantics — generation on
 these planes does not vary with storage — and is why run-of-river plants are
 supported on the computed path rather than rejected.
+
+The two samples sit either side of that single volume, each offset by the
+larger of half a percent of the plant's useful storage and `1` hm³, so a
+plant with no useful storage still gets two distinct samples; when the
+volume-height curve spans a range of volumes, both samples are clamped into
+it.
 
 ### Computed FPHA without turbine capacity
 
@@ -110,7 +122,7 @@ for the water-balance treatment of the resulting flux.
 
 ### Commissioning: the PreFilling state
 
-A hydro's `entry_stage_id`/`exit_stage_id` commissioning window is honored even for a **non-filling** hydro (one with no `filling` block). At any stage outside its window — before `entry_stage_id`, or from `exit_stage_id` onward — the plant is **PreFilling**: the site is not in service, so its turbine, spillage, and diversion columns are pinned to zero, its storage is frozen by the identity $v_h = v^{in}_h$, and its natural inflow is routed past the site to the first active downstream plant (or the network sink). Unlike the generic outside-window zero-pin used for the other entity types, the river is never trapped or duplicated at a site that is not in service. See [system elements §5](/math/system-elements) for the full lifecycle and [penalty system](/math/penalty-system) for the spillage-frozen-versus-costed distinction.
+A hydro's `entry_stage_id`/`exit_stage_id` commissioning window is honored even for a **non-filling** hydro (one with no `filling` block). At any stage outside its window — before `entry_stage_id`, or from `exit_stage_id` onward — the plant is **PreFilling**: the site is not in service, so its turbine, spillage, and diversion columns are pinned to zero, its storage is frozen by the identity $v_h = v^{in}_h$, and its local inflow, the upstream releases and the flows diverted in are routed past the site to the first active downstream plant (or leaves the modelled system if there is none). Unlike the generic outside-window zero-pin used for the other entity types, the river is never trapped or duplicated at a site that is not in service. See [LP Formulation — Lifecycle Phases](/math/lp-formulation#lifecycle-phases) for every phase and [penalty system](/math/penalty-system) for the spillage-frozen-versus-costed distinction.
 
 ### Water travel time: in-transit seed and validation
 
@@ -135,11 +147,11 @@ Load-time validation of a declared arc:
 - **Heterogeneous travel time under chronological blocks.** When two or more
   declared arcs feed the _same_ downstream plant with _differing_
   `travel_time_hours` and at least one study stage runs in chronological block
-  mode, the case is rejected at load as an **unsupported-in-v1** error naming
+  mode, the case is rejected at load with a `NotImplemented` error, whose message reads "unsupported in v1", naming
   the downstream plant and the conflicting arcs; align the arcs'
   `travel_time_hours`, or keep every study stage in parallel block mode. Equal
   travel times into a confluence, or a study with no chronological stage, are
-  unaffected.
+  unaffected. See [Error Codes — `NotImplemented`](/reference/error-codes/#notimplemented).
 - **Zero, absent, or invalid travel time.** A zero or absent `travel_time_hours`
   is treated as undeclared — an instantaneous transfer that creates no
   cross-stage arc, adds no in-transit bucket, and needs no `past_defluences`
@@ -211,9 +223,16 @@ coefficients are automatically written to
 refitting on a subsequent run, copy this output file into `system/` and
 change `source` to `"precomputed"` in `hydro_production_models.json`.
 
-A computed-FPHA plant with no turbine capacity has no rows in that file. Once
-`fpha_hyperplanes.parquet` is in `system/`, every plant on the FPHA model
-needs rows in it, whatever its `source`; otherwise the case is rejected at
-load with `has no FPHA hyperplanes`. Before the copy, switch the no-capacity
+A computed-FPHA plant with no turbine capacity has no rows in the exported
+file. Once `fpha_hyperplanes.parquet` is in `system/`, every plant on the FPHA
+model needs rows in it, whatever its `source`; otherwise the case is rejected
+at load with `has no FPHA hyperplanes`. Before the copy, switch the no-capacity
 plant to `"constant_productivity"` in both `hydros.json` (`generation.model`)
-and its `hydro_production_models.json` entries.
+and its `hydro_production_models.json` entries. Give it a productivity value
+from exactly one source, `productivity_mw_per_m3s` in its
+`hydro_production_models.json` entries or an
+`equivalent_productivity_mw_per_m3s` row of
+`system/hydro_energy_productivity.parquet` (`0` marks a planned outage): with
+neither the case is rejected with
+`no productivity_mw_per_m3s available for (hydro_id=…, stage_id=…)`, and
+supplying both is also rejected.

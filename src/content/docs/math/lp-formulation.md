@@ -7,7 +7,7 @@ description: Complete stage subproblem LP — objective taxonomy, all constraint
 
 This spec presents the complete stage subproblem LP for the Cobre SDDP solver: the objective function with its cost taxonomy, all constraint families, slack/penalty variables, and the Benders cut interface to the future cost function. It uses the **parallel blocks** formulation by default.
 
-**Reading order**: [SDDP algorithm](/math/sddp-algorithm) → [system elements](/math/system-elements) → **this spec** → [equipment formulations](/math/equipment-formulations)
+**Reading order**: [System Elements](/math/system-elements) → [Equipment Formulations](/math/equipment-formulations) → **this chapter** → [State Augmentation](/math/state-augmentation)
 
 For what each physical element represents and its decision variables, see [system elements](/math/system-elements). For variable naming conventions and index sets, see [notation conventions](/overview/notation-conventions).
 

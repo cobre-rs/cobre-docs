@@ -9,7 +9,7 @@ import { Content as StoppingConfigure } from './_impl/_stopping.configure.mdx';
 
 ## Purpose
 
-This spec defines the available stopping rules for the Cobre SDDP solver and how they combine. It covers iteration limits, time limits, bound stalling, and the recommended gap-based stopping criterion.
+This chapter defines the available stopping rules for the Cobre SDDP solver and how they combine. It covers iteration limits, time limits, bound stalling, and the recommended gap-based stopping criterion.
 
 ## 1 Available Stopping Rules
 
@@ -85,7 +85,7 @@ $$
 100 \cdot \frac{\text{gap}^k}{\max(1, |\underline{z}^k|)}
 $$
 
-Both bounds are in unscaled currency units — the original cost units, with the [cost scaling](/math/lp-formulation#121-cost-scaling) of the stage LP undone — so $\text{gap}^k$ is in currency units and the percent gap is dimensionless. The denominator is the magnitude of the **lower** bound, **never** the upper bound, floored at one currency unit so that the ratio stays bounded when the lower bound is near zero. The per-iteration reported gap and the relative arm of the gap rule below share this denominator, so the two never disagree on what "relative gap" means.
+Both bounds are in unscaled currency units — the original cost units, with the [cost scaling](/math/lp-layout-and-scaling#21-cost-scaling) of the stage LP undone — so $\text{gap}^k$ is in currency units and the percent gap is dimensionless. The denominator is the magnitude of the **lower** bound, **never** the upper bound, floored at one currency unit so that the ratio stays bounded when the lower bound is near zero. The per-iteration reported gap and the relative arm of the gap rule below share this denominator, so the two never disagree on what "relative gap" means.
 
 The gap rule terminates training once the exact upper bound has closed on the lower bound.
 
@@ -178,7 +178,7 @@ the training loop regardless of whether any or all of the configured rules have 
 
 ## Implementation in Cobre
 
-The methodology above defines when each rule stops training; the tab below covers how Cobre configures the rules, which interfaces can issue a shutdown request, and what a stopped run records.
+The methodology above defines when each rule stops training; the tab below links the configuration entries for the rules, states which interfaces can issue a shutdown request, and lists what a stopped run records.
 
 <Tabs>
   <TabItem label="Configure"><StoppingConfigure /></TabItem>

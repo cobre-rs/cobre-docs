@@ -67,13 +67,13 @@ _The convex cost-to-go $V(x)$ approximated from below by Benders cuts. Each cut 
 
 ## 2. Bounds and Convergence
 
-SDDP maintains two bounds on the optimal expected cost:
+SDDP maintains two bounds on the optimal (risk-adjusted) cost:
 
 **Lower bound** $\underline{z}$: The first stage's risk-adjusted value over its openings with the current cuts ([definition](/math/upper-bound-evaluation#lower-bound)). Under the hypotheses of [Cut Management — when bounds and certificates hold](/math/cut-management#when-bounds-and-certificates-hold), this value is a valid lower bound on the optimal (risk-adjusted) cost, and it does not decrease as cuts are added.
 
 **Upper bound** $\bar{z}$: an enumerated forward pass, which visits every scenario path once, gives the policy's exact risk-adjusted cost, an upper bound on the optimal value, when the risk measure is uniform across stages; a sampled forward pass gives the mean cost of its sampled paths, a statistical estimate with a confidence interval that certifies nothing ([Upper Bound Evaluation](/math/upper-bound-evaluation), [Tier 3](/math/cut-management#tier-3-gap-certificate)).
 
-The **optimality gap** is the upper bound minus the lower bound; its percent form normalises that difference by the lower bound (see [Optimality gap](/math/stopping-rules#optimality-gap)).
+The **optimality gap** is the upper bound minus the lower bound; its percent form normalises that difference by the magnitude of the lower bound, floored at one currency unit (see [Optimality gap](/math/stopping-rules#optimality-gap)).
 
 Training stops when its stopping rules are met: an iteration or time limit, a stalled lower bound, or, with an exact upper bound, a gap within tolerance ([Stopping Rules](/math/stopping-rules)).
 
@@ -107,7 +107,7 @@ _Cost distribution with the mean, $\mathrm{VaR}_\alpha$ and $\mathrm{CVaR}_\alph
 
 This overview omits the implementation detail: the LP layout, cut storage, the scenario tree and the warm-start strategy. The System Modelling, Stochastic Modelling and The SDDP Algorithm groups cover them.
 
-For the full algorithm, with stage LP formulation, cut coefficient derivation, and convergence analysis, see [SDDP Algorithm](/math/sddp-algorithm).
+For the full algorithm, with stage LP formulation, cut coefficient derivation, and convergence monitoring, see [SDDP Algorithm](/math/sddp-algorithm).
 
 For the cut mechanics — how cuts are generated, stored, and pruned — see [Cut Management](/math/cut-management).
 

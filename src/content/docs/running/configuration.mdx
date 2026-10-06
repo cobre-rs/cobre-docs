@@ -227,7 +227,7 @@ for a full description of each scheme and of historical windows.
 
 ### `training.stopping_rules`
 
-Each entry in `stopping_rules` is a JSON object with a `"type"` discriminator.
+Each entry in `stopping_rules` is a JSON object with a `"type"` discriminator. Each rule's stop condition is defined in [Stopping Rules](/math/stopping-rules/).
 
 #### `iteration_limit`
 
@@ -241,6 +241,8 @@ Stop after a fixed number of training iterations.
 | ------- | ------- | ------------------------------------------ |
 | `limit` | integer | Maximum number of SDDP iterations to run. |
 
+Use one `iteration_limit` entry: on a resumed run its `limit` counts the iterations of the earlier runs as well ([Train in slices](/running/policy-management/#train-in-slices)).
+
 #### `time_limit`
 
 Stop after a wall-clock time budget is exhausted.
@@ -252,6 +254,8 @@ Stop after a wall-clock time budget is exhausted.
 | Field     | Type  | Description                       |
 | --------- | ----- | ---------------------------------- |
 | `seconds` | number | Maximum training time in seconds. |
+
+The rule compares `seconds` with the wall-clock seconds since this run's training started, checked after each iteration.
 
 :::caution[Multi-rank runs]
 Under MPI each rank measures `time_limit` on its own clock, from its own start of training, and makes its own stop decision; the ranks do not reconcile it, even on a single node. Cobre accepts the rule at any rank count, so a multi-rank run bounds training with `iteration_limit` ([Train in Slices](/running/policy-management/#train-in-slices)) and leaves `time_limit` out of its stopping rules.
@@ -267,8 +271,10 @@ Stop when the relative improvement in the lower bound falls below a threshold.
 
 | Field        | Type    | Description                                                                                              |
 | ------------ | ------- | ---------------------------------------------------------------------------------------------------------- |
-| `iterations` | integer | Window size: the number of past iterations over which to compute the relative improvement.               |
+| `iterations` | integer | Window size: the number of most recent recorded lower bounds compared.                                   |
 | `tolerance`  | number  | Relative improvement threshold. Training stops when the improvement over the window is below this value. |
+
+The rule cannot trigger before the current run has recorded `iterations` bounds, so a resumed run starts with an empty window. With a positive `tolerance`, a window of `1` compares the bound with itself and triggers at the first iteration.
 
 #### `gap`
 
@@ -404,7 +410,7 @@ enforcement. Row management periodically scans the row pool and
 deactivates rows that are unlikely to improve the policy, reducing LP
 size without sacrificing convergence quality. For a detailed explanation
 of each stage, see
-[Performance Accelerators](/running/performance/#cut-management-pipeline).
+[Performance Accelerators](/running/performance/#cut-management-pipeline) and, for the selection methods themselves, [Cut Management](/math/cut-management/).
 
 The block has two always-on knobs at the top level plus a `selection`
 sub-object that chooses the method and carries only that method's parameters.
@@ -415,7 +421,7 @@ the default.
 
 | Field                    | Type    | Default | Description                                                                                                                                                           |
 | ------------------------ | ------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `row_activity_tolerance` | number  | `0.0`   | Minimum dual-multiplier magnitude for a constraint row to count as binding at a solution point. Rows whose dual falls below this are treated as inactive in tracking. |
+| `row_activity_tolerance` | number  | `0.0`   | Threshold for a constraint row to count as binding at a solution point: the row's dual value, not its magnitude, must be strictly greater than this. Rows whose dual is at or below it are treated as inactive in tracking. Separate from a selection method's `tie_tolerance` / `domination_tolerance`; this value only decides which rows count as binding for activity tracking (the `last_active_iter` / `active_count` the budget pass sorts on). |
 | `max_active_per_stage`   | integer | `null`  | Hard cap on active rows per stage LP, enforced after the selection method runs. `null` = no cap.                                                                      |
 | `selection`              | object  | `null`  | The active selection method and its parameters (see below). `null` (the default) disables row selection.                                                              |
 
@@ -451,13 +457,13 @@ load error, and a misspelled method is rejected with the list of valid methods.
 - `"dynamic"` — a per-solve lazy loop that loads only a small resident subset of
   rows per solve while retaining the full pool. The resident set is seeded from
   the most recent iterations, and each lazy-solve round adds the most-violated
-  candidate rows.
+  candidate rows. The method is refused under an enumerated [`training.selection`](#trainingselection) when `cobre run` sets the study up (exit `1`); `cobre validate` passes such a case.
 
   | Field                 | Type    | Default | Description                                                                                                                                                                                                                                                                              |
   | --------------------- | ------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
   | `start_iteration`     | integer | `2`     | First 1-based iteration at which the lazy loop becomes active. Must be `>= 1`.                                                                                                                                                                                                           |
   | `seed_window`         | integer | `5`     | Number of most-recent iterations whose rows seed the initial resident set. `0` is valid (seeds only the current iteration).                                                                                                                                                              |
-  | `candidate_recency`   | integer | `null`  | Only rows generated within the last `candidate_recency` iterations are scored. `null` (the default) is unbounded — every pool row is a candidate, so the window excludes no row. `Some(n)` (must be `>= 1`) makes the loop deliberately inexact: rows older than the window are never added. |
+  | `candidate_recency`   | integer | `null`  | Only rows generated within the last `candidate_recency` iterations are scored. `null` (the default) is unbounded — every pool row is a candidate, so the window excludes no row. An integer `n` (must be `>= 1`) makes the loop deliberately inexact: rows older than the window are never added. |
   | `max_added_per_round` | integer | `10`    | Maximum rows added per lazy-solve round. Must be `>= 1`.                                                                                                                                                                                                                                 |
   | `violation_tolerance` | number  | `1e-10` | Violation tolerance for accepting a candidate row. Must be `> 0`.                                                                                                                                                                                                                        |
 
@@ -529,7 +535,7 @@ corresponding option at **the phase's built-in tuned profile** — not the
 underlying solver's own default profile; the two differ (for example, all
 three phase profiles set `price` to `"row_hyper_sparse"`, while HiGHS's own
 default pricing is `"row"`). Resolution happens once at setup — before any LP
-template is built — and the result is broadcast identically to every rank.
+template is built — and every rank resolves the same profile from the broadcast configuration.
 
 | Field | Type / values |
 | --- | --- |
@@ -566,7 +572,7 @@ single-unscaling identity does not account for.
 #### Validation
 
 Seven fields are range-checked; a value outside its range is rejected at
-config-load time with an error naming the phase and the offending field:
+study setup by `cobre run` (exit `1`) with an error naming the phase and the offending field; `cobre validate` builds the study only when `policy.boundary` is set, so it otherwise passes such a value:
 
 - `primal_feasibility_tolerance` — must be finite.
 - `dual_feasibility_tolerance` — must be finite and `>= 1e-10`.
@@ -640,7 +646,7 @@ resolves to `0`, the simulation phase is skipped entirely.
 Under `enumerated`, the classes read the node's opening as in
 [`training.selection`](#trainingselection): a class that does not read it draws
 its own realization instead. The single-opening requirement of
-[`training.selection`](#trainingselection) applies here as well.
+[`training.selection`](#trainingselection) applies here as well. When exactly one of training and simulation is `enumerated`, `cobre run` logs a setup warning naming the statistic the other phase lacks: with enumerated training and sampled simulation, the exact lower bound is available but the weighted census simulation statistics are not. The warning is advisory and the run proceeds; set both selections to `enumerated` for a census simulation.
 
 Example:
 
@@ -677,29 +683,7 @@ value:
 
 The scheme values and admission rules are those of [`training.scenario_source`](#trainingscenario_source); `openings` is rejected here.
 
-Example — simulate with out-of-sample inflow while training uses in-sample. The
-training `seed` (77) drives the out-of-sample draws; the simulation `seed` only
-satisfies admission:
-
-```json
-{
-  "training": {
-    "selection": { "method": "sampled", "forward_passes": 50 },
-    "stopping_rules": [{ "type": "iteration_limit", "limit": 200 }],
-    "scenario_source": { "seed": 77 }
-  },
-  "simulation": {
-    "enabled": true,
-    "selection": { "method": "sampled", "num_scenarios": 2000 },
-    "scenario_source": {
-      "seed": 77,
-      "inflow": { "scheme": "out_of_sample" },
-      "load": { "scheme": "in_sample" },
-      "ncs": { "scheme": "in_sample" }
-    }
-  }
-}
-```
+A worked configuration is under [Out-of-sample simulation](#out-of-sample-simulation).
 
 ---
 
@@ -728,7 +712,9 @@ scenarios uses no seed.
   for admission when a class of `simulation.scenario_source` is not `in_sample`,
   and no draw reads its value. A simulation class on `out_of_sample` therefore
   needs `training.scenario_source.seed`, even when every training class is
-  `in_sample`.
+  `in_sample`. `cobre validate` does not check it: without it, `cobre run`
+  trains, writes the policy checkpoint, and stops with exit `4` when the
+  simulation starts.
 - A `historical` trajectory's window and an `external` trajectory's scenario are
   chosen by a deterministic hash of the iteration and trajectory indices that
   takes no seed.
@@ -762,6 +748,8 @@ Controls physical modeling options.
 - `"truncation_with_penalty"` -- combines both: clamps the inflow to zero and adds
   a bounded slack variable penalised by `penalties.json::hydro.inflow_nonnegativity_cost`,
   providing a smooth backstop for extreme tail realisations.
+
+The four methods are defined in [Inflow Non-Negativity](/math/inflow-nonnegativity/).
 
 Example:
 
@@ -812,7 +800,7 @@ For the methodology, see
 
 ## `estimation`
 
-Controls the PAR(p) model estimation pipeline. When the case provides
+Controls the PAR(p) model estimation pipeline of [PAR(p) Inflow Model](/math/par-inflow-model/). When the case provides
 `inflow_history.parquet`, Cobre can automatically estimate AR coefficients
 instead of requiring pre-computed `inflow_ar_coefficients.parquet`.
 
@@ -841,7 +829,7 @@ path: (1) the Yule-Walker system is extended to include a cross-correlation term
 the current-season inflow and the rolling 12-month average; (2) per-season sample
 statistics (mean and standard deviation) of that rolling average are computed for each
 hydro plant; (3) the coefficient, mean, and standard deviation are written to
-`inflow_annual_component.parquet` in the output directory; and (4) the lag stride used
+`inflow_annual_component.parquet` under `output/stochastic/` when `exports.stochastic` is `true`; and (4) the lag stride used
 when building the LP noise columns is widened to accommodate the extra annual term. Use
 this option when your inflow series shows persistence that extends beyond the
 standard seasonal lag window.
@@ -1026,6 +1014,73 @@ These keys are accepted when `config.json` loads — their names and value types
 | `training.solver.retry_max_attempts`        | `5`     | A solve that does not reach optimality escalates through the solver's built-in retry sequence, not this setting ([Solver Safeguards](/running/performance/#solver-safeguards)). |
 | `training.solver.retry_time_budget_seconds` | `30.0`  | A solve that does not reach optimality escalates through the solver's built-in retry sequence, not this setting ([Solver Safeguards](/running/performance/#solver-safeguards)). |
 | `upper_bound_evaluation`                    | `{}`    | Nothing reads the block: every key in it, the `lipschitz` keys included, has no effect.                                                                                         |
+
+---
+
+## Recipes
+
+Each recipe is a `config.json` excerpt that merges into a case: a key in the excerpt replaces the same key in the case, an array included. The rules behind its keys live in the sections it links.
+
+### Converge to a gap
+
+Train with an enumerated forward pass and stop when the exact gap closes. `relative_tolerance` is a percent: `0.01` stops at a 0.01% gap. The `iteration_limit` entry ends the run if the gap does not close first; a sampled simulation after it logs an advisory setup warning ([`simulation.selection`](#simulationselection)). The [`gap`](#gap) rule is admitted only under `enumerated` selection with the same risk measure at every stage (the default `expectation` qualifies), and every stage declares a single opening (`num_openings: 1` in `stages.json`), because enumerated selection requires it ([`training.selection`](#trainingselection)).
+
+{/* capture: cobre validate case (exit 0); cobre run case --output <dir> (exit 0) | cobre   v0.17.0 | binary: cobre-cli sha256 23916b46 | case: 1dtoy + config.json training.selection and training.stopping_rules as below, stages[].num_openings: 1 on every stage */}
+
+```json
+{
+  "training": {
+    "selection": { "method": "enumerated" },
+    "stopping_rules": [
+      { "type": "gap", "relative_tolerance": 0.01 },
+      { "type": "iteration_limit", "limit": 50 }
+    ]
+  }
+}
+```
+
+### Time-boxed run
+
+Bound a single-process run by wall-clock time. Under the default [`stopping_mode`](#trainingstopping_mode) (`"any"`), training stops at the first rule that is satisfied, so pair [`time_limit`](#time_limit) with an `iteration_limit` above what the time allows: training never runs past the largest `iteration_limit` in the set, or the default cap of [Mandatory Fields](#mandatory-fields) when the set has none. A multi-rank run leaves `time_limit` out, because each rank keeps its own clock, and bounds training with `iteration_limit` instead ([Train in Slices](/running/policy-management/#train-in-slices)).
+
+{/* capture: cobre validate case (exit 0) | cobre   v0.17.0 | binary: cobre-cli sha256 23916b46 | case: 1dtoy + config.json training.stopping_rules as below (one iteration_limit entry, replacing the case's 128) */}
+
+```json
+{
+  "training": {
+    "stopping_rules": [
+      { "type": "time_limit", "seconds": 600.0 },
+      { "type": "iteration_limit", "limit": 1000 }
+    ]
+  }
+}
+```
+
+### Out-of-sample simulation
+
+Train with in-sample noise and simulate with out-of-sample inflow. The `training.scenario_source.seed` (77) drives the out-of-sample draws; `simulation.scenario_source.seed` only satisfies admission ([Seed resolution](#seed-resolution)). The `simulation.scenario_source` fields are listed under [`simulation.scenario_source`](#simulationscenario_source).
+
+{/* capture: cobre validate case (exit 0) | cobre   v0.17.0 | binary: cobre-cli sha256 23916b46 | case: 1dtoy + config.json training.selection, training.stopping_rules, training.scenario_source and simulation as below */}
+
+```json
+{
+  "training": {
+    "selection": { "method": "sampled", "forward_passes": 50 },
+    "stopping_rules": [{ "type": "iteration_limit", "limit": 200 }],
+    "scenario_source": { "seed": 77 }
+  },
+  "simulation": {
+    "enabled": true,
+    "selection": { "method": "sampled", "num_scenarios": 2000 },
+    "scenario_source": {
+      "seed": 77,
+      "inflow": { "scheme": "out_of_sample" },
+      "load": { "scheme": "in_sample" },
+      "ncs": { "scheme": "in_sample" }
+    }
+  }
+}
+```
 
 ---
 

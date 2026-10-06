@@ -3,6 +3,8 @@ title: Toy Four-Reservoir SDDP Walkthrough
 description: Hand-traceable four-reservoir SDDP iteration — multi-dimensional cuts, per-bus dispatch, and per-reservoir marginal water values on a four-bus system with independent 0-order inflows.
 ---
 
+import ToyFourSlopesPlot from "../../../components/ToyFourSlopesPlot.astro";
+
 ## Purpose
 
 This chapter extends the single-reservoir walkthrough in
@@ -430,6 +432,15 @@ saves nothing at this trial point. The cut stacks four independent
 marginal water values; trading water between reservoirs needs a
 coupling that the caricature leaves out, such as transmission or a
 cascade (section 8).
+
+The figure shows the four slopes of this cut as bars and each
+opening's reduced cost as a dot: H1 is water-limited in all three
+openings ($-50$ each), H2 in $\omega_1$ and $\omega_2$, H3 in
+$\omega_1$ only (its $\omega_2$ kink takes $0$), and H4 in none. The
+plotted values come from a tested module that re-runs this stage-4
+backward pass.
+
+<ToyFourSlopesPlot />
 
 **Cut tightness is local, not global.** Each cut equals the expected
 cost the backward pass computed at its trial point; far from the trial

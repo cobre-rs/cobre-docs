@@ -128,8 +128,10 @@ export function checkRecording(record, gifBuf, tapeBlob) {
 // --- Git plumbing (execFileSync with an ARGS ARRAY — never a shell string) --
 
 // Returns the tape's git blob id at `ref`, or null when the checkout at `cobre`
-// cannot resolve it (no checkout, or the tag is not fetched): `rev-parse` exits
-// 128 for both. Any other failure (git itself missing) is real and propagates.
+// cannot resolve the ref (no checkout, or the tag is not fetched). `rev-parse`
+// also exits 128 for a missing tape path at a resolvable ref; that case returns
+// a marker that never equals a recorded blob, so `--check` reports it as drift.
+// Any other failure (git itself missing) is real and propagates.
 function gitTapeBlob(cobre, ref, tape) {
   try {
     return execFileSync(
@@ -138,8 +140,19 @@ function gitTapeBlob(cobre, ref, tape) {
       { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] },
     ).trim();
   } catch (error) {
-    if (error.status === 128) return null;
-    throw error;
+    if (error.status !== 128) throw error;
+    try {
+      execFileSync(
+        "git",
+        ["-C", cobre, "rev-parse", "--verify", `${ref}^{commit}`],
+        {
+          stdio: "ignore",
+        },
+      );
+    } catch {
+      return null;
+    }
+    return `(absent: ${tape} not found at ${ref})`;
   }
 }
 
@@ -158,8 +171,14 @@ function parseArgs(argv) {
     const arg = argv[i];
     if (arg === "--cobre") {
       cobre = argv[++i];
+      if (cobre === undefined) {
+        throw new Error("refresh:recordings: --cobre needs a path");
+      }
     } else if (arg === "--ref") {
       ref = argv[++i];
+      if (ref === undefined) {
+        throw new Error("refresh:recordings: --ref needs a git ref");
+      }
     } else if (arg === "--check") {
       check = true;
     } else {

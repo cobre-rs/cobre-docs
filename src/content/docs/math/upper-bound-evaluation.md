@@ -5,12 +5,12 @@ description: The statistical Monte-Carlo and exact deterministic upper-bound mec
 
 ## Purpose
 
-This spec defines Cobre's upper-bound mechanisms: an overview of the bounds of a training iteration (section 1), the exact deterministic upper bound of an enumerated forward pass and its nested form under a uniform CVaR (section 2), the gap computation that compares the iteration's upper bound against the lower bound from cuts (section 3), and the estimators of the sampled forward schemes and of the post-training sampled and census simulation, with what each estimates (section 4). The appendix describes the reserved vertex-based inner approximation (SIDP) design. It complements the outer approximation (cuts) described in [SDDP Algorithm](/math/sddp-algorithm) by providing the convergence-certificate half of the bound pair.
+This chapter defines Cobre's upper-bound mechanisms: an overview of the bounds of a training iteration (section 1), the exact deterministic upper bound of an enumerated forward pass and its nested form under a uniform CVaR (section 2), the gap computation that compares the iteration's upper bound against the lower bound from cuts (section 3), and the estimators of the sampled forward schemes and of the post-training sampled and census simulation, with what each estimates (section 4). The appendix describes the reserved vertex-based inner approximation (SIDP) design. It complements the outer approximation (cuts) described in [SDDP Algorithm](/math/sddp-algorithm) by providing the convergence-certificate half of the bound pair.
 
 For notation conventions (index sets, parameters, decision variables, dual variables), see [Notation Conventions](/overview/notation-conventions).
 
 :::note[Symbol convention]
-This spec uses $d$ for the discount factor. See [Discount Rate](/math/discount-rate).
+This chapter uses $d$ for the discount factor. See [Discount Rate](/math/discount-rate).
 :::
 
 ## 1 Overview
@@ -98,7 +98,7 @@ $$
 \underline{z}^k = \rho_1\Big[\, Q_1^k(x_0, \omega) \;\Big|\; \omega \in \Omega_1 \Big]
 $$
 
-where $Q_1^k(x_0, \omega)$ is the optimal value of the first-stage problem at the initial state $x_0$ under opening $\omega$, its immediate cost plus the discounted future cost that the iteration-$k$ cuts bound from below, with the opening's full realization applied: inflow, load and non-controllable availability. $\Omega_1$ is the first stage's opening set, its generated openings or a single supplied realization, and its openings are weighted uniformly. $\rho_1$ is the first stage's risk measure, the expectation when risk-neutral; it aggregates the first stage's own openings as well as those of the next stage ([Risk Measures §6](/math/risk-measures#6-risk-averse-bellman-equation)). The bound is stated in original cost units, with the [cost scaling](/math/lp-formulation#121-cost-scaling) of the stage problems undone. It does not decrease in $k$, because the problem it is evaluated on keeps every cut once added ([Cut Management §5](/math/cut-management#5-cut-growth-and-selection-motivation)), and it is a valid lower bound under the hypotheses of [Tier 1](/math/cut-management#tier-1-valid-lower-bound).
+where $Q_1^k(x_0, \omega)$ is the optimal value of the first-stage problem at the initial state $x_0$ under opening $\omega$, its immediate cost plus the discounted future cost that the iteration-$k$ cuts bound from below, with the opening's full realization applied: inflow, load and non-controllable availability. $\Omega_1$ is the first stage's opening set, its generated openings or a single supplied realization, and its openings are weighted uniformly. $\rho_1$ is the first stage's risk measure, the expectation when risk-neutral; it aggregates the first stage's own openings as well as those of the next stage ([Risk Measures §6](/math/risk-measures#6-risk-averse-bellman-equation)). The bound is stated in original cost units, with the [cost scaling](/math/lp-layout-and-scaling#21-cost-scaling) of the stage problems undone. It does not decrease in $k$, because the problem it is evaluated on keeps every cut once added ([Cut Management §5](/math/cut-management#5-cut-growth-and-selection-motivation)), and it is a valid lower bound under the hypotheses of [Tier 1](/math/cut-management#tier-1-valid-lower-bound).
 
 ### Upper bound
 
@@ -377,7 +377,7 @@ The convergence guarantee would still hold: with $d_{\text{cycle}} < 1$, both th
 
 ## Cross-References
 
-- [SDDP Algorithm](/math/sddp-algorithm) — Core algorithm providing the outer approximation (lower bound) that this spec complements
+- [SDDP Algorithm](/math/sddp-algorithm) — Core algorithm providing the outer approximation (lower bound) that this chapter complements
 - [Notation Conventions](/overview/notation-conventions) — Standard symbols for state variables, value functions, and cost-to-go
 - [Discount Rate](/math/discount-rate) — Discount factor $d$ used in the exact bound's discounted cost (section 2) and in the reserved vertex value computation and Lipschitz accumulation (appendix)
 - [Policy Graphs](/math/policy-graphs) — The enumerated-versus-sampled forward-pass distinction that selects between the statistical and exact upper-bound mechanisms (sections 1–2)

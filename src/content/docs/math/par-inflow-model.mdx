@@ -11,7 +11,7 @@ import AcfPacfPlot from "../../../components/AcfPacfPlot.astro";
 
 ## Purpose
 
-This spec defines the Periodic Autoregressive model of order $p$ (PAR(p)) used to capture temporal correlation in inflow time series. It states the model, its parameters and the quantities stored for it (§1); the form the LP stage subproblem consumes (§2); the estimation of the parameters from historical inflow data, including order selection (§3); the closure that derives the innovation scale from the AR coefficients (§4); the validation invariants (§5); the estimation and factorisation of the spatial correlation across hydros (§6); and the optional PAR(p)-A extension, which adds a single annual coefficient on top of the periodic AR structure to capture multi-year hydrological persistence (§7).
+This chapter defines the Periodic Autoregressive model of order $p$ (PAR(p)) used to capture temporal correlation in inflow time series. It states the model, its parameters and the quantities stored for it (§1); the form the LP stage subproblem consumes (§2); the estimation of the parameters from historical inflow data, including order selection (§3); the closure that derives the innovation scale from the AR coefficients (§4); the validation invariants (§5); the estimation and factorisation of the spatial correlation across hydros (§6); and the optional PAR(p)-A extension, which adds a single annual coefficient on top of the periodic AR structure to capture multi-year hydrological persistence (§7).
 
 ## 1. Model Definition
 
@@ -186,7 +186,7 @@ For partial-year studies, the lag-season means $\mu_{m(t-\ell)}$ for seasons pre
 
 ### 2.5 Lagged Inflows Pinned by Column Bounds
 
-The lagged inflows $a_{h,\ell}$ are **LP variables**, not substituted values. In the LP, they appear with coefficients $-\psi_{m(t),\ell}$ in the AR dynamics constraint row, and each incoming lag column is pinned to the trajectory's lag value $\hat{a}_{h,\ell}$ by setting both of its column bounds to that value: there are no fixing rows, as for every state variable in [LP Formulation](/math/lp-formulation). The value $\hat{a}_{h,\ell}$ is patched per scenario from the trajectory record.
+The lagged inflows $a_{h,\ell}$ are **LP variables**, not substituted values. In the LP, they appear with coefficients $-\psi_{m(t),\ell}$ in the AR dynamics constraint row, and each incoming lag column is pinned to the trajectory's lag value $\hat{a}_{h,\ell}$ by setting both of its column bounds to that value: there are no fixing rows, as for every state variable in [State Augmentation §2](/math/state-augmentation#2-pinning-by-column-bounds). The value $\hat{a}_{h,\ell}$ is patched per scenario from the trajectory record.
 
 Because the lag contribution $\sum_\ell \psi_{m(t),\ell} \cdot a_{h,\ell}$ is carried by the constraint matrix (not the RHS), the AR dynamics constraint RHS reduces to:
 
@@ -204,7 +204,7 @@ The $\psi_{m(t),\ell}$ coefficients are written into the constraint matrix **onc
 
 No division, no mean subtraction, no repeated coefficient transformation — the three precomputed LP components eliminate all redundant arithmetic from the hot path.
 
-Whether the lagged inflows enter a stage's cuts is a per-stage choice; a cut that projects them out carries their contribution in its intercept at the trial lag values (see [Cut Management](/math/cut-management/#cut-dimension-the-enabled-state-subset)).
+Whether the lagged inflows enter a stage's cuts is a per-stage choice; a cut that projects them out carries their contribution in its intercept at the trial lag values (see [State Augmentation §7](/math/state-augmentation#7-cut-state-projection)).
 
 ### 2.6 Summary of LP Components
 
@@ -795,7 +795,8 @@ The methodology above defines the PAR(p) inflow model; the tabs below cover how 
 
 ## Cross-References
 
-- [LP Formulation](/math/lp-formulation) — AR inflow dynamics in the LP: state expansion, lag column pinning, reduced-cost extraction
+- [LP Formulation](/math/lp-formulation) — The realized-inflow rows of the stage LP
+- [State Augmentation](/math/state-augmentation) — AR inflow dynamics: state expansion, lag column pinning, reduced-cost extraction
 - [Inflow Non-Negativity](/math/inflow-nonnegativity) — Methods for handling negative realizations produced by the PAR(p) model
 - [Scenario Generation](/math/scenario-generation) — When external inflow scenarios are used in training, the backward pass turns the opening tree's noise into inflows with the applied PAR model, in which hydros of AR order 0 and no annual component take the external samples' mean and standard deviation.
 - [Notation Conventions](/overview/notation-conventions) — Defines inflow symbols ($a_{h,t}$, $\mu_m$, $\psi_{m,\ell}$, $\sigma_m$) and unit conventions

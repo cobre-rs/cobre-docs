@@ -3,6 +3,7 @@ title: Hydro Production Function Models
 description: Constant productivity, FPHA (piecewise-linear convex hull fit), and linearized head models for hydro generation constraints — with fitting pipeline, LP integration, and energy-conversion scalars.
 ---
 
+import FphaPlot from "../../../components/FphaPlot.astro";
 import { Tabs, TabItem } from "@astrojs/starlight/components";
 import { Content as HydroConfigure } from "./_impl/_hydro.configure.mdx";
 import { Content as HydroIO } from "./_impl/_hydro.io.mdx";
@@ -30,10 +31,10 @@ $$
 
 with:
 
-- $\eta_h$ = turbine efficiency (a dimensionless factor below 1), from the hydro object's `efficiency` field
+- $\eta_h$ = turbine efficiency (a dimensionless factor in $(0, 1]$), from the plant's declared efficiency
 - $H^{ref}_{h,t}$ = reference net head (meters), evaluated at the reference storage level and varying by stage
 
-**Per-stage productivity**: the productivity coefficient is authored **per (hydro, stage)** rather than per plant. A plant can therefore carry a stage-varying constant productivity — useful when the reference head differs between near-term and far-future stages of the same study, or when the constant model is being used as a coarse approximation that needs different operating points across the horizon. Section 5.1 describes how that per-(hydro, stage) value is resolved at load time.
+**Per-stage productivity**: the productivity coefficient is authored **per (hydro, stage)** rather than per plant. A plant can therefore carry a stage-varying constant productivity — useful when the reference head differs between near-term and far-future stages of the same study, or when the constant model is being used as a coarse approximation that needs different operating points across the horizon. Section 5.1 describes how that per-(hydro, stage) value is supplied.
 
 **LP treatment**: constant productivity adds no generation column and no production row: the turbined-flow column of each (hydro, bus) cell (§2.9) enters its bus's load balance with coefficient $\rho_{h,t}$ in every block, so $g_{h,k} = \rho_{h,t} \cdot q_{h,k}$ holds by construction. Simple and fast, but ignores head variation with storage **within a stage**.
 
@@ -78,7 +79,7 @@ where:
 - $q$ = turbined flow (m³/s)
 - $s$ = spillage flow (m³/s)
 - $h_{net}$ = net head (m), clamped to $\ge 0$
-- $\rho_{esp} = 9.81\,\eta_h / 1000$ (MW·s/m⁴), with constant efficiency $\eta_h$ per plant (default 1.0)
+- $\rho_{esp} = 9.81\,\eta_h / 1000$ (MW·s/m⁴), with constant efficiency $\eta_h$ per plant
 
 The **net head** is computed as:
 
@@ -100,7 +101,7 @@ Cobre uses **tabular data with linear interpolation** for the forebay curve — 
 
 #### Forebay Level $h_{fore}(v)$
 
-The upstream water level is read from the volume-height curve in `hydro_geometry.parquet`. For storage $v$ where $v^{(i)} \leq v < v^{(i+1)}$:
+The upstream water level is read from the plant's volume-height curve. For storage $v$ where $v^{(i)} \leq v < v^{(i+1)}$:
 
 $$
 h_{fore}(v) = h^{(i)} + \frac{h^{(i+1)} - h^{(i)}}{v^{(i+1)} - v^{(i)}} \times (v - v^{(i)})
@@ -110,13 +111,13 @@ $$
 
 The downstream water level depends on total outflow. Three representations are supported:
 
-**Polynomial model** (`type: "polynomial"`):
+**Polynomial model**:
 
 $$
 h_{tail}(q_{out}) = c_0 + c_1 q_{out} + c_2 q_{out}^2 + c_3 q_{out}^3 + c_4 q_{out}^4
 $$
 
-**Piecewise-linear model** (`type: "piecewise"`): tabular breakpoints with linear interpolation between points.
+**Piecewise-linear model**: tabular breakpoints with linear interpolation between points.
 
 **Piecewise-quartic families (exact tailrace)**: an optional per-plant tailrace table provides piecewise degree-4 polynomial segments (evaluated via Horner's method), grouped into backwater families keyed by the downstream reservoir's reference forebay level — see §2.3.1.
 
@@ -160,11 +161,11 @@ $$
 
 so the exact production is $\phi = \rho_{esp} \cdot q \cdot h_{net}$ in MW. Cobre uses constant efficiency $\eta_h$ per plant.
 
-FPHA plants author $\rho_{esp}$ directly — not a single scalar productivity $\rho$. The equivalent productivity $\rho_{eq}$ at the reference operating point is **derived** from $\rho_{esp}$ and the VHA geometry; the derivation is documented in section 5.1.
+An FPHA plant has no single scalar productivity $\rho$. The fitted planes follow from $\eta_h$ and the topology functions alone, while the equivalent productivity $\rho_{eq}$ at the reference operating point is **derived** from a specific productivity $\rho_{esp}$ supplied for the plant (overridable per stage) and the VHA geometry; the derivation is documented in section 5.1.
 
 ### 2.5 FPHA Hyperplanes
 
-The FPHA approximation replaces the nonlinear production function $\phi(v, q, s)$ with a set of $M$ linear hyperplanes that form a **concave approximation** of the exact surface (outer before the $k_{FPHA}$ correction of §2.6.3). Each hyperplane $m$ defines an upper bound on generation:
+The FPHA approximation replaces the nonlinear production function $\phi(v, q, s)$ with a set of $M$ linear hyperplanes that form a **concave approximation** of the exact surface (an outer approximation of the capped cloud before the $k_{FPHA}$ correction of §2.6.3). Each hyperplane $m$ defines an upper bound on generation:
 
 $$
 g_{h,k} \leq \gamma_0^m + \gamma_v^m \cdot v_h^{avg} + \gamma_q^m \cdot q_{h,k} + \gamma_s^m \cdot s_{h,k}
@@ -176,12 +177,12 @@ The plane is fitted once per plant (§2.1–§2.8); a plant split across buses e
 
 | Coefficient | Sign | Meaning                                           |
 | ----------- | ---- | ------------------------------------------------- |
-| $\gamma_0$  | —    | Intercept (MW at zero storage, flow, spillage); its sign is not validated |
-| $\gamma_v$  | ≥ 0  | Higher storage → higher forebay → more generation |
-| $\gamma_q$  | ≥ 0 (> 0 for precomputed planes) | More turbined flow → more generation              |
-| $\gamma_s$  | ≤ 0  | More spillage → higher tailrace → less net head   |
+| $\gamma_0^m$ | —    | Intercept (MW at zero storage, flow, spillage); its sign is not validated |
+| $\gamma_v^m$ | ≥ 0  | Higher storage → higher forebay → more generation |
+| $\gamma_q^m$ | ≥ 0 (> 0 for precomputed planes) | More turbined flow → more generation              |
+| $\gamma_s^m$ | ≤ 0  | More spillage → higher tailrace → less net head   |
 
-**Source of hyperplanes**: planes are either pre-computed (read from `fpha_hyperplanes.parquet`) or computed from topology data during preprocessing. The computed fit is described in §2.6.
+**Source of hyperplanes**: planes are either pre-computed (supplied with the case) or computed from topology data during preprocessing. The computed fit is described in §2.6.
 
 ### 2.6 Computed FPHA Fitting Pipeline
 
@@ -191,20 +192,20 @@ The computed-FPHA path produces hyperplanes from topology data in four stages: c
 
 The fitter evaluates the exact production function $\phi = \rho_{esp} \cdot q \cdot h_{net}$ on a uniform two-dimensional grid over the fitting window, **with spillage $s = 0$ and lateral flow $= 0$**. The grid has:
 
-- **Volume axis**: `volume_discretization_points` uniformly spaced values spanning the fitting window $[v_{min}, v_{max}]$ (default 5 points). The window is set by the optional `fitting_window` block inside `fpha_config` (absolute `volume_min_hm3` / `volume_max_hm3` or percentile bounds), defaulting to the plant's full forebay storage range. It is distinct from `reference_volume` (§5.1), which fixes an operating point, not this window.
-- **Flow axis**: `turbine_discretization_points` uniformly spaced values spanning $[0, q_{max}]$ (default 5 points). The axis **starts at $q = 0$**, where generation is zero; this zero-flow column anchors the lower closure of the cloud and eliminates the need for any synthetic closing point.
+- **Volume axis**: a configurable number of uniformly spaced values spanning the fitting window $[v_{min}, v_{max}]$. The window lies within the plant's forebay storage range (the full range unless narrowed) and is distinct from the reference volume (§5.1), which fixes an operating point, not this window. The point counts and the window are set on the Configure tab.
+- **Flow axis**: a configurable number of uniformly spaced values spanning $[0, q_{max}]$. The axis **starts at $q = 0$**, where generation is zero; this zero-flow column anchors the lower closure of the cloud and eliminates the need for any synthetic closing point.
 
 Each cloud point is capped at the plant's installed capacity $\bar{G}_h$. Spillage is not a cloud dimension — it is fixed at zero throughout.
 
 **Plants without turbine capacity**: when $q_{max} = 0$ the flow axis collapses onto $q = 0$, where generation is zero, so the cloud carries no production and no plane survives the hull. Such a plant is modelled with zero productivity at every stage instead of a plane set; the [implementation notes](#implementation-in-cobre) give the capacity threshold and how the plant is reported.
 
-**Run-of-river plants**: when the plant has a single fitting volume ($v_{min} \approx v_{max}$), two volume samples ~1% of useful storage apart are synthesized to keep the 3-D hull non-degenerate. The resulting $\gamma_v$ residual is then **snapped to exactly 0**, enforcing the correct run-of-river semantics ($\gamma_v = 0$).
+**Run-of-river plants**: when the plant has a single fitting volume ($v_{min} \approx v_{max}$, or a single volume sample requested), two nearby volume samples are synthesized to keep the 3-D hull non-degenerate (Implementation notes, "Run-of-river support"). The resulting $\gamma_v^m$ is **snapped to exactly 0** when its magnitude is negligible, enforcing the run-of-river semantics ($\gamma_v^m = 0$).
 
 **Determinism**: the cloud points and the hull output are canonically sorted, so the fitted hyperplanes are bit-identical regardless of input ordering and MPI rank count.
 
 #### 2.6.2 Convex Hull
 
-The 3-D convex hull of the $(V, Q, \text{generation})$ cloud is computed via the qhull library. The **upper-envelope facets** — those whose outward normal has a positive generation component — are selected. Each is read as $\text{generation} = \gamma_0 + \gamma_v V + \gamma_q Q$. Before the $k_{FPHA}$ correction of §2.6.3, the result is a **concave outer approximation** (the smallest concave function lying above $\min(\phi, \bar{G}_h)$ at the capped cloud points); non-concave regions of $\phi$ fall inside the hull and their facets drop out. Near-parallel coplanar facets arising from hull triangulation are deduplicated by exact coefficient comparison.
+The 3-D convex hull of the $(V, Q, \text{generation})$ cloud is computed via the qhull library. The **upper-envelope facets** — those whose outward normal has a positive generation component — are selected. Each is read as $\text{generation} = \gamma_0^m + \gamma_v^m V + \gamma_q^m Q$. Before the $k_{FPHA}$ correction of §2.6.3, the result is a **concave outer approximation** (the smallest concave function lying above $\min(\phi, \bar{G}_h)$ at the capped cloud points); non-concave regions of $\phi$ fall inside the hull and their facets drop out. Near-parallel coplanar facets arising from hull triangulation are deduplicated by exact coefficient comparison.
 
 #### 2.6.3 Least-Squares $k_{FPHA}$ Correction
 
@@ -218,17 +219,21 @@ Key properties:
 
 - The regression uses the **pointwise minimum** over the raw hull planes as $FPHA_0(V_i, Q_j)$, because the LP applies planes as $g \le \gamma_0^m + \gamma_v^m V + \gamma_q^m Q$ for every $m$, so the binding cap is the minimum, not the maximum.
 - The regression is over the spill$=0$ grid only — adding a spillage axis would pull $k_{FPHA}$ toward the larger-deviation spill region and degrade the no-spill operating region.
-- $k_{FPHA}$ scales the **whole affine function** ($\gamma_0, \gamma_v, \gamma_q$ alike), not just the intercept. It therefore differs from the factor $\kappa$ of precomputed planes, which scales the intercept only.
+- $k_{FPHA}$ scales the **whole affine function** ($\gamma_0^m, \gamma_v^m, \gamma_q^m$ alike), not just the intercept. It therefore differs from the factor $\kappa$ of precomputed planes, which scales the intercept only.
 - $k_{FPHA}$ may be **greater or less than 1** (an MSE balance, not a one-sided shrink). Validation requires $k_{FPHA} > 0$. A degenerate denominator (all-zero production) yields the neutral $k_{FPHA} = 1$.
-- Validation also requires $\gamma_v \ge 0$, $\gamma_q \ge 0$, $\gamma_s \le 0$.
+- Validation also requires $\gamma_v^m \ge 0$, $\gamma_q^m \ge 0$, $\gamma_s^m \le 0$.
 
-**Fit-quality diagnostic**: after the full pipeline, the relative mean-absolute-deviation of the emitted min-envelope vs the exact $\phi$ over the spill$=0$ grid is computed. A warning is emitted (in canonical plant/stage order) when it exceeds **5%** — typically indicating a strongly non-concave surface that no single $k_{FPHA}$ can track well.
+**Fit-quality diagnostic**: after the full pipeline, the relative mean-absolute-deviation of the emitted min-envelope vs the exact $\phi$ over the spill$=0$ grid is computed. A warning is emitted (in canonical plant/stage order) when it exceeds a threshold (Implementation notes, "Fit-quality warning") — typically indicating a strongly non-concave surface that no single $k_{FPHA}$ can track well.
 
-**Precomputed input**: when using `source: "precomputed"`, hyperplanes are read directly from `fpha_hyperplanes.parquet`. Its `kappa` column (default 1.0) scales each plane's intercept only ($\gamma_0 \leftarrow \gamma_0 \cdot \kappa$) and must lie in $(0, 1]$. The computed path does not use $\kappa$; its whole-affine $k_{FPHA}$ correction plays that role.
+**Precomputed input**: precomputed planes may carry an intercept factor $\kappa \in (0, 1]$ (Configure tab) that scales each plane's intercept only ($\gamma_0^m \leftarrow \gamma_0^m \cdot \kappa$), unlike the whole-affine $k_{FPHA}$. The computed path does not use $\kappa$; its $k_{FPHA}$ correction plays that role.
+
+The figure below shows a synthetic plant with normalized axes: storage, flow and generation are fractions of $v_{max}$, $q_{max}$ and $\bar{G}_h$. It slices the fit at one grid volume, which the example takes as the reference volume $V^{ref}$ of §5.1, and plots five series against turbined flow: the cloud points at that volume; the exact production $\phi$ capped at $\bar{G}_h$; the raw hull $FPHA_0$, the minimum over the hull planes, which lies on or above every cloud point; the corrected envelope $k_{FPHA} \cdot FPHA_0$, which rescales the hull by the single scalar of this section; and the dashed line $\rho_{eq}\,q$ of §5.1, which meets the uncapped $\phi$ at $q_{max}$, above the capped curve where the capacity binds.
+
+<FphaPlot />
 
 ### 2.7 Lateral-Flow Secant
 
-Spillage raises the tailrace level, lowering net head and generation. The $\gamma_s$ coefficient for each plane is fit by a **per-plane 1-D ordinary-least-squares secant** of generation vs lateral flow (in the current default: own spillage $s$) over **9 evenly-spaced samples** of $q_{lat} \in [0, S_{max}]$, evaluated at the plane's representative (active-maximum) operating point:
+Spillage raises the tailrace level, lowering net head and generation. The $\gamma_s^m$ coefficient for each plane is fit by a **per-plane 1-D ordinary-least-squares secant** of generation vs lateral flow (the plant's own spillage $s$) over evenly spaced samples of $q_{lat} \in [0, S_{max}]$, evaluated at the plane's representative (active-maximum) operating point:
 
 $$
 S_{max} = \begin{cases}2 \cdot \text{MLT} & \text{if MLT} > 0 \\ 2 \cdot q_{max} & \text{if MLT} = 0\end{cases}
@@ -236,20 +241,20 @@ $$
 
 where MLT is the long-term mean inflow (m³/s). The **representative operating point** for each plane is the spill$=0$ grid point where that plane is the active (tightest) upper bound and attains the largest generation — the operating region the plane actually governs. The secant samples the **uncapped** production function $\phi$ (not clipped at installed capacity $\bar{G}_h$), so the spillage sensitivity is read from the raw head curve and is not flattened wherever the capacity ceiling binds — unlike the cloud and the $k_{FPHA}$ regression (§2.6), which both use the capacity-capped output.
 
-**Sign**: $\gamma_s \le 0$ (more lateral flow raises the tailrace, reduces generation). Near-zero slopes $|\gamma_s| < 10^{-10}$ of either sign are **snapped to exactly 0** to protect LP column scaling from near-zero structural coefficients.
+**Sign**: $\gamma_s^m \le 0$ (more lateral flow raises the tailrace, reduces generation). Near-zero slopes of either sign are **snapped to exactly 0** (Implementation notes, "Computed-FPHA fitting behavior") to protect LP column scaling from near-zero structural coefficients.
 
-**Default lateral axis**: own spillage ($q_{lat} = s$). The lateral axis is the plant's own spillage; upstream releases and post-incremental inflows do not enter it.
+**Lateral axis**: the plant's own spillage ($q_{lat} = s$); upstream releases and post-incremental inflows do not enter it.
 
 ### 2.8 Similar-Hyperplane Reduction
 
-An optional post-fit step merges consecutive **near-parallel or near-coincident** planes into their **mean hyperplane** to shrink the LP. Two mutually-exclusive methods are supported, configured via an `fpha_plane_reduction` block:
+An optional post-fit step merges consecutive **near-parallel or near-coincident** planes into their **mean hyperplane** to shrink the LP. Two mutually-exclusive methods are supported:
 
-- **Angle** (`method: angle`, tolerance in degrees): merge consecutive pairs whose normal-vector angle $\theta = \arccos(\mathbf{n}_1 \cdot \mathbf{n}_2 / \|\mathbf{n}_1\|\|\mathbf{n}_2\|)$ satisfies $\theta < \varepsilon$ (strict). Fully deterministic from coefficients.
-- **Distance** (`method: distance`, tolerance in percent + sample count): merge consecutive pairs whose normalised mean-squared generation difference $\delta = \text{EQM}/\bar{G}_h^2 < \varepsilon/100$. Uses a deterministically-seeded PRNG (seeded from stable plant/stage/plane-pair identity, never from wall clock or MPI rank), so results are bit-identical across input ordering and rank count.
+- **Angle**: merge consecutive pairs whose normal-vector angle $\theta = \arccos(\mathbf{n}_1 \cdot \mathbf{n}_2 / \|\mathbf{n}_1\|\|\mathbf{n}_2\|)$ satisfies $\theta < \varepsilon$ (strict), with $\theta$ and the tolerance $\varepsilon$ in degrees. Fully deterministic from coefficients.
+- **Distance**: merge consecutive pairs whose normalised mean-squared generation difference $\delta = \text{EQM}/\phi_{\max}^2 < \varepsilon/100$, where $\phi_{\max}$ is the largest value of the exact production $\phi$ (uncapped) over the fitting grid, with the tolerance $\varepsilon$ in percent and EQM estimated over sampled operating points. Uses a deterministically-seeded PRNG (seeded from stable plant/stage/plane-pair identity, never from wall clock or MPI rank), so results are bit-identical across input ordering and rank count.
 
-**Origin-plane invariant**: the plane through the origin ($\gamma_0 \approx 0 \wedge \gamma_v \approx 0$, generating zero power at zero turbining) is **never merged**. This guarantees the zero-generation floor.
+**Origin-plane invariant**: the plane through the origin ($\gamma_0^m \approx 0 \wedge \gamma_v^m \approx 0$, generating zero power at zero turbining) is **never merged**. This guarantees the zero-generation floor.
 
-**Off by default**: no reduction is applied unless an `fpha_plane_reduction` block is present in the production-models config.
+Reduction is optional and applies only when selected (Configure tab).
 
 ### 2.9 LP Integration
 
@@ -273,7 +278,7 @@ $$
 \lambda_{h,b} = \frac{\sum_{u \,\in\, (h,b)} \bar{Q}_u}{\sum_{u \,\in\, h} \bar{Q}_u}
 $$
 
-($0$ when the plant's declared total is $0$, never `NaN`), a study-time constant derived from each unit group's declared `max_turbined_m3s` — never recomputed per stage or block, and never re-derived from a resolved per-stage override, which would double-count an availability derate already enforced on the flow path by each cell's own column bounds. It satisfies $\sum_{b \in \mathcal{B}_h} \lambda_{h,b} = 1$, and a single-cell plant has $\lambda_{h,b} = 1$ exactly. The flow coefficient $\gamma_q^m$ stays on the cell's own $q_{h,b,k}$ **unscaled** — it is the only term homogeneous in the cell partition, which is what makes $\sum_{b} g_{h,b,k}$ at fixed $v^{avg}_h$, $s_{h,k}$, and $\sum_b q_{h,b,k}$ recover the plant-level bound this per-cell form replaces.
+($0$ when the plant's declared total is $0$), a study-time constant derived from each unit group's declared maximum turbined flow — never recomputed per stage or block, and never re-derived from a resolved per-stage override, which would double-count an availability derate already enforced on the flow path by each cell's own column bounds. It satisfies $\sum_{b \in \mathcal{B}_h} \lambda_{h,b} = 1$, and a single-cell plant has $\lambda_{h,b} = 1$ exactly. The flow coefficient $\gamma_q^m$ stays on the cell's own $q_{h,b,k}$ **unscaled** — it is the only term homogeneous in the cell partition, which is what makes $\sum_{b} g_{h,b,k}$ at fixed $v^{avg}_h$, $s_{h,k}$, and $\sum_b q_{h,b,k}$ recover the plant-level bound this per-cell form replaces.
 
 #### Average Storage Computation
 
@@ -283,7 +288,7 @@ $$
 v^{avg}_h = \frac{v^{in}_h + v_h}{2}
 $$
 
-where $v^{in}_h$ is the incoming storage LP variable (pinned to $\hat{v}_h$ via column bounds — see [LP Formulation §4a](/math/lp-formulation)) and $v_h$ is end-of-stage storage — a single plant-level quantity shared by every cell, since storage is not partitioned. Both are LP variables, so $v^{in}_h$ appears in every cell's FPHA constraint with coefficient $-\lambda_{h,b} \, \gamma_v^m / 2$ on the left-hand side, as does $v_h$. The LP solver automatically accounts for this in the reduced cost of the pinned $v^{in}_h$ column.
+where $v^{in}_h$ is the incoming storage LP variable (pinned to $\hat{v}_h$ via column bounds — see [State Augmentation §2](/math/state-augmentation#2-pinning-by-column-bounds)) and $v_h$ is end-of-stage storage — a single plant-level quantity shared by every cell, since storage is not partitioned. Both are LP variables, so $v^{in}_h$ appears in every cell's FPHA constraint with coefficient $-\lambda_{h,b} \, \gamma_v^m / 2$ on the left-hand side, as does $v_h$, on a parallel stage; on a chronological stage, in block 1's rows, and $v_h$ in block $|\mathcal{K}|$'s. The LP solver automatically accounts for this in the reduced cost of the pinned $v^{in}_h$ column.
 
 On a chronological stage the row of block $k$ uses that block's own average storage $(v_{h,k-1} + v_{h,k})/2$ in place of $v^{avg}_h$, with $v_{h,0} = v^{in}_h$ (see [Block Formulations](/math/block-formulations)).
 
@@ -291,7 +296,7 @@ On a chronological stage the row of block $k$ uses that block's own average stor
 
 When using FPHA, the generation variable $g_{h,b,k}$ is **not** directly computed from turbined flow. Instead:
 
-1. Generation is a free LP variable per cell, bounded by $[0, \bar{G}_{h,b}]$, where $\bar{G}_{h,b}$ sums the cell's own unit groups' declared `max_generation_mw` and closes against the plant's own resolved maximum (see [LP Formulation §6](/math/lp-formulation))
+1. Generation is a free LP variable per cell, bounded by $[0, \bar{G}_{h,b}]$, where $\bar{G}_{h,b}$ sums the cell's own unit groups' declared maximum generation and closes against the plant's own resolved maximum (see [LP Formulation §6](/math/lp-formulation))
 2. FPHA constraints (one per plane $m$, per cell) provide upper bounds relating generation to storage, flow, and spillage
 3. Where generation has value, the optimizer raises it until an FPHA plane or a tighter bound such as $\bar{G}_{h,b}$ binds
 4. At an optimum where generation has value, each cell's generation lies on one of its FPHA hyperplane facets or on a tighter bound, such as $\bar{G}_{h,b}$
@@ -312,7 +317,7 @@ For the full penalty taxonomy and priority ordering, see [Penalty System](/math/
 
 ### 2.11 Impact on Benders Cuts
 
-The FPHA formulation affects water value computation. Because the incoming storage variable $v^{in}_h$ appears in **every one of the plant's cells'** FPHA constraints (via $v^{avg}_h = (v^{in}_h + v_h)/2$, each apportioned by that cell's $\lambda_{h,b}$, section 2.9), the FPHA hyperplane duals of every cell contribute to the marginal value of incoming storage. However, the implementation does **not** require manually combining duals from the water balance and FPHA constraints. Instead, pinning $v^{in}_h$ to $\hat{v}_h$ by column bounds (see [LP Formulation §4a](/math/lp-formulation)) makes its reduced cost capture the total sensitivity $\beta^v_h$ automatically — the LP solver propagates every cell's FPHA contribution through the single shared $v^{in}_h$.
+The FPHA formulation affects water value computation. Because the incoming storage variable $v^{in}_h$ appears in **every one of the plant's cells'** FPHA constraints (via $v^{avg}_h = (v^{in}_h + v_h)/2$, each apportioned by that cell's $\lambda_{h,b}$, section 2.9) — on a parallel stage; on a chronological stage, in block 1's rows — the FPHA hyperplane duals of every cell contribute to the marginal value of incoming storage. However, the implementation does **not** require manually combining duals from the water balance and FPHA constraints. Instead, pinning $v^{in}_h$ to $\hat{v}_h$ by column bounds (see [State Augmentation §2](/math/state-augmentation#2-pinning-by-column-bounds)) makes its reduced cost capture the total sensitivity $\beta^v_h$ automatically — the LP solver propagates every cell's FPHA contribution through the single shared $v^{in}_h$.
 
 The cut coefficient for storage is simply the reduced cost of the pinned $v^{in}_h$ column:
 
@@ -320,7 +325,7 @@ $$
 \beta^v_h = \bar{c}^{in}_h / d^{col}_h
 $$
 
-This reduced cost implicitly includes the water balance contribution ($\pi^{wb}_h$), the FPHA contribution summed over every cell of the plant ($\frac{1}{2} \sum_{b \in \mathcal{B}_h} \lambda_{h,b} \sum_m \pi_{h,b,m}^{fpha} \cdot \gamma_v^m$), and any generic constraint contributions — all resolved by the LP solver without explicit dual combination.
+This reduced cost implicitly includes the water balance contribution (that of the row reading $v^{in}_h$: $\pi^{wb}_h$ on a parallel stage, $\pi^{wb}_{h,1}$ on a chronological stage), the FPHA contribution summed over every cell of the plant ($\frac{1}{2} \sum_{b \in \mathcal{B}_h} \lambda_{h,b} \sum_m \pi_{h,b,m}^{fpha} \cdot \gamma_v^m$, with $\pi_{h,b,m}^{fpha}$ summed over the blocks whose rows read $v^{in}_h$: every block on a parallel stage, block 1 on a chronological stage), the dual of the evaporation row ([LP Formulation, Evaporation Row](/math/lp-formulation#evaporation-row)) weighted by $\gamma^{ev}_{v,h}/2$ for a hydro with an evaporation model (block 1's row only on a chronological stage), and any generic constraint contributions — all resolved by the LP solver without explicit dual combination.
 
 For the complete cut coefficient computation, see [cut management](/math/cut-management).
 
@@ -330,7 +335,7 @@ A production model that varies by stage or season is part of the model the polic
 
 ## 3. Linearized Head Model (Reserved — Resolves to Constant Productivity)
 
-`linearized_head` is a **reserved production-model name**: it is equivalent to `constant_productivity` (§1) in every phase — training (backward and forward passes) and simulation alike — and selecting it applies no head correction and imposes no phase restriction.
+Linearized head is a **reserved production-model name**: it is equivalent to constant productivity (§1) in every phase — training (backward and forward passes) and simulation alike — and selecting it applies no head correction and imposes no phase restriction.
 
 Generation is therefore $g_{h,k} = \rho_{h,t} \cdot q_{h,k}$ with the plant's per-(hydro, stage) productivity (§5.1). It still requires the plant's productivity input.
 
@@ -338,7 +343,7 @@ Generation is therefore $g_{h,k} = \rho_{h,t} \cdot q_{h,k}$ with the plant's pe
 
 ### Training (Policy Construction)
 
-The substantive choice during training is between `constant_productivity` and `fpha` (`linearized_head` is an alias for the former, §3). That choice trades accuracy against computational cost:
+The substantive choice during training is between constant productivity and FPHA (linearized head is an alias for the former, §3). That choice trades accuracy against computational cost:
 
 | Scenario                       | Recommended Model     | Rationale                          |
 | ------------------------------ | --------------------- | ---------------------------------- |
@@ -351,18 +356,18 @@ The substantive choice during training is between `constant_productivity` and `f
 
 ### Simulation (Policy Evaluation)
 
-During simulation, `constant_productivity` and `fpha` behave as they do in training, and `linearized_head` resolves to constant productivity (§3):
+During simulation, constant productivity and FPHA behave as they do in training, and linearized head resolves to constant productivity (§3):
 
 | Scenario                                                 | Recommended Model                   | Rationale                                                                                                |
 | -------------------------------------------------------- | ----------------------------------- | -------------------------------------------------------------------------------------------------------- |
 | Plants trained with FPHA                                 | FPHA                                | Consistency with training model                                                                          |
 | Plants trained with constant, low head variation         | Constant productivity               | No benefit from head correction                                                                          |
-| Plants selecting `linearized_head`                       | Constant productivity (equivalent)  | `linearized_head` resolves to the same constant-productivity source (§3); no head correction is applied  |
+| Plants selecting linearized head                         | Constant productivity (equivalent)  | Linearized head resolves to the same constant-productivity source (§3); no head correction is applied    |
 | Post-optimization validation                             | Compare all models                  | Verify approximation quality                                                                             |
 
 Simulating a plant under another production model than the one it was trained with evaluates the policy heuristically (§2.11).
 
-The production model may vary by stage or by season per hydro, configured via the `stage_ranges` and `seasonal` selection modes in `hydro_production_models.json`.
+The production model may vary by stage or by season per hydro (Configure tab).
 
 ## 5. Energy-Conversion Quantities
 
@@ -374,51 +379,15 @@ The **equivalent productivity** $\rho_{eq,h,t}$ (MW per m³/s) is the single-sca
 
 | Generation model        | $\rho_{eq,h,t}$ derivation                                                                                                                                                                                                                                                                                                                                          |
 | ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `constant_productivity` | A per-(hydro, stage) numeric value authored by the case — see "Authoring sources" below.                                                                                                                                                                                                                                                                            |
-| `linearized_head`       | A per-(hydro, stage) numeric value authored by the case — same resolution as `constant_productivity`.                                                                                                                                                                                                                                                               |
-| `fpha`                  | $\rho_{eq,h,t} = \rho_{esp,h,t} \cdot h_{eq}(V^{ref}_{h,t},\, Q^{ref}_{h,t})$, where $h_{eq}$ is the net head computed from the VHA geometry (section 2.3) at the reference point and $\rho_{esp,h,t}$ is resolved per stage: a per-stage override, else a per-plant default override, else the plant's own value. FPHA hydros do **not** author a separate $\rho_{eq}$ scalar in the production-models input — it is derived. A parquet-level override is still accepted (see "FPHA override path"). |
+| Constant productivity   | A per-(hydro, stage) numeric value authored by the case (see below).                                                                                                                                                                                                                                                                                                |
+| Linearized head         | A per-(hydro, stage) numeric value authored by the case, supplied as for constant productivity.                                                                                                                                                                                                                                                                     |
+| FPHA                    | $\rho_{eq,h,t} = \rho_{esp,h,t} \cdot h_{eq}(V^{ref}_{h,t},\, Q^{ref}_{h,t})$, where $h_{eq}$ is the net head computed from the VHA geometry (section 2.3) at the reference point and $\rho_{esp,h,t}$ is resolved per stage: a per-stage override, else a per-plant default override, else the plant's own value. FPHA hydros author no separate $\rho_{eq}$ scalar — it is derived, and an override is accepted (see below). |
 
-**Reference volume**: the reference operating volume $V^{ref}_{h,t}$ is declared by a single **`reference_volume`** field in the production-model config entry (`stage_range` or `seasonal`). The field takes exactly one of two forms: an absolute `volume_hm3` value, or a `percentile` (fraction of useful volume between $V^{min}_h$ and $V^{max}_h$); when absent it defaults to 65% of useful volume. This single field is the source of truth for the $\rho_{eq}$ derivation above and for the reservoir reference level at which the computed-FPHA piecewise-quartic tailrace families are interpolated (§2.3.1 — a plant's reference volume sets the downstream forebay level seen by the plant immediately upstream). It does **not** set the computed-FPHA volume fitting window $[V_{min}, V_{max}]$: that window is configured separately by the optional `fitting_window` block inside `fpha_config` (§2.6.1), defaulting to the plant's full forebay storage range.
+**Reference volume**: the reference operating volume $V^{ref}_{h,t}$ is declared once per production-model entry (a stage range or a season), either as an absolute volume or as a fraction of the useful volume between $V^{min}_h$ and $V^{max}_h$; when absent a default fraction of the useful volume applies (Configure tab). This single declaration is the source of truth for the $\rho_{eq}$ derivation above and for the reservoir reference level at which the computed-FPHA piecewise-quartic tailrace families are interpolated (§2.3.1 — a plant's reference volume sets the downstream forebay level seen by the plant immediately upstream). It does **not** set the computed-FPHA volume fitting window $[V_{min}, V_{max}]$: that window is configured separately on the Configure tab, defaulting to the plant's full forebay storage range (§2.6.1).
 
 The reference flow $Q^{ref}_{h,t}$ at which both evaluators compute the net head is the plant's installed turbined-flow capacity.
 
-#### Authoring sources for non-FPHA hydros
-
-Two complementary inputs supply $\rho_{eq,h,t}$ for `constant_productivity` and `linearized_head` plants:
-
-1. **Range-level productivity** in the hydro production models input. Each `stage_range` or `seasonal` entry may carry a single `productivity_mw_per_m3s` value that applies to every stage the entry covers. This is the natural authoring shape for "this productivity is the same for the next five stages" — declarative, low-volume.
-2. **Per-stage productivity** in the hydro energy productivity input (a per-row table indexed by `(hydro_id, stage_id)`). Each row may name a specific stage or carry a per-hydro default (no `stage_id` set). This is the natural authoring shape for "this productivity changes every stage" — tabular, high-volume.
-
-Either source — but **not both for the same `(hydro, stage)`** — may supply the value. The contract is symmetric with the generic-constraint authoring contract: a declarative JSON file owns model selection plus range-level values, and a tabular parquet file owns per-stage numerical refinement.
-
-#### Resolution order
-
-For a non-FPHA hydro $h$ at study stage $t$, the value of $\rho_{eq,h,t}$ is resolved in this order:
-
-1. A per-stage row in the energy-productivity input whose `stage_id` matches $t$ exactly.
-2. A per-hydro default row in the energy-productivity input (no `stage_id` set) for hydro $h$.
-3. The `productivity_mw_per_m3s` value from the matching `stage_range` or `seasonal` entry in the production-models input.
-
-The first three options are mutually exclusive at load time (see "Conflict and coverage" below), so this ordering is descriptive rather than a precedence in the sense of "earlier source overrides later"; it is the order in which the resolver consults sources, stopping at the first hit.
-
-#### Conflict and coverage
-
-Two load-time invariants are enforced:
-
-- **Conflict**: when the per-stage parquet row (or the per-hydro default) and the production-models JSON entry both supply a value for the same $(h, t)$, the case is rejected at load time. The error names both files and the offending $(h, t)$.
-- **Coverage**: when neither source supplies a value for some study stage $t$ of a non-FPHA hydro $h$, the case is rejected at load time. The error names the offending $(h, t)$ pair.
-
-A coverage failure never reaches the dispatch pipeline — it is caught alongside the other case-validation rules. This is the same boundary discipline used elsewhere in the load pipeline: structural problems surface as load-time errors, never as deeper dispatch-time panics.
-
-#### FPHA override path
-
-For FPHA hydros, $\rho_{eq}$ is derived from VHA geometry and $\rho_{esp}$ at the reference operating point. The per-stage energy-productivity input remains available as an **override**: if a row supplies a value for an FPHA $(h, t)$, it replaces the derived value. The override replaces the value of **both** evaluators — the reference-point value here and the useful-range mean value of §5.3. The production-models JSON file does **not** accept `productivity_mw_per_m3s` for FPHA — that field is rejected at parse time. FPHA hydros are therefore exempt from the non-FPHA conflict and coverage rules.
-
-#### Zero as planned-outage marker
-
-A resolved $\rho_{eq,h,t} = 0$ is **accepted** for non-FPHA hydros and a resolved $\rho_{esp,h,t} = 0$ is accepted for FPHA hydros. Both are interpreted as a **planned outage** for the affected stage: the LP uses these scalars as multipliers (never divisors), so zero productivity produces zero generation cleanly without any divide-by-zero or feasibility hazard. The same relaxation applies to the parquet $\rho_{eq}$ override, the parquet $\rho_{esp}$ column, and the JSON range-level productivity. Negative values are still rejected at load time as nonsensical.
-
-This relaxation lets real-world cases mark a plant as out-of-service for specific stages without the case author needing to remove it from the system definition, restructure the cascade, or work around a strict-positivity check.
+**Authoring**: a non-FPHA plant's equivalent productivity $\rho_{eq,h,t}$ is authored per hydro and stage. An FPHA plant's equivalent productivity is derived as in the table above and may be overridden; the override replaces the derived value in both evaluators, the reference-point value here and the useful-range mean value of §5.3. A zero equivalent productivity of a non-FPHA plant is a planned outage: the plant generates nothing at that stage. An FPHA plant's generation follows its fitted planes, not this scalar. The authoring sources, their resolution order and the load-time checks are on the Configure tab.
 
 ### 5.2 Accumulated Cascade Productivity $\rho_{acum}$
 
@@ -522,27 +491,6 @@ These quantities do not enter the LP — they are accounting outputs derived fro
 
 The full FPHA production function (section 2) is multi-dimensional and concave; constant productivity is a scalar but per-plant. Neither can be summed across a cascade or scaled by inflow without a reference operating point. The energy-conversion scalars resolve this: each model is reduced to two numbers per (hydro, stage) — one from the reference-point evaluator, one from the useful-range mean evaluator — and those numbers are what the cascade-summation, ENA, EARM, and maximum-stored-energy formulas above can consume uniformly. The LP's production model does not use these scalars; it continues to enforce the full production model. They are accounting quantities that may also be used as coefficients of user-authored generic constraints, such as the security curve of §5.3 (see [LP Formulation §10](/math/lp-formulation#10-generic-constraints)).
 
-## 6. Data Requirements Summary
-
-| Data Source                     | Required Fields                                                                                          | Used For                                                                                                 |
-| ------------------------------- | -------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
-| Hydro plant entity              | `tailrace` (polynomial, piecewise, or piecewise-quartic families)                                        | $h_{tail}(q_{out})$ computation                                                                          |
-| Hydro plant entity              | `hydraulic_losses` (factor or constant)                                                                  | $h_{loss}$ computation                                                                                   |
-| Hydro plant entity              | `efficiency` (constant)                                                                                  | Turbine efficiency $\eta$                                                                                |
-| Hydro plant entity              | `specific_productivity_mw_per_m3s_per_m` (FPHA, and the useful-range mean evaluator for any model)      | $\rho_{esp}$ for $\rho_{eq}$ derivation (§5.1) and $\bar\rho_{eq}$ (§5.3)                                  |
-| Hydro plant entity              | Cascade topology (downstream pointer)                                                                    | $\rho_{acum}$ topological sum (§5.2)                                                                     |
-| Hydro production models input   | Range-level productivity per `stage_range` / `seasonal` entry (non-FPHA, optional)                       | $\rho_{h,t}$ for sections 1 and 3 (§5.1 authoring source 1)                                              |
-| Hydro production models input   | `reference_volume` per `stage_range` / `seasonal` entry (absolute or percentile)                         | $V^{ref}$ for the energy-conversion reduction (§5.1) and the tailrace backwater reference level (§2.3.1) |
-| Hydro production models input   | FPHA `fitting_window` per `stage_range` / `seasonal` entry (absolute or percentile bounds, optional)     | Computed-FPHA volume grid $[v_{min}, v_{max}]$ (§2.6.1)                                                  |
-| Hydro production models input   | FPHA fitting configuration and optional `fpha_plane_reduction` block                                     | Grid sizes, plane reduction method (§2.6–§2.8)                                                           |
-| Hydro energy productivity input | Per-(hydro, stage) `equivalent_productivity_mw_per_m3s` and specific productivity                        | $\rho_{eq,h,t}$ override for both evaluators (§5.1 authoring source 2 + FPHA override path); $\rho_{esp,h,t}$ for both evaluators' head-derived value (§5.1, §5.3) |
-| Hydro geometry                  | volume_hm3, height_m                                                                                     | $h_{fore}(v)$ interpolation (§2.3); mean forebay level $\bar h_{fore,h}$ (§5.3)                           |
-| Pre-fitted FPHA planes          | $\gamma_0, \gamma_v, \gamma_q, \gamma_s$ (plus the `kappa` intercept factor, default 1.0)                | Optional alternative to in-process fitting                                                               |
-
-For non-FPHA hydros, the per-(hydro, stage) productivity coefficient is resolved from exactly one of the two authoring sources listed in §5.1: range-level productivity in the production-models input, or per-stage productivity in the energy-productivity input. Supplying a value from both for the same $(h, t)$ is rejected at load time; supplying neither for any study stage of a non-FPHA hydro is also rejected at load time.
-
-For FPHA hydros, the production-models input does not accept a productivity scalar — $\rho_{eq}$ is derived from VHA geometry and $\rho_{esp}$ unless the energy-productivity input supplies an override.
-
 ## Implementation in Cobre
 
 The methodology above defines the hydro production models; the tabs below cover how Cobre's software surface configures, feeds, and reports on them.
@@ -564,6 +512,6 @@ The methodology above defines the hydro production models; the tabs below cover 
 - [Notation conventions](/overview/notation-conventions) — variable and set definitions ($g_h$, $q_h$, $v_h$, $s_h$, $\rho_h$)
 - [System elements](/math/system-elements) — hydro plant element description, decision variables, Variable Units Convention
 - [LP formulation](/math/lp-formulation) — how production constraints integrate into the assembled LP
-- [Penalty system](/math/penalty-system) — `turbined_cost` regularization, penalty priority ordering
+- [Penalty system](/math/penalty-system) — turbined-cost regularization, penalty priority ordering
 - [Cut management](/math/cut-management) — Benders cut generation affected by FPHA dual variables
 - [Equipment formulations](/math/equipment-formulations) — thermal and hydro equipment constraint patterns

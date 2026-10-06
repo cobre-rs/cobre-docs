@@ -103,7 +103,7 @@ absent.
 | `downstream_id`  | integer or null | No       | Identifier of the plant that receives this plant's outflow. Absent or `null` means the plant is at the bottom of its cascade — outflow leaves the system. |
 | `operational_start_date` | string (ISO-8601 date) | Yes | Calendar date (`YYYY-MM-DD`) the plant enters the registry's operational history. Provenance and the canonical `(operational_start_date, id)` ordering key (see [Notation Conventions](/overview/notation-conventions)) — independent of `entry_stage_id`/`exit_stage_id` below, which alone gate commissioning. |
 | `entry_stage_id` | integer or null | No       | Stage index at which the plant enters service (inclusive). `null` means the plant is available from stage 0. |
-| `exit_stage_id`  | integer or null | No       | Stage index at which the plant is decommissioned. The commissioning window is **half-open** `[entry_stage_id, exit_stage_id)`: the plant is active through `exit_stage_id - 1`, and outside the window it is not in service. For a hydro the out-of-service state is **PreFilling** — turbine, spillage, and diversion pinned to zero, storage frozen, and natural inflow routed past the site (see Implementation notes and [system elements §5](/math/system-elements)) — rather than a bare column zero-pin. `null` means the plant is never decommissioned. |
+| `exit_stage_id`  | integer or null | No       | Stage index at which the plant is decommissioned. The commissioning window is **half-open** `[entry_stage_id, exit_stage_id)`: the plant is active through `exit_stage_id - 1`, and outside the window it is not in service. For a hydro the out-of-service state is **PreFilling** — turbine, spillage, and diversion pinned to zero, storage frozen, and natural inflow routed past the site (see Implementation notes and [System Elements §5](/math/system-elements)) — rather than a bare column zero-pin. `null` means the plant is never decommissioned. |
 
 #### Reservoir
 
@@ -271,7 +271,7 @@ travel down the **main cascade arc** to `downstream_id`.
 
 When an arc is declared, Cobre carries the water in transit as additional
 Bellman state (see [State Augmentation §6](/math/state-augmentation#6-water-travel-time) and
-[system elements §5](/math/system-elements)). Travel time applies to the main
+[System Elements §5](/math/system-elements)). Travel time applies to the main
 cascade arc only — diversion and pumping transfers are always instantaneous.
 Declaring an arc requires seeding the pre-study releases already in transit via
 `initial_conditions.past_defluences`, and the downstream plant must have
@@ -407,9 +407,12 @@ values.
 
 When present, every field is optional and independently falls back to the
 global default from `penalties.json`; the block accepts exactly these twelve
-keys and rejects any unknown field. For the full field list, units, and the
-priority ordering across penalty categories, see
-[Penalty System](/math/penalty-system).
+keys and rejects any unknown field. The directional evaporation and withdrawal
+costs have no key in this block; a plant with this block takes them from its
+resolved symmetric costs ([Penalty System — Directional evaporation and
+withdrawal costs](/math/penalty-system#directional-evaporation-and-withdrawal-costs)).
+For the full field list, units, and the priority ordering across penalty
+categories, see [Penalty System](/math/penalty-system).
 
 **Three-tier resolution cascade** — penalty values are resolved from the most
 specific to the most general source:
@@ -534,7 +537,7 @@ options are ignored. The parquet schema:
 | Column            | Type    | Required | Description |
 | ----------------- | ------- | -------- | ----------- |
 | `hydro_id`        | Int32   | Yes      | Hydro plant identifier |
-| `stage_id`        | Int32   | No       | Stage the plane applies to (`null` = all stages) |
+| `stage_id`        | Int32   | No       | Stage the plane applies to (`null` = all stages; an absent column means the same) |
 | `plane_id`        | Int32   | Yes      | Plane index within this hydro |
 | `gamma_0`         | Float64 | Yes      | Intercept coefficient (MW) |
 | `gamma_v`         | Float64 | Yes      | Volume coefficient (MW/hm³). Must be non-negative (`>= 0`); run-of-river plants have `gamma_v = 0`. |
@@ -583,11 +586,11 @@ All fields except `source` are optional:
 
 | Field                            | Default | Description |
 | -------------------------------- | ------- | ----------- |
-| `volume_discretization_points`   | 5       | Number of volume grid points for fitting. Must be `>= 2`. Run-of-river plants (`γ_V` snapped to 0) bypass volume discretization — the fit collapses to a single volume point and emits one `hydro_geometry.parquet` row. |
+| `volume_discretization_points`   | 5       | Number of volume grid points for fitting. `1` selects the single-volume fit of a run-of-river plant; otherwise it must be `>= 2`. Run-of-river plants (`γ_V` snapped to 0) bypass volume discretization — the fit collapses to a single volume point and emits one `hydro_geometry.parquet` row. |
 | `turbine_discretization_points`  | 5       | Number of turbined-flow grid points. Must be `>= 2`. |
 | `spillage_discretization_points` | 5       | Validated (must be `>= 2`) but does **not** add a spillage axis to the fitting grid — the cloud and the $k_{FPHA}$ regression fix spillage at `0`, and the lateral-flow secant sweeps its own sample range independently (§2.7). The field is retained for input round-tripping. |
 | `max_planes_per_hydro`           | 10      | Accepted and validated (`>= 1`) but does not currently trim the plane set — the hull fitter emits exactly the upper-envelope facets. |
-| `fitting_window`                 | null    | Optional volume range for fitting; absent uses the full operating range `[min_storage_hm3, max_storage_hm3]`. |
+| `fitting_window`                 | null    | Optional volume range for fitting; absent uses the full forebay range of the plant's `system/hydro_geometry.parquet` volume-height curve. |
 
 :::note[Round-trip-only]
 `spillage_discretization_points` is accepted and validated, but the current Cobre
@@ -604,7 +607,7 @@ grid — useful when the plant rarely operates near one extreme:
 ```
 
 ```json
-"fitting_window": { "volume_min_percentile": 5.0, "volume_max_percentile": 95.0 }
+"fitting_window": { "volume_min_percentile": 0.05, "volume_max_percentile": 0.95 }
 ```
 
 Absolute (`_hm3`) and percentile (`_percentile`) bounds are mutually
@@ -640,7 +643,7 @@ within `tolerance_pct`, using `n_samples` sample points:
 | Field           | Required | Description |
 | --------------- | -------- | ----------- |
 | `method`        | Yes      | Must be `"distance"`. |
-| `tolerance_pct` | Yes      | Maximum relative MSE distance (fraction) to treat two planes as coincident. Finite, `>= 0.0`. |
+| `tolerance_pct` | Yes      | Tolerance, in percent, on the normalised mean-squared generation difference: two planes merge when that difference, as a fraction, is below `tolerance_pct / 100`. Finite, `>= 0.0`. |
 | `n_samples`     | Yes      | Number of sample points used to estimate the distance. Must be `>= 1`. |
 
 Supplying a field belonging to the other method is a load-time error. The
@@ -663,6 +666,10 @@ sources:
   single stage, a row with `stage_id = null` is a per-hydro default. Natural
   for per-stage numerical refinement.
 
+As with the [generic-constraint inputs](/reference/generic-constraints/), the
+JSON file owns model selection and range-level values, and the parquet file
+owns per-stage numerical refinement.
+
 Resolution order at load time:
 
 1. Parquet stage-specific row (exact `stage_id` match).
@@ -670,7 +677,24 @@ Resolution order at load time:
 3. JSON `productivity_mw_per_m3s` on the matching stage range or season.
 
 Supplying a value from both sources for the same `(hydro, stage)` is a
-load-time error; supplying neither is also a load-time error.
+load-time error; supplying neither is also a load-time error. The conflict
+error names both files and the offending `(hydro_id, stage_id)` and asks for
+the value from exactly one source; the coverage error names the pair and both
+files.
+
+A hydro whose `generation.model` is `fpha` is outside both checks: its
+equivalent productivity is derived from the VHA geometry and the specific
+productivity (methodology §5.1). An `equivalent_productivity_mw_per_m3s` row
+for such a hydro (stage-specific, else the per-hydro default) is an override that
+replaces the derived value for both evaluators — the reference-point value
+(§5.1) and the useful-range mean value (§5.3).
+
+In `system/hydro_energy_productivity.parquet`,
+`equivalent_productivity_mw_per_m3s` and
+`specific_productivity_mw_per_m3s_per_m` must each be finite and non-negative
+when set: `0` is accepted and a negative value is rejected at load. A `0`
+equivalent productivity on a non-FPHA hydro marks a planned-outage stage, as
+`0.0` does in the JSON field below. A `0` specific productivity zeroes the head-derived equivalent productivity and does not stop generation.
 
 ```json
 {

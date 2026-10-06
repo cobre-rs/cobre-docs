@@ -10,7 +10,7 @@ import { Content as CutNotes } from './_impl/_cut-management.notes.mdx';
 
 ## Purpose
 
-This spec defines the complete Benders cut lifecycle in Cobre: what cuts represent mathematically, how cut coefficients relate to LP dual variables, how per-scenario cuts are aggregated into a single cut, under what conditions cuts are valid, and what selection strategies are available to control cut pool growth.
+This chapter defines the complete Benders cut lifecycle in Cobre: what cuts represent mathematically, how cut coefficients relate to LP dual variables, how per-scenario cuts are aggregated into a single cut, under what conditions cuts are valid, and what selection strategies are available to control cut pool growth.
 
 ## 1. Cut Definition
 
@@ -27,15 +27,15 @@ where:
 - $x$ is the vector of the state components the cut projects onto, and $\beta$ the vector of their cut coefficients, one per component
 - $\beta^v_h$ is the storage coefficient for hydro $h$ (marginal value of water)
 - $\beta^{lag}_{h,\ell}$ is the AR lag coefficient for hydro $h$, lag $\ell$ (marginal value of inflow history)
-- $v_h$, $a_{h,\ell}$ are the storage and AR-lag state variables (see [LP Formulation](/math/lp-formulation))
+- $v_h$, $a_{h,\ell}$ are the storage and AR-lag state variables (see [State Augmentation §1](/math/state-augmentation#1-state-vector))
 
-The cut carries a coefficient for each **enabled** state dimension: the storage $v_h$ and the inflow lags $a_{h,\ell}$ when the stage's projection selection keeps them ([Cut dimension](#cut-dimension-the-enabled-state-subset)), and the in-transit travel-time buckets and commitment-ring slots, when present, always. A cut is stored densely over the components it projects onto: every such component carries a coefficient in every cut, read from the reduced cost of its pinned column (§2), and a coefficient may be zero; the cut's LP row omits the components whose coefficient is structurally zero.
+The cut carries a coefficient for each **enabled** state dimension: the storage $v_h$ and the inflow lags $a_{h,\ell}$ when the stage's projection selection keeps them ([State Augmentation §7](/math/state-augmentation#7-cut-state-projection)), and the in-transit travel-time buckets and commitment-ring slots, when present, always. A cut is stored densely over the components it projects onto: every such component carries a coefficient in every cut, read from the reduced cost of its pinned column (§2), and a coefficient may be zero; the cut's LP row omits the components whose coefficient is structurally zero.
 
 Cobre adds cuts monotonically across iterations: an active cut is never removed from the lower-bound LP within a training run. Because the cut set only grows, the lower-bound estimate is non-decreasing across iterations of a training run. This is a methodology-level guarantee — the outer approximation of the value function can only become tighter iteration by iteration.
 
 ## 2. Reduced-Cost Extraction
 
-After solving the stage $t$ subproblem for trial state $\hat{x}_{t-1}$ and scenario $\omega_t$, the cut coefficients are derived from the LP **reduced costs** of the pinned incoming-state columns — the columns whose lower and upper bounds were set equal to the incoming state value (see [LP Formulation §4a](/math/lp-formulation)).
+After solving the stage $t$ subproblem for trial state $\hat{x}_{t-1}$ and scenario $\omega_t$, the cut coefficients are derived from the LP **reduced costs** of the pinned incoming-state columns — the columns whose lower and upper bounds were set equal to the incoming state value (see [State Augmentation §2](/math/state-augmentation#2-pinning-by-column-bounds)).
 
 Both storage and inflow lags use the same pattern: an incoming-state LP variable is pinned to the trial value by equal column bounds, and the reduced cost of that column gives the cut coefficient directly:
 
@@ -44,7 +44,7 @@ Both storage and inflow lags use the same pattern: an incoming-state LP variable
 | Incoming storage (hydro $h$)   | $\bar{c}^{in}_h$         | $\beta^v_{t,h} = \bar{c}^{in}_h / d^{col}_h$                         | \$/hm³    |
 | AR lag (hydro $h$, lag $\ell$) | $\bar{c}^{lag}_{h,\ell}$ | $\beta^{lag}_{t,h,\ell} = \bar{c}^{lag}_{h,\ell} / d^{col}_{h,\ell}$ | \$/(m³/s) |
 
-where $d^{col}$ is the per-column prescaler factor that unscales the reduced cost; a further factor $K$ converts to original cost units at the reporting boundary (see [LP Formulation §12 (LP Scaling)](/math/lp-formulation#12-lp-scaling)). When the study has in-transit water or anticipated thermals, each incoming bucket column and each incoming commitment-ring slot column contributes one coefficient by the same rule; the coefficient multiplies the matching outgoing column of the cut's stage ([LP Formulation — Ring-Slot Cut Coefficient](/math/lp-formulation#ring-slot-cut-coefficient)).
+where $d^{col}$ is the per-column prescaler factor that unscales the reduced cost; a further factor $K$ converts to original cost units at the reporting boundary (see [LP Layout and Scaling §2](/math/lp-layout-and-scaling#2-lp-scaling)). When the study has in-transit water or anticipated thermals, each incoming bucket column and each incoming commitment-ring slot column contributes one coefficient by the same rule; the coefficient multiplies the matching outgoing column of the cut's stage ([State Augmentation §3](/math/state-augmentation#3-outgoing-state-and-the-cut-row); [State Augmentation — Ring-Slot Cut Coefficient](/math/state-augmentation#ring-slot-cut-coefficient)).
 
 The cut intercept ensures the cut passes through the trial point:
 
@@ -54,12 +54,12 @@ $$
 
 where $Q_t(\hat{x}_{t-1}, \omega_t)$ is the optimal objective value of the stage $t$ subproblem and the product $\beta_t^{\top} \hat{x}_{t-1}$ runs over the components the cut projects onto (§1), each coefficient paired with the trial value of its own component: storage and inflow lags when the stage keeps them, buckets and ring slots always. A component the cut projects out contributes no product term; its linear term at the trial value is folded into the intercept ([§4](#4-cut-validity), condition 4). The trial state $\hat{x}_{t-1}$ this intercept is anchored at is the canonicalized (read-back-clamped) outgoing state of the previous stage's forward solve — its LP primal projected onto its admissible bounds — so the pinned incoming-state columns and the intercept share one in-box anchor (see [SDDP Algorithm §3.1](/math/sddp-algorithm#31-forward-pass)).
 
-**Sign convention**: By the LP envelope theorem, $\partial Q_t / \partial \hat{x}_j = \beta_j$, the sensitivity of the optimal value to the pinned incoming state. For a column pinned at $\underline{x}_j = \bar{x}_j = \hat{x}_j$, that sensitivity is exactly the column's reduced cost — equal, by KKT parity, to the multiplier the former equality row $x^{in}_j = \hat{x}_j$ would have carried — so the cut coefficient is taken directly from the reduced cost with no sign flip (after the per-column unscaling above). The reduced cost automatically captures all downstream effects: for storage, this includes contributions from the water balance, FPHA hyperplanes, and any generic constraints that reference the incoming storage variable $v^{in}_h$ (see [LP Formulation](/math/lp-formulation)).
+**Sign convention**: By the LP envelope theorem, $\partial Q_t / \partial \hat{x}_j = \beta_j$, the sensitivity of the optimal value to the pinned incoming state. For a column pinned at $\underline{x}_j = \bar{x}_j = \hat{x}_j$, that sensitivity is exactly the column's reduced cost — equal, by KKT parity, to the multiplier the equivalent equality row $x^{in}_j = \hat{x}_j$ would have carried — so the cut coefficient is taken directly from the reduced cost with no sign flip (after the per-column unscaling above). The reduced cost automatically captures all downstream effects: for storage, this includes contributions from the water balance, FPHA hyperplanes, and any generic constraints that reference the incoming storage variable $v^{in}_h$ (see [LP Formulation](/math/lp-formulation)).
 
 **Storage coefficient sign**: more incoming storage lowers $Q_t$ wherever the extra water displaces thermal generation or deficit, in this stage or a later one, so the storage coefficient is non-positive there; it can turn positive where the extra water can only leave the reservoir at a cost, such as a spillage cost or an outflow-limit penalty.
 
 :::note[Design note]
-This "fishing" approach (pinning an incoming-state LP variable to the trial value and reading its sensitivity) is the standard technique used by SDDP.jl and other modern SDDP implementations. Cobre realises it through **column bounds** rather than an equality row: a bound-pinned column's reduced cost is the sensitivity, which removes the $N(1+P^{\max})$ redundant equality rows per stage, plus one per bucket and ring slot, while keeping the property that one value per state coordinate captures all downstream effects automatically. See [LP Formulation §4a](/math/lp-formulation).
+Pinning an incoming-state column to the trial value and reading its reduced cost gives the sensitivity directly. Cobre realises it through **column bounds** rather than an equality row: a bound-pinned column's reduced cost is the sensitivity, which removes the $N(1+P^{\max})$ redundant equality rows per stage, plus one per bucket and ring slot, while keeping the property that one value per state coordinate captures all downstream effects automatically. See [State Augmentation §2](/math/state-augmentation#2-pinning-by-column-bounds).
 :::
 
 ### Cut dimension: the enabled state subset
@@ -113,7 +113,7 @@ Here $\beta_i$ is read as zero on every component the cut projects out, so the c
 1. **Convexity of the cost-to-go in the incoming state** — the incoming state enters each stage problem affinely, through the bounds of its pinned columns; [Tier 1](#tier-1-valid-lower-bound) names what breaks it.
 2. **Relatively complete recourse** — feasibility for all states and scenarios. In Cobre, this is guaranteed by the recourse slack system (Category 1 penalties): every constraint that could be violated by exogenous uncertainty has a penalty slack variable, ensuring the LP is always feasible. See [Penalty System](/math/penalty-system).
 3. **Correct sensitivity extraction** — the reduced costs used as cut coefficients must come from an optimal LP solution (not an infeasible or unbounded one)
-4. **Cuts span every state component the cost-to-go depends on** — the intercept absorbs the contribution of every component the cut projects out ([Cut dimension](#cut-dimension-the-enabled-state-subset)), at its trial value, so the cut is guaranteed to lie below the cost-to-go only on the slice through the trial point where those components keep their trial values. When the cost-to-go depends on such a component, as it depends on the inflow lags under a PAR(p > 0) model, $\underline{z}^k$ is not guaranteed to be a lower bound and the gap is not a certificate.
+4. **Cuts span every state component the cost-to-go depends on** — the intercept absorbs the contribution of every component the cut projects out ([State Augmentation §7](/math/state-augmentation#7-cut-state-projection)), at its trial value, so the cut is guaranteed to lie below the cost-to-go only on the slice through the trial point where those components keep their trial values. When the cost-to-go depends on such a component, as it depends on the inflow lags under a PAR(p > 0) model, $\underline{z}^k$ is not guaranteed to be a lower bound and the gap is not a certificate.
 
 ### When Bounds and Certificates Hold
 
@@ -132,7 +132,7 @@ At every iteration $k$, $\underline{z}^k$ is at most the optimal value of the mo
 - **Convexity.** The cost-to-go of every stage is convex in the incoming state: the incoming state enters each stage problem affinely, through the bounds of its pinned columns. The truncation methods of [Inflow Non-Negativity](/math/inflow-nonnegativity) break this in the inflow-lag components under a PAR(p > 0) model, because the noise floor they impose is solved from the trial point's lags; keeping the lag components in the cut does not restore it. Without a non-negativity method, or with the penalty method, the inflow stays affine in the lags.
 - **Relatively complete recourse.** Every stage problem is feasible for every incoming state and realization, which the penalty slacks of [Penalty System](/math/penalty-system) provide.
 - **Exact cuts.** Every cut is exact at its trial point and below the risk-adjusted cost-to-go everywhere: the backward pass solves the stage problem of every successor–opening pair to optimality and combines their cuts with probabilities from the risk set of the stage's coherent risk measure that attain that measure at the trial point.
-- **Full state span.** The cuts span every state component the cost-to-go depends on. When a component the cost-to-go depends on is projected out of the cut ([Cut dimension](#cut-dimension-the-enabled-state-subset)), the cut is guaranteed to lie below the cost-to-go only where that component equals its trial value.
+- **Full state span.** The cuts span every state component the cost-to-go depends on. When a component the cost-to-go depends on is projected out of the cut ([State Augmentation §7](/math/state-augmentation#7-cut-state-projection)), the cut is guaranteed to lie below the cost-to-go only where that component equals its trial value.
 - **Non-negative cost-to-go.** The cost-to-go of every stage is non-negative. The future-cost variable $\theta$ is bounded below by zero, so the approximation lies below the cost-to-go only where that cost-to-go is non-negative.
 - **Fixed terminal function.** The terminal function is fixed for the whole run: zero, or an imported terminal boundary ([Post-Study Boundary & Chained Studies](/math/post-study-boundary)).
 
@@ -296,7 +296,7 @@ See [Determinism & Provenance](/math/determinism-guarantees).
 
 ## 10. Selection Parameters
 
-The table maps each key of the `training.cut_selection` object to its symbol on this page, where it has one, and to the methods that read it; the Configure tab under [Implementation in Cobre](#implementation-in-cobre) gives each key's type, default and constraints.
+The table maps each key of the `training.cut_selection` object to its symbol on this page, where it has one, and to the methods that read it; [`training.cut_selection`](/running/configuration/#trainingcut_selection) gives each key's type, default and constraints.
 
 | Math symbol                 | Config key                       | Applies to                     |
 | --------------------------- | -------------------------------- | ------------------------------ |
@@ -323,7 +323,8 @@ The methodology above defines the complete Benders cut lifecycle; the tabs below
 
 ## Cross-References
 
-- [LP Formulation](/math/lp-formulation) — Column-bound state pinning whose reduced costs give cut coefficients; Benders cut constraints in the LP
+- [LP Formulation](/math/lp-formulation) — Benders cut constraints in the LP
+- [State Augmentation](/math/state-augmentation) — Column-bound state pinning whose reduced costs give cut coefficients; cut-state projection onto the state components each stage selects
 - [LP Warm-Start](/math/lp-warm-start) — Stored-basis warm-start of stage solves; a DCS solve does not apply it (§8.4)
 - [PAR Inflow Model](/math/par-inflow-model) — AR lag state variables that appear in cut coefficients
 - [SDDP Algorithm](/math/sddp-algorithm) — Forward/backward pass structure that drives cut generation

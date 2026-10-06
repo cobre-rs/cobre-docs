@@ -75,6 +75,9 @@ an MPICH built for PMIx, as on this page, launch with `srun --mpi=pmix` (see
 Windows and Intel macOS have no pre-built MPI archive — build from source
 (Option 2) on those platforms.
 
+The x86-64 Linux `cobre-mpi` uses AVX2 and FMA instructions and needs a
+processor that supports them.
+
 The Linux binaries are dynamically linked against `libmpi.so.12` (the MPICH 4.x
 ABI). They do **not** bundle an MPI runtime — you supply one at run time (see
 [Building MPICH from source](#building-mpich-from-source)). Any MPICH-ABI-compatible
@@ -107,6 +110,10 @@ The binary is written to `target/release/cobre`. The build reads the MPI
 headers and link flags through `pkg-config`, so ensure `PKG_CONFIG_PATH`
 includes your MPICH `lib/pkgconfig` directory.
 
+On x86-64 Linux the source tree's `.cargo/config.toml` enables AVX2 and FMA for
+the build, so the binary needs a processor that supports them, as the pre-built
+archive does, unless a `RUSTFLAGS` environment variable replaces that setting.
+
 :::note[NUMA topology]
 `cobre-cli` has no `numa` feature of its own; the ferrompi NUMA extension is a
 feature of the `cobre-comm` crate (`numa = ["mpi", "ferrompi/numa"]`). Enable it
@@ -117,9 +124,11 @@ cargo build --release --features mpi,cobre-comm/numa -p cobre-cli
 ```
 
 With it on, the topology also carries the SLURM job metadata (job ID, node
-list, CPUs per task): the post-run summary prints a `SLURM:` line and
+list, CPUs per task): the `Execution` block of the run banner prints a `SLURM:` line and
 `distribution.slurm_job_id` in `training/metadata.json` /
-`simulation/metadata.json` is populated. It is optional and off by default.
+`simulation/metadata.json` is populated. It is optional and off by default. The
+pre-built `cobre-mpi` archive is built without this feature, so its runs print
+no `SLURM:` line and write no `distribution.slurm_job_id`.
 :::
 
 ---
@@ -257,17 +266,19 @@ the same path on every node because every rank reads it.
 ### Hybrid MPI + threads
 
 Cobre uses MPI for inter-node communication and rayon threads for intra-node LP
-solves. The standard mapping is **one rank per node**, with each rank's thread
-pool sized to the cores allocated to it:
+solves. The launch below runs one rank per node, with the thread pool sized as
+set out in [Sizing and scaling](#sizing-and-scaling):
 
 ```bash
 srun --mpi=pmix --nodes=4 --ntasks-per-node=1 --cpus-per-task=96 --exclusive \
     ./cobre-mpi run <case-dir> --threads 96
 ```
 
-Set `--threads` equal to `--cpus-per-task` so each rank's rayon pool fills its
-node. `--exclusive` gives each rank a whole node with no co-tenants competing
-for cores or memory bandwidth.
+In this command `--threads 96` matches `--cpus-per-task=96`, so each rank's
+rayon pool has one thread per allocated core. `--exclusive` gives each rank a
+whole node with no co-tenants competing for cores or memory bandwidth. The `4`
+nodes and the `96` cores are illustrative: set them to the allocation your job
+needs.
 
 ### Batch script
 
@@ -329,11 +340,43 @@ Check what your cluster offers with `srun --mpi=list`.
 
 ---
 
+## Sizing and scaling
+
+No measured scaling data is published, so these rules relate ranks, threads,
+forward passes and memory to one another instead of giving node or core counts;
+[Performance Accelerators → Parallel Execution Model](/running/performance/#parallel-execution-model)
+holds the facts behind them.
+
+1. Run one rank per node, with `--threads` equal to the cores allocated to the rank
+   (`--cpus-per-task`). Each LP solve runs on one thread, so a rank solves at
+   most `--threads` LPs at a time.
+2. Run every rank with the same `--threads`. Under a sampled forward pass, the
+   run stops with an error when ranks differ in `--threads`.
+3. Under the `sampled` method, set `training.selection.forward_passes` and
+   `simulation.selection.num_scenarios` to at least the rank count times
+   `--threads`, and to a multiple of it for equal shares. On more than one rank with `--threads` above `1`, a `forward_passes` that is not a multiple of the rank count stops one rank with an `index out of bounds` error while the other ranks wait, so the job runs until its wall time. Trajectories and
+   scenarios are split over the ranks and then over each rank's workers, and a
+   worker left without work idles.
+4. Size each node's memory for one rank's full copy of the case, the opening
+   tree, the cut pool and the stage templates. Each rank holds its own copy, so
+   each extra rank on a node adds another, and the cut pool scales with the
+   iteration budget and the forward passes.
+5. Before adding ranks or threads, read the printed `Time split` and the knob table in
+   [Performance Accelerators → Diagnosing Performance](/running/performance/#diagnosing-performance).
+   The lower-bound evaluation runs serially on rank 0, and under a sampled
+   forward pass every rank waits on the per-stage cut exchange, so neither
+   shrinks with more ranks or threads.
+6. Place the case directory as the `<case-dir>` definition under
+   [Running under SLURM](#running-under-slurm) requires.
+
+---
+
 ## Resuming a job
 
 A job writes its checkpoint only when training ends. A job killed at its `--time`
 writes none and loses its iterations, and the next job resumes from the last
-checkpoint written (see [Resume](/running/policy-management/#resume)).
+complete checkpoint. A job killed while it writes the checkpoint leaves none, because
+the write removes the previous checkpoint first (see [Resume](/running/policy-management/#resume)).
 
 To fit a long training into wall-time-limited jobs, split it into slices, one
 batch job each, and submit the next slice after the previous one ends. Every
@@ -350,7 +393,7 @@ export in a slice that enables simulation (`simulation.enabled` set to `true`; t
 default is off). The checkpoint is written before simulation starts, so a job
 killed during simulation keeps that slice's checkpoint.
 
-After editing `<case-dir>/config.json` as above, submit each slice as its own batch job
+After editing `<case-dir>/config.json` as above, submit each slice
 on the same `<case-dir>`. The batch script passes no `--output`, so every slice uses `<case-dir>/output` on the shared
 filesystem, and every rank loads the previous checkpoint from it:
 
@@ -470,21 +513,17 @@ regression described above. Downgrade to MPICH 4.2.x.
 
 ## Verifying your setup
 
-Cobre's MPI results are **rank-count invariant**: for a given case, the
-classified output files are decoded-value bit-identical whether you run on one
-rank or many, and whether the ranks sit on one node or several. Only wall-clock
-timing columns and the per-rank/per-worker execution-topology tables legitimately
-differ. This holds for a stopping-rule set without `time_limit`: a wall-clock stop
-depends on timing, and a multi-rank run leaves it out
-([`time_limit`](/running/configuration/#time_limit)). The invariance holds for
-`policy.boundary` runs too: an imported terminal
-boundary policy is reconciled onto the study's own state once and the reconciled
-boundary pool is applied on every rank, so a boundary-coupled run is rank-count
-invariant like any other — see
-[Compatibility requirements](/running/policy-management/#compatibility-requirements)
-for how that boundary pool is reconciled. This means you can develop and validate on a single rank and scale out
-to the full fleet without changing results — the broader guarantee is documented
-in [Determinism Guarantees](/math/determinism-guarantees/).
+For one `cobre-mpi` binary, with every node running the same system image on one
+processor model (the same libm, libstdc++ and MPI library), the numerical content
+of the output files is bit-identical at any rank count and at any thread count
+(the same `--threads` on every rank); timestamps, wall-clock timing columns and
+the recorded execution topology differ. The guarantee
+holds for a stopping-rule set without `time_limit`: a wall-clock stop depends on
+timing, and a multi-rank run leaves it out
+([`time_limit`](/running/configuration/#time_limit)). Validate on one rank with
+`cobre-mpi` itself, because the single-process `cobre` is a different build
+whose results are not promised equal. The full statement is in
+[Determinism & Provenance](/math/determinism-guarantees/).
 
 Check your setup in three steps. Each step catches a different failure.
 
@@ -506,12 +545,15 @@ Check your setup in three steps. Each step catches a different failure.
        <shared-path>/cobre-mpi run <case-dir> --threads 2
    ```
 
-   Only rank 0 prints the `Execution` banner, so it must appear **once** and
-   read:
+   Only rank 0 prints the `Execution` banner, so it must appear **once**. Its
+   `Backend` and `Layout` lines on a multi-node job have this format, followed by
+   one host line per node (`{rank_word}` is `rank` or `ranks`; `{range}` lists the
+   host's ranks, such as `0–1`):
 
    ```text
-     Backend:   MPI (...)
-     Layout:    2 ranks across 2 nodes
+     Backend:   MPI ({library_version}, {standard_version})
+     Layout:    {world_size} {rank_word} across {num_hosts} nodes
+       {hostname}: ranks {range}  ({count} {rank_count_word})
    ```
 
    If the banner appears twice, each copy reading `Layout: 1 rank on <host>`,
@@ -525,5 +567,5 @@ Check your setup in three steps. Each step catches a different failure.
 - [Performance Accelerators](/running/performance/#parallel-execution-model) — the parallel-execution model MPI drives
 - [Running Studies](/running/running-studies/#communication-backend) — the `--comm-backend` flag and single-node threading
 - [CLI Reference](/reference/cli-reference/) — complete flag and subcommand reference
-- [Determinism Guarantees](/math/determinism-guarantees/) — why results are rank-count invariant
+- [Determinism & Provenance](/math/determinism-guarantees/) — the per-binary reproducibility guarantee
 - [Installation](/getting-started/installation/) — standard (single-process) install paths

@@ -1,11 +1,11 @@
 ---
 title: Notation Conventions
-description: Complete mathematical notation reference — index sets, parameters, decision variables, and dual variables used across all Cobre specification documents.
+description: Complete mathematical notation reference — index sets, parameters, decision variables, and dual variables used across the Cobre methodology chapters.
 ---
 
 ## Purpose
 
-This spec defines the complete mathematical notation used across all Cobre specification documents: index sets, parameters, decision variables, and dual variables. It serves as the canonical reference for symbol meanings, ensuring consistency across all math and data model specs.
+This chapter defines the complete mathematical notation used across the Cobre methodology chapters: index sets, parameters, decision variables, and dual variables. It serves as the canonical reference for symbol meanings, ensuring consistency across the methodology chapters.
 
 ## 1. General Notation Conventions
 
@@ -67,7 +67,7 @@ A glyph takes a second meaning only on pages that never carry its first; each su
 - $k$ indexes the blocks of a stage, $k \in \mathcal{K}$, in the System Modelling chapters and [Scenario Generation](/math/scenario-generation); it counts training iterations in [SDDP Algorithm](/math/sddp-algorithm), [Cut Management](/math/cut-management), [LP Warm-Start](/math/lp-warm-start), [Stopping Rules](/math/stopping-rules), [Upper Bound Evaluation](/math/upper-bound-evaluation), [Horizon Modes](/math/horizon-modes), [Discount Rate](/math/discount-rate), [The SDDP Framework in One Page](/overview/sddp-framework-overview) and the worked examples; in [PAR(p) Inflow Model](/math/par-inflow-model) it is the candidate order of the partial-autocorrelation test.
 - $k_{max}$ is the number of slots in every anticipated thermal's commitment ring in [State Augmentation](/math/state-augmentation); in [Stopping Rules](/math/stopping-rules) it is the iteration limit.
 - $\ell$ is the lag index of the autoregressive inflow model; in [Stopping Rules](/math/stopping-rules) and [Upper Bound Evaluation](/math/upper-bound-evaluation) it indexes the leaf paths of an enumerated scenario tree.
-- $\lambda$ is the risk-aversion weight of the convex-combination risk measure; in [PAR(p) Inflow Model](/math/par-inflow-model) $\lambda_i$ are the eigenvalues of the correlation matrix, and in [LP Formulation](/math/lp-formulation), [System Elements](/math/system-elements) and [Hydro Production Models](/math/hydro-production-models) $\lambda_{h,b}$ is the share of cell $(h, b)$ in the turbine capacity of plant $h$.
+- $\lambda$ is the risk-aversion weight of the convex-combination risk measure; in [PAR(p) Inflow Model](/math/par-inflow-model) $\lambda_i$ are the eigenvalues of the correlation matrix, and in [LP Formulation](/math/lp-formulation), [Block Formulations](/math/block-formulations) and [Hydro Production Models](/math/hydro-production-models) $\lambda_{h,b}$ is the share of cell $(h, b)$ in the turbine capacity of plant $h$.
 - $L$ is the last filling stage of a filling hydro in [LP Formulation](/math/lp-formulation) and [Penalty System](/math/penalty-system); in [PAR(p) Inflow Model](/math/par-inflow-model) it is the lower-triangular Cholesky factor of the correlation matrix, and in [Upper Bound Evaluation](/math/upper-bound-evaluation) $L_t$ is the vector of per-state-component Lipschitz constants $L_{t,j}$ of the stage-$t$ value function.
 - $\psi_{m,\ell}$ is the autoregressive coefficient of the inflow model ($\psi^*_{m,\ell}$ standardized; $\psi^{A*}_m$ and $\psi^A_m$ the annual coefficient of PAR(p)-A); in [Risk Measures](/math/risk-measures) $\psi(p, \mu)$ is the penalty function of the dual representation of a convex risk measure.
 - A hat on a state quantity marks its incoming (trial) value ($\hat{x}_{t-1}$, $\hat{v}_h$, $\hat{a}_{h,\ell}$); a hat on a model parameter marks its sample estimate from the historical record ($\hat{\mu}_m$, $\hat{s}_m$, $\hat{\rho}_m(\ell)$); the two never decorate the same base symbol.

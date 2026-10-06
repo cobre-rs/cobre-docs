@@ -1,0 +1,139 @@
+---
+title: Hydro Model Artifacts
+description: The hydro-model files cobre run writes — the production- and evaporation-model summary and the fitted hyperplane, evaporation and deviation-point tables.
+---
+
+`training/hydro_models.json` summarizes the production and evaporation models in use; the three files after it are the tables Cobre writes to the `hydro_models/` directory.
+
+The `hydro_models/` directory holds the three files that follow `training/hydro_models.json`. Each is written only when
+it has rows — fitted FPHA planes, evaporation models, or, with
+`exports.fpha_deviation_points` set to `true`, deviation points — and the
+directory is absent when none is written.
+
+---
+
+## `training/hydro_models.json`
+
+Aggregated production- and evaporation-model counts, plus per-hydro detail for
+every plant that uses an FPHA production model. Always written.
+
+**Methodology:** [Hydro Production Function Models](/math/hydro-production-models)
+
+Top-level object:
+
+| Name                     | Type    | Nullable | Units | Description                                                                                                                                                                                                        |
+| ------------------------ | ------- | -------- | ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `n_constant`             | integer | No       | —     | Number of hydro plants with constant productivity at every stage: plants whose production-model entries select no FPHA model, and computed-FPHA plants with no turbine capacity (modelled with zero productivity). |
+| `n_fpha`                 | integer | No       | —     | Number of hydro plants with precomputed or computed FPHA hyperplanes in at least one production-model entry; a computed-FPHA plant with no turbine capacity is counted in `n_constant` instead.                    |
+| `total_planes`           | integer | No       | —     | Sum of `n_planes` over `fpha_details`: each FPHA plant's hyperplanes at the first study stage.                                                                                                                     |
+| `fpha_details`           | array   | No       | —     | Per-hydro detail for each plant counted in `n_fpha` (see below).                                                                                                                                                   |
+| `n_evaporation`          | integer | No       | —     | Number of hydro plants with a linearized evaporation model.                                                                                                                                                        |
+| `n_no_evaporation`       | integer | No       | —     | Number of hydro plants with no evaporation model.                                                                                                                                                                  |
+| `n_user_supplied_ref`    | integer | No       | —     | Number of evaporation plants that used user-supplied reference volumes.                                                                                                                                            |
+| `n_default_midpoint_ref` | integer | No       | —     | Number of evaporation plants that used the default midpoint reference.                                                                                                                                             |
+
+**`fpha_details[]` fields:**
+
+| Name                      | Type    | Nullable | Units | Description                                                                                                  |
+| ------------------------- | ------- | -------- | ----- | ------------------------------------------------------------------------------------------------------------ |
+| `fpha_details[].hydro_id` | integer | No       | —     | Entity identifier of the hydro plant.                                                                        |
+| `fpha_details[].name`     | string  | No       | —     | Human-readable name of the hydro plant.                                                                      |
+| `fpha_details[].source`   | string  | No       | —     | Origin of the plant's hyperplanes: `"precomputed_hyperplanes"` or `"computed_from_geometry"`.                |
+| `fpha_details[].n_planes` | integer | No       | —     | Number of the plant's hyperplanes at the first study stage (`0` when that stage uses constant productivity). |
+
+---
+
+## `hydro_models/fpha_hyperplanes.parquet`
+
+Fitted FPHA hyperplane coefficients for every hydro whose computed fit produced
+planes in the current run; a computed-FPHA plant with no turbine capacity has
+none. The schema is identical to the input file
+`system/fpha_hyperplanes.parquet`: 11 columns, all with the same names, types, and nullability.
+
+**Methodology:** [Hydro Production Function Models](/math/hydro-production-models)
+
+| Name              | Type    | Nullable | Units     | Description                                               |
+| ----------------- | ------- | -------- | --------- | --------------------------------------------------------- |
+| `hydro_id`        | Int32   | No       | —         | Hydro plant ID                                            |
+| `stage_id`        | Int32   | Yes      | —         | Stage the plane applies to. `null` = valid for all stages |
+| `plane_id`        | Int32   | No       | —         | Plane index within this hydro (and stage)                 |
+| `gamma_0`         | Float64 | No       | MW        | Intercept coefficient (MW), unscaled                      |
+| `gamma_v`         | Float64 | No       | MW/hm³    | Volume coefficient (MW/hm³)                               |
+| `gamma_q`         | Float64 | No       | MW/(m³/s) | Turbined flow coefficient (MW per m³/s)                   |
+| `gamma_s`         | Float64 | No       | MW/(m³/s) | Spillage coefficient (MW per m³/s)                        |
+| `kappa`           | Float64 | Yes      | —         | Correction factor. Defaults to `1.0` when absent or null. |
+| `valid_v_min_hm3` | Float64 | Yes      | hm³       | Volume range minimum where this plane is valid (hm³)      |
+| `valid_v_max_hm3` | Float64 | Yes      | hm³       | Volume range maximum where this plane is valid (hm³)      |
+| `valid_q_max_m3s` | Float64 | Yes      | m³/s      | Maximum turbined flow where this plane is valid (m³/s)    |
+
+In a written file every row carries a `stage_id` and `kappa` is `1.0`; the
+three `valid_*` columns are `null`. The file is written atomically (via a `.tmp`
+rename), with rows in canonical hydro order, then stage and plane order; the
+input loader sorts them by `(hydro_id, stage_id, plane_id)`. It can be used
+directly as a future `source: "precomputed"` input by copying it to
+`system/fpha_hyperplanes.parquet`. A computed-FPHA plant with no turbine capacity
+has no rows in the file. With the file in `system/`, every plant on the FPHA
+model needs rows, whatever its `source`; otherwise the case is rejected at load
+with `Hydro … is configured with FPHA model but has no FPHA hyperplanes`. Before
+the copy, switch the no-capacity plant to `"constant_productivity"` in both
+`hydros.json` (`generation.model`) and its `hydro_production_models.json`
+entries (see
+[Hydro Production Models — Implementation notes](/math/hydro-production-models#implementation-in-cobre)).
+Give the plant a productivity value from exactly one source: `productivity_mw_per_m3s`
+on the production-model entry, or an `equivalent_productivity_mw_per_m3s` row of
+`system/hydro_energy_productivity.parquet` (`0` marks a planned outage). With
+none, the case is rejected with
+`no productivity_mw_per_m3s available for (hydro_id=…, stage_id=…)`; supplying
+both sources is also rejected.
+
+See [Case Directory Format — `system/fpha_hyperplanes.parquet`](/reference/case-directory-format/#systemfpha_hyperplanesparquet)
+for the full column definitions and validity constraints.
+
+---
+
+## `hydro_models/evaporation_models.parquet`
+
+Written when any hydro plant has an evaporation model. Contains the fitted
+evaporation coefficients for all plants that have evaporation, keyed by
+`(hydro_id, stage_id)`. Rows with `stage_id = null` are per-hydro defaults.
+
+**Methodology:** [LP Formulation](/math/lp-formulation)
+
+Six columns:
+
+| Name                       | Type    | Nullable | Units      | Description                                                       |
+| -------------------------- | ------- | -------- | ---------- | ----------------------------------------------------------------- |
+| `hydro_id`                 | Int32   | No       | —          | Hydro plant identifier                                            |
+| `stage_id`                 | Int32   | Yes      | —          | Stage; `null` = per-hydro default applicable to all stages        |
+| `intercept_m3s`            | Float64 | No       | m³/s       | Evaporation intercept coefficient (m³/s)                          |
+| `volume_slope_m3s_per_hm3` | Float64 | No       | (m³/s)/hm³ | Volume-dependent slope coefficient (m³/s per hm³)                 |
+| `reference_volume_hm3`     | Float64 | No       | hm³        | Reference volume used for linearisation (hm³)                     |
+| `source`                   | Utf8    | No       | —          | Derivation label (e.g. `"default_midpoint"` or `"user_supplied"`) |
+
+---
+
+## `hydro_models/fpha_deviation_points.parquet`
+
+Written only when `exports.fpha_deviation_points: true` is set in `config.json`.
+Contains one row per `(hydro, stage, V, Q)` grid point at spillage = 0, recording
+how closely the fitted FPHA plane set approximates the exact production function at
+each sample point. Opt-in because it can be large (one row per grid-point combination
+for each computed-FPHA plant and stage).
+
+**Methodology:** [Hydro Production Function Models](/math/hydro-production-models)
+
+Eight columns:
+
+| Name          | Type    | Nullable | Units | Description                                                                                                   |
+| ------------- | ------- | -------- | ----- | ------------------------------------------------------------------------------------------------------------- |
+| `hydro_id`    | Int32   | No       | —     | Hydro plant identifier                                                                                        |
+| `stage_id`    | Int32   | Yes      | —     | Stage. Nullable in the schema; always set in written output.                                                  |
+| `v`           | Float64 | No       | hm³   | Volume sample point (hm³)                                                                                     |
+| `q`           | Float64 | No       | m³/s  | Turbined-flow sample point (m³/s)                                                                             |
+| `fph_exact`   | Float64 | No       | MW    | Exact production function value at this (V, Q) point (MW)                                                     |
+| `fpha_fitted` | Float64 | No       | MW    | Fitted FPHA approximation at this (V, Q) point (MW)                                                           |
+| `deviation`   | Float64 | No       | MW    | Signed residual `fpha_fitted − fph_exact` (MW); positive = fitted cap above the exact surface                 |
+| `relative`    | Float64 | No       | —     | `\|deviation\|` relative to the grid's peak exact generation (dimensionless, ≥ 0); `0` when the grid peak ≤ 0 |
+
+The values are a pure function of geometry and config — the file is reproducible
+when emitted and never enters the parity hash.

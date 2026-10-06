@@ -1,0 +1,111 @@
+---
+// Render layer — Observable Plot island for the four-reservoir walkthrough
+// (examples/toy-four-reservoir §6). Reads the theme palette from CSS vars and
+// re-renders on the light/dark toggle. Data comes from the tested compute
+// module (figures/toyFourSlopes.ts), never hand-typed.
+---
+
+<div
+  id="toy-four-slopes-plot"
+  class="vf-plot"
+  role="img"
+  aria-label="Storage cut slopes of the four-reservoir walkthrough's iteration-1 stage-3 cut: bars for the probability-weighted slopes of H1 to H4, −50, −100/3, −50/3 and 0, with a dot for each opening's reduced cost"
+>
+</div>
+
+<script>
+  import * as Plot from "@observablehq/plot";
+  import { figureData } from "../figures/toyFourSlopes.ts";
+
+  function cssVar(name: string): string {
+    return getComputedStyle(document.documentElement)
+      .getPropertyValue(name)
+      .trim();
+  }
+
+  function render(): void {
+    const el = document.getElementById("toy-four-slopes-plot");
+    if (!el) return;
+
+    // The bars are per-reservoir water values -> Flow Blue (--dgm-hydro). The
+    // per-opening dots are not hydro -> the warm accent (Patina), brand §2.4
+    // #3. Literals mirror the palette.css fallbacks.
+    const hydro = cssVar("--dgm-hydro") || "#4a90b8";
+    const accent = cssVar("--dgm-accent") || "#4a8b6f";
+    const text = cssVar("--dgm-text") || "#c8c6c2";
+
+    const rows = figureData();
+    const spread = 14;
+    const openings = rows[0].perOpening.map((_, i) => i);
+    const centre = (openings.length - 1) / 2;
+    const legend = [
+      {
+        label: "probability-weighted slope",
+        symbol: "square",
+        fill: hydro,
+        dy: -34,
+      },
+      {
+        label: "reduced cost of each opening, in opening order left to right",
+        symbol: "circle",
+        fill: accent,
+        dy: -16,
+      },
+    ];
+
+    el.replaceChildren(
+      Plot.plot({
+        width: 640,
+        height: 420,
+        marginTop: 78,
+        marginRight: 20,
+        marginBottom: 48,
+        marginLeft: 60,
+        style: { background: "transparent", color: text, fontSize: "13px" },
+        x: {
+          label: "reservoir",
+          domain: rows.map((row) => row.hydro),
+          padding: 0.4,
+        },
+        y: { label: "storage cut slope β̄ᵛₕ", grid: true, domain: [-55, 5] },
+        marks: [
+          Plot.barY(rows, { x: "hydro", y: "slope", fill: hydro }),
+          ...openings.map((i) =>
+            Plot.dot(rows, {
+              x: "hydro",
+              y: (row) => row.perOpening[i],
+              dx: (i - centre) * spread,
+              fill: accent,
+              stroke: text,
+              r: 5,
+            }),
+          ),
+          Plot.ruleY([0], { stroke: text }),
+          ...legend.flatMap((entry) => [
+            Plot.dot([entry], {
+              frameAnchor: "top-left",
+              symbol: entry.symbol,
+              r: 5,
+              dx: 8,
+              dy: entry.dy,
+              fill: entry.fill,
+            }),
+            Plot.text([entry], {
+              frameAnchor: "top-left",
+              text: "label",
+              textAnchor: "start",
+              dx: 22,
+              dy: entry.dy,
+            }),
+          ]),
+        ],
+      }),
+    );
+  }
+
+  render();
+  new MutationObserver(render).observe(document.documentElement, {
+    attributes: true,
+    attributeFilter: ["data-theme"],
+  });
+</script>

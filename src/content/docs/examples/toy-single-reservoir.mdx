@@ -3,6 +3,8 @@ title: Toy Single-Reservoir SDDP Walkthrough
 description: Hand-traceable one-reservoir SDDP walkthrough — two iterations of forward pass, backward pass, cut construction, and lower-bound update on a four-stage system with 0-order inflow.
 ---
 
+import ToySingleValuePlot from "../../../components/ToySingleValuePlot.astro";
+
 ## Purpose
 
 This chapter walks through two complete SDDP iterations on a deliberately
@@ -536,6 +538,16 @@ strictly below $V_3$ elsewhere, as at $v = 0$ and $v = 15$. Later
 iterations that visit other trial points, low-storage ones in
 particular, add cuts that raise the envelope where it is still below
 $V_3$.
+
+The figure plots the table: $V_3$ (solid), the iteration-1 and
+iteration-2 cuts on stage 2 (dashed), and their upper envelope with
+the floor $\theta \geq 0$, against the storage $v$ left at the end of
+stage 2. The envelope meets $V_3$ at the two trial points (marked), on
+$[20, 30]$ and for $v \geq 40$, where the floor and $V_3$ are both
+zero, and lies below it elsewhere. The plotted values come
+from a tested module that re-runs both iterations of this walkthrough.
+
+<ToySingleValuePlot />
 
 ---
 

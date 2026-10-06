@@ -1,0 +1,169 @@
+---
+title: Case Format
+description: The layout of a Cobre case directory, a map from each input file to the page that documents it, and the conventions shared by all case files.
+---
+
+A Cobre case directory is a self-contained folder that holds all input data
+for a single power system study. `cobre validate` loads and checks the
+directory without solving, and `cobre run` loads it before solving;
+load-time errors are listed in [Error Codes](/reference/error-codes/).
+
+The case files are documented as follows: `config.json` at the end of this page, and the other files on eight pages. The [File summary](#file-summary) below maps each file to its page and section.
+
+## Directory layout
+
+```
+my_case/
+├── config.json                              # Solver configuration (required)
+├── penalties.json                           # Global penalty defaults (required)
+├── stages.json                              # Stage sequence and policy graph (required)
+├── initial_conditions.json                  # Reservoir storage at study start (required)
+├── post_study_stages.json                   # Post-study boundary calendar + thermal bounds (optional)
+├── system/
+│   ├── buses.json                           # Electrical buses (required)
+│   ├── lines.json                           # Transmission lines (required)
+│   ├── hydros.json                          # Hydro plants (required)
+│   ├── thermals.json                        # Thermal plants (required)
+│   ├── non_controllable_sources.json        # Intermittent sources (optional)
+│   ├── pumping_stations.json                # Pumping stations (optional)
+│   ├── energy_contracts.json                # Bilateral contracts (optional)
+│   ├── hydro_geometry.parquet               # Reservoir geometry tables (optional)
+│   ├── hydro_production_models.json         # FPHA production function configs (optional)
+│   ├── hydro_energy_productivity.parquet    # Per-plant, per-stage energy-conversion overrides (optional)
+│   ├── fpha_hyperplanes.parquet             # FPHA hyperplane coefficients (optional)
+│   └── tailrace_curves.parquet              # Piecewise-quartic tailrace curves (optional)
+├── scenarios/
+│   ├── inflow_history.parquet               # Historical inflow series (optional)
+│   ├── inflow_seasonal_stats.parquet        # PAR model seasonal statistics (optional)
+│   ├── inflow_ar_coefficients.parquet       # PAR autoregressive coefficients (optional)
+│   ├── inflow_annual_component.parquet      # PAR(p)-A annual component (optional)
+│   ├── external_inflow_scenarios.parquet    # External inflow scenarios (optional)
+│   ├── external_load_scenarios.parquet      # External load scenarios (optional)
+│   ├── external_ncs_scenarios.parquet       # External NCS scenarios (optional)
+│   ├── load_seasonal_stats.parquet          # Load model seasonal statistics (optional)
+│   ├── load_factors.json                    # Load scaling factors (optional)
+│   ├── non_controllable_factors.json        # NCS block scaling factors (optional)
+│   ├── non_controllable_stats.parquet      # NCS stochastic availability (optional)
+│   ├── correlation.json                     # Cross-series correlation model (optional)
+│   └── noise_openings.parquet              # User-supplied backward-pass opening tree (optional)
+└── constraints/
+    ├── thermal_bounds.parquet               # Stage-varying thermal bounds (optional)
+    ├── hydro_bounds.parquet                 # Stage-varying hydro bounds (optional)
+    ├── hydro_unit_group_bounds.parquet      # Stage-varying hydro unit group bounds (optional)
+    ├── line_bounds.parquet                  # Stage-varying line bounds (optional)
+    ├── pumping_bounds.parquet               # Stage-varying pumping bounds (optional)
+    ├── contract_bounds.parquet              # Stage-varying contract bounds (optional)
+    ├── ncs_bounds.parquet                   # Stage-varying NCS available generation bounds (optional)
+    ├── generic_constraints.json             # User-defined LP constraints (optional)
+    ├── generic_constraint_bounds.parquet    # Bounds for generic constraints (optional)
+    ├── generic_parameters.json              # Named parameters for constraint expressions (optional)
+    ├── penalty_overrides_bus.parquet        # Stage-varying bus penalty overrides (optional)
+    ├── penalty_overrides_line.parquet       # Stage-varying line penalty overrides (optional)
+    ├── penalty_overrides_hydro.parquet      # Stage-varying hydro penalty overrides (optional)
+    └── penalty_overrides_ncs.parquet        # Stage-varying NCS penalty overrides (optional)
+```
+
+## File summary
+
+| File                                            | Format  | Required | Page                                                                                               | Description                                                                             |
+| ----------------------------------------------- | ------- | -------- | -------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| `config.json`                                   | JSON    | Yes      | [Case Format](#configjson)                                                                         | Solver configuration                                                                    |
+| `penalties.json`                                | JSON    | Yes      | [Penalty Files](/reference/case-directory-format/#penaltiesjson)                                   | Global penalty defaults                                                                 |
+| `stages.json`                                   | JSON    | Yes      | [Stage Files](/reference/case-directory-format/#stagesjson)                                        | Stage sequence and policy graph                                                         |
+| `initial_conditions.json`                       | JSON    | Yes      | [Initial Condition Files](/reference/case-directory-format/#initial_conditionsjson)                | Initial reservoir storage                                                               |
+| `post_study_stages.json`                        | JSON    | No       | [Stage Files](/reference/case-directory-format/#post_study_stagesjson)                             | Post-study boundary calendar and per-thermal delivery bounds                            |
+| `system/buses.json`                             | JSON    | Yes      | [System Entity Files](/reference/case-directory-format/#systembusesjson)                           | Electrical bus registry                                                                 |
+| `system/lines.json`                             | JSON    | Yes      | [System Entity Files](/reference/case-directory-format/#systemlinesjson)                           | Transmission line registry                                                              |
+| `system/hydros.json`                            | JSON    | Yes      | [Hydro Plant Files](/reference/case-directory-format/#systemhydrosjson)                            | Hydro plant registry                                                                    |
+| `system/thermals.json`                          | JSON    | Yes      | [System Entity Files](/reference/case-directory-format/#systemthermalsjson)                        | Thermal plant registry                                                                  |
+| `system/non_controllable_sources.json`          | JSON    | No       | [System Entity Files](/reference/case-directory-format/#systemnon_controllable_sourcesjson)        | Intermittent source registry                                                            |
+| `system/pumping_stations.json`                  | JSON    | No       | [System Entity Files](/reference/case-directory-format/#systempumping_stationsjson)                | Pumping station registry                                                                |
+| `system/energy_contracts.json`                  | JSON    | No       | [System Entity Files](/reference/case-directory-format/#systemenergy_contractsjson)                | Bilateral energy contract registry                                                      |
+| `system/hydro_geometry.parquet`                 | Parquet | No       | [Production Model Files](/reference/case-directory-format/#systemhydro_geometryparquet)            | Reservoir geometry elevation tables                                                     |
+| `system/hydro_production_models.json`           | JSON    | No       | [Production Model Files](/reference/case-directory-format/#systemhydro_production_modelsjson)      | FPHA production function configs                                                        |
+| `system/hydro_energy_productivity.parquet`      | Parquet | No       | [Production Model Files](/reference/case-directory-format/#systemhydro_energy_productivityparquet) | Per-plant, per-stage energy-conversion overrides                                        |
+| `system/fpha_hyperplanes.parquet`               | Parquet | No       | [Production Model Files](/reference/case-directory-format/#systemfpha_hyperplanesparquet)          | FPHA hyperplane coefficients                                                            |
+| `system/tailrace_curves.parquet`                | Parquet | No       | [Production Model Files](/reference/case-directory-format/#systemtailrace_curvesparquet)           | Piecewise-quartic tailrace curves with backwater families                               |
+| `scenarios/inflow_history.parquet`              | Parquet | No       | [Scenario Files](/reference/case-directory-format/#scenariosinflow_historyparquet)                 | Historical inflow time series                                                           |
+| `scenarios/inflow_seasonal_stats.parquet`       | Parquet | No       | [Scenario Files](/reference/case-directory-format/#scenariosinflow_seasonal_statsparquet)          | PAR model seasonal statistics                                                           |
+| `scenarios/inflow_ar_coefficients.parquet`      | Parquet | No       | [Scenario Files](/reference/case-directory-format/#scenariosinflow_ar_coefficientsparquet)         | PAR autoregressive coefficients                                                         |
+| `scenarios/inflow_annual_component.parquet`     | Parquet | No       | [Scenario Files](/reference/case-directory-format/#scenariosinflow_annual_componentparquet)        | PAR(p)-A annual component                                                               |
+| `scenarios/external_inflow_scenarios.parquet`   | Parquet | No       | [Scenario Files](/reference/case-directory-format/#scenariosexternal_inflow_scenariosparquet)      | External inflow scenario realizations (hydro_id, stage_id, scenario_id, value_m3s)      |
+| `scenarios/external_load_scenarios.parquet`     | Parquet | No       | [Scenario Files](/reference/case-directory-format/#scenariosexternal_load_scenariosparquet)        | External load scenario realizations (bus_id, stage_id, scenario_id, value_mw)           |
+| `scenarios/external_ncs_scenarios.parquet`      | Parquet | No       | [Scenario Files](/reference/case-directory-format/#scenariosexternal_ncs_scenariosparquet)         | External NCS scenario realizations (ncs_id, stage_id, scenario_id, availability_factor) |
+| `scenarios/load_seasonal_stats.parquet`         | Parquet | No       | [Scenario Files](/reference/case-directory-format/#scenariosload_seasonal_statsparquet)            | Load model seasonal statistics                                                          |
+| `scenarios/load_factors.json`                   | JSON    | No       | [Scenario Files](/reference/case-directory-format/#scenariosload_factorsjson)                      | Load scaling factors per bus/stage                                                      |
+| `scenarios/non_controllable_factors.json`       | JSON    | No       | [Scenario Files](/reference/case-directory-format/#scenariosnon_controllable_factorsjson)          | NCS block scaling factors per source/stage                                              |
+| `scenarios/non_controllable_stats.parquet`      | Parquet | No       | [Scenario Files](/reference/case-directory-format/#scenariosnon_controllable_statsparquet)         | NCS stochastic availability factors                                                     |
+| `scenarios/correlation.json`                    | JSON    | No       | [Scenario Files](/reference/case-directory-format/#scenarioscorrelationjson)                       | Cross-series correlation model                                                          |
+| `scenarios/noise_openings.parquet`              | Parquet | No       | [Scenario Files](/reference/case-directory-format/#scenariosnoise_openingsparquet)                 | User-supplied backward-pass opening tree                                                |
+| `constraints/thermal_bounds.parquet`            | Parquet | No       | [Constraint Files](/reference/case-directory-format/#constraintsthermal_boundsparquet)             | Stage-varying thermal generation bounds                                                 |
+| `constraints/hydro_bounds.parquet`              | Parquet | No       | [Constraint Files](/reference/case-directory-format/#constraintshydro_boundsparquet)               | Stage-varying hydro operational bounds                                                  |
+| `constraints/hydro_unit_group_bounds.parquet`   | Parquet | No       | [Constraint Files](/reference/case-directory-format/#constraintshydro_unit_group_boundsparquet)    | Stage-varying, optionally per-block hydro unit group bounds                             |
+| `constraints/line_bounds.parquet`               | Parquet | No       | [Constraint Files](/reference/case-directory-format/#constraintsline_boundsparquet)                | Stage-varying line flow capacity                                                        |
+| `constraints/pumping_bounds.parquet`            | Parquet | No       | [Constraint Files](/reference/case-directory-format/#constraintspumping_boundsparquet)             | Stage-varying pumping flow bounds                                                       |
+| `constraints/contract_bounds.parquet`           | Parquet | No       | [Constraint Files](/reference/case-directory-format/#constraintscontract_boundsparquet)            | Stage-varying contract power bounds                                                     |
+| `constraints/ncs_bounds.parquet`                | Parquet | No       | [Constraint Files](/reference/case-directory-format/#constraintsncs_boundsparquet)                 | Stage-varying NCS available generation bounds                                           |
+| `constraints/generic_constraints.json`          | JSON    | No       | [Constraint Files](/reference/case-directory-format/#constraintsgeneric_constraintsjson)           | User-defined LP constraints                                                             |
+| `constraints/generic_constraint_bounds.parquet` | Parquet | No       | [Constraint Files](/reference/case-directory-format/#constraintsgeneric_constraint_boundsparquet)  | Generic constraint RHS bounds                                                           |
+| `constraints/generic_parameters.json`           | JSON    | No       | [Constraint Files](/reference/case-directory-format/#constraintsgeneric_parametersjson)            | Named parameters for constraint expressions                                             |
+| `constraints/penalty_overrides_bus.parquet`     | Parquet | No       | [Penalty Files](/reference/case-directory-format/#constraintspenalty_overrides_busparquet)         | Stage-varying bus excess cost                                                           |
+| `constraints/penalty_overrides_line.parquet`    | Parquet | No       | [Penalty Files](/reference/case-directory-format/#constraintspenalty_overrides_lineparquet)        | Stage-varying line exchange cost                                                        |
+| `constraints/penalty_overrides_hydro.parquet`   | Parquet | No       | [Penalty Files](/reference/case-directory-format/#constraintspenalty_overrides_hydroparquet)       | Stage-varying hydro penalty costs                                                       |
+| `constraints/penalty_overrides_ncs.parquet`     | Parquet | No       | [Penalty Files](/reference/case-directory-format/#constraintspenalty_overrides_ncsparquet)         | Stage-varying NCS curtailment cost                                                      |
+
+## Conventions
+
+- **Stage ids.** Every non-null `stage_id` column or field names a declared `id` of `stages.json`, never a position,
+  except `schedule[].stage_id` of [`scenarios/correlation.json`](/reference/case-directory-format/#scenarioscorrelationjson), which out-of-sample
+  forward and simulation sampling match by 0-based position among the study stages. Study stage ids are non-negative and may be gapped or start above `0`;
+  `pre_study_stages[]` ids are negative.
+- **Block ids.** `block_id` is the 0-based index of a block within its stage; a stage's `blocks[].id` values run `0..n-1`.
+- **Parquet column types.** Each Parquet column must have exactly the type its table lists. A column of another type
+  is rejected at load with `column "<name>" has type <actual> but <expected> is required`, and an absent required
+  column with `missing required column "<name>"`. pandas writes integers as `int64`, so cast them (for example
+  `df["stage_id"] = df["stage_id"].astype("int32")`) or pass an explicit pyarrow schema to
+  `pa.Table.from_pandas(df, schema=schema)`.
+
+  The type names map to the writer libraries as follows:
+
+  | Type      | pyarrow        | polars       | pandas                                 |
+  | --------- | -------------- | ------------ | -------------------------------------- |
+  | `Int32`   | `pa.int32()`   | `pl.Int32`   | `int32`                                |
+  | `UInt32`  | `pa.uint32()`  | `pl.UInt32`  | `uint32`                               |
+  | `Float64` | `pa.float64()` | `pl.Float64` | `float64`                              |
+  | `Date32`  | `pa.date32()`  | `pl.Date`    | `datetime.date` objects (object dtype) |
+
+- **Compression.** Input Parquet files must be uncompressed or zstd-compressed; Snappy, gzip and LZ4 are rejected at
+  load (`Parquet error: Disabled feature at compile time: snap` for Snappy). pyarrow `pq.write_table` and pandas
+  `DataFrame.to_parquet` write Snappy by default, so pass `compression="zstd"`; polars `write_parquet` already defaults to zstd.
+- **`$schema`.** Every JSON file accepts an optional `$schema` string key for editor validation; its value is not
+  checked. The
+  examples point at the schemas published with these pages (`https://docs.cobre-rs.dev/schemas/<name>.schema.json`,
+  vendored from cobre; see [JSON Schemas](/reference/json-schemas/)).
+
+### Shared entity fields
+
+`operational_start_date` is required on every entity of the seven registry files: [`system/buses.json`](/reference/case-directory-format/#systembusesjson), [`system/lines.json`](/reference/case-directory-format/#systemlinesjson), [`system/hydros.json`](/reference/case-directory-format/#systemhydrosjson), [`system/thermals.json`](/reference/case-directory-format/#systemthermalsjson), [`system/non_controllable_sources.json`](/reference/case-directory-format/#systemnon_controllable_sourcesjson), [`system/pumping_stations.json`](/reference/case-directory-format/#systempumping_stationsjson), and [`system/energy_contracts.json`](/reference/case-directory-format/#systemenergy_contractsjson).
+It is an ISO 8601 date (`YYYY-MM-DD`) that records when the entity enters the registry's operational history.
+
+The date is provenance and the first key of the canonical entity order `(operational_start_date, id)`. Entities are ordered by date and then by id, never by name, so renaming an entity leaves its position unchanged, while a new id or date can move it. The date does not gate commissioning: for the entities that carry a commissioning window, `entry_stage_id` and `exit_stage_id` alone decide it (`system/buses.json` has no window). [System Elements — Operational Start Date](/math/system-elements/#operational-start-date) states the ordering and the independence from the commissioning window.
+
+## `config.json`
+
+`config.json` holds the run parameters. Only the `training` section is required, and it must hold `training.selection` and
+`training.stopping_rules`; every other section is optional.
+[Configuration](/running/configuration/) documents every key with its type, default and admission rules;
+its [Seed resolution](/running/configuration/#seed-resolution) section explains how the seeds drive the random draws.
+
+**Minimal valid example:**
+
+```json
+{
+  "$schema": "https://docs.cobre-rs.dev/schemas/config.schema.json",
+  "training": {
+    "selection": { "method": "sampled", "forward_passes": 192 },
+    "stopping_rules": [{ "type": "iteration_limit", "limit": 200 }]
+  }
+}
+```

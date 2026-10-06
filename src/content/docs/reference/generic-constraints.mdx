@@ -785,7 +785,7 @@ brackets, as in `error: [SchemaViolation] …`.
 | A name declared both as a scalar parameter and as a named expression | [`SchemaViolation`](/reference/error-codes/#namespace-collision-between-a-scalar-parameter-and-a-named-expression) |
 | A reference cycle among named expressions, a self-reference included | [`SchemaViolation`](/reference/error-codes/#named-expression-reference-cycle) |
 | A key the constraint entry does not declare (for example `sense`) | [`ParseError`](/reference/error-codes/#unknown-field-in-a-generic-constraint-entry) |
-| A constraint entry with no `slack` object | [`ParseError`](/reference/error-codes/#parseerror-1) |
+| A constraint entry with no `slack` object | [`ParseError`](/reference/error-codes/#parseerror) |
 | `slack.enabled: true` with no `penalty`, or with a `penalty` of zero or less | [`SchemaViolation`](/reference/error-codes/#schemaviolation) |
 | A term naming an entity id the case does not declare (`hydro_generation(7)` with no hydro `7`) | [`InvalidReference`](/reference/error-codes/#invalidreference) |
 | `bus=` naming a bus on which the plant has no unit group | [`InvalidReference`](/reference/error-codes/#invalidreference) |
