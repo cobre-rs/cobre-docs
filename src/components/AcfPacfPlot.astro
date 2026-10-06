@@ -65,6 +65,7 @@
         style: { background: "transparent", color: text, fontSize: "13px" },
         x: {
           label: `lag ℓ (season ${seasonLabel})`,
+          labelOffset: 40,
           domain: lagDomain,
           ticks: acf.map((r) => r.lag),
           tickFormat: "d",

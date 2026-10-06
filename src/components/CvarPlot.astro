@@ -57,7 +57,12 @@
         marginBottom: 48,
         marginLeft: 60,
         style: { background: "transparent", color: text, fontSize: "13px" },
-        x: { label: "total cost Z", grid: true, domain: [0, 170] },
+        x: {
+          label: "total cost Z",
+          labelOffset: 40,
+          grid: true,
+          domain: [0, 170],
+        },
         y: { label: "probability density", grid: true },
         marks: [
           Plot.areaY(tail, {

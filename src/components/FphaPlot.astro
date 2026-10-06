@@ -62,7 +62,11 @@
         marginBottom: 48,
         marginLeft: 60,
         style: { background: "transparent", color: text, fontSize: "13px" },
-        x: { label: "turbined flow q / q_max", domain: X_DOMAIN },
+        x: {
+          label: "turbined flow q / q_max",
+          labelOffset: 40,
+          domain: X_DOMAIN,
+        },
         y: { label: "generation g / Ḡ", grid: true, domain: [0, Y_TOP] },
         marks: [
           Plot.ruleY([0], { stroke: text, strokeOpacity: 0.5 }),

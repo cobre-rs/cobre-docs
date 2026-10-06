@@ -11,9 +11,10 @@ lives as per-crate `README.md` files + `ARCHITECTURE.md` in the `cobre` repo.
 
 - **Dev**: `npm run dev` (Astro dev server)
 - **Build**: `npm run build`; `npm run build:versions` for multi-version assembly
-- **Build hygiene**: `npm run build` needs a clean (committed) working tree —
-  Lunaria reads git history and errors on the `/lunaria` route with uncommitted
-  changes to tracked files. Build and verify on committed state.
+- **Build hygiene**: `npm run build` exits 1 when a page Lunaria tracks
+  (`src/content/docs/**/*.{md,mdx}` outside `pt-br/`, per `lunaria.config.json`)
+  has no commit history: Lunaria reads each tracked page's git history for the
+  `/lunaria` route. Build and verify on committed state.
 - **KaTeX**: manual remark-math + rehype-katex (D4) wired in `astro.config.mjs`
   — NOT a Starlight plugin. Math is rendered to static HTML at build time (zero
   client JS).
@@ -132,7 +133,7 @@ Part-1 docs review, 2026-06; scoped to `math/*` + overview/notation/glossary.)
   and structure — never "typical size/value" columns or instance counts (plant
   counts, `$/MWh` ranges, horizon lengths). Those hold for some studies and are
   absurd for others; concrete numbers belong only in an explicit **worked example**
-  (Part 6) or the software layer. If a number encoded a methodological _ordering_
+  (Worked Examples) or the software layer. If a number encoded a methodological _ordering_
   (e.g. a penalty hierarchy), keep the ordering in prose and drop the absolute
   values.
 - **Symbol keys stay conceptual.** Notation keys and overview tables define what a
@@ -150,10 +151,11 @@ Part-1 docs review, 2026-06; scoped to `math/*` + overview/notation/glossary.)
   overview previews. (Model: SDDP.jl `first_steps`.)
 - **No dev artifacts ship as content.** Spike/scaffold renderer-checks, TODO demos,
   and harness probes never appear on the published site.
-- **Voice gate (Epic 04).** `check:voice` runs the corpus-wide hype/unpinned-number
-  detector; `check:version` forbids cobre-version narration in the math zone. A
-  genuine pre-existing exception is grandfathered in `scripts/doc-lint-allow.txt`
-  (a ratchet — any NEW hit fails the gate).
+- **Voice gates.** `check:voice`, `check:version`, `check:narration` and
+  `check:glossary` share the ratchet `scripts/doc-lint-allow.txt`: an entry
+  grandfathers one rule at one `path:line`, any other hit fails its gate, and an
+  entry that matches no hit fails its gate as STALE. The commands are under
+  Quality Gates.
 
 ## Software-Layer Authoring Standards
 
@@ -164,6 +166,36 @@ the things the math layer forbids. It still follows _code > spec_ (verify every
 field/flag against the current cobre code, not stale prose), stays user-facing
 (no crate internals — those are cobre READMEs), and keeps its `_`-prefixed
 partial filenames so the render split holds.
+
+---
+
+## Quality Gates
+
+```bash
+# export COBRE_BIN=~/.local/opt/cobre-v0.17.0/cobre-cli-x86_64-unknown-linux-gnu/cobre
+npm run check:figures && npm run check:voice && npm run check:counts \
+  && npm run check:version && npm run check:narration && npm run check:error-coverage \
+  && npm run check:input-schemas && npm run check:glossary && npm run check:python-api \
+  && npm run check:gc-examples && npm run check:type-spelling && npm run check:d2 \
+  && npm run check:spdx && npm run refresh:recordings -- --check \
+  && npm run build && npm run check && npm run check:math && npm run check:links \
+  && npm run build:versions && npm test && npm run check:e10
+```
+
+- **d2 v0.7.1** on `PATH`: without it `npm run build` and `npm run dev` abort with
+  "Could not find D2".
+- **cobre v0.17.0** for `check:gc-examples`: `COBRE_BIN`, else `cobre` on `PATH`.
+  The gate exits 2 when the binary is missing, lies under a cargo
+  `target/release/` or `target/debug/` directory, or reports a version other
+  than `DEFAULT_COBRE_REF` in `scripts/cobre-ref.mjs`.
+- **KaTeX strict**: `npm run build` fails on any KaTeX strict-mode violation or
+  parse error (`scripts/rehype-katex-strict.mjs`); `npm run dev` does not run
+  this check.
+
+`.github/workflows/starlight-ci.yml` runs every gate on pull requests to `main`
+(the build as `npm run build:versions`); `.github/workflows/starlight-deploy.yml`
+runs only the build checks, on push to `main`. `README.md` describes each gate in
+one line (`## Quality gates`; `build:versions` under `## Local development`).
 
 ---
 
@@ -244,10 +276,11 @@ forward traversal.
 → **Checkpoint format (self-describing)**: `policy/manifest.bin` (a
 `FlatBuffers` `CheckpointManifest` root: study graph, stage count, producer
 provenance + `format_version`) is written LAST as the commit signal and read
-FIRST behind the version gate. Each `cuts/<pool>.bin` self-describes its own
-`cost_scale_factor` + graph identity. `FORMAT_VERSION` is `2`; every load kind
-checks the exact cobre version first and refuses a checkpoint from an older or a
-newer build (`PolicyVersionMismatch`, `POLICY_COBRE_VERSION`), and Python
+FIRST behind the `format_version` gate. Each `cuts/<pool>.bin` self-describes its
+own `cost_scale_factor` + graph identity. `FORMAT_VERSION` is `2`; every load kind
+checks the exact cobre version in `validate_policy_load`, before any state check,
+and refuses a checkpoint from an older or a newer build (`PolicyVersionMismatch`,
+`POLICY_COBRE_VERSION`), and Python
 `write_policy_checkpoint` stamps `POLICY_COBRE_VERSION`. A full-FCF load also
 refuses a stored basis that does not fit its LP
 (`build_basis_cache_from_checkpoint`, `StoredBasisDimensionMismatch`). Boundary
@@ -346,6 +379,69 @@ PreFilling only, free during Filling and Operating (`columns.rs`; the phase is
 entity order is `(operational_start_date, id)` — rename-invariant, id-renumber
 moves LP/cut/output order (`system/builder.rs` `sort_canonical`).
 
+When **updating stochastic sampling** (`scenario-generation.mdx` §2.5 and §3.2,
+`par-inflow-model.mdx`, `_impl/_scenario.configure.mdx`,
+`_impl/_scenario.notes.mdx`):
+
+→ For the forward `historical` scheme, window discovery
+(`discover_historical_windows`, `crates/cobre-stochastic/src/sampling/window.rs`)
+builds the window pool and refuses an empty one (`no valid historical windows
+found`); `standardize_historical_windows` and `validate_historical_library`
+(`crates/cobre-stochastic/src/sampling/historical.rs`) then standardize each
+window and run the V2.x checks: V2.1, V2.3, V2.5 and V2.9 are errors (the
+empty-pool refusal pre-empts V2.5), V2.6 is a warning, and V2.2, V2.4 and V2.7
+are construction invariants with no release-build check (only V2.7 is
+re-asserted, by a `debug_assert!`). Lag seasons come from the calendar walk in
+`crates/cobre-stochastic/src/season_cast/mod.rs` (`season_period_window`,
+`nth_previous_occurrence`, `StageCalendar::season_occurrences`), never from
+arithmetic on declared season ids. The `historical_residuals` noise method
+(`crates/cobre-io/src/stages.rs`) builds the opening tree from the same library
+(`build_opening_tree_library` in
+`crates/cobre-sddp/src/setup/stochastic_pipeline.rs`). `cobre validate` builds the
+opening-tree library but builds the forward scheme's library only inside
+`StudySetup`, which it constructs only when `policy.boundary` is configured, so
+`validate` can pass a case whose forward library `run` refuses.
+
+When **updating the generic-constraint `hydro_inflow` term**
+(`reference/generic-constraints.mdx`, section `hydro_inflow`; `lp-formulation.md`
+§10, Hydro Inflow):
+
+→ `hydro_inflow` parses as a block-capable variable
+(`crates/cobre-io/src/constraints/generic.rs`) and `resolve_hydro_inflow`
+(`crates/cobre-sddp/src/lp/builder/generic_constraints.rs`) resolves it to a
+**rate** identity (m³/s), not the `−τ`-weighted storage-balance row: the plant's
+local `z_inflow` column, inflow diverted into the plant, upstream releases
+weighted by the share the downstream balance row credits to the block, and
+maturing transit water. Each upstream PreFilling plant whose short-circuit
+targets this plant adds its own terms at `1.0`. The plant's own outflows,
+evaporation, withdrawal slacks, AR-lag `ψ` and pumping are excluded.
+
+When **updating policy reuse and its gates** (`running/policy-management.mdx`,
+`reference/error-codes.mdx`):
+
+→ `policy-management.mdx` owns the load contract (`## Policy Load Contract`,
+`### Check order`, `### Version gate`, `### Stored-basis gate`) and
+`error-codes.mdx` owns the error messages. The code is `validate_policy_load` and
+`build_basis_cache_from_checkpoint`
+(`crates/cobre-sddp/src/policy/policy_load.rs`),
+`crates/cobre-sddp/src/policy/reconcile.rs` and
+`crates/cobre-cli/src/commands/run/policy.rs`. The gate facts are in the
+**Checkpoint format** bullet of the LP cluster above.
+
+When **updating discounting** (`discount-rate.mdx`,
+`_impl/_discount.configure.mdx`, `post-study-boundary.md`):
+
+→ `compute_per_stage_discount_factors` (`crates/cobre-sddp/src/time_value.rs`)
+gives each stage the one-step factor `d_t = 1/(1+r_t)^(Δt/365.25)`, `Δt` the stage
+duration in days. `r_t` is the stage's `annual_discount_rate_override`
+(`crates/cobre-io/src/stages.rs`; in the chain dialect a stage without one takes
+its departing transition's override, a per-edge spelling `nodes[]` rejects), else
+the global `policy_graph.annual_discount_rate`. The θ objective coefficient is
+`discount_factors()[stage]`, not divided by the cost scale factor that divides
+every other objective coefficient (`crates/cobre-sddp/src/lp/builder/template.rs`).
+`relative_delivery_discount` (same `time_value.rs`) is `D(delivery)/D(decision)`,
+the cumulative-factor ratio that discounts an anticipated commitment's cost.
+
 When **authoring or editing a diagram** (inline ` ```d2 ` or a tested Observable
 Plot island under `src/figures/` + `src/components/`):
 
@@ -360,7 +456,7 @@ in diagram-authoring.md §4.2, not ad-hoc hex.
 
 **JSON schemas**: the 18 input schemas are generated in `cobre` from `cobre-io`
 types; this site **vendors** a committed copy (`public/schemas/`) refreshed by
-`npm run refresh:schemas --ref <tag>` (reads a git ref, never the cobre working
+`npm run refresh:schemas -- --ref <tag>` (reads a git ref, never the cobre working
 tree). Refresh on each cobre release; the freshness gate stays in `cobre`.
 
 ---

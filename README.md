@@ -44,19 +44,19 @@ npm run build:versions # multi-version assembly (versions.json) → dist/
 ```
 src/
 ├── content/
-│   ├── docs/             # the unified corpus — math layer + interleaved software layer
-│   │   ├── index.mdx     #   landing page
-│   │   ├── getting-started/ #   Get Started — installation, quickstart, Python quickstart
-│   │   ├── overview/     #   Get Started (what Cobre solves) and Introduction
-│   │   ├── math/         #   System Modelling, Stochastic Modelling, The SDDP Algorithm, Coupling & Boundary Conditions
-│   │   │   └── _impl/    #   software-layer Configure / I·O / Notes partials, rendered as tabs on the math pages
-│   │   ├── running/      #   Running Cobre
-│   │   ├── examples/     #   Worked Examples
-│   │   ├── reference/    #   Reference — CLI, error codes, schemas, Python API, glossary, bibliography
-│   │   │   ├── case-format/ #   Reference > Case Format
-│   │   │   └── output/   #   Reference > Output Format
-│   │   └── pt-br/        #   pt-BR locale scaffold (.gitkeep only); feeds no sidebar group
-│   └── content.config.ts
+│   └── docs/             # the unified corpus — math layer + interleaved software layer
+│       ├── index.mdx     #   landing page
+│       ├── getting-started/ #   Get Started — installation, quickstart, Python quickstart
+│       ├── overview/     #   Get Started (what Cobre solves) and Introduction
+│       ├── math/         #   System Modelling, Stochastic Modelling, The SDDP Algorithm, Coupling & Boundary Conditions
+│       │   └── _impl/    #   software-layer Configure / I·O / Notes partials, rendered as tabs on the math pages
+│       ├── running/      #   Running Cobre
+│       ├── examples/     #   Worked Examples
+│       ├── reference/    #   Reference — CLI, error codes, schemas, Python API, glossary, bibliography
+│       │   ├── case-format/ #   Reference > Case Format
+│       │   └── output/   #   Reference > Output Format
+│       └── pt-br/        #   pt-BR locale scaffold (.gitkeep only); feeds no sidebar group
+├── content.config.ts
 ├── components/           # Astro islands (Observable Plot figures, version picker, footer)
 ├── figures/              # tested TypeScript compute layer for the plots (*.ts + *.test.ts)
 ├── styles/               # brand palette, figure/KaTeX/font CSS
@@ -97,7 +97,7 @@ npm run check:e10     # third-party-notices / content-licensing completeness
 A push to `main` triggers `.github/workflows/starlight-deploy.yml`, which builds the
 site, runs the build checks, and publishes it to GitHub Pages at
 `docs.cobre-rs.dev` (`methodology.cobre-rs.dev` 301-redirects in). The full gate
-suite, the doc-lint gates included, runs in `.github/workflows/starlight-ci.yml` on
+suite, including the doc-lint gates, runs in `.github/workflows/starlight-ci.yml` on
 pull requests to `main`.
 
 ## License

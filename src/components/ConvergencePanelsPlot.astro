@@ -62,7 +62,13 @@
         marginBottom: 48,
         marginLeft: 60,
         style: { background: "transparent", color: text, fontSize: "13px" },
-        x: { label: "iteration", grid: true, domain: [0, 25], ticks: 5 },
+        x: {
+          label: "iteration",
+          labelOffset: 40,
+          grid: true,
+          domain: [0, 25],
+          ticks: 5,
+        },
         y: { label: "total expected cost", grid: true },
         fx: {
           label: null,

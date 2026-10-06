@@ -51,7 +51,12 @@
         marginBottom: 48,
         marginLeft: 60,
         style: { background: "transparent", color: text, fontSize: "13px" },
-        x: { label: "iteration k", grid: true, domain: [0, 25] },
+        x: {
+          label: "iteration k",
+          labelOffset: 40,
+          grid: true,
+          domain: [0, 25],
+        },
         y: { label: "total expected cost", grid: true },
         marks: [
           Plot.areaY(data, {

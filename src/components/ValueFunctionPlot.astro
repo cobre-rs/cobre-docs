@@ -45,7 +45,7 @@
         marginBottom: 48,
         marginLeft: 60,
         style: { background: "transparent", color: text, fontSize: "13px" },
-        x: { label: "stored volume v (hm³)", grid: true },
+        x: { label: "stored volume v (hm³)", labelOffset: 40, grid: true },
         y: { label: "future cost V(v)", grid: true },
         marks: [
           Plot.line(data, { x: "v", y: "q", stroke: curve, strokeWidth: 2.5 }),
