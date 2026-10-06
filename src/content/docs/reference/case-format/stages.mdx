@@ -1,0 +1,295 @@
+---
+title: Stage Files
+description: The study time axis of a case, field by field — stages.json with its policy graph, stages, blocks and seasons, and the optional post-horizon calendar post_study_stages.json.
+---
+
+A Cobre case describes its time axis in two files at the case root. `stages.json` is required: it holds the
+policy graph, the study stages with their load blocks, the optional season map, and the optional pre-study stages.
+`post_study_stages.json` is optional: it holds the calendar and the per-thermal cost and delivery bounds for commitments
+that are decided inside the study and delivered after the horizon. The [File summary](/reference/case-format/#file-summary)
+maps every case file to its page, and [Conventions](/reference/case-format/#conventions) states the rules shared by all of them.
+
+---
+
+## `stages.json`
+
+**Methodology:** [Policy Graphs](/math/policy-graphs/) · [Block Formulations](/math/block-formulations/) · [Discount Rate](/math/discount-rate/)
+
+Defines the temporal structure of the study: stage sequence, block decomposition,
+and policy graph horizon type.
+
+**Top-level fields:**
+
+| Name                 | Type           | Required | Default | Units | Description                                                                                                               |
+| -------------------- | -------------- | -------- | ------- | ----- | ------------------------------------------------------------------------------------------------------------------------- |
+| `policy_graph`       | object         | Yes      | —       | —     | Horizon type, annual discount rate, and stage transitions/nodes (see below)                                               |
+| `stages`             | array          | Yes      | —       | —     | Array of study stage definitions                                                                                          |
+| `season_definitions` | object \| null | No       | —       | —     | Season labeling for seasonal model alignment                                                                              |
+| `pre_study_stages`   | array          | No       | —       | —     | Pre-study stages for AR model warm-up (negative IDs)                                                                      |
+| `scenario_source`    | —              | No       | `null`  | —     | Not accepted: a `stages.json` holding this key with a value other than `null` is rejected at load; see the caution below. |
+
+**`policy_graph` sub-object:**
+
+| Name                                | Type   | Required | Default | Units | Description                                                                                                                                                           |
+| ----------------------------------- | ------ | -------- | ------- | ----- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `policy_graph.type`                 | string | Yes      | —       | —     | One of `"finite_horizon"`, `"cyclic"`. Horizon type. Only `"finite_horizon"` is supported; `"cyclic"` is **reserved** and rejected at load (no engine consumer today) |
+| `policy_graph.annual_discount_rate` | number | Yes      | —       | —     | Global annual discount rate (>= 0.0)                                                                                                                                  |
+| `policy_graph.nodes`                | array  | No       | —       | —     | Policy-graph nodes (see below). Absent ⇒ the graph is a stage chain and `transitions[]` endpoints are read directly as stage ids                                      |
+| `policy_graph.transitions`          | array  | No       | —       | —     | Stage transitions (see below). Defaults to an empty array                                                                                                             |
+
+**`policy_graph.nodes[]` entry fields:**
+
+| Name                               | Type            | Required | Default | Units | Description                                                                                                                                                                                                                                                                 |
+| ---------------------------------- | --------------- | -------- | ------- | ----- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `policy_graph.nodes[].id`          | integer         | Yes      | —       | —     | Unique node id, referenced by `transitions[]` endpoints when `nodes[]` is declared                                                                                                                                                                                          |
+| `policy_graph.nodes[].stage_id`    | integer         | Yes      | —       | —     | Declared study-stage id this node sits at; resolved against the study stages, never an array index                                                                                                                                                                          |
+| `policy_graph.nodes[].scenario_id` | integer \| null | No       | `null`  | —     | Per-stage external-library realization column this node carries. Required at a stage carrying a slot-occupying external class, omitted where none. `scenario_id: k` is exactly the degenerate one-element weighted opening set `[{ "scenario_id": k, "probability": 1.0 }]` |
+| `policy_graph.nodes[].label`       | string \| null  | No       | `null`  | —     | Optional human-readable label                                                                                                                                                                                                                                               |
+
+**`policy_graph.transitions[]` entry fields:**
+
+| Name                                                       | Type           | Required | Default | Units | Description                                                                                                                                                                                                                                         |
+| ---------------------------------------------------------- | -------------- | -------- | ------- | ----- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `policy_graph.transitions[].source_id`                     | integer        | Yes      | —       | —     | Source endpoint: a node id when `policy_graph.nodes[]` is non-empty, a stage id otherwise                                                                                                                                                           |
+| `policy_graph.transitions[].target_id`                     | integer        | Yes      | —       | —     | Target endpoint: a node id when `policy_graph.nodes[]` is non-empty, a stage id otherwise                                                                                                                                                           |
+| `policy_graph.transitions[].probability`                   | number         | Yes      | —       | —     | Transition probability; a source's outgoing probabilities must sum to `1` within `1e-6` (a sum further off is rejected), and the loader then rescales them so they sum to `1`                                                                       |
+| `policy_graph.transitions[].annual_discount_rate_override` | number \| null | No       | `null`  | —     | Stage-chain dialect only (no `policy_graph.nodes[]`): folded onto the transition's source stage, and the stage's own `annual_discount_rate_override` wins when both are set; rejected under `policy_graph.nodes[]` — declare the rate on the stage. |
+
+:::caution[No top-level `scenario_source` in `stages.json`]
+Scenario sampling is configured per-pass in `config.json` —
+`training.scenario_source` for the training forward pass and
+`simulation.scenario_source` for post-training simulation (see
+[`config.json`](/reference/case-format/#configjson)). A top-level `scenario_source` key in
+`stages.json` with a value other than `null` is rejected at load (`cobre validate`
+reports a `[SchemaViolation]` error on the field `scenario_source`; see
+[Error Codes](/reference/error-codes/#schemaviolation)).
+:::
+
+**`stages[]` entry fields:**
+
+| Name                                     | Type             | Required    | Default      | Units | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| ---------------------------------------- | ---------------- | ----------- | ------------ | ----- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `stages[].id`                            | integer          | Yes         | —            | —     | Stage identifier (non-negative integer, unique). A negative id is not rejected; the stage is read as a pre-study stage, not a study stage                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| `stages[].start_date`                    | string           | Yes         | —            | —     | ISO 8601 date (e.g., `"2024-01-01"`)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| `stages[].end_date`                      | string           | Yes         | —            | —     | ISO 8601 date; must be after `start_date`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| `stages[].blocks`                        | array            | Yes         | —            | —     | Array of load blocks (`id`, `name`, `hours`): non-empty, block ids `0..n-1` (each once, in any order), every `hours` finite and `> 0`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| `stages[].blocks[].id`                   | integer          | Yes         | —            | —     | Block index within the stage; the ids of a stage are `0..n-1`, each once, in any order.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| `stages[].blocks[].name`                 | string           | Yes         | —            | —     | Human-readable block label.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| `stages[].blocks[].hours`                | number           | Yes         | —            | h     | Block duration in hours; must be `> 0`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| `stages[].num_openings`                  | integer \| null  | Conditional | `null`       | —     | Number of within-node openings for this stage (>= 1); required on the plain stage-chain dialect (no `policy_graph.nodes[]`) and at a generated-openings stage under `nodes[]`, rejected at a stage that carries only external openings                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| `stages[].season_id`                     | integer \| null  | No          | `null`       | —     | Reference to a season in `season_definitions`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| `stages[].block_mode`                    | string           | No          | `"parallel"` | —     | One of `"parallel"`, `"chronological"`. Block execution mode: `"parallel"` (default) or `"chronological"`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| `stages[].state_variables`               | object \| null   | No          | —            | —     | Cut projection of this stage. For its fields and default, see [`stages[].state_variables` — Cut Projection](/math/cut-management/#stagesstate_variables--cut-projection).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| `stages[].state_variables.storage`       | boolean          | No          | `true`       | —     | Storage flag of the stage's cut projection. See [`stages[].state_variables` — Cut Projection](/math/cut-management/#stagesstate_variables--cut-projection).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| `stages[].state_variables.inflow_lags`   | boolean          | No          | `false`      | —     | Inflow-lag flag of the stage's cut projection. See [`stages[].state_variables` — Cut Projection](/math/cut-management/#stagesstate_variables--cut-projection).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| `stages[].risk_measure`                  | string \| object | No          | —            | —     | Per-stage risk measure: `"expectation"` (the default) or `{"cvar": {"alpha": …, "lambda": …}}` with `alpha` in `(0, 1]` (the tail fraction) and `lambda` in `[0, 1]`; values outside these ranges are rejected; see [Risk Measures](/math/risk-measures#implementation-in-cobre)                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| `stages[].risk_measure.cvar`             | object           | Conditional | —            | —     | `CVaR` parameters, holding `alpha` and `lambda`; required when `stages[].risk_measure` is an object.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| `stages[].risk_measure.cvar.alpha`       | number           | Yes         | —            | —     | Tail fraction, in `(0, 1]`; a value outside the range is rejected.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| `stages[].risk_measure.cvar.lambda`      | number           | Yes         | —            | —     | Risk-aversion weight, in `[0, 1]`; a value outside the range is rejected.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| `stages[].sampling_method`               | string           | No          | `"saa"`      | —     | One of `"saa"`, `"lhs"`, `"qmc_sobol"`, `"qmc_halton"`, `"selective"`, `"historical_residuals"`. Noise-generation method for the stage: `"saa"` (default), `"lhs"`, `"qmc_sobol"`, `"qmc_halton"`, `"selective"` or `"historical_residuals"`. `"selective"` needs a supplied opening tree (`training.scenario_source.openings` `{"source": "file"}`, `scenarios/noise_openings.parquet`); `"historical_residuals"` needs `scenarios/inflow_history.parquet` and a `season_id` on every study stage. For a class on `out_of_sample`, `"selective"` and `"historical_residuals"` each draw plain Monte Carlo noise in the forward pass, with a warning. See [Scenario Generation](/math/scenario-generation/#23a-sampling-method-and-opening-tree-generation) |
+| `stages[].annual_discount_rate_override` | number \| null   | No          | `null`       | —     | The stage's own annual discount rate; absent uses `policy_graph.annual_discount_rate`. See [Discount Rate](/math/discount-rate#implementation-in-cobre).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+
+**`pre_study_stages[]` entry fields:**
+
+| Name                            | Type            | Required | Default | Units | Description                                                                                                                                                                  |
+| ------------------------------- | --------------- | -------- | ------- | ----- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `pre_study_stages[].id`         | integer         | Yes      | —       | —     | Negative stage id; unique, and distinct from every study stage id. A non-negative id is read as a study stage, and loading then fails because that stage declares no blocks. |
+| `pre_study_stages[].start_date` | string          | Yes      | —       | —     | ISO 8601 date (`YYYY-MM-DD`).                                                                                                                                                |
+| `pre_study_stages[].end_date`   | string          | Yes      | —       | —     | ISO 8601 date, after `start_date`.                                                                                                                                           |
+| `pre_study_stages[].season_id`  | integer \| null | No       | `null`  | —     | A season of `season_definitions`, taken as declared (never derived from the dates).                                                                                          |
+
+Pre-study stages are dated periods before the first study stage that the autoregressive (AR) inflow model uses
+for its lags. Pre-study stages carry no blocks and are never solved.
+
+**`season_definitions` sub-object:**
+
+The optional `season_definitions` object maps season IDs to calendar periods for the PAR model;
+it maps `season_id` values on stages to PAR parameters.
+When absent there is no season map, so a stage without `season_id` has no season. When present
+as a single-resolution map, a stage without `season_id` takes the season of its start date; a
+multi-resolution map (a `custom` map whose seasons overlap) requires `season_id` on every stage.
+Estimation from `inflow_history.parquet` requires `season_definitions`, and a study whose inflow
+class uses the `historical` scheme, or that has a `historical_residuals` stage, requires a season
+on every study stage.
+
+| Name                            | Type   | Required | Default | Units | Description                                 |
+| ------------------------------- | ------ | -------- | ------- | ----- | ------------------------------------------- |
+| `season_definitions.cycle_type` | string | Yes      | —       | —     | One of `"monthly"`, `"weekly"`, `"custom"`. |
+| `season_definitions.seasons`    | array  | Yes      | —       | —     | Array of season entries (see below)         |
+
+**`season_definitions.seasons[]` entry fields:**
+
+| Name                                       | Type            | Required | Default | Units | Description                                                                                                                    |
+| ------------------------------------------ | --------------- | -------- | ------- | ----- | ------------------------------------------------------------------------------------------------------------------------------ |
+| `season_definitions.seasons[].id`          | integer         | Yes      | —       | —     | Season identifier (0-based integer, unique within the season map)                                                              |
+| `season_definitions.seasons[].label`       | string          | Yes      | —       | —     | Human-readable label (e.g., `"January"`, `"Q1"`, `"Wet Season"`)                                                               |
+| `season_definitions.seasons[].month_start` | integer         | Yes      | —       | —     | Calendar month where the season starts (1–12)                                                                                  |
+| `season_definitions.seasons[].day_start`   | integer \| null | No       | `null`  | —     | Calendar day where the season starts (1–31). Read only for the `custom` cycle type; an omitted value is read as `1`.           |
+| `season_definitions.seasons[].month_end`   | integer \| null | No       | `null`  | —     | Calendar month where the season ends (1–12). Read only for the `custom` cycle type; an omitted value is read as `month_start`. |
+| `season_definitions.seasons[].day_end`     | integer \| null | No       | `null`  | —     | Calendar day where the season ends (1–31). Read only for the `custom` cycle type; an omitted value is read as `31`.            |
+
+**Cycle types:**
+
+- `"monthly"` — seasons map to calendar months (12 seasons, 0 = January, ..., 11 = December).
+  Only `id`, `label`, and `month_start` are needed per entry.
+- `"weekly"` — seasons map to ISO calendar weeks (52 seasons). Only `id`, `label`,
+  and `month_start` are needed per entry.
+- `"custom"` — user-defined date ranges with explicit `month_start`/`day_start`/`month_end`/`day_end`.
+  The boundary fields `day_start`, `month_end` and `day_end` are read only for this cycle type; an omitted one is read as `1`, `month_start` and `31` respectively. Use this cycle type for mixed-resolution studies
+  where some stages are monthly (IDs 0–11) and others are quarterly (IDs 12–15).
+
+**Example — Custom cycle type with monthly and quarterly seasons:**
+
+```json
+{
+  "season_definitions": {
+    "cycle_type": "custom",
+    "seasons": [
+      {
+        "id": 0,
+        "label": "January",
+        "month_start": 1,
+        "day_start": 1,
+        "month_end": 2,
+        "day_end": 1
+      },
+      {
+        "id": 1,
+        "label": "February",
+        "month_start": 2,
+        "day_start": 1,
+        "month_end": 3,
+        "day_end": 1
+      },
+      {
+        "id": 11,
+        "label": "December",
+        "month_start": 12,
+        "day_start": 1,
+        "month_end": 1,
+        "day_end": 1
+      },
+      {
+        "id": 12,
+        "label": "Q1",
+        "month_start": 1,
+        "day_start": 1,
+        "month_end": 4,
+        "day_end": 1
+      },
+      {
+        "id": 13,
+        "label": "Q2",
+        "month_start": 4,
+        "day_start": 1,
+        "month_end": 7,
+        "day_end": 1
+      },
+      {
+        "id": 14,
+        "label": "Q3",
+        "month_start": 7,
+        "day_start": 1,
+        "month_end": 10,
+        "day_end": 1
+      },
+      {
+        "id": 15,
+        "label": "Q4",
+        "month_start": 10,
+        "day_start": 1,
+        "month_end": 1,
+        "day_end": 1
+      }
+    ]
+  }
+}
+```
+
+In this example, seasons 0–11 cover monthly PAR models for the near-term phase and seasons 12–15
+cover quarterly PAR models for the long-term phase. Each monthly stage assigns a `season_id` of 0–11;
+each quarterly stage assigns a `season_id` of 12–15. Stages sharing a `season_id` must have
+durations within 7 days of each other, so monthly and quarterly stages use distinct `season_id` values.
+
+---
+
+## `post_study_stages.json`
+
+**Methodology:** [Post-Study Boundary](/math/post-study-boundary/)
+
+The post-study boundary calendar: a sequence of post-horizon stages plus a
+per-`(thermal, post-study stage)` cost and delivery-bound table. Its
+`thermal_bounds[]` table is the **sole surface** for declaring the bound and
+cost of a commitment an anticipated thermal decides **in-study** but delivers
+after the horizon (its decision column is charged at the cell's cost,
+discounted to the decision stage, and the loaded boundary prices the commitment
+it carries). Optional
+and inert when absent; **required** once any anticipated thermal's lead reaches
+a post-study stage — a missing cell for a reached stage is rejected at load,
+naming the plant and the post-study stage index. See
+[Post-Study Boundary](/math/post-study-boundary) for the boundary formulation
+this file feeds.
+
+**`stages[]`** — the post-horizon calendar:
+
+| Name                      | Type   | Required | Default | Units | Description                                                                                                           |
+| ------------------------- | ------ | -------- | ------- | ----- | --------------------------------------------------------------------------------------------------------------------- |
+| `stages[].start_date`     | string | Yes      | —       | —     | Stage start date (inclusive), ISO 8601 YYYY-MM-DD                                                                     |
+| `stages[].duration_hours` | number | Yes      | —       | h     | Stage duration in hours; finite and `> 0.0`. `end_date` is derived from `start_date + duration_hours`, never declared |
+
+Stages are **date-contiguous** (each stage's implicit `end_date` equals the
+next stage's `start_date`) and the **first `start_date` must equal the study
+horizon end** — the date immediately after the last in-study stage. Post-study
+stages are **boundary-only**: they are never dispatched, never a study stage,
+and never carry Benders cuts — they exist solely to give a post-horizon
+delivery a calendar position to be priced against. No two stages may share a
+`start_date`. Post-study stages declare no discount rate: the cumulative
+discount continues over them at `policy_graph.annual_discount_rate`.
+
+**`thermal_bounds[]`** — per-`(thermal, post-study stage)` cost and delivery
+capability:
+
+| Name                                      | Type    | Required | Default | Units   | Description                                                                       |
+| ----------------------------------------- | ------- | -------- | ------- | ------- | --------------------------------------------------------------------------------- |
+| `thermal_bounds[].thermal_id`             | integer | Yes      | —       | —       | Thermal plant identifier; must reference a thermal declaring `anticipated_config` |
+| `thermal_bounds[].post_study_stage_index` | integer | Yes      | —       | —       | Zero-based index into `stages[]`; must be `< stages.len()`                        |
+| `thermal_bounds[].cost_per_mwh`           | number  | Yes      | —       | USD/MWh | Fuel cost (`USD/MWh`) at this cell; finite                                        |
+| `thermal_bounds[].min_mw`                 | number  | Yes      | —       | MW      | Lower bound of the delivered MW rate at this cell; finite                         |
+| `thermal_bounds[].max_mw`                 | number  | Yes      | —       | MW      | Upper bound of the delivered MW rate at this cell; finite, `>= min_mw`            |
+
+No two rows may share a `(thermal_id, post_study_stage_index)` pair. Every
+post-study stage an anticipated thermal's lead reaches must carry a matching
+`thermal_bounds` row: the delivered commitment is bounded by that cell's
+`[min_mw, max_mw]` and charged at its `cost_per_mwh` on the decision column,
+discounted from the post-study stage to the decision stage.
+
+```json
+{
+  "$schema": "https://docs.cobre-rs.dev/schemas/post_study_stages.schema.json",
+  "stages": [
+    { "start_date": "2026-11-01", "duration_hours": 720.0 },
+    { "start_date": "2026-12-01", "duration_hours": 744.0 }
+  ],
+  "thermal_bounds": [
+    {
+      "thermal_id": 86,
+      "post_study_stage_index": 0,
+      "cost_per_mwh": 210.0,
+      "min_mw": 0.0,
+      "max_mw": 350.0
+    },
+    {
+      "thermal_id": 86,
+      "post_study_stage_index": 1,
+      "cost_per_mwh": 220.0,
+      "min_mw": 0.0,
+      "max_mw": 300.0
+    }
+  ]
+}
+```
+
+The vendored JSON Schema is at
+[`/schemas/post_study_stages.schema.json`](/schemas/post_study_stages.schema.json) —
+see [JSON Schemas](/reference/json-schemas) for the full schema-to-file table
+(this file's row lives there).

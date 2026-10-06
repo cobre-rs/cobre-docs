@@ -237,14 +237,14 @@ Every commitment the plant has decided but not yet delivered is state: the plant
 The figure follows one delivery through the ring under a stage-count lead. The commitment $g^{\mathrm{a}}_{i,t}$ decided at stage $t = m - K_i$ is deposited into the ring slot of its delivery stage $m$, carried unchanged at stages $t + 1, \ldots, m - 1$, and delivered at stage $m$, where the plant's generation must match it. A delivery decided before the study seeds its slot at the first stage instead (the dashed path), and is then carried and delivered in the same way. A physical lead changes which stage decides each delivery, not how the ring holds it.
 
 ```d2
-direction: right
+direction: down
 
 classes: {
   thermal: {style: {stroke: "#f5a623"}}
 }
 
-decide: "stage t = m − Kᵢ\ndeposit the commitment\nin its ring slot" {class: thermal}
-seed: "decided before the study\nseeds its slot\nat the first stage" {shape: parallelogram}
+decide: "stage t = m − Kᵢ\ndeposit in its ring slot" {class: thermal}
+seed: "decided before the study\nseeds its slot at the first stage" {shape: parallelogram}
 carry: "stages t + 1 … m − 1\ncarry it unchanged"
 deliver: "stage m\ndeliver it" {class: thermal}
 
@@ -302,6 +302,29 @@ Cobre distinguishes two hydro plant subsets based on their operational state:
 
 Most plants are in $\mathcal{H}^{op}$. Filling hydros have per-stage target-storage floors instead of generation constraints. Some plants have negligible storage capacity (**run-of-river**) and must pass all inflows through turbines and spillways within the same stage. At each stage a hydro is PreFilling, Filling or Operating, and [LP Formulation — Lifecycle Phases](/math/lp-formulation#lifecycle-phases) tabulates what each phase fixes.
 
+The figure traces one hydro's phase across the study, from the first stage (the start oval). A hydro without filling is Operating inside its commissioning window and PreFilling outside it, before its entry stage and from its exit stage on, so a hydro that leaves service stays PreFilling for the rest of the study. A hydro without filling and without a window is Operating at every stage. A filling hydro is PreFilling before its filling start stage, Filling from that stage up to its entry stage, and Operating from its entry stage on. A filling hydro has no exit stage, so it never returns to PreFilling. For what each phase fixes in the stage LP, see [LP Formulation — Lifecycle Phases](/math/lp-formulation#lifecycle-phases).
+
+```d2
+direction: down
+
+classes: {
+  hydro: {style: {stroke: "#4a90b8"}}
+}
+
+start: "start" {shape: oval}
+pre: "PreFilling\nno dam: water passes by" {class: hydro}
+filling: "Filling\nstorage accumulates, no turbining" {class: hydro}
+op: "Operating\ngenerates" {class: hydro}
+
+start -> pre: "before the entry or\nfilling start stage"
+start -> filling: "filling from\nthe first stage"
+start -> op: "in service from\nthe first stage"
+pre -> filling: "filling start stage"
+pre -> op: "entry stage,\nno filling"
+filling -> op: "entry stage"
+op -> pre: "exit stage,\nno filling"
+```
+
 ### Decision Variables
 
 | Variable     | Units | Description                                                            |
@@ -327,6 +350,37 @@ Evaporation is a bounded LP column tied to storage by an evaporation row that li
 - **Cascade topology**: Upstream plants' turbined and spilled flow ($q + s$, with $q$ the plant's total turbined flow summed over its cells) becomes the downstream plant's inflow, within the release stage or, on a declared travel-time arc, partly in later stages (see _Cascade Travel Time_ below)
 - **Diversion targets**: Some plants can divert water to a declared target plant, bounded by $\bar{U}_h$; a plant's diverted flow reaches only its diversion target and is never part of its release to the plant downstream
 - **Pumping stations**: May receive pumped water (increasing storage) or supply water to pumps (decreasing storage)
+
+The figure draws the water paths that meet at one plant. The incremental inflow $a_h$ enters the reservoir. The upstream plant's release $q + s$ arrives within the release stage for the share $\nu_{h',t,0}$; the rest enters the in-transit bucket and reaches the reservoir in later stages as it matures (the dashed edge). The bucket exists only on a main cascade arc with a nonzero travel time; on any other arc the share is $1$ and the whole release arrives within the release stage. This plant releases its own $q + s$ to the downstream plant and diverts $u_h$ to its diversion target. A pumping station moves $p_y$ from its source reservoir to its destination; the figure draws one pumping from the downstream plant into this reservoir. This plant also receives the diversion of any plant that targets it and supplies any station that pumps from it; these are the same edges seen from the other plant. Evaporation $e_h$ and withdrawal $r_h$ leave the modeled system, each signed, so a negative value adds water. [Cascade Travel Time](#cascade-travel-time) defines the share and the bucket, and [LP Formulation §4](/math/lp-formulation#4-hydro-water-balance) writes the balance row that sums these paths.
+
+```d2
+direction: down
+
+classes: {
+  hydro: {style: {stroke: "#4a90b8"}}
+}
+
+up: "Upstream\nplant" {shape: cylinder; class: hydro}
+inflow: "Inflow a" {shape: oval; class: hydro}
+bucket: "In-transit\nbucket"
+res: "Reservoir vₕ" {shape: cylinder; class: hydro}
+down: "Downstream\nplant" {shape: cylinder; class: hydro}
+divt: "Diversion\ntarget" {shape: cylinder; class: hydro}
+pump: "Pumping station"
+evap: "Evaporation e" {shape: oval}
+wd: "Withdrawal r" {shape: oval}
+
+inflow -> res: "a"
+up -> res: "q + s\n(share ν)"
+up -> bucket: "q + s\n(rest)"
+bucket -> res: "matures" {style.stroke-dash: 4}
+res -> down: "q + s"
+res -> divt: "u"
+down -> pump: "p"
+pump -> res: "p"
+evap <- res: "e"
+res -> wd: "r"
+```
 
 ### Key Parameters
 

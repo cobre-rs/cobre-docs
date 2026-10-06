@@ -332,6 +332,15 @@ The guarantee covers the numerical content of the outputs, not the raw bytes of
 the output files. Independent re-derivation of numerical content is the subject
 of section 5.
 
+**Agreement between values computed in different orders.** Bit-identity is a
+property of each reported value across re-runs, rank counts and thread counts.
+Two values that are equal in exact arithmetic but computed by different
+formulas — a total formed by multiplying a sum by a factor, and the sum of the
+parts each multiplied by that factor — need not agree to the last bit, because
+floating-point multiplication does not distribute over addition exactly. They
+can differ by a rounding-scale amount, and each is still reproduced
+bit-identically on every run.
+
 **Policy reuse across software versions.** A stored policy loads only in the
 software version that wrote it, so the guarantee covers re-deriving a policy
 from its recorded inputs, not loading a stored policy in another version (see

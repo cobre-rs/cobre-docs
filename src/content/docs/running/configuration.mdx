@@ -98,7 +98,7 @@ load-time error (`deny_unknown_fields`).
 | `forward_passes` | integer | `sampled` only | Number of scenario trajectories per iteration (`>= 1`). Larger values reduce variance in each iteration's cut but increase cost per iteration. Rejected under `"enumerated"`. |
 
 There is **no default** forward-pass count: an absent `training.selection` is
-a hard load error ([`SchemaError`](/reference/error-codes/#schemaerror)).
+a hard load error ([`SchemaViolation`](/reference/error-codes/#schemaviolation)).
 
 Example — sampled:
 
@@ -1139,5 +1139,5 @@ Train with in-sample noise and simulate with out-of-sample inflow. The `training
 
 - [Case Directory Format](/reference/case-directory-format/) — full schema for all input files
 - [Running Studies](/running/running-studies/) — end-to-end workflow guide
-- [Error Codes](/reference/error-codes/) — validation errors including `SchemaError` for config fields
+- [Error Codes](/reference/error-codes/) — validation errors including `SchemaViolation` for config fields
 - [Multi-Resolution Studies](/math/multi-resolution-studies/) — how stage resolution affects PAR noise sharing (noise groups) and observation aggregation

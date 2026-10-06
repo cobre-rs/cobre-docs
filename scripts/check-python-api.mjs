@@ -57,13 +57,11 @@ export function parseStub(text, mod) {
       if (quotes % 2 === 1) inDocstring = false;
       continue;
     }
-    if (quotes % 2 === 1) {
-      inDocstring = true;
-      continue;
-    }
-    if (quotes > 0 || line.length === 0) continue;
-    const indent = line.length - line.trimStart().length;
-    const body = line.trim();
+    if (quotes % 2 === 1) inDocstring = true;
+    const code = line.split('"""')[0].replace(/\s+$/, "");
+    if (code.length === 0) continue;
+    const indent = code.length - code.trimStart().length;
+    const body = code.trim();
     let m;
     if (indent === 0) {
       cls = null;
@@ -73,13 +71,13 @@ export function parseStub(text, mod) {
           headings.push(cls);
           fields.set(cls, []);
         }
-      } else if ((m = body.match(/^def\s+([A-Za-z_]\w*)\s*\(/)) && isPublic(m[1])) {
+      } else if ((m = body.match(/^(?:async\s+)?def\s+([A-Za-z_]\w*)\s*\(/)) && isPublic(m[1])) {
         headings.push(`${mod}.${m[1]}`);
       } else if ((m = body.match(/^([A-Za-z_]\w*)\s*:/)) && isPublic(m[1])) {
         headings.push(`${mod}.${m[1]}`);
       }
     } else if (cls !== null && indent === 4) {
-      if ((m = body.match(/^def\s+([A-Za-z_]\w*)\s*\(/)) && isPublic(m[1])) {
+      if ((m = body.match(/^(?:async\s+)?def\s+([A-Za-z_]\w*)\s*\(/)) && isPublic(m[1])) {
         headings.push(`${cls}.${m[1]}`);
       } else if ((m = body.match(/^([A-Za-z_]\w*)\s*:/)) && isPublic(m[1])) {
         fields.get(cls).push(m[1]);

@@ -3,14 +3,12 @@ title: Bibliography
 description: External sources cited across the methodology chapters.
 ---
 
-This bibliography collects every external source — papers, books, preprints,
-and software references — cited in the methodology chapters of this book.
-Each entry lists the chapters that depend on it; foundational works that
-underlie the methodology without being directly quoted are included as
-background references.
+This bibliography collects every external source cited across this site's
+methodology chapters, plus background references that the methodology rests
+on without quoting. Chapters cite an entry in short form, author and year,
+linked to the section below that holds it.
 
-For a glossary of domain terms used throughout the book, see
-[Glossary](/reference/glossary).
+For domain terms, see [Glossary](/reference/glossary).
 
 ---
 
@@ -26,12 +24,15 @@ For a glossary of domain terms used throughout the book, see
 
 - **Birge, J.R.** (1985). Decomposition and partitioning methods for multistage stochastic linear programs. _Operations Research_, 33(5), 989–1007. [doi:10.1287/opre.33.5.989](https://doi.org/10.1287/opre.33.5.989)
   Multi-cut formulation for stochastic programs. Origin of the multi-cut L-shaped method that the single-cut formulation in [Cut Management](/math/cut-management) is contrasted with.
+  _Background reference for [Cut Management](/math/cut-management), [SDDP Algorithm](/math/sddp-algorithm)._
 
 - **Birge, J.R. & Louveaux, F.V.** (2011). _Introduction to Stochastic Programming_, 2nd edition. Springer. [doi:10.1007/978-1-4614-0237-4](https://doi.org/10.1007/978-1-4614-0237-4)
   Standard textbook reference for stochastic programming theory and decomposition methods.
+  _Background reference for [SDDP Algorithm](/math/sddp-algorithm)._
 
 - **Philpott, A.B. & Guan, Z.** (2008). On the convergence of stochastic dual dynamic programming and related methods. _Operations Research Letters_, 36(4), 450–455. [doi:10.1016/j.orl.2008.01.013](https://doi.org/10.1016/j.orl.2008.01.013)
   Convergence theory for SDDP under finitely many scenarios.
+  _Background reference for [Cut Management](/math/cut-management)._
 
 - **Shapiro, A.** (2011). Analysis of stochastic dual dynamic programming method. _European Journal of Operational Research_, 209(1), 63–72. [doi:10.1016/j.ejor.2010.08.007](https://doi.org/10.1016/j.ejor.2010.08.007)
   Convergence analysis, complexity bounds, and risk-averse extensions for SDDP.
@@ -47,11 +48,11 @@ For a glossary of domain terms used throughout the book, see
 
 - **de Matos, V.L., Philpott, A.B. & Finardi, E.C.** (2015). Improving the performance of Stochastic Dual Dynamic Programming. _Journal of Computational and Applied Mathematics_, 290, 196–208. [doi:10.1016/j.cam.2015.04.048](https://doi.org/10.1016/j.cam.2015.04.048)
   Cut selection strategies for SDDP, including the Level-1 active-cut criterion.
-  _Cited in [Cut Management](/math/cut-management) §6._
+  _Cited in [Cut Management](/math/cut-management) §7.1._
 
-- **Bandarra, M. & Guigues, V.** (2021). Single cut and multicut stochastic dual dynamic programming with cut selection for multistage stochastic linear programs: convergence proof and numerical experiments. _Computational Management Science_, 18(2), 125–148. [doi:10.1007/s10287-021-00387-8](https://doi.org/10.1007/s10287-021-00387-8). Preprint: [arXiv:1902.06757](https://arxiv.org/abs/1902.06757).
+- **Bandarra, M. & Guigues, V.** (2021). Single cut and multicut stochastic dual dynamic programming with cut selection for multistage stochastic linear programs: convergence proof and numerical experiments. _Computational Management Science_, 18(2), 125–148. [doi:10.1007/s10287-021-00387-8](https://doi.org/10.1007/s10287-021-00387-8). Preprint: [arXiv:1902.06757](https://arxiv.org/abs/1902.06757)
   Convergence proof for Level-1 and LML1 cut selection strategies. Guarantees finite convergence with probability 1.
-  _Cited in [Cut Management](/math/cut-management) §6._
+  _Cited in [Cut Management](/math/cut-management) §7.2, §9._
 
 ---
 
@@ -63,16 +64,17 @@ For a glossary of domain terms used throughout the book, see
 
 - **Philpott, A.B. & de Matos, V.L.** (2012). Dynamic sampling algorithms for multi-stage stochastic programs with risk aversion. _European Journal of Operational Research_, 218(2), 470–483. [doi:10.1016/j.ejor.2011.10.056](https://doi.org/10.1016/j.ejor.2011.10.056)
   Dynamic sampling under risk aversion with Markovian scenario transitions.
+  _Background reference for [Risk Measures](/math/risk-measures)._
 
 - **Philpott, A.B., de Matos, V.L. & Finardi, E.C.** (2013). On solving multistage stochastic programs with coherent risk measures. _Operations Research_, 61(4), 957–970. [doi:10.1287/opre.2013.1175](https://doi.org/10.1287/opre.2013.1175)
   Time-consistent risk-averse SDDP with CVaR. Dual representation and aggregation weights for risk-averse cut generation.
-  _Cited in [Risk Measures](/math/risk-measures) §11 and [Upper Bound Evaluation](/math/upper-bound-evaluation) (References)._
+  _Cited in [Risk Measures](/math/risk-measures) §10, §11, [Upper Bound Evaluation](/math/upper-bound-evaluation) (References)._
 
 ---
 
 ## Upper Bound Evaluation
 
-- **Costa, B.F.P. & Leclère, V.** (2023). Duality of upper bounds in stochastic dynamic programming. _Optimization Online_. [optimization-online.org/?p=23738](https://optimization-online.org/?p=23738)
+- **Costa, B.F.P. & Leclère, V.** (2023). Duality of upper bounds in stochastic dynamic programming. _Optimization Online_. Preprint: [optimization-online.org/?p=23738](https://optimization-online.org/?p=23738)
   Duality framework for inner-approximation upper bounds. Basis for the SIDP inner-approximation estimator described in [Upper Bound Evaluation](/math/upper-bound-evaluation).
   _Cited in [Upper Bound Evaluation](/math/upper-bound-evaluation) (References)._
 
@@ -117,36 +119,37 @@ For a glossary of domain terms used throughout the book, see
 ## Boundary Conditions and Horizon Modes
 
 - **Costa, B.F.P., Calixto, A.O., Sousa, R.F.S., Figueiredo, R.T., Penna, D.D.J., Khenayfis, L.S. & Oliveira, A.M.R.** (2025). Boundary conditions for hydrothermal operation planning problems: the infinite horizon approach. _Proceeding Series of the Brazilian Society of Computational and Applied Mathematics_, 11(1), 1–7. [doi:10.5540/03.2025.011.01.0355](https://doi.org/10.5540/03.2025.011.01.0355)
-  Periodic policy graph and infinite-horizon SDDP formulation. Source of the season function $\tau(t)$, the cycle convergence inequality, the season-indexed cut pool with its cut-sharing equation, and the fixed-point Bellman operator used in the cyclic-mode treatment.
+  Periodic policy graph and infinite-horizon SDDP formulation. Source of the season function $\tau(t)$, the cycle convergence inequality, the season-indexed cut pool with its cut-sharing equation, and the fixed-point Bellman operator of the reserved cyclic design that [Horizon Modes](/math/horizon-modes) describes.
   _Cited in [Horizon Modes](/math/horizon-modes) §6._
 
 ---
 
 ## Software References
 
-- **Dowson, O. & Kapelevich, L.** (2021). SDDP.jl: A Julia Package for Stochastic Dual Dynamic Programming. _INFORMS Journal on Computing_, 33(1), 27–33. [doi:10.1287/ijoc.2020.0987](https://doi.org/10.1287/ijoc.2020.0987). Documentation: [sddp.dev](https://sddp.dev/stable/).
+- **Dowson, O. & Kapelevich, L.** (2021). SDDP.jl: A Julia Package for Stochastic Dual Dynamic Programming. _INFORMS Journal on Computing_, 33(1), 27–33. [doi:10.1287/ijoc.2020.0987](https://doi.org/10.1287/ijoc.2020.0987). Documentation: [sddp.dev](https://sddp.dev/stable/)
   Reference SDDP implementation in Julia. Influenced cut-management patterns, sampling-scheme abstractions, the state-pinning cut-extraction technique (realised in Cobre via column bounds and reduced costs), and notation conventions in Cobre.
-  _Cited in [Notation Conventions](/overview/notation-conventions), [LP Formulation](/math/lp-formulation) §11, [Cut Management](/math/cut-management) §2, [Scenario Generation](/math/scenario-generation) §3, [Risk Measures](/math/risk-measures) §3, [Policy Graphs](/math/policy-graphs) §4._
+  _Cited in [Notation Conventions](/overview/notation-conventions), [Scenario Generation](/math/scenario-generation) §3, [Risk Measures](/math/risk-measures) §3, [Policy Graphs](/math/policy-graphs) §4, [SDDP Algorithm](/math/sddp-algorithm) §4._
 
 - **Huangfu, Q. & Hall, J.A.J.** (2018). Parallelizing the dual revised simplex method. _Mathematical Programming Computation_, 10(1), 119–142. [doi:10.1007/s12532-017-0130-5](https://doi.org/10.1007/s12532-017-0130-5)
   HiGHS dual simplex implementation. HiGHS is Cobre's default LP solver.
+  _Background reference for [LP Warm-Start](/math/lp-warm-start)._
 
 ---
 
 ## Numerical Methods
 
 - **Curtis, A.R. & Reid, J.K.** (1972). On the automatic scaling of matrices for Gaussian elimination. _IMA Journal of Applied Mathematics_, 10(1), 118–124. [doi:10.1093/imamat/10.1.118](https://doi.org/10.1093/imamat/10.1.118)
-  Geometric-mean matrix equilibration — the row/column scaling heuristic Cobre applies to condition the stage LP.
+  Iterative least-squares matrix scaling for Gaussian elimination. Cobre's own prescaler is a one-pass geometric-mean row/column equilibration in the same family; the LP backend's optional `solver_scaling` profile applies the Curtis–Reid algorithm.
   _Cited in [LP Layout and Scaling](/math/lp-layout-and-scaling) §2._
 
 - **Higham, N.J.** (2002). Computing the nearest correlation matrix — a problem from finance. _IMA Journal of Numerical Analysis_, 22(3), 329–343. [doi:10.1093/imanum/22.3.329](https://doi.org/10.1093/imanum/22.3.329)
   The nearest positive-semidefinite / correlation-matrix problem underlying the clip-negative-eigenvalues projection used when factorising the spatial correlation matrix.
-  _Background reference for [PAR Inflow Model](/math/par-inflow-model) §6._
+  _Cited in [PAR Inflow Model](/math/par-inflow-model) §6._
 
 ---
 
 ## Brazilian Power-System Context
 
-- **CEPEL Technical Documentation.** Centro de Pesquisas de Energia Elétrica. Online manual: [see.cepel.br/manual/libs/latest/](https://see.cepel.br/manual/libs/latest/).
-  Official documentation for the NEWAVE / DECOMP / DESSEM suite of stochastic-dispatch models operated for the Brazilian system. Cited here only for the practitioner terminology map — the DECOMP/DESSEM/NEWAVE Portuguese terms (`q_lat`, `q_out`, `h_mon`/`h_jus`) carried in the glossary and notation tables as a translation aid. The methods those models implement are credited to their primary articles above: FPHA → Diniz & Maceira (2008); PAR(p) and iterative order reduction → Maceira & Damázio (2006); DECOMP-style scenario tree → Maceira et al. (2002). Cobre's dead-volume filling model is its own and is not attributed here.
-  _Cited in [Hydro Production Models](/math/hydro-production-models) §2.1, [Glossary](/reference/glossary)._
+- **CEPEL — Centro de Pesquisas de Energia Elétrica** (n.d.). _Documentação Técnica dos modelos para Planejamento da Operação do SIN – Ambiente Libs_. Online manual: [see.cepel.br/manual/libs/latest/](https://see.cepel.br/manual/libs/latest/)
+  Official documentation of the NEWAVE / DECOMP / DESSEM suite of stochastic-dispatch models operated for the Brazilian system. Cited only for practitioner terms and notation: the equivalent-terms tables of the glossary, the GEVAZP residual distribution (section _Distribuição Lognormal 3 parâmetros_), the PAR(p) notation (section _Modelo Autorregressivo Periódico - Par(p)_) and the term "Tendência hidrológica" (section _Geração de Séries Sintéticas Condicionadas_). The methods those models implement are credited to their primary articles above: FPHA → Diniz & Maceira (2008); PAR(p) and iterative order reduction → Maceira & Damázio (2006); PAR(p)-A → Treistman et al. (2020); DECOMP-style scenario tree → Maceira et al. (2002). Cobre's dead-volume filling model is its own and is not attributed here.
+  _Cited in [Glossary](/reference/glossary/#equivalent-terms-in-other-planning-tools)._

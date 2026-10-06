@@ -1,0 +1,391 @@
+---
+title: Metadata Files
+description: The run metadata cobre run writes for training and simulation, and the stochastic-model provenance record, field by field.
+---
+
+Both `training/metadata.json` and `simulation/metadata.json` use an atomic
+write protocol:
+
+1. Serialize JSON to a temporary `.json.tmp` sibling file.
+2. Atomically rename the `.tmp` file to the target path.
+
+This ensures consumers never observe a partial file. If a metadata file exists,
+it contains a complete, valid JSON document. If a run is interrupted before the
+final write, the `.tmp` sibling may remain, but the target file reflects the
+last successfully completed write.
+
+The `status` field of both files is always `"complete"`; it does not record how
+the run ended. For training, read `convergence.termination_reason`, which is
+`"error"` when training stopped on a failure, and `convergence.achieved`, which
+is `true` when the `bound_stalling` rule stopped the run and `false` for every
+other termination reason. For simulation, read `scenarios.failed`.
+
+Both files are plain JSON, so `jq` reads them directly. For a script or CI
+check, see [Output format](/reference/cli-reference/#output-format) in the CLI
+Reference.
+
+From Python, `cobre.results.load_results(output_dir)` returns both metadata
+documents in one dict, together with a per-phase `complete` flag — see the
+[Python Quickstart](/getting-started/python-quickstart/).
+
+---
+
+## `training/metadata.json`
+
+The training metadata file is written atomically at the end of the training run.
+It merges run context, configuration, convergence outcome, row-pool statistics,
+objective bounds, LP solver statistics, and distribution information into a
+single file. The `convergence` block records how the run stopped.
+
+**Methodology:** [Determinism & Provenance](/math/determinism-guarantees) · [Stopping Rules](/math/stopping-rules)
+
+**Example (a `cobre run` of the 1dtoy template; hostname and timestamps replaced):**
+
+{/* capture: cobre run toy --quiet, then toy/output/training/metadata.json | cobre   v0.17.0 | binary: cobre-cli sha256 23916b46 | case: temporary 1dtoy derivative (cobre init --template 1dtoy, unchanged) */}
+
+```json
+{
+  "cobre_version": "0.17.0",
+  "hostname": "<hostname>",
+  "solver": "highs",
+  "solver_version": "1.13.1",
+  "started_at": "<timestamp>",
+  "completed_at": "<timestamp>",
+  "duration_seconds": 0.468,
+  "status": "complete",
+  "configuration": {
+    "seed": null,
+    "max_iterations": 128,
+    "forward_passes": 1,
+    "stopping_mode": "any",
+    "policy_mode": "fresh"
+  },
+  "problem_dimensions": {
+    "num_stages": 4,
+    "num_hydros": 1,
+    "num_thermals": 2,
+    "num_buses": 1,
+    "num_lines": 0
+  },
+  "iterations": {
+    "completed": 128,
+    "converged_at": null
+  },
+  "convergence": {
+    "achieved": false,
+    "final_gap_percent": -96.28359773344324,
+    "termination_reason": "iteration_limit"
+  },
+  "row_pool": {
+    "total_generated": 384,
+    "total_active": 384,
+    "peak_active": 384,
+    "cuts_active": 384,
+    "rows_in_lp_total": 0,
+    "rows_in_lp_solve_count": 0,
+    "rows_in_lp_max": 0,
+    "total_loaded": 0
+  },
+  "bounds": {
+    "final_lower_bound": 15595518.381798636,
+    "final_upper_bound": 579592.1986224409,
+    "final_upper_bound_std": 0.0,
+    "final_upper_bound_kind": "statistical"
+  },
+  "solve_stats": {
+    "total_lp_solves": 5632,
+    "first_try": 5632,
+    "retried": 0,
+    "failed": 0,
+    "forward_solve_seconds": 0.05161780600000029,
+    "backward_solve_seconds": 0.24256579799999914,
+    "parallelism": 1
+  },
+  "setup": {
+    "load_seconds": 0.001174509,
+    "stochastic_fit_seconds": 0.000100001,
+    "production_fit_seconds": 0.000026218,
+    "evaporation_fit_seconds": 4.48e-7,
+    "broadcast_seconds": 0.000202196
+  },
+  "distribution": {
+    "backend": "local",
+    "world_size": 1,
+    "ranks_participated": 1,
+    "num_hosts": 1,
+    "threads_per_rank": 1,
+    "hosts": [
+      {
+        "hostname": "<hostname>",
+        "ranks": [0]
+      }
+    ]
+  }
+}
+```
+
+**Top-level fields:**
+
+| Name                       | Type   | Nullable | Units | Description                                                                                                                                                        |
+| -------------------------- | ------ | -------- | ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `cobre_version`            | string | No       | —     | Version of the cobre binary that produced this output.                                                                                                             |
+| `hostname`                 | string | No       | —     | Hostname of the machine that ran training.                                                                                                                         |
+| `solver`                   | string | No       | —     | LP solver backend: `"highs"` or `"clp"`.                                                                                                                           |
+| `solver_version`           | string | Yes      | —     | Version string of the linked LP solver library. Omitted when not available.                                                                                        |
+| `started_at`               | string | No       | —     | ISO 8601 timestamp when training started.                                                                                                                          |
+| `completed_at`             | string | No       | —     | ISO 8601 timestamp when training completed.                                                                                                                        |
+| `duration_seconds`         | number | No       | s     | Total training wall-clock duration in seconds.                                                                                                                     |
+| `status`                   | string | No       | —     | Always `"complete"`; `convergence.termination_reason` records how the run ended (`"error"` when training stopped on a failure).                                    |
+| `production_fit_deviation` | object | Yes      | —     | Run-level rollup of the per-entity production-model fit deviation (informational, never hashed). Omitted when the run fitted no model whose deviation is measured. |
+
+**`configuration` fields:**
+
+| Name                           | Type    | Nullable | Units | Description                                                                                                                   |
+| ------------------------------ | ------- | -------- | ----- | ----------------------------------------------------------------------------------------------------------------------------- |
+| `configuration.seed`           | integer | Yes      | —     | The configured `training.tree_seed`; `null` when absent (the run then uses `42`).                                             |
+| `configuration.max_iterations` | integer | Yes      | —     | Maximum iterations: the `limit` of the first `iteration_limit` entry of `training.stopping_rules`; `null` when there is none. |
+| `configuration.forward_passes` | integer | Yes      | —     | Number of forward-pass scenario trajectories per iteration. `null` under `enumerated` selection.                              |
+| `configuration.stopping_mode`  | string  | No       | —     | How multiple stopping rules combine: `"any"` or `"all"`.                                                                      |
+| `configuration.policy_mode`    | string  | No       | —     | Policy warm-start mode: `"fresh"`, `"warm_start"`, or `"resume"`.                                                             |
+
+**`problem_dimensions` fields:**
+
+| Name                              | Type    | Nullable | Units | Description                                                   |
+| --------------------------------- | ------- | -------- | ----- | ------------------------------------------------------------- |
+| `problem_dimensions.num_stages`   | integer | No       | —     | Number of stages: the study stages plus any pre-study stages. |
+| `problem_dimensions.num_hydros`   | integer | No       | —     | Total number of hydro plants.                                 |
+| `problem_dimensions.num_thermals` | integer | No       | —     | Total number of thermal plants.                               |
+| `problem_dimensions.num_buses`    | integer | No       | —     | Total number of buses.                                        |
+| `problem_dimensions.num_lines`    | integer | No       | —     | Total number of transmission lines.                           |
+
+**`iterations` fields:**
+
+| Name                      | Type    | Nullable | Units | Description                                                       |
+| ------------------------- | ------- | -------- | ----- | ----------------------------------------------------------------- |
+| `iterations.completed`    | integer | No       | —     | Number of training iterations that finished.                      |
+| `iterations.converged_at` | integer | Yes      | —     | Equal to `completed` when `achieved` is `true`; `null` otherwise. |
+
+**`convergence` fields:**
+
+| Name                             | Type    | Nullable | Units | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| -------------------------------- | ------- | -------- | ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `convergence.achieved`           | boolean | No       | —     | `true` when the `bound_stalling` rule stopped the run; `false` for every other termination reason, `gap` included.                                                                                                                                                                                                                                                                                                                                                                         |
+| `convergence.final_gap_percent`  | number  | Yes      | %     | [Optimality gap](/math/stopping-rules#optimality-gap) between lower and upper bounds at termination as a percentage. `null` when the final lower bound is not positive.                                                                                                                                                                                                                                                                                                                    |
+| `convergence.termination_reason` | string  | No       | —     | Name of the stopping rule that ended the run: `"iteration_limit"`, `"time_limit"`, `"bound_stalling"`, or `"gap"`; `"error"` when training stopped on a failure, in which case `cobre run` exits non-zero; `"unknown"` when an `on_iteration` callback of [`cobre.Study.train`](/reference/python-api/#cobrestudytrain) or [`cobre.run.run`](/reference/python-api/#cobrerunrun) stopped the run by returning a truthy value or raising, and no stopping rule triggered at that iteration. |
+
+**`row_pool` fields:**
+
+| Name                              | Type    | Nullable | Units | Description                                                                                                                                  |
+| --------------------------------- | ------- | -------- | ----- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| `row_pool.total_generated`        | integer | No       | —     | Total cut rows generated over the entire run.                                                                                                |
+| `row_pool.total_active`           | integer | No       | —     | Cut rows still active in the pool at termination.                                                                                            |
+| `row_pool.peak_active`            | integer | No       | —     | Highest number of simultaneously active cut rows observed.                                                                                   |
+| `row_pool.cuts_active`            | integer | No       | —     | Cut rows currently active in the LP at termination.                                                                                          |
+| `row_pool.rows_in_lp_total`       | integer | No       | —     | Sum of resident rows-in-LP over every lazy-selection solve in the run. Zero when no lazy selection ran.                                      |
+| `row_pool.rows_in_lp_solve_count` | integer | No       | —     | Number of lazy-selection solves in the run. Zero when no lazy selection ran.                                                                 |
+| `row_pool.rows_in_lp_max`         | integer | No       | —     | Largest resident rows-in-LP over any single lazy-selection solve. Zero when no lazy selection ran.                                           |
+| `row_pool.total_loaded`           | integer | No       | —     | Cut rows loaded from a boundary policy rather than generated by this run; a subset of `total_generated`. `0` when no boundary policy loaded. |
+
+**`bounds` fields:**
+
+| Name                            | Type   | Nullable | Units | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| ------------------------------- | ------ | -------- | ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `bounds.final_lower_bound`      | number | No       | —     | Final lower bound on the objective at termination.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| `bounds.final_upper_bound`      | number | Yes      | —     | Final upper-bound value; always a number in a file `cobre run` writes.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| `bounds.final_upper_bound_std`  | number | Yes      | —     | Sample standard deviation of the last completed iteration's forward-pass scenario costs. `null` when `final_upper_bound_kind` is `"exact"`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| `bounds.final_upper_bound_kind` | string | No       | —     | Upper-bound regime of the run: `"exact"` under `enumerated` selection, `"statistical"` under `sampled` selection; the same value as `upper_bound_kind` on every row of [`training/convergence.parquet`](/reference/output-format/#trainingconvergenceparquet). Under `"exact"`, the gap between the bounds is a valid optimality certificate only when the risk measure is the same at every stage; under a stage-varying measure `final_upper_bound` is the policy's expected cost, which can fall below `final_lower_bound` (see [Cut Management — when bounds and certificates hold](/math/cut-management#when-bounds-and-certificates-hold)). |
+
+**`solve_stats` fields:**
+
+| Name                                 | Type    | Nullable | Units | Description                                                   |
+| ------------------------------------ | ------- | -------- | ----- | ------------------------------------------------------------- |
+| `solve_stats.total_lp_solves`        | integer | Yes      | —     | Total number of LP solves performed during training.          |
+| `solve_stats.first_try`              | integer | Yes      | —     | Number of LP solves that succeeded on the first attempt.      |
+| `solve_stats.retried`                | integer | Yes      | —     | Number of LP solves that succeeded after one or more retries. |
+| `solve_stats.failed`                 | integer | Yes      | —     | Number of LP solves that failed terminally.                   |
+| `solve_stats.forward_solve_seconds`  | number  | Yes      | s     | Cumulative wall-clock seconds in forward-phase LP solves.     |
+| `solve_stats.backward_solve_seconds` | number  | Yes      | s     | Cumulative wall-clock seconds in backward-phase LP solves.    |
+| `solve_stats.parallelism`            | integer | Yes      | —     | Degree of parallelism (worker count) used during training.    |
+
+**`distribution` fields:**
+
+| Name                              | Type    | Nullable | Units | Description                                                                                                                      |
+| --------------------------------- | ------- | -------- | ----- | -------------------------------------------------------------------------------------------------------------------------------- |
+| `distribution.backend`            | string  | No       | —     | Communication backend: `"mpi"` or `"local"`.                                                                                     |
+| `distribution.world_size`         | integer | No       | —     | Total number of processes in the communicator. `1` for single-process runs.                                                      |
+| `distribution.ranks_participated` | integer | No       | —     | Number of processes that participated in computation.                                                                            |
+| `distribution.num_hosts`          | integer | No       | —     | Number of distinct physical hosts.                                                                                               |
+| `distribution.threads_per_rank`   | integer | No       | —     | Worker threads per process.                                                                                                      |
+| `distribution.mpi_library`        | string  | Yes      | —     | MPI implementation version (e.g. `"Open MPI v4.1.6"`). Omitted for the local backend.                                            |
+| `distribution.mpi_standard`       | string  | Yes      | —     | MPI standard version (e.g. `"MPI 4.0"`). Omitted for the local backend.                                                          |
+| `distribution.thread_level`       | string  | Yes      | —     | Negotiated MPI thread safety level. Omitted for the local backend.                                                               |
+| `distribution.slurm_job_id`       | string  | Yes      | —     | SLURM job ID when running under SLURM. Omitted otherwise.                                                                        |
+| `distribution.hosts`              | array   | No       | —     | Per-host rank assignment. One entry per physical host. For local single-process runs, contains a single entry with `ranks: [0]`. |
+| `distribution.hosts[].hostname`   | string  | No       | —     | Hostname for this entry.                                                                                                         |
+| `distribution.hosts[].ranks`      | array   | No       | —     | Array of integers: sorted global ranks assigned to this host.                                                                    |
+
+**`setup` fields** (informational):
+
+| Name                            | Type   | Nullable | Units | Description                                                               |
+| ------------------------------- | ------ | -------- | ----- | ------------------------------------------------------------------------- |
+| `setup.load_seconds`            | number | No       | s     | Wall-clock seconds spent loading the input case.                          |
+| `setup.stochastic_fit_seconds`  | number | No       | s     | Wall-clock seconds spent fitting the stochastic process.                  |
+| `setup.production_fit_seconds`  | number | No       | s     | Wall-clock seconds spent fitting the production model (FPHA hyperplanes). |
+| `setup.evaporation_fit_seconds` | number | No       | s     | Wall-clock seconds spent fitting the evaporation model.                   |
+| `setup.broadcast_seconds`       | number | No       | s     | Wall-clock seconds spent broadcasting setup data across MPI ranks.        |
+
+These values are non-deterministic: they vary run-to-run with
+machine load and are excluded from any parity computation.
+
+**`production_fit_deviation` fields** (absent when the run fitted no model whose deviation is measured):
+
+| Name                                      | Type    | Nullable | Units | Description                                                                 |
+| ----------------------------------------- | ------- | -------- | ----- | --------------------------------------------------------------------------- |
+| `production_fit_deviation.n_entries`      | integer | No       | —     | Number of per-entity entries the rollup summarizes.                         |
+| `production_fit_deviation.mean_abs`       | number  | No       | —     | Arithmetic mean of the per-entry mean absolute deviation magnitudes.        |
+| `production_fit_deviation.max_abs`        | number  | No       | —     | Maximum of the per-entry max absolute deviation magnitudes.                 |
+| `production_fit_deviation.worst_relative` | number  | No       | —     | Largest per-entry relative (dimensionless) deviation across all entries.    |
+| `production_fit_deviation.worst_entry`    | object  | Yes      | —     | The entry with the largest relative deviation. `null` when no entry exists. |
+
+**`production_fit_deviation.worst_entry` fields:**
+
+| Name                                             | Type    | Nullable | Units | Description                                                                       |
+| ------------------------------------------------ | ------- | -------- | ----- | --------------------------------------------------------------------------------- |
+| `production_fit_deviation.worst_entry.entity_id` | integer | No       | —     | Identifier of the entity owning the worst entry.                                  |
+| `production_fit_deviation.worst_entry.stage_id`  | integer | No       | —     | Declared stage id (from `stages.json`) of the first stage the worst entry covers. |
+| `production_fit_deviation.worst_entry.relative`  | number  | No       | —     | Relative (dimensionless) deviation of the worst entry.                            |
+| `production_fit_deviation.worst_entry.mean_abs`  | number  | No       | —     | Mean absolute deviation magnitude of the worst entry.                             |
+| `production_fit_deviation.worst_entry.max_abs`   | number  | No       | —     | Max absolute deviation magnitude of the worst entry.                              |
+
+---
+
+## `simulation/metadata.json`
+
+The simulation metadata file is written atomically when simulation completes.
+It captures run context, scenario completion counts, aggregate cost statistics,
+LP solver statistics, and distribution information.
+
+**Methodology:** [Determinism & Provenance](/math/determinism-guarantees)
+
+**Example (the same `cobre run` of the 1dtoy template; hostname and timestamps replaced):**
+
+{/* capture: cobre run toy --quiet, then toy/output/simulation/metadata.json | cobre   v0.17.0 | binary: cobre-cli sha256 23916b46 | case: temporary 1dtoy derivative (cobre init --template 1dtoy, unchanged) */}
+
+```json
+{
+  "cobre_version": "0.17.0",
+  "hostname": "<hostname>",
+  "solver": "highs",
+  "solver_version": "1.13.1",
+  "started_at": "<timestamp>",
+  "completed_at": "<timestamp>",
+  "duration_seconds": 0.324,
+  "status": "complete",
+  "scenarios": {
+    "total": 100,
+    "completed": 100,
+    "failed": 0
+  },
+  "cost": {
+    "mean_cost": 9679385.922404818,
+    "std_cost": 23696548.3646435
+  },
+  "solve_stats": {
+    "total_lp_solves": 400,
+    "first_try": 400,
+    "retried": 0,
+    "failed": 0,
+    "solve_seconds": 0.053534688,
+    "parallelism": 1
+  },
+  "distribution": {
+    "backend": "local",
+    "world_size": 1,
+    "ranks_participated": 1,
+    "num_hosts": 1,
+    "threads_per_rank": 1,
+    "hosts": [
+      {
+        "hostname": "<hostname>",
+        "ranks": [0]
+      }
+    ]
+  }
+}
+```
+
+**Top-level fields:**
+
+| Name               | Type   | Nullable | Units | Description                                                                 |
+| ------------------ | ------ | -------- | ----- | --------------------------------------------------------------------------- |
+| `cobre_version`    | string | No       | —     | Version of the cobre binary that produced this output.                      |
+| `hostname`         | string | No       | —     | Hostname of the machine that ran simulation.                                |
+| `solver`           | string | No       | —     | LP solver backend: `"highs"` or `"clp"`.                                    |
+| `solver_version`   | string | Yes      | —     | LP solver library version string. Omitted when not available.               |
+| `started_at`       | string | No       | —     | ISO 8601 timestamp when simulation started.                                 |
+| `completed_at`     | string | No       | —     | ISO 8601 timestamp when simulation completed.                               |
+| `duration_seconds` | number | No       | s     | Total simulation wall-clock duration in seconds.                            |
+| `status`           | string | No       | —     | Always `"complete"`: the file is written only when the simulation finishes. |
+
+**`scenarios` fields:**
+
+| Name                  | Type    | Nullable | Units | Description                                                                                                              |
+| --------------------- | ------- | -------- | ----- | ------------------------------------------------------------------------------------------------------------------------ |
+| `scenarios.total`     | integer | No       | —     | Number of scenarios whose output partitions were written.                                                                |
+| `scenarios.completed` | integer | No       | —     | Number of scenarios whose output partitions were written.                                                                |
+| `scenarios.failed`    | integer | No       | —     | Number of scenarios whose output partitions could not be written; a failed LP solve stops the run with an error instead. |
+
+**`cost` fields** (always written):
+
+| Name             | Type   | Nullable | Units | Description                                                      |
+| ---------------- | ------ | -------- | ----- | ---------------------------------------------------------------- |
+| `cost.mean_cost` | number | No       | USD   | Mean total cost across simulated scenarios.                      |
+| `cost.std_cost`  | number | No       | USD   | Standard deviation of the total cost across simulated scenarios. |
+
+**`solve_stats` fields:**
+
+| Name                          | Type    | Nullable | Units | Description                                                   |
+| ----------------------------- | ------- | -------- | ----- | ------------------------------------------------------------- |
+| `solve_stats.total_lp_solves` | integer | Yes      | —     | Total number of LP solves performed during simulation.        |
+| `solve_stats.first_try`       | integer | Yes      | —     | Number of LP solves that succeeded on the first attempt.      |
+| `solve_stats.retried`         | integer | Yes      | —     | Number of LP solves that succeeded after one or more retries. |
+| `solve_stats.failed`          | integer | Yes      | —     | Number of LP solves that failed terminally.                   |
+| `solve_stats.solve_seconds`   | number  | Yes      | s     | Cumulative wall-clock seconds spent in simulation LP solves.  |
+| `solve_stats.parallelism`     | integer | Yes      | —     | Degree of parallelism (worker count) used during simulation.  |
+
+The `distribution` object has the same field structure as in `training/metadata.json`.
+See the **`distribution` fields** table above.
+
+---
+
+## `training/model_provenance.json`
+
+Records which data sources fed the inflow and hydro-production models. Written
+on every `cobre run`, before training starts; diagnostic. Top-level object with
+two sub-objects, `inflow` and `hydro_production`.
+
+**Methodology:** [Determinism & Provenance](/math/determinism-guarantees) · [PAR(p) Inflow Model](/math/par-inflow-model)
+
+**`inflow` fields:**
+
+| Name                                    | Type    | Nullable | Units | Description                                                                                        |
+| --------------------------------------- | ------- | -------- | ----- | -------------------------------------------------------------------------------------------------- |
+| `inflow.estimation_path`                | string  | No       | —     | Stable label of the estimation path taken.                                                         |
+| `inflow.seasonal_stats_source`          | string  | No       | —     | Origin of seasonal mean/std data: `"estimated"`, `"user_file"`, or `"n/a"`.                        |
+| `inflow.ar_coefficients_source`         | string  | No       | —     | Origin of the AR lag coefficients (same value set).                                                |
+| `inflow.correlation_source`             | string  | No       | —     | Origin of the spatial correlation decomposition (same value set).                                  |
+| `inflow.opening_tree_source`            | string  | No       | —     | Origin of the noise opening scenario tree (same value set).                                        |
+| `inflow.n_hydros`                       | integer | No       | —     | Number of hydro plants in the system.                                                              |
+| `inflow.ar_method`                      | string  | Yes      | —     | Order-selection method used when AR coefficients were estimated. `null` when AR was not estimated. |
+| `inflow.ar_max_order`                   | integer | Yes      | —     | Maximum AR order across all hydro plants. `null` when AR was not estimated.                        |
+| `inflow.white_noise_fallbacks`          | array   | No       | —     | Array of integers: IDs of hydro plants that fell back to white noise. Empty when none did.         |
+| `inflow.historical_library_seed_digest` | integer | Yes      | —     | Fingerprint of the inflow-lag seed for the historical library. Omitted when no library was built.  |
+
+**`hydro_production` fields:**
+
+| Name                                                  | Type    | Nullable | Units | Description                                                                                                                               |
+| ----------------------------------------------------- | ------- | -------- | ----- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| `hydro_production.n_fpha_computed_from_geometry`      | integer | No       | —     | Hydro plants whose FPHA hyperplanes were computed from reservoir geometry; a computed-FPHA plant with no turbine capacity is not counted. |
+| `hydro_production.n_fpha_precomputed_hyperplanes`     | integer | No       | —     | Hydro plants whose FPHA hyperplanes were supplied precomputed.                                                                            |
+| `hydro_production.n_evaporation_ref_user_supplied`    | integer | No       | —     | Hydro plants whose evaporation reference level was user-supplied.                                                                         |
+| `hydro_production.n_evaporation_ref_default_midpoint` | integer | No       | —     | Hydro plants whose evaporation reference level defaulted to the curve midpoint.                                                           |

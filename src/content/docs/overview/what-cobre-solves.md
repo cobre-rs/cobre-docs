@@ -19,7 +19,7 @@ It is a planning problem of hydro-dominated power systems, and the one the Cobre
 
 Cobre implements **Stochastic Dual Dynamic Programming (SDDP)**. SDDP solves the multi-stage problem by decomposing it into per-stage linear programmes that are linked through state variables (reservoir levels and inflow lags). Iterating forward and backward through the stage tree, the algorithm builds piecewise-linear approximations of the cost-to-go function at each stage. These approximations, called Benders cuts, carry future cost information from the last stage back to the first.
 
-The algorithm converges when the gap between a lower bound and an upper bound falls below a chosen stopping criterion. See [The SDDP Framework in One Page](/overview/sddp-framework-overview) for the one-page framing, and [SDDP Algorithm](/math/sddp-algorithm) for the full algorithmic treatment.
+Each iteration updates a lower bound and an upper-bound evaluation of the policy's cost ([Methodology Guarantees](#3-methodology-guarantees)); training stops when its stopping rules are met ([Stopping Rules](/math/stopping-rules)). See [The SDDP Framework in One Page](/overview/sddp-framework-overview) for the one-page framing, and [SDDP Algorithm](/math/sddp-algorithm) for the full algorithmic treatment.
 
 ## 3. Methodology Guarantees
 

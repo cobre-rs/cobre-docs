@@ -1,12 +1,13 @@
 ---
 title: Error Codes
-description: The `LoadError` variants case loading reports, the `ErrorKind` diagnostics it collects, the policy-load errors a checkpoint refusal raises, and the runtime errors of `cobre run`, with causes and resolutions.
+description: The validation report kinds a case load collects, the load-failure kinds that stop a load, the policy-load errors a checkpoint refusal raises, and the runtime errors of `cobre run`, with causes and resolutions.
 ---
 
-Case loading reports two kinds of errors: `LoadError` variants (returned
-when a case fails to load) and `ErrorKind` values (diagnostic categories collected while the
-case is validated). The page also lists the policy-load errors a checkpoint
-refusal raises and the [runtime errors](#runtime-errors) of a running `cobre run`.
+Case loading reports errors in two groups: [validation report kinds](#validation-report-kinds)
+(diagnostic categories collected while the case is validated) and
+[load-failure kinds](#load-failure-kinds) (returned when a case fails to load). The page also
+lists the policy-load errors a checkpoint refusal raises and the
+[runtime errors](#runtime-errors) of a running `cobre run`.
 
 ## How these errors reach you
 
@@ -122,6 +123,17 @@ each of them that is not found on disk.
 [FileNotFound] system/hydros.json: required file 'system/hydros.json' not found in case directory
 ```
 
+A case directory without `system/buses.json` gives two
+`[FileNotFound]` lines: the first reports the missing required file, the second
+the failed read of it:
+
+{/* capture: cobre validate nobus | cobre   v0.17.0 | binary: cobre-cli sha256 23916b46 | case: temporary 1dtoy derivative (cobre init --template 1dtoy nobus; system/buses.json deleted; run with NO_COLOR=1, exit code 1; the Validation summary line, which carries the temporary path, is not quoted and the error: prefix is not quoted) */}
+
+```text
+[FileNotFound] system/buses.json: required file 'system/buses.json' not found in case directory
+[FileNotFound] system/buses.json: No such file or directory (os error 2)
+```
+
 **Resolution:** Create the missing file in the correct subdirectory. The required files are: `config.json`, `penalties.json`, `stages.json`,
 `initial_conditions.json`, `system/buses.json`, `system/lines.json`,
 `system/hydros.json`, and `system/thermals.json`.
@@ -189,6 +201,10 @@ trailing commas, missing quotation marks, or mismatched braces. For a
 field` message inside a `stopping_rules` entry, remove the field that does not
 belong to that entry's `type`, or move it to an entry whose `type` declares it.
 
+**See also:** an `anticipated_config` object in `system/thermals.json` that matches neither accepted
+lead shape is collected under this kind — see
+[Invalid anticipated-thermal lead](#invalid-anticipated-thermal-lead).
+
 #### Unknown field in a generic-constraint entry
 
 **When it occurs:** Each generic-constraint object accepts exactly five fields
@@ -253,485 +269,7 @@ A stage with no openings:
 [SchemaViolation] stages.json: field stages[0].num_openings: num_openings must be > 0
 ```
 
-**Resolution:** Correct the value in the indicated field. Field paths use
-dot-notation and zero-based array indices. Consult the
-[Case Directory Format](/reference/case-directory-format/) page for valid ranges and required fields.
-For storage bounds, ensure `min <= max`. For opening counts, ensure `num_openings >= 1`.
-
-**See also:** a `constraints/hydro_bounds.parquet` spillage-band inversion or
-non-negativity rejection is collected under this kind during a full case
-load — see
-[Spillage-band inversion](#spillage-band-inversion) under `ConstraintError`.
-
----
-
-### `InvalidReference`
-
-**Severity:** Error
-
-**When it occurs:** A cross-entity foreign-key reference points to an entity
-that does not exist in the expected registry. For example, one of a hydro
-plant's unit groups' `bus_id` references a bus that is not in
-`system/buses.json`. Emitted when the cross-entity references are resolved.
-
-**Example:**
-
-{/* capture: cobre validate badref | cobre   v0.17.0 | binary: cobre-cli sha256 23916b46 | case: temporary 1dtoy derivative (cobre init --template 1dtoy badref; system/hydros.json: hydro 0 unit group 0 bus_id changed from 0 to 99; run with NO_COLOR=1, exit code 1; the Validation summary line, which carries the temporary path, is not quoted and the error: prefix is not quoted) */}
-
-```text
-[InvalidReference] system/hydros.json (Hydro 0 unit group 0): Hydro 0 unit group 0 references non-existent Bus 99 via field 'bus_id'
-```
-
-**Resolution:** Either add the referenced entity to its registry file, or
-correct the ID in the referencing file. Check all ID references:
-`unit_groups[].bus_id`, `thermals.bus_id`, `lines.source_bus_id`,
-`lines.target_bus_id`, `hydros.downstream_id`.
-
----
-
-### `DuplicateId`
-
-**Severity:** Error
-
-**When it occurs:** An id or key is declared twice where it must be unique.
-Three cases emit this kind: a unit-group `id` declared twice in one hydro plant
-(unit-group ids are unique within a plant, not globally); a policy-graph node
-`id` declared twice in `policy_graph.nodes[]` of `stages.json`; and two rows of a
-`constraints/*_bounds.parquet` override file that set the same column for the
-same entity, stage and block. An entity `id` declared twice in a registry file,
-such as two buses with the same `id` in `system/buses.json`, is a
-[`SchemaViolation`](#schemaviolation), not a `DuplicateId`; see the
-[`SchemaError`](#schemaerror) example.
-
-**Example:**
-
-{/* capture: cobre validate dupug | cobre   v0.17.0 | binary: cobre-cli sha256 23916b46 | case: temporary 1dtoy derivative (cobre init --template 1dtoy dupug; system/hydros.json: unit group 0 of hydro 0 duplicated, with max_generation_mw and max_turbined_m3s of both copies set to 25.0; run with NO_COLOR=1, exit code 1; the Validation summary line, which carries the temporary path, is not quoted and the error: prefix is not quoted) */}
-
-```text
-[DuplicateId] system/hydros.json (Hydro 0): Hydro 0: unit group id 0 is declared more than once; unit group ids must be unique within a plant
-```
-
-**Resolution:** Rename the repeated unit-group or node `id`, or remove or merge
-the bound-override rows that set the same column twice.
-
----
-
-### `InvalidValue`
-
-**Severity:** Error
-
-**When it occurs:** A value violates a domain rule that `cobre validate`
-checks once the files have loaded. Examples: the outgoing transition
-probabilities from a stage in `stages.json` do not sum to 1.0, or a study stage
-has an empty `blocks` array. A reservoir whose `min_storage_hm3` exceeds
-`max_storage_hm3`, and a stage whose `num_openings` is 0, are reported as
-[`SchemaViolation`](#schemaviolation) lines instead.
-
-**Example:**
-
-{/* capture: cobre validate trans | cobre   v0.17.0 | binary: cobre-cli sha256 23916b46 | case: temporary 1dtoy derivative (cobre init --template 1dtoy trans; stages.json: policy_graph.transitions added as 0 to 1 with probability 0.5, 1 to 2 and 2 to 3 with probability 1.0; run with NO_COLOR=1, exit code 1; the Validation summary line, which carries the temporary path, is not quoted and the error: prefix is not quoted) */}
-
-```text
-[InvalidValue] stages.json: outgoing transition probabilities from stage 0 sum to 0.50000000 (expected 1.0 ±0.000001); probability must sum to 1.0
-```
-
-{/* capture: cobre validate noblk | cobre   v0.17.0 | binary: cobre-cli sha256 23916b46 | case: temporary 1dtoy derivative (cobre init --template 1dtoy noblk; stages.json: stage 1 blocks replaced by an empty array; run with NO_COLOR=1, exit code 1; the Validation summary line, which carries the temporary path, is not quoted and the error: prefix is not quoted) */}
-
-```text
-[InvalidValue] stages.json: stage 1 declares no blocks; every study stage must declare at least one block
-```
-
-**Resolution:** Correct the value named in the message. Consult
-the [Case Directory Format](/reference/case-directory-format/) page for documented constraints. For transitions,
-make the outgoing probabilities from each stage sum to 1.0. For stages, declare at least one
-block in every study stage's `blocks` array.
-
-**See also:** a `min_diversion_m3s` floor on a hydro with no declared
-diversion channel is reported this way — see
-[Diversion floor without a declared channel](#diversion-floor-without-a-declared-channel)
-under `ConstraintError`.
-
----
-
-### `CycleDetected`
-
-**Severity:** Error
-
-**When it occurs:** A directed graph that must be acyclic contains a cycle.
-Two graphs are checked. The hydro cascade: the `downstream_id` links among hydro
-plants must form a directed forest (no cycles), so a cycle would mean plant A
-drains into plant B which drains back into plant A. The policy graph: the
-`policy_graph.nodes[]` of `stages.json`, linked by `transitions[]`, must be
-acyclic; this check applies only when `nodes[]` is declared.
-
-**Example message, hydro cascade:**
-
-{/* capture: cobre validate cyc | cobre   v0.17.0 | binary: cobre-cli sha256 23916b46 | case: temporary 1dtoy derivative (cobre init --template 1dtoy cyc; system/hydros.json: hydro 1 (a copy of hydro 0 named UHE2) added, hydro 0 downstream_id set to 1 and hydro 1 downstream_id set to 0; run with NO_COLOR=1, exit code 1; the command prints nine error lines, of which only the [CycleDetected] line is quoted; the Validation summary line, which carries the temporary path, is not quoted and the error: prefix is not quoted) */}
-
-```text
-[CycleDetected] system/hydros.json: hydro cascade contains a cycle involving hydro IDs: [0, 1]
-```
-
-**Example message, policy-graph nodes:**
-
-{/* quoted from source: crates/cobre-io/src/validation/semantic/stages.rs:476-481 at cobre v0.17.0 */}
-
-```text
-policy-graph nodes contain a cycle; the node graph must be acyclic
-```
-
-`cobre validate` prints it as `[CycleDetected] stages.json: <message>`, where
-`<message>` is the text above.
-
-**Resolution:** Review the `downstream_id` chain for the listed plants and remove
-the cycle. Every hydro cascade must be a directed tree rooted at plants with no
-downstream (tailwater discharge). For the policy graph, remove the
-`transitions[]` entry that closes the cycle.
-
----
-
-### `DimensionMismatch`
-
-**Severity:** Error
-
-**When it occurs:** A cross-file coverage check fails. For example, when
-`scenarios/inflow_seasonal_stats.parquet` is present, every hydro needs a row
-for each study stage in which it is active, and each missing (hydro, stage)
-pair is one error that names the hydro and the stage. A mismatch means an
-optional per-entity file provides data for some entities but not all that
-require it.
-
-**Example:**
-
-{/* capture: cobre validate cyc | cobre   v0.17.0 | binary: cobre-cli sha256 23916b46 | case: temporary 1dtoy derivative (cobre init --template 1dtoy cyc; system/hydros.json: hydro 1 (a copy of hydro 0 named UHE2) added, hydro 0 downstream_id set to 1 and hydro 1 downstream_id set to 0; run with NO_COLOR=1, exit code 1; the command prints nine error lines, of which only the first [DimensionMismatch] line is quoted; the Validation summary line, which carries the temporary path, is not quoted and the error: prefix is not quoted) */}
-
-```text
-[DimensionMismatch] scenarios/inflow_seasonal_stats.parquet (Hydro 1): Hydro 1 missing inflow seasonal stats for stage 0
-```
-
-**Resolution:** Add the missing rows to the Parquet file; the message names the
-hydro and the stage that lack one. When that file is present, every hydro needs a
-row for each study stage in which it is active.
-
----
-
-### `BusinessRuleViolation`
-
-**Severity:** Error
-
-**When it occurs:** A domain-specific business rule is violated that cannot
-be expressed as a simple range constraint. Examples: a negative `turbined_cost`
-on a hydro whose generation model is `fpha`, a filling schedule that cannot
-reach the dead volume before the hydro enters operation, the anticipated-thermal
-and post-study-boundary rules, a bound-override row that names an undeclared
-`stage_id`, or a per-block generic-constraint reference that the stage's blocks
-cannot satisfy. One check reports a `BusinessRuleViolation` as a warning: when the inflow model is estimated from `scenarios/inflow_history.parquet` and a hydro has more than one observation in one season of a year, `cobre validate` prints a `warning:` line (exit `0`) saying the observations are aggregated to season resolution.
-
-**Example:**
-
-{/* capture: cobre validate fpha | cobre   v0.17.0 | binary: cobre-cli sha256 23916b46 | case: temporary 1dtoy derivative (cobre init --template 1dtoy fpha; system/hydros.json: hydro 0 generation.model changed from constant_productivity to fpha, and a penalties block with turbined_cost -0.05 added to hydro 0; run with NO_COLOR=1, exit code 1; the Validation summary line is not quoted) */}
-
-```text
-error: [BusinessRuleViolation] penalties.json (Hydro 0): Hydro 0: turbined_cost (-0.05) must be non-negative (>= 0) for FPHA hydros; negative values distort LP dispatch
-```
-
-**Resolution:** Read the message carefully — it describes the specific rule that
-was violated and which entities are involved. For the two penalty rules, see
-[Load-time penalty checks](/math/penalty-system#implementation-in-cobre).
-
-**See also:** the anticipated-thermal / post-study boundary cluster is also
-reported this way — see
-[Invalid anticipated-thermal lead](#invalid-anticipated-thermal-lead),
-[Commitment on a non-anticipated thermal](#commitment-on-a-non-anticipated-thermal),
-[Missing commitment window on an anticipated thermal](#missing-commitment-window-on-an-anticipated-thermal),
-[Post-study boundary unanchored or malformed](#post-study-boundary-unanchored-or-malformed),
-and
-[Uncovered or over-covered past_anticipated_commitments window](#uncovered-or-over-covered-past_anticipated_commitments-window)
-under `ConstraintError`. The undeclared-`stage_id` bound-override rule is
-also reported this way — see
-[Undeclared `stage_id` in bound-override parquet](#undeclared-stage_id-in-bound-override-parquet)
-under `ConstraintError`.
-The per-block generic-constraint references are also reported this way — see
-[Per-block generic-constraint references](#per-block-generic-constraint-references)
-under `ConstraintError`.
-
----
-
-### `WarmStartIncompatible`
-
-**Status:** Reserved. Case validation never reports this kind. A warm-start
-run is a full-FCF load of the checkpoint at `policy.path`, and
-a checkpoint that does not fit the current study is refused at policy load; see
-[Policy-load errors](#policy-load-errors).
-
----
-
-### `ResumeIncompatible`
-
-**Status:** Reserved. Case validation never reports this kind. A resume
-run is a full-FCF load of the checkpoint at `policy.path`, and a
-checkpoint that does not fit the current study is refused at policy load; see
-[Policy-load errors](#policy-load-errors).
-
----
-
-### `NotImplemented`
-
-**Severity:** Error
-
-**When it occurs:** Two or more hydros that declare a positive
-`travel_time_hours` feed the same downstream plant with values that differ by
-more than `1e-9`, and at least one study stage in `stages.json` uses
-`"chronological"` `block_mode`. The
-check rejects the case whenever any study stage is chronological, not only the
-stages where the arcs' timing would differ. Emitted by the business-rule check,
-with one line for each affected downstream plant, on `system/hydros.json`.
-
-**Example:**
-
-{/* quoted from source: crates/cobre-io/src/validation/semantic/travel_time.rs:256-261 at cobre v0.17.0 */}
-
-```text
-Hydro {downstream_id}: chronological confluence with heterogeneous travel times is unsupported in v1 — {n} declared arcs feed this downstream plant with differing travel_time_hours ({arcs}); align the arcs' travel_time_hours or keep every study stage in Parallel mode
-```
-
-`{downstream_id}` is the id of the downstream plant, `{n}` is the number of arcs
-that feed it, and `{arcs}` lists those arcs as comma-separated
-`hydro {id} (travel_time_hours={t})` items.
-
-**Resolution:** Give every arc into that downstream plant the same
-`travel_time_hours` in
-[`system/hydros.json`](/reference/case-directory-format/#systemhydrosjson), or
-set `block_mode` to `"parallel"` on every study stage in
-[`stages.json`](/reference/case-directory-format/#stagesjson).
-
----
-
-### `UnusedEntity`
-
-**Severity:** Warning (does not block execution)
-
-**When it occurs:** A `contract_import` or `contract_export` term of a
-generic constraint names a contract id that `system/energy_contracts.json` does
-not declare. The term has no effect and the case still loads. The warning alerts
-the user to a possible input error.
-
-**Example:**
-
-{/* quoted from source: crates/cobre-io/src/validation/referential.rs:1160-1164 at cobre v0.17.0 */}
-
-```text
-{label} references Contract {id} which is a stub entity with no LP effect
-```
-
-`{label}` is `GenericConstraint N term[M]`, naming the constraint `id` and the
-zero-based position of the term in its expression; `{id}` is the undeclared
-contract id.
-
-**Resolution:** Correct the contract id in the term, or declare that contract in
-`system/energy_contracts.json`. If the term is intentional, this warning can be
-ignored.
-
----
-
-### `ModelQuality`
-
-**Severity:** Warning (does not block execution)
-
-**When it occurs:** A concern about the input model is detected that leaves
-the case valid. Examples: an inverted penalty ordering, inflow-lag state
-disabled on every study stage despite supplied autoregressive coefficients, a
-negative value in `scenarios/inflow_history.parquet`, a season with no
-observations in that file, a hydro-season with at least one, but fewer than
-`estimation.min_observations_per_season`, fully covered stage occurrences in that
-file, or an advisory on a hydro's declared `travel_time_hours`. Each is reported as
-a warning.
-
-**Example:**
-
-{/* capture: cobre validate ord | cobre   v0.17.0 | binary: cobre-cli sha256 23916b46 | case: temporary 1dtoy derivative (cobre init --template 1dtoy ord; penalties.json: hydro.storage_violation_below_cost changed from 10000.0 to 100.0; run with NO_COLOR=1, exit code 0; the Valid case and Validation summary lines are not quoted) */}
-
-```text
-warning: penalties.json: Penalty ordering violation: storage_violation_below_cost (100) should be > max(deficit_segment_costs) (7500) -- 1 hydro(s) affected, worst case: Hydro 0
-```
-
-Every penalty-ordering warning starts `Penalty ordering violation:`; the five
-messages are quoted under
-[Load-time penalty checks](/math/penalty-system#implementation-in-cobre).
-
-**Inflow-lag message:**
-
-{/* quoted from source: crates/cobre-io/src/validation/semantic/stages.rs:120-125 at cobre v0.17.0 */}
-
-```text
-inflow lags are disabled on all study stages (state_variables.inflow_lags = false) despite a PAR(p>0) inflow model (AR order {max_order}), so the inflow-lag dimensions are omitted from the per-stage state. This is a valid configuration for external-solver interoperability; otherwise it is likely a misconfiguration
-```
-
-`{max_order}` is replaced by the AR order when the warning is issued. When it
-fires and what it changes:
-[`stages[].state_variables` — Cut Projection](/math/cut-management/#stagesstate_variables--cut-projection).
-
-**Observation-count message:**
-
-{/* quoted from source: crates/cobre-io/src/validation/semantic/scenarios.rs:1112-1116 at cobre v0.17.0 */}
-
-```text
-hydro {hid} season {sid} has {n} observations (minimum recommended: {min_obs}); estimation accuracy may be insufficient with so few observations
-```
-
-`{min_obs}` is `estimation.min_observations_per_season`. `cobre validate` reports
-the warning only when the inflow model is estimated from
-`scenarios/inflow_history.parquet` (that is, the case does not supply both
-`scenarios/inflow_seasonal_stats.parquet` and `scenarios/inflow_ar_coefficients.parquet`)
-and `stages.json` declares `season_definitions`.
-
-**Resolution:** Review the flagged input. For a penalty-ordering warning, see
-[Load-time penalty checks](/math/penalty-system#implementation-in-cobre); for the
-inflow-lag warning, see
-[`stages[].state_variables` — Cut Projection](/math/cut-management/#stagesstate_variables--cut-projection).
-Warnings of this type do not prevent the solver from running.
-
----
-
-### `SemanticAmbiguity`
-
-**Severity:** Warning (does not block execution)
-
-**When it occurs:** A valid construct whose semantics are ambiguous or
-stage-dependent in a way that is likely to surprise the user. Two constructs
-trigger it, both emitted by the business-rule check in
-`constraints/generic_constraints.json`:
-
-1. **`thermal_generation(N)` on an anticipated thermal.** Using
-   `thermal_generation(N)` in a generic constraint when thermal `N` is an
-   anticipated thermal. `thermal_generation` refers to the per-block generation
-   measured at the _delivery_ stage (when the commitment matures), not the
-   commitment decision made at the current stage. Users who intend to constrain
-   the commitment itself should use `anticipated_decision(N)` instead.
-
-   **Example:** A generic constraint `thermal_generation(0)` on an anticipated thermal:
-
-   {/* capture: cobre validate sa1 | cobre   v0.17.0 | binary: cobre-cli sha256 23916b46 | case: temporary 1dtoy derivative (cobre init --template 1dtoy sa1; system/thermals.json: thermal 0 given anticipated_config with lead_stages 1; initial_conditions.json: past_anticipated_commitments gains one window for thermal 0, 2024-01-01 to 2024-02-01, value_mw 0.0; constraints/generic_constraints.json added holding one constraint, id 0, name peak_cap, expression thermal_generation(0), slack enabled false; constraints/generic_constraint_bounds.parquet added with compression zstd and one row, constraint 0, stage 1, block_id and bound_lower null, bound_upper 10.0; run with NO_COLOR=1, exit code 0; the Valid case and Validation summary lines and the first warning line, which concerns the thermal's stage-cadence transition, are not quoted) */}
-
-   ```text
-   warning: constraints/generic_constraints.json (constraint[id=0]): Constraint "peak_cap": thermal_generation(0) references an anticipated thermal. thermal_generation refers to the per-block generation at the delivery stage, not the forward commitment. If you intend to constrain the commitment itself, use anticipated_decision(0) instead.
-   ```
-
-   **Resolution:** Review the constraint expression. If you want to bound the
-   generation dispatched at the delivery stage, `thermal_generation(N)` is correct
-   and the warning can be ignored. If you want to bound the advance commitment
-   decision itself, replace `thermal_generation(N)` with `anticipated_decision(N)`.
-
-2. **`max_stored_energy(h)` paired with `accumulated_productivity(h)`.** One
-   constraint references both computed tags for the same hydro — in its
-   expression coefficients or in its bounds (an `@emax` on the right-hand side
-   counts). The two are evaluated differently (`accumulated_productivity` at the
-   plant's reference point, `max_stored_energy` over the useful range), so a
-   stored-energy comparison built from them does not cancel. One warning is
-   emitted per such hydro; the case still validates.
-
-   **Example:** A constraint that pairs the two tags for hydro 0:
-
-   {/* capture: cobre validate sa2 | cobre   v0.17.0 | binary: cobre-cli sha256 23916b46 | case: temporary 1dtoy derivative (cobre init --template 1dtoy sa2; constraints/generic_parameters.json added holding two computed parameters for hydro 0, id 1 name rho tag accumulated_productivity and id 2 name emax tag max_stored_energy; constraints/generic_constraints.json added holding one constraint, id 0, name sec_mismatch, expression @rho * hydro_useful_volume_final(0) >= 0.3 * @emax, slack enabled false; constraints/generic_constraint_bounds.parquet added with compression zstd and one row, constraint 0, stage 1, block_id, bound_lower and bound_upper null; run with NO_COLOR=1, exit code 0; the Valid case and Validation summary lines are not quoted) */}
-
-   ```text
-   warning: constraints/generic_constraints.json (sec_mismatch): Constraint "sec_mismatch": pairs max_stored_energy(0) with accumulated_productivity(0) for hydro 0; the two ride different evaluators and would not cancel. The coefficient matching max_stored_energy is integrated_accumulated_productivity, not accumulated_productivity.
-   ```
-
-   **Resolution:** Use `integrated_accumulated_productivity` as the coefficient
-   that matches `max_stored_energy`; see
-   [the security-curve example](/reference/generic-constraints/#worked-example-a-security-curve).
-
-The warning is printed by `cobre validate` in its human-readable output; the
-`--json` success output does not carry warnings.
-
----
-
-## Load-failure kinds
-
-The `phase` value of `cobre validate --json` and the `kind` of an entry in the `errors` array of
-`cobre.io.validate` (Python) name the failure that stopped the load. Almost every case-load failure reports
-[`ConstraintError`](#constrainterror), because the load collects its problems into one report. The kinds are
-listed below in the order of the load steps in which they typically occur: reading a file, parsing it,
-checking its fields, then validating the whole case.
-
-During a case load, a read, parse or schema failure in one file is collected
-into the validation report rather than returned on its own. It reaches you as a
-line of a [`ConstraintError`](#constrainterror): `[FileNotFound]` for a read
-failure, `[ParseError] <file>: parse error: <message>` for a parse failure, and
-`[SchemaViolation] <file>: field <field>: <message>` for a schema failure. The
-display formats below reach you only for a load error raised after that report
-is complete; see [Exit Codes](/reference/cli-reference/#exit-codes).
-
-### `IoError`
-
-**Severity:** Error
-
-**When it occurs:** A required file exists in the file manifest but cannot be
-read from disk — file not found, permission denied, or other OS-level I/O
-failure. Occurs when a JSON or Parquet file is read for parsing and the read
-returns an error.
-
-**Display format:**
-
-```
-I/O error reading {path}: {source}
-```
-
-**Fields:**
-
-| Field    | Description                             |
-| -------- | --------------------------------------- |
-| `path`   | Path to the file that could not be read |
-| `source` | Underlying OS I/O error                 |
-
-**Example:** A case directory without `system/buses.json` gives two
-`[FileNotFound]` lines: the first reports the missing required file, the second
-the failed read of it:
-
-{/* capture: cobre validate nobus | cobre   v0.17.0 | binary: cobre-cli sha256 23916b46 | case: temporary 1dtoy derivative (cobre init --template 1dtoy nobus; system/buses.json deleted; run with NO_COLOR=1, exit code 1; the Validation summary line, which carries the temporary path, is not quoted and the error: prefix is not quoted) */}
-
-```text
-[FileNotFound] system/buses.json: required file 'system/buses.json' not found in case directory
-[FileNotFound] system/buses.json: No such file or directory (os error 2)
-```
-
-**Resolution:** Verify the file exists in the case directory. Check that the
-process has read permissions for the directory and file. For a full case load, the
-case root must contain all required files (see [Case Directory Format](/reference/case-directory-format/)).
-
----
-
-`ParseError` — see [`ParseError`](#parseerror); a parse failure collected in the report prints as a
-`[ParseError]` line.
-
----
-
-### `SchemaError`
-
-**Severity:** Error
-
-**When it occurs:** A file parses successfully but a field violates a schema
-constraint: a required field is missing, a value is outside its valid range, or
-an enum discriminator names an unknown variant. Occurs when the fields of a parsed
-file are checked. Also returned when `training.selection`
-(which carries the forward-pass count) or `training.stopping_rules` is absent.
-
-**Display format:**
-
-```
-schema error in {path}, field {field}: {message}
-```
-
-**Fields:**
-
-| Field     | Description                                                            |
-| --------- | ---------------------------------------------------------------------- |
-| `path`    | Path to the file containing the invalid entry                          |
-| `field`   | Dot-separated path to the offending field (e.g., `"hydros[3].bus_id"`) |
-| `message` | Human-readable description of the violation                            |
-
-**Example:** A `config.json` without `training.selection`:
+A `config.json` without `training.selection`:
 
 {/* capture: cobre validate nosel | cobre   v0.17.0 | binary: cobre-cli sha256 23916b46 | case: temporary 1dtoy derivative (cobre init --template 1dtoy nosel; config.json re-written with 2-space indentation, training.selection removed; run with NO_COLOR=1, exit code 1; the Validation summary line, which carries the temporary path, is not quoted and the error: prefix is not quoted) */}
 
@@ -747,12 +285,25 @@ Two buses that share an `id` in `system/buses.json`:
 [SchemaViolation] system/buses.json: field buses[1].id: duplicate id 0 in buses array
 ```
 
-**Resolution:** The `field` value identifies the exact location of the problem.
-Check that required fields are present and that values fall within documented
-ranges. For `config.json`, `training.selection` (for example
+**Resolution:** Correct the value in the indicated field. Field paths use
+dot-notation and zero-based array indices. Consult the
+[Case Directory Format](/reference/case-directory-format/) page for valid ranges and required fields.
+For storage bounds, ensure `min <= max`. For opening counts, ensure `num_openings >= 1`.
+For `config.json`, `training.selection` (for example
 `{ "method": "sampled", "forward_passes": 192 }`) and `training.stopping_rules`
 are mandatory keys with no default when absent. An absent `training.selection` is
 reported with the message `a forward-pass count is required via training.selection`; add the key to `config.json`.
+
+**See also:** a `constraints/hydro_bounds.parquet` spillage-band inversion or
+non-negativity rejection is collected under this kind during a full case
+load — see
+[Spillage-band inversion](#spillage-band-inversion).
+Two of the four failures of
+[Invalid anticipated-thermal lead](#invalid-anticipated-thermal-lead) print `[SchemaViolation]` lines; the
+other two print `[ParseError]` and `[BusinessRuleViolation]` lines. A case load prints every schema failure
+as a `[SchemaViolation]` line; the `schema error in <path>, field <field>: <message>` form is the display
+format of [`SchemaError`](#schemaerror), which reaches you only for a load error raised after the report is
+complete.
 
 #### Namespace collision between a scalar parameter and a named expression
 
@@ -773,8 +324,10 @@ exactly one kind of thing.
 
 **Example:**
 
-```
-schema error in constraints/generic_constraints.json, field expressions[2].name: name "demanda" is declared as both a scalar parameter and a named expression; the "@name" namespace is shared
+{/* capture: cobre validate nscoll | cobre   v0.17.0 | binary: cobre-cli sha256 23916b46 | case: temporary 1dtoy derivative (cobre init --template 1dtoy nscoll; constraints/generic_parameters.json added, written with 2-space indentation, holding one seasonal scalar parameter, id 1, name demanda; constraints/generic_constraints.json added, written with 2-space indentation, holding an empty constraints array and one named expression, name demanda, expression hydro_storage(0); run with NO_COLOR=1, exit code 1; the Validation summary line, which carries the temporary path, is not quoted and the error: prefix is not quoted) */}
+
+```text
+[SchemaViolation] constraints/generic_constraints.json: field expressions[0].name: name "demanda" is declared as both a scalar parameter and a named expression; the "@name" namespace is shared
 ```
 
 **Resolution:** Rename the named expression (or the scalar parameter) so the
@@ -798,8 +351,10 @@ rejected before any expression is inlined, even if no constraint ever uses it.
 
 **Example:**
 
-```
-schema error in constraints/generic_constraints.json, field expressions: named-expression reference cycle detected: fnese -> fnese_margin -> fnese
+{/* capture: cobre validate ncycle | cobre   v0.17.0 | binary: cobre-cli sha256 23916b46 | case: temporary 1dtoy derivative (cobre init --template 1dtoy ncycle; constraints/generic_constraints.json added, written with 2-space indentation, holding an empty constraints array and two named expressions, fnese referencing @fnese_margin and fnese_margin referencing @fnese; run with NO_COLOR=1, exit code 1; the Validation summary line, which carries the temporary path, is not quoted and the error: prefix is not quoted) */}
+
+```text
+[SchemaViolation] constraints/generic_constraints.json: field expressions: named-expression reference cycle detected: fnese -> fnese_margin -> fnese
 ```
 
 **Resolution:** Break the cycle — rewrite one of the named expressions in the
@@ -828,8 +383,10 @@ without referencing it is a cheap existence check, not an expansion.
 
 **Example:**
 
-```
-schema error in constraints/generic_constraints.json, field constraints[0].expression: named-expression reference "@e60" expands to more than 100000 inlined terms; this indicates an exponential reference pattern (e.g. a doubling chain "@e = @prev + @prev")
+{/* capture: cobre validate nbudget | cobre   v0.17.0 | binary: cobre-cli sha256 23916b46 | case: temporary 1dtoy derivative (cobre init --template 1dtoy nbudget; constraints/generic_constraints.json added, written with 2-space indentation, holding one constraint, id 0, name c0, expression @e60, slack disabled, and 61 named expressions, e0 = hydro_storage(0) and e<k> = @e<k-1> + @e<k-1> for k 1 to 60; constraints/generic_constraint_bounds.parquet added with compression zstd and one row, constraint 0, stage 0, block_id and bound_lower null, bound_upper 1e9; run with NO_COLOR=1, exit code 1; the Validation summary line, which carries the temporary path, is not quoted and the error: prefix is not quoted) */}
+
+```text
+[SchemaViolation] constraints/generic_constraints.json: field constraints[0].expression: named-expression reference "@e60" expands to more than 100000 inlined terms; this indicates an exponential reference pattern (e.g. a doubling chain "@e = @prev + @prev")
 ```
 
 **Resolution:** Rewrite the named-expression chain to grow linearly rather
@@ -894,42 +451,6 @@ its data unchanged. The column tables of
 [Case Directory Format](/reference/case-directory-format/) list the required
 columns of every file.
 
-#### Deterministic external inflow column under an autoregressive model
-
-**When it occurs:** Under the `external` inflow sampling scheme, an inflow's
-seasonal mean and standard deviation are replaced by the sample moments of its
-external scenario file only for a hydro of autoregressive order 0 with no annual
-component; a hydro whose files declare a lag coefficient or an annual component
-keeps the statistics its own files declare. The substitution is per class: a
-load or non-controllable-source class takes its moments from its external file
-only when that class is itself `external`.
-
-A constant (σ = 0) column is accepted for load, NCS, and a hydro of order 0
-with no annual component, but **rejected** for a hydro whose files declare an
-autoregressive order above 0 or an annual component: a single deterministic
-value cannot stand in for such a model, since it would have to equal that
-model's own stage-by-stage deterministic PAR output, which the loader does not
-reconstruct from a flat column.
-
-**Fields:**
-
-| Field         | Description                                                                                              |
-| ------------- | ---------------------------------------------------------------------------------------------------------- |
-| `description` | Contains a `[BusinessRuleViolation] <external inflow file> (inflow entity <e> stage <stage_id>): <message>` line |
-
-**Example:**
-
-```
-constraint violation: [BusinessRuleViolation] scenarios/external_inflow_scenarios.parquet (inflow entity 7 stage 3): inflow external library at stage 3, entity 7: every scenario value is constant (σ = 0), but this hydro's inflow follows an autoregressive model of order > 0; a deterministic value here would have to equal that model's own deterministic PAR output at every stage, which this loader does not compute upstream
-```
-
-**Resolution:** Give the external column genuine stage-to-stage variation, or
-drop the plant's autoregressive inflow model to order 0 (no lag coefficient, no
-annual component) if its inflow really is deterministic. See
-[Scenario Generation §4.4](/math/scenario-generation) for the accept/reject
-rule and [`scenario_source`](/running/configuration/#trainingscenario_source) for the
-scheme configuration.
-
 #### Scenario-source admission rules
 
 **When it occurs:** A `training.scenario_source` or `simulation.scenario_source`
@@ -974,132 +495,6 @@ it after `error: constraint violation: `.
 
 A declared opening-tree file that is missing is reported in the stochastic
 phase: [Opening-tree file missing](#opening-tree-file-missing).
-
----
-
-### `ConstraintError`
-
-**Severity:** Error
-
-**When it occurs:** A catch-all for all validation diagnostics collected
-across any validation step, for system assembly rejections, and for guards
-raised directly by loaders after assembly (for example, a non-finite
-closure-derived innovation scale is rejected here naming the hydro and
-season). The `description` field contains
-every collected error message joined by newlines, each prefixed with its
-`[ErrorKind]`, source file, optional entity identifier, and message text.
-
-**Display format:**
-
-```
-constraint violation: {description}
-```
-
-**Fields:**
-
-| Field         | Description                           |
-| ------------- | ------------------------------------- |
-| `description` | All error messages joined by newlines |
-
-**Example:** A case directory without `system/buses.json`. `cobre validate`
-prints each collected problem as an `error:` line and exits `1`:
-
-{/* capture: cobre validate nobus | cobre   v0.17.0 | binary: cobre-cli sha256 23916b46 | case: temporary 1dtoy derivative (cobre init --template 1dtoy nobus; system/buses.json deleted; run with NO_COLOR=1, exit code 1; the Validation summary line, which carries the temporary path, is not quoted) */}
-
-```text
-error: [FileNotFound] system/buses.json: required file 'system/buses.json' not found in case directory
-error: [FileNotFound] system/buses.json: No such file or directory (os error 2)
-```
-
-`cobre run` prints the same lines, joined by newlines, after
-`error: constraint violation: ` and also exits `1`.
-
-**Resolution:** Read every line in `description` — each line is a separate
-problem. Address them all and re-run. The `[ErrorKind]` prefix identifies the
-category of each problem; see [Validation report kinds](#validation-report-kinds) for resolution
-guidance per category.
-
-#### Generic-constraint bound reference with no activation rows
-
-**When it occurs:** `constraints/generic_constraint_bounds.parquet` is the
-**activation grid** for generic constraints — a constraint applies at
-`(stage, block)` if and only if a row exists for it there, independent of
-whether the row supplies a numeric endpoint or the endpoint comes entirely
-from the constraint's own inline affine remainder (an inline `<= @demanda`,
-say). A constraint whose only endpoints come from that affine remainder, but
-which has zero rows in the bounds parquet, is collected as `InvalidReference`
-— the reference would otherwise apply to nothing and be silently inert.
-
-**Fields:**
-
-| Field         | Description                                                                                          |
-| ------------- | -------------------------------------------------------------------------------------------------------|
-| `description` | Contains a `[InvalidReference] constraints/generic_constraints.json (GenericConstraint <id>): GenericConstraint <id> declares a bound reference but has no activation rows in generic_constraint_bounds.parquet: the reference would apply to nothing` line |
-
-**Example:**
-
-```
-constraint violation: [InvalidReference] constraints/generic_constraints.json (GenericConstraint 3): GenericConstraint 3 declares a bound reference but has no activation rows in generic_constraint_bounds.parquet: the reference would apply to nothing
-```
-
-**Resolution:** Add at least one row for the constraint's `id` to
-`generic_constraint_bounds.parquet` at every `(stage, block)` where it should
-apply — the row may leave both `bound_lower`/`bound_upper` null as long as the
-constraint's own affine remainder supplies the value; the row's job is then
-only to activate the cell. See
-[Generic Constraints — the activation grid](/reference/generic-constraints/)
-for the full model.
-
-#### Generic-constraint bounds row with neither endpoint and no affine remainder
-
-**When it occurs:** A `generic_constraint_bounds.parquet` row with
-`bound_lower = null` and `bound_upper = null` is legal only when the
-constraint's own `bound_lower_affine`/`bound_upper_affine` supplies at least
-one endpoint (the row then only activates the cell, per above). A both-null
-row on a constraint with **no** affine remainder on either side has no
-endpoint at all and is collected as `InvalidValue`.
-
-**Fields:**
-
-| Field         | Description                                                                                                              |
-| ------------- | ----------------------------------------------------------------------------------------------------------------------------|
-| `description` | Contains a `[InvalidValue] constraints/generic_constraint_bounds.parquet (GenericConstraintBoundsRow[<i>]): GenericConstraintBoundsRow[<i>] on constraint <id> has neither bound_lower nor bound_upper: at least one endpoint is required` line |
-
-**Example:**
-
-```
-constraint violation: [InvalidValue] constraints/generic_constraint_bounds.parquet (GenericConstraintBoundsRow[4]): GenericConstraintBoundsRow[4] on constraint 3 has neither bound_lower nor bound_upper: at least one endpoint is required
-```
-
-**Resolution:** Either supply `bound_lower` and/or `bound_upper` on the row,
-or add an inline relational operator (`<=`, `>=`, `==`) to the constraint's
-`expression` so an affine remainder fills the missing endpoint. See
-[Generic Constraints — the activation grid](/reference/generic-constraints/).
-
-#### Scalar parameters outside the constraints directory
-
-**When it occurs:** Scalar parameters are read from
-`constraints/generic_parameters.json` only, beside the generic constraints that
-reference its `@name` parameters. A file at `system/scalar_parameters.json` is
-rejected whatever its content; the loader never reads it, so a well-formed file at that path is still refused.
-
-**Fields:**
-
-| Field         | Description                                                                                                            |
-| ------------- | ---------------------------------------------------------------------------------------------------------------------------|
-| `description` | Contains a `[BusinessRuleViolation] system/scalar_parameters.json: system/scalar_parameters.json is no longer read; scalar parameters are now read from constraints/generic_parameters.json, beside the constraints that reference them by @name. Move the file (its contents are unchanged).` line |
-
-**Example:**
-
-{/* capture: cobre validate sp | cobre   v0.17.0 | binary: cobre-cli sha256 23916b46 | case: temporary 1dtoy derivative (cobre init --template 1dtoy sp; system/scalar_parameters.json added holding {"parameters": []}; run with NO_COLOR=1, exit code 1; the Validation summary line, which carries the temporary path, is not quoted and the error: prefix is not quoted) */}
-
-```text
-[BusinessRuleViolation] system/scalar_parameters.json: system/scalar_parameters.json is no longer read; scalar parameters are now read from constraints/generic_parameters.json, beside the constraints that reference them by @name. Move the file (its contents are unchanged).
-```
-
-**Resolution:** `mkdir -p <case>/constraints && git mv <case>/system/scalar_parameters.json <case>/constraints/generic_parameters.json` — the contents do not change. See
-[Generic Constraints — the five parameter kinds](/reference/generic-constraints/)
-for the current file's schema.
 
 #### Invalid anticipated-thermal lead
 
@@ -1167,6 +562,370 @@ reaches. See
 anticipated-thermal model and
 [`system/thermals.json`](/reference/case-directory-format/#systemthermalsjson)
 for the file's fields.
+
+#### Spillage-band inversion
+
+**When it occurs:** An inverted spillage band (`min_spillage_m3s > max_spillage_m3s`)
+or a negative `min_diversion_m3s`, `min_spillage_m3s`, or `max_spillage_m3s` in
+`constraints/hydro_bounds.parquet` is reported here (tagged `[SchemaViolation]`)
+when a full case is loaded, and surfaces as a standalone `SchemaError` when that
+file is checked on its own.
+
+**Fields:**
+
+| Field         | Description                                                                                                                       |
+| ------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| `description` | Contains a `[SchemaViolation] constraints/hydro_bounds.parquet: field hydro_bounds[<i>].<column>: <message>` line — see below |
+
+**Example:**
+
+```text
+[SchemaViolation] constraints/hydro_bounds.parquet: field hydro_bounds[0].max_spillage_m3s: max_spillage_m3s (5) must be >= min_spillage_m3s (10)
+```
+
+```text
+[SchemaViolation] constraints/hydro_bounds.parquet: field hydro_bounds[0].min_diversion_m3s: value must be >= 0.0, got -5
+```
+
+**Resolution:** Correct the offending row so `min_spillage_m3s <=
+max_spillage_m3s`, and so `min_diversion_m3s`, `min_spillage_m3s`, and
+`max_spillage_m3s` are all non-negative. See
+[Case Directory Format](/reference/case-directory-format/) for
+`hydro_bounds.parquet`'s column reference.
+
+---
+
+### `InvalidReference`
+
+**Severity:** Error
+
+**When it occurs:** A cross-entity foreign-key reference points to an entity
+that does not exist in the expected registry. For example, one of a hydro
+plant's unit groups' `bus_id` references a bus that is not in
+`system/buses.json`. Emitted when the cross-entity references are resolved.
+
+**Example:**
+
+{/* capture: cobre validate badref | cobre   v0.17.0 | binary: cobre-cli sha256 23916b46 | case: temporary 1dtoy derivative (cobre init --template 1dtoy badref; system/hydros.json: hydro 0 unit group 0 bus_id changed from 0 to 99; run with NO_COLOR=1, exit code 1; the Validation summary line, which carries the temporary path, is not quoted and the error: prefix is not quoted) */}
+
+```text
+[InvalidReference] system/hydros.json (Hydro 0 unit group 0): Hydro 0 unit group 0 references non-existent Bus 99 via field 'bus_id'
+```
+
+**Resolution:** Either add the referenced entity to its registry file, or
+correct the ID in the referencing file. Check all ID references:
+`unit_groups[].bus_id`, `thermals.bus_id`, `lines.source_bus_id`,
+`lines.target_bus_id`, `hydros.downstream_id`.
+
+**See also:** a `constraints/ncs_bounds.parquet` row with an undeclared `stage_id` is reported under this
+kind — see
+[Undeclared `stage_id` in bound-override parquet](#undeclared-stage_id-in-bound-override-parquet).
+
+#### Generic-constraint bound reference with no activation rows
+
+**When it occurs:** `constraints/generic_constraint_bounds.parquet` is the
+**activation grid** for generic constraints — a constraint applies at
+`(stage, block)` if and only if a row exists for it there, independent of
+whether the row supplies a numeric endpoint or the endpoint comes entirely
+from the constraint's own inline affine remainder (an inline `<= @demanda`,
+say). A constraint whose only endpoints come from that affine remainder, but
+which has zero rows in the bounds parquet, is collected as `InvalidReference`
+— the reference would otherwise apply to nothing and be silently inert.
+
+**Fields:**
+
+| Field         | Description                                                                                          |
+| ------------- | -------------------------------------------------------------------------------------------------------|
+| `description` | Contains a `[InvalidReference] constraints/generic_constraints.json (GenericConstraint <id>): GenericConstraint <id> declares a bound reference but has no activation rows in generic_constraint_bounds.parquet: the reference would apply to nothing` line |
+
+**Example:**
+
+```
+constraint violation: [InvalidReference] constraints/generic_constraints.json (GenericConstraint 3): GenericConstraint 3 declares a bound reference but has no activation rows in generic_constraint_bounds.parquet: the reference would apply to nothing
+```
+
+**Resolution:** Add at least one row for the constraint's `id` to
+`generic_constraint_bounds.parquet` at every `(stage, block)` where it should
+apply — the row may leave both `bound_lower`/`bound_upper` null as long as the
+constraint's own affine remainder supplies the value; the row's job is then
+only to activate the cell. See
+[Generic Constraints — the activation grid](/reference/generic-constraints/)
+for the full model.
+
+---
+
+### `DuplicateId`
+
+**Severity:** Error
+
+**When it occurs:** An id or key is declared twice where it must be unique.
+Three cases emit this kind: a unit-group `id` declared twice in one hydro plant
+(unit-group ids are unique within a plant, not globally); a policy-graph node
+`id` declared twice in `policy_graph.nodes[]` of `stages.json`; and two rows of a
+`constraints/*_bounds.parquet` override file that set the same column for the
+same entity, stage and block. An entity `id` declared twice in a registry file,
+such as two buses with the same `id` in `system/buses.json`, is a
+[`SchemaViolation`](#schemaviolation), not a `DuplicateId`; see the
+two-buses example there.
+
+**Example:**
+
+{/* capture: cobre validate dupug | cobre   v0.17.0 | binary: cobre-cli sha256 23916b46 | case: temporary 1dtoy derivative (cobre init --template 1dtoy dupug; system/hydros.json: unit group 0 of hydro 0 duplicated, with max_generation_mw and max_turbined_m3s of both copies set to 25.0; run with NO_COLOR=1, exit code 1; the Validation summary line, which carries the temporary path, is not quoted and the error: prefix is not quoted) */}
+
+```text
+[DuplicateId] system/hydros.json (Hydro 0): Hydro 0: unit group id 0 is declared more than once; unit group ids must be unique within a plant
+```
+
+**Resolution:** Rename the repeated unit-group or node `id`, or remove or merge
+the bound-override rows that set the same column twice.
+
+---
+
+### `InvalidValue`
+
+**Severity:** Error
+
+**When it occurs:** A value violates a domain rule that `cobre validate`
+checks once the files have loaded. Examples: the outgoing transition
+probabilities from a stage in `stages.json` do not sum to 1.0, or a study stage
+has an empty `blocks` array. A reservoir whose `min_storage_hm3` exceeds
+`max_storage_hm3`, and a stage whose `num_openings` is 0, are reported as
+[`SchemaViolation`](#schemaviolation) lines instead.
+
+**Example:**
+
+{/* capture: cobre validate trans | cobre   v0.17.0 | binary: cobre-cli sha256 23916b46 | case: temporary 1dtoy derivative (cobre init --template 1dtoy trans; stages.json: policy_graph.transitions added as 0 to 1 with probability 0.5, 1 to 2 and 2 to 3 with probability 1.0; run with NO_COLOR=1, exit code 1; the Validation summary line, which carries the temporary path, is not quoted and the error: prefix is not quoted) */}
+
+```text
+[InvalidValue] stages.json: outgoing transition probabilities from stage 0 sum to 0.50000000 (expected 1.0 ±0.000001); probability must sum to 1.0
+```
+
+{/* capture: cobre validate noblk | cobre   v0.17.0 | binary: cobre-cli sha256 23916b46 | case: temporary 1dtoy derivative (cobre init --template 1dtoy noblk; stages.json: stage 1 blocks replaced by an empty array; run with NO_COLOR=1, exit code 1; the Validation summary line, which carries the temporary path, is not quoted and the error: prefix is not quoted) */}
+
+```text
+[InvalidValue] stages.json: stage 1 declares no blocks; every study stage must declare at least one block
+```
+
+**Resolution:** Correct the value named in the message. Consult
+the [Case Directory Format](/reference/case-directory-format/) page for documented constraints. For transitions,
+make the outgoing probabilities from each stage sum to 1.0. For stages, declare at least one
+block in every study stage's `blocks` array.
+
+**See also:** a `min_diversion_m3s` floor on a hydro with no declared
+diversion channel is reported under this kind — see
+[Diversion floor without a declared channel](#diversion-floor-without-a-declared-channel).
+
+#### Generic-constraint bounds row with neither endpoint and no affine remainder
+
+**When it occurs:** A `generic_constraint_bounds.parquet` row with
+`bound_lower = null` and `bound_upper = null` is legal only when the
+constraint's own `bound_lower_affine`/`bound_upper_affine` supplies at least
+one endpoint (the row then only activates the cell, per above). A both-null
+row on a constraint with **no** affine remainder on either side has no
+endpoint at all and is collected as `InvalidValue`.
+
+**Fields:**
+
+| Field         | Description                                                                                                              |
+| ------------- | ----------------------------------------------------------------------------------------------------------------------------|
+| `description` | Contains a `[InvalidValue] constraints/generic_constraint_bounds.parquet (GenericConstraintBoundsRow[<i>]): GenericConstraintBoundsRow[<i>] on constraint <id> has neither bound_lower nor bound_upper: at least one endpoint is required` line |
+
+**Example:**
+
+```
+constraint violation: [InvalidValue] constraints/generic_constraint_bounds.parquet (GenericConstraintBoundsRow[4]): GenericConstraintBoundsRow[4] on constraint 3 has neither bound_lower nor bound_upper: at least one endpoint is required
+```
+
+**Resolution:** Either supply `bound_lower` and/or `bound_upper` on the row,
+or add an inline relational operator (`<=`, `>=`, `==`) to the constraint's
+`expression` so an affine remainder fills the missing endpoint. See
+[Generic Constraints — the activation grid](/reference/generic-constraints/).
+
+#### Diversion floor without a declared channel
+
+**When it occurs:** `constraints/hydro_bounds.parquet` may override a hydro's
+`min_diversion_m3s` floor per `(hydro, stage)`. When the hydro declares no
+`diversion` channel, its diversion flow is fixed at `[0, 0]` — a positive floor
+is then the infeasible interval `[min > 0, 0]`. The business-rule check rejects
+the override before it ever reaches the LP.
+
+**Fields:**
+
+| Field         | Description                                                                                                                                          |
+| ------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `description` | Contains a `[InvalidValue] constraints/hydro_bounds.parquet (Hydro <id>): Hydro <id>: hydro_bounds row at stage_id=<stage> sets min_diversion_m3s=<value>, but the hydro declares no diversion channel; diversion is pinned [0, 0] with no channel, making a positive floor infeasible` line |
+
+**Example:**
+
+```
+constraint violation: [InvalidValue] constraints/hydro_bounds.parquet (Hydro 3): Hydro 3: hydro_bounds row at stage_id=5 sets min_diversion_m3s=2.0, but the hydro declares no diversion channel; diversion is pinned [0, 0] with no channel, making a positive floor infeasible
+```
+
+**Resolution:** Either declare a `diversion` channel on the hydro in
+`system/hydros.json` (see [System Elements](/math/system-elements)), or remove
+the `min_diversion_m3s` override for that `(hydro, stage)` in
+`constraints/hydro_bounds.parquet`.
+
+---
+
+### `CycleDetected`
+
+**Severity:** Error
+
+**When it occurs:** A directed graph that must be acyclic contains a cycle.
+Two graphs are checked. The hydro cascade: the `downstream_id` links among hydro
+plants must form a directed forest (no cycles), so a cycle would mean plant A
+drains into plant B which drains back into plant A. The policy graph: the
+`policy_graph.nodes[]` of `stages.json`, linked by `transitions[]`, must be
+acyclic; this check applies only when `nodes[]` is declared.
+
+**Messages:**
+
+{/* capture: cobre validate cyc | cobre   v0.17.0 | binary: cobre-cli sha256 23916b46 | case: temporary 1dtoy derivative (cobre init --template 1dtoy cyc; system/hydros.json: hydro 1 (a copy of hydro 0 named UHE2) added, hydro 0 downstream_id set to 1 and hydro 1 downstream_id set to 0; run with NO_COLOR=1, exit code 1; the command prints nine error lines, of which only the [CycleDetected] line is quoted; the Validation summary line, which carries the temporary path, is not quoted and the error: prefix is not quoted) */}
+
+```text
+[CycleDetected] system/hydros.json: hydro cascade contains a cycle involving hydro IDs: [0, 1]
+```
+
+The policy-graph nodes message:
+
+{/* quoted from source: crates/cobre-io/src/validation/semantic/stages.rs:476-481 at cobre v0.17.0 */}
+
+```text
+policy-graph nodes contain a cycle; the node graph must be acyclic
+```
+
+`cobre validate` prints it as `[CycleDetected] stages.json: <message>`, where
+`<message>` is the text above.
+
+**Resolution:** Review the `downstream_id` chain for the listed plants and remove
+the cycle. Every hydro cascade must be a directed tree rooted at plants with no
+downstream (tailwater discharge). For the policy graph, remove the
+`transitions[]` entry that closes the cycle.
+
+---
+
+### `DimensionMismatch`
+
+**Severity:** Error
+
+**When it occurs:** A cross-file coverage check fails. For example, when
+`scenarios/inflow_seasonal_stats.parquet` is present, every hydro needs a row
+for each study stage in which it is active, and each missing (hydro, stage)
+pair is one error that names the hydro and the stage. A mismatch means an
+optional per-entity file provides data for some entities but not all that
+require it.
+
+**Example:**
+
+{/* capture: cobre validate cyc | cobre   v0.17.0 | binary: cobre-cli sha256 23916b46 | case: temporary 1dtoy derivative (cobre init --template 1dtoy cyc; system/hydros.json: hydro 1 (a copy of hydro 0 named UHE2) added, hydro 0 downstream_id set to 1 and hydro 1 downstream_id set to 0; run with NO_COLOR=1, exit code 1; the command prints nine error lines, of which only the first [DimensionMismatch] line is quoted; the Validation summary line, which carries the temporary path, is not quoted and the error: prefix is not quoted) */}
+
+```text
+[DimensionMismatch] scenarios/inflow_seasonal_stats.parquet (Hydro 1): Hydro 1 missing inflow seasonal stats for stage 0
+```
+
+**Resolution:** Add the missing rows to the Parquet file; the message names the
+hydro and the stage that lack one. When that file is present, every hydro needs a
+row for each study stage in which it is active.
+
+---
+
+### `BusinessRuleViolation`
+
+**Severity:** Error
+
+**When it occurs:** A domain-specific business rule is violated that cannot
+be expressed as a simple range constraint. Examples: a negative `turbined_cost`
+on a hydro whose generation model is `fpha`, a filling schedule that cannot
+reach the dead volume before the hydro enters operation, the anticipated-thermal
+and post-study-boundary rules, a bound-override row that names an undeclared
+`stage_id`, or a per-block generic-constraint reference that the stage's blocks
+cannot satisfy. One check reports a `BusinessRuleViolation` as a warning: when the inflow model is estimated from `scenarios/inflow_history.parquet` and a hydro has more than one observation in one season of a year, `cobre validate` prints a `warning:` line (exit `0`) saying the observations are aggregated to season resolution.
+
+**Example:**
+
+{/* capture: cobre validate fpha | cobre   v0.17.0 | binary: cobre-cli sha256 23916b46 | case: temporary 1dtoy derivative (cobre init --template 1dtoy fpha; system/hydros.json: hydro 0 generation.model changed from constant_productivity to fpha, and a penalties block with turbined_cost -0.05 added to hydro 0; run with NO_COLOR=1, exit code 1; the Validation summary line is not quoted) */}
+
+```text
+error: [BusinessRuleViolation] penalties.json (Hydro 0): Hydro 0: turbined_cost (-0.05) must be non-negative (>= 0) for FPHA hydros; negative values distort LP dispatch
+```
+
+**Resolution:** Read the message carefully — it describes the specific rule that
+was violated and which entities are involved. For the two penalty rules, see
+[Load-time penalty checks](/math/penalty-system#implementation-in-cobre).
+
+**See also:** the entries below hold the anticipated-thermal and post-study boundary rules
+([Commitment on a non-anticipated thermal](#commitment-on-a-non-anticipated-thermal),
+[Missing commitment window on an anticipated thermal](#missing-commitment-window-on-an-anticipated-thermal),
+[Post-study boundary unanchored or malformed](#post-study-boundary-unanchored-or-malformed) and
+[Uncovered or over-covered past_anticipated_commitments window](#uncovered-or-over-covered-past_anticipated_commitments-window)),
+the undeclared-`stage_id` bound-override rule
+([Undeclared `stage_id` in bound-override parquet](#undeclared-stage_id-in-bound-override-parquet)) and
+the per-block generic-constraint references
+([Per-block generic-constraint references](#per-block-generic-constraint-references)).
+The horizon rule of [Invalid anticipated-thermal lead](#invalid-anticipated-thermal-lead) also prints a
+`[BusinessRuleViolation]` line; that entry sits under `SchemaViolation`, where two of its four lines print.
+
+#### Deterministic external inflow column under an autoregressive model
+
+**When it occurs:** Under the `external` inflow sampling scheme, an inflow's
+seasonal mean and standard deviation are replaced by the sample moments of its
+external scenario file only for a hydro of autoregressive order 0 with no annual
+component; a hydro whose files declare a lag coefficient or an annual component
+keeps the statistics its own files declare. The substitution is per class: a
+load or non-controllable-source class takes its moments from its external file
+only when that class is itself `external`.
+
+A constant (σ = 0) column is accepted for load, NCS, and a hydro of order 0
+with no annual component, but **rejected** for a hydro whose files declare an
+autoregressive order above 0 or an annual component: a single deterministic
+value cannot stand in for such a model, since it would have to equal that
+model's own stage-by-stage deterministic PAR output, which the loader does not
+reconstruct from a flat column.
+
+**Fields:**
+
+| Field         | Description                                                                                              |
+| ------------- | ---------------------------------------------------------------------------------------------------------- |
+| `description` | Contains a `[BusinessRuleViolation] <external inflow file> (inflow entity <e> stage <stage_id>): <message>` line |
+
+**Example:**
+
+```
+constraint violation: [BusinessRuleViolation] scenarios/external_inflow_scenarios.parquet (inflow entity 7 stage 3): inflow external library at stage 3, entity 7: every scenario value is constant (σ = 0), but this hydro's inflow follows an autoregressive model of order > 0; a deterministic value here would have to equal that model's own deterministic PAR output at every stage, which this loader does not compute upstream
+```
+
+**Resolution:** Give the external column genuine stage-to-stage variation, or
+drop the plant's autoregressive inflow model to order 0 (no lag coefficient, no
+annual component) if its inflow really is deterministic. See
+[Scenario Generation §4.4](/math/scenario-generation) for the accept/reject
+rule and [`scenario_source`](/running/configuration/#trainingscenario_source) for the
+scheme configuration.
+
+#### Scalar parameters outside the constraints directory
+
+**When it occurs:** Scalar parameters are read from
+`constraints/generic_parameters.json` only, beside the generic constraints that
+reference its `@name` parameters. A file at `system/scalar_parameters.json` is
+rejected whatever its content; the loader never reads it, so a well-formed file at that path is still refused.
+
+**Fields:**
+
+| Field         | Description                                                                                                            |
+| ------------- | ---------------------------------------------------------------------------------------------------------------------------|
+| `description` | Contains a `[BusinessRuleViolation] system/scalar_parameters.json: system/scalar_parameters.json is no longer read; scalar parameters are now read from constraints/generic_parameters.json, beside the constraints that reference them by @name. Move the file (its contents are unchanged).` line |
+
+**Example:**
+
+{/* capture: cobre validate sp | cobre   v0.17.0 | binary: cobre-cli sha256 23916b46 | case: temporary 1dtoy derivative (cobre init --template 1dtoy sp; system/scalar_parameters.json added holding {"parameters": []}; run with NO_COLOR=1, exit code 1; the Validation summary line, which carries the temporary path, is not quoted and the error: prefix is not quoted) */}
+
+```text
+[BusinessRuleViolation] system/scalar_parameters.json: system/scalar_parameters.json is no longer read; scalar parameters are now read from constraints/generic_parameters.json, beside the constraints that reference them by @name. Move the file (its contents are unchanged).
+```
+
+**Resolution:** `mkdir -p <case>/constraints && git mv <case>/system/scalar_parameters.json <case>/constraints/generic_parameters.json` — the contents do not change. See
+[Generic Constraints — the five parameter kinds](/reference/generic-constraints/)
+for the current file's schema.
 
 #### Commitment on a non-anticipated thermal
 
@@ -1343,61 +1102,6 @@ before the first study stage: the first `lead_stages` stages, or, for
 stage's end — is at or before the study start. See
 [System Elements §4](/math/system-elements).
 
-#### Diversion floor without a declared channel
-
-**When it occurs:** `constraints/hydro_bounds.parquet` may override a hydro's
-`min_diversion_m3s` floor per `(hydro, stage)`. When the hydro declares no
-`diversion` channel, its diversion flow is fixed at `[0, 0]` — a positive floor
-is then the infeasible interval `[min > 0, 0]`. The business-rule check rejects
-the override before it ever reaches the LP.
-
-**Fields:**
-
-| Field         | Description                                                                                                                                          |
-| ------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `description` | Contains a `[InvalidValue] constraints/hydro_bounds.parquet (Hydro <id>): Hydro <id>: hydro_bounds row at stage_id=<stage> sets min_diversion_m3s=<value>, but the hydro declares no diversion channel; diversion is pinned [0, 0] with no channel, making a positive floor infeasible` line |
-
-**Example:**
-
-```
-constraint violation: [InvalidValue] constraints/hydro_bounds.parquet (Hydro 3): Hydro 3: hydro_bounds row at stage_id=5 sets min_diversion_m3s=2.0, but the hydro declares no diversion channel; diversion is pinned [0, 0] with no channel, making a positive floor infeasible
-```
-
-**Resolution:** Either declare a `diversion` channel on the hydro in
-`system/hydros.json` (see [System Elements](/math/system-elements)), or remove
-the `min_diversion_m3s` override for that `(hydro, stage)` in
-`constraints/hydro_bounds.parquet`.
-
-#### Spillage-band inversion
-
-**When it occurs:** An inverted spillage band (`min_spillage_m3s > max_spillage_m3s`)
-or a negative `min_diversion_m3s`, `min_spillage_m3s`, or `max_spillage_m3s` in
-`constraints/hydro_bounds.parquet` is reported here (tagged `[SchemaViolation]`)
-when a full case is loaded, and surfaces as a standalone `SchemaError` when that
-file is checked on its own.
-
-**Fields:**
-
-| Field         | Description                                                                                                                       |
-| ------------- | --------------------------------------------------------------------------------------------------------------------------------- |
-| `description` | Contains a `[SchemaViolation] constraints/hydro_bounds.parquet: field hydro_bounds[<i>].<column>: <message>` line — see below |
-
-**Example:**
-
-```
-constraint violation: [SchemaViolation] constraints/hydro_bounds.parquet: field hydro_bounds[0].max_spillage_m3s: max_spillage_m3s (5.0) must be >= min_spillage_m3s (10.0)
-```
-
-```
-constraint violation: [SchemaViolation] constraints/hydro_bounds.parquet: field hydro_bounds[0].min_diversion_m3s: value must be >= 0.0, got -5.0
-```
-
-**Resolution:** Correct the offending row so `min_spillage_m3s <=
-max_spillage_m3s`, and so `min_diversion_m3s`, `min_spillage_m3s`, and
-`max_spillage_m3s` are all non-negative. See
-[Case Directory Format](/reference/case-directory-format/) for
-`hydro_bounds.parquet`'s column reference.
-
 #### Undeclared `stage_id` in bound-override parquet
 
 **When it occurs:** A row in `constraints/{thermal,hydro,line,pumping,contract,hydro_unit_group}_bounds.parquet`
@@ -1482,6 +1186,313 @@ reference. To address per-block quantities, set `block_mode` to `"chronological"
 on the stage in [`stages.json`](/reference/case-directory-format/#stagesjson); a
 chronological stage requires a named block for evaporation, as in
 `hydro_evaporation(<hydro>, 0)`.
+
+---
+
+### `WarmStartIncompatible`
+
+**Status:** Reserved. Case validation never reports this kind. A warm-start
+run is a full-FCF load of the checkpoint at `policy.path`, and
+a checkpoint that does not fit the current study is refused at policy load; see
+[Policy-load errors](#policy-load-errors).
+
+---
+
+### `ResumeIncompatible`
+
+**Status:** Reserved. Case validation never reports this kind. A resume
+run is a full-FCF load of the checkpoint at `policy.path`, and a
+checkpoint that does not fit the current study is refused at policy load; see
+[Policy-load errors](#policy-load-errors).
+
+---
+
+### `NotImplemented`
+
+**Severity:** Error
+
+**When it occurs:** Two or more hydros that declare a positive
+`travel_time_hours` feed the same downstream plant with values that differ by
+more than `1e-9`, and at least one study stage in `stages.json` uses
+`"chronological"` `block_mode`. The
+check rejects the case whenever any study stage is chronological, not only the
+stages where the arcs' timing would differ. Emitted by the business-rule check,
+with one line for each affected downstream plant, on `system/hydros.json`.
+
+**Example:**
+
+{/* quoted from source: crates/cobre-io/src/validation/semantic/travel_time.rs:256-261 at cobre v0.17.0 */}
+
+```text
+Hydro {downstream_id}: chronological confluence with heterogeneous travel times is unsupported in v1 — {n} declared arcs feed this downstream plant with differing travel_time_hours ({arcs}); align the arcs' travel_time_hours or keep every study stage in Parallel mode
+```
+
+`{downstream_id}` is the id of the downstream plant, `{n}` is the number of arcs
+that feed it, and `{arcs}` lists those arcs as comma-separated
+`hydro {id} (travel_time_hours={t})` items.
+
+**Resolution:** Give every arc into that downstream plant the same
+`travel_time_hours` in
+[`system/hydros.json`](/reference/case-directory-format/#systemhydrosjson), or
+set `block_mode` to `"parallel"` on every study stage in
+[`stages.json`](/reference/case-directory-format/#stagesjson).
+
+---
+
+### `UnusedEntity`
+
+**Severity:** Warning (does not block execution)
+
+**When it occurs:** A `contract_import` or `contract_export` term of a
+generic constraint names a contract id that `system/energy_contracts.json` does
+not declare. The term has no effect and the case still loads. The warning alerts
+the user to a possible input error.
+
+**Example:**
+
+{/* quoted from source: crates/cobre-io/src/validation/referential.rs:1160-1164 at cobre v0.17.0 */}
+
+```text
+{label} references Contract {id} which is a stub entity with no LP effect
+```
+
+`{label}` is `GenericConstraint N term[M]`, naming the constraint `id` and the
+zero-based position of the term in its expression; `{id}` is the undeclared
+contract id.
+
+**Resolution:** Correct the contract id in the term, or declare that contract in
+`system/energy_contracts.json`. If the term is intentional, this warning can be
+ignored.
+
+---
+
+### `ModelQuality`
+
+**Severity:** Warning (does not block execution)
+
+**When it occurs:** A concern about the input model is detected that leaves
+the case valid. Examples: an inverted penalty ordering, inflow-lag state
+disabled on every study stage despite supplied autoregressive coefficients, a
+negative value in `scenarios/inflow_history.parquet`, a season with no
+observations in that file, a hydro-season with at least one, but fewer than
+`estimation.min_observations_per_season`, fully covered stage occurrences in that
+file, or an advisory on a hydro's declared `travel_time_hours`. Each is reported as
+a warning.
+
+**Example:**
+
+{/* capture: cobre validate ord | cobre   v0.17.0 | binary: cobre-cli sha256 23916b46 | case: temporary 1dtoy derivative (cobre init --template 1dtoy ord; penalties.json: hydro.storage_violation_below_cost changed from 10000.0 to 100.0; run with NO_COLOR=1, exit code 0; the Valid case and Validation summary lines are not quoted) */}
+
+```text
+warning: penalties.json: Penalty ordering violation: storage_violation_below_cost (100) should be > max(deficit_segment_costs) (7500) -- 1 hydro(s) affected, worst case: Hydro 0
+```
+
+Every penalty-ordering warning starts `Penalty ordering violation:`; the five
+messages are quoted under
+[Load-time penalty checks](/math/penalty-system#implementation-in-cobre).
+
+The inflow-lag message:
+
+{/* quoted from source: crates/cobre-io/src/validation/semantic/stages.rs:120-125 at cobre v0.17.0 */}
+
+```text
+inflow lags are disabled on all study stages (state_variables.inflow_lags = false) despite a PAR(p>0) inflow model (AR order {max_order}), so the inflow-lag dimensions are omitted from the per-stage state. This is a valid configuration for external-solver interoperability; otherwise it is likely a misconfiguration
+```
+
+`{max_order}` is replaced by the AR order when the warning is issued. When it
+fires and what it changes:
+[`stages[].state_variables` — Cut Projection](/math/cut-management/#stagesstate_variables--cut-projection).
+
+The observation-count message:
+
+{/* quoted from source: crates/cobre-io/src/validation/semantic/scenarios.rs:1112-1116 at cobre v0.17.0 */}
+
+```text
+hydro {hid} season {sid} has {n} observations (minimum recommended: {min_obs}); estimation accuracy may be insufficient with so few observations
+```
+
+`{min_obs}` is `estimation.min_observations_per_season`. `cobre validate` reports
+the warning only when the inflow model is estimated from
+`scenarios/inflow_history.parquet` (that is, the case does not supply both
+`scenarios/inflow_seasonal_stats.parquet` and `scenarios/inflow_ar_coefficients.parquet`)
+and `stages.json` declares `season_definitions`.
+
+**Resolution:** Review the flagged input. For a penalty-ordering warning, see
+[Load-time penalty checks](/math/penalty-system#implementation-in-cobre); for the
+inflow-lag warning, see
+[`stages[].state_variables` — Cut Projection](/math/cut-management/#stagesstate_variables--cut-projection).
+Warnings of this type do not prevent the solver from running.
+
+---
+
+### `SemanticAmbiguity`
+
+**Severity:** Warning (does not block execution)
+
+**When it occurs:** A valid construct whose semantics are ambiguous or
+stage-dependent in a way that is likely to surprise the user. Two constructs
+trigger it, both emitted by the business-rule check in
+`constraints/generic_constraints.json`:
+
+1. **`thermal_generation(N)` on an anticipated thermal.** Using
+   `thermal_generation(N)` in a generic constraint when thermal `N` is an
+   anticipated thermal. `thermal_generation` refers to the per-block generation
+   measured at the _delivery_ stage (when the commitment matures), not the
+   commitment decision made at the current stage. Users who intend to constrain
+   the commitment itself should use `anticipated_decision(N)` instead.
+
+   **Example:** A generic constraint `thermal_generation(0)` on an anticipated thermal:
+
+   {/* capture: cobre validate sa1 | cobre   v0.17.0 | binary: cobre-cli sha256 23916b46 | case: temporary 1dtoy derivative (cobre init --template 1dtoy sa1; system/thermals.json: thermal 0 given anticipated_config with lead_stages 1; initial_conditions.json: past_anticipated_commitments gains one window for thermal 0, 2024-01-01 to 2024-02-01, value_mw 0.0; constraints/generic_constraints.json added holding one constraint, id 0, name peak_cap, expression thermal_generation(0), slack enabled false; constraints/generic_constraint_bounds.parquet added with compression zstd and one row, constraint 0, stage 1, block_id and bound_lower null, bound_upper 10.0; run with NO_COLOR=1, exit code 0; the Valid case and Validation summary lines and the first warning line, which concerns the thermal's stage-cadence transition, are not quoted) */}
+
+   ```text
+   warning: constraints/generic_constraints.json (constraint[id=0]): Constraint "peak_cap": thermal_generation(0) references an anticipated thermal. thermal_generation refers to the per-block generation at the delivery stage, not the forward commitment. If you intend to constrain the commitment itself, use anticipated_decision(0) instead.
+   ```
+
+   **Resolution:** Review the constraint expression. If you want to bound the
+   generation dispatched at the delivery stage, `thermal_generation(N)` is correct
+   and the warning can be ignored. If you want to bound the advance commitment
+   decision itself, replace `thermal_generation(N)` with `anticipated_decision(N)`.
+
+2. **`max_stored_energy(h)` paired with `accumulated_productivity(h)`.** One
+   constraint references both computed tags for the same hydro — in its
+   expression coefficients or in its bounds (an `@emax` on the right-hand side
+   counts). The two are evaluated differently (`accumulated_productivity` at the
+   plant's reference point, `max_stored_energy` over the useful range), so a
+   stored-energy comparison built from them does not cancel. One warning is
+   emitted per such hydro; the case still validates.
+
+   **Example:** A constraint that pairs the two tags for hydro 0:
+
+   {/* capture: cobre validate sa2 | cobre   v0.17.0 | binary: cobre-cli sha256 23916b46 | case: temporary 1dtoy derivative (cobre init --template 1dtoy sa2; constraints/generic_parameters.json added holding two computed parameters for hydro 0, id 1 name rho tag accumulated_productivity and id 2 name emax tag max_stored_energy; constraints/generic_constraints.json added holding one constraint, id 0, name sec_mismatch, expression @rho * hydro_useful_volume_final(0) >= 0.3 * @emax, slack enabled false; constraints/generic_constraint_bounds.parquet added with compression zstd and one row, constraint 0, stage 1, block_id, bound_lower and bound_upper null; run with NO_COLOR=1, exit code 0; the Valid case and Validation summary lines are not quoted) */}
+
+   ```text
+   warning: constraints/generic_constraints.json (sec_mismatch): Constraint "sec_mismatch": pairs max_stored_energy(0) with accumulated_productivity(0) for hydro 0; the two ride different evaluators and would not cancel. The coefficient matching max_stored_energy is integrated_accumulated_productivity, not accumulated_productivity.
+   ```
+
+   **Resolution:** Use `integrated_accumulated_productivity` as the coefficient
+   that matches `max_stored_energy`; see
+   [the security-curve example](/reference/generic-constraints/#worked-example-a-security-curve).
+
+The warning is printed by `cobre validate` in its human-readable output; the
+`--json` success output does not carry warnings.
+
+---
+
+## Load-failure kinds
+
+The `phase` value of `cobre validate --json` and the `kind` of an entry in the `errors` array of
+`cobre.io.validate` (Python) name the failure that stopped the load. Almost every case-load failure reports
+[`ConstraintError`](#constrainterror), because the load collects its problems into one report. The kinds are
+listed below in the order of the load steps in which they typically occur: reading a file, parsing it,
+checking its fields, then validating the whole case.
+
+During a case load, a read, parse or schema failure in one file is collected
+into the validation report rather than returned on its own. It reaches you as a
+line of a [`ConstraintError`](#constrainterror): `[FileNotFound]` for a read
+failure, `[ParseError] <file>: parse error: <message>` for a parse failure, and
+`[SchemaViolation] <file>: field <field>: <message>` for a schema failure. The
+display formats below reach you only for a load error raised after that report
+is complete; see [Exit Codes](/reference/cli-reference/#exit-codes).
+
+### `IoError`
+
+**Severity:** Error
+
+**When it occurs:** A required file exists in the file manifest but cannot be
+read from disk — file not found, permission denied, or other OS-level I/O
+failure. Occurs when a JSON or Parquet file is read for parsing and the read
+returns an error.
+
+**Display format:**
+
+```
+I/O error reading {path}: {source}
+```
+
+**Fields:**
+
+| Field    | Description                             |
+| -------- | --------------------------------------- |
+| `path`   | Path to the file that could not be read |
+| `source` | Underlying OS I/O error                 |
+
+**Resolution:** Verify the file exists in the case directory. Check that the
+process has read permissions for the directory and file. For a full case load, the
+case root must contain all required files (see [Case Directory Format](/reference/case-directory-format/)).
+A problem collected during a case load prints as a report line; see [Validation report kinds](#validation-report-kinds).
+
+---
+
+`ParseError` — see [`ParseError`](#parseerror); a parse failure collected in the report prints as a
+`[ParseError]` line.
+
+---
+
+### `SchemaError`
+
+**Severity:** Error
+
+**When it occurs:** A file parses successfully but a field violates a schema
+constraint: a required field is missing, a value is outside its valid range, or
+an enum discriminator names an unknown variant. Occurs when the fields of a parsed
+file are checked. Also returned when `training.selection`
+(which carries the forward-pass count) or `training.stopping_rules` is absent
+and the config is parsed or merged outside a case load (for example, Python
+config overrides); a case load reports the same absence as a
+[`SchemaViolation`](#schemaviolation) line.
+
+**Display format:**
+
+```
+schema error in {path}, field {field}: {message}
+```
+
+**Fields:**
+
+| Field     | Description                                                            |
+| --------- | ---------------------------------------------------------------------- |
+| `path`    | Path to the file containing the invalid entry                          |
+| `field`   | Dot-separated path to the offending field (e.g., `"hydros[3].bus_id"`) |
+| `message` | Human-readable description of the violation                            |
+
+**Resolution:** The `field` value identifies the exact location of the problem.
+Check that required fields are present and that values fall within documented
+ranges. A problem collected during a case load prints as a report line; see [Validation report kinds](#validation-report-kinds).
+
+---
+
+### `ConstraintError`
+
+**Severity:** Error
+
+**When it occurs:** A catch-all for all validation diagnostics collected
+across any validation step, for system assembly rejections, and for guards
+raised directly by loaders after assembly (for example, a non-finite
+closure-derived innovation scale is rejected here naming the hydro and
+season). The `description` field contains
+every collected error message joined by newlines, each prefixed with its
+`[<Kind>]`, source file, optional entity identifier, and message text.
+
+**Display format:**
+
+```
+constraint violation: {description}
+```
+
+**Fields:**
+
+| Field         | Description                           |
+| ------------- | ------------------------------------- |
+| `description` | All error messages joined by newlines |
+
+**Example:** The `--json` failure capture under
+[How these errors reach you](#how-these-errors-reach-you) reports `ConstraintError` as its
+`phase`, with the collected report line in `message`.
+
+**Resolution:** Read every line in `description` — each line is a separate
+problem. Address them all and re-run. The `[<Kind>]` prefix identifies the
+category of each problem, and each kind section gives its resolution. A problem collected during a case load prints as a report line; see [Validation report kinds](#validation-report-kinds).
 
 ---
 

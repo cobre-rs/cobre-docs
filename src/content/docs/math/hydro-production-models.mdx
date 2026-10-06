@@ -40,26 +40,13 @@ with:
 
 **Data requirements**: a per-stage productivity scalar per hydro plant. No geometry or hyperplane data needed.
 
-## 2. FPHA (Função de Produção Hidrelétrica Aproximada)
+## 2. FPHA (Approximate Hydroelectric Production Function)
 
-For accurate modeling of hydroelectric generation, FPHA (Approximate Hydropower Production Function) captures the nonlinear relationship between storage, flow, spillage, and generation through a piecewise-linear approximation. The approach follows the piecewise-linear hydro production model of Diniz & Maceira (2008); that model is four-dimensional (forebay/head, turbined flow, and tailrace/spillage), whereas Cobre fits a reduced variant over storage and turbined flow at spillage = 0, capturing the spillage effect through the per-plane lateral-flow secant of §2.7 rather than an explicit spillage axis.
+For accurate modeling of hydroelectric generation, FPHA (Approximate Hydroelectric Production Function) captures the nonlinear relationship between storage, flow, spillage, and generation through a piecewise-linear approximation. The approach follows the piecewise-linear hydro production model of Diniz & Maceira (2008); that model is four-dimensional (forebay/head, turbined flow, and tailrace/spillage), whereas Cobre fits a reduced variant over storage and turbined flow at spillage = 0, capturing the spillage effect through the per-plane lateral-flow secant of §2.7 rather than an explicit spillage axis.
 
-### 2.1 Notation Mapping
+### 2.1 Notation
 
-This section uses consistent notation with the LP formulation. The following table maps Cobre symbols to equivalent Portuguese terminology for practitioners familiar with DECOMP/DESSEM/NEWAVE:
-
-| Cobre      | Portuguese (practitioner reference) | Description                 | Units |
-| ---------- | ----------------------------------- | --------------------------- | ----- |
-| $\phi$     | FPH                                 | Hydro production function   | MW    |
-| $v$        | $V$                                 | Reservoir storage           | hm³   |
-| $q$        | $Q$                                 | Turbined flow               | m³/s  |
-| $s$        | $S$ / $Q_{ver}$                     | Spillage                    | m³/s  |
-| $g_h$      | GH                                  | Hydro generation            | MW    |
-| $h_{fore}$ | $h_{mon}$ (montante)                | Forebay (upstream) level    | m     |
-| $h_{tail}$ | $h_{jus}$ (jusante)                 | Tailrace (downstream) level | m     |
-| $h_{net}$  | $h_{liq}$ (líquida)                 | Net head                    | m     |
-| $h_{loss}$ | $h_{PerdH}$ (perda hidráulica)      | Hydraulic losses            | m     |
-| $q_{out}$  | $Q_{jus}$                           | Total downstream outflow    | m³/s  |
+This section uses the notation of the [LP formulation](/math/lp-formulation); for equivalent terms in other planning tools, see the [Glossary](/reference/glossary#equivalent-terms-in-other-planning-tools).
 
 :::note[Note on lateral flow]
 The tailrace level depends on the outflow below the plant, which this model takes as $q_{out} = q + s$ (the plant's own turbined and spilled flow). The lateral-flow secant (§2.7) captures the spillage effect, and upstream releases or other inflows below the dam do not enter $q_{out}$.

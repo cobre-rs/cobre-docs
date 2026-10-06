@@ -49,7 +49,7 @@ live in [Bibliography](/reference/bibliography).
 | Useful volume | Volume útil | Storage above the plant's physical minimum storage, up to its physical maximum. See [Hydro Production Models §5](/math/hydro-production-models#5-energy-conversion-quantities). |
 | Stored energy (EARM) | Energia armazenada (EARM) | Energy content of the stored useful volume: the volume above the physical minimum valued at the useful-range mean accumulated productivity, in MWh (or MW over the stage's hours). See [Hydro Production Models §5](/math/hydro-production-models#5-energy-conversion-quantities). |
 | Security curve | Curva de segurança | A per-stage floor on stored energy, expressed as a fraction of the plant's maximum stored energy. See [Hydro Production Models §5](/math/hydro-production-models#5-energy-conversion-quantities). |
-| Transit seed     | Semente de trânsito                        | The `simulation/transit_seed/` rolling release-window export (`{scenario_id, hydro_id, start_date, end_date, value_m3s}`) that seeds a continuing run's own `past_defluences`, letting a study chained after this one reconstruct in-transit state on its cascade arcs. See [System Elements §5d](/math/system-elements). |
+| Transit seed     | Semente de trânsito                        | The `simulation/transit_seed/` rolling release-window export (`{scenario_id, hydro_id, start_date, end_date, value_m3s}`) that seeds a continuing run's own `past_defluences`, letting a study chained after this one reconstruct in-transit state on its cascade arcs. See [State Augmentation §6](/math/state-augmentation#6-water-travel-time). |
 
 ---
 
@@ -164,6 +164,42 @@ live in [Bibliography](/reference/bibliography).
 | Warm-start     | Partida a quente | Reusing a previous solution basis to accelerate the simplex method on a modified LP, including reconstructing a stored basis onto a churned cut pool by slot identity. See [LP Warm-Start](/math/lp-warm-start). |
 | HiGHS          | -                | Open-source LP / MIP solver used as Cobre's default backend.                                                                                                                                                     |
 | CLP            | -                | Open-source LP solver from COIN-OR, available as an alternative compile-time backend.                                                                                                                            |
+
+---
+
+## Equivalent terms in other planning tools
+
+The tables below map Cobre's modelling concepts to their terms in NEWAVE and DECOMP, and the FPHA symbols of [Hydro Production Models §2](/math/hydro-production-models#2-fpha-approximate-hydroelectric-production-function) to the practitioner notation of NEWAVE, DECOMP and DESSEM.
+
+**Concept equivalents.**
+
+| Cobre concept                               | Term in NEWAVE/DECOMP                     | Note                                                                                                                                                                                                                                                                                     |
+| ------------------------------------------- | ----------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [Bus](#power-system)                        | Subsistema                                | A NEWAVE/DECOMP subsystem corresponds to one bus (bus granularity is user-defined); see [Subsystem](#power-system).                                                                                                                                                                      |
+| [Block](#power-system)                      | Patamar                                   | Same concept.                                                                                                                                                                                                                                                                            |
+| Must-run non-controllable source            | Usinas não simuladas                      | A source whose generation equals its available generation in every block, with no curtailment; see [System Elements — Curtailable vs. Must-Run](/math/system-elements#curtailable-vs-must-run).                                                                                          |
+| Anticipated thermal                         | GNL antecipado                            | A thermal plant whose generation is committed at a stage before its delivery stage; see [Anticipated dispatch](#thermal-generation).                                                                                                                                                     |
+| Water travel time                           | Tempo de viagem                           | A release on a plant's main cascade arc reaches the downstream plant after the travel time and is carried as in-transit state until it arrives; see [System Elements — Cascade Travel Time](/math/system-elements#cascade-travel-time).                                                  |
+| Dead-volume filling                         | Enchimento de volume morto                | A plant in commissioning fills its reservoir up to its [dead volume](#hydro-generation) on a per-stage minimum-accumulation schedule, without generating, before it enters service; see [System Elements — Dead-Volume Filling](/math/system-elements#dead-volume-filling).              |
+| [Dead volume](#hydro-generation)            | Volume morto                              | A hard storage floor, with two exceptions: a filling hydro has a soft floor once it enters service, and a hydro not in service has no dead-volume floor; see [LP Formulation — Lifecycle Phases](/math/lp-formulation#lifecycle-phases).                                                 |
+| Stored-energy floor as a generic constraint | VminOP; Curva de segurança                | A per-stage lower bound on the productivity-weighted storage of a set of plants, optionally stated as a fraction of their maximum stored energy; see [Security curve](#hydro-generation) and [LP Formulation §10](/math/lp-formulation#10-generic-constraints).                          |
+| Stage-varying maximum-storage override      | Volume de espera                          | The flood-control reserve is entered as a lower maximum storage at the stages it covers. The plant's physical storage range, which the stored-energy quantities read, is unchanged; see [Hydro Production Models §5.3](/math/hydro-production-models#53-useful-range-mean-productivity). |
+| Individual hydro plants                     | REE (Reservatório equivalente de energia) | Cobre represents every hydro plant individually, with its own storage and production model, and builds no equivalent energy reservoir; see [System Elements §5](/math/system-elements#5-hydro-plants).                                                                                   |
+
+**FPHA notation.** The symbols belong to the [FPHA](#hydro-generation) model.
+
+| Cobre      | Practitioner notation          | Meaning                           | Units |
+| ---------- | ------------------------------ | --------------------------------- | ----- |
+| $\phi$     | FPH                            | Hydro production function         | MW    |
+| $v$        | $V$                            | Reservoir storage                 | hm³   |
+| $q$        | $Q$                            | Turbined flow                     | m³/s  |
+| $s$        | $S$ / $Q_{ver}$                | Spillage                          | m³/s  |
+| $g_h$      | GH                             | Hydro generation                  | MW    |
+| $h_{fore}$ | $h_{mon}$ (montante)           | Forebay (upstream) level          | m     |
+| $h_{tail}$ | $h_{jus}$ (jusante)            | Tailrace (downstream) level       | m     |
+| $h_{net}$  | $h_{liq}$ (líquida)            | Net head                          | m     |
+| $h_{loss}$ | $h_{PerdH}$ (perda hidráulica) | Hydraulic losses                  | m     |
+| $q_{out}$  | $Q_{jus}$                      | Outflow below the plant ($q + s$) | m³/s  |
 
 ---
 

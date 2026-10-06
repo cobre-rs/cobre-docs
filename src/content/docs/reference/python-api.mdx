@@ -57,7 +57,7 @@ class Study:
     ) -> None: ...
 ```
 
-A loaded, reusable study. Construction loads the case, resolves the configuration, runs the stochastic and hydro-model preprocessing, and writes the front-half sidecars `training/scaling_report.json`, `training/model_provenance.json` and `training/hydro_models.json` (plus the stochastic exports when enabled) under `output_dir`. Validation happens here: a case or configuration that fails validation raises from the constructor, so a constructed `Study` is valid.
+A loaded, reusable study. Construction loads the case, resolves the configuration, runs the stochastic and hydro-model preprocessing, and writes `training/scaling_report.json`, `training/model_provenance.json` and `training/hydro_models.json` (plus the stochastic exports when enabled) under `output_dir`. Validation happens here: a case or configuration that fails validation raises from the constructor, so a constructed `Study` is valid.
 
 **Parameters**
 
@@ -71,7 +71,7 @@ A loaded, reusable study. Construction loads the case, resolves the configuratio
 - `OSError` (builtin) when `case_dir` does not exist, before any work.
 - `ValueError` (builtin) when `threads` is `0`, or when `config_overrides` has a non-`str` key or an unsupported value type.
 - `cobre.errors.ValidationError` for a configuration override, parse or read failure, for a missing or unreadable case file, and for a schema, parse or constraint failure in the case data.
-- `cobre.errors.CaseIoError` for a sidecar write failure, such as an unwritable `output_dir`.
+- `cobre.errors.CaseIoError` when writing one of those files fails, such as under an unwritable `output_dir`.
 - `cobre.errors.PolicyIncompatibleError` when a warm-start policy does not match the system.
 - `cobre.errors.SolverError` for any other preprocessing or construction failure.
 
@@ -358,8 +358,8 @@ Loads a case, trains, simulates when the configuration enables it, and writes th
 
 **Parameters**
 
-- `case_dir`, `output_dir`, `threads`, `config_overrides`: as for [`cobre.Study`](#cobrestudy). `threads=None` runs on one thread.
-- `on_iteration`: as for [`cobre.Study.train`](#cobrestudytrain). A truthy return requests a cooperative stop at a later iteration boundary.
+- `case_dir`, `output_dir`, `threads`, `config_overrides`: as for [`cobre.Study`](#cobrestudy).
+- `on_iteration`: as for [`cobre.Study.train`](#cobrestudytrain).
 
 **Returns**: a dict of shape [`cobre._types.RunResult`](#cobre_typesrunresult). All keys are present on every branch; the values below differ by branch.
 
@@ -471,7 +471,7 @@ Loaders for the artifacts a run writes under its output directory. Every functio
 def load_results(output_dir: Union[str, Path]) -> dict[str, Any]: ...
 ```
 
-Reads the run manifests. The call raises before building the result when `training/_SUCCESS` is absent.
+Reads the run manifests.
 
 **Parameters**
 

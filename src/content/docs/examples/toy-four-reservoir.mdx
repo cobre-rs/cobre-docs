@@ -272,7 +272,7 @@ Stage 4 cost: $50 \times 10 + 50 \times 2 = 500 + 100 = 600$.
 
 ## 5. Iteration 1 — Backward Pass
 
-The backward pass walks stages $4 \to 1$. At each stage it pins the
+The backward pass walks stages $4 \to 2$. At each stage it pins the
 incoming storage to the trial point from the forward pass, evaluates
 all three openings, reads the four pinned-column reduced costs, and
 aggregates into a 4-coefficient cut. The mechanics follow
@@ -388,7 +388,7 @@ unit at H1 saves $50$ in every scenario and the average is $-50$. H4
 has zero coefficient: B4 was thermal-free in every opening, so storage
 at H4 has no marginal value at this trial point.
 
-### Stages 3, 2 and 1
+### Stages 3 and 2
 
 The same procedure repeats at the earlier stages, with the cut from
 the next stage active in the LP. At each stage:

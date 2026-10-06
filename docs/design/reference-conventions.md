@@ -36,7 +36,7 @@ Column rules:
 - **Header.** The header row is exactly `Name | Type | Required | Default | Units | Description`, with these six names in
   this order (D-202a-3). A table with any other header is not an input table and the checker does not read it.
 - **Name.** A JSON `Name` cell holds the backticked full path from the file root, with `[]` after an array of objects
-  (`hydros[].tailrace.type`) and `<name>` for a user-chosen map key (`profiles.<name>.correlation_groups[]`). An array of
+  (`hydros[].tailrace.type`) and `<name>` for a user-chosen map key (`profiles.<name>.correlation_groups[].name`; the array row itself is `profiles.<name>.correlation_groups`, with no trailing `[]`). An array of
   non-objects (scalars, or arrays of scalars) is one leaf row with no `[]` and Type `array`; the example is
   `hydros[].evaporation.coefficients_mm`. A Parquet `Name` cell holds the backticked column name.
 - **Type.** One name from section 4, written bare (no backticks) and case-sensitive: `Int32` is not `int32`. A nullable

@@ -150,3 +150,12 @@ test("seeded violation on the vendored stubs: one dropped heading is the only fi
   const seeded = complete.replace("### `cobre.run.run`\n", "");
   assert.deepEqual(checkCoverage(symbols, parsePage(seeded)), ["MISSING\tcobre.run.run"]);
 });
+
+test("a def or class line that carries its own docstring, and async def, are symbols", () => {
+  const { headings, fields } = parseStub(
+    'async def a() -> None: ...\ndef b() -> None: """Doc."""\nclass C: """Doc."""\n    n: int',
+    "cobre.z",
+  );
+  assert.deepEqual(headings, ["cobre.z", "cobre.z.a", "cobre.z.b", "cobre.z.C"]);
+  assert.deepEqual([...fields.entries()], [["cobre.z.C", ["n"]]]);
+});
