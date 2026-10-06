@@ -265,7 +265,7 @@ in `system/non_controllable_sources.json`:
 | `operational_start_date` | string (ISO-8601 date) | Yes | Calendar date (`YYYY-MM-DD`) the source enters the registry's operational history — see [Shared Operational Start Date](#shared-operational-start-date) above. |
 | `max_generation_mw`  | number  | Yes     | Installed capacity, in MW — the hard physical upper bound behind the stochastic availability described in methodology §6. |
 | `allow_curtailment`  | boolean | No      | Defaults to `true` (curtailable). Set `false` for must-run sources that pin generation to the realized availability every scenario — see [system elements §6](/math/system-elements#curtailable-vs-must-run) for when this is required (e.g. already-netted aggregate NCS totals). |
-| `curtailment_cost`   | number or null | No | Entity-level override of the global `ncs_curtailment_cost` regularization price. |
+| `curtailment_cost`   | number or null | No | Entity-level override of `non_controllable_source.curtailment_cost` in `penalties.json`. |
 
 The stochastic available generation itself comes from the scenario pipeline
 (`constraints/ncs_bounds.parquet` and the scenario factors/stats files), not

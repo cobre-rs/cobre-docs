@@ -4,17 +4,9 @@ description: Field-by-field reference for every file in a Cobre case directory �
 ---
 
 A Cobre case directory is a self-contained folder that holds all input data
-for a single power system study. `load_case` reads this directory and produces
-a fully-validated `System` ready for the solver.
-
-For a description of how these files are parsed and validated, see the
-`cobre-io` crate documentation in the cobre repository.
-
-:::note[JSON Schema validation]
-Every JSON input file above accepts a `$schema` key (see the examples in each
-section) pointing at the matching JSON Schema in the `cobre` repository, for
-editor-integrated validation.
-:::
+for a single power system study. `cobre validate` loads and checks the
+directory without solving, and `cobre run` loads it before solving;
+load-time errors are listed in [Error Codes](/reference/error-codes/).
 
 ## Directory layout
 
@@ -116,11 +108,35 @@ my_case/
 | `constraints/penalty_overrides_hydro.parquet`   | Parquet | No       | Stage-varying hydro penalty costs                                                  |
 | `constraints/penalty_overrides_ncs.parquet`     | Parquet | No       | Stage-varying NCS curtailment cost                                                 |
 
-Input Parquet files must be uncompressed or zstd-compressed; Snappy, gzip and LZ4
-are rejected at load as a `ParseError`
-(`Parquet error: Disabled feature at compile time: snap` for Snappy). pyarrow
-`pq.write_table` writes Snappy by default, so pass `compression="zstd"`; polars
-`write_parquet` already defaults to zstd.
+## Conventions
+
+- **Stage ids.** Every non-null `stage_id` column or field names a declared `id` of `stages.json`, never a position,
+  except `schedule[].stage_id` of [`scenarios/correlation.json`](#scenarioscorrelationjson), which out-of-sample
+  forward and simulation sampling match by 0-based position among the study stages. Study stage ids are non-negative and may be gapped or start above `0`;
+  `pre_study_stages[]` ids are negative.
+- **Block ids.** `block_id` is the 0-based index of a block within its stage; a stage's `blocks[].id` values run `0..n-1`.
+- **Parquet column types.** Each Parquet column must have exactly the type its table lists. A column of another type
+  is rejected at load with `column "<name>" has type <actual> but <expected> is required`, and an absent required
+  column with `missing required column "<name>"`. pandas writes integers as `int64`, so cast them (for example
+  `df["stage_id"] = df["stage_id"].astype("int32")`) or pass an explicit pyarrow schema to
+  `pa.Table.from_pandas(df, schema=schema)`.
+
+  The type names map to the writer libraries as follows:
+
+  | Type      | pyarrow        | polars       | pandas                                 |
+  | --------- | -------------- | ------------ | -------------------------------------- |
+  | `Int32`   | `pa.int32()`   | `pl.Int32`   | `int32`                                |
+  | `UInt32`  | `pa.uint32()`  | `pl.UInt32`  | `uint32`                               |
+  | `Float64` | `pa.float64()` | `pl.Float64` | `float64`                              |
+  | `Date32`  | `pa.date32()`  | `pl.Date`    | `datetime.date` objects (object dtype) |
+
+- **Compression.** Input Parquet files must be uncompressed or zstd-compressed; Snappy, gzip and LZ4 are rejected at
+  load (`Parquet error: Disabled feature at compile time: snap` for Snappy). pyarrow `pq.write_table` and pandas
+  `DataFrame.to_parquet` write Snappy by default, so pass `compression="zstd"`; polars `write_parquet` already defaults to zstd.
+- **`$schema`.** Every JSON file accepts an optional `$schema` string key for editor validation; its value is not
+  checked. The
+  examples point at the schemas published with these pages (`https://docs.cobre-rs.dev/schemas/<name>.schema.json`,
+  vendored from cobre; see [JSON Schemas](/reference/json-schemas/)).
 
 ---
 
@@ -139,7 +155,7 @@ sections are optional and fall back to documented defaults when absent.
 | `modeling`               | object | `{}`         | Inflow non-negativity treatment; objective cost-scale conditioning  |
 | `training`               | object | **required** | Iteration count, stopping rules, cut selection, parallelism, solver |
 | `estimation`             | object | `{}`         | PAR(p) model estimation settings (max order, selection criterion)   |
-| `upper_bound_evaluation` | object | `{}`         | Inner approximation upper-bound settings                            |
+| `upper_bound_evaluation` | object | `{}`         | Inner approximation upper-bound settings; accepted, no effect       |
 | `policy`                 | object | fresh mode   | Policy directory path and warm-start mode                           |
 | `simulation`             | object | disabled     | Post-training simulation settings                                   |
 | `exports`                | object | all disabled | Output file selection flags                                         |
@@ -164,8 +180,8 @@ authored in `penalties.json::hydro.inflow_nonnegativity_cost`.
 | `training.enabled`         | boolean         | `true`                              | When `false`, skip training and proceed directly to simulation                                                             |
 | `training.tree_seed`       | integer or null | `null`                              | Seed of the opening tree and of the in-sample opening draws; an absent value uses `42` (see [Seed resolution](#seed-resolution)) |
 | `training.scenario_source` | object or null  | `null`                              | Per-class sampling scheme for the training forward pass (see below)                                                        |
-| `training.parallelism`     | object or null  | `{backward_scheduler: by_scenario}` | Backward-pass scheduler selection; see [Configuration](/running/configuration/#parallelism)                                |
-| `training.solver`          | object or null  | `null`                              | LP solver retry policy and optional per-phase solver profiles; see [Configuration](/running/configuration/#trainingsolver) |
+| `training.parallelism`     | object          | `{backward_scheduler: by_scenario}` | Backward-pass scheduler selection; see [Configuration](/running/configuration/#parallelism)                                |
+| `training.solver`          | object          | `{retry_max_attempts: 5, retry_time_budget_seconds: 30.0}` | LP solver retry policy and optional per-phase solver profiles; see [Configuration](/running/configuration/#trainingsolver) |
 
 **`training.selection` sub-section:**
 
@@ -173,9 +189,7 @@ Chooses how many trajectories the training forward pass runs per iteration, or
 whether it exhaustively enumerates the scenario openings instead of sampling. The
 object is internally tagged on `method`; each variant accepts only its own fields
 (pairing `forward_passes` with `"enumerated"` is a load-time error). There is no
-default forward-pass count — an absent `training.selection` is a hard load error,
-and the root-level `training.forward_passes` field from earlier releases is
-rejected as an unknown field.
+default forward-pass count — an absent `training.selection` is a hard load error.
 
 | Field                                | Type    | Required          | Description                                                                |
 | ------------------------------------- | ------- | ------------------ | ----------------------------------------------------------------------------- |
@@ -259,17 +273,15 @@ Each entry has a `"type"` discriminator. Valid types:
 | Type              | Required fields                                                       | Stops when                                                               |
 | ----------------- | --------------------------------------------------------------------- | ------------------------------------------------------------------------ |
 | `iteration_limit` | `limit: integer`                                                      | Iteration count reaches `limit`                                          |
-| `time_limit`      | `seconds: number`                                                     | Wall-clock time exceeds `seconds`                                        |
+| `time_limit`      | `seconds: number`                                                     | Wall-clock time reaches `seconds`                                        |
 | `bound_stalling`  | `iterations: integer`, `tolerance: number`                            | Lower bound improvement falls below `tolerance` over `iterations` window |
-| `gap`             | `tolerance: number` and/or `relative_tolerance: number` (at least one required) | The optimality gap between the lower and upper bounds falls below the tolerance |
+| `gap`             | `tolerance: number` and/or `relative_tolerance: number` (at least one required) | The optimality gap between the lower and upper bounds falls below the tolerance. Admissible only with `training.selection.method = "enumerated"` and the same risk measure at every stage, a `cvar` with `lambda: 0` counting as `"expectation"` (see [Configuration](/running/configuration/#gap)); `cobre run` rejects any other `gap` rule when it sets the study up, and `cobre validate` reports the rejection only when `policy.boundary` is configured. |
 
 :::note[`stopping_rules` need not include `iteration_limit`]
-Earlier documentation said the rule set must include an `iteration_limit` rule.
-The binary requires the `training.stopping_rules` key, but accepts any non-empty
-set without an `iteration_limit` rule. Training still never runs past an
-iteration budget: the largest `iteration_limit` in the set, or 100 iterations
-when the set has none. An empty array `[]` is treated as a single
-`iteration_limit` rule of 100 iterations. These pages follow the binary.
+The `training.stopping_rules` key is required. A non-empty set needs no
+`iteration_limit` rule. Training never runs past the largest `limit` among the
+set's `iteration_limit` rules, or past 100 iterations when the set has none. An
+empty array `[]` is treated as a single `iteration_limit` rule of 100 iterations.
 :::
 
 **`training.cut_selection` sub-section:**
@@ -288,6 +300,9 @@ per-method field tables.
 
 **`upper_bound_evaluation` section:**
 
+The loader accepts the block and checks its keys and value types. No part of
+the run reads it, so its fields have no effect.
+
 | Field                      | Type    | Default | Description                                   |
 | -------------------------- | ------- | ------- | --------------------------------------------- |
 | `enabled`                  | boolean | `null`  | Enable vertex-based inner approximation       |
@@ -301,14 +316,17 @@ per-method field tables.
 
 | Field                               | Type           | Default      | Description                                                            |
 | ----------------------------------- | -------------- | ------------ | ---------------------------------------------------------------------- |
-| `path`                              | string         | `"./policy"` | Directory for policy data (cuts, states, vertices, basis)              |
+| `path`                              | string         | `"./policy"` | Policy checkpoint directory, resolved against the run's output directory. Its files are listed under [Output Format — Policy Checkpoint](/reference/output-format/#policy-checkpoint). |
 | `mode`                              | string         | `"fresh"`    | Initialization mode: `"fresh"`, `"warm_start"`, or `"resume"`          |
 | `boundary`                          | object or null | `null`       | Terminal boundary cut config: `path` (string) + `strict` (bool, default false) |
-| `checkpointing.enabled`             | boolean        | `null`       | Enable periodic checkpointing                                          |
-| `checkpointing.initial_iteration`   | integer        | `null`       | First iteration to write a checkpoint                                  |
-| `checkpointing.interval_iterations` | integer        | `null`       | Iterations between checkpoints                                         |
-| `checkpointing.store_basis`         | boolean        | `null`       | Include LP basis in checkpoints                                        |
-| `checkpointing.compress`            | boolean        | `null`       | Compress checkpoint files                                              |
+| `checkpointing.enabled`             | boolean        | `null`       | Accepted; has no effect. Periodic-checkpointing flag.                  |
+| `checkpointing.initial_iteration`   | integer        | `null`       | Accepted; has no effect. First checkpoint iteration.                   |
+| `checkpointing.interval_iterations` | integer        | `null`       | Accepted; has no effect. Iterations between checkpoints.               |
+| `checkpointing.store_basis`         | boolean        | `null`       | Accepted; has no effect. LP-basis storage flag.                        |
+| `checkpointing.compress`            | boolean        | `null`       | Accepted; has no effect. Checkpoint-compression flag.                  |
+
+Training writes one policy checkpoint at its end, whatever the `checkpointing.*`
+fields hold ([Policy Management](/running/policy-management/#resume)).
 
 **`simulation` section:**
 
@@ -330,8 +348,7 @@ Chooses how many trajectories the post-training simulation runs, or whether it
 exhaustively enumerates the scenario openings instead of sampling. Internally
 tagged on `method`, mirroring `training.selection` above. Unlike
 `training.selection`, this field is optional: an absent `simulation.selection`
-resolves to a sampled count of `2000` — the same default the flat `num_scenarios`
-field carried before this field existed.
+resolves to a sampled count of `2000`.
 
 | Field                                  | Type    | Required          | Description                                                                    |
 | ---------------------------------------- | ------- | ------------------ | ----------------------------------------------------------------------------------- |
@@ -366,8 +383,8 @@ Global penalty cost defaults used when no entity-level override is present.
 All four sections are required. Every scalar cost must be strictly positive
 (`> 0.0`), with one exception: the hydro `turbined_cost` regularization cost is
 validated `>= 0.0` (a `0.0` turbined cost — no turbine-flow penalty — is valid).
-Deficit segment costs must be monotonically increasing and the last segment must
-have `depth_mw: null` (unbounded).
+The deficit segments must be non-empty, with costs strictly increasing and the last
+segment's `depth_mw` set to `null` (unbounded).
 
 | Section                   | Field                                 | Type           | Description                                                                                                                            |
 | ------------------------- | ------------------------------------- | -------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
@@ -449,9 +466,6 @@ and policy graph horizon type.
 | `nodes[]`              | No       | Policy-graph nodes (see below). Absent ⇒ the graph is a stage chain and `transitions[]` endpoints are read directly as stage ids                   |
 | `transitions[]`        | No       | Stage transitions (see below). Defaults to an empty array                                                                                           |
 
-A deck with no `nodes[]` is a stage chain byte-for-byte as before — existing
-`stages.json` files with only `policy_graph.transitions` need no migration.
-
 **`policy_graph.nodes[]` entry fields:**
 
 | Field         | Required | Description                                                                                                                                                                                                                                                    |
@@ -467,7 +481,7 @@ A deck with no `nodes[]` is a stage chain byte-for-byte as before — existing
 | --------------------------------- | -------- | --------------------------------------------------------------------------------------------------- |
 | `source_id`                       | Yes      | Source endpoint: a node id when `policy_graph.nodes[]` is non-empty, a stage id otherwise            |
 | `target_id`                       | Yes      | Target endpoint: a node id when `policy_graph.nodes[]` is non-empty, a stage id otherwise             |
-| `probability`                     | Yes      | Transition probability                                                                              |
+| `probability`                     | Yes      | Transition probability; a source's outgoing probabilities must sum to `1` within `1e-6` (a sum further off is rejected), and the loader then rescales them so they sum to `1` |
 | `annual_discount_rate_override`   | No       | Stage-chain dialect only (no `policy_graph.nodes[]`): folded onto the transition's source stage, and the stage's own `annual_discount_rate_override` wins when both are set; rejected under `policy_graph.nodes[]` — declare the rate on the stage. |
 
 :::caution[No top-level `scenario_source` in `stages.json`]
@@ -475,24 +489,38 @@ Scenario sampling is configured per-pass in `config.json` —
 `training.scenario_source` for the training forward pass and
 `simulation.scenario_source` for post-training simulation (see
 [`config.json`](#configjson) above). A top-level `scenario_source` key in
-`stages.json` is not read.
+`stages.json` with a value other than `null` is rejected at load (`cobre validate`
+reports a `[SchemaViolation]` error on the field `scenario_source`; see
+[Error Codes](/reference/error-codes/#schemaviolation)).
 :::
 
 **`stages[]` entry fields:**
 
 | Field             | Required | Description                                                       |
 | ----------------- | -------- | ----------------------------------------------------------------- |
-| `id`              | Yes      | Stage identifier (non-negative integer, unique)                   |
+| `id`              | Yes      | Stage identifier (non-negative integer, unique). A negative id is not rejected; the stage is read as a pre-study stage, not a study stage |
 | `start_date`      | Yes      | ISO 8601 date (e.g., `"2024-01-01"`)                              |
 | `end_date`        | Yes      | ISO 8601 date; must be after `start_date`                         |
-| `blocks`          | Yes      | Array of load blocks (`id`, `name`, `hours`); must be non-empty, and every `hours` must be finite and `> 0` (an empty array is rejected as `InvalidValue`, a non-positive `hours` at parse time as `SchemaViolation`) |
-| `num_openings`    | Yes      | Number of within-node openings for this stage (>= 1); required on the plain stage-chain dialect (no `policy_graph.nodes[]`) and at a generated-openings stage under `nodes[]`, rejected at a stage that carries only external openings |
+| `blocks`          | Yes      | Array of load blocks (`id`, `name`, `hours`): non-empty, block ids `0..n-1` (each once, in any order), every `hours` finite and `> 0` |
+| `num_openings`    | Conditional | Number of within-node openings for this stage (>= 1); required on the plain stage-chain dialect (no `policy_graph.nodes[]`) and at a generated-openings stage under `nodes[]`, rejected at a stage that carries only external openings |
 | `season_id`       | No       | Reference to a season in `season_definitions`                     |
 | `block_mode`      | No       | Block execution mode: `"parallel"` (default) or `"chronological"` |
-| `state_variables` | No       | Cut dimension for this stage: `{ storage, inflow_lags }` booleans, defaulting to storage-only (`inflow_lags` off). Governs which state dimensions the stage's cuts project onto — distinct from what is reported; a disabled dimension is projected out of the cut, not zero-padded. Travel-time buckets and anticipated-thermal slots are always included. See [Cut Management](/math/cut-management). |
-| `risk_measure`    | No       | Per-stage risk measure: `"expectation"` or CVaR config            |
+| `state_variables` | No       | Cut projection of this stage. For its fields and default, see [`stages[].state_variables` — Cut Projection](/math/cut-management/#stagesstate_variables--cut-projection). |
+| `risk_measure`    | No       | Per-stage risk measure: `"expectation"` (the default) or `{"cvar": {"alpha": …, "lambda": …}}` with `alpha` in `(0, 1]` (the tail fraction) and `lambda` in `[0, 1]`; values outside these ranges are rejected; see [Risk Measures](/math/risk-measures#implementation-in-cobre) |
 | `sampling_method` | No       | Noise-generation method for the stage: `"saa"` (default), `"lhs"`, `"qmc_sobol"`, `"qmc_halton"`, `"selective"` or `"historical_residuals"`. `"selective"` needs a supplied opening tree (`training.scenario_source.openings` `{"source": "file"}`, `scenarios/noise_openings.parquet`); `"historical_residuals"` needs `scenarios/inflow_history.parquet` and a `season_id` on every study stage. For a class on `out_of_sample`, `"selective"` and `"historical_residuals"` each draw plain Monte Carlo noise in the forward pass, with a warning. See [Scenario Generation](/math/scenario-generation/#23a-sampling-method-and-opening-tree-generation) |
 | `annual_discount_rate_override` | No       | The stage's own annual discount rate; absent uses `policy_graph.annual_discount_rate`. See [Discount Rate](/math/discount-rate#implementation-in-cobre). |
+
+**`pre_study_stages[]` entry fields:**
+
+| Name                            | Type            | Required | Default | Units | Description                                                                                                                                               |
+| ------------------------------- | --------------- | -------- | ------- | ----- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `pre_study_stages[].id`         | integer         | Yes      | —       | —     | Negative stage id; unique, and distinct from every study stage id. A non-negative id is read as a study stage, and loading then fails because that stage declares no blocks. |
+| `pre_study_stages[].start_date` | string          | Yes      | —       | —     | ISO 8601 date (`YYYY-MM-DD`).                                                                                                                             |
+| `pre_study_stages[].end_date`   | string          | Yes      | —       | —     | ISO 8601 date, after `start_date`.                                                                                                                        |
+| `pre_study_stages[].season_id`  | integer \| null | No       | `null`  | —     | A season of `season_definitions`, taken as declared (never derived from the dates).                                                                       |
+
+Pre-study stages are dated periods before the first study stage that the autoregressive (AR) inflow model uses
+for its lags. Pre-study stages carry no blocks and are never solved.
 
 **`season_definitions` sub-object:**
 
@@ -601,9 +629,8 @@ on every study stage.
 
 In this example, seasons 0–11 cover monthly PAR models for the near-term phase and seasons 12–15
 cover quarterly PAR models for the long-term phase. Each monthly stage assigns a `season_id` of 0–11;
-each quarterly stage assigns a `season_id` of 12–15. Rule 29 enforces that stages sharing the same
-`season_id` must have similar durations (within 7 days), so monthly and quarterly stages must use
-distinct season IDs.
+each quarterly stage assigns a `season_id` of 12–15. Stages sharing a `season_id` must have
+durations within 7 days of each other, so monthly and quarterly stages use distinct `season_id` values.
 
 ---
 
@@ -623,9 +650,7 @@ travel-time arcs, and recent observations at the start of the study.
 Each `hydro_id` must be unique within its array and must not appear in both
 `storage` and `filling_storage`. All `value_hm3` values must be non-negative.
 
-Seeding the PAR lag chain and the mid-period accumulator does not read a
-positional lag array from this file — this file carries no `past_inflows`
-field, and one is rejected at load. The seed instead derives from
+The PAR lag chain and the mid-period accumulator are seeded from
 `scenarios/inflow_history.parquet`'s windowed record, shadowed day-wise by
 `recent_observations` wherever the two overlap.
 
@@ -839,9 +864,9 @@ Electrical bus registry. Buses are the nodes of the transmission network.
 | `buses[].id`                          | Yes      | Bus identifier (integer, unique)                                                          |
 | `buses[].name`                        | Yes      | Human-readable bus name (string)                                                          |
 | `buses[].operational_start_date`      | Yes      | Calendar date the bus enters the registry's operational history, ISO-8601 (`YYYY-MM-DD`). Provenance and the canonical `(operational_start_date, id)` ordering key (see [Notation Conventions](/overview/notation-conventions)) |
-| `buses[].deficit_segments`            | No       | Entity-level deficit cost tiers; when absent, global defaults from `penalties.json` apply |
-| `buses[].deficit_segments[].depth_mw` | No       | Segment MW depth; `null` for the final unbounded segment                                  |
-| `buses[].deficit_segments[].cost`     | No       | Cost per MWh of deficit in this tier (USD/MWh)                                            |
+| `buses[].deficit_segments`            | No       | Entity-level deficit cost tiers; when present they replace `bus.deficit_segments` in `penalties.json` for this bus and follow the same rules (non-empty, costs strictly increasing, last `depth_mw` `null`) |
+| `buses[].deficit_segments[].depth_mw` | No       | Segment depth (MW); the last segment's `depth_mw` must be `null` (unbounded)                         |
+| `buses[].deficit_segments[].cost`     | Yes      | Cost per MWh of deficit in this tier (USD/MWh); `> 0`                                     |
 
 ---
 
@@ -860,8 +885,13 @@ Transmission line registry. Lines connect buses and carry power flows.
 | `lines[].exit_stage_id`       | No       | Stage when line is decommissioned; `null` = never                    |
 | `lines[].capacity.direct_mw`  | Yes      | Maximum power flow in the direct direction (MW)                      |
 | `lines[].capacity.reverse_mw` | Yes      | Maximum power flow in the reverse direction (MW)                     |
-| `lines[].exchange_cost`       | No       | Entity-level exchange cost override ($/MWh); absent = global default |
+| `lines[].exchange_cost`       | No       | Entity-level exchange cost override (USD/MWh); absent = `line.exchange_cost` in `penalties.json` |
 | `lines[].losses_percent`      | No       | Transmission losses as percentage (default: 0.0)                     |
+
+**Validation:**
+
+- `entry_stage_id` must be less than `exit_stage_id` when both are set.
+- `capacity.direct_mw`, `capacity.reverse_mw` and `losses_percent` must be `>= 0`.
 
 ---
 
@@ -883,9 +913,9 @@ Key fields:
 | `hydros[].entry_stage_id`                         | No       | Stage when plant enters service; `null` = always exists                                                       |
 | `hydros[].exit_stage_id`                          | No       | Stage when plant is decommissioned; `null` = never                                                            |
 | `hydros[].reservoir`                              | Yes      | `min_storage_hm3` and `max_storage_hm3` (both >= 0) — the plant's **physical**, stage-invariant range: stored-energy outputs, the `hydro_useful_volume_*` bound fold and the `min_storage`/`max_storage`/`max_stored_energy` computed tags read it; `constraints/hydro_bounds.parquet` storage overrides tighten only the per-stage operative bounds of the LP storage variable |
-| `hydros[].outflow`                                | Yes      | `min_outflow_m3s` and `max_outflow_m3s` total outflow bounds                                                  |
+| `hydros[].outflow`                                | Yes      | `min_outflow_m3s` and `max_outflow_m3s` total outflow bounds; `max_outflow_m3s` is optional                   |
 | `hydros[].generation`                             | Yes      | Generation model: `model`, turbine flow bounds, generation MW bounds                                          |
-| `hydros[].generation.model`                       | Yes      | `"constant_productivity"`, `"linearized_head"`, or `"fpha"`                                                   |
+| `hydros[].generation.model`                       | Yes      | `"constant_productivity"`, `"linearized_head"`, or `"fpha"`; `"linearized_head"` is a reserved name that resolves to constant productivity ([Hydro Production Models §3](/math/hydro-production-models)) |
 | `hydros[].specific_productivity_mw_per_m3s_per_m` | No       | Specific productivity ρ_esp [MW/(m³/s)/m]. Required for FPHA hydros that derive ρ_eq from VHA geometry; on any hydro with `system/hydro_geometry.parquet` rows it also feeds the useful-range mean evaluator (per-stage overrides in `system/hydro_energy_productivity.parquet`). |
 | `hydros[].tailrace`                               | No       | Tailrace model: `"polynomial"` or `"piecewise"`                                                               |
 | `hydros[].hydraulic_losses`                       | No       | Head loss model: `"factor"` or `"constant"`                                                                   |
@@ -895,9 +925,40 @@ Key fields:
 | `hydros[].filling`                                | No       | Filling config: `start_stage_id` and `filling_min_rate_m3s`                                                   |
 | `hydros[].penalties`                              | No       | Entity-level hydro penalty overrides (all fields optional, fall back to global)                               |
 
-**`hydros[].unit_groups[]`** replaces the plant-level `bus_id` field, which is
-removed — a deck still carrying it is rejected by this file's
-deny-unknown-fields contract. Every group carries its own bus, so one plant
+**Sub-object fields:** the keys inside each sub-object listed above.
+
+| Name                                         | Type           | Required    | Default | Units    | Description                                                                                                                                                                               |
+| -------------------------------------------- | -------------- | ----------- | ------- | -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `hydros[].reservoir.min_storage_hm3`         | number         | Yes         | —       | hm³      | Dead volume; `>= 0` and `<= max_storage_hm3`.                                                                                                                                             |
+| `hydros[].reservoir.max_storage_hm3`         | number         | Yes         | —       | hm³      | Maximum storage; `>= 0`.                                                                                                                                                                  |
+| `hydros[].outflow.min_outflow_m3s`           | number         | Yes         | —       | m³/s     | Minimum total outflow; `>= 0`.                                                                                                                                                            |
+| `hydros[].outflow.max_outflow_m3s`           | number \| null | No          | `null`  | m³/s     | `null` or absent means no upper bound; when set, `>= min_outflow_m3s`.                                                                                                                    |
+| `hydros[].generation.min_turbined_m3s`       | number         | Yes         | —       | m³/s     | Minimum turbined flow; `>= 0`.                                                                                                                                                            |
+| `hydros[].generation.max_turbined_m3s`       | number         | Yes         | —       | m³/s     | Maximum turbined flow; `>= 0` and `>= min_turbined_m3s`.                                                                                                                                  |
+| `hydros[].generation.min_generation_mw`      | number         | Yes         | —       | MW       | Minimum generation.                                                                                                                                                                       |
+| `hydros[].generation.max_generation_mw`      | number         | Yes         | —       | MW       | Maximum generation; `>= min_generation_mw`.                                                                                                                                               |
+| `hydros[].tailrace.type`                     | string         | Yes         | —       | —        | One of `"polynomial"`, `"piecewise"`. Selects the tailrace curve form.                                                                                                                    |
+| `hydros[].tailrace.coefficients`             | array          | Conditional | —       | m        | Required when `type` is `"polynomial"`. Tailrace level as a polynomial in the total outflow, coefficients in ascending powers.                                                            |
+| `hydros[].tailrace.points[].outflow_m3s`     | number         | Yes         | —       | m³/s     | Total outflow at the point. The `points` array is required when `type` is `"piecewise"`.                                                                                                  |
+| `hydros[].tailrace.points[].height_m`        | number         | Yes         | —       | m        | Tailrace level at the point's outflow.                                                                                                                                                    |
+| `hydros[].hydraulic_losses.type`             | string         | Yes         | —       | —        | One of `"factor"`, `"constant"`. Selects the head-loss form.                                                                                                                              |
+| `hydros[].hydraulic_losses.value`            | number         | Conditional | —       | —        | Required when `type` is `"factor"`. A fraction of the gross head, forebay level minus tailrace level.                                                                                     |
+| `hydros[].hydraulic_losses.value_m`          | number         | Conditional | —       | m        | Required when `type` is `"constant"`. Head loss, independent of flow and head.                                                                                                            |
+| `hydros[].efficiency.type`                   | string         | Yes         | —       | —        | One of `"constant"`. Selects the efficiency form.                                                                                                                                         |
+| `hydros[].efficiency.value`                  | number         | Yes         | —       | —        | Turbine efficiency as a fraction.                                                                                                                                                         |
+| `hydros[].evaporation.coefficients_mm`       | array          | Yes         | —       | mm/month | Exactly 12 values, January first. A plant declaring them needs `system/hydro_geometry.parquet` rows.                                                                                      |
+| `hydros[].evaporation.reference_volumes_hm3` | array \| null  | No          | `null`  | hm³      | Exactly 12 linearization volumes, January first. Each is finite and inside `[min_storage_hm3, max_storage_hm3]`. When `null` or absent the linearization uses the midpoint of that range. |
+| `hydros[].diversion.downstream_id`           | integer        | Yes         | —       | —        | Plant receiving the diverted water.                                                                                                                                                       |
+| `hydros[].diversion.max_flow_m3s`            | number         | Yes         | —       | m³/s     | Channel capacity.                                                                                                                                                                         |
+| `hydros[].filling.start_stage_id`            | integer        | Yes         | —       | —        | Study stage `id` at which filling starts.                                                                                                                                                 |
+| `hydros[].filling.filling_min_rate_m3s`      | number         | No          | `0.0`   | m³/s     | Minimum filling rate, `>= 0`; `0.0` is passive filling.                                                                                                                                   |
+
+The `generation` object accepts no productivity value; a plant's productivity
+comes from `system/hydro_production_models.json` or
+`system/hydro_energy_productivity.parquet`. Computed FPHA requires the
+`tailrace`, `hydraulic_losses` and `efficiency` objects and `system/hydro_geometry.parquet` rows.
+
+**`hydros[].unit_groups[]`** — each group carries its own bus, so one plant
 can inject generation onto several electrical buses:
 
 | Field               | Required | Description                                                                  |
@@ -916,37 +977,49 @@ column and one FPHA generation column per cell, and each cell's generation
 injects at that cell's bus; two groups sharing a bus share that cell's
 columns, so their individual split is undetermined rather than unimplemented
 — every equally optimal split has no dual to distinguish it. A plant whose
-groups all declare the same `bus_id` collapses to a single cell, matching the
-pre-partition LP exactly (byte-identical).
+groups all declare the same `bus_id` has a single cell.
 
 Stage-varying, optionally per-block overrides on a group's four declared
 bounds are supplied via
 [`constraints/hydro_unit_group_bounds.parquet`](#constraintshydro_unit_group_boundsparquet).
 Per-cell simulation output is
 [`simulation/hydro_bus_generation/`](/reference/output-format/#simulationhydro_bus_generation);
-`simulation/hydros/` continues to report each plant's total, unchanged.
+`simulation/hydros/` reports each plant's total.
 
 All fields within `hydros[].penalties` are optional. When a field is absent the
 global default from `penalties.json` is used. The following fields are supported:
 
-| Field within `penalties`              | Optional | Description                                                                                                                               |
-| ------------------------------------- | -------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
-| `spillage_cost`                       | Yes      | Spillage penalty ($/m³/s).                                                                                                                |
-| `turbined_cost`                       | Yes      | Turbined flow regularization cost; applied to every hydro's turbine column in the LP objective.                                           |
-| `diversion_cost`                      | Yes      | Diversion flow penalty.                                                                                                                   |
-| `storage_violation_below_cost`        | Yes      | Storage below-minimum violation penalty.                                                                                                  |
-| `filling_target_violation_cost`       | Yes      | Filling target violation penalty.                                                                                                         |
-| `turbined_violation_below_cost`       | Yes      | Turbined flow below-minimum violation penalty.                                                                                            |
-| `outflow_violation_below_cost`        | Yes      | Total outflow below-minimum violation penalty.                                                                                            |
-| `outflow_violation_above_cost`        | Yes      | Total outflow above-maximum violation penalty.                                                                                            |
-| `generation_violation_below_cost`     | Yes      | Generation below-minimum violation penalty.                                                                                               |
-| `evaporation_violation_cost`          | Yes      | Symmetric evaporation violation penalty (applies to both directions when directional fields are absent).                                  |
-| `water_withdrawal_violation_cost`     | Yes      | Symmetric water withdrawal violation penalty (applies to both directions when directional fields are absent).                             |
-| `water_withdrawal_violation_pos_cost` | Yes      | Override cost for over-withdrawal violations (actual > target). Supersedes `water_withdrawal_violation_cost` for the positive direction.  |
-| `water_withdrawal_violation_neg_cost` | Yes      | Override cost for under-withdrawal violations (actual &lt; target). Supersedes `water_withdrawal_violation_cost` for the negative direction. |
-| `evaporation_violation_pos_cost`      | Yes      | Override cost for over-evaporation violations (actual > modelled). Supersedes `evaporation_violation_cost` for the positive direction.    |
-| `evaporation_violation_neg_cost`      | Yes      | Override cost for under-evaporation violations (actual &lt; modelled). Supersedes `evaporation_violation_cost` for the negative direction.   |
-| `inflow_nonnegativity_cost`           | Yes      | Override global inflow non-negativity penalty cost for this plant ($/m³/s).                                                               |
+| Field within `penalties`          | Description                                                                                                                                                                                                                                    |
+| --------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `spillage_cost`                   | Spillage penalty (USD/(m³/s·h)).                                                                                                                                                                                                               |
+| `turbined_cost`                   | Turbined flow regularization cost; applied to every hydro's turbine column in the LP objective (USD/(m³/s·h)).                                                                                                                                 |
+| `diversion_cost`                  | Diversion flow penalty (USD/(m³/s·h)).                                                                                                                                                                                                         |
+| `storage_violation_below_cost`    | Storage below-minimum violation penalty (USD/hm³).                                                                                                                                                                                             |
+| `filling_target_violation_cost`   | Filling target violation penalty (USD/hm³).                                                                                                                                                                                                    |
+| `turbined_violation_below_cost`   | Turbined flow below-minimum violation penalty (USD/(m³/s·h)).                                                                                                                                                                                  |
+| `outflow_violation_below_cost`    | Total outflow below-minimum violation penalty (USD/(m³/s·h)).                                                                                                                                                                                  |
+| `outflow_violation_above_cost`    | Total outflow above-maximum violation penalty (USD/(m³/s·h)).                                                                                                                                                                                  |
+| `generation_violation_below_cost` | Generation below-minimum violation penalty (USD/MWh).                                                                                                                                                                                          |
+| `evaporation_violation_cost`      | Symmetric evaporation violation penalty (USD/(m³/s·h)). Supplies both directional evaporation costs of this plant; see [Directional evaporation and withdrawal costs](/math/penalty-system/#directional-evaporation-and-withdrawal-costs).     |
+| `water_withdrawal_violation_cost` | Symmetric water withdrawal violation penalty (USD/(m³/s·h)). Supplies both directional withdrawal costs of this plant; see [Directional evaporation and withdrawal costs](/math/penalty-system/#directional-evaporation-and-withdrawal-costs). |
+| `inflow_nonnegativity_cost`       | Override global inflow non-negativity penalty cost for this plant (USD/(m³/s·h)).                                                                                                                                                              |
+
+**Validation:**
+
+- `entry_stage_id` must be less than `exit_stage_id` when both are set.
+- A plant with `filling` must declare `entry_stage_id`, with `filling.start_stage_id` before it, and no `exit_stage_id`;
+  `filling.start_stage_id` must be a declared study stage.
+- Its `filling_storage` seed in `initial_conditions.json` must lie in `[0, min_storage_hm3)`, and be `0` when filling
+  starts after the first study stage; `filling_min_rate_m3s >= 0`.
+- A filling plant whose `entry_stage_id` is at or past the study horizon draws a warning: it fills throughout and never
+  operates in the study.
+- The filling schedule must reach the dead volume; see
+  [Load-time penalty checks](/math/penalty-system#implementation-in-cobre).
+- Unit-group ids are unique within the plant, and each group's minimum turbined flow and generation must not exceed its
+  maximum.
+- Each group's `min_turbined_m3s` and `max_turbined_m3s` must be `>= 0`.
+- The groups' maxima must sum to at most the plant's maxima and their minima to at least the plant's minima (turbined
+  flow and generation, each checked against the declared values, not against per-stage overrides).
 
 ---
 
@@ -966,7 +1039,12 @@ Thermal plant registry. Each entry defines a dispatchable generation unit.
 | `thermals[].operational_start_date` | Yes  | Calendar date the unit enters the registry's operational history, ISO-8601 (`YYYY-MM-DD`). Provenance and the canonical `(operational_start_date, id)` ordering key — independent of `entry_stage_id`/`exit_stage_id` below, which alone gate commissioning |
 | `thermals[].entry_stage_id`     | No       | Stage when the unit enters service (`null` = present from stage 0) |
 | `thermals[].exit_stage_id`      | No       | Stage when the unit is decommissioned (`null` = never)             |
-| `thermals[].anticipated_config` | No       | Anticipated-dispatch config (object with `lead_stages` ≥ 1)        |
+| `thermals[].anticipated_config` | No       | Anticipated-dispatch lead: an object with exactly one of `lead_stages` (integer `>= 1`) or `lead_time_hours` (finite and `> 0`); both or neither is rejected at load. See the [Equipment Formulations Configure tab](/math/equipment-formulations#implementation-in-cobre) |
+
+**Validation:**
+
+- `entry_stage_id` must be less than `exit_stage_id` when both are set.
+- `generation.min_mw` and `generation.max_mw` must be `>= 0`, with `max_mw >= min_mw`; `cost_per_mwh` must be `>= 0`.
 
 ---
 
@@ -988,7 +1066,7 @@ Per-scenario availability is supplied by the
 | `non_controllable_sources[].operational_start_date` | Yes      | Calendar date the source enters the registry's operational history, ISO-8601 (`YYYY-MM-DD`). Provenance and the canonical `(operational_start_date, id)` ordering key — independent of `entry_stage_id`/`exit_stage_id` below, which alone gate commissioning |
 | `non_controllable_sources[].max_generation_mw`      | Yes      | Maximum generation (installed capacity) [MW]                                                                                                                                                                                                            |
 | `non_controllable_sources[].allow_curtailment`      | No       | Whether the LP may curtail this source. `true` (default) — dispatch within `[0, max_generation_mw × availability]` at the curtailment cost; `false` — must-run, dispatch pinned to the realized availability every scenario                             |
-| `non_controllable_sources[].curtailment_cost`       | No       | Entity-level curtailment cost override [$/MWh]; falls back to the global `ncs_curtailment_cost` when absent                                                                                                                                             |
+| `non_controllable_sources[].curtailment_cost`       | No       | Entity-level curtailment cost override [USD/MWh]; falls back to `non_controllable_source.curtailment_cost` in `penalties.json` when absent                                                                                                              |
 | `non_controllable_sources[].entry_stage_id`         | No       | Stage when the source enters service; `null` or absent = present from stage 0                                                                                                                                                                          |
 | `non_controllable_sources[].exit_stage_id`          | No       | Stage when the source is decommissioned; `null` or absent = never                                                                                                                                                                                     |
 
@@ -1014,6 +1092,11 @@ scenario, injecting a fixed amount with no curtailment freedom.
   ]
 }
 ```
+
+**Validation:**
+
+- `entry_stage_id` must be less than `exit_stage_id` when both are set.
+- `max_generation_mw` must be `>= 0`.
 
 ---
 
@@ -1065,6 +1148,11 @@ Stage-varying flow bounds can be overridden via `constraints/pumping_bounds.parq
   ]
 }
 ```
+
+**Validation:**
+
+- `entry_stage_id` must be less than `exit_stage_id` when both are set.
+- `source_hydro_id` must differ from `destination_hydro_id`.
 
 ---
 
@@ -1124,14 +1212,19 @@ can be overridden via `constraints/contract_bounds.parquet`.
 }
 ```
 
+**Validation:**
+
+- `entry_stage_id` must be less than `exit_stage_id` when both are set.
+- `limits.min_mw` and `limits.max_mw` must be `>= 0`.
+
 ---
 
 ### `system/hydro_geometry.parquet`
 
-Volume-Height-Area (VHA) curves for hydro reservoirs. Required when any hydro is
-configured with a computed FPHA production model (`source: "computed"`) or with
-evaporation linearization. When absent, FPHA computation and evaporation
-linearization are unavailable for all plants.
+Volume-Height-Area (VHA) curves for hydro reservoirs. Required for a
+computed-FPHA plant (`source: "computed"`) and for a plant that declares
+`evaporation` coefficients. When the file holds any row, every FPHA plant needs
+at least 1 row of its own and every `linearized_head` plant at least 2.
 
 The table is also read by the useful-range mean evaluator
 ([Hydro Production Models §5.3](/math/hydro-production-models#53-useful-range-mean-productivity))
@@ -1144,30 +1237,31 @@ that fails to build, or a non-positive mean equivalent head, rejects the case at
 Author the table to span `reservoir.min_storage_hm3` … `reservoir.max_storage_hm3`:
 when the table is narrower, the mean is taken over the table's own extent.
 
-4 columns, all non-nullable. Rows are sorted by `(hydro_id, volume_hm3)` ascending.
+4 columns, all non-nullable; rows may appear in any order.
 Multiple rows per `hydro_id` together constitute the VHA curve for that plant.
 
 | Column       | Type   | Required | Description                                                              |
 | ------------ | ------ | -------- | ------------------------------------------------------------------------ |
-| `hydro_id`   | INT32  | Yes      | Hydro plant ID                                                           |
-| `volume_hm3` | DOUBLE | Yes      | Total reservoir volume at this point (hm³). Non-negative and finite.     |
-| `height_m`   | DOUBLE | Yes      | Reservoir surface elevation at this volume (m). Non-negative and finite. |
-| `area_km2`   | DOUBLE | Yes      | Water surface area at this volume (km²). Non-negative and finite.        |
+| `hydro_id`   | Int32  | Yes      | Hydro plant ID                                                           |
+| `volume_hm3` | Float64 | Yes      | Total reservoir volume at this point (hm³). Non-negative and finite.     |
+| `height_m`   | Float64 | Yes      | Reservoir surface elevation at this volume (m). Non-negative and finite. |
+| `area_km2`   | Float64 | Yes      | Water surface area at this volume (km²). Non-negative and finite.        |
 
 **Validation:** all four columns must be present with the correct types. `volume_hm3`,
-`height_m`, and `area_km2` must be non-negative and finite. Monotonicity of
-`volume_hm3` within each hydro is enforced during Layer 5 semantic validation.
+`height_m`, and `area_km2` must be non-negative and finite. Within each plant,
+`volume_hm3` must be strictly increasing and `height_m` and `area_km2`
+non-decreasing, each within a relative tolerance.
 
 ---
 
 ### `system/hydro_production_models.json`
 
-Per-hydro production function assignment. The file is required whenever
-the case contains at least one non-FPHA hydro: each non-FPHA plant must
-have a matching entry that supplies either an inline
-`productivity_mw_per_m3s` per stage range / season, or defers to
-`system/hydro_energy_productivity.parquet` for that `(hydro, stage)`
-coefficient.
+Per-hydro production function assignment. The file needs an entry for every
+plant whose `generation.model` in `system/hydros.json` is `"fpha"`. For any
+other plant, each study stage takes its productivity from exactly one of
+`productivity_mw_per_m3s` here or `equivalent_productivity_mw_per_m3s` in
+`system/hydro_energy_productivity.parquet`, so a plant whose productivity the
+Parquet file supplies for every study stage needs no entry.
 
 The file contains a `"production_models"` array. Each entry configures one hydro
 plant and is identified by a unique `hydro_id`. Results are loaded in
@@ -1222,11 +1316,11 @@ to mean "until end of horizon".
 | Field within each range   | Required | Description                                                                                                                                                                                                                                                                                                                                                    |
 | ------------------------- | -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `start_stage_id`          | Yes      | First stage (inclusive) to which this entry applies                                                                                                                                                                                                                                                                                                            |
-| `end_stage_id`            | Yes      | Last stage (inclusive); `null` means open-ended                                                                                                                                                                                                                                                                                                                |
+| `end_stage_id`            | No       | Last stage (inclusive); `null` or absent means open-ended                                                                                                                                                                                                                                                                                                      |
 | `model`                   | Yes      | Model name: `"constant_productivity"`, `"linearized_head"`, or `"fpha"`                                                                                                                                                                                                                                                                                        |
-| `fpha_config`             | No       | Required when `model` is `"fpha"`. See FPHA config fields below.                                                                                                                                                                                                                                                                                               |
+| `fpha_config`             | No       | Source and fit settings of an `"fpha"` entry; see FPHA config fields below. An `"fpha"` entry without it reads the rows of `system/fpha_hyperplanes.parquet`, as `source: "precomputed"` does.                                                                                                                                                                 |
 | `reference_volume`        | No       | Reference operating volume V_ref, a sibling of `fpha_config` (not nested). Set exactly one of `volume_hm3` (absolute, hm³, `> 0.0`) or `percentile` (a fraction of the operating range, `[0.0, 1.0]`); both or neither is rejected. Absent ⇒ the case-wide default fraction. Applies to any plant in either selection mode. See reference-volume fields below. |
-| `productivity_mw_per_m3s` | No       | Positive when present; rejected on `"fpha"`. Optional for `constant_productivity` and `linearized_head` — when omitted, supply the value via `system/hydro_energy_productivity.parquet`. Exactly one source per `(hydro, stage)` is required; both is rejected at load time.                                                                                   |
+| `productivity_mw_per_m3s` | No       | Finite and `>= 0` when present (`0` marks a planned-outage stage); rejected on `"fpha"`. Optional for `constant_productivity` and `linearized_head` — when omitted, supply the value via `system/hydro_energy_productivity.parquet`. Exactly one source per `(hydro, stage)` is required; both is rejected at load time.                                       |
 
 **`seasonal` mode.** The model for a stage is determined by its `season_id`.
 Stages whose season is not listed use `default_model`.
@@ -1247,15 +1341,15 @@ The reference operating volume V_ref feeds the FPHA backwater (downstream
 forebay) level and the energy-equivalent productivity ρ_eq. It is the single
 source of truth for V_ref: when absent, the case-wide default fraction is used.
 
-**`fpha_config` fields (required when `model` is `"fpha"`):**
+**`fpha_config` fields:**
 
 | Field                            | Required | Default        | Description                                                   |
 | -------------------------------- | -------- | -------------- | ------------------------------------------------------------- |
 | `source`                         | Yes      | —              | `"precomputed"` or `"computed"`                               |
-| `volume_discretization_points`   | No       | solver default | Number of volume grid points for hyperplane computation       |
-| `turbine_discretization_points`  | No       | solver default | Number of turbine-flow grid points for hyperplane computation |
+| `volume_discretization_points`   | No       | `5`            | Number of volume grid points, at least `2`; `1`, or a fitting volume range that is a single point, selects the single-volume (run-of-river) fit |
+| `turbine_discretization_points`  | No       | `5`            | Number of turbine-flow grid points; at least `2`              |
 | `spillage_discretization_points` | No       | `5`            | Validated (`>= 2`); does not add a spillage axis to the fit — accepted for input round-tripping (see [Hydro Production Models → Configure](/math/hydro-production-models#implementation-in-cobre)) |
-| `max_planes_per_hydro`           | No       | `10`           | Validated (`>= 1`); does not currently trim the fitted plane set (see [Hydro Production Models → Configure](/math/hydro-production-models#implementation-in-cobre)) |
+| `max_planes_per_hydro`           | No       | `10`           | Validated (`>= 1`); the fit keeps every upper-envelope facet and does not trim to this count; only `fpha_plane_reduction` reduces the set (see [Hydro Production Models → Configure](/math/hydro-production-models#implementation-in-cobre)) |
 | `fitting_window`                 | No       | full range     | Volume range restriction for hyperplane computation           |
 
 `source: "precomputed"` means the hyperplanes are loaded from
@@ -1263,6 +1357,11 @@ source of truth for V_ref: when absent, the case-wide default fraction is used.
 them from `system/hydro_geometry.parquet`; in this case `hydro_geometry.parquet`
 must be present and the computed planes are automatically written to
 `output/hydro_models/fpha_hyperplanes.parquet`.
+
+A plant with any `source: "computed"` entry fits planes for every study stage, so every stage must resolve to an entry
+that carries an `fpha_config`. A `constant_productivity` or `linearized_head` range, a season left to `default_model`,
+or a stage that no entry covers is rejected when the case is set up. To use FPHA in some stages and another model in
+the rest, give every FPHA entry `source: "precomputed"`.
 
 **`fitting_window` fields.** Absolute bounds (`volume_min_hm3`, `volume_max_hm3`)
 and percentile bounds (`volume_min_percentile`, `volume_max_percentile`) are
@@ -1275,7 +1374,7 @@ mutually exclusive — set one pair or the other, not both.
 | `volume_min_percentile` | number | Minimum as a percentile of the operating range (0–1) |
 | `volume_max_percentile` | number | Maximum as a percentile of the operating range (0–1) |
 
-**Example — hydro 0 uses computed FPHA for stages 0–24, then constant productivity:**
+**Example — hydro 0 uses computed FPHA for stages 0–24 and computed FPHA on a finer grid from stage 25:**
 
 ```json
 {
@@ -1298,8 +1397,12 @@ mutually exclusive — set one pair or the other, not both.
         {
           "start_stage_id": 25,
           "end_stage_id": null,
-          "model": "constant_productivity",
-          "productivity_mw_per_m3s": 0.72
+          "model": "fpha",
+          "fpha_config": {
+            "source": "computed",
+            "volume_discretization_points": 11,
+            "turbine_discretization_points": 21
+          }
         }
       ]
     }
@@ -1336,34 +1439,38 @@ Pre-computed FPHA hyperplane coefficients for hydros configured with
 `fpha_config.source: "precomputed"`. When absent, only `"computed"` source is
 available.
 
-11 columns. Rows are sorted by `(hydro_id, stage_id, plane_id)` ascending.
-Null `stage_id` sorts before any non-null stage and means the plane is valid for
-all stages of that hydro. One row per hyperplane; at least 1 plane is required
-per `(hydro_id, stage_id)` group.
+11 columns; rows may appear in any order. A null `stage_id` means the plane is
+valid for all stages of that hydro. One row per hyperplane; at least 1 plane is
+required per `(hydro_id, stage_id)` group.
 
 | Column            | Type   | Nullable | Description                                                 |
 | ----------------- | ------ | -------- | ----------------------------------------------------------- |
-| `hydro_id`        | INT32  | No       | Hydro plant ID                                              |
-| `stage_id`        | INT32  | Yes      | Stage the plane applies to. `null` = valid for all stages   |
-| `plane_id`        | INT32  | No       | Plane index within this hydro (and stage)                   |
-| `gamma_0`         | DOUBLE | No       | Intercept coefficient (MW)                                  |
-| `gamma_v`         | DOUBLE | No       | Volume coefficient (MW/hm³). Positive.                      |
-| `gamma_q`         | DOUBLE | No       | Turbined flow coefficient (MW per m³/s)                     |
-| `gamma_s`         | DOUBLE | No       | Spillage coefficient (MW per m³/s). Typically non-positive. |
-| `kappa`           | DOUBLE | Yes      | Correction factor. Defaults to `1.0` when absent or null.   |
-| `valid_v_min_hm3` | DOUBLE | Yes      | Volume range minimum where this plane is valid (hm³)        |
-| `valid_v_max_hm3` | DOUBLE | Yes      | Volume range maximum where this plane is valid (hm³)        |
-| `valid_q_max_m3s` | DOUBLE | Yes      | Maximum turbined flow where this plane is valid (m³/s)      |
+| `hydro_id`        | Int32  | No       | Hydro plant ID                                              |
+| `stage_id`        | Int32  | Yes      | Stage the plane applies to. `null` = valid for all stages   |
+| `plane_id`        | Int32  | No       | Plane index within this hydro (and stage)                   |
+| `gamma_0`         | Float64 | No       | Intercept coefficient (MW)                                  |
+| `gamma_v`         | Float64 | No       | Volume coefficient (MW/hm³). `>= 0` (`0` for a run-of-river plant). |
+| `gamma_q`         | Float64 | No       | Turbined flow coefficient (MW per m³/s). `> 0`.             |
+| `gamma_s`         | Float64 | No       | Spillage coefficient (MW per m³/s). `<= 0`.                 |
+| `kappa`           | Float64 | Yes      | Intercept-only correction factor (`gamma_0` is multiplied by it) in `(0, 1]`; defaults to `1.0` when absent or null. |
+| `valid_v_min_hm3` | Float64 | Yes      | Volume range minimum where this plane is valid (hm³)        |
+| `valid_v_max_hm3` | Float64 | Yes      | Volume range maximum where this plane is valid (hm³)        |
+| `valid_q_max_m3s` | Float64 | Yes      | Maximum turbined flow where this plane is valid (m³/s)      |
 
 **Validation:** required columns (`hydro_id`, `plane_id`, `gamma_0`, `gamma_v`,
 `gamma_q`, `gamma_s`) must be present with the correct types. Optional columns
-that are present must also have the correct types. Minimum planes per
-`(hydro_id, stage_id)` group and sign constraints on `gamma_v` and `gamma_s`
-are enforced during Layer 5 semantic validation.
+that are present must also have the correct types. Every row must have
+`gamma_v` `>= 0` and `gamma_s` `<= 0` at load, and once the file holds any row,
+every plant configured with FPHA, computed included, needs rows in it (the
+computed fit does not read them). Each stage a plant runs with precomputed FPHA
+uses the rows carrying its `stage_id`, else the all-stage (`stage_id` null)
+rows, and must have one of the two; each row a stage uses must have `gamma_q`
+`> 0` and `kappa` in `(0, 1]` when the study is set up.
 
 The file produced by `output/hydro_models/fpha_hyperplanes.parquet` (written when
-`source: "computed"` is used) has this exact same 11-column schema and is
-suitable for use as a future precomputed input.
+`source: "computed"` is used) has this exact same 11-column schema. The setup check on planes read from `system/fpha_hyperplanes.parquet` requires `gamma_q > 0` on
+every plane, and a plant whose `max_generation_mw` caps the fitted surface writes a flat plane with `gamma_q = 0`, so
+such a file is rejected when the study is set up with it unedited as precomputed input.
 
 ---
 
@@ -1392,14 +1499,15 @@ different set of consumers:
 
 | Column                                   | Parquet type | Nullable | Description                                                                              |
 | ---------------------------------------- | ------------ | -------- | ---------------------------------------------------------------------------------------- |
-| `hydro_id`                               | INT32        | no       | Hydro plant identifier                                                                   |
-| `stage_id`                               | INT32        | yes      | Stage; NULL means "applies to all stages"                                                |
-| `equivalent_productivity_mw_per_m3s`     | DOUBLE       | yes      | Direct ρ_eq override [MW/(m³/s)]; finite and >= 0.0 (`0.0` marks a planned-outage stage) |
-| `reference_outflow_m3s`                  | DOUBLE       | yes      | Q_ref override [m³/s]; finite and >= 0.0                                                 |
-| `specific_productivity_mw_per_m3s_per_m` | DOUBLE       | yes      | ρ_esp override [MW/(m³/s)/m]; finite and >= 0.0 (`0.0` marks a planned-outage stage)                                           |
+| `hydro_id`                               | Int32        | no       | Hydro plant identifier                                                                   |
+| `stage_id`                               | Int32        | yes      | Stage; NULL means "applies to all stages"                                                |
+| `equivalent_productivity_mw_per_m3s`     | Float64      | yes      | Direct ρ_eq override [MW/(m³/s)]; finite and >= 0.0 (`0.0` marks a planned-outage stage) |
+| `reference_outflow_m3s`                  | Float64      | yes      | Q_ref override [m³/s]; finite and >= 0.0                                                 |
+| `specific_productivity_mw_per_m3s_per_m` | Float64      | yes      | ρ_esp override [MW/(m³/s)/m]; finite and >= 0.0 (`0.0` marks a planned-outage stage)                                           |
 
 **Validation:**
 
+- All five columns must be present; a file missing any of them is rejected.
 - `hydro_id` must not be null.
 - `equivalent_productivity_mw_per_m3s`, when set, must be finite and >= 0.0;
   `0.0` is accepted as a planned-outage marker.
@@ -1408,10 +1516,9 @@ different set of consumers:
   `0.0` mirrors the `equivalent_productivity_mw_per_m3s` planned-outage marker.
 - A row where all three override columns are NULL is accepted.
 - Duplicate `(hydro_id, stage_id)` pairs are rejected during case build.
-- The reference operating volume V_ref is no longer an override column here; it
-  is declared per `(plant, stage)` via `reference_volume` in
-  `system/hydro_production_models.json`. A legacy `reference_volume_hm3` column,
-  if still present, is ignored (a one-time warning is emitted).
+- The reference operating volume V_ref is declared per `(plant, stage)` by `reference_volume` in
+  `system/hydro_production_models.json`; a `reference_volume_hm3` column in this
+  file is ignored, with a warning.
 
 ---
 
@@ -1426,29 +1533,28 @@ reference level — instead of the tailrace model declared in `hydros.json`.
 Plants without a row in this file keep their existing tailrace model; the file
 is inert (silently skipped) when absent from the case directory.
 
-Rows are sorted by `(hydro_id, family_id, segment_id)` ascending. A complete
-curve for one backwater family consists of multiple rows sharing
-`(hydro_id, family_id)`.
+Rows may appear in any order. A complete curve for one backwater family
+consists of multiple rows sharing `(hydro_id, family_id)`.
 
 | Column                         | Type   | Nullable | Description                                                                                                                         |
 | ------------------------------ | ------ | -------- | ----------------------------------------------------------------------------------------------------------------------------------- |
-| `hydro_id`                     | INT32  | No       | Plant whose tailrace this describes                                                                                                 |
-| `family_id`                    | INT32  | No       | Family index within the plant (sequential grouping key)                                                                             |
-| `downstream_reference_level_m` | DOUBLE | Yes      | Downstream reservoir reference level keying this family (m). `null` when the plant has a single family and no backwater dependency. |
-| `segment_id`                   | INT32  | No       | Piece index within the family                                                                                                       |
-| `outflow_min_m3s`              | DOUBLE | No       | Segment lower validity bound (m³/s). Non-negative.                                                                                  |
-| `outflow_max_m3s`              | DOUBLE | No       | Segment upper validity bound (m³/s). Non-negative, >= `outflow_min_m3s`.                                                            |
-| `coefficient_0`                | DOUBLE | No       | Degree-0 polynomial coefficient. Any sign.                                                                                          |
-| `coefficient_1`                | DOUBLE | No       | Degree-1 polynomial coefficient. Any sign.                                                                                          |
-| `coefficient_2`                | DOUBLE | No       | Degree-2 polynomial coefficient. Any sign.                                                                                          |
-| `coefficient_3`                | DOUBLE | No       | Degree-3 polynomial coefficient. Any sign.                                                                                          |
-| `coefficient_4`                | DOUBLE | No       | Degree-4 polynomial coefficient. Any sign.                                                                                          |
+| `hydro_id`                     | Int32  | No       | Plant whose tailrace this describes                                                                                                 |
+| `family_id`                    | Int32  | No       | Family index within the plant (sequential grouping key)                                                                             |
+| `downstream_reference_level_m` | Float64 | Yes      | Downstream reservoir reference level keying this family (m). `null` when the plant has a single family and no backwater dependency. |
+| `segment_id`                   | Int32  | No       | Piece index within the family                                                                                                       |
+| `outflow_min_m3s`              | Float64 | No       | Segment lower validity bound (m³/s). Non-negative.                                                                                  |
+| `outflow_max_m3s`              | Float64 | No       | Segment upper validity bound (m³/s). Non-negative, >= `outflow_min_m3s`.                                                            |
+| `coefficient_0`                | Float64 | No       | Degree-0 polynomial coefficient. Any sign.                                                                                          |
+| `coefficient_1`                | Float64 | No       | Degree-1 polynomial coefficient. Any sign.                                                                                          |
+| `coefficient_2`                | Float64 | No       | Degree-2 polynomial coefficient. Any sign.                                                                                          |
+| `coefficient_3`                | Float64 | No       | Degree-3 polynomial coefficient. Any sign.                                                                                          |
+| `coefficient_4`                | Float64 | No       | Degree-4 polynomial coefficient. Any sign.                                                                                          |
 
 The quartic is evaluated as `coefficient_0 + coefficient_1*x + coefficient_2*x² + coefficient_3*x³ + coefficient_4*x⁴` where `x` is the downstream outflow in m³/s. Higher-degree coefficients are routinely negative in source data; all signs are accepted.
 
 **Validation rules:**
 
-- All eleven columns must be present with the correct Arrow types.
+- All eleven columns must be present with the types listed above.
 - `outflow_min_m3s` and `outflow_max_m3s` must be non-negative and finite.
 - `outflow_max_m3s >= outflow_min_m3s` (segments are non-inverted).
 - `coefficient_0` through `coefficient_4` must be finite.
@@ -1462,20 +1568,17 @@ The quartic is evaluated as `coefficient_0 + coefficient_1*x + coefficient_2*x²
 
 Historical inflow observation windows per hydro. Every row is a window, not a
 point-in-time reading: `[start_date, end_date)` bounds the period and
-`value_m3s` is the mean inflow observed over it. This is the windowed layout
-the loader accepts; a file still carrying the legacy single-`date`-per-row
-layout is rejected outright, with no inference or conversion path back to the
-windowed form.
+`value_m3s` is the mean inflow observed over it.
 
 | Column       | Type   | Required | Description                         |
 | ------------ | ------ | -------- | ------------------------------------ |
-| `hydro_id`   | INT32  | Yes      | Hydro plant ID                       |
-| `start_date` | DATE   | Yes      | Window start, inclusive              |
-| `end_date`   | DATE   | Yes      | Window end, exclusive; after `start_date` |
-| `value_m3s`  | DOUBLE | Yes      | Mean inflow over the window (m³/s)   |
+| `hydro_id`   | Int32  | Yes      | Hydro plant ID                       |
+| `start_date` | Date32 | Yes      | Window start, inclusive              |
+| `end_date`   | Date32 | Yes      | Window end, exclusive; after `start_date` |
+| `value_m3s`  | Float64 | Yes      | Mean inflow over the window (m³/s)   |
 
-Rows are sorted by `(hydro_id, start_date)` ascending. For a given `hydro_id`,
-windows must not overlap; adjacent windows (`start_date == previous end_date`)
+Rows may appear in any order. For a given `hydro_id`, windows must not overlap;
+adjacent windows (`start_date == previous end_date`)
 are accepted. `value_m3s` must be finite; a negative value is accepted — the
 quantity is incremental inflow (a plant's natural flow minus its upstream
 plants'), so a negative window is real hydrology, and the LP prices it through
@@ -1510,10 +1613,10 @@ rule of a row for every bus at every study stage.
 
 | Column     | Type   | Required | Description                                                 |
 | ---------- | ------ | -------- | ----------------------------------------------------------- |
-| `hydro_id` | INT32  | Yes      | Hydro plant ID                                              |
-| `stage_id` | INT32  | Yes      | Stage ID                                                    |
-| `mean_m3s` | DOUBLE | Yes      | Seasonal mean inflow (m³/s); must be finite                 |
-| `std_m3s`  | DOUBLE | Yes      | Seasonal standard deviation (m³/s); must be >= 0 and finite |
+| `hydro_id` | Int32  | Yes      | Hydro plant ID                                              |
+| `stage_id` | Int32  | Yes      | Stage ID                                                    |
+| `mean_m3s` | Float64 | Yes      | Seasonal mean inflow (m³/s); must be finite                 |
+| `std_m3s`  | Float64 | Yes      | Seasonal standard deviation (m³/s); must be >= 0 and finite |
 
 ---
 
@@ -1526,14 +1629,45 @@ coefficients below via the periodic-ACF closure — see
 
 | Column        | Type   | Required | Description                                 |
 | ------------- | ------ | -------- | ------------------------------------------- |
-| `hydro_id`    | INT32  | Yes      | Hydro plant ID                              |
-| `stage_id`    | INT32  | Yes      | Stage ID                                    |
-| `lag`         | INT32  | Yes      | Lag index (1-based)                         |
-| `coefficient` | DOUBLE | Yes      | AR coefficient for this (hydro, stage, lag) |
+| `hydro_id`    | Int32  | Yes      | Hydro plant ID                              |
+| `stage_id`    | Int32  | Yes      | Stage ID                                    |
+| `lag`         | Int32  | Yes      | Lag index (1-based)                         |
+| `coefficient` | Float64 | Yes      | AR coefficient for this (hydro, stage, lag) |
 
 Columns beyond this schema are ignored — a file carrying an extra column (for
 example a stored innovation-scale ratio produced by another tool) loads with
 that column ignored outright; the derived value always wins.
+
+---
+
+### `scenarios/inflow_annual_component.parquet`
+
+PAR(p)-A annual component of each (hydro, stage) pair: the annual coefficient, and the mean and standard deviation of
+the rolling 12-month average inflow.
+[PAR(p) Inflow Model — Implementation in Cobre](/math/par-inflow-model#implementation-in-cobre) states when the file
+is honoured and when estimation overwrites it.
+
+| Name                 | Type    | Required | Default | Units | Description                                                                                        |
+| -------------------- | ------- | -------- | ------- | ----- | -------------------------------------------------------------------------------------------------- |
+| `hydro_id`           | Int32   | Yes      | —       | —     | Hydro plant id; names a declared hydro.                                                            |
+| `stage_id`           | Int32   | Yes      | —       | —     | Stage id of the matching `inflow_seasonal_stats.parquet` row.                                      |
+| `annual_coefficient` | Float64 | Yes      | —       | —     | Annual-component coefficient, dimensionless; finite. Negative, zero and positive values are valid. |
+| `annual_mean_m3s`    | Float64 | Yes      | —       | m³/s  | Mean of the rolling 12-month average inflow at the stage; finite.                                  |
+| `annual_std_m3s`     | Float64 | Yes      | —       | m³/s  | Standard deviation of the rolling 12-month average inflow at the stage; finite and `> 0`.          |
+
+**Validation rules.** Each rule names the error kind that `cobre validate` reports.
+
+- **Row checks.** Every column is present with its type, no value is null, `annual_coefficient` and
+  `annual_mean_m3s` are finite, and `annual_std_m3s` is finite and `> 0`. Kind: `SchemaViolation`.
+- **Declared hydro.** A `hydro_id` that names no declared hydro is an `InvalidReference` error.
+- **Pairing with the statistics.** When the case supplies `scenarios/inflow_seasonal_stats.parquet`, each
+  (`hydro_id`, `stage_id`) pair appears once here and has a row there; a repeated pair, or a pair with no statistics
+  row, is a `SchemaError`. Without a statistics file neither check runs.
+- **Season.** With a statistics file supplied, every stage that has a row in this file needs a season, from a `season_id` on the
+  stage or from `season_definitions` in [`stages.json`](#stagesjson); otherwise the case is refused with a
+  `ConstraintError`.
+- **Monthly cycle.** PAR(p)-A is monthly-only: when `stages.json` declares `season_definitions`, a `cycle_type` of
+  `weekly` or `custom` together with any row here is a `BusinessRuleViolation`.
 
 ---
 
@@ -1548,10 +1682,10 @@ analysis, and round-trip replay of a previously exported opening tree.
 
 | Column          | Type   | Required | Description                                                                              |
 | --------------- | ------ | -------- | ---------------------------------------------------------------------------------------- |
-| `stage_id`      | INT32  | Yes      | Declared study-stage id from `stages.json` (not a 0-based position)                      |
-| `opening_index` | UINT32 | Yes      | 0-based opening index within the stage (0 to that stage's `num_openings − 1`)            |
-| `entity_index`  | UINT32 | Yes      | 0-based position in the noise vector (see entity ordering below)                         |
-| `value`         | DOUBLE | Yes      | Noise realization for this (stage, opening, entity) triple                               |
+| `stage_id`      | Int32  | Yes      | Declared study-stage id from `stages.json` (not a 0-based position)                      |
+| `opening_index` | UInt32 | Yes      | 0-based opening index within the stage (0 to that stage's `num_openings − 1`)            |
+| `entity_index`  | UInt32 | Yes      | 0-based position in the noise vector (see entity ordering below)                         |
+| `value`         | Float64 | Yes      | Noise realization for this (stage, opening, entity) triple                               |
 
 **Entity ordering.** The noise vector is hydros in canonical order
 (`operational_start_date`, then id), then the load buses that carry load noise
@@ -1578,6 +1712,132 @@ The total row count must equal the sum over study stages of
 See [Scenario Generation](/math/scenario-generation) for the opening tree and
 [Configuration](/running/configuration/#scenario_source) for the `openings`
 field.
+
+---
+
+### `scenarios/external_inflow_scenarios.parquet`
+
+Pre-computed inflow realizations, read when the inflow `scheme` is `"external"` in `training.scenario_source` or
+`simulation.scenario_source` (see [`config.json`](#configjson)). Realizations are numbered per stage by
+`scenario_id`; how the passes draw from them is described in
+[Scenario Generation §4](/math/scenario-generation/#4-external-scenario-integration), and which classes take
+their mean and standard deviation from the file is stated under
+[`scenarios/inflow_seasonal_stats.parquet`](#scenariosinflow_seasonal_statsparquet).
+
+| Name          | Type    | Required | Default | Units | Description                                                                  |
+| ------------- | ------- | -------- | ------- | ----- | ---------------------------------------------------------------------------- |
+| `stage_id`    | Int32   | Yes      | —       | —     | Declared study-stage id from `stages.json` (not a 0-based position); `>= 0`. |
+| `scenario_id` | Int32   | Yes      | —       | —     | 0-based realization index at that stage; `>= 0`.                             |
+| `hydro_id`    | Int32   | Yes      | —       | —     | Hydro plant id; names a declared hydro.                                      |
+| `value_m3s`   | Float64 | Yes      | —       | m³/s  | Inflow value of the realization at the stage; finite.                        |
+
+**Validation rules.** Each rule names the error kind that `cobre validate` and `cobre run` print.
+
+- **Row checks.** Each file is read whenever it is present, whatever the class's scheme. `stage_id >= 0`,
+  `scenario_id >= 0`, a finite value, and no repeated (`stage_id`, `scenario_id`, entity) row; a missing column or a
+  column of the wrong type fails the same way. Kind: `SchemaViolation`.
+- **Entity references.** An entity id that names no declared hydro, bus or NCS (the entity column of each of the three
+  files) is an `InvalidReference` error.
+- **Scheme with no data.** A class whose scheme resolves to `external` (in training, or in simulation when
+  `simulation.scenario_source` is declared) while its file is absent or holds no rows is a `BusinessRuleViolation`
+  on `config.json`.
+- **Library coherence.** The following rules read the classes that `training.scenario_source` samples under
+  `external`; a class that is `external` only in `simulation.scenario_source` is not checked by them.
+  - **Unresolved stage.** Every `stage_id` must be a declared study-stage id; otherwise `InvalidValue`.
+  - **Scenario ids.** At each stage every entity that has rows carries exactly the ids `0` to `n − 1`, once each, where
+    `n` is the number of distinct `scenario_id` values at that stage; a 1-based numbering or a gap is a
+    `BusinessRuleViolation`.
+  - **One realization axis.** Every such class declares the same `n` at each stage; otherwise
+    `BusinessRuleViolation`.
+  - **Constant inflow column (inflow only).** A hydro whose values at a stage are all equal (σ = 0) is a
+    `BusinessRuleViolation` when the hydro has a row in `scenarios/inflow_ar_coefficients.parquet` or
+    `scenarios/inflow_annual_component.parquet`; see
+    [Deterministic external inflow column under an autoregressive model](/reference/error-codes/#deterministic-external-inflow-column-under-an-autoregressive-model).
+  - **Prefix coherence.** Under a declared `policy_graph.nodes[]` graph (see [`stages.json`](#stagesjson)), the two
+    columns that a transition's nodes point to must agree at every stage up to the source node's stage; otherwise a
+    `ModelQuality` warning.
+- **Entity coverage.** A class whose scheme resolves to `external` (in training, or in simulation when
+  `simulation.scenario_source` is declared) needs at least one row for every entity its noise vector places (see the entity
+  ordering under [`scenarios/noise_openings.parquet`](#scenariosnoise_openingsparquet)): every declared hydro, every
+  bus with a row in `scenarios/load_seasonal_stats.parquet`, and every NCS with a row in
+  `scenarios/non_controllable_stats.parquet`. `cobre run` refuses a class with a missing entity when it sets the study
+  up, with an `insufficient data` error that names the class and the entity, and exits `4`. A class that is `external`
+  only in `simulation.scenario_source` is refused with a `library width mismatch` error (exit `1`) when its file adds
+  an entity that the training noise vector does not place: a bus whose `std_mw` is `0`, or an NCS without a
+  `non_controllable_stats.parquet` row. `cobre validate` reports either refusal only for a case with
+  `policy.boundary` configured, with the message prefixed `policy.boundary: ` (phase `BoundaryReconciliationError`
+  under `--json`).
+
+---
+
+### `scenarios/external_load_scenarios.parquet`
+
+Pre-computed load realizations, read when the load `scheme` is `"external"` in `training.scenario_source` or
+`simulation.scenario_source` (see [`config.json`](#configjson)). Realizations are numbered per stage by
+`scenario_id`; how the passes draw from them is described in
+[Scenario Generation §4](/math/scenario-generation/#4-external-scenario-integration), and which classes take
+their mean and standard deviation from the file is stated under
+[`scenarios/inflow_seasonal_stats.parquet`](#scenariosinflow_seasonal_statsparquet).
+
+| Name          | Type    | Required | Default | Units | Description                                                                  |
+| ------------- | ------- | -------- | ------- | ----- | ---------------------------------------------------------------------------- |
+| `stage_id`    | Int32   | Yes      | —       | —     | Declared study-stage id from `stages.json` (not a 0-based position); `>= 0`. |
+| `scenario_id` | Int32   | Yes      | —       | —     | 0-based realization index at that stage; `>= 0`.                             |
+| `bus_id`      | Int32   | Yes      | —       | —     | Bus id; names a declared bus.                                                |
+| `value_mw`    | Float64 | Yes      | —       | MW    | Load value of the realization at the stage; finite.                          |
+
+These rules apply as listed under
+[`scenarios/external_inflow_scenarios.parquet`](#scenariosexternal_inflow_scenariosparquet); the constant-column rule
+is inflow-only.
+
+---
+
+### `scenarios/external_ncs_scenarios.parquet`
+
+Pre-computed non-controllable-source availability realizations, read when the NCS `scheme` is `"external"` in
+`training.scenario_source` or `simulation.scenario_source` (see [`config.json`](#configjson)). Realizations are
+numbered per stage by `scenario_id`; how the passes draw from them is described in
+[Scenario Generation §4](/math/scenario-generation/#4-external-scenario-integration), and which classes take
+their mean and standard deviation from the file is stated under
+[`scenarios/inflow_seasonal_stats.parquet`](#scenariosinflow_seasonal_statsparquet).
+
+| Name                  | Type    | Required | Default | Units | Description                                                                  |
+| --------------------- | ------- | -------- | ------- | ----- | ---------------------------------------------------------------------------- |
+| `stage_id`            | Int32   | Yes      | —       | —     | Declared study-stage id from `stages.json` (not a 0-based position); `>= 0`. |
+| `scenario_id`         | Int32   | Yes      | —       | —     | 0-based realization index at that stage; `>= 0`.                             |
+| `ncs_id`              | Int32   | Yes      | —       | —     | Non-controllable source id; names a declared NCS.                            |
+| `availability_factor` | Float64 | Yes      | —       | —     | Availability factor of the realization at the stage, dimensionless; finite.  |
+
+These rules apply as listed under
+[`scenarios/external_inflow_scenarios.parquet`](#scenariosexternal_inflow_scenariosparquet); the constant-column rule
+is inflow-only.
+
+---
+
+### `scenarios/load_seasonal_stats.parquet`
+
+Seasonal load statistics of each (bus, stage) pair. `mean_mw` is the bus's mean load at the stage; the load of each
+block is the stage value times the block factor of [`scenarios/load_factors.json`](#scenariosload_factorsjson). When
+the file has any row, it needs a row for every bus at every study stage. Without the file every bus carries zero load,
+unless the load scheme is `external` in training. A bus whose `std_mw` is above `0` carries load noise
+([Scenario Generation §5.1](/math/scenario-generation/#51-load-uncertainty-model)). Under the `external` load scheme the
+file is optional and the mean and standard deviation come from the external file (see
+[`scenarios/inflow_seasonal_stats.parquet`](#scenariosinflow_seasonal_statsparquet)).
+
+| Name       | Type    | Required | Default | Units | Description                                                                                  |
+| ---------- | ------- | -------- | ------- | ----- | -------------------------------------------------------------------------------------------- |
+| `bus_id`   | Int32   | Yes      | —       | —     | Bus id; names a declared bus.                                                                |
+| `stage_id` | Int32   | Yes      | —       | —     | Declared study-stage id from `stages.json` (not a 0-based position).                         |
+| `mean_mw`  | Float64 | Yes      | —       | MW    | Mean load of the bus at the stage; finite.                                                   |
+| `std_mw`   | Float64 | Yes      | —       | MW    | Standard deviation of the load at the stage; finite and `>= 0`. `0` is a deterministic load. |
+
+**Validation rules.** Each rule names the error kind that `cobre validate` reports.
+
+- **Row checks.** Every column is present with its type, `mean_mw` is finite, and `std_mw` is finite and `>= 0`.
+  Kind: `SchemaViolation`.
+- **Coverage.** When the file has any row, every bus has a row at every study stage; each missing pair is a
+  `DimensionMismatch` error, `Bus <id> missing load seasonal stats for stage <id>`.
+- **Declared bus.** A `bus_id` that names no declared bus is an `InvalidReference` error.
 
 ---
 
@@ -1616,7 +1876,7 @@ to 1.0 for every block.
 | Field           | Type    | Description                                                        |
 | --------------- | ------- | ------------------------------------------------------------------ |
 | `bus_id`        | integer | Bus entity ID. Must refer to a bus defined in `system/buses.json`. |
-| `stage_id`      | integer | Study stage index. Must be a valid stage ID from `stages.json`.    |
+| `stage_id`      | integer | Declared study-stage `id` from `stages.json`.                      |
 | `block_factors` | array   | Array of `{ block_id, factor }` pairs for each load block.         |
 
 **`block_factors` entry fields:**
@@ -1635,8 +1895,11 @@ values greater than 1.0 increase it.
 ### `scenarios/non_controllable_factors.json`
 
 Per-NCS, per-stage, per-block scaling factors for non-controllable source (NCS)
-available generation. When present, each factor multiplies the available
-generation bound from `constraints/ncs_bounds.parquet` for the specified block.
+available generation. When present, each factor multiplies the source's available
+generation for the specified block: the bound from `constraints/ncs_bounds.parquet` (`max_generation_mw`
+where no row applies) for a source with no stochastic availability model, and `max_generation_mw` times the
+availability ratio for a source with rows in
+[`scenarios/non_controllable_stats.parquet`](#scenariosnon_controllable_statsparquet).
 This allows modeling of intra-stage availability patterns such as diurnal solar
 irradiance profiles or wind speed variations across load blocks.
 
@@ -1666,7 +1929,7 @@ for every block.
 | Field           | Type    | Description                                                                      |
 | --------------- | ------- | -------------------------------------------------------------------------------- |
 | `ncs_id`        | integer | NCS entity ID. Must refer to a source in `system/non_controllable_sources.json`. |
-| `stage_id`      | integer | Study stage index. Must be a valid stage ID from `stages.json`.                  |
+| `stage_id`      | integer | Declared study-stage `id` from `stages.json`.                                    |
 | `block_factors` | array   | Array of `{ block_id, factor }` pairs for each load block.                       |
 
 **`block_factors` entry fields:**
@@ -1676,10 +1939,58 @@ for every block.
 | `block_id` | integer | Must be a valid block for stage | Zero-based block index within the stage.                                   |
 | `factor`   | number  | > 0, finite                    | Multiplier applied to the stage available generation bound for this block. |
 
-**Effect:** `available_mw_block = available_generation_mw * block_factor`.
+**Effect:** for a source with no stochastic availability model,
+`available_mw_block = available_generation_mw * block_factor`; for a source with rows in
+`non_controllable_stats.parquet`, `available_mw_block = max_generation_mw * ratio * block_factor`, where `ratio` is the
+realized availability ratio of the scenario, drawn from that file's model or, under the `external` scheme, from
+`external_ncs_scenarios.parquet`. A source with no row in that file that draws its availability from
+`external_ncs_scenarios.parquet` under the `external` scheme is not scaled by the factors.
 A factor of 1.0 leaves the bound unchanged; factors below 1.0 reduce available
 generation and factors above 1.0 raise it. The factor must be strictly positive —
 `0.0` is rejected at load.
+
+---
+
+### `scenarios/correlation.json`
+
+Spatial correlation of the noise: named profiles of correlation groups and an optional stage-to-profile schedule. A
+group holds entities of one class (`inflow`, `load` or `ncs`), and each class is correlated separately. The
+decomposition of the matrices and the treatment of negative eigenvalues are in
+[Scenario Generation §2.1](/math/scenario-generation/#21-correlated-noise-generation); the
+[PAR(p) Inflow Model Configure tab](/math/par-inflow-model#implementation-in-cobre) gives a worked example and the
+per-path use of the file.
+
+| Name                                                   | Type          | Required | Default | Units | Description                                                                                                                                                                                                                                                             |
+| ------------------------------------------------------ | ------------- | -------- | ------- | ----- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `method`                                               | string        | Yes      | —       | —     | One of `"spectral"`. Decomposition method of the correlation matrices.                                                                                                                                                                                                  |
+| `profiles`                                             | object        | Yes      | —       | —     | Named correlation profiles, keyed by profile name; holds at least one.                                                                                                                                                                                                  |
+| `profiles.<name>.correlation_groups`                   | array         | Yes      | —       | —     | Groups of correlated entities of the profile `<name>`; may be empty.                                                                                                                                                                                                    |
+| `profiles.<name>.correlation_groups[].name`            | string        | Yes      | —       | —     | Group label.                                                                                                                                                                                                                                                            |
+| `profiles.<name>.correlation_groups[].entities`        | array         | Yes      | —       | —     | Entity references of the group, in matrix order; at least one, all of one `type`.                                                                                                                                                                                       |
+| `profiles.<name>.correlation_groups[].entities[].type` | string        | Yes      | —       | —     | Entity class: `"inflow"` (a hydro's inflow), `"load"` (a bus's load) or `"ncs"` (a non-controllable source's availability).                                                                                                                                             |
+| `profiles.<name>.correlation_groups[].entities[].id`   | integer       | Yes      | —       | —     | Id of the hydro (`inflow`), bus (`load`) or NCS (`ncs`); names a declared entity.                                                                                                                                                                                       |
+| `profiles.<name>.correlation_groups[].matrix`          | array         | Yes      | —       | —     | Correlation matrix in row-major order, one row and one column per entity; symmetric, diagonal `1.0`, entries in `[-1.0, 1.0]`.                                                                                                                                          |
+| `schedule`                                             | array \| null | No       | `[]`    | —     | Stage-to-profile entries. Absent or `null` is the empty schedule.                                                                                                                                                                                                       |
+| `schedule[].stage_id`                                  | integer       | Yes      | —       | —     | Stage the entry's profile applies to. The opening tree matches a declared study-stage id from `stages.json`; out-of-sample forward and simulation sampling matches the stage's 0-based position among the study stages. The two coincide when the ids are `0, 1, 2, …`. |
+| `schedule[].profile_name`                              | string        | Yes      | —       | —     | Name of a profile in `profiles`.                                                                                                                                                                                                                                        |
+
+**Validation rules.** Each rule names the error kind that `cobre validate` reports.
+
+- **Structure.** A missing required key, a value of the wrong type, a `method` other than `"spectral"`, or an unknown key
+  in any object is a `ParseError`.
+- **Profiles.** `profiles` holds at least one profile. Kind: `SchemaViolation`.
+- **Matrix.** Each group's `matrix` has one row per entity and is square; its entries lie in `[-1.0, 1.0]`; its diagonal
+  is `1.0`; and it is symmetric, each pair of mirrored entries differing by at most `1e-10`. Kind: `SchemaViolation`.
+- **Schedule.** Every `schedule[].profile_name` names a profile of `profiles`. Kind: `SchemaViolation`. A
+  `stage_id` is not checked against `stages.json`.
+- **Entity references.** An `entities[].id` that names no declared hydro (`inflow`), bus (`load`) or NCS
+  (`ncs`), and a `type` other than these three, are each an `InvalidReference` error.
+- **One class per group.** The entities of a group share one `type`; a mixed group is a `BusinessRuleViolation`.
+- **Default profile.** The `"default"` profile, or the only profile, applies at every stage that `schedule` does not
+  name. With more than one profile and none named `"default"`, the case is refused with a `StochasticPreparationError`.
+- **Groups.** A group lists at least one entity. Within a profile an `id` value appears in at most one group, and once
+  in it, whatever its `type`: an `inflow` group and a `load` group that both list id `0` are rejected (the message ends
+  `groups must be disjoint`). Kind: `StochasticPreparationError`.
 
 ---
 
@@ -1687,14 +1998,19 @@ generation and factors above 1.0 raise it. The factor must be strictly positive 
 
 Per-NCS, per-stage stochastic availability model. Each row provides the mean
 and standard deviation of the availability factor for one NCS entity at one
-stage. The noise transform produces: `A_r = max_gen × clamp(mean + std × η, 0, 1)`.
+stage. The availability ratio of a stage and scenario is
+`clamp(mean + std × η, 0, 1)`; each block's available generation is the source's
+`max_generation_mw` × that ratio × the block factor from
+`scenarios/non_controllable_factors.json` (the factor is 1 when none is
+given); a `constraints/ncs_bounds.parquet` row does not change this available generation (see
+[Equipment Formulations §6](/math/equipment-formulations#6-non-controllable-generation-sources)).
 
 | Column     | Type   | Required | Description                                      |
 | ---------- | ------ | -------- | ------------------------------------------------ |
-| `ncs_id`   | INT32  | Yes      | Non-controllable source ID                       |
-| `stage_id` | INT32  | Yes      | Stage ID (0-based)                               |
-| `mean`     | DOUBLE | Yes      | Mean availability factor in [0, 1]               |
-| `std`      | DOUBLE | Yes      | Standard deviation of availability factor (>= 0) |
+| `ncs_id`   | Int32  | Yes      | Non-controllable source ID                       |
+| `stage_id` | Int32  | Yes      | Stage ID                                         |
+| `mean`     | Float64 | Yes      | Mean availability factor in [0, 1]               |
+| `std`      | Float64 | Yes      | Standard deviation of availability factor (>= 0) |
 
 When absent, NCS availability is deterministic from `constraints/ncs_bounds.parquet`
 or the entity's `max_generation_mw`.
@@ -1713,16 +2029,20 @@ Stage-varying generation and cost overrides for thermal plants.
 
 | Column              | Type             | Required | Description                                                                                                                                                       |
 | -------------------- | ---------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `thermal_id`        | INT32            | Yes      | Thermal plant ID                                                                                                                                                  |
-| `stage_id`          | INT32            | Yes      | Stage ID                                                                                                                                                           |
-| `min_generation_mw` | DOUBLE           | No       | Minimum generation override (MW)                                                                                                                                  |
-| `max_generation_mw` | DOUBLE           | No       | Maximum generation override (MW)                                                                                                                                  |
-| `cost_per_mwh`      | DOUBLE           | No       | Dispatch cost override (USD/MWh)                                                                                                                                  |
-| `block_id`          | INT32 (nullable) | No       | Zero-based block index within the stage, selecting one block's `min_generation_mw`/`max_generation_mw` override. `null` applies at the stage level. A non-null `cost_per_mwh` on the same row, or any `block_id` on a thermal declaring `anticipated_config`, is rejected at validation. |
+| `thermal_id`        | Int32            | Yes      | Thermal plant ID                                                                                                                                                  |
+| `stage_id`          | Int32            | Yes      | Stage ID                                                                                                                                                           |
+| `min_generation_mw` | Float64          | No       | Minimum generation override (MW)                                                                                                                                  |
+| `max_generation_mw` | Float64          | No       | Maximum generation override (MW)                                                                                                                                  |
+| `cost_per_mwh`      | Float64          | No       | Dispatch cost override (USD/MWh)                                                                                                                                  |
+| `block_id`          | Int32 (nullable) | No       | Zero-based block index within the stage, selecting one block's `min_generation_mw`/`max_generation_mw` override. `null` applies at the stage level. A non-null `cost_per_mwh` on the same row, or any `block_id` on a thermal declaring `anticipated_config`, is rejected at validation. |
 
 `cost_per_mwh` is deliberately **not** block-eligible, unlike
 `contract_bounds.price_per_mwh` below — commitment is a stage-level decision,
 so a per-block dispatch cost has nothing to attach to.
+
+**Validation:**
+
+- Every override value must be finite; `cost_per_mwh` must be `>= 0`.
 
 ---
 
@@ -1732,23 +2052,23 @@ Stage-varying operational bound overrides for hydro plants.
 
 | Column                 | Type   | Required | Description                          |
 | ---------------------- | ------ | -------- | ------------------------------------ |
-| `hydro_id`             | INT32  | Yes      | Hydro plant ID                       |
-| `stage_id`             | INT32  | Yes      | Stage ID                             |
-| `min_turbined_m3s`     | DOUBLE | No       | Minimum turbined flow (m³/s)         |
-| `max_turbined_m3s`     | DOUBLE | No       | Maximum turbined flow (m³/s)         |
-| `min_storage_hm3`      | DOUBLE | No       | Minimum reservoir storage (hm³)      |
-| `max_storage_hm3`      | DOUBLE | No       | Maximum reservoir storage (hm³)      |
-| `min_outflow_m3s`      | DOUBLE | No       | Minimum total outflow (m³/s)         |
-| `max_outflow_m3s`      | DOUBLE | No       | Maximum total outflow (m³/s)         |
-| `min_generation_mw`    | DOUBLE | No       | Minimum generation (MW)              |
-| `max_generation_mw`    | DOUBLE | No       | Maximum generation (MW)              |
-| `max_diversion_m3s`    | DOUBLE | No       | Maximum diversion flow (m³/s)        |
-| `min_diversion_m3s`    | DOUBLE | No       | Minimum diversion flow (m³/s); requires a declared `diversion` channel |
-| `min_spillage_m3s`     | DOUBLE | No       | Minimum spillage flow (m³/s)         |
-| `max_spillage_m3s`     | DOUBLE | No       | Maximum spillage flow (m³/s); `>= min_spillage_m3s` |
-| `filling_min_rate_m3s` | DOUBLE | No       | Filling minimum-rate override (m³/s) |
-| `water_withdrawal_m3s` | DOUBLE | No       | Water withdrawal (m³/s)              |
-| `block_id`             | INT32 (nullable) | No | Zero-based block index within the stage, selecting one block's turbined/outflow/generation/diversion/spillage override. `null` applies at the stage level. A non-null `min_storage_hm3`/`max_storage_hm3`/`filling_min_rate_m3s`/`water_withdrawal_m3s` value on the same row is rejected at validation — those four stay stage-level only, with no per-block variant. |
+| `hydro_id`             | Int32  | Yes      | Hydro plant ID                       |
+| `stage_id`             | Int32  | Yes      | Stage ID                             |
+| `min_turbined_m3s`     | Float64 | No       | Minimum turbined flow (m³/s)         |
+| `max_turbined_m3s`     | Float64 | No       | Maximum turbined flow (m³/s)         |
+| `min_storage_hm3`      | Float64 | No       | Minimum reservoir storage (hm³)      |
+| `max_storage_hm3`      | Float64 | No       | Maximum reservoir storage (hm³)      |
+| `min_outflow_m3s`      | Float64 | No       | Minimum total outflow (m³/s)         |
+| `max_outflow_m3s`      | Float64 | No       | Maximum total outflow (m³/s)         |
+| `min_generation_mw`    | Float64 | No       | Minimum generation (MW)              |
+| `max_generation_mw`    | Float64 | No       | Maximum generation (MW)              |
+| `max_diversion_m3s`    | Float64 | No       | Maximum diversion flow (m³/s)        |
+| `min_diversion_m3s`    | Float64 | No       | Minimum diversion flow (m³/s); requires a declared `diversion` channel |
+| `min_spillage_m3s`     | Float64 | No       | Minimum spillage flow (m³/s)         |
+| `max_spillage_m3s`     | Float64 | No       | Maximum spillage flow (m³/s); `>= min_spillage_m3s` |
+| `filling_min_rate_m3s` | Float64 | No       | Filling minimum-rate override (m³/s) |
+| `water_withdrawal_m3s` | Float64 | No       | Water withdrawal (m³/s)              |
+| `block_id`             | Int32 (nullable) | No | Zero-based block index within the stage, selecting one block's turbined/outflow/generation/diversion/spillage override. `null` applies at the stage level. A non-null `min_storage_hm3`/`max_storage_hm3`/`filling_min_rate_m3s`/`water_withdrawal_m3s` value on the same row is rejected at validation — those four stay stage-level only, with no per-block variant. |
 
 A `min_diversion_m3s` override on a hydro that declares no `diversion`
 channel is rejected at validation — with no channel, the diversion column is
@@ -1757,6 +2077,12 @@ pinned `[0, 0]`, making a positive floor infeasible. `min_diversion_m3s`,
 row combining `min_spillage_m3s` and `max_spillage_m3s` with `min_spillage_m3s
 > max_spillage_m3s` is rejected. See [Error Codes](/reference/error-codes) for
 the full failure-mode catalog.
+
+**Validation:**
+
+- A row's `max_turbined_m3s` or `max_generation_mw` must not exceed the plant's declared value.
+- Every override value must be finite.
+- `filling_min_rate_m3s` must be `>= 0`.
 
 ---
 
@@ -1772,14 +2098,19 @@ plant, so `hydro_unit_group_id` addresses the group by that declared id.
 
 | Column               | Type             | Required | Description                                                                                                                                          |
 | --------------------- | ---------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `hydro_id`           | INT32            | Yes      | Hydro plant ID                                                                                                                                        |
-| `hydro_unit_group_id`| INT32            | Yes      | Unit group ID (`unit_groups[].id`), unique within the plant                                                                                          |
-| `stage_id`           | INT32            | Yes      | Stage ID                                                                                                                                              |
-| `min_turbined_m3s`   | DOUBLE           | No       | Minimum turbined flow override for this group (m³/s)                                                                                                 |
-| `max_turbined_m3s`   | DOUBLE           | No       | Maximum turbined flow override for this group (m³/s)                                                                                                 |
-| `min_generation_mw`  | DOUBLE           | No       | Minimum generation override for this group (MW)                                                                                                      |
-| `max_generation_mw`  | DOUBLE           | No       | Maximum generation override for this group (MW)                                                                                                      |
-| `block_id`           | INT32 (nullable) | No       | Zero-based block index within the stage, selecting one block's override. `null` applies at the stage level; all four bound columns are block-eligible. |
+| `hydro_id`           | Int32            | Yes      | Hydro plant ID                                                                                                                                        |
+| `hydro_unit_group_id`| Int32            | Yes      | Unit group ID (`unit_groups[].id`), unique within the plant                                                                                          |
+| `stage_id`           | Int32            | Yes      | Stage ID                                                                                                                                              |
+| `min_turbined_m3s`   | Float64          | No       | Minimum turbined flow override for this group (m³/s)                                                                                                 |
+| `max_turbined_m3s`   | Float64          | No       | Maximum turbined flow override for this group (m³/s)                                                                                                 |
+| `min_generation_mw`  | Float64          | No       | Minimum generation override for this group (MW)                                                                                                      |
+| `max_generation_mw`  | Float64          | No       | Maximum generation override for this group (MW)                                                                                                      |
+| `block_id`           | Int32 (nullable) | No       | Zero-based block index within the stage, selecting one block's override. `null` applies at the stage level; all four bound columns are block-eligible. |
+
+**Validation:**
+
+- A row's `max_turbined_m3s` or `max_generation_mw` must not exceed that group's declared value.
+- Every override value must be finite.
 
 ---
 
@@ -1789,20 +2120,15 @@ Stage-varying, absolute-MW flow capacity overrides for transmission lines.
 
 | Column       | Type             | Required | Description                                                                                                                    |
 | ------------ | ---------------- | -------- | -------------------------------------------------------------------------------------------------------------------------------- |
-| `line_id`    | INT32            | Yes      | Transmission line ID                                                                                                          |
-| `stage_id`   | INT32            | Yes      | Stage ID                                                                                                                       |
-| `direct_mw`  | DOUBLE           | No       | Direct-flow capacity override (MW)                                                                                            |
-| `reverse_mw` | DOUBLE           | No       | Reverse-flow capacity override (MW)                                                                                           |
-| `block_id`   | INT32 (nullable) | No       | Zero-based block index within the stage, selecting one block's `direct_mw`/`reverse_mw` override. `null` applies at the stage level. |
+| `line_id`    | Int32            | Yes      | Transmission line ID                                                                                                          |
+| `stage_id`   | Int32            | Yes      | Stage ID                                                                                                                       |
+| `direct_mw`  | Float64          | No       | Direct-flow capacity override (MW)                                                                                            |
+| `reverse_mw` | Float64          | No       | Reverse-flow capacity override (MW)                                                                                           |
+| `block_id`   | Int32 (nullable) | No       | Zero-based block index within the stage, selecting one block's `direct_mw`/`reverse_mw` override. `null` applies at the stage level. |
 
-Per-block line capacity is declared here directly, as absolute MW.
-`constraints/exchange_factors.json`, which scaled a stage-level capacity by a
-per-block factor, is removed; a study still carrying that file is rejected by
-name. The old factor form's effect on a given `(line, stage, block)` is
-reproduced by `direct_mw = base_capacity × direct_factor` (and the reverse
-equivalent). Absolute MW also expresses `direct_mw = 0.0` — a line fully
-closed in one block — which the previous factor, constrained strictly
-positive, could never represent.
+Per-block line capacity is declared here as absolute MW; `direct_mw = 0.0`
+closes the line in the direct direction for that block, or for the stage when
+`block_id` is `null` (and `reverse_mw = 0.0` in the reverse one).
 
 ---
 
@@ -1810,13 +2136,13 @@ positive, could never represent.
 
 Stage-varying flow bounds for pumping stations.
 
-| Column               | Type   | Required | Description                 |
-| -------------------- | ------ | -------- | --------------------------- |
-| `pumping_station_id` | INT32  | Yes      | Pumping station ID          |
-| `stage_id`           | INT32  | Yes      | Stage ID                    |
-| `min_m3s`    | DOUBLE           | No       | Minimum pumping flow (m³/s)                                                                                          |
-| `max_m3s`    | DOUBLE           | No       | Maximum pumping flow (m³/s)                                                                                          |
-| `block_id`   | INT32 (nullable) | No       | Zero-based block index within the stage, selecting one block's `min_m3s`/`max_m3s` override. `null` applies at the stage level. |
+| Column               | Type             | Required | Description                                                                                                                     |
+| -------------------- | ---------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| `pumping_station_id` | Int32            | Yes      | Pumping station ID                                                                                                              |
+| `stage_id`           | Int32            | Yes      | Stage ID                                                                                                                        |
+| `min_m3s`            | Float64          | No       | Minimum pumping flow (m³/s)                                                                                                     |
+| `max_m3s`            | Float64          | No       | Maximum pumping flow (m³/s)                                                                                                     |
+| `block_id`           | Int32 (nullable) | No       | Zero-based block index within the stage, selecting one block's `min_m3s`/`max_m3s` override. `null` applies at the stage level. |
 
 ---
 
@@ -1826,12 +2152,12 @@ Stage-varying power and price overrides for energy contracts.
 
 | Column          | Type             | Required | Description                                                                                                                     |
 | --------------- | ---------------- | -------- | ---------------------------------------------------------------------------------------------------------------------------------- |
-| `contract_id`   | INT32            | Yes      | Energy contract ID                                                                                                              |
-| `stage_id`      | INT32            | Yes      | Stage ID                                                                                                                         |
-| `min_mw`        | DOUBLE           | No       | Minimum power (MW)                                                                                                               |
-| `max_mw`        | DOUBLE           | No       | Maximum power (MW)                                                                                                               |
-| `price_per_mwh` | DOUBLE           | No       | Price override (USD/MWh)                                                                                                        |
-| `block_id`      | INT32 (nullable) | No       | Zero-based block index within the stage, selecting one block's `min_mw`/`max_mw`/`price_per_mwh` override. `null` applies at the stage level. |
+| `contract_id`   | Int32            | Yes      | Energy contract ID                                                                                                              |
+| `stage_id`      | Int32            | Yes      | Stage ID                                                                                                                         |
+| `min_mw`        | Float64          | No       | Minimum power (MW)                                                                                                               |
+| `max_mw`        | Float64          | No       | Maximum power (MW)                                                                                                               |
+| `price_per_mwh` | Float64          | No       | Price override (USD/MWh)                                                                                                        |
+| `block_id`      | Int32 (nullable) | No       | Zero-based block index within the stage, selecting one block's `min_mw`/`max_mw`/`price_per_mwh` override. `null` applies at the stage level. |
 
 `price_per_mwh` is block-eligible — a study's simulation cost path honors a
 per-block contract price — deliberately asymmetric with
@@ -1846,15 +2172,22 @@ sparse storage: only `(ncs_id, stage_id)` pairs that differ from the base
 entity-level value need rows. Absent rows keep the entity's
 declared `max_generation_mw` unchanged; a present row overrides that entity
 capacity with its per-stage `available_generation_mw` for the `(ncs_id, stage_id)` cell.
+The rows apply to a source with no stochastic availability model. A source with rows in
+[`scenarios/non_controllable_stats.parquet`](#scenariosnon_controllable_statsparquet), or one that draws its
+availability from
+[`scenarios/external_ncs_scenarios.parquet`](#scenariosexternal_ncs_scenariosparquet) under the `external` scheme,
+ignores its rows here: its available generation follows the model or the realizations (see
+[Equipment Formulations §6](/math/equipment-formulations#6-non-controllable-generation-sources)).
 
 | Column                    | Type   | Required | Description                                                     |
 | ------------------------- | ------ | -------- | --------------------------------------------------------------- |
-| `ncs_id`                  | INT32  | Yes      | Non-controllable source ID                                      |
-| `stage_id`                | INT32  | Yes      | Stage ID                                                        |
-| `available_generation_mw` | DOUBLE | Yes      | Maximum available generation for this stage (MW). Must be >= 0. |
+| `ncs_id`                  | Int32  | Yes      | Non-controllable source ID                                      |
+| `stage_id`                | Int32  | Yes      | Stage ID                                                        |
+| `available_generation_mw` | Float64 | Yes      | Maximum available generation for this stage (MW). Must be >= 0. |
 
-The per-block available generation bound in the LP is:
-`available_mw_block = available_generation_mw * block_factor`, where
+For a source these rows apply to, the per-block available generation bound in the LP is:
+`available_mw_block = available_generation_mw * block_factor` (`max_generation_mw` in place of
+`available_generation_mw` at a stage with no row), where
 `block_factor` comes from `scenarios/non_controllable_factors.json`
 (default 1.0 when absent).
 
@@ -1899,7 +2232,7 @@ syntax and resolution rules.
 | `name`        | string          | Yes      | Short name used in reports and log output.                                                      |
 | `expression`  | string          | Yes      | Expression string over variable references and constants (see below).                          |
 | `description` | string or null  | No       | Optional human-readable description.                                                            |
-| `slack`       | object          | Yes      | Slack variable configuration: `enabled` (boolean) and `penalty` (number; required when `enabled` is `true`). |
+| `slack`       | object          | Yes      | Slack variable configuration: `enabled` (boolean) and `penalty` (number; required and `> 0` when `enabled` is `true`). |
 
 There is no `sense` field. A constraint's shape (`floor`/`cap`/`band`/`equality`)
 is derived from which of `bound_lower`/`bound_upper` are present on its
@@ -1949,11 +2282,11 @@ value instead — see below).
 
 | Column          | Type             | Required | Description                                                                             |
 | --------------- | ---------------- | -------- | ------------------------------------------------------------------------------------------ |
-| `constraint_id` | INT32            | Yes      | Generic constraint ID                                                                    |
-| `stage_id`      | INT32            | Yes      | Stage ID                                                                                  |
-| `block_id`      | INT32 (nullable) | No       | Zero-based block index within the stage. `null` applies to all blocks of the given stage. |
-| `bound_lower`   | DOUBLE (nullable) | No     | Lower interval endpoint. `null` when the constraint is unbounded below at this cell.      |
-| `bound_upper`   | DOUBLE (nullable) | No     | Upper interval endpoint. `null` when the constraint is unbounded above at this cell.       |
+| `constraint_id` | Int32            | Yes      | Generic constraint ID                                                                    |
+| `stage_id`      | Int32            | Yes      | Stage ID                                                                                  |
+| `block_id`      | Int32 (nullable) | No       | Zero-based block index within the stage. `null` applies to all blocks of the given stage. |
+| `bound_lower`   | Float64 (nullable) | No     | Lower interval endpoint. `null` when the constraint is unbounded below at this cell.      |
+| `bound_upper`   | Float64 (nullable) | No     | Upper interval endpoint. `null` when the constraint is unbounded above at this cell.       |
 
 The pair derives the constraint's shape: `bound_lower` alone is `floor`,
 `bound_upper` alone is `cap`, both present and different is `band`, both
@@ -1995,9 +2328,6 @@ load error.
   ]
 }
 ```
-
-The top-level JSON key stays `"scalar_parameters"` — only the file's location
-and name changed.
 
 **Per-entry fields:**
 
@@ -2062,9 +2392,9 @@ All penalty values must be strictly positive (> 0.0) and finite.
 
 | Column        | Type   | Required | Description                              |
 | ------------- | ------ | -------- | ---------------------------------------- |
-| `bus_id`      | INT32  | Yes      | Bus ID                                   |
-| `stage_id`    | INT32  | Yes      | Stage ID                                 |
-| `excess_cost` | DOUBLE | No       | Excess injection cost override (USD/MWh) |
+| `bus_id`      | Int32  | Yes      | Bus ID                                   |
+| `stage_id`    | Int32  | Yes      | Stage ID                                 |
+| `excess_cost` | Float64 | No       | Excess injection cost override (USD/MWh) |
 
 Note: Bus deficit segments are not stage-varying. Only `excess_cost` can be
 overridden per stage for buses.
@@ -2075,9 +2405,9 @@ overridden per stage for buses.
 
 | Column          | Type   | Required | Description                           |
 | --------------- | ------ | -------- | ------------------------------------- |
-| `line_id`       | INT32  | Yes      | Transmission line ID                  |
-| `stage_id`      | INT32  | Yes      | Stage ID                              |
-| `exchange_cost` | DOUBLE | No       | Exchange flow cost override (USD/MWh) |
+| `line_id`       | Int32  | Yes      | Transmission line ID                  |
+| `stage_id`      | Int32  | Yes      | Stage ID                              |
+| `exchange_cost` | Float64 | No       | Exchange flow cost override (USD/MWh) |
 
 ---
 
@@ -2085,19 +2415,24 @@ overridden per stage for buses.
 
 | Column                            | Type   | Required | Description                                 |
 | --------------------------------- | ------ | -------- | ------------------------------------------- |
-| `hydro_id`                        | INT32  | Yes      | Hydro plant ID                              |
-| `stage_id`                        | INT32  | Yes      | Stage ID                                    |
-| `spillage_cost`                   | DOUBLE | No       | Spillage penalty override                   |
-| `turbined_cost`                   | DOUBLE | No       | Turbined cost override                      |
-| `diversion_cost`                  | DOUBLE | No       | Diversion penalty override                  |
-| `storage_violation_below_cost`    | DOUBLE | No       | Storage below-minimum violation override    |
-| `filling_target_violation_cost`   | DOUBLE | No       | Filling target violation override           |
-| `turbined_violation_below_cost`   | DOUBLE | No       | Turbined below-minimum violation override   |
-| `outflow_violation_below_cost`    | DOUBLE | No       | Outflow below-minimum violation override    |
-| `outflow_violation_above_cost`    | DOUBLE | No       | Outflow above-maximum violation override    |
-| `generation_violation_below_cost` | DOUBLE | No       | Generation below-minimum violation override |
-| `evaporation_violation_cost`      | DOUBLE | No       | Evaporation violation override              |
-| `water_withdrawal_violation_cost` | DOUBLE | No       | Water withdrawal violation override         |
+| `hydro_id`                        | Int32  | Yes      | Hydro plant ID                              |
+| `stage_id`                        | Int32  | Yes      | Stage ID                                    |
+| `spillage_cost`                   | Float64 | No       | Spillage penalty override (USD/(m³/s·h))                                          |
+| `turbined_cost`                   | Float64 | No       | Turbined cost override (USD/(m³/s·h))                                             |
+| `diversion_cost`                  | Float64 | No       | Diversion penalty override (USD/(m³/s·h))                                         |
+| `storage_violation_below_cost`    | Float64 | No       | Storage below-minimum violation override (USD/hm³)                                |
+| `filling_target_violation_cost`   | Float64 | No       | Filling target violation override (USD/hm³)                                       |
+| `turbined_violation_below_cost`   | Float64 | No       | Turbined below-minimum violation override (USD/(m³/s·h))                          |
+| `outflow_violation_below_cost`    | Float64 | No       | Outflow below-minimum violation override (USD/(m³/s·h))                           |
+| `outflow_violation_above_cost`    | Float64 | No       | Outflow above-maximum violation override (USD/(m³/s·h))                           |
+| `generation_violation_below_cost` | Float64 | No       | Generation below-minimum violation override (USD/MWh)                             |
+| `evaporation_violation_cost`      | Float64 | No       | Symmetric evaporation violation override (USD/(m³/s·h)). The stage value prices no slack; a stage row reaches the LP through the two directional evaporation columns below. See [Directional evaporation and withdrawal costs](/math/penalty-system/#directional-evaporation-and-withdrawal-costs). |
+| `evaporation_violation_pos_cost`  | Float64 | No       | Over-evaporation violation override, evaporation above the target (USD/(m³/s·h))  |
+| `evaporation_violation_neg_cost`  | Float64 | No       | Under-evaporation violation override, evaporation below the target (USD/(m³/s·h)) |
+| `water_withdrawal_violation_cost` | Float64 | No       | Symmetric water withdrawal violation override (USD/(m³/s·h)). The stage value prices no slack; a stage row reaches the LP through the two directional withdrawal columns below. See [Directional evaporation and withdrawal costs](/math/penalty-system/#directional-evaporation-and-withdrawal-costs). |
+| `water_withdrawal_violation_pos_cost` | Float64 | No       | Water withdrawal violation override, over-delivery (USD/(m³/s·h))                 |
+| `water_withdrawal_violation_neg_cost` | Float64 | No       | Water withdrawal violation override, under-delivery (USD/(m³/s·h))                |
+| `inflow_nonnegativity_cost`       | Float64 | No       | Inflow non-negativity violation override (USD/(m³/s·h))                           |
 
 ---
 
@@ -2105,6 +2440,6 @@ overridden per stage for buses.
 
 | Column             | Type   | Required | Description                            |
 | ------------------ | ------ | -------- | -------------------------------------- |
-| `ncs_id`           | INT32  | Yes      | Non-controllable source ID             |
-| `stage_id`         | INT32  | Yes      | Stage ID                               |
-| `curtailment_cost` | DOUBLE | No       | Curtailment penalty override (USD/MWh) |
+| `ncs_id`           | Int32  | Yes      | Non-controllable source ID             |
+| `stage_id`         | Int32  | Yes      | Stage ID                               |
+| `curtailment_cost` | Float64 | No       | Curtailment penalty override (USD/MWh) |
