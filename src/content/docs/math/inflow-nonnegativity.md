@@ -5,7 +5,7 @@ description: Four methods for handling negative PAR(p) inflow realizations — n
 
 ## Purpose
 
-This spec defines the four methods available for handling negative inflow realizations produced by the PAR(p) model, including their LP formulations, objective function modifications, and trade-offs.
+This chapter defines the four methods available for handling negative inflow realizations produced by the PAR(p) model, including their LP formulations, objective function modifications, and trade-offs.
 
 ## 1. Problem Statement
 
@@ -188,16 +188,16 @@ The penalty is proportional to $\sigma_m \cdot \xi_h$, which is the actual inflo
 
 ## 7. Comparison Summary
 
-| Method                    | LP Size    | Bias    | AR Preservation | Feasibility |
-| ------------------------- | ---------- | ------- | --------------- | ----------- |
-| `none`                    | Base       | None    | Full            | May fail    |
-| `penalty` | +1 column per hydro | Minimal | Full | Guaranteed |
-| `truncation`              | Base       | Upward  | Partial         | Guaranteed  |
-| `truncation_with_penalty` | +1 column per hydro | Upward | Partial | Guaranteed |
+| Method                    | LP Size             | Bias    | AR Preservation | Feasibility |
+| ------------------------- | ------------------- | ------- | --------------- | ----------- |
+| `none`                    | Base                | None    | Full            | May fail    |
+| `penalty`                 | +1 column per hydro | Minimal | Full            | Guaranteed  |
+| `truncation`              | Base                | Upward  | Partial         | Guaranteed  |
+| `truncation_with_penalty` | +1 column per hydro | Upward  | Partial         | Guaranteed  |
 
 ## 8. Reference
 
-> Larroyd, P.V., Pedrini, R., Beltran, F., Teixeira, G., Finardi, E.C., & Picarelli, L.B. (2022). "Dealing with Negative Inflows in the Long-Term Hydrothermal Scheduling Problem." _Energies_, 15(3), 1115. https://doi.org/10.3390/en15031115
+- [Larroyd et al. (2022)](/reference/bibliography/#inflow-modelling)
 
 ## Cross-References
 

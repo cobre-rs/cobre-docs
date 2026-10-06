@@ -5,7 +5,7 @@ description: Schemas of the simulation/ files cobre run writes — the per-entit
 
 All per-scenario simulation results use Hive partitioning: one `data.parquet` file per
 scenario stored in a `scenario_id=NNNN/` subdirectory. See
-[Hive Partitioning](/reference/output-format/#hive-partitioning) for how to read these files.
+[Hive Partitioning](/reference/output/#hive-partitioning) for how to read these files.
 
 ---
 
@@ -22,11 +22,11 @@ give `node_id` 0, 1, 2). On a policy graph that declares `nodes`, `node_id` is
 the node's declared id and
 identifies which branch a scenario actually visited at that stage, and joins
 back to the node's `stage_id`/`pool_id` via the `nodes` of the policy
-checkpoint's manifest (see [`policy/manifest.bin`](/reference/output-format/#policymanifestbin)).
+checkpoint's manifest (see [`policy/manifest.bin`](/reference/output/policy/#policymanifestbin)).
 `scenario_id` duplicates the Hive partition directory
 (`scenario_id=NNNN/`) as an explicit in-file column, so a join on the axis is
 a join rather than a directory-name parse (see
-[Hive Partitioning](/reference/output-format/#hive-partitioning)).
+[Hive Partitioning](/reference/output/#hive-partitioning)).
 
 **Methodology:** [Policy Graphs](/math/policy-graphs)
 
@@ -162,8 +162,8 @@ The `stored_energy_initial_mwh` and `stored_energy_final_mwh` columns equal the 
 
 Hydro dispatch results at `(hydro, bus)` cell granularity — one cell per
 distinct bus among a plant's unit groups (see
-[`hydros[].unit_groups[]`](/reference/case-directory-format/#systemhydrosjson)
-in the Case Directory Format reference). One row per (stage, block, hydro,
+[`hydros[].unit_groups[]`](/reference/case-format/hydros/#systemhydrosjson)
+in the Case Format reference). One row per (stage, block, hydro,
 bus) quadruplet. 9 columns.
 
 **Methodology:** [LP Formulation](/math/lp-formulation)
@@ -475,7 +475,7 @@ constraint) triplet where a violation occurred. 7 columns.
 
 ## `simulation/solver/iterations.parquet`
 
-Identical schema to [`training/solver/iterations.parquet`](/reference/output-format/#trainingsolveriterationsparquet).
+Identical schema to [`training/solver/iterations.parquet`](/reference/output/training/#trainingsolveriterationsparquet).
 One row per `scenario_id`; `phase` is always `"simulation"`. `iteration`, `stage_id`,
 `opening_index`, `rank`, and `worker_id` are **NULL** (a simulation row carries no
 per-iteration / per-stage / per-opening / per-rank / per-worker attribution); `scenario_id`
@@ -488,7 +488,7 @@ is set.
 ## `simulation/solver/retry_histogram.parquet`
 
 Same columns and types as
-[`training/solver/retry_histogram.parquet`](/reference/output-format/#trainingsolverretry_histogramparquet).
+[`training/solver/retry_histogram.parquet`](/reference/output/training/#trainingsolverretry_histogramparquet).
 One row per scenario and retry level with a positive count; `iteration` holds
 the scenario id (0-based), `phase` is always `"simulation"` and `stage_id` is
 `null`. `cobre run` (CLI) writes the file with no rows and records simulation

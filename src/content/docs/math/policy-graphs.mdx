@@ -110,7 +110,7 @@ An explicit node graph keeps this stage-level convention: a discount override ap
 
 ## 4. Mapping onto the SDDP.jl Family
 
-The node/transition/pool structure above is the same abstraction Dowson (2020) defines as a **policy graph** and the SDDP.jl package implements (Dowson & Kapelevich, 2021): nodes each carry a local subproblem and their own cut pool, connected by probability-weighted arcs, with the backward pass aggregating successor pools into a parent's cut exactly as §1 describes. Cobre's graph is the finite, acyclic, leaf-terminated member of that family — every trajectory starts at a root and ends at a leaf after a bounded number of stages, with no cycle back to an earlier stage. §5 states the further restrictions Cobre currently imposes within that member.
+The node/transition/pool structure above is the same abstraction [Dowson (2020)](/reference/bibliography/#sddp-foundations) defines as a **policy graph** and the SDDP.jl package implements ([Dowson & Kapelevich, 2021](/reference/bibliography/#software-references)): nodes each carry a local subproblem and their own cut pool, connected by probability-weighted arcs, with the backward pass aggregating successor pools into a parent's cut exactly as §1 describes. Cobre's graph is the finite, acyclic, leaf-terminated member of that family — every trajectory starts at a root and ends at a leaf after a bounded number of stages, with no cycle back to an earlier stage. §5 states the further restrictions Cobre currently imposes within that member.
 
 ## 5. Known Limitations
 
@@ -154,8 +154,7 @@ The methodology above defines nodes, transitions and their probabilities; the ta
 
 ## References
 
-> Dowson, O. (2020). The policy graph decomposition of multistage stochastic programming problems. _Networks_, 76(1), 3–23. https://doi.org/10.1002/net.21932
-
-> Dowson, O. & Kapelevich, L. (2021). SDDP.jl: A Julia Package for Stochastic Dual Dynamic Programming. _INFORMS Journal on Computing_, 33(1), 27–33. https://doi.org/10.1287/ijoc.2020.0987
+- [Dowson (2020)](/reference/bibliography/#sddp-foundations)
+- [Dowson & Kapelevich (2021)](/reference/bibliography/#software-references)
 
 See the full [Bibliography](/reference/bibliography) for every source cited across the methodology.

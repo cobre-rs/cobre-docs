@@ -9,7 +9,7 @@ The `system/` directory holds one registry file for each entity type. This page 
 
 ## `system/buses.json`
 
-**Methodology:** [System Elements](/math/system-elements/)
+**Methodology:** [System Element Modeling Overview](/math/system-elements/)
 
 Electrical bus registry. Buses are the nodes of the transmission network.
 
@@ -26,7 +26,7 @@ Electrical bus registry. Buses are the nodes of the transmission network.
 
 ## `system/lines.json`
 
-**Methodology:** [System Elements](/math/system-elements/) · [Equipment Formulations](/math/equipment-formulations/)
+**Methodology:** [System Element Modeling Overview](/math/system-elements/) · [Equipment-Specific Formulations](/math/equipment-formulations/)
 
 Transmission line registry. Lines connect buses and carry power flows.
 
@@ -53,7 +53,7 @@ Transmission line registry. Lines connect buses and carry power flows.
 
 ## `system/thermals.json`
 
-**Methodology:** [Equipment Formulations](/math/equipment-formulations/) · [State Augmentation](/math/state-augmentation/)
+**Methodology:** [Equipment-Specific Formulations](/math/equipment-formulations/) · [State Augmentation](/math/state-augmentation/)
 
 Thermal plant registry. Each entry defines a dispatchable generation unit.
 
@@ -82,7 +82,7 @@ Thermal plant registry. Each entry defines a dispatchable generation unit.
 
 ## `system/non_controllable_sources.json`
 
-**Methodology:** [Equipment Formulations](/math/equipment-formulations/)
+**Methodology:** [Equipment-Specific Formulations](/math/equipment-formulations/)
 
 Non-controllable source (NCS) registry. Each entry defines an intermittent or
 aggregate generator — wind, solar, small hydro, biomass, distributed generation —
@@ -136,7 +136,7 @@ scenario, injecting a fixed amount with no curtailment freedom.
 
 ## `system/pumping_stations.json`
 
-**Methodology:** [Equipment Formulations](/math/equipment-formulations/)
+**Methodology:** [Equipment-Specific Formulations](/math/equipment-formulations/)
 
 Pumping station registry. Each entry defines a pumped-storage or water-transfer
 installation that withdraws water from a source hydro reservoir, injects it into a
@@ -194,7 +194,7 @@ Stage-varying flow bounds can be overridden via `constraints/pumping_bounds.parq
 
 ## `system/energy_contracts.json`
 
-**Methodology:** [Equipment Formulations](/math/equipment-formulations/)
+**Methodology:** [Equipment-Specific Formulations](/math/equipment-formulations/)
 
 Energy contract registry. Each entry defines a bilateral energy purchase or sale
 obligation with a counterparty outside the modeled system. The file is optional;

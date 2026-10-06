@@ -16,7 +16,7 @@ entity-level value unchanged.
 
 ## `constraints/thermal_bounds.parquet`
 
-**Methodology:** [Equipment Formulations](/math/equipment-formulations/)
+**Methodology:** [Equipment-Specific Formulations](/math/equipment-formulations/)
 
 Stage-varying generation and cost overrides for thermal plants.
 
@@ -41,7 +41,7 @@ so a per-block dispatch cost has nothing to attach to.
 
 ## `constraints/hydro_bounds.parquet`
 
-**Methodology:** [System Elements](/math/system-elements/)
+**Methodology:** [System Element Modeling Overview](/math/system-elements/)
 
 Stage-varying operational bound overrides for hydro plants.
 
@@ -83,7 +83,7 @@ the full failure-mode catalog.
 
 ## `constraints/hydro_unit_group_bounds.parquet`
 
-**Methodology:** [System Elements](/math/system-elements/)
+**Methodology:** [System Element Modeling Overview](/math/system-elements/)
 
 Stage-varying, optionally per-block bound overrides for a hydro plant's
 declared unit groups (`hydros[].unit_groups[]`; see
@@ -113,7 +113,7 @@ plant, so `hydro_unit_group_id` addresses the group by that declared id.
 
 ## `constraints/line_bounds.parquet`
 
-**Methodology:** [Equipment Formulations](/math/equipment-formulations/)
+**Methodology:** [Equipment-Specific Formulations](/math/equipment-formulations/)
 
 Stage-varying, absolute-MW flow capacity overrides for transmission lines.
 
@@ -133,7 +133,7 @@ closes the line in the direct direction for that block, or for the stage when
 
 ## `constraints/pumping_bounds.parquet`
 
-**Methodology:** [Equipment Formulations](/math/equipment-formulations/)
+**Methodology:** [Equipment-Specific Formulations](/math/equipment-formulations/)
 
 Stage-varying flow bounds for pumping stations.
 
@@ -149,7 +149,7 @@ Stage-varying flow bounds for pumping stations.
 
 ## `constraints/contract_bounds.parquet`
 
-**Methodology:** [Equipment Formulations](/math/equipment-formulations/)
+**Methodology:** [Equipment-Specific Formulations](/math/equipment-formulations/)
 
 Stage-varying power and price overrides for energy contracts.
 
@@ -170,7 +170,7 @@ per-block contract price — deliberately asymmetric with
 
 ## `constraints/ncs_bounds.parquet`
 
-**Methodology:** [Equipment Formulations](/math/equipment-formulations/)
+**Methodology:** [Equipment-Specific Formulations](/math/equipment-formulations/)
 
 Stage-varying available generation bounds for non-controllable sources. Uses
 sparse storage: only `(ncs_id, stage_id)` pairs that differ from the base
@@ -178,9 +178,9 @@ entity-level value need rows. Absent rows keep the entity's
 declared `max_generation_mw` unchanged; a present row overrides that entity
 capacity with its per-stage `available_generation_mw` for the `(ncs_id, stage_id)` cell.
 The rows apply to a source with no stochastic availability model. A source with rows in
-[`scenarios/non_controllable_stats.parquet`](/reference/case-directory-format/#scenariosnon_controllable_statsparquet), or one that draws its
+[`scenarios/non_controllable_stats.parquet`](/reference/case-format/scenarios/#scenariosnon_controllable_statsparquet), or one that draws its
 availability from
-[`scenarios/external_ncs_scenarios.parquet`](/reference/case-directory-format/#scenariosexternal_ncs_scenariosparquet) under the `external` scheme,
+[`scenarios/external_ncs_scenarios.parquet`](/reference/case-format/scenarios/#scenariosexternal_ncs_scenariosparquet) under the `external` scheme,
 ignores its rows here: its available generation follows the model or the realizations (see
 [Equipment Formulations §6](/math/equipment-formulations#6-non-controllable-generation-sources)).
 
@@ -227,13 +227,6 @@ constraints are added.
 }
 ```
 
-Alongside `constraints`, the file accepts an optional top-level `expressions`
-array — named linear expressions (`{ "name", "expression" }`) shared by every
-constraint and referenced by name from any `expression`. It is absent by
-default. See
-[Generic Constraints](/reference/generic-constraints/) for the named-expression
-syntax and resolution rules.
-
 **Per-entry fields (`constraints[]`):**
 
 | Name                          | Type           | Required    | Default | Units | Description                                                                                                            |
@@ -246,50 +239,22 @@ syntax and resolution rules.
 | `constraints[].slack.enabled` | boolean        | Yes         | —       | —     | Whether a slack variable is allowed.                                                                                   |
 | `constraints[].slack.penalty` | number \| null | Conditional | —       | —     | Penalty per unit of violation. Required and `> 0` when `enabled` is `true`.                                            |
 
-There is no `sense` field. A constraint's shape (`floor`/`cap`/`band`/`equality`)
-is derived from which of `bound_lower`/`bound_upper` are present on its
-activation-grid rows in [`constraints/generic_constraint_bounds.parquet`](#constraintsgeneric_constraint_boundsparquet),
-not authored per-entry — see
-[Generic Constraints: Interval and shape derivation](/reference/generic-constraints/#interval-and-shape-derivation)
-for the full derivation and the optional inline relational-RHS shorthand.
-
 **Named expressions (`expressions[]`):**
 
 | Name                        | Type           | Required | Default | Units | Description                                                                                             |
 | --------------------------- | -------------- | -------- | ------- | ----- | ------------------------------------------------------------------------------------------------------- |
+| `expressions`               | array          | No       | —       | —     | Named linear expressions shared by every constraint and referenced by `@name`. Absent means none.       |
 | `expressions[].name`        | string         | Yes      | —       | —     | Name bound to the expression. Must be unique in the file and distinct from every scalar-parameter name. |
 | `expressions[].expression`  | string         | Yes      | —       | —     | Linear expression that `name` stands for, written in the same grammar as `constraints[].expression`.    |
 | `expressions[].description` | string \| null | No       | —       | —     | Optional human-readable description.                                                                    |
 
-**Variable references.** An `expression` is a linear combination of
-coefficient-scaled variable references, e.g.
-`"2.5 * thermal_generation(5) - hydro_generation(3)"`. A reference takes the
-form `var_name(entity_id[, block_id][, bus=bus_id])` — an optional positional
-block argument, then an optional named `bus=` selector, in that order.
-
-`hydro_turbined` and `hydro_generation` are the only two variables accepting
-the `bus=` selector, letting a constraint address one `(hydro, bus)` cell of a
-plant split across several unit groups (see
-[`hydros[].unit_groups[]`](/reference/case-format/hydros/#systemhydrosjson)): `hydro_turbined(5,
-bus=2)` and `hydro_generation(5, bus=2)` resolve to the LP column for hydro
-5's cell on bus 2 — `2` must be a bus actually carried by one of hydro 5's
-unit groups, or the reference is rejected at load. Omitting `bus=` sums over
-the plant's cells, preserving the plant-level meaning every other variable
-carries; a plant with only one cell needs no selector. The positional block
-argument, when present, precedes the named selector:
-`hydro_turbined(5, 0, bus=2)` addresses block 0 of that cell.
-
-To constrain an anticipated thermal's commitment, use
-`anticipated_decision(N)` (stage-level scalar, no block index); see
-[`system/thermals.json`](/reference/case-format/system/#systemthermalsjson) for `anticipated_config`.
-
-`hydro_useful_volume_initial(id[, block])` and
-`hydro_useful_volume_final(id[, block])` address the same LP column and accept
-the same block argument as `hydro_storage_initial`/`hydro_storage_final`, but
-read as storage above the plant's physical minimum
-(`reservoir.min_storage_hm3`); see
-[Generic Constraints](/reference/generic-constraints/#variable-catalog) for the
-bound fold that realises them.
+The `expression` grammar, the variables it can name, named expressions (`@name`) and how a
+constraint's shape follows from its bounds are specified in
+[Generic Constraints](/reference/generic-constraints/):
+[Expression grammar](/reference/generic-constraints/#expression-grammar),
+[Variable catalog](/reference/generic-constraints/#variable-catalog),
+[The `@name` grammar](/reference/generic-constraints/#the-name-grammar),
+[Interval and shape derivation](/reference/generic-constraints/#interval-and-shape-derivation).
 
 ---
 
@@ -312,21 +277,10 @@ value instead — see below).
 | `bound_lower`   | Float64 (nullable) | No       | —       | —     | Lower interval endpoint. `null` when the constraint is unbounded below at this cell.      |
 | `bound_upper`   | Float64 (nullable) | No       | —       | —     | Upper interval endpoint. `null` when the constraint is unbounded above at this cell.      |
 
-The pair derives the constraint's shape: `bound_lower` alone is `floor`,
-`bound_upper` alone is `cap`, both present and different is `band`, both
-present and bit-identical is `equality`. A row with **both** endpoints `null`
-is rejected unless the constraint's own inline affine remainder (an inline
-`<=`/`>=`/`==` on the constraint's `expression`, or a `per_stage_block`
-`generic_parameters.json` reference) supplies at least one endpoint for that
-cell — the row still activates the cell, but contributes no value. A
-constraint whose only bound endpoints come from an inline affine remainder but
-which has zero rows here fails referential validation (`InvalidReference` — the
-reference would apply to nothing): the activation grid decides _where_ such a
-constraint applies, even when it supplies none of the bound _value_. A plain
-constraint with no affine remainder and no rows is not an error — it simply
-applies to nothing and is silently inert. See
-[Generic Constraints: The activation grid](/reference/generic-constraints/#the-activation-grid)
-for the full validation rules and worked examples.
+How the two endpoints set the shape:
+[Interval and shape derivation](/reference/generic-constraints/#interval-and-shape-derivation).
+Which rows are rejected:
+[The activation grid](/reference/generic-constraints/#the-activation-grid).
 
 ---
 
@@ -404,6 +358,5 @@ The productivity and stored-energy quantities these tags resolve to are defined 
   rejected.
 - Unknown JSON fields on any entry are rejected immediately.
 
-See [Generic Constraints: the five parameter kinds](/reference/generic-constraints/#generic_parametersjson-the-five-parameter-kinds)
-for the authoring narrative, the `per_stage_block` worked example, and a note
-on the vendored schema's stale `kind` description.
+For what each kind means, see
+[The five parameter kinds](/reference/generic-constraints/#generic_parametersjson-the-five-parameter-kinds).

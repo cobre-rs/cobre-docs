@@ -69,4 +69,3 @@
 #     `grep -c '# owner: E<NN> ' scripts/doc-lint-allow.txt` = 0.
 #   • Epic 15 ticket-248 confirms the residue is zero.
 
-math/_impl/_network.configure.mdx:77  narration-earlier-docs  # owner: E10 LPS-18 — Earlier documentation

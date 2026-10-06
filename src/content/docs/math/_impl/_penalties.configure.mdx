@@ -4,12 +4,12 @@ overrides layer on top of these defaults through the resolution cascade
 described in [§1 Cascade Resolution](#1-cascade-resolution) and
 [§3 Penalty Defaults and Overrides](#3-penalty-defaults-and-overrides). This
 tab covers how the defaults are supplied, how overrides resolve and the checks
-Cobre runs on the configured costs; the penalty-priority ordering itself stays
-in the methodology body above, not here.
+Cobre runs on the configured costs; the penalty-priority ordering itself is in
+[Penalty Priority Ordering](#penalty-priority-ordering) above.
 
 ### `penalties.json` — Global Penalty Defaults
 
-[Case Directory Format](/reference/case-directory-format/#penaltiesjson) owns
+[Case Format](/reference/case-format/penalties/#penaltiesjson) owns
 the field table for `penalties.json` (every field, its type and the load rules).
 The example below sets the required costs only; the optional ones (the four
 directional costs and `inflow_nonnegativity_cost`) are omitted.
@@ -55,7 +55,7 @@ and a chronological stage each block's pair over the block hours
 
 The entity-level `hydros[].penalties` block that overrides these defaults per
 plant is documented in the
-[Hydro Production Models Configure tab](/math/hydro-production-models#implementation-in-cobre);
+[System Elements Configure tab](/math/system-elements#implementation-in-cobre);
 the directional-cost fallback is described under
 [Directional evaporation and withdrawal costs](#directional-evaporation-and-withdrawal-costs).
 
@@ -76,8 +76,8 @@ cumulative — the first `depth_mw` MW of unmet demand cost the first segment's
 The last segment is unbounded, so the LP is always feasible whatever the
 shortfall. The field rules (a non-empty list, positive and strictly increasing
 costs, and a last `depth_mw` of `null`) are under
-[`penalties.json`](/reference/case-directory-format/#penaltiesjson) and
-[`system/buses.json`](/reference/case-directory-format/#systembusesjson).
+[`penalties.json`](/reference/case-format/penalties/#penaltiesjson) and
+[`system/buses.json`](/reference/case-format/system/#systembusesjson).
 
 `deficit_segments` resolves from exactly two sources and does **not** support
 stage-level overrides:
@@ -115,7 +115,7 @@ tiers differ per field, so this is a lookup table, not a single uniform rule:
 | `bus.deficit_segments`                          | not supported                                     | `buses[].deficit_segments`                                                          | `penalties.json` → `bus.deficit_segments`                     |
 | `bus.excess_cost`                                | `penalty_overrides_bus.parquet`                   | not supported                                                                       | `penalties.json` → `bus.excess_cost`                          |
 | `line.exchange_cost`                             | `penalty_overrides_line.parquet`                  | `lines[].exchange_cost`                                                             | `penalties.json` → `line.exchange_cost`                       |
-| `hydro.*`                       | `penalty_overrides_hydro.parquet`        | `hydros[].penalties` — see the [Hydro Configure tab](/math/hydro-production-models#implementation-in-cobre) | `penalties.json` → `hydro.*`                                  |
+| `hydro.*`                       | `penalty_overrides_hydro.parquet`        | `hydros[].penalties` — see the [System Elements Configure tab](/math/system-elements#implementation-in-cobre) | `penalties.json` → `hydro.*`                                  |
 | `non_controllable_source.curtailment_cost`      | `penalty_overrides_ncs.parquet`                   | `non_controllable_sources[].curtailment_cost`                                                                       | `penalties.json` → `non_controllable_source.curtailment_cost` |
 
 #### Resolution example

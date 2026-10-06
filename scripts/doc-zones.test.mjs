@@ -18,8 +18,16 @@ test("math/_impl/* is lenient (software layer nested under math/)", () => {
 });
 
 test("reference/* is lenient", () => {
-  assert.equal(zoneOf("reference/output-format.mdx"), ZONE_LENIENT);
-  assert.equal(zoneOf("reference/case-directory-format.mdx"), ZONE_LENIENT);
+  assert.equal(zoneOf("reference/error-codes.mdx"), ZONE_LENIENT);
+  assert.equal(zoneOf("reference/case-format/hydros.mdx"), ZONE_LENIENT);
+});
+
+test("reference/glossary.md is strict (math zone, R97)", () => {
+  assert.equal(zoneOf("reference/glossary.md"), ZONE_STRICT);
+  // One file, not the directory: its siblings stay lenient.
+  assert.equal(zoneOf("reference/bibliography.md"), ZONE_LENIENT);
+  // Exact path match: a lookalike name is not the glossary.
+  assert.equal(zoneOf("reference/glossary.mdx"), ZONE_LENIENT);
 });
 
 test("running/* is lenient", () => {

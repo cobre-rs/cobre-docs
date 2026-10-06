@@ -5,11 +5,11 @@ description: Complete stage subproblem LP — objective taxonomy, all constraint
 
 ## Purpose
 
-This spec presents the complete stage subproblem LP for the Cobre SDDP solver: the objective function with its cost taxonomy, all constraint families, slack/penalty variables, and the Benders cut interface to the future cost function. It uses the **parallel blocks** formulation by default.
+This chapter presents the complete stage subproblem LP for the Cobre SDDP solver: the objective function with its cost taxonomy, all constraint families, slack/penalty variables, and the Benders cut interface to the future cost function. It uses the **parallel blocks** formulation by default.
 
 **Reading order**: [System Elements](/math/system-elements) → [Equipment Formulations](/math/equipment-formulations) → **this chapter** → [State Augmentation](/math/state-augmentation)
 
-For what each physical element represents and its decision variables, see [system elements](/math/system-elements). For variable naming conventions and index sets, see [notation conventions](/overview/notation-conventions).
+For what each physical element represents and its decision variables, see [System Elements](/math/system-elements). For variable naming conventions and index sets, see [notation conventions](/overview/notation-conventions).
 
 ## Stage LP at a Glance
 
@@ -137,7 +137,7 @@ Curtailment is priced as a reward on dispatched non-controllable generation ([Eq
 
 ## 3. Load Balance Constraint
 
-Each hydro plant $h$ is partitioned into one or more **(hydro, bus) cells** — one cell per distinct bus among the plant's declared unit groups (see [system elements §5](/math/system-elements)). $\mathcal{B}_h$ denotes the set of buses hosting one of $h$'s cells; $\mathcal{H}_b$ denotes the hydros with a cell at bus $b$ (i.e. $b \in \mathcal{B}_h$). $g_{h,b,k}$ is the generation of hydro $h$'s cell at bus $b$, block $k$ — the quantity that actually injects at $b$. A plant whose groups share a single bus has $|\mathcal{B}_h| = 1$, and $g_{h,b,k}$ collapses to the single-cell $g_{h,k}$ used everywhere else in this spec.
+Each hydro plant $h$ is partitioned into one or more **(hydro, bus) cells** — one cell per distinct bus among the plant's declared unit groups (see [system elements §5](/math/system-elements)). $\mathcal{B}_h$ denotes the set of buses hosting one of $h$'s cells; $\mathcal{H}_b$ denotes the hydros with a cell at bus $b$ (i.e. $b \in \mathcal{B}_h$). $g_{h,b,k}$ is the generation of hydro $h$'s cell at bus $b$, block $k$ — the quantity that actually injects at $b$. A plant whose groups share a single bus has $|\mathcal{B}_h| = 1$, and $g_{h,b,k}$ collapses to the single-cell $g_{h,k}$ used everywhere else in this chapter.
 
 For each bus $b \in \mathcal{B}$ and block $k \in \mathcal{K}$:
 
@@ -266,9 +266,9 @@ where:
 
 The z-inflow variable $z_h$ then enters the water balance constraint (§4) in place of the raw inflow term $a_h$, and its primal value after solving gives the realized inflow for reporting and simulation extraction.
 
-The z-inflow columns sit between the leading state columns and the incoming storage columns in the column layout ([LP Layout and Scaling §1](/math/lp-layout-and-scaling#1-column-and-row-layout)). Their constraint rows form the **first** equality block ([LP Layout and Scaling §1](/math/lp-layout-and-scaling#1-column-and-row-layout)). The RHS is patched per scenario with $b_{h,m(t)} + \sigma_{m(t)} \cdot \varepsilon_t$, where $\varepsilon_t$ is the effective noise (possibly clamped for inflow non-negativity — see [Inflow Non-Negativity](/math/inflow-nonnegativity)). They are not pinned state columns and carry no cut coefficient of their own; the cut row multiplies the lag-1 coefficient by $z_h$.
+The z-inflow columns sit between the leading state columns and the incoming storage columns, and their constraint rows form the **first** equality block ([LP Layout and Scaling §1](/math/lp-layout-and-scaling#1-column-and-row-layout)). The RHS is patched per scenario with $b_{h,m(t)} + \sigma_{m(t)} \cdot \varepsilon_t$, where $\varepsilon_t$ is the effective noise (possibly clamped for inflow non-negativity — see [Inflow Non-Negativity](/math/inflow-nonnegativity)). They are not pinned state columns and carry no cut coefficient of their own; the cut row multiplies the lag-1 coefficient by $z_h$.
 
-**Constraint count**: $N$ total constraints, where $N = |\mathcal{H}|$ is the number of operating hydros. See [LP Layout and Scaling §1](/math/lp-layout-and-scaling#1-column-and-row-layout) for the row layout.
+**Constraint count**: $N$ total constraints, where $N = |\mathcal{H}|$ is the number of hydros, whatever their lifecycle phase.
 
 ## 6. Hydro Generation Constraints
 
@@ -296,7 +296,7 @@ $$
 \lambda_{h,b} = \frac{\sum_{u \,\in\, (h,b)} \bar{Q}_u}{\sum_{u \,\in\, h} \bar{Q}_u}
 $$
 
-(the ratio of the cell's own unit groups' declared `max_turbined_m3s` to the plant's total, $0$ when the plant's total is $0$), so that $\sum_{b \in \mathcal{B}_h} \lambda_{h,b} = 1$ for every plant with positive declared turbine capacity. Only the plane's flow-independent part — the intercept $\gamma^m_0$, the storage term, and the spillage term — is apportioned by $\lambda_{h,b}$; the flow coefficient $\gamma^m_q$ stays on the cell's own $q_{h,b,k}$ unscaled, because it alone is homogeneous in the cell partition (summing the per-cell rows at fixed $v^{avg}_h$, $s_{h,k}$, and $\sum_b q_{h,b,k}$ recovers the plant-level bound this replaces). A single-cell plant with positive declared turbine capacity has $\lambda_{h,b} = 1$ exactly, so its row is the plant-level row.
+(the ratio of the cell's own unit groups' declared maximum turbined flow to the plant's total, $0$ when the plant's total is $0$), so that $\sum_{b \in \mathcal{B}_h} \lambda_{h,b} = 1$ for every plant with positive declared turbine capacity. Only the plane's flow-independent part — the intercept $\gamma^m_0$, the storage term, and the spillage term — is apportioned by $\lambda_{h,b}$; the flow coefficient $\gamma^m_q$ stays on the cell's own $q_{h,b,k}$ unscaled, because it alone is homogeneous in the cell partition (summing the per-cell rows at fixed $v^{avg}_h$, $s_{h,k}$, and $\sum_b q_{h,b,k}$ recovers the plant-level bound this replaces). A single-cell plant with positive declared turbine capacity has $\lambda_{h,b} = 1$ exactly, so its row is the plant-level row.
 
 For a plant with positive declared turbine capacity the shares sum to $1$, so the per-cell rows of each plane sum to that plane's plant-level row (above). A sum of minima is at most the minimum of the sums, so at the same $v^{avg}_h$, $s_{h,k}$ and total turbined flow the cap the per-cell rows put on the plant's generation $\sum_{b \in \mathcal{B}_h} g_{h,b,k}$, on the left, is at most the plant-level envelope, the minimum over the planes of the plant-level rows, on the right:
 
@@ -354,7 +354,7 @@ $$
 
 The dead volume $\underline{V}_h$ is a hard lower bound for every hydro except two cases: a hydro with a filling configuration has a floor of $0$ in every phase, the per-stage filling floor below taking its place while it fills, and from its entry stage on the dead volume returns as the soft floor $v_h + \sigma^{v-}_h \geq \underline{V}_h$, the only storage-below-minimum slack of the LP, priced above deficit; a hydro without a filling configuration has a floor of $0$ while PreFilling, where its frozen identity (§4) holds the storage at its incoming value. On a chronological stage the block-end storages $v_{h,k}$ carry the same column bounds, and the soft floor applies to the end-of-stage storage $v_h$ only. The upper bound is hard; excess water leaves through spillage.
 
-**Filling floors** (for filling hydros, at every stage $t \in [\text{start\_stage\_id}, \text{entry\_stage\_id})$):
+**Filling floors** (for filling hydros, at every filling stage $t$, from the filling start stage up to, not including, the entry stage):
 
 $$
 v_h + \sigma^{fill}_h \geq V^{\text{target}}_t,
@@ -362,7 +362,7 @@ v_h + \sigma^{fill}_h \geq V^{\text{target}}_t,
 V^{\text{target}}_t = \min\!\Big( \underline{V}_{h,L} - \sum_{t'=t+1}^{L} \zeta_{t'} \, \text{rate}_{t'},\ \underline{V}_{h,t} \Big)
 $$
 
-$\underline{V}_{h,t}$ is the dead volume in force at stage $t$ (a stage may override it), $L = \text{entry\_stage\_id} - 1$ is the last filling stage and $\text{rate}_{t'}$ the minimum accumulation rate of stage $t'$, which $\zeta_{t'}$ converts into hm³. The floor at stage $t$ is the dead volume of stage $L$ minus the accumulation the schedule still owes after $t$, never above the dead volume of stage $t$ itself; it reaches $\underline{V}_{h,L}$ at $L$. Every filling stage carries its floor. The slack $\sigma^{fill}_h$ is priced at $c^{fill}_h$, which Cobre expects **below deficit** ([Penalty System — Penalty Ordering Validation](/math/penalty-system#penalty-ordering-validation) checks it as given). See [Penalty System §6](/math/penalty-system#dead-volume-filling-specifics).
+$\underline{V}_{h,t}$ is the dead volume in force at stage $t$ (a stage may override it), $L$ is the last filling stage, the stage before the entry stage, and $\text{rate}_{t'}$ the minimum accumulation rate of stage $t'$, which $\zeta_{t'}$ converts into hm³. The floor at stage $t$ is the dead volume of stage $L$ minus the accumulation the schedule still owes after $t$, never above the dead volume of stage $t$ itself; it reaches $\underline{V}_{h,L}$ at $L$. Every filling stage carries its floor. The slack $\sigma^{fill}_h$ is priced at $c^{fill}_h$, which Cobre expects **below deficit** ([Penalty System — Penalty Ordering Validation](/math/penalty-system#penalty-ordering-validation) checks it as given). See [Penalty System §6](/math/penalty-system#dead-volume-filling-specifics).
 
 ### Turbined Flow Bounds (per cell $(h, b)$, block $k$)
 
@@ -386,6 +386,10 @@ $$
 
 The lower bound is $0$ unless a minimum diversion flow is set for the stage or for the block, which replaces it. Both bounds are hard. Diversion cost is a regularization term (see §1), not a violation penalty.
 
+### Spillage Bounds (per hydro $h$, block $k$)
+
+Spillage $s_{h,k}$ is bounded below by $0$ and above by $+\infty$ unless a minimum or maximum spillage is set for the stage or for the block, which replaces the bound. Both bounds are hard. While the hydro is PreFilling, spillage is fixed at $[0, 0]$ ([Lifecycle Phases](#lifecycle-phases)).
+
 ### Pumping Flow Bounds (per station $y$, block $k$)
 
 $$
@@ -401,7 +405,7 @@ At each stage a hydro is in exactly one lifecycle phase, set by its [commissioni
 | Phase | Applies at | Storage row and floor | Turbined flow and generation | Spillage | Diversion | Inflow, upstream releases and withdrawal | Operational floors |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | PreFilling | A hydro without a filling configuration: every stage outside its commissioning window, before its entry stage or from its exit stage on. A filling hydro: every stage before its filling start | Frozen identity $v_h - v^{in}_h = 0$, per block on a chronological stage, with right-hand side $0$ (§4); floor $0$; no evaporation row | $q_{h,b,k}$ fixed at $[0, 0]$ on every cell; no FPHA rows and no generation column | $s_{h,k}$ fixed at $[0, 0]$, whatever its bounds | $u_{h,k}$ fixed at $[0, 0]$ | The local inflow, the releases of the upstream plants and the flows diverted in enter the row of the first non-PreFilling plant downstream, and the withdrawal target moves to that plant's right-hand side; with no such plant the water leaves the system. In-transit volume maturing into the plant enters no row and leaves the modeled system | The minimum-outflow, minimum-turbined-flow and minimum-generation rows are present; with turbined flow, spillage and generation at $0$, a positive minimum falls wholly on its slack, at its penalty (§9) |
-| Filling | A filling hydro: every stage from its filling start up to, but not including, its entry stage | Water balance of §4, with the evaporation row of an evaporating hydro; floor $0$ and the per-stage filling floor $v_h + \sigma^{fill}_h \geq V^{\text{target}}_t$ of [Storage Bounds](#storage-bounds-per-hydro-hhh) | $q_{h,b,k}$ fixed at $[0, 0]$ on every cell; no FPHA rows and no generation column | Within its bounds | $u_{h,k}$ fixed at $[0, 0]$ | On the plant's own row (§4) | The same rows are present; a positive minimum turbined flow or minimum generation falls wholly on its slack, and spillage can meet a positive minimum outflow |
+| Filling | A filling hydro: every stage from its filling start up to, but not including, its entry stage | Water balance of §4, with the evaporation row of an evaporating hydro; floor $0$ and the per-stage filling floor $v_h + \sigma^{fill}_h \geq V^{\text{target}}_t$ of [§8 Storage Bounds](#8-variable-bounds-and-minimum-constraints) | $q_{h,b,k}$ fixed at $[0, 0]$ on every cell; no FPHA rows and no generation column | Within its bounds | $u_{h,k}$ fixed at $[0, 0]$ | On the plant's own row (§4) | The same rows are present; a positive minimum turbined flow or minimum generation falls wholly on its slack, and spillage can meet a positive minimum outflow |
 | Operating | A hydro without a filling configuration: every stage inside its commissioning window, so every stage when it declares none. A filling hydro: every stage from its entry stage on; it has no exit stage | Water balance of §4, with the evaporation row of an evaporating hydro; the hard dead-volume floor $\underline{V}_h$ for a hydro without a filling configuration, and for a filling hydro floor $0$ with the soft dead-volume floor $v_h + \sigma^{v-}_h \geq \underline{V}_h$ | Turbined flow within the Turbined Flow Bounds above; generation by the production model of §6 | Within its bounds | Within the Diversion Flow Bounds above for a hydro without a filling configuration; fixed at $[0, 0]$ for a filling hydro | On the plant's own row (§4) | The same rows are present; the minimum turbined flow is met by the cell's turbined flow, the minimum generation by its generation, and the minimum outflow by turbined flow plus spillage, with the slack covering any shortfall at its penalty (§9) |
 
 Outside its commissioning window a thermal's generation, a line's flow in each direction, a non-controllable source's generation, a pumping station's pumped flow and a contract's power are fixed at $[0, 0]$ in every block; an anticipated thermal's commitment is gated by its delivery stage in addition, and is opened only when the plant is in service at that delivery stage, whatever its status at the decision stage ([State Augmentation §5](/math/state-augmentation#5-anticipated-thermal-commitments)).
@@ -433,18 +437,6 @@ where $H_t = \sum_k \tau_k$ is the total stage duration in hours, and the evapor
 - $r_h = 0$: both slacks are pinned to zero.
 
 This cap guards a degenerate case: an unbounded under-delivery slack would let a run-of-river plant "un-withdraw" past its target and inject phantom water into the reservoir.
-
-Storage violation penalties ($c^{sv-}_h \sigma^{v-}_h$ and $c^{fill}_h \sigma^{fill}_h$) appear outside the $\tau_k$ sum because they apply to end-of-stage storage — see §2.
-
-### Penalty Resolution
-
-The effective penalty for any (entity, stage, penalty_type) tuple follows a three-level cascade:
-
-1. **Stage-specific override** (from Parquet files in `constraints/`)
-2. **Entity-specific override** (from entity registry JSON)
-3. **Global default** (from `penalties.json`)
-
-For the full resolution semantics and all penalty value definitions, see [Penalty System](/math/penalty-system).
 
 ## 10. Generic Constraints
 
@@ -534,7 +526,7 @@ When anticipated thermals are present, the cut carries one coefficient per commi
 
 The future-cost variable $\theta$ has lower bound $0$ at every stage, which presumes $V_{t+1} \ge 0$. Stage objectives can be negative: export contracts earn revenue (§2), and the curtailment term of §2 is a reward: it is never positive, and it is constant for a must-run source. Where $V_{t+1}$ is negative the bound lies above it, so the cut approximation need not lie below $V_{t+1}$ and the lower bound is not guaranteed. At the last stage of the finite horizon, with no terminal boundary loaded, $\theta$ is $0$ ($V_{T+1} = 0$); with a [terminal boundary](/math/post-study-boundary#1-the-right-boundary) loaded, $\theta$ keeps the floor and the imported cuts bound it from below, so the terminal function is the larger of $0$ and the imported cuts.
 
-Cuts live in an **append-only pool** at stable slot indices: every cut ever generated is retained for the lifetime of the run, and only the active subset is baked into each iteration's stage template. Deactivation **excludes** a cut from each iteration's stage-template rebake rather than mutating any row; the persistent lower-bound LP is append-only (its rows are never removed, so the lower bound stays monotone). Slot indices stay stable, so reactivation — re-baking the cut into the template at the same slot — is exact. Dynamic Cut Selection deactivates no cut itself: each solve loads a resident subset of the active cuts and grows it with the omitted candidate cuts its solution violates. A per-stage cap on the number of active cuts, when set, deactivates cuts once it is exceeded, under every selection method. See [cut management](/math/cut-management).
+Cuts live in an **append-only pool** at stable slot indices: every cut ever generated is retained for the lifetime of the run, and only the active subset is baked into each iteration's stage template. Deactivation **excludes** a cut from each iteration's stage-template rebake rather than mutating any row; the persistent lower-bound LP is append-only (its rows are never removed, so the lower bound stays monotone). Slot indices stay stable, so reactivation — re-baking the cut into the template at the same slot — is exact. Dynamic Cut Selection deactivates no cut itself: each solve loads a resident subset of the active cuts and grows it with the omitted candidate cuts its solution violates. A per-stage cap on the number of active cuts, when set, deactivates cuts once it is exceeded, under every selection method.
 
 For cut coefficient derivation, aggregation, and selection strategies, see [cut management](/math/cut-management).
 

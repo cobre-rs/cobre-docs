@@ -287,7 +287,7 @@ same inflow.
 
 The SDDP algorithm has three concerns that govern
 how scenarios are handled during training. Cobre formalizes these as distinct
-abstractions, following the design established by SDDP.jl:
+abstractions, following the design established by SDDP.jl ([Dowson & Kapelevich, 2021](/reference/bibliography/#software-references)):
 
 | Concern                                              | Abstraction            | What It Controls                 | Default    |
 | ---------------------------------------------------- | ---------------------- | -------------------------------- | ---------- |
@@ -805,8 +805,8 @@ Its structural requirements — a singleton opening set at every node, and
 in-degree 1 everywhere, so the graph is a pure tree — are those of
 [Policy Graphs §6](/math/policy-graphs/#6-the-enumerated-tree-structural-requirement).
 Branching is therefore declared as sibling nodes, each with one opening, and
-the deterministic trunk with branching only at the final stage (Maceira et al.,
-2002) is a chain of single-successor nodes ending in a terminal fan of sibling
+the deterministic trunk with branching only at the final stage
+([Maceira et al., 2002](/reference/bibliography/#inflow-modelling)) is a chain of single-successor nodes ending in a terminal fan of sibling
 nodes.
 
 With a common branching count per stage, the number of root-to-leaf paths is

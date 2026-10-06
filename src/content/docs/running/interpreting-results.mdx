@@ -3,7 +3,7 @@ title: Convergence & Diagnostics
 description: Practical analysis patterns for assessing convergence, extracting generation and cost statistics, and troubleshooting simulation results.
 ---
 
-The [Output Format Reference](/reference/output-format/) documents what each
+The [Output Format Reference](/reference/output/) documents what each
 output file contains. This page goes one level deeper: it provides practical
 analysis patterns for answering domain questions from the data. It assumes you
 are comfortable loading Parquet files in your preferred tool.
@@ -160,7 +160,7 @@ of the 1dtoy template:
 | -------------------------------- | -------------------------------------------------------------------------------------------------------- |
 | `convergence.achieved`           | `true` only when the `bound_stalling` rule stopped the run; `false` for every other termination reason, `gap` included. |
 | `convergence.final_gap_percent`  | The relative gap at termination, in percent: the upper bound minus the lower bound, relative to the lower bound. Negative when the upper bound is below the lower bound; `null` when the final lower bound is not positive. See guidelines below. |
-| `convergence.termination_reason` | The name of the stopping rule that ended the run. The values are listed under [`training/metadata.json`](/reference/output-format/#trainingmetadatajson). |
+| `convergence.termination_reason` | The name of the stopping rule that ended the run. The values are listed under [`training/metadata.json`](/reference/output/metadata/#trainingmetadatajson). |
 | `iterations.converged_at`        | Equal to `iterations.completed` when `achieved` is `true`, `null` otherwise.                             |
 
 **Gap guidelines.** There is no universal threshold — acceptable gap depends
@@ -380,7 +380,7 @@ adds `bus_id`. `costs` is one row per (`scenario_id`, `stage_id`) with a null
 Aggregate within a (scenario, stage) first — sum energy and cost over blocks,
 weight a per-block rate such as `water_value_per_hm3` by block hours — and only then take statistics across
 scenarios. Each table's columns are listed in the
-[Output Format Reference](/reference/output-format/).
+[Output Format Reference](/reference/output/).
 :::
 
 The printed outputs in this section and in
@@ -390,6 +390,48 @@ the stage's hours (an odd hour count gives `OFFPEAK` the extra hour), run with
 100 simulation scenarios. The template as generated has one block per stage, so
 its numbers differ. The snippets run from the
 case directory, which here holds both `results/` and `stages.json`.
+
+### Reading a whole table
+
+Each `simulation/<entity>/` directory reads as one table over all scenarios;
+`scenario_id` is both the partition directory name and an in-file column (see
+[Hive Partitioning](/reference/output/#hive-partitioning)).
+
+```python
+# Polars — reads all scenarios at once, infers scenario_id from directory names
+import polars as pl
+
+df = pl.read_parquet("results/simulation/costs/")
+print(df.head())
+```
+
+{/* capture: python read-whole-table | cobre-python 0.17.0 (PyPI wheel sha256 c0b117d2) | python 3.12.3 | case: output of cobre run (cobre-cli sha256 23916b46) on 1dtoy (cobre init --template 1dtoy) */}
+
+```text
+shape: (5, 29)
+┌────────────┬──────────┬─────────┬──────────┬───┬────────────┬────────────┬───────────┬───────────┐
+│ scenario_i ┆ stage_id ┆ node_id ┆ block_id ┆ … ┆ turbined_c ┆ curtailmen ┆ exchange_ ┆ pumping_c │
+│ d          ┆ ---      ┆ ---     ┆ ---      ┆   ┆ ost        ┆ t_cost     ┆ cost      ┆ ost       │
+│ ---        ┆ i32      ┆ i32     ┆ i32      ┆   ┆ ---        ┆ ---        ┆ ---       ┆ ---       │
+│ i32        ┆          ┆         ┆          ┆   ┆ f64        ┆ f64        ┆ f64       ┆ f64       │
+╞════════════╪══════════╪═════════╪══════════╪═══╪════════════╪════════════╪═══════════╪═══════════╡
+│ 0          ┆ 0        ┆ 0       ┆ null     ┆ … ┆ 1674.0     ┆ 0.0        ┆ 0.0       ┆ 0.0       │
+│ 0          ┆ 1        ┆ 1       ┆ null     ┆ … ┆ 1566.0     ┆ 0.0        ┆ 0.0       ┆ 0.0       │
+│ 0          ┆ 2        ┆ 2       ┆ null     ┆ … ┆ 1674.0     ┆ 0.0        ┆ 0.0       ┆ 0.0       │
+│ 0          ┆ 3        ┆ 3       ┆ null     ┆ … ┆ 1563.31441 ┆ 0.0        ┆ 0.0       ┆ 0.0       │
+│            ┆          ┆         ┆          ┆   ┆ 8          ┆            ┆           ┆           │
+│ 1          ┆ 0        ┆ 0       ┆ null     ┆ … ┆ 1674.0     ┆ 0.0        ┆ 0.0       ┆ 0.0       │
+└────────────┴──────────┴─────────┴──────────┴───┴────────────┴────────────┴───────────┴───────────┘
+```
+
+{/* not run: pandas is outside the capture environment (design/python-env.md); it reads the same directory as the captured Polars snippet */}
+
+```python
+# Pandas with PyArrow backend
+import pandas as pd
+
+df = pd.read_parquet("results/simulation/costs/")
+```
 
 ### Aggregating across scenarios
 
@@ -510,6 +552,15 @@ shape: (4, 5)
 SELECT * FROM read_parquet('results/simulation/costs/**/*.parquet')
 WHERE scenario_id = 0
 ORDER BY stage_id;
+```
+
+{/* not run: R is outside the capture environment (design/python-env.md); same scenario filter as the captured Polars snippet */}
+
+```r
+# R with the arrow package
+library(arrow)
+ds <- open_dataset("results/simulation/costs/")
+dplyr::collect(dplyr::filter(ds, scenario_id == 0))
 ```
 
 ---
@@ -817,5 +868,5 @@ Possible causes:
 ## Related Pages
 
 - **Theory:** [Upper Bound Evaluation](/math/upper-bound-evaluation/) — the statistical upper-bound estimator behind the convergence metrics this page analyzes.
-- [Output Format Reference](/reference/output-format/) — complete field-by-field schema for all output files
+- [Output Format Reference](/reference/output/) — complete field-by-field schema for all output files
 - [Configuration](/running/configuration/) — all `config.json` fields including stopping rules and seed

@@ -6,7 +6,7 @@
 // reframed around the "No version numbers in the corpus" hard rule
 // (CLAUDE.md): the single anchor is the `**Synced to: cobre vX.Y.Z …**` line.
 //
-//   - STRICT zones (math/*.mdx excluding _impl/, overview/*): ZERO cobre-
+//   - STRICT zones (math/*.mdx excluding _impl/, overview/*, reference/glossary.md): ZERO cobre-
 //     version strings/tokens AND zero version-annotation narration
 //     ("added in v0.8.1", "as of v0.8.0", "Keys renamed from v0.8.1", "earlier
 //     releases", ...) are tolerated — this enforces the hard rule directly.
@@ -15,7 +15,7 @@
 //     immediately adjacent, and the narration patterns require a
 //     version-change verb, neither of which a bare third-party `vN.N` token
 //     satisfies.
-//   - LENIENT zones (math/_impl/*, reference/*, running/*, getting-started/*,
+//   - LENIENT zones (math/_impl/*, reference/* (except reference/glossary.md), running/*, getting-started/*,
 //     examples/*): a cobre-version string MAY appear (real CLI output like
 //     `COBRE v0.9.1`, sample JSON like `"cobre_version": "0.9.0"`) but must be
 //     a well-formed `X.Y.Z` — it is deliberately NOT required to equal the

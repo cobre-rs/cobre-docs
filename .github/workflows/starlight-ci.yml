@@ -138,6 +138,10 @@ jobs:
       - name: Check doc narration (change-narration ratchet, both zones)
         run: npm run check:narration
 
+      # E13 ticket-214 (GRD-08): every emitted ErrorKind/LoadError variant has an error-codes section; vendored copy, no cobre checkout (ADR-020).
+      - name: Check error coverage (error-codes vs vendored error kinds)
+        run: npm run check:error-coverage
+
       # GRD-04 (R87): every public cobre-python stub symbol has an anchor in reference/python-api; reads the vendored scripts/pystubs/ (refresh:pystubs), no cobre checkout.
       - name: Check python-api coverage (vendored stubs vs reference/python-api)
         run: npm run check:python-api

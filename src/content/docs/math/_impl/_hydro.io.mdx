@@ -1,24 +1,24 @@
 This is a topic-scoped index of the files hydro production touches and of the fields the methodology reads from them — it names each file and its role and maps fields to the quantities they feed; it does not repeat their field-by-field schemas. The
 exhaustive, field-by-field case-directory and output reference is owned by
-the Reference corpus ([Case Directory Format](/reference/case-directory-format/)
-and [Output Format](/reference/output-format/) pages).
+the Reference corpus ([Case Format](/reference/case-format/)
+and [Output Format](/reference/output/) pages).
 
 ### Inputs
 
 | File | Role |
 | ---- | ---- |
-| `system/hydros.json` | Hydro plant registry — core fields, reservoir, outflow, generation model, the required `unit_groups` bus partition, and the advanced blocks (see the Configure tab). |
+| `system/hydros.json` | Hydro plant registry — core fields, reservoir, outflow, generation model, the required `unit_groups` bus partition, and the advanced blocks (see the [System Elements Configure tab](/math/system-elements#implementation-in-cobre)). |
 | `system/hydro_production_models.json` | Optional per-hydro production-model selection (`stage_ranges` / `seasonal`), FPHA fitting configuration, and plane reduction. |
 | `system/hydro_geometry.parquet` | Volume-Height-Area (VHA) curves — required for any hydro using computed FPHA or `linearized_head`, and for the evaporation area-volume conversion; also read, for any plant with a specific productivity, by the useful-range mean evaluator (§5.3). |
 | `system/hydro_energy_productivity.parquet` | Per-`(hydro, stage)` overrides: equivalent productivity (both evaluators), specific productivity (both evaluators' head term and the `specific_productivity` tag), reference turbined flow (the `reference_turbine` tag only) — the tabular authoring source of the Configure tab's resolution order, and the FPHA override. |
 | `system/tailrace_curves.parquet` | Optional piecewise-quartic tailrace-level curves — `tailrace_level(outflow)` per `(hydro_id, family_id, segment_id)` — feeding computed-FPHA and energy-conversion fitting. A hydro with no curve uses its constant downstream reference level. |
 | `system/fpha_hyperplanes.parquet` | Pre-fitted FPHA hyperplane coefficients, read when a plant's `fpha_config.source` is `"precomputed"`. |
-| `constraints/hydro_unit_group_bounds.parquet` | Optional stage-varying, optionally per-block overrides of a unit group's four declared bounds (see the Configure tab). Rows are keyed by `(hydro_id, hydro_unit_group_id, stage_id, block_id?)`, where `hydro_unit_group_id` matches a group's own `id` in `hydros.json`; a group with no override row reads its declared value. |
-| `constraints/hydro_bounds.parquet` | Optional stage-varying (and optionally per-block) overrides of a hydro **plant's** own bounds (turbined, storage, outflow, generation, diversion, spillage, filling rate, withdrawal). Keyed by `(hydro_id, stage_id)` with an optional `block_id`; an absent/null cell falls back to the declared base value. **Distinct** from the per-unit-group `hydro_unit_group_bounds.parquet` above — a separate, plant-level file. |
+| `constraints/hydro_unit_group_bounds.parquet` | Optional stage-varying, optionally per-block overrides of a unit group's four declared bounds (see the [System Elements Configure tab](/math/system-elements#implementation-in-cobre)). Rows are keyed by `(hydro_id, hydro_unit_group_id, stage_id, block_id?)`, where `hydro_unit_group_id` matches a group's own `id` in `hydros.json`; a group with no override row reads its declared value. |
+| `constraints/hydro_bounds.parquet` | Optional stage-varying (and optionally per-block) overrides of a hydro **plant's** own bounds (turbined, storage, outflow, generation, diversion, spillage, filling rate, withdrawal). Keyed by `(hydro_id, stage_id)` with an optional `block_id`; an absent/null cell falls back to the declared base value. **Distinct** from the per-unit-group `hydro_unit_group_bounds.parquet` above — a separate, plant-level file (see the [System Elements Configure tab](/math/system-elements#implementation-in-cobre)). |
 | `initial_conditions.json` (hydro rows) | Per-hydro initial state: `storage` or `filling_storage` (exactly one), and optional `past_defluences` seeding the pre-study releases in transit on a declared travel-time arc. AR-lag seeding for the PAR inflow model derives from `scenarios/inflow_history.parquet` and `recent_observations` instead — see the [PAR chapter's Inputs & Outputs tab](/math/par-inflow-model#implementation-in-cobre). |
 
 For the complete field-by-field schema of each file above, see the
-[Case Directory Format](/reference/case-directory-format/) reference page in
+[Case Format](/reference/case-format/) reference page in
 the Reference corpus.
 
 ### Data requirements by quantity
@@ -54,5 +54,5 @@ Each row names a data source, the fields the methodology above reads from it, an
 | `simulation/transit_seed/` | Scenario-level rolling release-window seed for a declared travel-time arc — five columns (`scenario_id`, `hydro_id`, `start_date`, `end_date`, `value_m3s`), carrying no stage/node prefix. Written only when a travel-time arc is declared; absent otherwise. Feeds a continuing run's own `initial_conditions.past_defluences` (study chaining). |
 
 For the complete output schema (columns, types, file layout), see the
-[Output Format](/reference/output-format/) reference page in the Reference
+[Output Format](/reference/output/) reference page in the Reference
 corpus.

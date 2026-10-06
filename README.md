@@ -73,6 +73,7 @@ npm run check:voice   # hype / unpinned-number gate (two-voice methodology)
 npm run check:counts  # stated column/field counts match the adjacent table
 npm run check:version # cobre-version references vs the Synced-to anchor
 npm run check:narration # change narration, both zones (ratchet: scripts/doc-lint-allow.txt)
+npm run check:error-coverage # every emitted ErrorKind/LoadError variant has an error-codes section; unemitted ones are reserved
 npm run check:python-api # every public cobre-python stub symbol has an anchor in reference/python-api (stubs: scripts/pystubs/)
 npm run check:d2      # D2 uses the ELK engine, never TALA
 npm run check:spdx    # 100% FOSS dependency audit

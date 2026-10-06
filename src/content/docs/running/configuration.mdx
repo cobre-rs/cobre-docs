@@ -842,7 +842,7 @@ Controls policy persistence (checkpoint saving and warm-start loading).
 
 | Field                    | Type                                     | Default      | Description                                                                                                                                 |
 | ------------------------ | ---------------------------------------- | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------- |
-| `path`                   | string                                   | `"./policy"` | Policy directory, resolved against the run's output directory (`<case>/output` by default); training writes the checkpoint there and warm-start, resume and simulation-only read it. The checkpoint's files are listed under [Output Format — Policy Checkpoint](/reference/output-format/#policy-checkpoint). |
+| `path`                   | string                                   | `"./policy"` | Policy directory, resolved against the run's output directory (`<case>/output` by default); training writes the checkpoint there and warm-start, resume and simulation-only read it. The checkpoint's files are listed under [Output Format — Policy Checkpoint](/reference/output/policy/). |
 | `mode`                   | string                                   | `"fresh"`    | One of `"fresh"`, `"warm_start"`, `"resume"`. Initialization mode. `"fresh"` starts from scratch; `"warm_start"` loads cuts from a previous run; `"resume"` continues an interrupted run. |
 | `boundary`               | object \| null                           | `null`       | Terminal boundary cut configuration for coupling with an outer model's FCF. See below.                                                      |
 
@@ -1137,7 +1137,7 @@ Train with in-sample noise and simulate with out-of-sample inflow. The `training
 
 ## See Also
 
-- [Case Directory Format](/reference/case-directory-format/) — full schema for all input files
+- [Case Format](/reference/case-format/) — full schema for all input files
 - [Running Studies](/running/running-studies/) — end-to-end workflow guide
 - [Error Codes](/reference/error-codes/) — validation errors including `SchemaViolation` for config fields
 - [Multi-Resolution Studies](/math/multi-resolution-studies/) — how stage resolution affects PAR noise sharing (noise groups) and observation aggregation

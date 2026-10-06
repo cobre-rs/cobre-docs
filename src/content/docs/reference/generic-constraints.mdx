@@ -6,8 +6,8 @@ description: The generic-constraints authoring language -- file set, interval an
 Generic constraints are written in an **authoring language**: three input
 files, one output, and a grammar (named `@expressions`, inline relational
 right-hand sides, interval bounds). This page is the authority for that
-language. For the per-file column tables, see
-[Case Directory Format](/reference/case-directory-format/); for the LP
+language. For the per-file field tables, see
+[Constraint Files](/reference/case-format/constraints/); for the LP
 formulation these constraints desugar into, see
 [LP Formulation §10](/math/lp-formulation#10-generic-constraints).
 
@@ -15,9 +15,9 @@ formulation these constraints desugar into, see
 
 | File                                                | Role                                                                                                                                                                    |
 | ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `constraints/generic_constraints.json`               | Declares each constraint's `id`, `name`, `expression` (LHS, plus an optional inline relational operator), `description?`, and `slack` config; an optional top-level `expressions` array declares named linear expressions shared by every constraint. |
-| `constraints/generic_constraint_bounds.parquet`      | The **activation grid**: one row per `(constraint_id, stage_id[, block_id])` cell the constraint is active for, carrying the nullable `bound_lower`/`bound_upper` parquet base.                                                                        |
-| `constraints/generic_parameters.json`                | Declares named scalar parameters (top-level key `"scalar_parameters"`) referenced by `@name` from constraint expressions, inline bound endpoints, and other named expressions.                                          |
+| `constraints/generic_constraints.json`               | Declares the constraints, each a linear expression over the [variable catalog](#variable-catalog) with an optional inline bound and a slack setting, and the named expressions they share; field table: [Constraint Files](/reference/case-format/constraints/#constraintsgeneric_constraintsjson). |
+| `constraints/generic_constraint_bounds.parquet`      | The **activation grid**: one row per constraint, stage and optional block the constraint is active for, carrying the nullable lower and upper bound endpoints (the parquet base); field table: [Constraint Files](/reference/case-format/constraints/#constraintsgeneric_constraint_boundsparquet). |
+| `constraints/generic_parameters.json`                | Declares the named scalar parameters that constraint expressions, inline bound endpoints and other named expressions reference by `@name`; field table: [Constraint Files](/reference/case-format/constraints/#constraintsgeneric_parametersjson). |
 | `generic_constraints/resolved_echo.parquet` (output) | The fully-resolved, desugared form of every generic constraint the solver actually built — one row per `(constraint, stage, block, term)`. Written whenever the study has generic constraints; the directory is entirely absent otherwise.            |
 
 ---
@@ -111,7 +111,8 @@ if a row exists for it there.
   "declares a bound reference but has no activation rows in
   generic_constraint_bounds.parquet: the reference would apply to nothing."
   The parquet still decides *where* the constraint applies, even when it
-  supplies none of the bound *value*.
+  supplies none of the bound *value*. A constraint with no inline affine remainder
+  and no rows is not an error; it applies to nothing.
 - **A both-null row is legal only when a reference fills a side.** A row with
   `bound_lower = null` and `bound_upper = null` is accepted when the
   constraint's own `bound_lower_affine`/`bound_upper_affine` supplies at least
@@ -328,10 +329,13 @@ parse).
 | `contract_export(id[, block])`   | Yes       | No     |                                                                           |
 | `non_controllable_generation(id[, block])` | Yes | No   |                                                                           |
 | `non_controllable_curtailment(id[, block])` | Yes | No  |                                                                           |
-| `anticipated_decision(id)`       | **No** (rejected if given) | No | Stage-level scalar commitment column; no block index at all — use `anticipated_decision(N)` |
+| `anticipated_decision(id)`       | **No** (rejected if given) | No | Stage-level scalar commitment column of a thermal that declares [`anticipated_config`](/reference/case-format/system/#systemthermalsjson); no block index at all — use `anticipated_decision(N)` |
 
 Only `hydro_turbined` and `hydro_generation` accept `bus=`; any other
-variable rejects it as "does not accept a bus selector."
+variable rejects it as "does not accept a bus selector." A `(hydro, bus)` cell
+is the part of a plant on one bus: a plant has one cell per distinct bus among
+its [unit groups](/reference/case-format/hydros/#systemhydrosjson), and `bus=`
+must name one of those buses.
 
 A `hydro_withdrawal`, `non_controllable_generation` or
 `non_controllable_curtailment` term is accepted when the case loads but adds no
@@ -364,7 +368,7 @@ created, and the folded endpoints are visible in
 
 With `h` a hydro id and `K` the number of blocks the stage declares, the
 generic-constraint check rejects a `hydro_evaporation` reference that the
-stage's [`block_mode`](/reference/case-directory-format/#stagesjson) cannot
+stage's [`block_mode`](/reference/case-format/stages/#stagesjson) cannot
 expose:
 
 - On a parallel stage with two or more blocks, `hydro_evaporation(h)` and
@@ -473,8 +477,9 @@ resolve -> term
 
 Two authoring roles share **one namespace**: scalar parameters (declared in
 `constraints/generic_parameters.json`) and named expressions (declared in the
-constraints file's own top-level `expressions` array). Declaring the same name
-in both is rejected: "name ... is declared as both a scalar parameter and a
+constraints file's own optional top-level `expressions` array and shared by
+every constraint). Declaring the same name in both is rejected: "name ... is
+declared as both a scalar parameter and a
 named expression; the \"@name\" namespace is shared."
 
 **Disambiguation.** `@name` immediately followed by `* variable` is a
@@ -583,15 +588,16 @@ affine bound, never "no bound."
 
 ## `generic_parameters.json`: the five parameter kinds
 
-The file's top-level JSON key is `"scalar_parameters"` (an array).
+The file's top-level JSON key is `"scalar_parameters"` (an array). The [field table](/reference/case-format/constraints/#constraintsgeneric_parametersjson) lists
+the field each kind fills.
 
-| `kind`            | Payload field                                        | Value semantics                                                              |
-| ------------------ | ------------------------------------------------------ | ------------------------------------------------------------------------------ |
-| `constant`         | `"value": <f64>`                                       | One value for every stage                                                    |
-| `per_stage`        | `"values": [[stage_id, value], ...]`                   | Explicit value per stage; `stage_id`s must be a contiguous range from `0`     |
-| `seasonal`         | `"values": [[season_id, value], ...]`                  | One value per season; stages inherit their season's value; `season_id`s must be unique |
-| `computed`         | `"computed_spec": { "tag": "<variant>", "hydro_id": <int> }` | Derived from hydro geometry/operational data at LP-build time — one of ten hydro-derived tags (e.g. `equivalent_productivity`); see [Case Directory Format](/reference/case-directory-format/#constraintsgeneric_parametersjson) |
-| `per_stage_block`  | `"block_values": [[stage_id, block_id, value], ...]`   | Explicit value per `(stage_id, block_id)` pair; each pair unique              |
+| `kind`            | Value semantics                                                                                                                                                                                                               |
+| ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `constant`        | One value for every stage                                                                                                                                                                                                     |
+| `per_stage`       | Explicit value per stage; `stage_id`s must be a contiguous range from `0`                                                                                                                                                     |
+| `seasonal`        | One value per season; stages inherit their season's value; `season_id`s must be unique                                                                                                                                        |
+| `computed`        | Derived from hydro geometry/operational data at LP-build time — one of ten hydro-derived tags (e.g. `equivalent_productivity`); see [Constraint Files](/reference/case-format/constraints/#constraintsgeneric_parametersjson) |
+| `per_stage_block` | Explicit value per `(stage_id, block_id)` pair; each pair unique                                                                                                                                                              |
 
 The vendored [`generic_parameters.schema.json`](/schemas/generic_parameters.schema.json)
 lists four `kind` values and does not restrict the field; the loader accepts
@@ -653,21 +659,21 @@ invariant, so the same case always echoes the same rows in the same order. A
 term-less (constant-only) constraint contributes a single placeholder row
 whose per-term columns are all null.
 
-| Column             | Type    | Description                                                                          |
-| -------------------- | --------- | ---------------------------------------------------------------------------------------- |
-| `stage_id`           | INT32     | Study stage id                                                                          |
-| `block_id`           | INT32, nullable | Null on a collapsed stage-level row                                              |
-| `constraint_id`      | INT32     | Generic constraint id                                                                   |
-| `constraint_name`    | UTF8      | Generic constraint name                                                                 |
-| `term_index`         | INT32, nullable | Position in the resolved LHS; null on the term-less placeholder row              |
-| `variable_kind`      | UTF8, nullable | Variable name (e.g. `"thermal_generation"`); null on the placeholder |
-| `variable`           | UTF8, nullable | Rendered variable label (e.g. `"thermal_generation(id=3, block=all)"`); null on the placeholder            |
-| `coefficient`        | DOUBLE, nullable | Fully resolved numeric coefficient (`resolve(coefficient, stage, block) * scale`); null on the placeholder |
-| `bound_lower`        | DOUBLE, nullable | Lower interval endpoint after folding — including each useful-volume term's `coef × min_storage_hm3` shift; null when unbounded below                 |
-| `bound_upper`        | DOUBLE, nullable | Upper interval endpoint after folding — including each useful-volume term's `coef × min_storage_hm3` shift; null when unbounded above                 |
-| `derived_shape`      | UTF8      | The same `floor`/`cap`/`band`/`equality` label as above — never an authored sense       |
-| `slack_enabled`      | BOOLEAN   | Whether the constraint carries a slack term                                             |
-| `slack_penalty`      | DOUBLE, nullable | Slack penalty; null when slack is disabled                                       |
+| Name              | Type    | Nullable | Units | Description                                                                                                                           |
+| ----------------- | ------- | -------- | ----- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| `stage_id`        | Int32   | No       | —     | Study stage id                                                                                                                        |
+| `block_id`        | Int32   | Yes      | —     | Null on a collapsed stage-level row                                                                                                   |
+| `constraint_id`   | Int32   | No       | —     | Generic constraint id                                                                                                                 |
+| `constraint_name` | Utf8    | No       | —     | Generic constraint name                                                                                                               |
+| `term_index`      | Int32   | Yes      | —     | Position in the resolved LHS; null on the term-less placeholder row                                                                   |
+| `variable_kind`   | Utf8    | Yes      | —     | Variable name (e.g. `"thermal_generation"`); null on the placeholder                                                                  |
+| `variable`        | Utf8    | Yes      | —     | Rendered variable label (e.g. `"thermal_generation(id=3, block=all)"`); null on the placeholder                                       |
+| `coefficient`     | Float64 | Yes      | —     | Fully resolved numeric coefficient (`resolve(coefficient, stage, block) * scale`); null on the placeholder                            |
+| `bound_lower`     | Float64 | Yes      | —     | Lower interval endpoint after folding — including each useful-volume term's `coef × min_storage_hm3` shift; null when unbounded below |
+| `bound_upper`     | Float64 | Yes      | —     | Upper interval endpoint after folding — including each useful-volume term's `coef × min_storage_hm3` shift; null when unbounded above |
+| `derived_shape`   | Utf8    | No       | —     | The same `floor`/`cap`/`band`/`equality` label as above — never an authored sense                                                     |
+| `slack_enabled`   | Boolean | No       | —     | Whether the constraint carries a slack term                                                                                           |
+| `slack_penalty`   | Float64 | Yes      | —     | Slack penalty; null when slack is disabled                                                                                            |
 
 The echo is the place to observe a folded bound: the input
 `constraints/generic_constraint_bounds.parquet` shows the pre-fold value. For
@@ -807,8 +813,8 @@ brackets, as in `error: [SchemaViolation] …`.
 
 - [LP Formulation §10](/math/lp-formulation#10-generic-constraints) — the math
   formulation these constraints desugar into.
-- [Case Directory Format](/reference/case-directory-format/#constraintsgeneric_constraintsjson) —
-  per-file field tables for the three input files.
+- [Constraint Files](/reference/case-format/constraints/#constraintsgeneric_constraintsjson) — field tables for
+  the three input files.
 - [Error Codes](/reference/error-codes/) — the exhaustive `LoadError`/`ErrorKind` catalog.
 - [JSON Schemas](/reference/json-schemas/) — vendored
   [`generic_constraints.schema.json`](/schemas/generic_constraints.schema.json) and

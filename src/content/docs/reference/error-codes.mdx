@@ -45,7 +45,7 @@ Cobre surfaces errors through four user-facing channels:
   ```
 
 - **`cobre.io.validate(...)` (Python)** — returns `{ valid, errors: [{ kind, message }], warnings: [{ kind, message, file, entity }] }`. `errors` holds at most one entry: none when `valid` is true, one on failure. Its `kind` is the same string as the CLI `phase`, and its `message` is the error's full text, which for a case-load failure starts `constraint violation: `. For the two failures where the CLI prints no JSON object, Python still returns an entry: `IoError` for a missing case directory and `BoundaryReconciliationError` for a `policy.boundary` checkpoint that cannot be read. Each warning's `kind` is the `ErrorKind` name.
-- **`cobre.errors` Python exception classes** — case loading raises `ValidationError` or `CaseIoError`; a policy-load refusal raises `PolicyIncompatibleError`, or `SolverError` for a boundary-load refusal other than a version mismatch (see [Policy-load errors](#policy-load-errors)). See [Python Quickstart — Error Handling](/getting-started/python-quickstart/#error-handling) for the full hierarchy.
+- **`cobre.errors` Python exception classes** — case loading raises `ValidationError` or `CaseIoError`; a policy-load refusal raises `PolicyIncompatibleError`, or `SolverError` for a boundary-load refusal other than a version mismatch (see [Policy-load errors](#policy-load-errors)). See [`cobre.errors`](/reference/python-api/#cobreerrors) for the full hierarchy and [Python Quickstart — Error Handling](/getting-started/python-quickstart/#error-handling) for catching these classes.
 
 Policy-load failures use different exit codes and exception classes; see [How a policy-load failure reaches you](#how-a-policy-load-failure-reaches-you). For the cause and fix of the failures a study commonly meets, see [Troubleshooting](/running/troubleshooting/).
 
@@ -287,7 +287,7 @@ Two buses that share an `id` in `system/buses.json`:
 
 **Resolution:** Correct the value in the indicated field. Field paths use
 dot-notation and zero-based array indices. Consult the
-[Case Directory Format](/reference/case-directory-format/) page for valid ranges and required fields.
+[Case Format](/reference/case-format/) page for valid ranges and required fields.
 For storage bounds, ensure `min <= max`. For opening counts, ensure `num_openings >= 1`.
 For `config.json`, `training.selection` (for example
 `{ "method": "sampled", "forward_passes": 192 }`) and `training.stopping_rules`
@@ -448,7 +448,7 @@ whatever other name the file carries it, is a schema failure naming the required
 
 **Resolution:** Rename the column to the name the file requires, keeping
 its data unchanged. The column tables of
-[Case Directory Format](/reference/case-directory-format/) list the required
+[Case Format](/reference/case-format/) list the required
 columns of every file.
 
 #### Scenario-source admission rules
@@ -560,7 +560,7 @@ horizon, shorten the lead, or declare, in `post_study_stages.json`, a post-study
 reaches. See
 [System Elements §4](/math/system-elements#anticipated-thermal-plants) for the
 anticipated-thermal model and
-[`system/thermals.json`](/reference/case-directory-format/#systemthermalsjson)
+[`system/thermals.json`](/reference/case-format/system/#systemthermalsjson)
 for the file's fields.
 
 #### Spillage-band inversion
@@ -590,7 +590,7 @@ file is checked on its own.
 **Resolution:** Correct the offending row so `min_spillage_m3s <=
 max_spillage_m3s`, and so `min_diversion_m3s`, `min_spillage_m3s`, and
 `max_spillage_m3s` are all non-negative. See
-[Case Directory Format](/reference/case-directory-format/) for
+[Case Format](/reference/case-format/) for
 `hydro_bounds.parquet`'s column reference.
 
 ---
@@ -707,7 +707,7 @@ has an empty `blocks` array. A reservoir whose `min_storage_hm3` exceeds
 ```
 
 **Resolution:** Correct the value named in the message. Consult
-the [Case Directory Format](/reference/case-directory-format/) page for documented constraints. For transitions,
+the [Case Format](/reference/case-format/) page for documented constraints. For transitions,
 make the outgoing probabilities from each stage sum to 1.0. For stages, declare at least one
 block in every study stage's `blocks` array.
 
@@ -950,7 +950,7 @@ constraint violation: [BusinessRuleViolation] initial_conditions.json (initial_c
 **Resolution:** Either set `anticipated_config` on thermal `<id>` in
 `system/thermals.json`, or remove/correct the `thermal_id` in the offending
 `past_anticipated_commitments` entry. See
-[System Elements §4](/math/system-elements#anticipated-thermal-plants) for anticipated-thermal configuration and [Case Directory Format](/reference/case-directory-format/)
+[System Elements §4](/math/system-elements#anticipated-thermal-plants) for anticipated-thermal configuration and [Case Format](/reference/case-format/)
 for `initial_conditions.json`'s schema.
 
 #### Missing commitment window on an anticipated thermal
@@ -977,7 +977,7 @@ stages and for a lead given in hours alike.
 **Resolution:** Add a window for the thermal to `past_anticipated_commitments` (a
 committed `0` MW is an explicit window), or remove the thermal's `anticipated_config`.
 See [Uncovered or over-covered `past_anticipated_commitments` window](#uncovered-or-over-covered-past_anticipated_commitments-window)
-for the coverage the windows must reach and [Case Directory Format](/reference/case-directory-format/)
+for the coverage the windows must reach and [Case Format](/reference/case-format/)
 for `initial_conditions.json`'s schema.
 
 #### Post-study boundary unanchored or malformed
@@ -1053,7 +1053,7 @@ plant's in-study-decided lead reaches. Tile every post-study stage that a
 covers, at coverage `1.0`, never covering a stage the study decides or one past the plant's reach,
 and keep a non-zero fixed commitment inside the plant's commissioning window.
 See [Post-Study Boundary](/math/post-study-boundary) for the boundary model and
-[Case Directory Format](/reference/case-directory-format/) for
+[Case Format](/reference/case-format/) for
 `post_study_stages.json`'s schema.
 
 #### Uncovered or over-covered `past_anticipated_commitments` window
@@ -1144,7 +1144,7 @@ declares, the check rejects four conditions:
 - A block index of `K` or more in an evaporation or storage reference, on any
   stage.
 - An evaporation reference to a block from 1 to `K - 1` on a
-  [parallel stage](/reference/case-directory-format/#stagesjson) with `K > 1`.
+  [parallel stage](/reference/case-format/stages/#stagesjson) with `K > 1`.
 - An evaporation reference with no block on a chronological stage with `K > 1`.
 - A storage reference to an interior block boundary, a boundary between two
   blocks, on a parallel stage with `K > 1`.
@@ -1183,7 +1183,7 @@ to `K - 1`. On a parallel stage, address evaporation with block 0 or with no
 block, and address a storage reference only at the stage's start or end: block 0
 or no block for an initial reference, the last block or no block for a final
 reference. To address per-block quantities, set `block_mode` to `"chronological"`
-on the stage in [`stages.json`](/reference/case-directory-format/#stagesjson); a
+on the stage in [`stages.json`](/reference/case-format/stages/#stagesjson); a
 chronological stage requires a named block for evaporation, as in
 `hydro_evaporation(<hydro>, 0)`.
 
@@ -1233,9 +1233,9 @@ that feed it, and `{arcs}` lists those arcs as comma-separated
 
 **Resolution:** Give every arc into that downstream plant the same
 `travel_time_hours` in
-[`system/hydros.json`](/reference/case-directory-format/#systemhydrosjson), or
+[`system/hydros.json`](/reference/case-format/hydros/#systemhydrosjson), or
 set `block_mode` to `"parallel"` on every study stage in
-[`stages.json`](/reference/case-directory-format/#stagesjson).
+[`stages.json`](/reference/case-format/stages/#stagesjson).
 
 ---
 
@@ -1419,7 +1419,7 @@ I/O error reading {path}: {source}
 
 **Resolution:** Verify the file exists in the case directory. Check that the
 process has read permissions for the directory and file. For a full case load, the
-case root must contain all required files (see [Case Directory Format](/reference/case-directory-format/)).
+case root must contain all required files (see [Case Format](/reference/case-format/)).
 A problem collected during a case load prints as a report line; see [Validation report kinds](#validation-report-kinds).
 
 ---

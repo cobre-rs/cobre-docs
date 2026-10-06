@@ -17,6 +17,67 @@ writing parsers, building dashboards, or implementing compatibility checks.
 
 ---
 
+## Files by page
+
+The table lists each file `cobre run` can write, in the order of the directory
+tree below, with the page that documents it.
+
+| File                                                                                                                     | Page                                                     |
+| ------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------- |
+| [`training/metadata.json`](/reference/output/metadata/#trainingmetadatajson)                                             | [Metadata Files](/reference/output/metadata/)            |
+| [`training/convergence.parquet`](/reference/output/training/#trainingconvergenceparquet)                                 | [Training Output](/reference/output/training/)           |
+| [`training/dictionaries/`](/reference/output/training/#trainingdictionaries)                                             | [Training Output](/reference/output/training/)           |
+| [`training/dictionaries/codes.json`](/reference/output/training/#codesjson)                                              | [Training Output](/reference/output/training/)           |
+| [`training/dictionaries/entities.csv`](/reference/output/training/#entitiescsv)                                          | [Training Output](/reference/output/training/)           |
+| [`training/dictionaries/variables.csv`](/reference/output/training/#variablescsv)                                        | [Training Output](/reference/output/training/)           |
+| [`training/dictionaries/bounds.parquet`](/reference/output/training/#boundsparquet)                                      | [Training Output](/reference/output/training/)           |
+| [`training/timing/iterations.parquet`](/reference/output/training/#trainingtimingiterationsparquet)                      | [Training Output](/reference/output/training/)           |
+| [`training/solver/iterations.parquet`](/reference/output/training/#trainingsolveriterationsparquet)                      | [Training Output](/reference/output/training/)           |
+| [`training/solver/retry_histogram.parquet`](/reference/output/training/#trainingsolverretry_histogramparquet)            | [Training Output](/reference/output/training/)           |
+| [`training/scaling_report.json`](/reference/output/training/#trainingscaling_reportjson)                                 | [Training Output](/reference/output/training/)           |
+| [`training/hydro_models.json`](/reference/output/hydro-models/#traininghydro_modelsjson)                                 | [Hydro Model Artifacts](/reference/output/hydro-models/) |
+| [`training/model_provenance.json`](/reference/output/metadata/#trainingmodel_provenancejson)                             | [Metadata Files](/reference/output/metadata/)            |
+| [`training/cut_selection/iterations.parquet`](/reference/output/training/#trainingcut_selectioniterationsparquet)        | [Training Output](/reference/output/training/)           |
+| [`training/_SUCCESS`](#success-markers)                                                                                  | [Output Format](#success-markers)                        |
+| [`policy/manifest.bin`](/reference/output/policy/#policymanifestbin)                                                     | [Policy Checkpoint](/reference/output/policy/)           |
+| [`policy/cuts/NNN.bin`](/reference/output/policy/#policycutsnnnbin)                                                      | [Policy Checkpoint](/reference/output/policy/)           |
+| [`policy/basis/NNN.bin`](/reference/output/policy/#policybasisnnnbin)                                                    | [Policy Checkpoint](/reference/output/policy/)           |
+| [`policy/states/NNN.bin`](/reference/output/policy/#policystatesnnnbin)                                                  | [Policy Checkpoint](/reference/output/policy/)           |
+| [`simulation/metadata.json`](/reference/output/metadata/#simulationmetadatajson)                                         | [Metadata Files](/reference/output/metadata/)            |
+| [`simulation/paths.parquet`](/reference/output/simulation/#simulationpathsparquet)                                       | [Simulation Output](/reference/output/simulation/)       |
+| [`simulation/scenario_summary.parquet`](/reference/output/simulation/#simulationscenario_summaryparquet)                 | [Simulation Output](/reference/output/simulation/)       |
+| [`simulation/costs/`](/reference/output/simulation/#simulationcosts)                                                     | [Simulation Output](/reference/output/simulation/)       |
+| [`simulation/hydros/`](/reference/output/simulation/#simulationhydros)                                                   | [Simulation Output](/reference/output/simulation/)       |
+| [`simulation/hydro_bus_generation/`](/reference/output/simulation/#simulationhydro_bus_generation)                       | [Simulation Output](/reference/output/simulation/)       |
+| [`simulation/thermals/`](/reference/output/simulation/#simulationthermals)                                               | [Simulation Output](/reference/output/simulation/)       |
+| [`simulation/exchanges/`](/reference/output/simulation/#simulationexchanges)                                             | [Simulation Output](/reference/output/simulation/)       |
+| [`simulation/buses/`](/reference/output/simulation/#simulationbuses)                                                     | [Simulation Output](/reference/output/simulation/)       |
+| [`simulation/pumping_stations/`](/reference/output/simulation/#simulationpumping_stations)                               | [Simulation Output](/reference/output/simulation/)       |
+| [`simulation/contracts/`](/reference/output/simulation/#simulationcontracts)                                             | [Simulation Output](/reference/output/simulation/)       |
+| [`simulation/non_controllables/`](/reference/output/simulation/#simulationnon_controllables)                             | [Simulation Output](/reference/output/simulation/)       |
+| [`simulation/inflow_lags/`](/reference/output/simulation/#simulationinflow_lags)                                         | [Simulation Output](/reference/output/simulation/)       |
+| [`simulation/in_transit/`](/reference/output/simulation/#simulationin_transit)                                           | [Simulation Output](/reference/output/simulation/)       |
+| [`simulation/transit_seed/`](/reference/output/simulation/#simulationtransit_seed)                                       | [Simulation Output](/reference/output/simulation/)       |
+| [`simulation/anticipated_lanes/`](/reference/output/simulation/#simulationanticipated_lanes)                             | [Simulation Output](/reference/output/simulation/)       |
+| [`simulation/violations/generic/`](/reference/output/simulation/#simulationviolationsgeneric)                            | [Simulation Output](/reference/output/simulation/)       |
+| [`simulation/solver/iterations.parquet`](/reference/output/simulation/#simulationsolveriterationsparquet)                | [Simulation Output](/reference/output/simulation/)       |
+| [`simulation/solver/retry_histogram.parquet`](/reference/output/simulation/#simulationsolverretry_histogramparquet)      | [Simulation Output](/reference/output/simulation/)       |
+| [`simulation/_SUCCESS`](#success-markers)                                                                                | [Output Format](#success-markers)                        |
+| [`anticipated/fixed_deliveries.parquet`](/reference/output/simulation/#anticipatedfixed_deliveriesparquet)               | [Simulation Output](/reference/output/simulation/)       |
+| [`generic_constraints/resolved_echo.parquet`](/reference/output/simulation/#generic_constraintsresolved_echoparquet)     | [Simulation Output](/reference/output/simulation/)       |
+| [`hydro_models/fpha_hyperplanes.parquet`](/reference/output/hydro-models/#hydro_modelsfpha_hyperplanesparquet)           | [Hydro Model Artifacts](/reference/output/hydro-models/) |
+| [`hydro_models/evaporation_models.parquet`](/reference/output/hydro-models/#hydro_modelsevaporation_modelsparquet)       | [Hydro Model Artifacts](/reference/output/hydro-models/) |
+| [`hydro_models/fpha_deviation_points.parquet`](/reference/output/hydro-models/#hydro_modelsfpha_deviation_pointsparquet) | [Hydro Model Artifacts](/reference/output/hydro-models/) |
+| [`stochastic/inflow_seasonal_stats.parquet`](/reference/output/stochastic/#exported-files)                               | [Stochastic Artifacts](/reference/output/stochastic/)    |
+| [`stochastic/inflow_ar_coefficients.parquet`](/reference/output/stochastic/#exported-files)                              | [Stochastic Artifacts](/reference/output/stochastic/)    |
+| [`stochastic/inflow_annual_component.parquet`](/reference/output/stochastic/#stochasticinflow_annual_componentparquet)   | [Stochastic Artifacts](/reference/output/stochastic/)    |
+| [`stochastic/correlation.json`](/reference/output/stochastic/#exported-files)                                            | [Stochastic Artifacts](/reference/output/stochastic/)    |
+| [`stochastic/fitting_report.json`](/reference/output/stochastic/#stochasticfitting_reportjson)                           | [Stochastic Artifacts](/reference/output/stochastic/)    |
+| [`stochastic/noise_openings.parquet`](/reference/output/stochastic/#stochasticnoise_openingsparquet)                     | [Stochastic Artifacts](/reference/output/stochastic/)    |
+| [`stochastic/load_seasonal_stats.parquet`](/reference/output/stochastic/#exported-files)                                 | [Stochastic Artifacts](/reference/output/stochastic/)    |
+
+---
+
 ## Output Directory Tree
 
 A complete `cobre run` produces the following directory structure. Not every
@@ -188,7 +249,7 @@ are stored in a directory named `scenario_id=NNNN/` containing a single
 `data.parquet` file. `scenario_id` is **both** the Hive partition directory
 **and** an explicit non-null `Int32` column inside every entity Parquet file
 (the leading column of the shared `(scenario_id, stage_id, node_id)` axis —
-see [Node Axis and Policy-Graph Outputs](/reference/output-format/#node-axis-and-policy-graph-outputs)).
+see [Node Axis and Policy-Graph Outputs](/reference/output/simulation/#node-axis-and-policy-graph-outputs)).
 A three-way join across entity files, or a join against
 `simulation/paths.parquet` / `simulation/scenario_summary.parquet`, is
 therefore a join on ordinary columns rather than a directory-name parse.
@@ -197,6 +258,10 @@ All major columnar data tools understand this layout and can read an entire
 `simulation/<entity>/` directory as a single table, either inferring
 `scenario_id` from the partition directory names or reading it directly from
 the in-file column — both agree by construction.
+Reading recipes for Polars and pandas are in
+[Convergence & Diagnostics → Reading a whole table](/running/interpreting-results/#reading-a-whole-table);
+the R and DuckDB scenario filters are in
+[Filtering to a single scenario](/running/interpreting-results/#filtering-to-a-single-scenario).
 
 Scenario IDs are zero-based integers. The number of `scenario_id=NNNN/`
 partitions written is `scenarios.completed` in `simulation/metadata.json`;

@@ -48,7 +48,12 @@ Column rules:
   - `Conditional`: the schema does not require the field, and the Description states the load-time condition. A field
     that only some `oneOf` or `anyOf` variants require is `Conditional`. `check:input-schemas` treats `Conditional` as
     not required.
-- **Default.** A backticked JSON or Parquet literal, or the em dash `—` (U+2014).
+- **Default.** The em dash `—` (U+2014) or a backticked literal. A JSON field takes the literal of the `default` key on
+  its property in the vendored schema (`null` when that key is `null`), and `—` when the property has no `default` key,
+  including an optional field that reads as `null` when absent. A Parquet column, which has no vendored schema, takes the
+  backticked default the loader applies to an absent or null cell, and `—` when the loader applies none. A default the
+  loader applies but the schema omits (`hydro.inflow_nonnegativity_cost`) is stated in the Description, not the Default
+  cell.
 - **Units.** A plain unit (`MW`, `USD/MWh`, `USD/(m³/s·h)`, `hm³`, `m³/s`, `h`) or `—` (U+2014). Currency is written
   `USD`, never a bare dollar sign, which remark-math can pair into inline math across a table row.
 - **Description.** An enumerated field has Type `string` and a Description that opens `One of` followed by each value as

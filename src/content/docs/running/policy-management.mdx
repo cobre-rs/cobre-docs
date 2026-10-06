@@ -156,7 +156,7 @@ MPI every rank loads that checkpoint, so the output directory is visible at the
 same path on every node.
 
 **Multi-rank (MPI) jobs** slice with `iteration_limit` only. Size each slice from
-the [`time_total_ms`](/reference/output-format/#trainingconvergenceparquet) trend
+the [`time_total_ms`](/reference/output/training/#trainingconvergenceparquet) trend
 in the previous slice's `training/convergence.parquet`, which holds only the
 iterations of the slice that wrote it. Per-iteration time grows as cuts
 accumulate, so leave a margin. The stopping-rule set holds no `time_limit`
@@ -267,7 +267,7 @@ any cut, basis, or state payload is parsed (step 1 of the
 `manifest.bin` records the study graph, the number of stages, the producing
 cobre version, and the producer provenance (completed iterations, lower- and
 upper-bound values, forward passes per iteration, and the RNG seed) — see
-[Output Format](/reference/output-format/#policymanifestbin) for the full
+[Output Format](/reference/output/policy/#policymanifestbin) for the full
 field-by-field table. Whether a checkpoint loads into the current study is
 decided by the [Policy Load Contract](#policy-load-contract).
 
@@ -398,7 +398,7 @@ representation at rest:
   study's internal scaled space.
 
 Each `cuts/<pool>.bin` (see the field table in
-[Output Format](/reference/output-format/#policymanifestbin)) carries its **own**
+[Output Format](/reference/output/policy/#policymanifestbin)) carries its **own**
 `cost_scale_factor` provenance field recording the writing study's factor — the
 checkpoint is self-describing per pool. Every load path — warm-start, resume,
 simulation-only, and boundary-cut injection — **requires** each resolved pool to
@@ -579,7 +579,7 @@ source is rejected when its `season_manifest`:
   `boundary policy at {path}: hydro {id} PAR order mismatch at season {season} (study has order {n}, source has order {n})`.
 
 The `season_manifest` field shape is documented in
-[Output Format](/reference/output-format/#policymanifestbin).
+[Output Format](/reference/output/policy/#policymanifestbin).
 
 **Subset rejects.** If the source prices _less_ than this study needs, the load
 is rejected regardless of `strict`:
@@ -1009,4 +1009,4 @@ cobre.write_policy_checkpoint("output/policy", stage_cuts, metadata)
 - **Theory:** [Cut Management](/math/cut-management/) — the cut pool that a policy checkpoint persists across runs.
 - [Configuration](/running/configuration/) — every `config.json` field documented
 - [Running Studies](/running/running-studies/) — common workflows including training-only and simulation-only runs
-- [Output Format](/reference/output-format/) — detailed description of every output file
+- [Output Format](/reference/output/) — detailed description of every output file

@@ -1,152 +1,11 @@
-Cobre's `system/hydros.json` and `system/hydro_production_models.json` files
-author the entities and production-model selection the methodology above
-describes. This tab is the field-level configuration reference; the equations
-these fields feed are in the sections above.
+Cobre's `system/hydro_production_models.json` file authors the production-model
+selection the methodology above describes, and the `generation` block of
+`system/hydros.json` supplies each plant's default model and its turbine and
+generation bounds. The equations these fields feed are in the sections above.
+The rest of the plant registry is on
+[System Elements — Configure](/math/system-elements#implementation-in-cobre).
 
-### `system/hydros.json` — Hydro Plant Registry
-
-Hydro plants are defined in `system/hydros.json`. The top-level object has a
-single key `"hydros"` containing an array of plant objects:
-
-```json
-{
-  "hydros": [
-    {
-      "id": 1,
-      "name": "UHE Tucuruí",
-      "downstream_id": null,
-      "operational_start_date": "1984-11-22",
-      "entry_stage_id": null,
-      "exit_stage_id": null,
-      "reservoir": {
-        "min_storage_hm3": 50.0,
-        "max_storage_hm3": 45000.0
-      },
-      "outflow": {
-        "min_outflow_m3s": 1000.0,
-        "max_outflow_m3s": 100000.0
-      },
-      "generation": {
-        "model": "constant_productivity",
-        "min_turbined_m3s": 500.0,
-        "max_turbined_m3s": 22500.0,
-        "min_generation_mw": 0.0,
-        "max_generation_mw": 8370.0
-      },
-      "unit_groups": [
-        {
-          "id": 0,
-          "name": "UG1",
-          "bus_id": 0,
-          "min_turbined_m3s": 500.0,
-          "max_turbined_m3s": 22500.0,
-          "min_generation_mw": 0.0,
-          "max_generation_mw": 8370.0
-        }
-      ],
-      "tailrace": {
-        "type": "polynomial",
-        "coefficients": [5.0, 0.001]
-      },
-      "hydraulic_losses": {
-        "type": "factor",
-        "value": 0.03
-      },
-      "efficiency": {
-        "type": "constant",
-        "value": 0.93
-      },
-      "evaporation": {
-        "coefficients_mm": [
-          80.0, 75.0, 70.0, 65.0, 60.0, 55.0, 60.0, 65.0, 70.0, 75.0, 80.0, 85.0
-        ]
-      },
-      "diversion": {
-        "downstream_id": 2,
-        "max_flow_m3s": 200.0
-      },
-      "filling": {
-        "start_stage_id": 48,
-        "filling_min_rate_m3s": 100.0
-      },
-      "penalties": {
-        "spillage_cost": 0.01,
-        "diversion_cost": 0.1,
-        "turbined_cost": 0.05,
-        "storage_violation_below_cost": 10000.0,
-        "filling_target_violation_cost": 6000.0,
-        "turbined_violation_below_cost": 500.0,
-        "outflow_violation_below_cost": 500.0,
-        "outflow_violation_above_cost": 500.0,
-        "generation_violation_below_cost": 1000.0,
-        "evaporation_violation_cost": 5000.0,
-        "water_withdrawal_violation_cost": 1000.0,
-        "inflow_nonnegativity_cost": 1000.0
-      }
-    }
-  ]
-}
-```
-
-Only `id`, `name`, `operational_start_date`, `reservoir`,
-`outflow`, `generation`, and `unit_groups` are required. All other top-level
-keys (`tailrace`, `hydraulic_losses`, `efficiency`, `evaporation`,
-`diversion`, `filling`, `penalties`) are optional and default to off when
-absent.
-
-#### Core Fields
-
-| Field            | Type            | Required | Description |
-| ---------------- | --------------- | -------- | ----------- |
-| `id`             | integer         | Yes      | Unique non-negative identifier. Must be unique across all hydro plants. Referenced by `initial_conditions.json` and by other plants via `downstream_id`. |
-| `name`           | string          | Yes      | Human-readable plant name. Used in output files, validation messages, and log output. |
-| `downstream_id`  | integer or null | No       | Identifier of the plant that receives this plant's outflow. Absent or `null` means the plant is at the bottom of its cascade — outflow leaves the system. |
-| `operational_start_date` | string (ISO-8601 date) | Yes | Calendar date (`YYYY-MM-DD`) the plant enters the registry's operational history. Provenance and the canonical `(operational_start_date, id)` ordering key (see [Notation Conventions](/overview/notation-conventions)) — independent of `entry_stage_id`/`exit_stage_id` below, which alone gate commissioning. |
-| `entry_stage_id` | integer or null | No       | Stage index at which the plant enters service (inclusive). `null` means the plant is available from stage 0. |
-| `exit_stage_id`  | integer or null | No       | Stage index at which the plant is decommissioned. The commissioning window is **half-open** `[entry_stage_id, exit_stage_id)`: the plant is active through `exit_stage_id - 1`, and outside the window it is not in service. For a hydro the out-of-service state is **PreFilling** — turbine, spillage, and diversion pinned to zero, storage frozen, and natural inflow routed past the site (see Implementation notes and [System Elements §5](/math/system-elements)) — rather than a bare column zero-pin. `null` means the plant is never decommissioned. |
-
-#### Reservoir
-
-Storage is tracked in **hm³** (cubic hectometres; 1 hm³ = 10⁶ m³).
-
-```json
-"reservoir": {
-  "min_storage_hm3": 0.0,
-  "max_storage_hm3": 1000.0
-}
-```
-
-| Field             | Type   | Description |
-| ----------------- | ------ | ----------- |
-| `min_storage_hm3` | number | Physical minimum storage (dead volume). Water below this level cannot reach the turbine intakes. For plants that can empty completely, use `0.0`. |
-| `max_storage_hm3` | number | Physical maximum storage. Must be greater than or equal to `min_storage_hm3` (equal is allowed — a fixed-storage plant). |
-
-This is the plant's physical, stage-invariant range: stored-energy outputs and the
-useful-range mean productivity ([Hydro Production Models §5.3](/math/hydro-production-models#53-useful-range-mean-productivity))
-read it, while `constraints/hydro_bounds.parquet` storage overrides (for example a
-flood-control ceiling) tighten only the per-stage operative bounds of the LP storage
-variable.
-
-#### Outflow Constraints
-
-Total outflow equals turbined flow plus spillage.
-
-```json
-"outflow": {
-  "min_outflow_m3s": 0.0,
-  "max_outflow_m3s": 50.0
-}
-```
-
-| Field             | Type           | Description |
-| ----------------- | -------------- | ----------- |
-| `min_outflow_m3s` | number         | Minimum total outflow required at all times [m³/s]. Set to the ecological flow requirement or minimum riparian right. Use `0.0` if there is no minimum requirement. |
-| `max_outflow_m3s` | number or null | Maximum total outflow [m³/s]. `null` means no upper bound on outflow. |
-
-When the solver cannot meet the minimum-outflow bound, a violation slack is
-added at the cost of `outflow_violation_below_cost` in the penalties block.
-
-#### Generation Models
+### `system/hydros.json` — `generation` block
 
 The `generation` block configures the turbine model for dispatch purposes and
 provides the default production function used when no
@@ -175,277 +34,18 @@ production function.
 
 **Available production function models**:
 
-| Model                 | `model` value             | Phase availability                    | Description |
-| --------------------- | ------------------------- | -------------------------------------- | ----------- |
-| Constant productivity | `"constant_productivity"` | Training + simulation                  | `power = productivity * turbined_flow`. Independent of reservoir head. Productivity is supplied per stage range or season in `system/hydro_production_models.json`. |
-| FPHA                  | `"fpha"`                  | Training + simulation                  | Piecewise-linear envelope of the nonlinear production function. Head-dependent. Configured via `hydro_production_models.json` — see below. |
-| Linearized head       | `"linearized_head"`       | Both phases                            | Reserved model name; the current engine resolves it to the same constant-productivity source as `constant_productivity` (see methodology §3). Requires the plant's productivity input. |
+| Model                 | `model` value             | Description |
+| --------------------- | ------------------------- | ----------- |
+| Constant productivity | `"constant_productivity"` | `power = productivity * turbined_flow`. Independent of reservoir head. Productivity is supplied per stage range or season in `system/hydro_production_models.json`. |
+| FPHA                  | `"fpha"`                  | Piecewise-linear envelope of the nonlinear production function. Head-dependent. Configured via `hydro_production_models.json` — see below. |
+| Linearized head       | `"linearized_head"`       | Reserved model name; it resolves to the same constant-productivity source as `constant_productivity` (see methodology §3). Requires the plant's productivity input. |
+
+Every model applies in training and in simulation.
 
 For most initial studies, `constant_productivity` is the natural choice. The
 productivity coefficient encodes the plant's average efficiency and net head:
 for a plant with 80 m net head and 90% efficiency, the theoretical
 productivity is approximately `9.81 × 80 × 0.90 / 1000 ≈ 0.706` MW/(m³/s).
-
-#### Unit Groups (`unit_groups`)
-
-A plant's generation envelope is split into one or more turbine groups, each
-on its own bus. `unit_groups` is required — every hydro declares at least one
-group; an absent, `null`, or empty array is rejected at load. There is no
-top-level `hydro.bus_id`: a plant's bus association lives exclusively on its
-groups' `bus_id`.
-
-```json
-"unit_groups": [
-  {
-    "id": 0,
-    "name": "UG1",
-    "bus_id": 0,
-    "min_turbined_m3s": 500.0,
-    "max_turbined_m3s": 22500.0,
-    "min_generation_mw": 0.0,
-    "max_generation_mw": 8370.0
-  }
-]
-```
-
-| Field               | Type    | Description |
-| ------------------- | ------- | ----------- |
-| `id`                | integer | Group identifier, unique within the owning plant (not globally). |
-| `name`              | string  | Human-readable group name. |
-| `bus_id`            | integer | Bus to which this group's generation is injected. Must match an `id` in `buses.json`. |
-| `min_turbined_m3s`  | number  | Minimum turbined flow for this group [m³/s]. |
-| `max_turbined_m3s`  | number  | Maximum turbined flow for this group [m³/s]. |
-| `min_generation_mw` | number  | Minimum electrical generation for this group [MW]. |
-| `max_generation_mw` | number  | Maximum electrical generation for this group [MW]. |
-
-**Bus-partitioned dispatch.** A plant is partitioned into one **cell** per
-distinct `bus_id` among its groups: the LP carries one turbine column and one
-FPHA-generation column per cell, and each cell injects its generation at that
-cell's bus. A plant whose groups all share one bus collapses to a single
-cell — the same LP shape as a plant with no groups declared beyond the
-required one.
-
-Each group's own turbine bounds must be internally consistent
-(`min_turbined_m3s <= max_turbined_m3s`, and likewise for generation), and
-group `id`s are unique within the plant. Across the whole plant, the sum of
-every group's `max_turbined_m3s` (and, separately, `max_generation_mw`)
-cannot exceed the plant's own declared maximum from the `generation` block
-above — a plant's own value is the envelope, so groups cannot raise it — and
-the sum of every group's minima must be able to reach the plant's own
-declared minimum.
-
-Stage-varying, optionally per-block overrides of a group's four bounds are
-supplied by `constraints/hydro_unit_group_bounds.parquet` — see the Inputs &
-Outputs tab.
-
-#### Cascade Topology (`downstream_id`)
-
-The `downstream_id` field creates a directed chain of hydro plants: water
-released from an upstream plant (turbined or spilled) enters the downstream
-plant's reservoir in the same stage. To model a three-plant cascade where
-plant 0 flows into plant 1, which flows into plant 2:
-
-```json
-{ "id": 0, "downstream_id": 1, ... }
-{ "id": 1, "downstream_id": 2, ... }
-{ "id": 2, "downstream_id": null, ... }
-```
-
-The downstream graph is validated to be **acyclic** — no chain of
-`downstream_id` references may return to a plant already in the chain. Plants
-with `downstream_id: null` are tailwater plants; each connected component of
-the cascade graph must have exactly one tailwater plant.
-
-#### Water Travel Time (`travel_time_hours`)
-
-The optional `travel_time_hours` field declares how long a release takes to
-travel down the **main cascade arc** to `downstream_id`.
-
-```json
-{ "id": 0, "downstream_id": 1, "travel_time_hours": 48.0 }
-```
-
-| Field               | Type           | Required | Description                                                                                                                                                                                                                                                                     |
-| ------------------- | -------------- | -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `travel_time_hours` | number or null | No       | Travel time on the main cascade arc, in hours. When present, strictly positive, and the plant has a `downstream_id`, the part of each release that the travel time carries past the end of the release stage reaches the downstream reservoir in later stages; the rest arrives within the stage (see [Cascade Travel Time](/math/system-elements#cascade-travel-time)). Absent, `null`, or `0.0` means an instantaneous transfer. |
-
-When an arc is declared, Cobre carries the water in transit as additional
-Bellman state (see [State Augmentation §6](/math/state-augmentation#6-water-travel-time) and
-[System Elements §5](/math/system-elements)). Travel time applies to the main
-cascade arc only — diversion and pumping transfers are always instantaneous.
-Declaring an arc requires seeding the pre-study releases already in transit via
-`initial_conditions.past_defluences`, and the downstream plant must have
-entered service by the first study stage — see Implementation notes.
-
-#### Advanced Fields
-
-These fields enable more detailed physical modeling and are all optional.
-
-**Tailrace model** — the `tailrace` block models downstream water level as a
-function of total outflow; when absent, tailrace elevation is zero. Two
-entity-level variants are supported:
-
-```json
-"tailrace": { "type": "polynomial", "coefficients": [5.0, 0.001] }
-```
-
-`coefficients` is an ascending-power polynomial: `coefficients[0]` is the
-height at zero outflow (m), `coefficients[1]` the coefficient for `Q¹`, and so
-on.
-
-```json
-"tailrace": {
-  "type": "piecewise",
-  "points": [
-    { "outflow_m3s": 0.0, "height_m": 3.0 },
-    { "outflow_m3s": 5000.0, "height_m": 4.5 }
-  ]
-}
-```
-
-Points must be sorted in ascending `outflow_m3s` order; the solver
-interpolates linearly between them. A third, file-level source — the optional
-per-plant piecewise-quartic tailrace curves with backwater families (methodology
-§2.3.1) — overrides the entity-level model for any plant that has rows in
-that file.
-
-**Hydraulic losses** — the `hydraulic_losses` block models head loss in the
-penstock; absent means lossless.
-
-```json
-"hydraulic_losses": { "type": "factor", "value": 0.03 }
-```
-
-`value` is a dimensionless fraction (e.g. `0.03` = 3% of the gross head, the
-forebay level minus the tailrace level) for `"factor"`, or a fixed metres
-value (`value_m`) for `"constant"`.
-
-**Efficiency model** — the `efficiency` block scales hydraulic power to
-electrical power; absent means 100% efficiency. Only `"constant"` is
-supported:
-
-```json
-"efficiency": { "type": "constant", "value": 0.93 }
-```
-
-**Evaporation** — the `evaporation` block models net water flux at the
-reservoir surface; absent means no evaporation. Coefficients are **signed**:
-positive values are net evaporative loss, negative values are net rainfall
-input.
-
-```json
-"evaporation": {
-  "coefficients_mm": [
-    80.0, 75.0, 70.0, 65.0, 60.0, 55.0,
-    60.0, 65.0, 70.0, 75.0, 80.0, 85.0
-  ],
-  "reference_volumes_hm3": [
-    15000, 12000, 10000, 8000, 6000, 5000,
-    5500, 7000, 9000, 11000, 13000, 14500
-  ]
-}
-```
-
-| Field                   | Type  | Required | Description |
-| ----------------------- | ----- | -------- | ----------- |
-| `coefficients_mm`       | array | Yes      | Exactly 12 values, one per calendar month (index 0 = January). mm/month; may be negative. |
-| `reference_volumes_hm3` | array | No       | Exactly 12 linearization reference volumes [hm³], one per month, within `[min_storage_hm3, max_storage_hm3]`. Absent defaults to the storage range midpoint. |
-
-A hydro that declares `coefficients_mm` but has no usable area-volume curve to
-convert it into a flux — see Implementation notes for exactly what "no usable
-curve" means and what Cobre does about it.
-
-**Diversion channel** — the `diversion` block models a diversion that routes
-flow directly to a downstream plant's reservoir, bypassing turbines and
-spillways; absent means no diversion.
-
-```json
-"diversion": { "downstream_id": 2, "max_flow_m3s": 200.0 }
-```
-
-**Filling configuration** — the `filling` block enables a commissioning fill
-period, during which the reservoir accumulates water toward `min_storage_hm3`
-before the plant can generate.
-
-```json
-"filling": {
-  "start_stage_id": 48,
-  "filling_min_rate_m3s": 100.0
-}
-```
-
-| Field                  | Required | Description |
-| ---------------------- | -------- | ----------- |
-| `start_stage_id`       | Yes      | Stage index at which filling begins (inclusive); filling runs through the stage before `entry_stage_id`. |
-| `filling_min_rate_m3s` | No       | Per-stage minimum accumulation rate [m³/s], defaulting to `0.0` when omitted: anchors a per-stage minimum end-of-stage storage target that ramps to `min_storage_hm3` by the last filling stage. It is **not** an applied inflow and **not** a cap — natural inflow and upstream cascade releases still flow through the ordinary water balance; there is no retention or impound mechanism that diverts inflow into storage. |
-
-The target trajectory and its soft-floor penalty are covered in
-[Penalty System §6](/math/penalty-system#dead-volume-filling-specifics); the
-load-time filling-sufficiency check is listed in that page's
-[Configure tab](/math/penalty-system#implementation-in-cobre).
-
-**Penalties** — the `penalties` block overrides the global defaults from
-`penalties.json` for one plant; when absent, the plant uses the global
-values.
-
-```json
-"penalties": {
-  "spillage_cost": 0.01,
-  "diversion_cost": 0.1,
-  "turbined_cost": 0.05,
-  "storage_violation_below_cost": 10000.0,
-  "filling_target_violation_cost": 6000.0,
-  "turbined_violation_below_cost": 500.0,
-  "outflow_violation_below_cost": 500.0,
-  "outflow_violation_above_cost": 500.0,
-  "generation_violation_below_cost": 1000.0,
-  "evaporation_violation_cost": 5000.0,
-  "water_withdrawal_violation_cost": 1000.0,
-  "inflow_nonnegativity_cost": 1000.0
-}
-```
-
-When present, every field is optional and independently falls back to the
-global default from `penalties.json`; the block accepts exactly these twelve
-keys and rejects any unknown field. The directional evaporation and withdrawal
-costs have no key in this block; a plant with this block takes them from its
-resolved symmetric costs ([Penalty System — Directional evaporation and
-withdrawal costs](/math/penalty-system#directional-evaporation-and-withdrawal-costs)).
-For the full field list, units, and the priority ordering across penalty
-categories, see [Penalty System](/math/penalty-system).
-
-**Three-tier resolution cascade** — penalty values are resolved from the most
-specific to the most general source:
-
-1. **Stage-level override** (stage-specific penalty files, when present)
-2. **Entity-level override** (the `penalties` block inside the plant's JSON object)
-3. **Global default** (the `hydro` section of `penalties.json`, which must always be present and complete)
-
-#### Stage-varying operational bounds (`constraints/hydro_bounds.parquet`)
-
-Beyond the entity-level diversion and spillage fields above,
-`constraints/hydro_bounds.parquet` carries optional, sparse stage-varying
-bound overrides for a hydro plant, optionally narrowed to one block via an
-optional `block_id` column (`null` applies at the stage level). Three of its
-columns are new:
-
-- `min_diversion_m3s` — a minimum diversion-flow floor (m³/s). This is a
-  **floor that requires a declared `diversion` channel** on the hydro (see
-  Diversion channel, above): with no channel declared, the diversion column
-  is pinned `[0, 0]`, so a positive floor is infeasible and is rejected at
-  load.
-- `min_spillage_m3s`, `max_spillage_m3s` — the spillage band (m³/s);
-  `min_spillage_m3s` must be `<= max_spillage_m3s`.
-
-All three are non-negative — a negative value is rejected at load, as is a
-spillage band with `min_spillage_m3s > max_spillage_m3s`. An absent row
-leaves that hydro's diversion floor and spillage band unset for the
-stage/block it would have covered (no floor; spillage bounded only by the
-plant's other outflow constraints). See
-[Case Directory Format → `constraints/hydro_bounds.parquet`](/reference/case-directory-format)
-for the complete column table, including the pre-existing turbined/storage/
-outflow/generation/diversion-maximum/filling/withdrawal override columns this
-file also carries.
 
 ### `system/hydro_production_models.json` — Production Model Selection
 
@@ -541,7 +141,7 @@ options are ignored. The parquet schema:
 | `plane_id`        | Int32   | Yes      | Plane index within this hydro |
 | `gamma_0`         | Float64 | Yes      | Intercept coefficient (MW) |
 | `gamma_v`         | Float64 | Yes      | Volume coefficient (MW/hm³). Must be non-negative (`>= 0`); run-of-river plants have `gamma_v = 0`. |
-| `gamma_q`         | Float64 | Yes      | Turbined flow coefficient (MW per m³/s) |
+| `gamma_q`         | Float64 | Yes      | Turbined flow coefficient (MW per m³/s). Must be positive (`> 0`). |
 | `gamma_s`         | Float64 | Yes      | Spillage coefficient (MW per m³/s). Must be `<= 0`. |
 | `kappa`           | Float64 | No       | Intercept-only correction factor, defaulting to `1.0`; validated in `(0, 1]`. Applies only to precomputed planes — the computed path does not use `kappa` (see Implementation notes). |
 | `valid_v_min_hm3` | Float64 | No       | Minimum volume where this plane is valid (hm³) |
@@ -586,18 +186,11 @@ All fields except `source` are optional:
 
 | Field                            | Default | Description |
 | -------------------------------- | ------- | ----------- |
-| `volume_discretization_points`   | 5       | Number of volume grid points for fitting. `1` selects the single-volume fit of a run-of-river plant; otherwise it must be `>= 2`. Run-of-river plants (`γ_V` snapped to 0) bypass volume discretization — the fit collapses to a single volume point and emits one `hydro_geometry.parquet` row. |
+| `volume_discretization_points`   | 5       | Number of volume grid points for fitting. `1` selects the single-volume fit of a run-of-river plant; otherwise it must be `>= 2`. With a single fitting volume the fitter synthesizes two nearby volume samples and snaps `gamma_v` to exactly `0` (see Implementation notes). |
 | `turbine_discretization_points`  | 5       | Number of turbined-flow grid points. Must be `>= 2`. |
 | `spillage_discretization_points` | 5       | Validated (must be `>= 2`) but does **not** add a spillage axis to the fitting grid — the cloud and the $k_{FPHA}$ regression fix spillage at `0`, and the lateral-flow secant sweeps its own sample range independently (§2.7). The field is retained for input round-tripping. |
-| `max_planes_per_hydro`           | 10      | Accepted and validated (`>= 1`) but does not currently trim the plane set — the hull fitter emits exactly the upper-envelope facets. |
+| `max_planes_per_hydro`           | 10      | Accepted and validated (`>= 1`) but does not trim the plane set — the hull fitter emits exactly the upper-envelope facets. |
 | `fitting_window`                 | null    | Optional volume range for fitting; absent uses the full forebay range of the plant's `system/hydro_geometry.parquet` volume-height curve. |
-
-:::note[Round-trip-only]
-`spillage_discretization_points` is accepted and validated, but the current Cobre
-FPHA fit is a convex hull of the (volume, turbined) cloud at zero spillage — it
-has no spillage axis. The value is retained for input round-tripping and does not
-change the fitted production planes. These pages follow the binary.
-:::
 
 `fitting_window` restricts which portion of the operating range builds the
 grid — useful when the plant rarely operates near one extreme:
@@ -693,7 +286,8 @@ In `system/hydro_energy_productivity.parquet`,
 `equivalent_productivity_mw_per_m3s` and
 `specific_productivity_mw_per_m3s_per_m` must each be finite and non-negative
 when set: `0` is accepted and a negative value is rejected at load. A `0`
-equivalent productivity on a non-FPHA hydro marks a planned-outage stage, as
+equivalent productivity at a stage that does not use the `"fpha"` model marks a
+planned-outage stage, as
 `0.0` does in the JSON field below. A `0` specific productivity zeroes the head-derived equivalent productivity and does not stop generation.
 
 ```json
@@ -713,17 +307,6 @@ equivalent productivity on a non-FPHA hydro marks a planned-outage stage, as
 
 | Rule                            | Error Class          | Description |
 | -------------------------------- | --------------------- | ----------- |
-| Bus reference integrity          | Reference error       | Every `unit_groups[].bus_id` must match an `id` in `buses.json`. |
-| Downstream reference integrity   | Reference error       | Every non-null `downstream_id` must match an `id` in `hydros.json`. |
-| Unit group bound ordering         | Physical feasibility   | Each group's own `min_turbined_m3s` must be `<= max_turbined_m3s`, and `min_generation_mw` must be `<= max_generation_mw`. |
-| Unit group envelope               | Physical feasibility   | The sum of every group's `max_turbined_m3s` (and, separately, `max_generation_mw`) must not exceed the plant's own declared maximum; the sum of every group's minima must be able to reach the plant's own declared minimum. |
-| Cascade acyclicity                | Topology error         | The directed graph of `downstream_id` links must be acyclic. |
-| Storage bounds ordering           | Physical feasibility   | `min_storage_hm3` must be less than or equal to `max_storage_hm3` (equal is allowed — a fixed-storage plant). |
-| Outflow bounds ordering           | Physical feasibility   | When `max_outflow_m3s` is present, it must be `>= min_outflow_m3s`. |
-| Turbine bounds ordering           | Physical feasibility   | `min_turbined_m3s` must be `<= max_turbined_m3s`. |
-| Generation bounds consistency     | Physical feasibility   | `min_generation_mw` must be `<= max_generation_mw`. |
-| Initial conditions completeness   | Reference error        | Every hydro plant must have exactly one entry in `initial_conditions.json` (`storage` or `filling_storage`, not both). |
-| Evaporation array length          | Schema error           | `coefficients_mm` must have exactly 12 values; `reference_volumes_hm3`, when present, must also have exactly 12 values within `[min_storage_hm3, max_storage_hm3]`. |
 | FPHA geometry coverage            | Dimensional error      | Every `fpha` plant must have at least 1 row in `system/hydro_geometry.parquet` (a single row is valid for run-of-river plants); every `linearized_head` plant needs at least 2 rows. |
 | FPHA plane coverage               | Dimensional error      | Every `(hydro_id, stage_id)` group in `system/fpha_hyperplanes.parquet` must have at least 1 plane. |
 | FPHA coefficient signs            | Semantic error         | `gamma_v` must be non-negative (`>= 0`; run-of-river plants have `gamma_v = 0`); `gamma_s` must be non-positive. |

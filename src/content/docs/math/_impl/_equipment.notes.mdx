@@ -3,20 +3,12 @@ equipment — what Cobre does at runtime, beyond the equations above. This tab
 references the methodology body for the derivations rather than restating
 them.
 
-### Commissioning window: half-open, exit exclusive
+### Commissioning window: output rows outside the window
 
-Every equipment type in this chapter — thermal plants, transmission lines,
-import/export contracts, pumping stations, and non-controllable sources —
-shares one commissioning-window predicate: an entity is active at stage `t`
-when `entry_stage_id <= t < exit_stage_id`. The entry stage is **inclusive**;
-the exit stage is **exclusive** — the entity is gone starting at
-`exit_stage_id` itself, not decommissioned at the stage after it. Outside its
-window, the entity's LP columns are pinned to `[0, 0]`: a dormant contract
-still emits an output row (`power_mw = 0`, a defined dormant
-`operative_state_code`), it is simply zeroed rather than absent. This
-resolves any "inclusive exit" wording found elsewhere describing the same
-fields — the shipped commissioning predicate treats the exit stage as
-exclusive.
+Outside its commissioning window
+([Shared Commissioning Window](#shared-commissioning-window)) an entity still
+emits its output rows, zeroed rather than absent, with the same
+`operative_state_code` as in service.
 
 ### Contracts are stateless
 
@@ -69,7 +61,7 @@ is carried forward, so training continues normally instead of surfacing a
 spurious infeasible LP. This is the single read-back canonicalization seam the
 methodology states once — see
 [SDDP algorithm §3.1](/math/sddp-algorithm#31-forward-pass) and
-[Determinism Guarantees §3](/math/determinism-guarantees#3-methodology-mechanisms).
+[Determinism & Provenance §3](/math/determinism-guarantees#3-methodology-mechanisms).
 
 A commitment **genuinely** beyond the plant's generation bounds is not a solver
 artifact and is not absorbed by that clamp. It is caught **at case load**, when

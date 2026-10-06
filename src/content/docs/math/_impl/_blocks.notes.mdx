@@ -44,7 +44,7 @@ the stored basis.
 
 The checkpoint manifest records the block mode a policy was trained under in its
 producer block
-([`policy/manifest.bin`](/reference/output-format/#policymanifestbin)):
+([`policy/manifest.bin`](/reference/output/policy/#policymanifestbin)):
 `training_block_mode` holds `"parallel"` or `"chronological"` when every stage
 agrees and `"mixed"` otherwise, and `training_block_mode_per_stage` lists each
 stage's mode, in study-stage order, for a mixed study only. Both fields are

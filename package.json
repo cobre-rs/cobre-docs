@@ -20,9 +20,11 @@
     "check:counts": "node scripts/check-doc-counts.mjs",
     "check:version": "node scripts/check-doc-version.mjs",
     "check:narration": "node scripts/check-doc-narration.mjs",
+    "check:error-coverage": "node scripts/check-error-coverage.mjs",
     "check:python-api": "node scripts/check-python-api.mjs",
     "gen:notices": "node scripts/gen-notices.mjs",
     "refresh:schemas": "node scripts/refresh-schemas.mjs",
+    "refresh:error-kinds": "node scripts/refresh-error-kinds.mjs",
     "refresh:pystubs": "node scripts/refresh-pystubs.mjs",
     "refresh:recordings": "node scripts/refresh-recordings.mjs",
     "test": "node --test src/figures/*.test.ts scripts/*.test.mjs"

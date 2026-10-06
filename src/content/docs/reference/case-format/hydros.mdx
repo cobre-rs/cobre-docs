@@ -9,7 +9,7 @@ This page documents `system/hydros.json`, the hydro plant registry. The files th
 
 ## `system/hydros.json`
 
-**Methodology:** [System Elements](/math/system-elements/) · [Hydro Production Function Models](/math/hydro-production-models/) · [Penalty System](/math/penalty-system/)
+**Methodology:** [System Element Modeling Overview](/math/system-elements/) · [Hydro Production Function Models](/math/hydro-production-models/) · [Penalty System](/math/penalty-system/)
 
 Hydro plant registry. Each entry defines a complete hydro plant with reservoir,
 turbine, and optional cascade linkage.
@@ -95,9 +95,9 @@ groups all declare the same `bus_id` has a single cell.
 
 Stage-varying, optionally per-block overrides on a group's four declared
 bounds are supplied via
-[`constraints/hydro_unit_group_bounds.parquet`](/reference/case-directory-format/#constraintshydro_unit_group_boundsparquet).
+[`constraints/hydro_unit_group_bounds.parquet`](/reference/case-format/constraints/#constraintshydro_unit_group_boundsparquet).
 Per-cell simulation output is
-[`simulation/hydro_bus_generation/`](/reference/output-format/#simulationhydro_bus_generation);
+[`simulation/hydro_bus_generation/`](/reference/output/simulation/#simulationhydro_bus_generation);
 `simulation/hydros/` reports each plant's total.
 
 All fields within `hydros[].penalties` are optional. When a field is absent the

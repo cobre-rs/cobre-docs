@@ -1,0 +1,486 @@
+---
+title: Scenario Files
+description: The input files in scenarios/ — the inflow history and PAR(p) model inputs, the external scenario libraries, the load and non-controllable-source statistics and factors, the noise correlation, and the user-supplied opening tree.
+---
+
+The `scenarios/` directory holds the stochastic inputs of a case: the inflow history and the inputs of the PAR(p) inflow model, the external scenario libraries, the load and non-controllable-source statistics and factors, the noise correlation, and the user-supplied noise openings. The sections follow the directory tree, and each opens with a link to the methodology page that uses the file. The Parquet column types, the compression rule and the `$schema` key are described under [Conventions](/reference/case-format/#conventions).
+
+---
+
+## `scenarios/inflow_history.parquet`
+
+**Methodology:** [PAR(p) Inflow Model](/math/par-inflow-model/)
+
+Historical inflow observation windows per hydro. Every row is a window, not a
+point-in-time reading: `[start_date, end_date)` bounds the period and
+`value_m3s` is the mean inflow observed over it.
+
+| Name         | Type    | Required | Default | Units | Description                               |
+| ------------ | ------- | -------- | ------- | ----- | ----------------------------------------- |
+| `hydro_id`   | Int32   | Yes      | —       | —     | Hydro plant ID                            |
+| `start_date` | Date32  | Yes      | —       | —     | Window start, inclusive                   |
+| `end_date`   | Date32  | Yes      | —       | —     | Window end, exclusive; after `start_date` |
+| `value_m3s`  | Float64 | Yes      | —       | m³/s  | Mean inflow over the window (m³/s)        |
+
+Rows may appear in any order. For a given `hydro_id`, windows must not overlap;
+adjacent windows (`start_date == previous end_date`)
+are accepted. A `hydro_id` that names no declared hydro is an `InvalidReference`
+error. `value_m3s` must be finite; a negative value is accepted — the
+quantity is incremental inflow (a plant's natural flow minus its upstream
+plants'), so a negative window is real hydrology, and the LP prices it through
+the [inflow non-negativity](/math/inflow-nonnegativity) slack. Semantic validation reports one warning per
+file naming the negative count and the most-negative value's hydro.
+
+The history serves four roles:
+
+- **Estimation.** The raw observations from which Cobre estimates whichever of
+  `inflow_seasonal_stats` and `inflow_ar_coefficients` is absent.
+- **Derived inflow-lag seed.** The default-seeding record from which Cobre derives the
+  PAR lag chain and the mid-period accumulator, layered under the `recent_observations`
+  conditioning of `initial_conditions.json` wherever the two cover the same date
+  (see [`initial_conditions.json`](/reference/case-format/initial-conditions/#initial_conditionsjson)).
+- **Replay windows.** The windows of the `historical` scheme (see
+  [Historical Window Pool](/math/scenario-generation/#historical-window-pool)).
+- **Historical-residual openings.** The windows of the `historical_residuals` method (see
+  [Historical-Residual Openings](/math/scenario-generation/#25-historical-residual-openings)).
+
+---
+
+## `scenarios/inflow_seasonal_stats.parquet`
+
+**Methodology:** [PAR(p) Inflow Model](/math/par-inflow-model/)
+
+PAR(p) model seasonal statistics for each (hydro plant, stage) pair. When the
+file has any row, it needs a row for every hydro in service at each study stage.
+Under the `external` inflow scheme, a hydro of autoregressive order 0 (no annual
+component) takes the mean and standard deviation of the external scenario file,
+so its rows here are not used to sample; a hydro of autoregressive order above 0
+or with an annual component keeps the statistics this file declares (or the ones
+estimated from `inflow_history.parquet` when the file is absent).
+`load_seasonal_stats.parquet` and `non_controllable_stats.parquet` are optional for a
+class sampled under `external`; a present `load_seasonal_stats.parquet` keeps its own
+rule of a row for every bus at every study stage.
+
+| Name       | Type    | Required | Default | Units | Description                                                 |
+| ---------- | ------- | -------- | ------- | ----- | ----------------------------------------------------------- |
+| `hydro_id` | Int32   | Yes      | —       | —     | Hydro plant ID                                              |
+| `stage_id` | Int32   | Yes      | —       | —     | Stage ID                                                    |
+| `mean_m3s` | Float64 | Yes      | —       | m³/s  | Seasonal mean inflow (m³/s); must be finite                 |
+| `std_m3s`  | Float64 | Yes      | —       | m³/s  | Seasonal standard deviation (m³/s); must be >= 0 and finite |
+
+---
+
+## `scenarios/inflow_ar_coefficients.parquet`
+
+**Methodology:** [PAR(p) Inflow Model](/math/par-inflow-model/)
+
+Autoregressive coefficients for the PAR(p) inflow model. The model's
+innovation scale is not an input: Cobre derives it at load from the
+coefficients below via the periodic-ACF closure — see
+[PAR(p) Inflow Model](/math/par-inflow-model).
+
+| Name          | Type    | Required | Default | Units | Description                                 |
+| ------------- | ------- | -------- | ------- | ----- | ------------------------------------------- |
+| `hydro_id`    | Int32   | Yes      | —       | —     | Hydro plant ID                              |
+| `stage_id`    | Int32   | Yes      | —       | —     | Stage ID                                    |
+| `lag`         | Int32   | Yes      | —       | —     | Lag index (1-based)                         |
+| `coefficient` | Float64 | Yes      | —       | —     | AR coefficient for this (hydro, stage, lag) |
+
+Columns beyond this schema are ignored — a file carrying an extra column (for
+example a stored innovation-scale ratio produced by another tool) loads with
+that column ignored outright; the derived value always wins.
+
+---
+
+## `scenarios/inflow_annual_component.parquet`
+
+**Methodology:** [PAR(p) Inflow Model](/math/par-inflow-model/)
+
+PAR(p)-A annual component of each (hydro, stage) pair: the annual coefficient, and the mean and standard deviation of
+the rolling 12-month average inflow.
+[PAR(p) Inflow Model — Implementation in Cobre](/math/par-inflow-model#implementation-in-cobre) states when the file
+is honoured and when estimation overwrites it.
+
+| Name                 | Type    | Required | Default | Units | Description                                                                                        |
+| -------------------- | ------- | -------- | ------- | ----- | -------------------------------------------------------------------------------------------------- |
+| `hydro_id`           | Int32   | Yes      | —       | —     | Hydro plant id; names a declared hydro.                                                            |
+| `stage_id`           | Int32   | Yes      | —       | —     | Stage id of the matching `inflow_seasonal_stats.parquet` row.                                      |
+| `annual_coefficient` | Float64 | Yes      | —       | —     | Annual-component coefficient, dimensionless; finite. Negative, zero and positive values are valid. |
+| `annual_mean_m3s`    | Float64 | Yes      | —       | m³/s  | Mean of the rolling 12-month average inflow at the stage; finite.                                  |
+| `annual_std_m3s`     | Float64 | Yes      | —       | m³/s  | Standard deviation of the rolling 12-month average inflow at the stage; finite and `> 0`.          |
+
+**Validation rules.** Each rule names the error kind that `cobre validate` reports.
+
+- **Row checks.** Every column is present with its type, no value is null, `annual_coefficient` and
+  `annual_mean_m3s` are finite, and `annual_std_m3s` is finite and `> 0`. Kind: `SchemaViolation`.
+- **Declared hydro.** A `hydro_id` that names no declared hydro is an `InvalidReference` error.
+- **Pairing with the statistics.** When the case supplies `scenarios/inflow_seasonal_stats.parquet`, each
+  (`hydro_id`, `stage_id`) pair appears once here and has a row there; a repeated pair, or a pair with no statistics
+  row, is a `SchemaError`. Without a statistics file neither check runs.
+- **Season.** With a statistics file supplied, every stage that has a row in this file needs a season, from a `season_id` on the
+  stage or from `season_definitions` in [`stages.json`](/reference/case-format/stages/#stagesjson); otherwise the case is refused with a
+  `ConstraintError`.
+- **Monthly cycle.** PAR(p)-A is monthly-only: when `stages.json` declares `season_definitions`, a `cycle_type` of
+  `weekly` or `custom` together with any row here is a `BusinessRuleViolation`.
+
+---
+
+## `scenarios/external_inflow_scenarios.parquet`
+
+**Methodology:** [Scenario Generation](/math/scenario-generation/)
+
+Pre-computed inflow realizations, read when the inflow `scheme` is `"external"` in `training.scenario_source` or
+`simulation.scenario_source` (see [`config.json`](/reference/case-format/#configjson)). Realizations are numbered per stage by
+`scenario_id`; how the passes draw from them is described in
+[Scenario Generation §4](/math/scenario-generation/#4-external-scenario-integration), and which classes take
+their mean and standard deviation from the file is stated under
+[`scenarios/inflow_seasonal_stats.parquet`](#scenariosinflow_seasonal_statsparquet).
+
+| Name          | Type    | Required | Default | Units | Description                                                                  |
+| ------------- | ------- | -------- | ------- | ----- | ---------------------------------------------------------------------------- |
+| `stage_id`    | Int32   | Yes      | —       | —     | Declared study-stage id from `stages.json` (not a 0-based position); `>= 0`. |
+| `scenario_id` | Int32   | Yes      | —       | —     | 0-based realization index at that stage; `>= 0`.                             |
+| `hydro_id`    | Int32   | Yes      | —       | —     | Hydro plant id; names a declared hydro.                                      |
+| `value_m3s`   | Float64 | Yes      | —       | m³/s  | Inflow value of the realization at the stage; finite.                        |
+
+**Validation rules.** Each rule names the error kind that `cobre validate` and `cobre run` print.
+
+- **Row checks.** Each file is read whenever it is present, whatever the class's scheme. `stage_id >= 0`,
+  `scenario_id >= 0`, a finite value, and no repeated (`stage_id`, `scenario_id`, entity) row; a missing column or a
+  column of the wrong type fails the same way. Kind: `SchemaViolation`.
+- **Entity references.** An entity id that names no declared hydro, bus or NCS (the entity column of each of the three
+  files) is an `InvalidReference` error.
+- **Scheme with no data.** A class whose scheme resolves to `external` (in training, or in simulation when
+  `simulation.scenario_source` is declared) while its file is absent or holds no rows is a `BusinessRuleViolation`
+  on `config.json`.
+- **Library coherence.** The following rules read the classes that `training.scenario_source` samples under
+  `external`; a class that is `external` only in `simulation.scenario_source` is not checked by them.
+  - **Unresolved stage.** Every `stage_id` must be a declared study-stage id; otherwise `InvalidValue`.
+  - **Scenario ids.** At each stage every entity that has rows carries exactly the ids `0` to `n − 1`, once each, where
+    `n` is the number of distinct `scenario_id` values at that stage; a 1-based numbering or a gap is a
+    `BusinessRuleViolation`.
+  - **One realization axis.** Every such class declares the same `n` at each stage; otherwise
+    `BusinessRuleViolation`.
+  - **Constant inflow column (inflow only).** A hydro whose values at a stage are all equal (σ = 0) is a
+    `BusinessRuleViolation` when the hydro has a row in `scenarios/inflow_ar_coefficients.parquet` or
+    `scenarios/inflow_annual_component.parquet`; see
+    [Deterministic external inflow column under an autoregressive model](/reference/error-codes/#deterministic-external-inflow-column-under-an-autoregressive-model).
+  - **Prefix coherence.** Under a declared `policy_graph.nodes[]` graph (see [`stages.json`](/reference/case-format/stages/#stagesjson)), the two
+    columns that a transition's nodes point to must agree at every stage up to the source node's stage; otherwise a
+    `ModelQuality` warning.
+- **Entity coverage.** A class whose scheme resolves to `external` (in training, or in simulation when
+  `simulation.scenario_source` is declared) needs at least one row for every entity its noise vector places (see the entity
+  ordering under [`scenarios/noise_openings.parquet`](#scenariosnoise_openingsparquet)): every declared hydro, every
+  bus with a row in `scenarios/load_seasonal_stats.parquet`, and every NCS with a row in
+  `scenarios/non_controllable_stats.parquet`. `cobre run` refuses a class with a missing entity when it sets the study
+  up, with an `insufficient data` error that names the class and the entity, and exits `4`. A class that is `external`
+  only in `simulation.scenario_source` is refused with a `library width mismatch` error (exit `1`) when its file adds
+  an entity that the training noise vector does not place: a bus whose `std_mw` is `0`, or an NCS without a
+  `non_controllable_stats.parquet` row. `cobre validate` reports either refusal only for a case with
+  `policy.boundary` configured, with the message prefixed `policy.boundary: ` (phase `BoundaryReconciliationError`
+  under `--json`).
+
+---
+
+## `scenarios/external_load_scenarios.parquet`
+
+**Methodology:** [Scenario Generation](/math/scenario-generation/)
+
+Pre-computed load realizations, read when the load `scheme` is `"external"` in `training.scenario_source` or
+`simulation.scenario_source` (see [`config.json`](/reference/case-format/#configjson)). Realizations are numbered per stage by
+`scenario_id`; how the passes draw from them is described in
+[Scenario Generation §4](/math/scenario-generation/#4-external-scenario-integration), and which classes take
+their mean and standard deviation from the file is stated under
+[`scenarios/inflow_seasonal_stats.parquet`](#scenariosinflow_seasonal_statsparquet).
+
+| Name          | Type    | Required | Default | Units | Description                                                                  |
+| ------------- | ------- | -------- | ------- | ----- | ---------------------------------------------------------------------------- |
+| `stage_id`    | Int32   | Yes      | —       | —     | Declared study-stage id from `stages.json` (not a 0-based position); `>= 0`. |
+| `scenario_id` | Int32   | Yes      | —       | —     | 0-based realization index at that stage; `>= 0`.                             |
+| `bus_id`      | Int32   | Yes      | —       | —     | Bus id; names a declared bus.                                                |
+| `value_mw`    | Float64 | Yes      | —       | MW    | Load value of the realization at the stage; finite.                          |
+
+These rules apply as listed under
+[`scenarios/external_inflow_scenarios.parquet`](#scenariosexternal_inflow_scenariosparquet); the constant-column rule
+is inflow-only.
+
+---
+
+## `scenarios/external_ncs_scenarios.parquet`
+
+**Methodology:** [Scenario Generation](/math/scenario-generation/)
+
+Pre-computed non-controllable-source availability realizations, read when the NCS `scheme` is `"external"` in
+`training.scenario_source` or `simulation.scenario_source` (see [`config.json`](/reference/case-format/#configjson)). Realizations are
+numbered per stage by `scenario_id`; how the passes draw from them is described in
+[Scenario Generation §4](/math/scenario-generation/#4-external-scenario-integration), and which classes take
+their mean and standard deviation from the file is stated under
+[`scenarios/inflow_seasonal_stats.parquet`](#scenariosinflow_seasonal_statsparquet).
+
+| Name                  | Type    | Required | Default | Units | Description                                                                  |
+| --------------------- | ------- | -------- | ------- | ----- | ---------------------------------------------------------------------------- |
+| `stage_id`            | Int32   | Yes      | —       | —     | Declared study-stage id from `stages.json` (not a 0-based position); `>= 0`. |
+| `scenario_id`         | Int32   | Yes      | —       | —     | 0-based realization index at that stage; `>= 0`.                             |
+| `ncs_id`              | Int32   | Yes      | —       | —     | Non-controllable source id; names a declared NCS.                            |
+| `availability_factor` | Float64 | Yes      | —       | —     | Availability factor of the realization at the stage, dimensionless; finite.  |
+
+These rules apply as listed under
+[`scenarios/external_inflow_scenarios.parquet`](#scenariosexternal_inflow_scenariosparquet); the constant-column rule
+is inflow-only.
+
+---
+
+## `scenarios/load_seasonal_stats.parquet`
+
+**Methodology:** [Scenario Generation](/math/scenario-generation/)
+
+Seasonal load statistics of each (bus, stage) pair. `mean_mw` is the bus's mean load at the stage; the load of each
+block is the stage value times the block factor of [`scenarios/load_factors.json`](#scenariosload_factorsjson). When
+the file has any row, it needs a row for every bus at every study stage. Without the file every bus carries zero load,
+unless the load scheme is `external` in training. A bus whose `std_mw` is above `0` carries load noise
+([Scenario Generation §5.1](/math/scenario-generation/#51-load-uncertainty-model)). Under the `external` load scheme the
+file is optional and the mean and standard deviation come from the external file (see
+[`scenarios/inflow_seasonal_stats.parquet`](#scenariosinflow_seasonal_statsparquet)).
+
+| Name       | Type    | Required | Default | Units | Description                                                                                  |
+| ---------- | ------- | -------- | ------- | ----- | -------------------------------------------------------------------------------------------- |
+| `bus_id`   | Int32   | Yes      | —       | —     | Bus id; names a declared bus.                                                                |
+| `stage_id` | Int32   | Yes      | —       | —     | Declared study-stage id from `stages.json` (not a 0-based position).                         |
+| `mean_mw`  | Float64 | Yes      | —       | MW    | Mean load of the bus at the stage; finite.                                                   |
+| `std_mw`   | Float64 | Yes      | —       | MW    | Standard deviation of the load at the stage; finite and `>= 0`. `0` is a deterministic load. |
+
+**Validation rules.** Each rule names the error kind that `cobre validate` reports.
+
+- **Row checks.** Every column is present with its type, `mean_mw` is finite, and `std_mw` is finite and `>= 0`.
+  Kind: `SchemaViolation`.
+- **Coverage.** When the file has any row, every bus has a row at every study stage; each missing pair is a
+  `DimensionMismatch` error, `Bus <id> missing load seasonal stats for stage <id>`.
+- **Declared bus.** A `bus_id` that names no declared bus is an `InvalidReference` error.
+
+---
+
+## `scenarios/load_factors.json`
+
+**Methodology:** [Scenario Generation](/math/scenario-generation/)
+
+Per-bus, per-stage, per-block load scaling factors. When present, each factor
+multiplies the stochastic load demand realization at the specified bus for the
+specified block. This allows you to model time-of-day or seasonal patterns in
+load shape without changing the underlying statistical model.
+
+When this file is absent, all load factors default to 1.0. When a
+`(bus_id, stage_id)` pair is absent from the file, its factors also default
+to 1.0 for every block.
+
+**JSON structure:**
+
+```json
+{
+  "load_factors": [
+    {
+      "bus_id": 0,
+      "stage_id": 0,
+      "block_factors": [
+        { "block_id": 0, "factor": 0.8 },
+        { "block_id": 1, "factor": 1.2 }
+      ]
+    }
+  ]
+}
+```
+
+**Fields per entry:**
+
+| Name                           | Type    | Required | Default | Units | Description                                                        |
+| ------------------------------ | ------- | -------- | ------- | ----- | ------------------------------------------------------------------ |
+| `load_factors[].bus_id`        | integer | Yes      | —       | —     | Bus entity ID. Must refer to a bus defined in `system/buses.json`. |
+| `load_factors[].stage_id`      | integer | Yes      | —       | —     | Declared study-stage `id` from `stages.json`.                      |
+| `load_factors[].block_factors` | array   | Yes      | —       | —     | Array of `{ block_id, factor }` pairs for each load block.         |
+
+**`block_factors` entry fields:**
+
+| Name                                      | Type    | Required | Default | Units | Description                                                                                            |
+| ----------------------------------------- | ------- | -------- | ------- | ----- | ------------------------------------------------------------------------------------------------------ |
+| `load_factors[].block_factors[].block_id` | integer | Yes      | —       | —     | Must be a valid block for stage. Zero-based block index within the stage.                              |
+| `load_factors[].block_factors[].factor`   | number  | Yes      | —       | —     | Must be > 0, finite. Multiplier applied to the stochastic load realization (MW) at this bus and block. |
+
+**Effect:** `load_rhs = mean_mw * stochastic_noise_factor * block_factor`.
+A factor of 1.0 leaves the load unchanged. Values less than 1.0 reduce load;
+values greater than 1.0 increase it.
+
+---
+
+## `scenarios/non_controllable_factors.json`
+
+**Methodology:** [Scenario Generation](/math/scenario-generation/) · [Equipment-Specific Formulations](/math/equipment-formulations/)
+
+Per-NCS, per-stage, per-block scaling factors for non-controllable source (NCS)
+available generation. When present, each factor multiplies the source's available
+generation for the specified block: the bound from `constraints/ncs_bounds.parquet` (`max_generation_mw`
+where no row applies) for a source with no stochastic availability model, and `max_generation_mw` times the
+availability ratio for a source with rows in
+[`scenarios/non_controllable_stats.parquet`](#scenariosnon_controllable_statsparquet).
+This allows modeling of intra-stage availability patterns such as diurnal solar
+irradiance profiles or wind speed variations across load blocks.
+
+When this file is absent, all NCS block factors default to 1.0. When a
+`(ncs_id, stage_id)` pair is absent from the file, its factors default to 1.0
+for every block.
+
+**JSON structure:**
+
+```json
+{
+  "non_controllable_factors": [
+    {
+      "ncs_id": 0,
+      "stage_id": 0,
+      "block_factors": [
+        { "block_id": 0, "factor": 0.3 },
+        { "block_id": 1, "factor": 0.8 }
+      ]
+    }
+  ]
+}
+```
+
+**Fields per entry:**
+
+| Name                                       | Type    | Required | Default | Units | Description                                                                      |
+| ------------------------------------------ | ------- | -------- | ------- | ----- | -------------------------------------------------------------------------------- |
+| `non_controllable_factors[].ncs_id`        | integer | Yes      | —       | —     | NCS entity ID. Must refer to a source in `system/non_controllable_sources.json`. |
+| `non_controllable_factors[].stage_id`      | integer | Yes      | —       | —     | Declared study-stage `id` from `stages.json`.                                    |
+| `non_controllable_factors[].block_factors` | array   | Yes      | —       | —     | Array of `{ block_id, factor }` pairs for each load block.                       |
+
+**`block_factors` entry fields:**
+
+| Name                                                  | Type    | Required | Default | Units | Description                                                                                     |
+| ----------------------------------------------------- | ------- | -------- | ------- | ----- | ----------------------------------------------------------------------------------------------- |
+| `non_controllable_factors[].block_factors[].block_id` | integer | Yes      | —       | —     | Must be a valid block for stage. Zero-based block index within the stage.                       |
+| `non_controllable_factors[].block_factors[].factor`   | number  | Yes      | —       | —     | Must be > 0, finite. Multiplier applied to the stage available generation bound for this block. |
+
+**Effect:** for a source with no stochastic availability model,
+`available_mw_block = available_generation_mw * block_factor`; for a source with rows in
+`non_controllable_stats.parquet`, `available_mw_block = max_generation_mw * ratio * block_factor`, where `ratio` is the
+realized availability ratio of the scenario, drawn from that file's model or, under the `external` scheme, from
+`external_ncs_scenarios.parquet`. A source with no row in that file that draws its availability from
+`external_ncs_scenarios.parquet` under the `external` scheme is not scaled by the factors.
+A factor of 1.0 leaves the bound unchanged; factors below 1.0 reduce available
+generation and factors above 1.0 raise it. The factor must be strictly positive —
+`0.0` is rejected at load.
+
+---
+
+## `scenarios/non_controllable_stats.parquet`
+
+**Methodology:** [Scenario Generation](/math/scenario-generation/) · [Equipment-Specific Formulations](/math/equipment-formulations/)
+
+Per-NCS, per-stage stochastic availability model. Each row provides the mean
+and standard deviation of the availability factor for one NCS entity at one
+stage. The availability ratio of a stage and scenario is
+`clamp(mean + std × η, 0, 1)`; each block's available generation is the source's
+`max_generation_mw` × that ratio × the block factor from
+`scenarios/non_controllable_factors.json` (the factor is 1 when none is
+given); a `constraints/ncs_bounds.parquet` row does not change this available generation (see
+[Equipment Formulations §6](/math/equipment-formulations#6-non-controllable-generation-sources)).
+
+| Name       | Type    | Required | Default | Units | Description                                      |
+| ---------- | ------- | -------- | ------- | ----- | ------------------------------------------------ |
+| `ncs_id`   | Int32   | Yes      | —       | —     | Non-controllable source ID                       |
+| `stage_id` | Int32   | Yes      | —       | —     | Stage ID                                         |
+| `mean`     | Float64 | Yes      | —       | —     | Mean availability factor in [0, 1]               |
+| `std`      | Float64 | Yes      | —       | —     | Standard deviation of availability factor (>= 0) |
+
+When absent, NCS availability is deterministic from `constraints/ncs_bounds.parquet`
+or the entity's `max_generation_mw`.
+
+---
+
+## `scenarios/correlation.json`
+
+**Methodology:** [Scenario Generation](/math/scenario-generation/)
+
+Spatial correlation of the noise: named profiles of correlation groups and an optional stage-to-profile schedule. A
+group holds entities of one class (`inflow`, `load` or `ncs`), and each class is correlated separately. The
+decomposition of the matrices and the treatment of negative eigenvalues are in
+[Scenario Generation §2.1](/math/scenario-generation/#21-correlated-noise-generation); the
+[PAR(p) Inflow Model Configure tab](/math/par-inflow-model#implementation-in-cobre) gives a worked example and the
+per-path use of the file.
+
+| Name                                                   | Type          | Required | Default | Units | Description                                                                                                                                                                                                                                                             |
+| ------------------------------------------------------ | ------------- | -------- | ------- | ----- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `method`                                               | string        | Yes      | —       | —     | One of `"spectral"`. Decomposition method of the correlation matrices.                                                                                                                                                                                                  |
+| `profiles`                                             | object        | Yes      | —       | —     | Named correlation profiles, keyed by profile name; holds at least one.                                                                                                                                                                                                  |
+| `profiles.<name>.correlation_groups`                   | array         | Yes      | —       | —     | Groups of correlated entities of the profile `<name>`; may be empty.                                                                                                                                                                                                    |
+| `profiles.<name>.correlation_groups[].name`            | string        | Yes      | —       | —     | Group label.                                                                                                                                                                                                                                                            |
+| `profiles.<name>.correlation_groups[].entities`        | array         | Yes      | —       | —     | Entity references of the group, in matrix order; at least one, all of one `type`.                                                                                                                                                                                       |
+| `profiles.<name>.correlation_groups[].entities[].type` | string        | Yes      | —       | —     | Entity class: `"inflow"` (a hydro's inflow), `"load"` (a bus's load) or `"ncs"` (a non-controllable source's availability).                                                                                                                                             |
+| `profiles.<name>.correlation_groups[].entities[].id`   | integer       | Yes      | —       | —     | Id of the hydro (`inflow`), bus (`load`) or NCS (`ncs`); names a declared entity.                                                                                                                                                                                       |
+| `profiles.<name>.correlation_groups[].matrix`          | array         | Yes      | —       | —     | Correlation matrix in row-major order, one row and one column per entity; symmetric, diagonal `1.0`, entries in `[-1.0, 1.0]`.                                                                                                                                          |
+| `schedule`                                             | array \| null | No       | —       | —     | Stage-to-profile entries. Absent or `null` is the empty schedule.                                                                                                                                                                                                       |
+| `schedule[].stage_id`                                  | integer       | Yes      | —       | —     | Stage the entry's profile applies to. The opening tree matches a declared study-stage id from `stages.json`; out-of-sample forward and simulation sampling matches the stage's 0-based position among the study stages. The two coincide when the ids are `0, 1, 2, …`. |
+| `schedule[].profile_name`                              | string        | Yes      | —       | —     | Name of a profile in `profiles`.                                                                                                                                                                                                                                        |
+
+**Validation rules.** Each rule names the error kind that `cobre validate` reports.
+
+- **Structure.** A missing required key, a value of the wrong type, a `method` other than `"spectral"`, or an unknown key
+  in any object is a `ParseError`.
+- **Profiles.** `profiles` holds at least one profile. Kind: `SchemaViolation`.
+- **Matrix.** Each group's `matrix` has one row per entity and is square; its entries lie in `[-1.0, 1.0]`; its diagonal
+  is `1.0`; and it is symmetric, each pair of mirrored entries differing by at most `1e-10`. Kind: `SchemaViolation`.
+- **Schedule.** Every `schedule[].profile_name` names a profile of `profiles`. Kind: `SchemaViolation`. A
+  `stage_id` is not checked against `stages.json`.
+- **Entity references.** An `entities[].id` that names no declared hydro (`inflow`), bus (`load`) or NCS
+  (`ncs`), and a `type` other than these three, are each an `InvalidReference` error.
+- **One class per group.** The entities of a group share one `type`; a mixed group is a `BusinessRuleViolation`.
+- **Default profile.** The `"default"` profile, or the only profile, applies at every stage that `schedule` does not
+  name. With more than one profile and none named `"default"`, the case is refused with a `StochasticPreparationError`.
+- **Groups.** A group lists at least one entity. Within a profile an `id` value appears in at most one group, and once
+  in it, whatever its `type`: an `inflow` group and a `load` group that both list id `0` are rejected (the message ends
+  `groups must be disjoint`). Kind: `StochasticPreparationError`.
+
+---
+
+## `scenarios/noise_openings.parquet`
+
+**Methodology:** [Scenario Generation](/math/scenario-generation/)
+
+User-supplied backward-pass opening tree, read **only** when `config.json`
+declares `training.scenario_source.openings = {"source": "file"}` (an undeclared
+file is ignored; a declared but absent file is an error). Not admitted with a
+`nodes[]` policy graph or under enumerated forward selection (see
+[`config.json`](/reference/case-format/#configjson)). This enables cross-tool comparison, sensitivity
+analysis, and round-trip replay of a previously exported opening tree.
+
+| Name            | Type    | Required | Default | Units | Description                                                                   |
+| --------------- | ------- | -------- | ------- | ----- | ----------------------------------------------------------------------------- |
+| `stage_id`      | Int32   | Yes      | —       | —     | Declared study-stage id from `stages.json` (not a 0-based position)           |
+| `opening_index` | UInt32  | Yes      | —       | —     | 0-based opening index within the stage (0 to that stage's `num_openings − 1`) |
+| `entity_index`  | UInt32  | Yes      | —       | —     | 0-based position in the noise vector (see entity ordering below)              |
+| `value`         | Float64 | Yes      | —       | —     | Noise realization for this (stage, opening, entity) triple                    |
+
+**Entity ordering.** The noise vector is hydros in canonical order
+(`operational_start_date`, then id), then the load buses that carry load noise
+(`std_mw > 0`, or every load bus under the `external` load scheme), then every
+NCS with availability statistics (including `std = 0`, plus external-scenario
+NCS under `external`); the load-bus and NCS blocks are each sorted by id. A
+zero-std NCS still occupies a slot. Violating this order causes silent value
+misassignment because the file stores indices only, not entity identifiers.
+
+**Validation rules.** The loader raises a hard error on failure:
+
+- **Unresolved stage** — every `stage_id` must be a declared study-stage id.
+- **Dimension mismatch** — the number of distinct `entity_index` values must
+  equal the noise-vector length defined above.
+- **Stage count mismatch** — the distinct `stage_id` values must be the
+  declared study stages.
+- **Missing opening indices** — for each stage, every opening index from 0 to
+  that stage's `num_openings − 1` must be present for every entity. Gaps are
+  not permitted; partial-stage override is not supported.
+
+The total row count must equal the sum over study stages of
+`num_openings × dimension`.
+
+See [Scenario Generation](/math/scenario-generation) for the opening tree and
+[Configuration](/running/configuration/#trainingscenario_source) for the `openings`
+field.

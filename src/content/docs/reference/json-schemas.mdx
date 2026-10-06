@@ -9,7 +9,7 @@ setting at the appropriate file to get autocompletion, hover documentation,
 and inline error highlighting while authoring case inputs.
 
 For a complete description of each file's fields and validation rules, see
-the [Case Directory Format](/reference/case-directory-format/) reference page.
+the [Case Format](/reference/case-format/) reference page.
 
 :::note[`operational_start_date`]
 Every `system/*` entity registry schema (buses, hydros, thermals, lines,
@@ -17,7 +17,7 @@ non-controllable sources, pumping stations, energy contracts) requires an
 `operational_start_date` field — an ISO-8601 calendar date (`YYYY-MM-DD`). It
 is provenance and the canonical `(operational_start_date, id)` ordering key
 only; see [Notation Conventions](/overview/notation-conventions) and
-[Case Directory Format](/reference/case-directory-format/) for field-level
+[Case Format](/reference/case-format/) for field-level
 detail.
 :::
 
@@ -105,7 +105,7 @@ loader's check is the one that applies.
   ([`SchemaViolation`](/reference/error-codes/#schemaviolation)).
 - `stages.schema.json` accepts a top-level `scenario_source` key. The loader
   rejects it: scenario sources belong in `config.json`
-  ([`config.json`](/reference/case-directory-format/#configjson)).
+  ([`config.json`](/reference/case-format/#configjson)).
 - `generic_parameters.schema.json` describes `kind` with four values and does
   not restrict it, while the loader accepts five kinds, `per_stage_block` (with
   its `block_values` array) included

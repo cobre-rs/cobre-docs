@@ -9,7 +9,7 @@
   id="fpha-plot"
   class="vf-plot"
   role="img"
-  aria-label="Synthetic hydro plant with normalized axes, sliced at one storage: generation against turbined flow, with the cloud points and the exact production capped at installed capacity, the raw hull envelope FPHA₀ above them, the corrected envelope k_FPHA·FPHA₀ and the dashed line ρ_eq·q"
+  aria-label="Synthetic hydro plant with normalized axes, sliced at one storage: generation against turbined flow, with the cloud points and the exact production capped at installed capacity, the raw hull envelope FPHA₀ on or above every cloud point, the corrected envelope k_FPHA·FPHA₀ and the dashed line ρ_eq·q"
 >
 </div>
 
@@ -31,8 +31,8 @@
     if (!el) return;
 
     // The plant's own data (cloud, exact production) is water -> Flow Blue
-    // (--dgm-hydro). The fitted lines are not hydro -> copper curve and warm
-    // accent (Patina); the equivalent-productivity line is a reference ->
+    // (--dgm-hydro). The fitted lines are not hydro -> copper curve and
+    // Patina accent; the equivalent-productivity line is a reference ->
     // stroke grey. Literals mirror the palette.css fallbacks.
     const hydro = cssVar("--dgm-hydro") || "#4a90b8";
     const curve = cssVar("--dgm-curve") || "#d4956a";

@@ -178,7 +178,7 @@ jq -r '.convergence.termination_reason' /data/cases/hydro_study/output/training/
 
 From Python, `cobre.results.load_results(output_dir)` returns both metadata
 files as dicts. Every field is documented in
-[Output Format → Metadata Files](/reference/output-format/#metadata-files).
+[Output Format → Metadata Files](/reference/output/metadata/).
 
 ### SLURM clusters
 
@@ -324,7 +324,7 @@ None.
 | ---- | ---------- | -------------------------------------------------------------------------------------------------------------------- |
 | `0`  | Success    | The command completed without errors                                                                                 |
 | `1`  | Validation | A parse, schema, or semantic-constraint error in any case file, `config.json` included, collected into the validation report, or a refused or unreadable `policy.boundary` checkpoint (both subcommands). `cobre run` also exits `1` for every other non-I/O load failure, and when a policy load is refused (another cobre version, or a stored basis or state that does not fit the study) |
-| `2`  | I/O or usage | File not found, permission denied, disk full, or write failure during loading or output (both subcommands); or a command-line usage error — an unknown subcommand or option, a missing subcommand or argument, a conflicting argument, or an invalid option value — reported by the argument parser before any file is read |
+| `2`  | I/O or usage | A case directory that does not exist (both subcommands); a disk-full or other filesystem failure while writing the policy checkpoint or the training or simulation results after training starts, except the write of one simulation scenario's results, which is logged and leaves the exit code `0` (`cobre run`); or a command-line usage error — an unknown subcommand or option, a missing subcommand or argument, a conflicting argument, or an invalid option value — reported by the argument parser before any file is read |
 | `3`  | Solver     | LP infeasible subproblem or numerical solver failure during simulation, or a solver backend that cannot be initialized |
 | `4`  | Internal   | Communication failure, unexpected channel closure, or other software/environment problem. Under `cobre run`, exit `4` also covers a missing `policy.path` directory or a checkpoint that cannot be read, and a stochastic-preparation failure that is a stochastic-model error (`cobre validate` reports it as `StochasticPreparationError`, exit `1`, with `stochastic error:` after the file label). `cobre validate` also maps the rare load error that escapes the validation report — a scenario-assembly schema error (an AR-coefficient count mismatch) — to this code, where `cobre run` exits `1`. A training iteration that fails (an infeasible stage LP, a solver failure or a communication failure) also exits `4` under `cobre run`, after its training outputs are written. |
 

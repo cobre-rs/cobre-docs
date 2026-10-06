@@ -2,12 +2,12 @@ This tab lists where a run records the categories of
 [Determinism & Provenance §5](/math/determinism-guarantees#5-provenance), by file
 and field name: run metadata, stochastic-model provenance and the policy
 checkpoint, and what is not recorded. The full field tables are in
-[Output Format](/reference/output-format/).
+[Output Format](/reference/output/).
 
 ### Run metadata
 
-[`training/metadata.json`](/reference/output-format/#trainingmetadatajson) and
-[`simulation/metadata.json`](/reference/output-format/#simulationmetadatajson)
+[`training/metadata.json`](/reference/output/metadata/#trainingmetadatajson) and
+[`simulation/metadata.json`](/reference/output/metadata/#simulationmetadatajson)
 record the software, the timing and the execution environment of the run. The
 training file also records the configuration.
 
@@ -30,7 +30,7 @@ training file also records the configuration.
 
 ### Stochastic-model provenance
 
-[`training/model_provenance.json`](/reference/output-format/#trainingmodel_provenancejson)
+[`training/model_provenance.json`](/reference/output/metadata/#trainingmodel_provenancejson)
 is written when an estimation path ran. Its `inflow` object records the
 `estimation_path` taken and the source of each part of the inflow model in
 `seasonal_stats_source`, `ar_coefficients_source`, `correlation_source` and
@@ -46,7 +46,7 @@ hyperplanes and of their evaporation reference level.
 
 ### Policy checkpoint
 
-[`policy/manifest.bin`](/reference/output-format/#policymanifestbin) is the
+[`policy/manifest.bin`](/reference/output/policy/#policymanifestbin) is the
 checkpoint's manifest, written last. It records `format_version`,
 `cobre_version` and `created_at` for the checkpoint, and `completed_iterations`,
 `final_lower_bound`, `max_iterations`, `forward_passes` and `rng_seed` for the

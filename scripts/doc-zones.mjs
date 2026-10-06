@@ -5,10 +5,12 @@
 // describe CURRENT cobre as instance-agnostic fact — no cobre-version
 // annotations, no hedged "typical"/"about N" magnitudes (per the Methodology
 // Authoring Standards + the "No version numbers in the corpus" hard rule in
-// CLAUDE.md). Everything else that documents the SOFTWARE layer — the
-// `math/_impl/_*.mdx` interleave partials, `reference/*`, `running/*`,
-// `getting-started/*`, and `examples/*` (worked examples legitimately carry
-// concrete instance numbers) — may carry concrete config/CLI/version detail.
+// CLAUDE.md). `reference/glossary.md` is the one strict page under
+// `reference/` (math zone, R97). Everything else that documents the SOFTWARE
+// layer — the `math/_impl/_*.mdx` interleave partials, `reference/*`,
+// `running/*`, `getting-started/*`, and `examples/*` (worked examples
+// legitimately carry concrete instance numbers) — may carry concrete
+// config/CLI/version detail.
 //
 // `zoneOf(relPath)` is the single source of truth for this split, keyed
 // directly off path (Epic 03 learnings: the profile "can key directly off the
@@ -18,7 +20,7 @@
 //
 // `relPath` is expected relative to `src/content/docs/` (e.g.
 // "math/lp-formulation.mdx", "math/_impl/_hydro.io.mdx",
-// "reference/output-format.mdx"). Backslashes are normalised to forward
+// "reference/error-codes.mdx"). Backslashes are normalised to forward
 // slashes so the predicate is platform-independent.
 
 import { readdirSync } from "node:fs";
@@ -39,6 +41,10 @@ const LENIENT_TOP_LEVEL_DIRS = [
 
 // Strict top-level directories (the methodology layer).
 const STRICT_TOP_LEVEL_DIRS = ["overview/"];
+
+// Strict single pages inside an otherwise-lenient directory (R97): the
+// glossary is math-zone text although it sits under reference/.
+const STRICT_FILES = ["reference/glossary.md"];
 
 /**
  * Classify a content-relative path into one of the three voice zones.
@@ -64,6 +70,8 @@ export function zoneOf(relPath) {
   for (const dir of STRICT_TOP_LEVEL_DIRS) {
     if (normalized.startsWith(dir)) return ZONE_STRICT;
   }
+  // Must precede the lenient loop, or the glossary matches reference/.
+  if (STRICT_FILES.includes(normalized)) return ZONE_STRICT;
   for (const dir of LENIENT_TOP_LEVEL_DIRS) {
     if (normalized.startsWith(dir)) return ZONE_LENIENT;
   }

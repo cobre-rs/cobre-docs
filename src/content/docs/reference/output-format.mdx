@@ -1350,8 +1350,8 @@ The `stored_energy_initial_mwh` and `stored_energy_final_mwh` columns equal the 
 
 Hydro dispatch results at `(hydro, bus)` cell granularity — one cell per
 distinct bus among a plant's unit groups (see
-[`hydros[].unit_groups[]`](/reference/case-directory-format/#systemhydrosjson)
-in the Case Directory Format reference). One row per (stage, block, hydro,
+[`hydros[].unit_groups[]`](/reference/case-format/hydros/#systemhydrosjson)
+in the Case Format reference). One row per (stage, block, hydro,
 bus) quadruplet. 9 columns.
 
 `simulation/hydros/` reports each plant's total: a plant split across several
@@ -1807,7 +1807,7 @@ none, the case is rejected with
 `no productivity_mw_per_m3s available for (hydro_id=…, stage_id=…)`; supplying
 both sources is also rejected.
 
-See [Case Directory Format — `system/fpha_hyperplanes.parquet`](/reference/case-directory-format/#systemfpha_hyperplanesparquet)
+See [Case Format — `system/fpha_hyperplanes.parquet`](/reference/case-format/production-models/#systemfpha_hyperplanesparquet)
 for the full column definitions and validity constraints.
 
 ### `hydro_models/evaporation_models.parquet`
@@ -1886,7 +1886,7 @@ If a file cannot be written, Cobre prints a warning such as `warning: stochastic
 
 The opening tree used during the training run, written in the same schema as
 the input file `scenarios/noise_openings.parquet`. See the
-[Case Directory Format](/reference/case-directory-format/#scenariosnoise_openingsparquet)
+[Case Format](/reference/case-format/scenarios/#scenariosnoise_openingsparquet)
 for the 4-column schema (`stage_id`, `opening_index`, `entity_index`, `value`).
 The exported `stage_id` is the 0-based stage position, while the input file
 requires the declared stage id, so a copy loads only when the declared stage

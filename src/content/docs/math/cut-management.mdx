@@ -196,7 +196,7 @@ Three periodic-pruning strategies are available, and all three share one **value
 
 ### 7.1 Level-1
 
-At each visited trial point, every cut within `tie_tolerance` of the per-state maximum value survives; the selected set is the union of these near-maximum cuts across all visited states. A cut is deactivated only if, at **every** visited state, its value is more than `tie_tolerance` below the maximum there. This strategy was originally proposed by de Matos, Philpott & Finardi (2015).
+At each visited trial point, every cut within `tie_tolerance` of the per-state maximum value survives; the selected set is the union of these near-maximum cuts across all visited states. A cut is deactivated only if, at **every** visited state, its value is more than `tie_tolerance` below the maximum there. This strategy was originally proposed by [de Matos, Philpott & Finardi (2015)](/reference/bibliography/#cut-management-and-convergence).
 
 **Properties**:
 
@@ -205,7 +205,7 @@ At each visited trial point, every cut within `tie_tolerance` of the per-state m
 
 ### 7.2 Limited Memory Level-1 (LML1)
 
-Like Level-1, but at each visited state only the **single oldest** eligible cut within `tie_tolerance` of the maximum survives (oldest = smallest slot index among non-warm-start cuts). The selected set is the union of these oldest-at-maximum cuts across visited states. Bandarra & Guigues (2021).
+Like Level-1, but at each visited state only the **single oldest** eligible cut within `tie_tolerance` of the maximum survives (oldest = smallest slot index among non-warm-start cuts). The selected set is the union of these oldest-at-maximum cuts across visited states. [Bandarra & Guigues (2021)](/reference/bibliography/#cut-management-and-convergence).
 
 **Properties**:
 
@@ -284,15 +284,13 @@ See [Determinism & Provenance](/math/determinism-guarantees).
 
 ## 9. Convergence Guarantee
 
-**Theorem** (Bandarra & Guigues, 2021): For an expectation objective at every stage, SDDP with finitely many scenarios and Level-1 or LML1 cut selection evaluated over every visited trial point reaches an optimal first-stage solution after finitely many iterations with probability 1. Domination applies the Level-1 test with its own tolerance (§7.3), so the same argument covers it.
+**Theorem** ([Bandarra & Guigues, 2021](/reference/bibliography/#cut-management-and-convergence)): For an expectation objective at every stage, SDDP with finitely many scenarios and Level-1 or LML1 cut selection evaluated over every visited trial point reaches an optimal first-stage solution after finitely many iterations with probability 1. Domination applies the Level-1 test with its own tolerance (§7.3), so the same argument covers it.
 
 **Key insight**: Removing cuts that are never active at any visited state does not change the outer approximation at those states, and the convergence argument uses the approximation only there. With finitely many scenarios, only finitely many distinct cuts and trial points can arise, each read from a basic solution of a stage problem, so the argument needs no density of the visited states: convergence is reached after finitely many iterations.
 
 **DCS and convergence**: a DCS solve that stops at §8.1 step 5 is exact — the optimum it returns equals the full-pool optimum — so such solves do not weaken the convergence argument. That exactness rests on $k_1 = \infty$ (every pool cut remains a candidate); a finite $k_1$ sacrifices it. A solve that reaches the round cap ends with the closing solve of §8.3, whose exactness is not checked.
 
 [Tier 2](#tier-2-convergence) states the hypotheses on the risk measure, the forward pass and the cut selection that a training run must meet for the theorem to apply, and the selection features that fall outside them.
-
-> Bandarra, M., & Guigues, V. (2021). "Single cut and multicut stochastic dual dynamic programming with cut selection for multistage stochastic linear programs: convergence proof and numerical experiments." _Computational Management Science_, 18(2), 125-148. https://doi.org/10.1007/s10287-021-00387-8
 
 ## 10. Selection Parameters
 

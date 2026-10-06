@@ -145,7 +145,7 @@ Trains an SDDP policy against the study's in-memory setup and returns a [`cobre.
 
 - `on_iteration`: called once per iteration boundary with a dict holding `kind`, `iteration`, `lower_bound`, `upper_bound`, `gap` and `wall_time_ms`. `gap` is the raw relative gap, not multiplied by 100. A truthy return requests a cooperative stop at a later iteration boundary; the stop is asynchronous, so the iteration at which the run ends is not fixed. An exception raised by the callback is re-raised verbatim after the artifacts are written.
 
-A stop requested by the callback, or an exception raised by it, ends the run with `convergence.termination_reason` set to `"unknown"` in `training/metadata.json` when no stopping rule triggered at that iteration; see [`training/metadata.json`](/reference/output-format/#trainingmetadatajson).
+A stop requested by the callback, or an exception raised by it, ends the run with `convergence.termination_reason` set to `"unknown"` in `training/metadata.json` when no stopping rule triggered at that iteration; see [`training/metadata.json`](/reference/output/metadata/#trainingmetadatajson).
 
 **Returns**: a [`cobre.Policy`](#cobrepolicy). With `training.enabled` set to `false`, `train` returns a zero-iteration policy that holds no cuts; `simulate` rejects it. Load a trained policy with `load_policy` instead.
 
@@ -373,7 +373,7 @@ Loads a case, trains, simulates when the configuration enables it, and writes th
 
 A Ctrl-C during the run is delivered as `KeyboardInterrupt` after the call returns to the interpreter, not at an iteration boundary. To end a run early, return a truthy value from `on_iteration`.
 
-A stop requested by `on_iteration` records `convergence.termination_reason` as `"unknown"` in `training/metadata.json` when no stopping rule triggered at that iteration; see [`training/metadata.json`](/reference/output-format/#trainingmetadatajson).
+A stop requested by `on_iteration` records `convergence.termination_reason` as `"unknown"` in `training/metadata.json` when no stopping rule triggered at that iteration; see [`training/metadata.json`](/reference/output/metadata/#trainingmetadatajson).
 
 **Raises**
 
@@ -482,7 +482,7 @@ Reads the run manifests.
 - `"training"`: `"metadata"`, the parsed `training/metadata.json`; `"manifest"`, an alias of `"metadata"` with equal contents; `"convergence_path"` and `"timing_path"`, the absolute paths of `training/convergence.parquet` and `training/timing/iterations.parquet`; and `"complete"`.
 - `"simulation"`: `"manifest"`, the parsed `simulation/metadata.json`, or `None` when that file is absent (simulation did not run); and `"complete"`.
 
-Both `"complete"` values are `_SUCCESS` marker flags, not a verdict on the run. `training["complete"]` is always `True` in a returned dict, because the call raises when the `training/_SUCCESS` marker is absent. `simulation["complete"]` is `True` when `simulation/_SUCCESS` exists and `False` otherwise. To learn how a run ended, read the `metadata` dicts; see [Metadata Files](/reference/output-format/#metadata-files).
+Both `"complete"` values are `_SUCCESS` marker flags, not a verdict on the run. `training["complete"]` is always `True` in a returned dict, because the call raises when the `training/_SUCCESS` marker is absent. `simulation["complete"]` is `True` when `simulation/_SUCCESS` exists and `False` otherwise. To learn how a run ended, read the `metadata` dicts; see [Metadata Files](/reference/output/metadata/).
 
 **Raises**
 
@@ -496,7 +496,7 @@ Both `"complete"` values are `_SUCCESS` marker flags, not a verdict on the run. 
 def load_convergence(output_dir: Union[str, Path]) -> Any: ...
 ```
 
-Reads `training/convergence.parquet`; for the columns, see [`training/convergence.parquet`](/reference/output-format/#trainingconvergenceparquet).
+Reads `training/convergence.parquet`; for the columns, see [`training/convergence.parquet`](/reference/output/training/#trainingconvergenceparquet).
 
 **Parameters**
 
@@ -556,7 +556,7 @@ def load_simulation(
 ) -> Any: ...
 ```
 
-Reads the Hive-partitioned Parquet files under `simulation/`; see [Simulation Output](/reference/output-format/#simulation-output) and [Hive Partitioning](/reference/output-format/#hive-partitioning). Each row dict carries a `scenario_id` key, read from the file's own `scenario_id` column or, when the file has none, from the partition path, and rows are ordered by `scenario_id`.
+Reads the Hive-partitioned Parquet files under `simulation/`; see [Simulation Output](/reference/output/simulation/) and [Hive Partitioning](/reference/output/#hive-partitioning). Each row dict carries a `scenario_id` key, read from the file's own `scenario_id` column or, when the file has none, from the partition path, and rows are ordered by `scenario_id`.
 
 **Parameters**
 
@@ -602,7 +602,7 @@ def load_policy(
 ) -> Any: ...
 ```
 
-Reads the policy checkpoint from `<output_dir>/<policy_subdir>` into plain dicts; see [Policy Checkpoint](/reference/output-format/#policy-checkpoint). The function does not check the cobre version that wrote the checkpoint. For the key tables, see [Load a policy](/running/policy-management/#load-a-policy).
+Reads the policy checkpoint from `<output_dir>/<policy_subdir>` into plain dicts; see [Policy Checkpoint](/reference/output/policy/). The function does not check the cobre version that wrote the checkpoint. For the key tables, see [Load a policy](/running/policy-management/#load-a-policy).
 
 **Parameters**
 
@@ -622,7 +622,7 @@ Reads the policy checkpoint from `<output_dir>/<policy_subdir>` into plain dicts
 def load_stochastic(output_dir: Union[str, Path]) -> Stochastic: ...
 ```
 
-Reads the fitted stochastic model from `stochastic/inflow_ar_coefficients.parquet` and `stochastic/noise_openings.parquet`; see [Stochastic Artifacts](/reference/output-format/#stochastic-artifacts). Those files exist only when the run had `exports.stochastic` enabled. Constructing the handle does not need NumPy.
+Reads the fitted stochastic model from `stochastic/inflow_ar_coefficients.parquet` and `stochastic/noise_openings.parquet`; see [Stochastic Artifacts](/reference/output/stochastic/). Those files exist only when the run had `exports.stochastic` enabled. Constructing the handle does not need NumPy.
 
 **Parameters**
 

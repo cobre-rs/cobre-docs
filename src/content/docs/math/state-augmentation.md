@@ -28,7 +28,7 @@ The state is ordered canonically: storage, inflow lags, in-transit buckets, comm
 
 ## 2. Pinning by Column Bounds
 
-The water balance ([LP Formulation §4](/math/lp-formulation#4-hydro-water-balance)), FPHA hyperplanes ([LP Formulation §6](/math/lp-formulation#6-hydro-generation-constraints)), and generic constraints ([LP Formulation §10](/math/lp-formulation#10-generic-constraints)) all involve the incoming storage value $\hat{v}_h$. Rather than embedding $\hat{v}_h$ as a constant in the RHS of each of these constraints (which would require collecting duals from all of them to compute cut coefficients), Cobre introduces an explicit **incoming storage LP variable** $v^{in}_h$ that every such constraint references, and **pins** it to the trial value.
+The water balance ([LP Formulation §4](/math/lp-formulation#4-hydro-water-balance)), FPHA hyperplanes ([LP Formulation §6](/math/lp-formulation#6-hydro-generation-constraints)), the evaporation row ([LP Formulation — Evaporation Row](/math/lp-formulation#evaporation-row)) and generic constraints ([LP Formulation §10](/math/lp-formulation#10-generic-constraints)) all involve the incoming storage value $\hat{v}_h$. Rather than embedding $\hat{v}_h$ as a constant in the RHS of each of these constraints (which would require collecting duals from all of them to compute cut coefficients), Cobre introduces an explicit **incoming storage LP variable** $v^{in}_h$ that every such constraint references, and **pins** it to the trial value.
 
 For each hydro $h \in \mathcal{H}$, the incoming-storage column ([LP Layout and Scaling §1](/math/lp-layout-and-scaling#1-column-and-row-layout)) is pinned by setting equal lower and upper **column bounds**:
 
@@ -45,13 +45,11 @@ where:
 The incoming state is pinned by **column bounds**, not by an explicit equality _constraint row_ $v^{in}_h = \hat{v}_h$ whose dual would be read: the LP has no such row ([LP Layout and Scaling §1](/math/lp-layout-and-scaling#1-column-and-row-layout)). Pinning by bounds keeps $N(1+P^{\max})$ redundant equality rows per stage out of the model (plus one per in-transit bucket and commitment-ring slot, §6, §5); the two formulations are KKT-equivalent — see below.
 :::
 
-The variable $v^{in}_h$ then appears as an LP variable (not a constant) in all constraints that depend on incoming storage: the water balance ([LP Formulation §4](/math/lp-formulation#4-hydro-water-balance)), the FPHA average storage computation ([LP Formulation §6](/math/lp-formulation#6-hydro-generation-constraints)), and any generic constraints ([LP Formulation §10](/math/lp-formulation#10-generic-constraints)) that reference incoming storage.
-
 **Cut coefficient**: the storage cut coefficient $\beta^v_h$ is the **reduced cost** of the pinned incoming-storage column (unscaled by its prescaler column factor — see [LP Layout and Scaling §2](/math/lp-layout-and-scaling#2-lp-scaling) and [cut management](/math/cut-management)). No fixing-constraint dual is involved.
 
-**Why this design**: By LP duality, when a column is pinned at $\underline{x} = \bar{x}$ its reduced cost equals the sensitivity $\partial Q_t / \partial \hat{v}_h$ of the optimal value to the pinned bound — exactly the multiplier the equivalent equality row $v^{in}_h = \hat{v}_h$ would have carried (KKT parity). This sensitivity automatically accounts for all downstream effects through water balance, FPHA, and generic constraints, so a single reduced-cost value suffices — no combination of duals from multiple constraint types is needed. The AR lags (§4), in-transit buckets (§6) and commitment-ring slots (§5) are pinned the same way.
+**Why this design**: By LP duality, when a column is pinned at $\underline{x} = \bar{x}$ its reduced cost equals the sensitivity $\partial Q_t / \partial \hat{v}_h$ of the optimal value to the pinned bound — exactly the multiplier the equivalent equality row $v^{in}_h = \hat{v}_h$ would have carried (KKT parity). This sensitivity automatically accounts for all downstream effects through water balance, FPHA, evaporation and generic constraints, so a single reduced-cost value suffices — no combination of duals from multiple constraint types is needed. The AR lags (§4), in-transit buckets (§6) and commitment-ring slots (§5) are pinned the same way.
 
-**Column count**: $N$ pinned incoming-storage columns, where $N = |\mathcal{H}|$ is the number of operating hydros. There are no state-fixing rows: every incoming-state column is pinned by its bounds.
+**Column count**: $N$ pinned incoming-storage columns, where $N = |\mathcal{H}|$ is the number of hydros, whatever their lifecycle phase. There are no state-fixing rows: every incoming-state column is pinned by its bounds.
 
 ## 3. Outgoing State and the Cut Row
 
@@ -76,8 +74,6 @@ where $\cdots$ stands for the bucket and ring-slot terms, each coefficient on it
 
 ## 4. Inflow Lags
 
-To maintain the Markov property, lagged inflows $a_{h,\ell}$ are promoted to state variables pinned by column bounds.
-
 The AR dynamics equation ([LP Formulation §5](/math/lp-formulation#5-realized-inflow-definition-rows)) uses lagged inflows $a_{h,\ell}$ as LP variables. To maintain the Markov property in the SDDP decomposition, each lag variable is pinned to its incoming state value via equal lower and upper **column bounds** on its lag column. This binds the lag variables to the known incoming state, and the **reduced cost** of each pinned column provides the cut coefficient $\beta^{lag}_{h,\ell}$ for the corresponding inflow-lag dimension of the Benders cuts ([LP Formulation §11](/math/lp-formulation#11-benders-cuts)). Whether these lag dimensions enter the cut is set by the cut-state projection, which the successor stage configures: when it projects out the inflow lags, the lag columns are still pinned for the AR dynamics, but their reduced costs carry no cut coefficient, giving a storage-only cut even under a PAR($p$) fit — see [§7](#7-cut-state-projection).
 
 For each hydro $h \in \mathcal{H}$ and each lag $\ell \in \{1, \ldots, P^{\max}\}$:
@@ -92,7 +88,7 @@ where:
 - $\hat{a}_{h,\ell}$ = incoming state value: the inflow of the $\ell$-th most recently completed lag period ([Multi-Resolution Studies §2](/math/multi-resolution-studies#2-lag-accumulation)); a lag period completes only under a [season map](/math/multi-resolution-studies#1-season-map), so without one no period completes and the lags keep their initial values
 - $P^{\max}$ = the lag depth of the state, the same for every hydro: the largest AR order, at least twelve when any hydro carries the annual component, and widened as below when a terminal boundary is loaded
 
-**Column count**: $N \times P^{\max}$ pinned lag columns, where $N = |\mathcal{H}|$ is the number of operating hydros and $P^{\max}$ is the lag depth of the state defined above. All hydros store $P^{\max}$ lags regardless of their individual AR order $P_h$; a hydro whose inflow model has no annual component reads only its first $P_h$ lags, so its slots $\ell > P_h$ carry zero coefficients in the dynamics row, while a hydro with the annual component ([PAR(p) Inflow Model §7](/math/par-inflow-model#7-annual-component-extension-parp-a)) reads every slot; every lag column is still present and pinned. This uniform layout keeps the lag columns contiguous, so all lag cut coefficients are read in a single slice of the reduced-cost vector ([LP Layout and Scaling §1](/math/lp-layout-and-scaling#1-column-and-row-layout)).
+**Column count**: $N \times P^{\max}$ pinned lag columns, where $N = |\mathcal{H}|$ is the number of hydros, whatever their lifecycle phase, and $P^{\max}$ is the lag depth of the state defined above. All hydros store $P^{\max}$ lags regardless of their individual AR order $P_h$; a hydro whose inflow model has no annual component reads only its first $P_h$ lags, so its slots $\ell > P_h$ carry zero coefficients in the dynamics row, while a hydro with the annual component ([PAR(p) Inflow Model §7](/math/par-inflow-model#7-annual-component-extension-parp-a)) reads every slot; every lag column is still present and pinned. This uniform layout keeps the lag columns contiguous, so all lag cut coefficients are read in a single slice of the reduced-cost vector ([LP Layout and Scaling §1](/math/lp-layout-and-scaling#1-column-and-row-layout)).
 
 The lag slots a hydro does not read are structurally zero and are left out of the cut row, like a ring slot no stage holds; with a terminal boundary loaded, the cut row keeps every hydro's slots up to the boundary depth, the deepest lag any boundary cut references, to which the lag state is widened ([Post-Study Boundary — Compatibility Conditions](/math/post-study-boundary#52-compatibility-conditions)).
 
@@ -130,7 +126,7 @@ $$
 x^{\mathrm{a}}_{s_i(m),i} - x^{\mathrm{a,in}}_{s_i(m),i} = 0
 $$
 
-for every delivery $m > t$ in the ring, decided at an earlier stage or before the study, that lies inside that calendar. The **fish** row binds the stage's generation to the commitment maturing there:
+for every delivery $m > t$ in the ring, decided at an earlier stage or before the study, that lies inside that calendar. The **fish** (delivery) row binds the stage's generation to the commitment maturing there:
 
 $$
 \sum_{k \in \mathcal{K}} \tau_k \, g_{i,k} - H_t \, x^{\mathrm{a,in}}_{s_i(t),i} = 0
@@ -158,7 +154,7 @@ The coefficient of slot $(s, i)$ in a cut of stage $t$ is the reduced cost of th
 
 ## 6. Water Travel Time
 
-When an upstream release takes appreciable time to travel down the cascade, only the share $\nu_{h',t,0}$ of a release ([LP Formulation §4](/math/lp-formulation#4-hydro-water-balance)) reaches the downstream neighbour in the release stage, and the rest arrives in later stages. Cobre models this as an **augmented in-transit state**: the volume still in transit on a cascade arc is carried through the Bellman recursion as extra state coordinates, exactly like storage (§2) and AR lags (§4). This section formulates that state, its pinning, the delayed-arrival water-balance entry, the rows that define it, its cut coefficient, and the horizon limitation.
+When an upstream release takes appreciable time to travel down the cascade, only the share $\nu_{h',t,0}$ of a release ([LP Formulation §4](/math/lp-formulation#4-hydro-water-balance)) reaches the downstream neighbour in the release stage, and the rest arrives in later stages. Cobre models this as an **augmented in-transit state**: the volume still in transit on a cascade arc is carried through the Bellman recursion as extra state coordinates, exactly like storage (§2) and AR lags (§4).
 
 **Scope.** A hydro $h$ declares a travel-time arc when it has a downstream plant and the arc to it has a strictly positive travel time; the diversion and pumping arcs carry no travel time (main cascade arc only). An absent or zero travel time is an instantaneous transfer — the upstream release enters the downstream water balance in the same stage ([LP Formulation §4](/math/lp-formulation#4-hydro-water-balance)) and no state is added.
 
@@ -196,7 +192,7 @@ The entry belongs to the receiving plant's water balance at every stage where th
 
 ### Bucket definition rows
 
-Each receiving plant $h$ has one ring of $L_h$ lags, ordered plant-major then lag in the state. Within a stage, each active outgoing lag $d$ of plant $h$ has one definition row:
+Within a stage, each active outgoing lag $d$ of a receiving plant $h$ has one definition row:
 
 $$
 b^{\mathrm{out}}_{h,d} = b^{\mathrm{in}}_{h,d+1} + \text{(deposits into lag } d\text{)}
@@ -218,7 +214,7 @@ Transit buckets are always in the cut projection, whatever the stage's selection
 
 ### Horizon limitation
 
-In-transit volume that would mature **after the study's last stage** is dropped and not credited to terminal storage — but only **when no terminal boundary future-cost function is loaded**. Absent a boundary, a release late in the horizon whose travel time carries it past the final stage $T$ leaves the modeled system without arriving: the deepest maturity lag active at stage $t$ is capped at $T - t$, so no bucket ever points beyond the horizon and the share is discarded rather than misdirected onto an earlier lag. When a [terminal boundary](/math/post-study-boundary) is loaded instead, this cap is lifted: the terminal deep-lag in-transit slots are held live rather than capped away, carried in the terminal stage's outgoing state, and reach the boundary-priced cut-state projection. The still-in-transit water is valued at the boundary rather than discarded, priced through the same reduced-cost cut mechanism the buckets already use (see Cut coefficient, above) — transit buckets are always in the cut projection, so a held-live bucket needs no separate pricing path.
+In-transit volume that would mature **after the study's last stage** is dropped and not credited to terminal storage — but only **when no terminal boundary future-cost function is loaded**. Absent a boundary, a release late in the horizon whose travel time carries it past the final stage $T$ leaves the modeled system without arriving: the deepest maturity lag active at stage $t$ is capped at $T - t$, so no bucket ever points beyond the horizon and the share is discarded rather than misdirected onto an earlier lag. When a [terminal boundary](/math/post-study-boundary) is loaded instead, this cap is lifted: the terminal deep-lag in-transit slots are held live rather than capped away, carried in the terminal stage's outgoing state, and reach the boundary-priced cut-state projection. The still-in-transit water is valued at the boundary rather than discarded, priced through the same reduced-cost cut mechanism the buckets already use (see Cut coefficient, above).
 
 ## 7. Cut-State Projection
 

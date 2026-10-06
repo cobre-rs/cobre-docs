@@ -1,9 +1,10 @@
 Cobre's electrical network is configured through two case-directory files:
 `system/buses.json` (nodes) and `system/lines.json` (edges). This tab covers
 their field-level configuration; the bus's piecewise deficit cost curve is
-priced through the shared penalty cascade and is documented in the
-[Penalty System Configure tab](/math/penalty-system#implementation-in-cobre)
-— this chapter does not repeat that field table.
+priced through the shared penalty cascade. Its segment fields are in
+[Case Format](/reference/case-format/system/#systembusesjson)
+and its resolution order is on the
+[Penalty System Configure tab](/math/penalty-system#implementation-in-cobre).
 
 ### `system/buses.json` — Bus Registry
 
@@ -29,7 +30,7 @@ Multi-Bus" below.
 | `id`               | integer | Yes      | Unique non-negative bus identifier, referenced by every entity's `bus_id`.                                                                                              |
 | `name`             | string  | Yes      | Human-readable bus name, used in output files and validation messages.                                                                                                  |
 | `operational_start_date` | string (ISO-8601 date) | Yes | Calendar date (`YYYY-MM-DD`) the bus enters the registry's operational history. Provenance and the canonical `(operational_start_date, id)` ordering key (see [Notation Conventions](/overview/notation-conventions)) — independent of any commissioning window. |
-| `deficit_segments` | array   | No       | Bus-level override of the piecewise deficit cost curve. See the [Penalty System Configure tab](/math/penalty-system#implementation-in-cobre) for the segment field table and the two-tier resolution order. |
+| `deficit_segments` | array   | No       | Bus-level override of the piecewise deficit cost curve. The segment fields are in [Case Format](/reference/case-format/system/#systembusesjson) and the global default is in [`penalties.json`](/reference/case-format/penalties/#penaltiesjson); the two-tier resolution order is on the [Penalty System Configure tab](/math/penalty-system#implementation-in-cobre). |
 
 `excess_cost` has no per-bus field at all: every bus shares the global
 `excess_cost` default from `penalties.json`, optionally refined per stage —
@@ -72,15 +73,6 @@ connects buses with one or more line entries:
 | `capacity.reverse_mw` | number          | Yes      | Hard upper bound on the reverse-direction flow variable, MW.                                                                                                                   |
 | `losses_percent`      | number          | No       | Transmission loss as a percentage of transmitted power, used **for reporting only**. Defaults to `0.0`. It does **not** enter the dispatch LP (load-balance flow coefficients are exactly $\pm 1$); Cobre computes `losses_mw = (losses_percent/100)·(f⁺+f⁻)` post-hoc and writes it under `simulation/exchanges/` (see the I·O tab). |
 | `exchange_cost`       | number or null  | No       | Entity-level override of the flow regularization cost. Falls back to the global `penalties.json` default — see the [Penalty System Configure tab](/math/penalty-system#implementation-in-cobre) for the full resolution cascade. |
-
-:::note[Reporting-only]
-Earlier documentation described `losses_percent` as an efficiency factor that
-reduces delivered power in the load balance. The current Cobre binary applies
-**no** loss term in the dispatch LP — each transmission-line flow enters its two
-buses with a coefficient of exactly ±1 — and computes transmission losses only
-after the solve, as the reported `losses_mw` quantity. These pages follow the
-binary.
-:::
 
 Stage-varying capacity is supplied via `constraints/line_bounds.parquet`,
 which accepts sparse `(line_id, stage_id)` rows carrying `direct_mw` and/or

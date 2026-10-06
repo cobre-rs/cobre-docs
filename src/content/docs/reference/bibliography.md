@@ -127,7 +127,7 @@ For domain terms, see [Glossary](/reference/glossary).
 ## Software References
 
 - **Dowson, O. & Kapelevich, L.** (2021). SDDP.jl: A Julia Package for Stochastic Dual Dynamic Programming. _INFORMS Journal on Computing_, 33(1), 27–33. [doi:10.1287/ijoc.2020.0987](https://doi.org/10.1287/ijoc.2020.0987). Documentation: [sddp.dev](https://sddp.dev/stable/)
-  Reference SDDP implementation in Julia. Influenced cut-management patterns, sampling-scheme abstractions, the state-pinning cut-extraction technique (realised in Cobre via column bounds and reduced costs), and notation conventions in Cobre.
+  Reference SDDP implementation in Julia. Influenced the sampling-scheme abstractions, the convex-combination risk-measure convention and the notation conventions in Cobre.
   _Cited in [Notation Conventions](/overview/notation-conventions), [Scenario Generation](/math/scenario-generation) §3, [Risk Measures](/math/risk-measures) §3, [Policy Graphs](/math/policy-graphs) §4, [SDDP Algorithm](/math/sddp-algorithm) §4._
 
 - **Huangfu, Q. & Hall, J.A.J.** (2018). Parallelizing the dual revised simplex method. _Mathematical Programming Computation_, 10(1), 119–142. [doi:10.1007/s12532-017-0130-5](https://doi.org/10.1007/s12532-017-0130-5)

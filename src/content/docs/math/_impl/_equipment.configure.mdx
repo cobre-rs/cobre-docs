@@ -1,8 +1,8 @@
 Cobre's `system/thermals.json`, `system/energy_contracts.json`,
 `system/pumping_stations.json`, and `system/non_controllable_sources.json`
 files author the four equipment types that carry dedicated element
-configuration in this chapter. This tab is the field-level configuration
-reference; the equations these fields feed are in the sections above.
+configuration in this chapter. The equations these fields feed are in the
+sections above.
 
 ### Shared Operational Start Date
 
@@ -117,7 +117,7 @@ attaching the per-plant lead described in [system elements §4](/math/system-ele
 | `lead_stages`     | integer | Number of stages of dispatch anticipation, calendar-free. A value of `2` means the commitment for stage `t` must be decided at stage `t - 2`. Must be `>= 1`. |
 | `lead_time_hours` | number  | Physical anticipation lead in hours; must be finite and `> 0`. Each delivery stage's commitment is decided at the stage containing the instant one lead before the delivery stage's end (an instant on a stage boundary belongs to the earlier stage); a delivery whose instant is at or before the study start is decided before the study. When the instant falls inside the delivery stage itself, the delivery is not anticipated: the plant dispatches as an ordinary thermal at that stage, and the study setup logs a warning naming the plant and the stage. |
 
-Supplying both keys, or neither, is a load error. A lead that reaches past the study horizon — `lead_stages` exceeding the stage count, or `lead_time_hours` exceeding the summed horizon — is rejected at load **unless** the plant's lead reaches a **declared post-study stage** (both lead modes are gated identically): such a commitment is delivered past the horizon, whether decided in the study or before it. With no post-study stage to reach, the plant can never deliver within the study horizon and the over-horizon lead is rejected. A `lead_time_hours` lead coarse enough that one decision stage would decide more than one delivery stage is rejected when the study is set up; a `lead_stages` lead never does this. See [Post-Study Boundary](/math/post-study-boundary) and [`post_study_stages.json`](/reference/case-directory-format#post_study_stagesjson) for the boundary a post-horizon delivery is priced against.
+Supplying both keys, or neither, is a load error. A lead that reaches past the study horizon — `lead_stages` exceeding the stage count, or `lead_time_hours` exceeding the summed horizon — is rejected at load **unless** the plant's lead reaches a **declared post-study stage** (both lead modes are gated identically): such a commitment is delivered past the horizon, whether decided in the study or before it. With no post-study stage to reach, the plant can never deliver within the study horizon and the over-horizon lead is rejected. A `lead_time_hours` lead coarse enough that one decision stage would decide more than one delivery stage is rejected when the study is set up; a `lead_stages` lead never does this. See [Post-Study Boundary](/math/post-study-boundary) and [`post_study_stages.json`](/reference/case-format/stages/#post_study_stagesjson) for the boundary a post-horizon delivery is priced against.
 
 An anticipated plant also declares, in `initial_conditions.json`'s
 `past_anticipated_commitments`, every commitment it decided before the study
@@ -175,7 +175,7 @@ declaration surfaces, by who decides the commitment:
 
 - **Decided in-study, delivered post-horizon** — bounded and costed **solely**
   by a `thermal_bounds[]` cell in
-  [`post_study_stages.json`](/reference/case-directory-format#post_study_stagesjson)
+  [`post_study_stages.json`](/reference/case-format/stages/#post_study_stagesjson)
   (`{thermal_id, post_study_stage_index, cost_per_mwh, min_mw, max_mw}`), one
   per reached post-study stage. The study decides the MW; the cell supplies its
   price and capability.
@@ -192,7 +192,7 @@ with a boundary loaded its state contribution enters the boundary cuts'
 intercepts. Without a boundary, a post-horizon window with a non-zero rate
 raises the same setup warning; an all-zero window raises none. See
 [Post-Study Boundary](/math/post-study-boundary) for the
-formulation and [Case Directory Format](/reference/case-directory-format) for
+formulation and [Case Format](/reference/case-format/) for
 the file shapes.
 
 #### Constraining Commitments via Generic Constraints

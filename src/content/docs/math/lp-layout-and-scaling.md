@@ -69,7 +69,7 @@ The stage LP uses a fixed column and row layout that places state variables firs
 
 Equipment and slack columns follow immediately after $\theta$, in this order: on a chronological stage, the storage at the end of every block but the last; turbined flow, spillage and diversion; thermal generation; the anticipated-thermal decisions; line flows in each direction; deficit and excess; the inflow non-negativity slacks, under the penalty-based methods; FPHA generation; evaporation and its slacks; the withdrawal slacks; the operational-violation slacks; non-controllable generation; pumped flow; import and export contracts; the generic-constraint slacks; and the filling-floor and soft dead-volume-floor slacks. The turbined-flow column family, and the FPHA generation column family, are indexed by **(hydro, bus) cell** rather than by plant — one column per cell ([LP Formulation §3](/math/lp-formulation#3-load-balance-constraint), [§6](/math/lp-formulation#6-hydro-generation-constraints)) — while every other hydro equipment column (spillage, diversion) stays indexed by plant. Like the outgoing storage and ring slots, the outgoing bucket block sits at the columns of its own state indices: it holds the volume still in transit on each cascade arc, defined by in-LP bucket definition rows ([State Augmentation §6](/math/state-augmentation#bucket-definition-rows)) rather than pinned, and the incoming bucket block is the matching pinned incoming copy read for the delayed-arrival water-balance entry and the cut coefficient ([State Augmentation §6](/math/state-augmentation#6-water-travel-time)). One equipment block serves anticipated thermals: one decision column per anticipated thermal, carrying the commitment decided at this stage for its delivery stage ([State Augmentation §5](/math/state-augmentation#5-anticipated-thermal-commitments)).
 
-The realized-inflow region holds one free column per hydro representing the total realized inflow $z_h = a_h$ (m³/s) for each hydro at the current stage. These are auxiliary columns (zero objective cost, unbounded) whose primal values after solving give the realized inflow. They participate in the water balance ([LP Formulation §4](/math/lp-formulation#4-hydro-water-balance)) and are defined by the z-inflow constraints ([LP Formulation §5](/math/lp-formulation#5-realized-inflow-definition-rows)).
+The realized-inflow region holds one free, zero-cost column $z_h$ per hydro, defined by the z-inflow rows of [LP Formulation §5](/math/lp-formulation#5-realized-inflow-definition-rows).
 
 **Row layout** (equality-constraint prefix):
 
@@ -99,13 +99,9 @@ $$
 
 The $\theta$ variable keeps an unscaled coefficient, the one-step discount factor $d_{t \to t+1}$: each stored cut is $\theta \geq \beta_0^{scaled} + \sum_j \beta_j^{scaled} x_j$ over the outgoing-state columns $j$ of the cut row, its intercept and every coefficient being the original-unit value divided by $K$, so $\theta$ is already in scaled cost space. The LP objective is $\sum_j \tilde{c}_j x_j + d_{t \to t+1} \, \theta$, and the total scaled objective equals $(C_{stage} + d_{t \to t+1} \, C_{future}) / K$. Each stage's factor carries every later stage's cost to stage 1 exactly once ([Discount Rate](/math/discount-rate#consistency-with-the-bellman-recursion)). All cost-domain outputs (objective values, duals, cost breakdowns) are multiplied by $K$ at the reporting boundary to recover original units.
 
-:::note[Impact on cut coefficients]
-Cut intercepts and coefficients are stored in scaled cost space (divided by $K$). When evaluating or reporting cut values, the factor $K$ must be applied. Duals extracted from the LP are already in scaled cost space and must be multiplied by $K$ to obtain original-unit values.
-:::
-
 ### 2.2 Column Scaling (Geometric Mean)
 
-After cost scaling, each column $j$ is assigned a geometric-mean scale factor — the standard matrix-equilibration heuristic (Curtis & Reid, 1972):
+After cost scaling, each column $j$ is assigned a geometric-mean scale factor — a one-pass geometric-mean matrix equilibration (cf. [Curtis & Reid, 1972](/reference/bibliography/#numerical-methods)):
 
 $$
 d_j^{col} = \frac{1}{\sqrt{\max_i |A_{ij}| \cdot \min_i |A_{ij}|}}

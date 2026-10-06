@@ -11,7 +11,7 @@ import { Content as HydroNotes } from "./_impl/_hydro.notes.mdx";
 
 ## Purpose
 
-This spec defines the hydro generation constraint models supported by Cobre, which relate turbined flow and reservoir storage to electrical output. Two production functions shape dispatch: constant productivity and FPHA. A third model name — linearized head — is a reserved alias for constant productivity (see §3). The choice between constant productivity and FPHA trades off accuracy vs. computational cost, and can vary by stage per hydro.
+This chapter defines the hydro generation constraint models supported by Cobre, which relate turbined flow and reservoir storage to electrical output. Two production functions shape dispatch: constant productivity and FPHA. A third model name — linearized head — is a reserved alias for constant productivity (see §3). The choice between constant productivity and FPHA trades off accuracy vs. computational cost, and can vary by stage per hydro.
 
 All decision variables use **rate units** (MW, m³/s) — see the Variable Units Convention in [system elements](/math/system-elements). For variable definitions see [notation conventions](/overview/notation-conventions); for LP integration see [LP formulation](/math/lp-formulation); for hydro element descriptions see [system elements](/math/system-elements).
 
@@ -42,7 +42,7 @@ with:
 
 ## 2. FPHA (Approximate Hydroelectric Production Function)
 
-For accurate modeling of hydroelectric generation, FPHA (Approximate Hydroelectric Production Function) captures the nonlinear relationship between storage, flow, spillage, and generation through a piecewise-linear approximation. The approach follows the piecewise-linear hydro production model of Diniz & Maceira (2008); that model is four-dimensional (forebay/head, turbined flow, and tailrace/spillage), whereas Cobre fits a reduced variant over storage and turbined flow at spillage = 0, capturing the spillage effect through the per-plane lateral-flow secant of §2.7 rather than an explicit spillage axis.
+For accurate modeling of hydroelectric generation, FPHA (Approximate Hydroelectric Production Function) captures the nonlinear relationship between storage, flow, spillage, and generation through a piecewise-linear approximation. The approach follows the piecewise-linear hydro production model of [Diniz & Maceira (2008)](/reference/bibliography/#hydro-production); that model is four-dimensional (forebay/head, turbined flow, and tailrace/spillage), whereas Cobre fits a reduced variant over storage and turbined flow at spillage = 0, capturing the spillage effect through the per-plane lateral-flow secant of §2.7 rather than an explicit spillage axis.
 
 ### 2.1 Notation
 
@@ -57,7 +57,7 @@ The tailrace level depends on the outflow below the plant, which this model take
 The **exact hydroelectric production function** relates generation to the operating state:
 
 $$
-\phi(v, q, s) = \rho_{esp} \cdot q \cdot h_{net}
+\phi(v, q, s) = (9.81\,\eta_h/1000) \cdot q \cdot h_{net}
 $$
 
 where:
@@ -66,7 +66,7 @@ where:
 - $q$ = turbined flow (m³/s)
 - $s$ = spillage flow (m³/s)
 - $h_{net}$ = net head (m), clamped to $\ge 0$
-- $\rho_{esp} = 9.81\,\eta_h / 1000$ (MW·s/m⁴), with constant efficiency $\eta_h$ per plant
+- $\eta_h$ = turbine efficiency (section 1), constant per plant; the factor $9.81\,\eta_h/1000$ (MW·s/m⁴) converts hydraulic power to electrical power
 
 The **net head** is computed as:
 
@@ -140,13 +140,7 @@ $$
 
 ### 2.4 Productivity
 
-The **specific productivity** $\rho_{esp}$ (MW per (m³/s · m)) converts hydraulic power to electrical power:
-
-$$
-\rho_{esp,h} = \frac{9.81 \times \eta_h}{1000}
-$$
-
-so the exact production is $\phi = \rho_{esp} \cdot q \cdot h_{net}$ in MW. Cobre uses constant efficiency $\eta_h$ per plant.
+The exact production function converts hydraulic power to electrical power with the factor $9.81\,\eta_h/1000$ (MW per (m³/s · m)), so $\phi = (9.81\,\eta_h/1000) \cdot q \cdot h_{net}$ in MW. Cobre uses constant efficiency $\eta_h$ per plant. The **specific productivity** $\rho_{esp}$, in the same unit, is a separate plant input that the exact production function and the FPHA fit do not use.
 
 An FPHA plant has no single scalar productivity $\rho$. The fitted planes follow from $\eta_h$ and the topology functions alone, while the equivalent productivity $\rho_{eq}$ at the reference operating point is **derived** from a specific productivity $\rho_{esp}$ supplied for the plant (overridable per stage) and the VHA geometry; the derivation is documented in section 5.1.
 
@@ -177,7 +171,7 @@ The computed-FPHA path produces hyperplanes from topology data in four stages: c
 
 #### 2.6.1 Grid and Cloud
 
-The fitter evaluates the exact production function $\phi = \rho_{esp} \cdot q \cdot h_{net}$ on a uniform two-dimensional grid over the fitting window, **with spillage $s = 0$ and lateral flow $= 0$**. The grid has:
+The fitter evaluates the exact production function $\phi = (9.81\,\eta_h/1000) \cdot q \cdot h_{net}$ on a uniform two-dimensional grid over the fitting window, **with spillage $s = 0$ and lateral flow $= 0$**. The grid has:
 
 - **Volume axis**: a configurable number of uniformly spaced values spanning the fitting window $[v_{min}, v_{max}]$. The window lies within the plant's forebay storage range (the full range unless narrowed) and is distinct from the reference volume (§5.1), which fixes an operating point, not this window. The point counts and the window are set on the Configure tab.
 - **Flow axis**: a configurable number of uniformly spaced values spanning $[0, q_{max}]$. The axis **starts at $q = 0$**, where generation is zero; this zero-flow column anchors the lower closure of the cloud and eliminates the need for any synthetic closing point.
@@ -196,10 +190,10 @@ The 3-D convex hull of the $(V, Q, \text{generation})$ cloud is computed via the
 
 #### 2.6.3 Least-Squares $k_{FPHA}$ Correction
 
-The raw hull envelope $FPHA_0$ is optimistic where $\phi$ is non-concave and pessimistic where it is concave. A single scalar $k_{FPHA}$ corrects the bias by minimising the mean-squared error between $k_{FPHA} \cdot FPHA_0$ and the exact $\phi$ over the spill$=0$ grid:
+The raw hull envelope $FPHA_0$ is optimistic where $\phi$ is non-concave and pessimistic where it is concave. A single scalar $k_{FPHA}$ corrects the bias by minimising the mean-squared error between $k_{FPHA} \cdot FPHA_0$ and the capped production $\min(\phi, \bar{G}_h)$ over the spill$=0$ grid:
 
 $$
-k_{FPHA} = \frac{\sum_{i,j} FPHA_0(V_i,Q_j)\,\phi(V_i,Q_j)}{\sum_{i,j} FPHA_0(V_i,Q_j)^2}, \qquad FPHA = k_{FPHA}\cdot FPHA_0
+k_{FPHA} = \frac{\sum_{i,j} FPHA_0(V_i,Q_j)\,\min\big(\phi(V_i,Q_j), \bar{G}_h\big)}{\sum_{i,j} FPHA_0(V_i,Q_j)^2}, \qquad FPHA = k_{FPHA}\cdot FPHA_0
 $$
 
 Key properties:
@@ -210,7 +204,7 @@ Key properties:
 - $k_{FPHA}$ may be **greater or less than 1** (an MSE balance, not a one-sided shrink). Validation requires $k_{FPHA} > 0$. A degenerate denominator (all-zero production) yields the neutral $k_{FPHA} = 1$.
 - Validation also requires $\gamma_v^m \ge 0$, $\gamma_q^m \ge 0$, $\gamma_s^m \le 0$.
 
-**Fit-quality diagnostic**: after the full pipeline, the relative mean-absolute-deviation of the emitted min-envelope vs the exact $\phi$ over the spill$=0$ grid is computed. A warning is emitted (in canonical plant/stage order) when it exceeds a threshold (Implementation notes, "Fit-quality warning") — typically indicating a strongly non-concave surface that no single $k_{FPHA}$ can track well.
+**Fit-quality diagnostic**: after the full pipeline, the relative mean-absolute-deviation of the emitted min-envelope vs the capped production $\min(\phi, \bar{G}_h)$ over the spill$=0$ grid is computed. A warning is emitted (in canonical plant/stage order) when it exceeds a threshold (Implementation notes, "Fit-quality warning") — typically indicating a strongly non-concave surface that no single $k_{FPHA}$ can track well.
 
 **Precomputed input**: precomputed planes may carry an intercept factor $\kappa \in (0, 1]$ (Configure tab) that scales each plane's intercept only ($\gamma_0^m \leftarrow \gamma_0^m \cdot \kappa$), unlike the whole-affine $k_{FPHA}$. The computed path does not use $\kappa$; its $k_{FPHA}$ correction plays that role.
 
@@ -334,7 +328,7 @@ The substantive choice during training is between constant productivity and FPHA
 
 | Scenario                       | Recommended Model     | Rationale                          |
 | ------------------------------ | --------------------- | ---------------------------------- |
-| High-head storage reservoirs   | FPHA                  | Significant head variation (>20%)  |
+| High-head storage reservoirs   | FPHA                  | Significant head variation         |
 | Large storage variation plants | FPHA                  | Operating across wide volume range |
 | Run-of-river plants            | FPHA or Constant      | The hull fit handles run-of-river plants (§2.6.1) |
 | Initial algorithm testing      | Constant productivity | Fast iteration, debug focus        |
@@ -362,7 +356,7 @@ The three production models of sections 1–3 describe how generation depends on
 
 ### 5.1 Equivalent Productivity $\rho_{eq}$
 
-The **equivalent productivity** $\rho_{eq,h,t}$ (MW per m³/s) is the single-scalar productivity that the plant would carry at the reference operating point $(V^{ref}_{h,t},\, Q^{ref}_{h,t})$. The derivation depends on the active generation model at stage $t$:
+The **equivalent productivity** $\rho_{eq,h,t}$ (MW per m³/s) is the single-scalar productivity that the plant would carry at the reference operating point $(V^{ref}_{h,t},\, Q^{ref}_{h,t})$. The derivation depends on the plant's declared generation model, not on the model a stage selects:
 
 | Generation model        | $\rho_{eq,h,t}$ derivation                                                                                                                                                                                                                                                                                                                                          |
 | ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -374,7 +368,7 @@ The **equivalent productivity** $\rho_{eq,h,t}$ (MW per m³/s) is the single-sca
 
 The reference flow $Q^{ref}_{h,t}$ at which both evaluators compute the net head is the plant's installed turbined-flow capacity.
 
-**Authoring**: a non-FPHA plant's equivalent productivity $\rho_{eq,h,t}$ is authored per hydro and stage. An FPHA plant's equivalent productivity is derived as in the table above and may be overridden; the override replaces the derived value in both evaluators, the reference-point value here and the useful-range mean value of §5.3. A zero equivalent productivity of a non-FPHA plant is a planned outage: the plant generates nothing at that stage. An FPHA plant's generation follows its fitted planes, not this scalar. The authoring sources, their resolution order and the load-time checks are on the Configure tab.
+**Authoring**: a non-FPHA plant's equivalent productivity $\rho_{eq,h,t}$ is authored per hydro and stage. An FPHA plant's equivalent productivity is derived as in the table above and may be overridden; the override replaces the derived value in both evaluators, the reference-point value here and the useful-range mean value of §5.3. A zero equivalent productivity at a stage where the plant does not use the FPHA model is a planned outage: the plant generates nothing at that stage. At a stage that uses the FPHA model, generation follows the fitted planes, not this scalar. The authoring sources, their resolution order and the load-time checks are on the Configure tab.
 
 ### 5.2 Accumulated Cascade Productivity $\rho_{acum}$
 

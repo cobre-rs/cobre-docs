@@ -2,8 +2,8 @@ This is a topic-scoped index of the files PAR(p) estimation touches — it
 names each file and its role, it does not repeat their field-by-field
 schemas beyond what the Configure tab already shows for the config-authoring
 surface. The exhaustive, field-by-field case-directory and output reference
-is owned by the Reference corpus ([Case Directory Format](/reference/case-directory-format/)
-and [Output Format](/reference/output-format/) pages).
+is owned by the Reference corpus ([Case Format](/reference/case-format/)
+and [Output Format](/reference/output/) pages).
 
 ### Inputs
 
@@ -26,7 +26,7 @@ and [Output Format](/reference/output-format/) pages).
 The last two are described in [Scenario Generation](/math/scenario-generation).
 
 For the complete field-by-field schema of each file above, see the
-[Case Directory Format](/reference/case-directory-format/) reference page in
+[Case Format](/reference/case-format/) reference page in
 the Reference corpus.
 
 ### Externally-fitted PAR models
@@ -80,7 +80,7 @@ Rules Cobre enforces (or that silently mis-scale the model if broken):
 - **Resolvable season context is required whenever any AR order is $>0$.**
   Every (hydro, stage) group with at least one coefficient row must resolve to
   a season via `season_definitions` or a per-stage `season_id` (see
-  [Case Directory Format](/reference/case-directory-format/) and
+  [Case Format](/reference/case-format/) and
   [Running Cobre — configuration](/running/configuration/)) — this applies on
   every load path, including a plain file-load with no fitting.
 - **The lags advance only under `season_definitions`.** A per-stage
@@ -104,5 +104,5 @@ The entire `output/stochastic/` directory is written **only when the case sets `
 | `output/stochastic/noise_openings.parquet` | The backward-pass opening tree actually used during training, exported when `exports.stochastic: true`. Copying it back into `scenarios/noise_openings.parquet` replays the same opening tree on a subsequent run when the case's declared stage ids are 0, 1, 2, … (the export numbers stages by 0-based position, and the load refuses other ids) — see [Scenario Generation](/math/scenario-generation) for the opening-tree mechanics themselves (out of scope here). |
 
 For the complete output schema (columns, types, file layout), see the
-[Output Format](/reference/output-format/) reference page in the Reference
+[Output Format](/reference/output/) reference page in the Reference
 corpus.

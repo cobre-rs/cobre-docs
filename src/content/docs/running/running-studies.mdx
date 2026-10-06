@@ -67,7 +67,7 @@ error: [SchemaViolation] system/hydros.json: field reservoir: missing field `res
 ```
 
 Fix any reported errors before proceeding. See
-[Case Directory Format](/reference/case-directory-format/) for the full schema.
+[Case Format](/reference/case-format/) for the full schema.
 
 ---
 
@@ -252,9 +252,9 @@ From Python, `cobre.results.load_results("/path/to/my_study/output")` returns
 both metadata files as dicts, and `cobre.results.load_convergence` /
 `cobre.results.load_simulation` load the Parquet tables. See
 [Interpreting Results](/running/interpreting-results/) for reading the
-convergence trajectory and simulation outputs, and [Output Format](/reference/output-format/) for every field
-of [`training/metadata.json`](/reference/output-format/#trainingmetadatajson) and
-[`simulation/metadata.json`](/reference/output-format/#simulationmetadatajson).
+convergence trajectory and simulation outputs, and [Output Format](/reference/output/) for every field
+of [`training/metadata.json`](/reference/output/metadata/#trainingmetadatajson) and
+[`simulation/metadata.json`](/reference/output/metadata/#simulationmetadatajson).
 
 ---
 
@@ -384,7 +384,7 @@ preprocessing artifacts to `output/stochastic/` before training begins:
 ```
 
 The export holds the stochastic model the run used.
-[Output Format — Stochastic Artifacts](/reference/output-format/#stochastic-artifacts)
+[Output Format — Stochastic Artifacts](/reference/output/stochastic/)
 lists each file, the condition under which it is written, and its schema.
 
 ### Round-trip workflow
@@ -441,7 +441,7 @@ from `inflow_history.parquet`, and reads the opening tree from
 hold `num_openings` openings for every stage, or the load fails; a tree that
 the first run clamped to fewer openings, with a warning, fails this check. The
 other conditions on the file are in
-[Case Directory Format](/reference/case-directory-format/#scenariosnoise_openingsparquet).
+[Case Format](/reference/case-format/scenarios/#scenariosnoise_openingsparquet).
 
 ---
 

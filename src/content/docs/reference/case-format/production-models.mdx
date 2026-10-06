@@ -280,7 +280,7 @@ different set of consumers:
 | ---------------------------------------- | ------------------ | -------- | ------- | ----------- | --------------------------------------------------------------------------------------------------------------------------- |
 | `hydro_id`                               | Int32              | Yes      | —       | —           | Hydro plant identifier                                                                                                      |
 | `stage_id`                               | Int32 (nullable)   | Yes      | —       | —           | Stage; NULL means "applies to all stages"                                                                                   |
-| `equivalent_productivity_mw_per_m3s`     | Float64 (nullable) | Yes      | —       | MW/(m³/s)   | Direct ρ_eq override [MW/(m³/s)]; finite and >= 0.0 (`0.0` marks a planned-outage stage of a non-FPHA hydro)                |
+| `equivalent_productivity_mw_per_m3s`     | Float64 (nullable) | Yes      | —       | MW/(m³/s)   | Direct ρ_eq override [MW/(m³/s)]; finite and >= 0.0 (`0.0` marks a planned outage at a stage not using the `"fpha"` model)  |
 | `reference_outflow_m3s`                  | Float64 (nullable) | Yes      | —       | m³/s        | Q_ref override [m³/s]; finite and >= 0.0                                                                                    |
 | `specific_productivity_mw_per_m3s_per_m` | Float64 (nullable) | Yes      | —       | MW/(m³/s)/m | ρ_esp override [MW/(m³/s)/m]; finite and >= 0.0 (`0.0` is accepted and makes the head-derived equivalent productivity zero) |
 
@@ -289,7 +289,7 @@ different set of consumers:
 - All five columns must be present; a file missing any of them is rejected.
 - `hydro_id` must not be null.
 - `equivalent_productivity_mw_per_m3s`, when set, must be finite and >= 0.0;
-  `0.0` is accepted; on a non-FPHA hydro it marks a planned-outage stage.
+  `0.0` is accepted; at a stage that does not use the `"fpha"` model it marks a planned outage.
 - `reference_outflow_m3s`, when set, must be finite and >= 0.0.
 - `specific_productivity_mw_per_m3s_per_m`, when set, must be finite and >= 0.0;
   `0.0` is accepted; it makes the head-derived equivalent productivity zero and is not a planned-outage marker.

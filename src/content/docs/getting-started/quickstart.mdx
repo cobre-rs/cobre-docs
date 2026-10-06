@@ -173,7 +173,7 @@ The tree is template-specific. `policy/basis/` holds a file per stage only when
 training produced a warm-start basis for that stage (the directory itself is
 always created), and cases with other entities add further simulation
 partitions — for example `pumping_stations/`, `contracts/`, `in_transit/`, and
-generic-constraint `violations/`. See [Output Format](/reference/output-format/)
+generic-constraint `violations/`. See [Output Format](/reference/output/)
 for the authoritative, conditional schema of every file.
 
 ---
@@ -386,7 +386,7 @@ gives the configuration.
 You have completed a full SDDP study from case setup to results. The following pages
 go deeper into how the case is structured and how to interpret the output:
 
-- [Case Directory Format](/reference/case-directory-format/) — what each input file controls
+- [Case Format](/reference/case-format/) — what each input file controls
 - [Convergence & Diagnostics](/running/interpreting-results/) — how to read Parquet output and assess convergence
 - [CLI Reference](/reference/cli-reference/) — all flags, subcommands, and exit codes
 - [Configuration](/running/configuration/) — every `config.json` field documented

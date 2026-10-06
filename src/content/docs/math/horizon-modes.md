@@ -300,15 +300,14 @@ cyclic design is specified to operate, is described in
 
 ## 6. Reference
 
-> Costa, B.F.P., Calixto, A.O., Sousa, R.F.S., Figueiredo, R.T., Penna, D.D.J., Khenayfis, L.S., & Oliveira, A.M.R. (2025). "Boundary conditions for hydrothermal operation planning problems: the infinite horizon approach." _Proceeding Series of the Brazilian Society of Computational and Applied Mathematics_, 11(1), 1–7. https://doi.org/10.5540/03.2025.011.01.0355
+- [Costa et al. (2025)](/reference/bibliography/#boundary-conditions-and-horizon-modes)
 
 The cyclic-mode formal structure in section 3 — the season function,
 the cycle convergence inequality, the season-indexed cut pool with its
 cut-sharing equation, and the fixed-point Bellman operator — follows
 this paper; the stationarity assumption and the contraction of the
 operator chain are the standard discounted periodic dynamic-programming
-argument. The full bibliographic entry is in
-[Bibliography](/reference/bibliography).
+argument.
 
 ## Cross-References
 
