@@ -1,98 +1,96 @@
-// Vendored terminal-recording refresh (recordings design, Option A).
+// Provenance check for the committed terminal recording.
 //
-// The demo GIFs embedded in getting-started/quickstart.mdx and
-// running/running-studies.mdx are VHS recordings of the *cobre CLI* in action.
-// They are GENERATED in the `cobre` repo (`recordings/*.tape` + the cobre
-// binary; code = ground truth) — cobre-docs vendors a committed copy of that
-// generated output under public/. This script re-vendors them exactly like
-// refresh-schemas.mjs vendors the JSON Schemas; it never hand-edits a GIF.
+// getting-started/quickstart.mdx embeds public/getting-started/quickstart.gif,
+// a VHS recording of the *cobre CLI*. The running pages show captured terminal
+// text instead of GIFs (ADR-033), and the GIF is rendered locally (E14
+// ticket-229), not vendored from cobre: this script never writes into public/.
 //
-// Released-baseline rule (same discipline as refresh-schemas): content is read
-// from an immutable git TAG via `git -C <cobre> show <ref>:recordings/<name>`,
-// NEVER the `cobre` working tree — a working-tree read would leak a mid-branch
-// regeneration into the vendored copy. Because a tag's GIF is a fixed git blob,
-// --check can byte-compare the vendored copy against it (unlike a *fresh* VHS
-// run, which is not byte-reproducible — timing jitter).
+// What it does instead: scripts/recordings-provenance.json records, for each
+// GIF in MANIFEST, the sha256 of the committed file, the tape's git blob at a
+// cobre tag, and the cobre version and hostname method of the rendering run.
+// --check verifies the committed GIF against that record — not byte-equality
+// with upstream, because a fresh VHS render is not byte-reproducible.
 //
-// Path manifest: unlike schemas (a flat dir mirror), each recording maps to a
-// specific public/ location next to the page that embeds it. MANIFEST is the
-// single source of truth for what ships and where. reconcileManifest() fails
-// loud if the tag grows a GIF the manifest does not map (a new demo the docs
-// would otherwise silently drop) or maps one the tag lacks.
+// Released-baseline rule (same discipline as refresh-schemas): the tape blob is
+// read from an immutable git TAG via `git -C <cobre> rev-parse <ref>:<path>`,
+// NEVER the `cobre` working tree.
+//
+// MANIFEST is the single source of truth for which GIFs ship and from which
+// tape. reconcileRecords() fails loud if the manifest and the record file do
+// not name the same recordings.
 //
 // Usage:
 //   node scripts/refresh-recordings.mjs [--cobre <path>] [--ref <git-ref>] [--check]
 //     --cobre   path to a cobre checkout (default: $COBRE_REPO or ~/git/cobre).
 //               Only used to resolve the git object database — the ref is read
-//               via plumbing, so cobre's checked-out branch is irrelevant.
-//     --ref     git ref/tag to vendor from (default: DEFAULT_COBRE_REF, see
-//               scripts/cobre-ref.mjs).
-//     --check   verify-only: byte-compare public/ copies against <ref>, write
-//               nothing; exit 1 listing every drifted/missing file, else exit 0.
+//               via plumbing, so cobre's checked-out branch is irrelevant. When
+//               no checkout resolves the ref, the tape is reported as not
+//               checked; it is never a failure (CI has no cobre source).
+//     --ref     git ref/tag whose tape blob the report mode computes (default:
+//               DEFAULT_COBRE_REF, see scripts/cobre-ref.mjs). --check reads
+//               each record's own tape_ref.
+//     --check   verify-only: compare each committed GIF's sha256 with its record
+//               and, when a checkout resolves it, the tape blob; exit 1 listing
+//               every drift, else exit 0.
+//     (none)    report: print each record's recorded and computed sha256 and
+//               tape blob, exit 0. Nothing is written in either mode.
 
 import { execFileSync } from "node:child_process";
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { readFileSync, existsSync } from "node:fs";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { homedir } from "node:os";
-import { join, dirname } from "node:path";
+import { join } from "node:path";
 import { DEFAULT_COBRE_REF } from "./cobre-ref.mjs";
 
 const RECORDINGS_SUBPATH = "recordings";
 
-// The single source of truth for which GIFs ship and where. `src` is the
-// basename under cobre `recordings/`; `dest` is the path under public/ (next to
-// the page that embeds it, so the served URL is /<dest>).
+// The single source of truth for which GIFs ship and where. `tape` is the
+// basename under cobre `recordings/` that renders the GIF; `dest` is the path
+// under public/ (next to the page that embeds it, so the served URL is /<dest>).
 const MANIFEST = [
-  { src: "quickstart.gif", dest: "getting-started/quickstart.gif" },
-  { src: "validation.gif", dest: "running/validation.gif" },
-  { src: "validation-error.gif", dest: "running/validation-error.gif" },
-  { src: "multithreading.gif", dest: "running/multithreading.gif" },
+  { tape: "quickstart.tape", dest: "getting-started/quickstart.gif" },
 ];
 
 const publicDir = fileURLToPath(new URL("../public/", import.meta.url));
+const provenancePath = fileURLToPath(
+  new URL("./recordings-provenance.json", import.meta.url),
+);
 
 // --- Pure helpers (exported for the node:test fixture) ----------------------
 // Synchronous, no filesystem/subprocess; exercised directly on inline fixtures
 // by scripts/refresh-recordings.test.mjs.
 
-// Parse `git ls-tree --name-only <ref> recordings/` stdout into a sorted array
-// of the .gif basenames present at the ref (ignoring .tape/.md/etc.).
-export function parseGifNames(lsTreeStdout) {
-  return lsTreeStdout
-    .split("\n")
-    .map((line) => line.trim())
-    .filter((line) => line.length > 0)
-    .map((line) => line.slice(line.lastIndexOf("/") + 1))
-    .filter((name) => name.endsWith(".gif"))
-    .sort();
+export function sha256Hex(buf) {
+  return createHash("sha256").update(buf).digest("hex");
 }
 
-// Cross-check the GIFs present at the ref against MANIFEST, both directions.
-// Throws a named error if the manifest references a GIF absent at the ref, or
-// if the ref carries a GIF the manifest does not map (a new demo the docs would
-// silently drop). Returns the sorted manifest `src` list on success.
-export function reconcileManifest(refGifNames, manifest) {
-  const refSet = new Set(refGifNames);
-  const mapped = manifest.map((e) => e.src).sort();
-  const mappedSet = new Set(mapped);
+// Cross-check MANIFEST against the records, both directions; an entry is its
+// (tape, dest) pair. Throws a named error if the manifest maps a recording that
+// has no record (it would ship unverified), or if a record names a recording the
+// manifest does not map (a record for a GIF the docs do not ship).
+export function reconcileRecords(manifest, records) {
+  const mapped = manifest.map(
+    (e) => `${RECORDINGS_SUBPATH}/${e.tape} -> ${e.dest}`,
+  );
+  const recorded = records.map((r) => `${r.tape} -> ${r.dest}`);
 
-  const missingAtRef = mapped.filter((src) => !refSet.has(src));
-  if (missingAtRef.length > 0) {
+  const unrecorded = mapped.filter((m) => !recorded.includes(m));
+  if (unrecorded.length > 0) {
     throw new Error(
-      `refresh:recordings: manifest references ${missingAtRef.join(", ")} not found under ${RECORDINGS_SUBPATH}/ at the ref — wrong ref, or a renamed/removed recording?`,
+      `refresh:recordings: the manifest maps ${unrecorded.join(", ")} but recordings-provenance.json has no such record — add the record (sha256, tape_blob) or the recording ships unverified.`,
     );
   }
-  const unmapped = refGifNames.filter((name) => !mappedSet.has(name));
+  const unmapped = recorded.filter((r) => !mapped.includes(r));
   if (unmapped.length > 0) {
     throw new Error(
-      `refresh:recordings: ${unmapped.join(", ")} exist under ${RECORDINGS_SUBPATH}/ at the ref but are not in the manifest — wire them into public/ (and a page) or they will not ship.`,
+      `refresh:recordings: recordings-provenance.json records ${unmapped.join(", ")} but the manifest does not map it — drop the record, or wire the recording into the manifest and a page.`,
     );
   }
-  return mapped;
 }
 
 // Throws a named error unless `buf` begins with a GIF signature (GIF87a/GIF89a).
-// Guards against vendoring an error page, an LFS pointer, or a truncated blob
+// Guards against a committed error page, LFS pointer, or truncated blob
 // instead of an actual GIF — the binary analog of assertWellFormed.
 export function assertGifMagic(name, buf) {
   const magic = buf.subarray(0, 6).toString("latin1");
@@ -103,37 +101,51 @@ export function assertGifMagic(name, buf) {
   }
 }
 
+// Returns the drift lines (empty when none) for one record. `gifBuf` is the
+// committed GIF's bytes, or null when public/<dest> is missing; `tapeBlob` is
+// the tape's blob at the record's tape_ref, or null when no cobre checkout
+// resolves it (not a drift: the sha256 check stands alone).
+export function checkRecording(record, gifBuf, tapeBlob) {
+  const { dest, sha256, tape, tape_ref: tapeRef, tape_blob: blob } = record;
+  const drift = [];
+  if (gifBuf === null) {
+    drift.push(`${dest} (missing from public/)`);
+  } else {
+    assertGifMagic(dest, gifBuf);
+    const actual = sha256Hex(gifBuf);
+    if (actual !== sha256) {
+      drift.push(`${dest} (sha256 ${actual}, recorded ${sha256})`);
+    }
+  }
+  if (tapeBlob !== null && tapeBlob !== blob) {
+    drift.push(
+      `${dest} (${tape} at ${tapeRef} is blob ${tapeBlob}, recorded ${blob})`,
+    );
+  }
+  return drift;
+}
+
 // --- Git plumbing (execFileSync with an ARGS ARRAY — never a shell string) --
 
-function gitLsTree(cobre, ref) {
+// Returns the tape's git blob id at `ref`, or null when the checkout at `cobre`
+// cannot resolve it (no checkout, or the tag is not fetched): `rev-parse` exits
+// 128 for both. Any other failure (git itself missing) is real and propagates.
+function gitTapeBlob(cobre, ref, tape) {
   try {
     return execFileSync(
       "git",
-      ["-C", cobre, "ls-tree", "--name-only", ref, `${RECORDINGS_SUBPATH}/`],
-      { encoding: "utf8" },
-    );
+      ["-C", cobre, "rev-parse", "--verify", `${ref}:${tape}`],
+      { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] },
+    ).trim();
   } catch (error) {
-    throw new Error(
-      `refresh:recordings: cannot list ${RECORDINGS_SUBPATH}/ at ${ref} from ${cobre} — is the tag fetched? (${error.message})`,
-    );
+    if (error.status === 128) return null;
+    throw error;
   }
 }
 
-// Returns a Buffer — NO encoding, so binary GIF bytes are preserved verbatim.
-// maxBuffer is raised well above execFileSync's 1 MB default: GIFs routinely
-// exceed it (multithreading.gif is ~1.1 MB), which would otherwise ENOBUFS.
-function gitShowBinary(cobre, ref, src) {
-  try {
-    return execFileSync(
-      "git",
-      ["-C", cobre, "show", `${ref}:${RECORDINGS_SUBPATH}/${src}`],
-      { maxBuffer: 256 * 1024 * 1024 },
-    );
-  } catch (error) {
-    throw new Error(
-      `refresh:recordings: cannot read ${ref}:${RECORDINGS_SUBPATH}/${src} from ${cobre} — is the tag fetched? (${error.message})`,
-    );
-  }
+function readGif(dest) {
+  const gifPath = join(publicDir, dest);
+  return existsSync(gifPath) ? readFileSync(gifPath) : null;
 }
 
 // --- Arg parsing --------------------------------------------------------------
@@ -161,50 +173,47 @@ function parseArgs(argv) {
 
 function main() {
   const { cobre, ref, check } = parseArgs(process.argv.slice(2));
+  const { recordings } = JSON.parse(readFileSync(provenancePath, "utf8"));
 
-  reconcileManifest(parseGifNames(gitLsTree(cobre, ref)), MANIFEST);
-
-  const released = new Map();
-  for (const { src } of MANIFEST) {
-    const buf = gitShowBinary(cobre, ref, src);
-    assertGifMagic(src, buf);
-    released.set(src, buf);
-  }
+  reconcileRecords(MANIFEST, recordings);
 
   if (check) {
     const drifted = [];
-    for (const { src, dest } of MANIFEST) {
-      const destPath = join(publicDir, dest);
-      if (!existsSync(destPath)) {
-        drifted.push(`${dest} (missing from public/)`);
-        continue;
+    for (const record of recordings) {
+      const { dest, tape, tape_ref: tapeRef } = record;
+      const tapeBlob = gitTapeBlob(cobre, tapeRef, tape);
+      if (tapeBlob === null) {
+        console.log(
+          `refresh:recordings --check: ${dest}: tape not checked (no cobre checkout at ${cobre} resolves ${tapeRef}:${tape})`,
+        );
       }
-      if (!readFileSync(destPath).equals(released.get(src))) {
-        drifted.push(`${dest} (drifted from ${ref})`);
-      }
+      drifted.push(...checkRecording(record, readGif(dest), tapeBlob));
     }
     if (drifted.length > 0) {
       console.error(
-        `refresh:recordings --check: ${drifted.length} of ${MANIFEST.length} vendored recording(s) drifted from ${ref}:\n`,
+        `refresh:recordings --check: ${drifted.length} drift(s) across ${recordings.length} recorded recording(s):\n`,
       );
       for (const d of drifted) console.error(`  ${d}`);
       process.exit(1);
     }
     console.log(
-      `refresh:recordings --check: ${MANIFEST.length} vendored recordings match ${ref}`,
+      `refresh:recordings --check: ${recordings.length} recorded recording(s) match recordings-provenance.json`,
     );
     process.exit(0);
   }
 
-  for (const { src, dest } of MANIFEST) {
-    const destPath = join(publicDir, dest);
-    mkdirSync(dirname(destPath), { recursive: true });
-    writeFileSync(destPath, released.get(src));
+  for (const record of recordings) {
+    const gif = readGif(record.dest);
+    const blob = gitTapeBlob(cobre, ref, record.tape);
+    const lines = [
+      record.dest,
+      `  sha256     recorded ${record.sha256}`,
+      `             computed ${gif === null ? "missing from public/" : sha256Hex(gif)}`,
+      `  tape_blob  recorded ${record.tape_blob}`,
+      `             computed ${blob ?? "not resolved"} (${ref}:${record.tape})`,
+    ];
+    console.log(lines.join("\n"));
   }
-  console.log(
-    `refresh:recordings: vendored ${MANIFEST.length} recordings from ${ref}`,
-  );
-  process.exit(0);
 }
 
 // Run when executed directly; stay inert when imported by the test.

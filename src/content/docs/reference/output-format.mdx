@@ -419,7 +419,7 @@ attributed to any phase is `overhead_ms`.
 | `forward_wall_ms`            | Int64 | No       | Wall-clock time for the forward pass (all stages and scenarios).                                                                                                                            |
 | `backward_wall_ms`           | Int64 | No       | Wall-clock time for the backward pass (all stages and trial points).                                                                                                                        |
 | `cut_selection_ms`           | Int64 | No       | Time spent running the cut selection pass.                                                                                                                                                  |
-| `mpi_allreduce_ms`           | Int64 | No       | Time spent in MPI allreduce (forward-pass bound synchronization).                                                                                                                           |
+| `mpi_allreduce_ms`           | Int64 | No       | Time spent in the forward-pass bound synchronization: an allgatherv of the per-trajectory costs across ranks and their canonical-order reduction.                                           |
 | `cut_sync_ms`                | Int64 | No       | Time spent in per-stage cut sync allgatherv (sub-component of backward).                                                                                                                    |
 | `lower_bound_ms`             | Int64 | No       | Time spent evaluating the lower bound (stage-0 LP solves for all openings).                                                                                                                 |
 | `state_exchange_ms`          | Int64 | No       | Time spent in state exchange allgatherv (sub-component of backward).                                                                                                                        |
@@ -961,7 +961,7 @@ entities is rejected.
 | ---------------- | ------ | -------------------------------------------------------------------------------------------------------------------- |
 | `entity_type`   | EntityType | `byte` enum: state-dimension kind — `0` HydroStorage, `1` HydroInflowLag, `2` AnticipatedThermalState, `3` HydroTransitBucket. |
 | `entity_id`     | int32  | Owning entity id — for a transit bucket, the downstream hydro.                                                        |
-| `subindex`      | uint32 | Secondary index within the entity: the inflow-lag order, anticipated-commitment ring slot (counted from stage 0: $(s - 1) \bmod k_{max}$ for the [Hold Ring](/math/lp-formulation#hold-ring) slot $s$), or transit maturity lag.  |
+| `subindex`      | uint32 | Secondary index within the entity: the inflow-lag order, anticipated-commitment ring slot (counted from stage 0: $(s - 1) \bmod k_{max}$ for the [Hold Ring](/math/state-augmentation#hold-ring) slot $s$), or transit maturity lag.  |
 | `was_active`    | bool   | Whether the owning entity was operationally active at this stage (excluded from the load-time identity check).       |
 | `reference_date` | int32  | The `HydroInflowLag` reference past-stage `start_date`, encoded `YYYYMMDD` (`year*10000 + month*100 + day`); sentinel `-2147483648` (the int32 minimum) for every other family. |
 | `interval_start` | int32  | Inclusive start of the forward-family half-open window, encoded `YYYYMMDD`: a `HydroTransitBucket` arrival start or an `AnticipatedThermalState` delivery start. Sentinel `-2147483648` for `HydroStorage` and `HydroInflowLag`, and for an `AnticipatedThermalState` ring slot that holds no live commitment at the pool's stage or whose delivery lands past the study calendar extended by the post-study stages. |
@@ -1542,7 +1542,7 @@ present **only when the system declares a travel-time arc**
 | `node_id`               | Int32   | No       | Visited policy-graph node id; on a stage chain, the 0-based stage position (not the declared stage id).             |
 | `hydro_id`              | Int32   | No       | Downstream (receiving) hydro plant ID the in-transit water is destined for.                                         |
 | `lag`                   | Int32   | No       | Maturity lag (1-based) of the bucket at the end of this stage: lag 1 arrives at the receiving plant at the next stage, lag `k` arrives `k` stages later. |
-| `in_transit_volume_hm3` | Float64 | No       | Volume in this bucket at the end of the stage, in hm³. Water that would mature after the last stage is dropped when no terminal boundary is loaded, so such a bucket reads `0` (see [Horizon limitation](/math/lp-formulation#horizon-limitation)). |
+| `in_transit_volume_hm3` | Float64 | No       | Volume in this bucket at the end of the stage, in hm³. Water that would mature after the last stage is dropped when no terminal boundary is loaded, so such a bucket reads `0` (see [Horizon limitation](/math/state-augmentation#horizon-limitation)). |
 | `delayed_arrival_hm3`   | Float64 | No       | Volume of the incoming lag-1 bucket, which enters the receiving plant's water balance at this stage (from the plant's exit stage on, it leaves the modeled system instead), in hm³; written on the `lag` = 1 row and `0` on deeper lags. |
 
 ---
@@ -1586,7 +1586,7 @@ study declares `post_study_stages`.
 | `thermal_id`            | Int32   | No       | Anticipated thermal unit ID.                                                                                        |
 | `delivery_date`         | Int32   | No       | Calendar date the commitment delivers, encoded `YYYYMMDD` (`year*10000 + month*100 + day`).                         |
 | `deposited_decision_mw` | Float64 | No       | Commitment decided at `stage_id` for delivery at `delivery_date`, in MW.                                              |
-| `carried_committed_mw`  | Float64 | No       | Value of the ring slot holding the commitment at `stage_id`, in MW; the [deposit row](/math/lp-formulation#ring-rows) makes it equal to `deposited_decision_mw`. |
+| `carried_committed_mw`  | Float64 | No       | Value of the ring slot holding the commitment at `stage_id`, in MW; the [deposit row](/math/state-augmentation#ring-rows) makes it equal to `deposited_decision_mw`. |
 
 ---
 

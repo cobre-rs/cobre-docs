@@ -69,11 +69,4 @@
 #     `grep -c '# owner: E<NN> ' scripts/doc-lint-allow.txt` = 0.
 #   • Epic 15 ticket-248 confirms the residue is zero.
 
-getting-started/installation.mdx:199  narration-migration  # owner: E09 ALG-20 — Migration
 math/_impl/_network.configure.mdx:77  narration-earlier-docs  # owner: E10 LPS-18 — Earlier documentation
-math/cut-management.mdx:264  narration-no-longer  # owner: E09 ALG-12 — no longer accepted
-math/hydro-production-models.mdx:347  narration-now-verb  # owner: E10 LPS-07 — now supports
-running/configuration.mdx:54  narration-pre-version  # owner: E12 RUN-02 — pre-v0
-running/configuration.mdx:280  narration-pre-version  # owner: E12 RUN-02 — pre-v0
-running/configuration.mdx:584  narration-pre-version  # owner: E12 RUN-02 — pre-v0
-running/configuration.mdx:939  narration-new-in  # owner: E12 RUN-02 — new in

@@ -144,224 +144,10 @@ my_case/
 
 ### `config.json`
 
-Controls all solver parameters. The `training` section is required; all other
-sections are optional and fall back to documented defaults when absent.
-
-**Top-level sections:**
-
-| Section                  | Type   | Default      | Purpose                                                             |
-| ------------------------ | ------ | ------------ | ------------------------------------------------------------------- |
-| `$schema`                | string | `null`       | JSON Schema URI for editor validation (ignored during processing)   |
-| `modeling`               | object | `{}`         | Inflow non-negativity treatment; objective cost-scale conditioning  |
-| `training`               | object | **required** | Iteration count, stopping rules, cut selection, parallelism, solver |
-| `estimation`             | object | `{}`         | PAR(p) model estimation settings (max order, selection criterion)   |
-| `upper_bound_evaluation` | object | `{}`         | Inner approximation upper-bound settings; accepted, no effect       |
-| `policy`                 | object | fresh mode   | Policy directory path and warm-start mode                           |
-| `simulation`             | object | disabled     | Post-training simulation settings                                   |
-| `exports`                | object | all disabled | Output file selection flags                                         |
-
-**`modeling` section:**
-
-| Field                                   | Type   | Default       | Description                                                                                                                           |
-| --------------------------------------- | ------ | ------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
-| `modeling.inflow_non_negativity.method` | string | `"penalty"`   | How to handle negative modelled inflows. One of `"none"`, `"penalty"`, `"truncation"`, `"truncation_with_penalty"`                    |
-| `modeling.cost_scale_factor`            | number | `1_000_000.0` | Divisor on non-θ objective coefficients; objective conditioning only (see [Configuration](/running/configuration/#cost_scale_factor)) |
-
-The per-hydro penalty coefficient applied to the inflow slack column is
-authored in `penalties.json::hydro.inflow_nonnegativity_cost`.
-
-**`training` section (mandatory fields):**
-
-| Field                      | Type            | Default                             | Description                                                                                                                |
-| -------------------------- | --------------- | ----------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
-| `training.selection`       | object          | **required**                        | Scenario-selection method — `sampled{forward_passes}` or `enumerated{}` (see below); a missing `training.selection` is a hard load error |
-| `training.stopping_rules`  | array           | **required**                        | List of stopping-rule entries; a missing key is a hard load error. An empty array `[]` is treated as a single `iteration_limit` rule of 100 iterations |
-| `training.stopping_mode`   | string          | `"any"`                             | How multiple rules combine: `"any"` (stop when any triggers) or `"all"` (stop when all trigger)                            |
-| `training.enabled`         | boolean         | `true`                              | When `false`, skip training and proceed directly to simulation                                                             |
-| `training.tree_seed`       | integer or null | `null`                              | Seed of the opening tree and of the in-sample opening draws; an absent value uses `42` (see [Seed resolution](#seed-resolution)) |
-| `training.scenario_source` | object or null  | `null`                              | Per-class sampling scheme for the training forward pass (see below)                                                        |
-| `training.parallelism`     | object          | `{backward_scheduler: by_scenario}` | Backward-pass scheduler selection; see [Configuration](/running/configuration/#parallelism)                                |
-| `training.solver`          | object          | `{retry_max_attempts: 5, retry_time_budget_seconds: 30.0}` | LP solver retry policy and optional per-phase solver profiles; see [Configuration](/running/configuration/#trainingsolver) |
-
-**`training.selection` sub-section:**
-
-Chooses how many trajectories the training forward pass runs per iteration, or
-whether it exhaustively enumerates the scenario openings instead of sampling. The
-object is internally tagged on `method`; each variant accepts only its own fields
-(pairing `forward_passes` with `"enumerated"` is a load-time error). There is no
-default forward-pass count — an absent `training.selection` is a hard load error.
-
-| Field                                | Type    | Required          | Description                                                                |
-| ------------------------------------- | ------- | ------------------ | ----------------------------------------------------------------------------- |
-| `training.selection.method`           | string  | Yes                | `"sampled"` or `"enumerated"`                                                  |
-| `training.selection.forward_passes`   | integer | `sampled` only     | Number of forward-pass trajectories per iteration (>= 1). Rejected under `"enumerated"` |
-
-**`training.scenario_source` sub-section:**
-
-Configures which scenario sampling scheme is used for each entity class during training.
-When absent, all classes default to `"in_sample"` (PAR-based noise generation).
-
-| Field                                       | Type            | Default                     | Description                                                                                            |
-| ------------------------------------------- | --------------- | --------------------------- | ------------------------------------------------------------------------------------------------------ |
-| `training.scenario_source.seed`             | integer or null | `null`                      | Forward seed of the out-of-sample draws, in training and in simulation; **required** when any class is not `"in_sample"`. Historical-window and external-scenario selection use no seed (see [Seed resolution](#seed-resolution)) |
-| `training.scenario_source.inflow.scheme`    | string          | `"in_sample"`               | Inflow sampling scheme: `"in_sample"`, `"historical"`, `"external"`, or `"out_of_sample"`              |
-| `training.scenario_source.load.scheme`      | string          | `"in_sample"`               | Load sampling scheme: `"in_sample"`, `"external"`, or `"out_of_sample"` (no replay scheme; see the admission rules) |
-| `training.scenario_source.ncs.scheme`       | string          | `"in_sample"`               | NCS sampling scheme: `"in_sample"`, `"external"`, or `"out_of_sample"` (no replay scheme; see the admission rules)  |
-| `training.scenario_source.historical_years` | array or object | `null`                      | Years eligible as inflow replay windows. List (`[2010, 2015]`) or range (`{"from": 2010, "to": 2023}`); absent, every year of the history is a candidate. Each listed year names the window whose first study stage falls in that year's occurrence of its season; eligibility follows [Historical Window Pool](/math/scenario-generation/#historical-window-pool), and a year that fails it is dropped without a message. An empty result is the "no valid historical windows found" error ([Error Codes](/reference/error-codes/#stochasticpreparationerror)). The same pool supplies the `historical_residuals` openings |
-| `training.scenario_source.openings`         | object          | `{"source": "generated"}`   | Backward opening-tree source: `{"source": "generated"}` builds the tree internally; `{"source": "file"}` reads `scenarios/noise_openings.parquet` (see [`scenarios/noise_openings.parquet`](#scenariosnoise_openingsparquet)). Training only |
-
-**Admission rules.** Both `training.scenario_source` and `simulation.scenario_source`
-are checked at load; each violation is a `SchemaViolation` on `config.json` naming the
-field (`<section>` is `training` or `simulation`):
-
-- `historical` is inflow-only — `field <section>.scenario_source.load.scheme` (or
-  `.ncs.scheme`): `historical scheme is only valid for the inflow class`.
-- `seed` is required whenever any class is not `"in_sample"` —
-  `field <section>.scenario_source.seed`:
-  `seed is required when any class uses out_of_sample, historical, or external scheme`.
-- `historical_years` needs a class on `"historical"` —
-  `field <section>.scenario_source.historical_years`:
-  `historical_years is specified but no class uses the 'historical' scheme`.
-- A `historical_years` range must satisfy `from <= to` —
-  `field <section>.scenario_source.historical_years`: for example `range 'from' (2010) must be <= 'to' (2000)`.
-- `openings` is training-only — `field simulation.scenario_source.openings`:
-  `openings is only valid under training.scenario_source, not simulation.scenario_source`.
-
-With `openings = {"source": "file"}`, a missing `scenarios/noise_openings.parquet` fails
-the load (`openings source is 'file' but the conventional scenarios/noise_openings.parquet is absent`),
-and the declaration is rejected together with a declared `nodes[]` policy graph or under
-`training.selection.method = "enumerated"`.
-
-#### Seed resolution
-
-Two seeds in `config.json` drive the random draws: `training.tree_seed` and
-`training.scenario_source.seed`. `simulation.scenario_source.seed` is a third key
-that no draw reads. The forward-pass selection of historical windows and external
-scenarios uses no seed.
-
-- `training.tree_seed` seeds the opening tree and the in-sample opening draws.
-  When it is a non-null integer, Cobre uses `|seed|` (unsigned absolute value)
-  as the base seed for deterministic SipHash-1-3 noise generation, so a negative
-  seed `-n` acts as `n`. When it is absent or `null`, the seed is `42` and no
-  warning is printed. Set it explicitly to make the choice intentional and
-  visible to other users of the case directory.
-- `training.scenario_source.seed` is the forward seed of the out-of-sample
-  draws. Cobre applies the same absolute-value rule: it uses `|seed|`. Inflow
-  draws from it directly; load and NCS each derive their own stream from it, so
-  the three classes draw independent noise. It is required whenever any class
-  is not `in_sample`, including a class on `historical` or `external`, whose
-  selection reads no seed.
-- The simulation uses the same two seeds: its in-sample draws use
-  `training.tree_seed` and its out-of-sample draws use
-  `training.scenario_source.seed`. `simulation.scenario_source.seed` is required
-  for admission when a class of `simulation.scenario_source` is not `in_sample`,
-  and no draw reads its value. A simulation class on `out_of_sample` therefore
-  needs `training.scenario_source.seed`, even when every training class is
-  `in_sample`.
-- A `historical` trajectory's window and an `external` trajectory's scenario are
-  chosen by a deterministic hash of the iteration and trajectory indices that
-  takes no seed.
-- The window each `historical_residuals` opening reads is part of the opening
-  tree and follows `training.tree_seed`.
-
-With the same seeds and inputs, the draws are identical across runs.
-
-**`training.stopping_rules` entries:**
-
-Each entry has a `"type"` discriminator. Valid types:
-
-| Type              | Required fields                                                       | Stops when                                                               |
-| ----------------- | --------------------------------------------------------------------- | ------------------------------------------------------------------------ |
-| `iteration_limit` | `limit: integer`                                                      | Iteration count reaches `limit`                                          |
-| `time_limit`      | `seconds: number`                                                     | Wall-clock time reaches `seconds`                                        |
-| `bound_stalling`  | `iterations: integer`, `tolerance: number`                            | Lower bound improvement falls below `tolerance` over `iterations` window |
-| `gap`             | `tolerance: number` and/or `relative_tolerance: number` (at least one required) | The optimality gap between the lower and upper bounds falls below the tolerance. Admissible only with `training.selection.method = "enumerated"` and the same risk measure at every stage, a `cvar` with `lambda: 0` counting as `"expectation"` (see [Configuration](/running/configuration/#gap)); `cobre run` rejects any other `gap` rule when it sets the study up, and `cobre validate` reports the rejection only when `policy.boundary` is configured. |
-
-:::note[`stopping_rules` need not include `iteration_limit`]
-The `training.stopping_rules` key is required. A non-empty set needs no
-`iteration_limit` rule. Training never runs past the largest `limit` among the
-set's `iteration_limit` rules, or past 100 iterations when the set has none. An
-empty array `[]` is treated as a single `iteration_limit` rule of 100 iterations.
-:::
-
-**`training.cut_selection` sub-section:**
-
-Two always-on knobs plus a tagged `selection` object that chooses the method
-and carries only that method's parameters. Omitting `selection` disables row
-selection. See the
-[Configuration](/running/configuration/#cut_selection) guide for the full
-per-method field tables.
-
-| Field                    | Type    | Default | Description                                                                                            |
-| ------------------------ | ------- | ------- | ------------------------------------------------------------------------------------------------------ |
-| `row_activity_tolerance` | number  | `0.0`   | Minimum dual multiplier for a row to count as binding                                                  |
-| `max_active_per_stage`   | integer | `null`  | Hard cap on active rows per stage; `null` = no cap                                                     |
-| `selection`              | object  | `null`  | Active method and its parameters; `method` is one of `"level1"`, `"lml1"`, `"domination"`, `"dynamic"` |
-
-**`upper_bound_evaluation` section:**
-
-The loader accepts the block and checks its keys and value types. No part of
-the run reads it, so its fields have no effect.
-
-| Field                      | Type    | Default | Description                                   |
-| -------------------------- | ------- | ------- | --------------------------------------------- |
-| `enabled`                  | boolean | `null`  | Enable vertex-based inner approximation       |
-| `initial_iteration`        | integer | `null`  | First iteration to compute the upper bound    |
-| `interval_iterations`      | integer | `null`  | Iterations between upper-bound evaluations    |
-| `lipschitz.mode`           | string  | `null`  | Lipschitz constant computation mode: `"auto"` |
-| `lipschitz.fallback_value` | number  | `null`  | Fallback when automatic computation fails     |
-| `lipschitz.scale_factor`   | number  | `null`  | Multiplicative safety margin                  |
-
-**`policy` section:**
-
-| Field                               | Type           | Default      | Description                                                            |
-| ----------------------------------- | -------------- | ------------ | ---------------------------------------------------------------------- |
-| `path`                              | string         | `"./policy"` | Policy checkpoint directory, resolved against the run's output directory. Its files are listed under [Output Format — Policy Checkpoint](/reference/output-format/#policy-checkpoint). |
-| `mode`                              | string         | `"fresh"`    | Initialization mode: `"fresh"`, `"warm_start"`, or `"resume"`          |
-| `boundary`                          | object or null | `null`       | Terminal boundary cut config: `path` (string) + `strict` (bool, default false) |
-| `checkpointing.enabled`             | boolean        | `null`       | Accepted; has no effect. Periodic-checkpointing flag.                  |
-| `checkpointing.initial_iteration`   | integer        | `null`       | Accepted; has no effect. First checkpoint iteration.                   |
-| `checkpointing.interval_iterations` | integer        | `null`       | Accepted; has no effect. Iterations between checkpoints.               |
-| `checkpointing.store_basis`         | boolean        | `null`       | Accepted; has no effect. LP-basis storage flag.                        |
-| `checkpointing.compress`            | boolean        | `null`       | Accepted; has no effect. Checkpoint-compression flag.                  |
-
-Training writes one policy checkpoint at its end, whatever the `checkpointing.*`
-fields hold ([Policy Management](/running/policy-management/#resume)).
-
-**`simulation` section:**
-
-| Field                                         | Type            | Default       | Description                                                                                            |
-| --------------------------------------------- | --------------- | ------------- | ------------------------------------------------------------------------------------------------------ |
-| `enabled`                                     | boolean         | `false`       | Enable post-training simulation                                                                        |
-| `simulation.selection`                        | object or null  | `null`        | Scenario-selection method — `sampled{num_scenarios}` or `enumerated{}` (see below); absent resolves to the default sampled count (`2000`) |
-| `io_channel_capacity`                         | integer         | `64`          | Channel capacity between simulation and I/O writer threads                                             |
-| `simulation.scenario_source`                  | object or null  | `null`        | Per-class sampling scheme for the simulation pass; when absent, the simulation reuses `training.scenario_source` as a whole. Same admission rules as training; `openings` is rejected here |
-| `simulation.scenario_source.seed`             | integer or null | `null`        | **Required** for admission when a class of `simulation.scenario_source` is not `"in_sample"`; no draw reads its value. The simulation's out-of-sample draws use `training.scenario_source.seed` (see [Seed resolution](#seed-resolution)) |
-| `simulation.scenario_source.inflow.scheme`    | string          | `"in_sample"` | Inflow sampling scheme: `"in_sample"`, `"historical"`, `"external"`, or `"out_of_sample"`              |
-| `simulation.scenario_source.load.scheme`      | string          | `"in_sample"` | Load sampling scheme: `"in_sample"`, `"external"`, or `"out_of_sample"` (no replay scheme; see the admission rules) |
-| `simulation.scenario_source.ncs.scheme`       | string          | `"in_sample"` | NCS sampling scheme: `"in_sample"`, `"external"`, or `"out_of_sample"` (no replay scheme; see the admission rules)  |
-| `simulation.scenario_source.historical_years` | array or object | `null`        | Years eligible as inflow replay windows. List (`[2010, 2015]`) or range (`{"from": 2010, "to": 2023}`); absent, every year of the history is a candidate. Each listed year names the window whose first study stage falls in that year's occurrence of its season; eligibility follows [Historical Window Pool](/math/scenario-generation/#historical-window-pool), and a year that fails it is dropped without a message. An empty result is the "no valid historical windows found" error ([Error Codes](/reference/error-codes/#stochasticpreparationerror)). Takes effect only when the training inflow scheme is not `"historical"`: when training is also `"historical"`, the simulation replays the training pool and this key has no effect |
-
-**`simulation.selection` sub-section:**
-
-Chooses how many trajectories the post-training simulation runs, or whether it
-exhaustively enumerates the scenario openings instead of sampling. Internally
-tagged on `method`, mirroring `training.selection` above. Unlike
-`training.selection`, this field is optional: an absent `simulation.selection`
-resolves to a sampled count of `2000`.
-
-| Field                                  | Type    | Required          | Description                                                                    |
-| ---------------------------------------- | ------- | ------------------ | ----------------------------------------------------------------------------------- |
-| `simulation.selection.method`            | string  | Yes (if present)   | `"sampled"` or `"enumerated"`                                                        |
-| `simulation.selection.num_scenarios`     | integer | `sampled` only      | Number of simulation trajectories to draw (>= 0). Rejected under `"enumerated"`      |
-
-**`exports` section:**
-
-| Field        | Type    | Default | Description                                                       |
-| ------------ | ------- | ------- | ----------------------------------------------------------------- |
-| `states`     | boolean | `false` | Export visited forward-pass trial points to the policy checkpoint |
-| `stochastic` | boolean | `false` | Export stochastic preprocessing artifacts to `output/stochastic/` |
-| `fpha_deviation_points` | boolean | `false` | Export the per-grid-point computed-FPHA fit-deviation table to `output/hydro_models/fpha_deviation_points.parquet`. |
+`config.json` holds the run parameters. Only the `training` section is required, and it must hold `training.selection` and
+`training.stopping_rules`; every other section is optional.
+[Configuration](/running/configuration/) documents every key with its type, default and admission rules;
+its [Seed resolution](/running/configuration/#seed-resolution) section explains how the seeds drive the random draws.
 
 **Minimal valid example:**
 
@@ -908,7 +694,7 @@ Key fields:
 | `hydros[].name`                                   | Yes      | Human-readable plant name                                                                                     |
 | `hydros[].unit_groups`                            | Yes      | Turbine groups partitioning the plant's generation envelope, each on its own bus (see below); an absent, `null`, or empty array is rejected |
 | `hydros[].downstream_id`                          | No       | Downstream plant ID in the cascade; `null` = tailwater                                                        |
-| `hydros[].travel_time_hours`                      | No       | Water travel time [hours] on the main cascade arc to `downstream_id`; `null` or `0.0` = instantaneous. When present and strictly positive, the release is delivered downstream after this delay and carried as in-transit Bellman state (see [System Elements §5](/math/system-elements) and [LP Formulation §5d](/math/lp-formulation)). Requires `initial_conditions.past_defluences` seeding. |
+| `hydros[].travel_time_hours`                      | No       | Water travel time [hours] on the main cascade arc to `downstream_id`; `null` or `0.0` = instantaneous. When present and strictly positive, the release is delivered downstream after this delay and carried as in-transit Bellman state (see [System Elements §5](/math/system-elements) and [State Augmentation §6](/math/state-augmentation#6-water-travel-time)). Requires `initial_conditions.past_defluences` seeding. |
 | `hydros[].operational_start_date`                 | Yes      | Calendar date the plant enters the registry's operational history, ISO-8601 (`YYYY-MM-DD`). Provenance and the canonical `(operational_start_date, id)` ordering key (see [Notation Conventions](/overview/notation-conventions)) — independent of `entry_stage_id`/`exit_stage_id` below, which alone gate commissioning |
 | `hydros[].entry_stage_id`                         | No       | Stage when plant enters service; `null` = always exists                                                       |
 | `hydros[].exit_stage_id`                          | No       | Stage when plant is decommissioned; `null` = never                                                            |
@@ -1579,10 +1365,11 @@ point-in-time reading: `[start_date, end_date)` bounds the period and
 
 Rows may appear in any order. For a given `hydro_id`, windows must not overlap;
 adjacent windows (`start_date == previous end_date`)
-are accepted. `value_m3s` must be finite; a negative value is accepted — the
+are accepted. A `hydro_id` that names no declared hydro is an `InvalidReference`
+error. `value_m3s` must be finite; a negative value is accepted — the
 quantity is incremental inflow (a plant's natural flow minus its upstream
 plants'), so a negative window is real hydrology, and the LP prices it through
-the inflow non-negativity slack. Semantic validation reports one warning per
+the [inflow non-negativity](/math/inflow-nonnegativity) slack. Semantic validation reports one warning per
 file naming the negative count and the most-negative value's hydro.
 
 The history serves four roles:
@@ -1710,7 +1497,7 @@ The total row count must equal the sum over study stages of
 `num_openings × dimension`.
 
 See [Scenario Generation](/math/scenario-generation) for the opening tree and
-[Configuration](/running/configuration/#scenario_source) for the `openings`
+[Configuration](/running/configuration/#trainingscenario_source) for the `openings`
 field.
 
 ---

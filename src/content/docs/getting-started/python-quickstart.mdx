@@ -1,134 +1,220 @@
 ---
 title: Python Quickstart
-description: Install the cobre Python package and run a complete SDDP study with cobre.run.run().
+description: Install the cobre Python package, run the 1dtoy example case with cobre.run.run(), and read and plot its results.
 ---
 
-Install Cobre and run a study in a few steps.
+Install the `cobre` Python package, scaffold the 1dtoy example case, run it with `cobre.run.run()`, then read and plot the results. The remaining sections change the configuration, validate a case and handle errors.
 
-## Installation
+## Install
 
 ```bash
-pip install cobre-python
+pip install cobre-python polars pyarrow matplotlib
 ```
 
-Requires Python 3.12, 3.13, or 3.14.
+The package imports as `cobre`; `polars`, `pyarrow` and `matplotlib` serve the read and plot steps. [Installation](/getting-started/installation/) lists the supported Python versions and platforms.
 
-## Run a Case
+## Scaffold a Case
+
+The Python package has no scaffold command. Create the 1dtoy example case with the `cobre` command-line tool from [Installation](/getting-started/installation/):
+
+```bash
+cobre init --template 1dtoy my_study
+```
+
+Alternatively, copy the repository's [examples/1dtoy](https://github.com/cobre-rs/cobre/tree/v0.17.0/examples/1dtoy) at the `v0.17.0` tag to `my_study/`. Run the snippets below, in order, from the directory that holds `my_study/`.
+
+## Run the Study
+
+`cobre.run.run()` loads the case, trains an SDDP policy, simulates 100 scenarios and writes the results to `my_study/output`. It returns a dict:
+
+{/* capture: python run | cobre-python 0.17.0 (PyPI wheel sha256 c0b117d2) | python 3.12.3 | case: 1dtoy (cobre init --template 1dtoy) as my_study; snippets run in page order */}
 
 ```python
 import cobre
 
-result = cobre.run.run("path/to/case")
+result = cobre.run.run("my_study")
+print(f"converged:   {result['converged']}")
+print(f"iterations:  {result['iterations']}")
+print(f"lower_bound: {result['lower_bound']:.6g}")
+print(f"upper_bound: {result['upper_bound']:.6g}")
+print(f"gap_percent: {result['gap_percent']:.1f}")
+print(f"simulation:  {result['simulation']}")
+print(f"output_dir:  {result['output_dir']}")
 ```
 
-The `cobre.run.run()` function loads the case, trains an SDDP policy, optionally
-runs simulation, and writes output files. It returns a dictionary with the
-following keys:
-
-| Key             | Type              | Description                                     |
-| --------------- | ----------------- | ------------------------------------------------ |
-| `converged`     | `bool`            | Whether training converged                      |
-| `iterations`    | `int`             | Number of training iterations completed         |
-| `lower_bound`   | `float`           | Final lower bound                               |
-| `upper_bound`   | `float` or `None` | Final upper bound (None if no simulation)       |
-| `gap_percent`   | `float` or `None` | Optimality gap percentage (None if unavailable)  |
-| `total_time_ms` | `int`             | Total wall-clock time in milliseconds           |
-| `output_dir`    | `str`             | Path to the output directory                    |
-| `simulation`    | `dict` or `None`  | Simulation summary (if enabled)                 |
-| `stochastic`    | `dict` or `None`  | Stochastic preprocessing summary                |
-| `hydro_models`  | `dict` or `None`  | Hydro model summary                             |
-| `provenance`    | `ProvenanceReport` or `None` | Build version and environment metadata (a `ProvenanceReport` typed dict, or `None` when provenance was not captured) |
-
-```python
-print(f"Converged: {result['converged']}")
-print(f"Iterations: {result['iterations']}")
-print(f"Lower bound: {result['lower_bound']:.2f}")
-if result['gap_percent'] is not None:
-    print(f"Gap: {result['gap_percent']:.2f}%")
-print(f"Output dir: {result['output_dir']}")
+```text
+converged:   False
+iterations:  128
+lower_bound: 1.55955e+07
+upper_bound: 579592
+gap_percent: -96.3
+simulation:  {'n_scenarios': 100, 'completed': 100}
+output_dir:  my_study/output
 ```
 
-## Optional Parameters
+The printed keys are part of the result dict; see [`RunResult`](/reference/python-api/#cobre_typesrunresult) for the full shape and [`cobre.run.run`](/reference/python-api/#cobrerunrun) for the parameters. `converged` is `True` only when the `bound_stalling` rule stops training. Here the 128-iteration limit stopped it, so `False` is expected. The bounds and the negative gap match the CLI quickstart, which explains them in [What You Just Ran](/getting-started/quickstart/#what-you-just-ran).
+
+## Read the Results
+
+Read the convergence record and the simulation costs back from the output directory:
+
+{/* capture: python read | cobre-python 0.17.0 (PyPI wheel sha256 c0b117d2) | python 3.12.3 | case: 1dtoy (cobre init --template 1dtoy) as my_study; snippets run in page order */}
 
 ```python
-result = cobre.run.run(
-    "path/to/case",
-    output_dir="path/to/output",   # default: case_dir/output
-    threads=4,                      # default: None → 1 worker
-    config_overrides={"simulation": {"enabled": False}},  # default: None
+import cobre
+import polars as pl
+
+conv = pl.from_arrow(cobre.results.load_convergence_arrow("my_study/output"))
+print(conv.select("iteration", "lower_bound", "upper_bound", "gap_percent").tail(3))
+
+costs = pl.from_arrow(
+    cobre.results.load_simulation_arrow("my_study/output", entity_type="costs")
 )
+per_scenario = costs.group_by("scenario_id").agg(
+    (pl.col("discount_factor") * pl.col("immediate_cost")).sum().alias("cost")
+)
+print(per_scenario.select(
+    pl.col("cost").mean().alias("mean"),
+    pl.col("cost").median().alias("median"),
+))
 ```
 
-- **`output_dir`**: where to write results (default: `case_dir/output`).
-- **`threads`**: worker count for the internal pool. Default `None` ⇒ **1 worker**. `0` is **rejected** (`ValueError: threads must be >= 1 when given`); a value `≥ 1` sets the worker count.
-- **`config_overrides`**: a dict merged into `config.json`. Both nested `{"simulation": {"enabled": False}}` and flat dotted `{"training.tree_seed": 7}` shapes are deep-merged into the configuration.
+```text
+shape: (3, 4)
+┌───────────┬─────────────┬───────────────┬─────────────┐
+│ iteration ┆ lower_bound ┆ upper_bound   ┆ gap_percent │
+│ ---       ┆ ---         ┆ ---           ┆ ---         │
+│ i32       ┆ f64         ┆ f64           ┆ f64         │
+╞═══════════╪═════════════╪═══════════════╪═════════════╡
+│ 126       ┆ 1.5596e7    ┆ 615923.497494 ┆ -96.050638  │
+│ 127       ┆ 1.5596e7    ┆ 615923.497494 ┆ -96.050638  │
+│ 128       ┆ 1.5596e7    ┆ 579592.198622 ┆ -96.283598  │
+└───────────┴─────────────┴───────────────┴─────────────┘
+shape: (1, 2)
+┌──────────┬───────────────┐
+│ mean     ┆ median        │
+│ ---      ┆ ---           │
+│ f64      ┆ f64           │
+╞══════════╪═══════════════╡
+│ 9.6794e6 ┆ 615923.497494 │
+└──────────┴───────────────┘
+```
+
+The two [`cobre.results`](/reference/python-api/#cobreresults) loaders return `pyarrow.Table`s, which `polars.from_arrow` wraps. A scenario's cost is the sum of `discount_factor * immediate_cost` over its `costs` rows, one per stage here; the mean matches the `Expected cost` line of the CLI run summary, and the median, far below the mean, shows that most scenarios are cheap.
+
+## Plot the Convergence
+
+Plot both bounds against the iteration:
+
+{/* capture: python plot | cobre-python 0.17.0 (PyPI wheel sha256 c0b117d2) | python 3.12.3 | case: 1dtoy (cobre init --template 1dtoy) as my_study; snippets run in page order */}
+
+```python
+import cobre
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
+import polars as pl
+
+conv = pl.from_arrow(cobre.results.load_convergence_arrow("my_study/output"))
+fig, ax = plt.subplots()
+ax.plot(conv["iteration"], conv["lower_bound"], label="lower bound")
+ax.plot(conv["iteration"], conv["upper_bound"], label="upper bound")
+ax.set_yscale("log")
+ax.set_xlabel("iteration")
+ax.set_ylabel("expected cost")
+ax.legend()
+fig.savefig("convergence.png")
+print("saved convergence.png")
+```
+
+```text
+saved convergence.png
+```
+
+The saved `convergence.png` uses a log axis. The lower bound rises from about 5.1e6 and flattens near 1.56e7. The upper bound is the cost of one forward pass per iteration; it sits near 6e5 with spikes above 1e8. `matplotlib.use("Agg")` draws to a file, so the script needs no display.
+
+## Change the Configuration
+
+`config_overrides` changes `config.json` settings for one call without editing the file. This call reruns the study with another seed and writes to its own output directory:
+
+{/* capture: python seed | cobre-python 0.17.0 (PyPI wheel sha256 c0b117d2) | python 3.12.3 | case: 1dtoy (cobre init --template 1dtoy) as my_study; snippets run in page order */}
+
+```python
+import cobre
+
+result = cobre.run.run(
+    "my_study",
+    output_dir="my_study/output-seed7",
+    config_overrides={"training.tree_seed": 7},
+)
+print(f"lower_bound: {result['lower_bound']:.6g}")
+```
+
+```text
+lower_bound: 9.7055e+06
+```
+
+The keys are dotted `config.json` paths. `training.tree_seed` seeds the opening tree and the in-sample draws (default 42), so another seed gives another tree and another lower bound: 9.7055e+06 here, against 1.55955e+07 for the first run. Pass nested settings as dotted keys: a dict under a non-dotted key replaces that whole object. `output_dir` keeps this run apart from the first. [Seed resolution](/running/configuration/#seed-resolution) describes the seeds.
+
+A run with training disabled simulates the policy already in the output directory, here the one the first run wrote:
+
+{/* capture: python simonly | cobre-python 0.17.0 (PyPI wheel sha256 c0b117d2) | python 3.12.3 | case: 1dtoy (cobre init --template 1dtoy) as my_study; snippets run in page order */}
+
+```python
+import cobre
+
+result = cobre.run.run("my_study", config_overrides={"training.enabled": False})
+print(f"iterations:  {result['iterations']}")
+print(f"upper_bound: {result['upper_bound']}")
+print(f"gap_percent: {result['gap_percent']}")
+```
+
+```text
+iterations:  0
+upper_bound: 579592.1986224409
+gap_percent: None
+```
+
+With training disabled and simulation enabled, `iterations` is `0`, `gap_percent` is `None`, and `upper_bound` is the last training upper bound recorded in the policy checkpoint the run loads (`None` if it records no finite one). With both phases disabled, `lower_bound` is `0.0` and `upper_bound`, `gap_percent` and `simulation` are `None`. The `threads` argument of `cobre.run.run` sets the worker count (default 1); `0` raises `ValueError`.
 
 ## Validate a Case
 
-Before running a study, validate the case directory to check for errors:
+`cobre.io.validate` checks a case directory without running it:
+
+{/* capture: python validate | cobre-python 0.17.0 (PyPI wheel sha256 c0b117d2) | python 3.12.3 | case: 1dtoy (cobre init --template 1dtoy) as my_study; snippets run in page order */}
 
 ```python
-import cobre.io
+import cobre
 
-report = cobre.io.validate("path/to/case")
-# Returns: {"valid": bool, "errors": [...], "warnings": [...]}
-
-if not report["valid"]:
-    for e in report["errors"]:
-        print(f"{e['kind']}: {e['message']}")
+print(cobre.io.validate("my_study"))
 ```
 
-`Study(...).validate()` returns the same-shaped dict.
+```text
+{'valid': True, 'errors': [], 'warnings': []}
+```
+
+The dict has the keys `valid`, `errors` and `warnings`; each entry of `errors` is a dict with `kind` and `message`. `cobre.Study("my_study").validate()` returns a dict with the same keys.
 
 ## Error Handling
 
-Cobre defines a typed exception hierarchy under `cobre.errors`. All exceptions inherit from `CobreError` (the common base) and also from the matching builtin (`ValueError`, `OSError`, or `RuntimeError`), so existing `except OSError` handlers keep catching while new code can catch the typed class.
+A setting that fails validation raises a typed exception. This call misspells a config key:
 
-| Exception                  | Inherits                        | Description                                                                                         |
-| -------------------------- | ------------------------------- | --------------------------------------------------------------------------------------------------- |
-| `CobreError`               | `Exception`                     | Base class for every Cobre exception                                                                |
-| `ValidationError`          | `CobreError`, `ValueError`      | Case data or configuration failed validation. Setup-phase validation messages start `setup validation error: ` |
-| `PolicyIncompatibleError`  | `CobreError`, `ValueError`      | A policy load refused the checkpoint: another cobre version wrote it, or its stored bases, state or graph do not fit the study. Messages start `policy validation error: ` |
-| `CaseIoError`              | `CobreError`, `OSError`         | A filesystem read or write failure while loading or writing a case                                  |
-| `OutputError`              | `CobreError`, `OSError`         | An output serialization, schema, or manifest failure while writing results                          |
-| `SolverError`              | `CobreError`, `RuntimeError`    | A training or solver failure. For an infeasible subproblem, the `.stage`, `.iteration`, and `.scenario` attributes are the integer coordinates; otherwise they are `None`. Also raised when a warm-start, resume, or simulation-only load cannot read its checkpoint, and when a boundary load refuses a checkpoint for a reason other than a cobre-version mismatch (messages start `boundary cut error: `) |
-| `SimulationError`          | `CobreError`, `RuntimeError`    | A simulation-phase failure                                                                          |
-| `InternalError`            | `CobreError`, `RuntimeError`    | An internal software or environment fault                                                           |
-
-See [Error Codes](/reference/error-codes/) for the full catalogue.
-[Policy-load errors](/reference/error-codes/#policy-load-errors) states which load path raises which class.
-
-## Read Output with Polars
-
-Cobre writes results as Parquet files, which can be loaded directly with
-Polars or any Arrow-compatible library:
+{/* capture: python errors | cobre-python 0.17.0 (PyPI wheel sha256 c0b117d2) | python 3.12.3 | case: 1dtoy (cobre init --template 1dtoy) as my_study; snippets run in page order */}
 
 ```python
-import polars as pl
+import cobre
 
-# Convergence trajectory
-convergence = pl.read_parquet("output/training/convergence.parquet")
-print(convergence.head())
-
-# Simulation costs (if simulation was enabled) — Hive-partitioned
-costs = pl.read_parquet("output/simulation/costs/")
-print(costs.describe())
+try:
+    cobre.run.run("my_study", config_overrides={"training.tree_seeds": 7})
+except cobre.errors.CobreError as err:
+    print(type(err).__name__, isinstance(err, ValueError))
 ```
 
-## Arrow Zero-Copy Loading
-
-For larger datasets, use the built-in Arrow loaders that avoid serialization
-overhead:
-
-```python
-# Returns a pyarrow.Table (zero-copy)
-convergence_table = cobre.results.load_convergence_arrow("output/")
-simulation_tables = cobre.results.load_simulation_arrow("output/")
-
-# Convert to Polars without copying
-import polars as pl
-df = pl.from_arrow(convergence_table)
+```text
+ValidationError True
 ```
+
+The typed exceptions are in `cobre.errors`. Each specific class derives from the base `CobreError` and from a builtin (`ValueError`, `OSError` or `RuntimeError`), so an existing `except ValueError` also catches this `ValidationError`. Argument checks such as `threads=0` or a missing case directory raise the builtin directly. See [`cobre.errors`](/reference/python-api/#cobreerrors) for the classes, [Error Codes](/reference/error-codes/) for the messages and [Policy-load errors](/reference/error-codes/#policy-load-errors) for which load path raises which class.
 
 ## Policy Checkpoints
 

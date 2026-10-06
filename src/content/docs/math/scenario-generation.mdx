@@ -62,8 +62,12 @@ assignment, thread scheduling, or restart. This is achieved through
 **deterministic seed derivation**:
 
 - A base seed is fixed for the study
-- Each (iteration, scenario, stage) tuple maps to a unique derived seed via a
-  deterministic hash function
+- Each draw maps to a unique derived seed via a deterministic hash function of
+  a tuple that identifies it. The tuple depends on the sampling method and on
+  the pass: for example (iteration, scenario, stage) for the in-sample forward
+  choice of an opening and (opening, stage) for a Monte Carlo opening-tree draw;
+  [Determinism & Provenance §3](/math/determinism-guarantees#3-methodology-mechanisms)
+  lists the tuple of every pass
 - The RNG state is initialized from this derived seed before generating the
   noise vector for that tuple
 
@@ -78,7 +82,7 @@ This design ensures:
 
 :::note[Architectural note]
 Because every rank can independently derive the same
-noise for any `(iteration, scenario, stage)` tuple by hashing identical
+noise for any draw from its tuple by hashing identical
 inputs with the same RNG, no MPI broadcast of noise data is required. Each
 rank generates only the noise it needs, exactly when it needs it. This
 property eliminates the need for a dedicated scenario innovation noise
@@ -122,14 +126,16 @@ the validity of the lower bound.
    $t$, producing a fixed opening tree with total element count
    $\sum_t N_t \times \text{dim}$
 2. Each noise vector is generated from the base seed using deterministic seed
-   derivation per (opening, stage) — ensuring reproducibility across
-   restarts and MPI configurations (see section 2.2)
+   derivation, per (opening, stage) under Monte Carlo sampling and per stage
+   under a batch method (Latin hypercube or quasi-Monte Carlo), which draws all
+   of a stage's openings together — ensuring reproducibility across restarts
+   and MPI configurations (see section 2.2)
 3. Correlation is applied per the active profile for each stage (see section
    2.4)
 4. In the opening tree, consecutive stages sharing a **noise group** — keyed by
    season and year, as when several weekly stages fall inside one monthly
    season — receive one shared noise draw per opening: the group's first stage
-   draws from its (opening, stage) seed and each later stage in the
+   draws its noise as in step 2 and each later stage in the
    group copies that stage's already-correlated noise. A stage without a
    season gets its own group; in a uniform monthly study every group is
    unique and every stage draws independently. See
@@ -166,10 +172,10 @@ a given (stage, opening) pair is read directly without iteration over
 the tree structure.
 
 The same tree is generated bit-identically on every MPI rank because both the
-per-(opening, stage) seed derivation and the noise-group assignment
+seed derivation of step 2 and the noise-group assignment
 are pure functions of globally known inputs — the base seed and the stage
 calendar of the broadcast system. For the determinism guarantees that follow
-from this property, see [Determinism Guarantees](/math/determinism-guarantees).
+from this property, see [Determinism & Provenance](/math/determinism-guarantees).
 
 ### 2.3a Sampling Method and Opening Tree Generation
 
@@ -314,7 +320,8 @@ and need not close or stay non-negative.
 
 The sampling scheme determines how the forward pass selects a scenario
 realization at each stage. Cobre supports four sampling schemes, chosen
-independently for each stochastic class (inflow, load, NCS):
+independently for each stochastic class (inflow, load, NCS); the Historical
+scheme applies to the inflow class only:
 
 #### InSample (Default)
 
@@ -825,4 +832,4 @@ The methodology above defines how scenarios are generated and sampled; the tabs 
 - [Cut Management](/math/cut-management) — Cut generation, storage, and selection; uses opening tree branchings as the backward pass input
 - [Multi-Resolution Studies](/math/multi-resolution-studies) — Multi-resolution modeling configurations; uses scenario generation with varied stage counts
 - [Post-Study Boundary & Chained Studies](/math/post-study-boundary) — a study chained to an upstream policy; each study draws its own scenario tree
-- [Determinism Guarantees](/math/determinism-guarantees) — Formal guarantees of bit-identical reproduction across ranks, restarts, and platform variants; grounded in the seed derivation architecture of section 2.2
+- [Determinism & Provenance](/math/determinism-guarantees) — bit-identical results per binary at any rank or thread count and on every re-run; grounded in the seed derivation architecture of section 2.2

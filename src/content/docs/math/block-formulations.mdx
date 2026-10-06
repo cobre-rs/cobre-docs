@@ -138,7 +138,7 @@ Only end-of-stage storage $v_h$ is carried as storage state (§2.5); the interio
 
 ### 4.2 What a cut means under another partition
 
-A cut is a valid lower approximation of the cost-to-go of the model it was trained on ([Cut Management §4](/math/cut-management#4-cut-validity)). A different block partition, different block durations, or the other formulation defines a different stage model, with its own stage costs and feasible sets and therefore its own cost-to-go. The trained cuts need not lie below that cost-to-go; depending on how the two models differ, they can underestimate or overestimate it.
+A cut is a valid lower approximation of the cost-to-go of the model it was trained on ([Cut Management — when bounds and certificates hold](/math/cut-management#when-bounds-and-certificates-hold)). A different block partition, different block durations, or the other formulation defines a different stage model, with its own stage costs and feasible sets and therefore its own cost-to-go. The trained cuts need not lie below that cost-to-go; depending on how the two models differ, they can underestimate or overestimate it.
 
 A policy evaluated under another partition is therefore a heuristic with no bound guarantee. The lower bound reached in training bounds the optimal value of the trained model; it need not bound the other model's optimal value from below, and the [optimality gap](/math/stopping-rules#optimality-gap) between it and a cost simulated under the other partition certifies nothing. The simulated cost estimates what the policy costs in the other model, and nothing bounds how far that lies from the other model's optimum. Training under a coarse partition and simulating under a finer one is a use of this kind.
 
@@ -146,20 +146,7 @@ Cuts injected as a terminal boundary ([Post-Study Boundary](/math/post-study-bou
 
 ## 5. Note on Fine-Grained Temporal Resolution
 
-The current block formulations use a single level of temporal decomposition within each stage: the user defines blocks with durations τ_k, and the LP operates at that resolution in both training and simulation.
-
-A more sophisticated approach — used in commercial tools like PSR's SDDP (v17.3+) — decomposes each stage into **representative typical days**, each containing chronological hourly (or sub-hourly) blocks. This enables:
-
-- Accurate modeling of daily cycling patterns (peak/off-peak storage arbitrage)
-- Proper representation of intermittent renewable generation profiles
-- Separate temporal resolutions for training (aggregated blocks) and simulation (full typical-day profiles)
-
-This extension is out of scope for the current formulation because it requires:
-
-- New input data schemas (day-type definitions, weights, hourly profiles)
-- Separation of the objective time-weighting (day weight × block duration) from the water balance conversion (block duration only)
-- Research into how day types chain within a stage (sequential vs. independent with weighted-average storage)
-- Validation against reference implementations
+Cobre models one level of temporal decomposition within a stage: the blocks of §1 and §2, each of duration $\tau_k$. A study's training and simulation solve the same blocks; a policy evaluated under another block partition is the case §4 covers. Cobre has no representative-day decomposition, in which a stage is split into weighted day types that each hold chronological sub-daily blocks.
 
 ## Implementation in Cobre
 

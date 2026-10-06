@@ -162,7 +162,7 @@ tolerance. A `value_mw` outside its stage's box is a load-time error, because
 the LP delivery equality on that stage could not otherwise be satisfied. The
 committed values are sunk: an in-study window seeds the ring slot of its
 delivery stage at the first stage, and that stage's
-[fish row](/math/lp-formulation#ring-rows) pins the plant's generation to it;
+[fish row](/math/state-augmentation#ring-rows) pins the plant's generation to it;
 a post-horizon window holds no slot, and when a boundary is loaded its state
 contribution is folded once, at load, into the intercept of every boundary
 cut. Neither enters the study objective, and a post-horizon window is echoed at

@@ -1,13 +1,15 @@
 ---
 title: Installation
-description: Install Cobre from pre-built binaries, crates.io, or from source, and choose an LP solver backend.
+description: Install the Cobre command-line program (pre-built binaries, crates.io or source) or the cobre-python package, and choose an LP solver backend.
 ---
 
-Cobre is a statically linked binary available for the platforms listed below.
-Choose the method that best fits your environment.
+Cobre ships as the `cobre` command-line program, with pre-built binaries for the
+platforms listed below, and as the `cobre-python` package for Python. Choose the
+method that best fits your environment; to install the Python package, go to
+[Python Package](#python-package).
 
 :::tip[Running on an HPC cluster?]
-The methods here install the single-process binary (`comm: local`). For
+The methods here install the single-process build (`comm: local`). For
 multi-node runs — MPI-enabled binaries, building MPICH from source, SLURM
 launch, and AWS ParallelCluster — see
 [HPC & Cluster Deployment](/running/hpc-deployment/).
@@ -47,6 +49,10 @@ powershell -ExecutionPolicy Bypass -c "irm https://github.com/cobre-rs/cobre/rel
 You can also download individual archives directly from the
 [GitHub Releases page](https://github.com/cobre-rs/cobre/releases/latest).
 
+The x86-64 Linux MPI build `cobre-mpi` (see
+[HPC Deployment](/running/hpc-deployment/)) uses AVX2 and FMA instructions and
+needs a processor that supports them.
+
 ### Verify the Installation
 
 ```bash
@@ -65,6 +71,61 @@ zstd:   enabled
 arch:   x86_64-linux
 build:  release (lto=thin)
 ```
+
+---
+
+## Python Package
+
+The `cobre-python` package installs the `cobre` Python module, which runs
+studies and loads their results from Python. It needs CPython 3.12 or newer and
+a platform listed below. The wheels bundle the HiGHS solver and depend on no
+other Python package.
+
+```bash
+pip install cobre-python
+```
+
+The package requires CPython 3.12 or newer. Each wheel is built for the CPython
+stable ABI (`abi3`), so one wheel per platform serves every supported Python
+version; the release smoke-tests the Linux x86-64 (glibc), macOS Apple Silicon
+and Windows wheels on Python 3.12, 3.13 and 3.14. PyPI publishes wheels for the
+platforms below and no source distribution, so on any other platform, or on
+Python 3.11 or older, `pip` reports
+`No matching distribution found for cobre-python`:
+
+| Platform              | Wheel platform tag       |
+| --------------------- | ------------------------ |
+| Linux (x86-64, glibc) | `manylinux_2_34_x86_64`  |
+| Linux (ARM64, glibc)  | `manylinux_2_28_aarch64` |
+| Linux (x86-64, musl)  | `musllinux_1_2_x86_64`   |
+| macOS (Apple Silicon) | `macosx_11_0_arm64`      |
+| macOS (Intel)         | `macosx_10_12_x86_64`    |
+| Windows (x86-64)      | `win_amd64`              |
+
+`pip` selects the wheel that matches your system, so you do not choose a tag
+yourself. On Linux with glibc (the C library most distributions use), the x86-64
+wheel needs glibc 2.34 or newer and the ARM64 wheel glibc 2.28 or newer;
+`ldd --version` prints your glibc version. Alpine Linux and other musl systems
+use the `musllinux` wheel.
+
+### Verify the Python Package
+
+```bash
+python -c "import cobre; print(cobre.__version__); print(cobre.version_info())"
+```
+
+{/* capture: python -c "import cobre; print(cobre.__version__); print(cobre.version_info())" | cobre-python 0.17.0 (PyPI wheel sha256 c0b117d2) | python 3.12.3 | case: none */}
+
+```text
+0.17.0
+{'version': '0.17.0', 'solver': 'HiGHS 1.13.1', 'comm': 'local', 'zstd': 'enabled', 'arch': 'x86_64-linux', 'build': 'release'}
+```
+
+If the first line shows the installed version and the second a dictionary, the
+package works. `version_info()` reports the fields that `cobre version` prints;
+`comm` is always
+`local`, because the package runs a study in a single process. Next, run a study
+from Python with the [Python Quickstart](/getting-started/python-quickstart/).
 
 ---
 
@@ -116,8 +177,13 @@ Verify:
 
 ```bash
 ./target/release/cobre version
-cargo test --workspace
 ```
+
+:::note[Contributors]
+To run the test suite, use `cargo test --workspace` (default HiGHS backend);
+[CONTRIBUTING.md](https://github.com/cobre-rs/cobre/blob/main/CONTRIBUTING.md)
+lists the per-crate and per-backend test commands.
+:::
 
 ---
 
@@ -150,6 +216,11 @@ git submodule update --init --recursive
 cargo build --release -p cobre-cli --no-default-features --features clp
 ```
 
+On a CLP build, every `training.solver`/`simulation.solver` override field is
+rejected at study setup — see
+[solver profile validation](/reference/error-codes/#solver-profile-validation-sddperror)
+for the full rejection rule and error messages.
+
 ### Mutual exclusivity
 
 The `highs` and `clp` features are mutually exclusive — exactly one LP backend
@@ -177,41 +248,15 @@ The `solver` and `solver_version` fields in each run's output metadata record
 the active backend identifier (`"highs"` or `"clp"`) and its library version
 string. These fields are written by both the CLI and the Python bindings.
 
-### Determinism
-
-Each backend is internally deterministic: the same input, solved twice, produces
-bit-for-bit identical results; permuting the input entities produces the
-correspondingly permuted output. Switching from one backend to the other may
-legitimately change numerical results — the two simplex implementations can reach
-different optimal vertices on degenerate problems, all of which are valid. No
-cross-backend numerical equality is guaranteed; each backend maintains its own
-parity baselines.
-
-This within-version guarantee has a cross-release counterpart: the backward
-pass's opening solve order can change between cobre releases (for example,
-relative to v0.11.1, which used a fixed sigma-weighted order). On a stage with
-**three or more openings**, a different opening order can settle on a different
-equally optimal vertex of a degenerate problem, all of which are valid, so
-training and simulation outputs on such a stage can shift across the release
-boundary. Stages with fewer than three openings have no order to change and
-stay byte-identical across releases.
-
-### Migration note
-
-Existing builds are unaffected. The default backend is HiGHS, unchanged from
-prior releases. The CLP backend is strictly opt-in: users who do not pass
-`--no-default-features --features clp` continue to build and run against HiGHS
-exactly as before.
-
-On a CLP build, every `training.solver`/`simulation.solver` override field is
-rejected at study setup — see
-[solver profile validation](/reference/error-codes/#solver-profile-validation-sddperror)
-for the full rejection rule and error messages.
+Results are reproducible per binary: a build with the other backend is a
+different binary, so its results are not promised equal. See
+[Determinism & Provenance](/math/determinism-guarantees/).
 
 ---
 
 ## Next Steps
 
 - [Quickstart](/getting-started/quickstart) — run a complete study end to end using the built-in `1dtoy` template
+- [Python Quickstart](/getting-started/python-quickstart/) — run a study and read its results from Python
 - [Running Studies](/running/running-studies/) — validate, run, and inspect results for any case directory
 - [CLI Reference](/reference/cli-reference/) — complete flag and subcommand reference

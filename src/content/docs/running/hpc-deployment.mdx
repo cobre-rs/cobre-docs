@@ -24,9 +24,10 @@ Cobre parallelises on two levels, and they compose:
 - **rayon threads within a rank** — solves LP subproblems concurrently inside
   each rank. Controlled by `--threads`.
 
-The parallel model — how backward-pass work is scheduled across workers
-(`by_node` / `by_scenario`) — is summarised in
-[Performance Accelerators §Parallel Execution](/running/performance/#parallel-execution);
+The parallel model — how work is partitioned across ranks and threads, which
+collectives tie the ranks together, the thread rules, and memory and case
+access — is summarised in
+[Performance Accelerators → Parallel Execution Model](/running/performance/#parallel-execution-model);
 the scheduler and communication internals live in the
 [`cobre-sddp` README](https://github.com/cobre-rs/cobre/blob/main/crates/cobre-sddp/README.md).
 This page is the operational counterpart: how to build and launch it.
@@ -60,7 +61,10 @@ cobre-mpi-<version>-<target>.tar.gz
 Download it from the [GitHub Releases page](https://github.com/cobre-rs/cobre/releases/latest).
 The archive contains the binary (named `cobre-mpi` to distinguish it from the
 single-process `cobre` in the same release), the license/notice files, and a
-`README.txt` with the runtime notes summarised below.
+`README.txt`. The README gives its SLURM launch lines with `srun --mpi=pmi2` and
+names `srun --mpi=pmix` only as an alternative in its troubleshooting notes. With
+an MPICH built for PMIx, as on this page, launch with `srun --mpi=pmix` (see
+[Running under SLURM](#running-under-slurm)).
 
 | Platform              | Target triple                 |
 | --------------------- | ----------------------------- |
@@ -124,8 +128,10 @@ list, CPUs per task): the post-run summary prints a `SLURM:` line and
 
 On an HPC cluster you almost always build MPICH yourself so it links against the
 cluster's high-performance fabric and process manager, rather than a generic
-package. The recipe below is the one Cobre's production ParallelCluster uses; it
-is pinned to the same MPICH version the release binaries are compiled against.
+package. The recipe below is the one the
+[AWS ParallelCluster reference architecture](#aws-parallelcluster-reference-architecture)
+uses; it is pinned to the same MPICH version the release binaries are compiled
+against.
 
 :::tip[Why a from-source runtime works with the pre-built binary]
 The pre-built `cobre-mpi` was **compiled** against a generic MPICH (device
@@ -243,6 +249,11 @@ cores, and (via PMIx) initialises MPI. Because `--comm-backend` defaults to
 `auto`, Cobre detects the `srun` launch and selects the MPI backend
 automatically.
 
+The commands below use three placeholders. `<partition>` is the SLURM partition,
+`<shared-path>` is a directory every node can read that holds `cobre-mpi` and the
+batch script, and `<case-dir>` is the case directory on a shared filesystem, at
+the same path on every node because every rank reads it.
+
 ### Hybrid MPI + threads
 
 Cobre uses MPI for inter-node communication and rayon threads for intra-node LP
@@ -251,7 +262,7 @@ pool sized to the cores allocated to it:
 
 ```bash
 srun --mpi=pmix --nodes=4 --ntasks-per-node=1 --cpus-per-task=96 --exclusive \
-    ./cobre-mpi run /shared/cases/hydro_study --threads 96
+    ./cobre-mpi run <case-dir> --threads 96
 ```
 
 Set `--threads` equal to `--cpus-per-task` so each rank's rayon pool fills its
@@ -260,9 +271,9 @@ for cores or memory bandwidth.
 
 ### Batch script
 
-A production job wraps that launch in an `sbatch` script. This is the script
-Cobre's production cluster uses (generalise the node count, partition, and time
-limit for your workload):
+A production job wraps that launch in an `sbatch` script. Replace the
+placeholders and set the node count, cores per task and time limit for your
+workload:
 
 ```bash
 #!/bin/bash
@@ -273,11 +284,11 @@ limit for your workload):
 #SBATCH --exclusive
 #SBATCH --output=cobre_%j.out
 #SBATCH --error=cobre_%j.err
-#SBATCH --partition=cobre-hpc-queue
+#SBATCH --partition=<partition>
 #SBATCH --time=0-08:00:00
 
 MPICH_PREFIX=/opt/mpich
-COBRE_MPI="$HOME/assets/cobre-mpi"
+COBRE_MPI="<shared-path>/cobre-mpi"
 
 export PATH="$MPICH_PREFIX/bin:$PATH"
 export LD_LIBRARY_PATH="$MPICH_PREFIX/lib:${LD_LIBRARY_PATH:-}"
@@ -289,12 +300,11 @@ Refer to the binary by an **absolute path**. `sbatch` runs the script in the
 directory you submitted from, so `./cobre-mpi` works only if you happen to run
 `sbatch` from the directory that holds the binary.
 
-Place the script and the binary somewhere visible to every node (a shared
-filesystem or your home directory). Submit the script with the case directory
-as its argument:
+Save the script as `run-cobre.sh` in `<shared-path>`, next to `cobre-mpi`. Submit
+it with the case directory as its argument:
 
 ```bash
-sbatch ~/assets/run-cobre.sh /shared/cases/hydro_study
+sbatch <shared-path>/run-cobre.sh <case-dir>
 ```
 
 ### Key SLURM flags
@@ -316,6 +326,37 @@ Match the launcher to how MPICH was built. The recommended
 a PMI2 incompatibility on SLURM 24.05 (see [Troubleshooting](#troubleshooting)).
 Check what your cluster offers with `srun --mpi=list`.
 :::
+
+---
+
+## Resuming a job
+
+A job writes its checkpoint only when training ends. A job killed at its `--time`
+writes none and loses its iterations, and the next job resumes from the last
+checkpoint written (see [Resume](/running/policy-management/#resume)).
+
+To fit a long training into wall-time-limited jobs, split it into slices, one
+batch job each, and submit the next slice after the previous one ends. Every
+slice after the first sets `policy.mode` to `"resume"` and raises
+`iteration_limit` to the new total, which counts the iterations of all earlier
+slices ([Train in Slices](/running/policy-management/#train-in-slices) gives the
+rule sets and how to size a slice). A multi-rank slice's stopping-rule set holds
+one `iteration_limit` entry and no `time_limit` entry (see the
+[`time_limit` caution](/running/configuration/#time_limit)).
+
+The job's `--time` covers the case load, the load of the previous checkpoint, the
+slice's iterations and the checkpoint write, plus the simulation and its result
+export in a slice that enables simulation (`simulation.enabled` set to `true`; the
+default is off). The checkpoint is written before simulation starts, so a job
+killed during simulation keeps that slice's checkpoint.
+
+After editing `<case-dir>/config.json` as above, submit each slice as its own batch job
+on the same `<case-dir>`. The batch script passes no `--output`, so every slice uses `<case-dir>/output` on the shared
+filesystem, and every rank loads the previous checkpoint from it:
+
+```bash
+sbatch <shared-path>/run-cobre.sh <case-dir>
+```
 
 ---
 
@@ -355,7 +396,7 @@ The moving parts:
   image means every dynamically-launched compute node already has the runtime —
   no per-job install step.
 - **The binary.** The pre-built `cobre-mpi` archive is downloaded from the
-  release page to a shared, node-visible location (e.g. `~/assets/`). It is the
+  release page to `<shared-path>`. It is the
   same binary produced by the release CI, and the custom image's system
   libraries are kept compatible with that build.
 - **Interconnect (EFA).** Because MPICH is built `--with-libfabric=/opt/amazon/efa`
@@ -373,7 +414,7 @@ The moving parts:
   export**, so FSx throughput is sized for those phases rather than the solve
   loop.
 
-Submission is the same `sbatch ~/assets/run-cobre.sh <case-dir>` shown above:
+Submission is the same `sbatch <shared-path>/run-cobre.sh <case-dir>` shown above:
 the head node queues the job, ParallelCluster powers up the compute nodes in the
 target partition, `srun --mpi=pmix` launches one rank per node, and the nodes
 scale back down when the queue drains.
@@ -433,7 +474,10 @@ Cobre's MPI results are **rank-count invariant**: for a given case, the
 classified output files are decoded-value bit-identical whether you run on one
 rank or many, and whether the ranks sit on one node or several. Only wall-clock
 timing columns and the per-rank/per-worker execution-topology tables legitimately
-differ. The invariance holds for `policy.boundary` runs too: an imported terminal
+differ. This holds for a stopping-rule set without `time_limit`: a wall-clock stop
+depends on timing, and a multi-rank run leaves it out
+([`time_limit`](/running/configuration/#time_limit)). The invariance holds for
+`policy.boundary` runs too: an imported terminal
 boundary policy is reconciled onto the study's own state once and the reconciled
 boundary pool is applied on every rank, so a boundary-coupled run is rank-count
 invariant like any other — see
@@ -448,7 +492,7 @@ Check your setup in three steps. Each step catches a different failure.
    wiring:
 
    ```bash
-   ~/assets/cobre-mpi version   # → comm: mpi
+   <shared-path>/cobre-mpi version   # → comm: mpi
    ```
 
 2. **MPICH links the cluster's PMIx.** Run the `ldd … | grep libpmix` check from
@@ -459,7 +503,7 @@ Check your setup in three steps. Each step catches a different failure.
 
    ```bash
    srun --mpi=pmix --nodes=2 --ntasks-per-node=1 \
-       ~/assets/cobre-mpi run /shared/cases/hydro_study --threads 2
+       <shared-path>/cobre-mpi run <case-dir> --threads 2
    ```
 
    Only rank 0 prints the `Execution` banner, so it must appear **once** and
@@ -478,7 +522,7 @@ Check your setup in three steps. Each step catches a different failure.
 
 ## See Also
 
-- [Performance Accelerators](/running/performance/#parallel-execution) — the parallel-execution model MPI drives
+- [Performance Accelerators](/running/performance/#parallel-execution-model) — the parallel-execution model MPI drives
 - [Running Studies](/running/running-studies/#communication-backend) — the `--comm-backend` flag and single-node threading
 - [CLI Reference](/reference/cli-reference/) — complete flag and subcommand reference
 - [Determinism Guarantees](/math/determinism-guarantees/) — why results are rank-count invariant

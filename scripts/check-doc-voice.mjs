@@ -30,6 +30,17 @@
 // An entry grandfathers only the rule id it names, and an entry of this gate's
 // that matches no hit is reported as STALE and fails the gate.
 //
+// Instance-magnitude rules (`detectMagnitudeViolations(text, zone)`, ids in
+// `MAGNITUDE_RULE_IDS`): `instance-count` ("160+ hydro", "10+ iterations"),
+// `instance-approx` ("≈ 2000 states", also KaTeX `\approx`) and
+// `instance-span` ("5-10 iterations", "1 month - 5 years"). They run in the
+// STRICT zone only; worked examples (`examples/*`) and the software layer
+// carry concrete instance numbers by design. Matching runs per paragraph block
+// over the blanked prose, so a phrase split by a hard wrap is found and a hit
+// is reported at the line it starts on; an inline
+// `<!-- doc-voice-ok: reason -->` on that line exempts it. The detector is
+// separate from `detectVoiceViolations`, and its ids are not in `RULE_IDS`.
+//
 // Exports `detectVoiceViolations(text, zone)` — the pure per-file detector —
 // and `RULE_IDS` (the rule ids this gate can emit) behind a direct-run guard,
 // mirroring check-figures.mjs / check-spdx.mjs.
@@ -42,7 +53,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { join, dirname } from "node:path";
 import { zoneOf, ZONE_STRICT, collectZonedSourceFiles } from "./doc-zones.mjs";
 import { loadAllowlist, partitionByAllowlist } from "./doc-lint-allowlist.mjs";
-import { proseLines } from "./doc-text.mjs";
+import { proseLines, buildBlocks, lineForOffset } from "./doc-text.mjs";
 
 const scriptDir = dirname(fileURLToPath(import.meta.url));
 const contentRoot = join(scriptDir, "..", "src", "content", "docs") + "/";
@@ -190,6 +201,50 @@ function typicalNumberHit(prose) {
     return `${hedgeMatch[0]} ... ${numPart.slice(0, 12).trim()}`;
   }
   return null;
+}
+
+// Instance magnitudes that hold for some studies only: an open-ended count, an
+// approximate state-space size, and a span of stages/months/years/iterations
+// (number-first or unit-first).
+const MAGNITUDE_PATTERNS = [
+  [
+    "instance-count",
+    /\b\d[\d,]*\+\s*(?:hydros?|reservoirs?|plants?|thermals?|buses|stages|iterations|scenarios)\b/gi,
+  ],
+  ["instance-approx", /(?:≈|~|\\approx)\s*\$?\s*\d[\d,.]*\s+states?\b/gi],
+  [
+    "instance-span",
+    /\b\d[\d,.]*\s*(?:–|—|-{1,2}|to)\s*\d[\d,.]*\s+(?:stages|months|years|iterations)\b|\b\d+\s+(?:months?|years?)\s*(?:–|—|-{1,2}|to)\s*\d+\s+(?:months?|years?)\b/gi,
+  ],
+];
+
+export const MAGNITUDE_RULE_IDS = new Set(
+  MAGNITUDE_PATTERNS.map(([rule]) => rule),
+);
+
+// Pure strict-zone detector for the instance-magnitude rules. Non-prose lines
+// are blanked, not dropped, so a hit keeps its physical line number; each
+// paragraph block is then matched as one joined string. Returns
+// { lineno, rule, text } hits sorted by line (allowlist NOT applied).
+export function detectMagnitudeViolations(text, zone) {
+  if (zone !== ZONE_STRICT) return [];
+
+  const rawLines = text.split("\n");
+  const blanked = rawLines.map(() => "");
+  for (const [lineno, prose] of proseLines(text)) blanked[lineno - 1] = prose;
+
+  const violations = [];
+  for (const block of buildBlocks(blanked.join("\n"))) {
+    for (const [rule, pattern] of MAGNITUDE_PATTERNS) {
+      for (const m of block.joined.matchAll(pattern)) {
+        const lineno = lineForOffset(block, m.index);
+        if (OK_MARKER.test(rawLines[lineno - 1])) continue;
+        violations.push({ lineno, rule, text: m[0].trim() });
+      }
+    }
+  }
+
+  return violations.sort((a, b) => a.lineno - b.lineno);
 }
 
 // ---------------------------------------------------------------------------

@@ -1,14 +1,14 @@
 Cobre's `config.json` top-level `estimation` block, the `scenarios/` PAR(p)
 input files, and `scenarios/correlation.json` configure the estimation and
-correlation pipeline the methodology above describes. This tab is the
-field-level configuration reference; the equations these fields feed are in
-the sections above.
+correlation pipeline the methodology above describes. This tab shows which PAR
+inputs to supply and how the estimation and correlation are configured; the
+equations these fields feed are in the sections above.
 
 ### `config.json` — `estimation` Block
 
 The `estimation` block is a top-level key of `config.json` (a sibling of
-`training`), and controls the PAR(p) fitting pipeline whenever
-`inflow_history.parquet` is present:
+`training`), and controls the PAR(p) fitting pipeline on the estimation paths
+(rows 4–6 of the table in the next section):
 
 ```json
 {
@@ -21,12 +21,9 @@ The `estimation` block is a top-level key of `config.json` (a sibling of
 }
 ```
 
-| Field                          | Type            | Default  | Description |
-| ------------------------------ | --------------- | -------- | ----------- |
-| `max_order`                    | integer          | `6`      | Maximum lag order `p_max` considered by PACF order selection (methodology §3.6). |
-| `order_selection`               | string          | `"pacf"` | Order-selection criterion. Exactly two values are accepted: `"pacf"` (classical PAR(p), methodology §1–§6) and `"pacf_annual"` (PAR(p)-A, methodology §7). |
-| `min_observations_per_season`  | integer          | `30`     | Recommended minimum number of fully-covered stage occurrences of each season per hydro. Below this count, estimation still proceeds — see Implementation notes. |
-| `max_coefficient_magnitude`    | float or `null`  | `null`   | Optional safety net on fitted coefficient magnitude — see Implementation notes for the exact effect. |
+The [`estimation`](/running/configuration/#estimation) section of the
+configuration reference lists every field and its default, and states the
+`min_observations_per_season` behaviour.
 
 Setting `"order_selection": "pacf_annual"` activates the PAR(p)-A annual
 component (methodology §7): the periodic Yule-Walker system is extended with
@@ -62,7 +59,7 @@ always overwrite it with fitted values.
 | 3 | 0 | 1 | 1 | `UserProvidedNoHistory` | user file | user file | identity, unless `correlation.json` provided |
 | 4 | 1 | 0 | 0 | `FullEstimation` | fitted from H | fitted from H (PACF + Yule-Walker + Maceira & Damázio) | estimated from H residuals, unless `correlation.json` provided |
 | 5 | 1 | 0 | 1 | `UserArHistoryStats` | fitted from H | user file | estimated from H residuals using user coefficients, unless `correlation.json` provided |
-| 6 | 1 | 1 | 0 | `PartialEstimation` | user file (used only for the Yule-Walker solve) | fitted from H | estimated from H residuals using the user stats, unless `correlation.json` provided |
+| 6 | 1 | 1 | 0 | `PartialEstimation` | user file (the fit uses statistics estimated from H) | fitted from H | estimated from H residuals, unless `correlation.json` provided |
 | 7 | 1 | 1 | 1 | `UserProvidedAll` | user file | user file | identity, unless `correlation.json` provided (history is not re-consumed) |
 
 Cases with `R = 1` but `H = 0` and `S = 0` collapse to row 1 — AR coefficients
@@ -82,7 +79,7 @@ pooled profile (methodology §6.1).
 | ----------------------------------------------------------- | -------------------------------------------------------------------- | ---- |
 | Smoke-test the LP without stochasticity                     | _(no scenarios files)_                                                | 1    |
 | Deterministic seasonal levels, no autoregression             | `inflow_seasonal_stats.parquet`                                       | 2    |
-| Fully user-specified PAR(p) without raw observations         | `inflow_seasonal_stats.parquet`, `inflow_ar_coefficients.parquet`     | 3    |
+| Fully user-specified PAR(p) without a history file           | `inflow_seasonal_stats.parquet`, `inflow_ar_coefficients.parquet`, and, for an AR order above 0, `recent_observations` covering the lag slots | 3    |
 | Hands-off: fit everything from raw observations              | `inflow_history.parquet`                                              | 4    |
 | Fit stats from history, override the AR structure            | `inflow_history.parquet`, `inflow_ar_coefficients.parquet`            | 5    |
 | Override the levels (mean/std) but let Cobre fit the AR       | `inflow_history.parquet`, `inflow_seasonal_stats.parquet`             | 6    |
@@ -91,26 +88,14 @@ pooled profile (methodology §6.1).
 
 ### `scenarios/inflow_history.parquet` — Windowed Historical Observations
 
-Required to drive any of the estimation paths (H = 1 above), and — whenever
-present — the base layer the derived inflow-lag seed casts from (see "Lag and
-accumulator seeding" below). One row per historical observation window:
-
-| Column       | Type   | Required | Description |
-| ------------ | ------ | -------- | ----------- |
-| `hydro_id`   | INT32  | Yes      | Hydro plant identifier (matches `id` in `hydros.json`). |
-| `start_date` | DATE   | Yes      | Window start, inclusive. |
-| `end_date`   | DATE   | Yes      | Window end, exclusive; must be after `start_date`. |
-| `value_m3s`  | DOUBLE | Yes      | Mean inflow over the window (m³/s); must be finite. A negative value is accepted — the quantity is incremental inflow, so a negative window is real hydrology (see [Inflow Non-Negativity](/math/inflow-nonnegativity)). |
-
-The legacy single-`date`-per-row layout is rejected outright — there is no
-inference or conversion path from it to the windowed form above. Windows for
-the same `hydro_id` must not overlap; adjacent windows (`start_date ==
-previous end_date`) are accepted.
+The windowed record is required to drive any of the estimation paths (H = 1
+above) and, whenever present, is the base layer the derived inflow-lag seed
+casts from (see "Lag and accumulator seeding" below).
 
 Every hydro plant in `hydros.json` must have at least one observation window
-in this file when estimation is active. When a season has fewer observations
-than `min_observations_per_season`, estimation still proceeds — see
-Implementation notes for the exact behavior.
+in this file when estimation is active. The columns, window rules and roles of
+the file are in
+[`scenarios/inflow_history.parquet`](/reference/case-directory-format/#scenariosinflow_historyparquet).
 
 ### Lag and accumulator seeding — `recent_observations`
 
@@ -121,14 +106,29 @@ slots and mid-period inflow accumulator. `initial_conditions.json`'s optional
 `hydro_id` / `start_date` / `end_date` / `value_m3s` shape as
 `inflow_history.parquet` and shadow it **day-wise** wherever the two overlap
 (the two series are never blended). `value_m3s` accepts negative values in
-`recent_observations` too, for the same incremental-inflow reason. When
-neither file covers a given hydro's opening seasons, that hydro's lag slots
-and accumulator seed to zero.
+both files: the quantity is incremental inflow, so a negative window is real
+hydrology (see [Inflow Non-Negativity](/math/inflow-nonnegativity)).
+
+When `scenarios/inflow_ar_coefficients.parquet` is supplied, the record must
+fully cover each lag slot up to the maximum AR order and, with an annual
+component, each slot of the twelve-period annual window that the study's own
+completed periods do not replace; otherwise the case is refused at load
+([`BusinessRuleViolation`](/reference/error-codes/#businessruleviolation)). A
+gap in a deeper slot, which the study's own completed periods push out of the
+lag window before the study ends, only draws a warning.
+
+When the coefficients are estimated, this coverage check does not run: a lag
+period the record covers only in part seeds from the mean over its covered
+days, and a period with no covered day seeds to zero.
+
+On either path, a first-stage period already in progress at the study start
+that the record covers only in part is accepted, with a warning; with no
+covered day, its accumulator seeds to zero.
 
 ### `scenarios/correlation.json` — Spatial Correlation Configuration
 
-Named correlation profiles, each grouping entities with a symmetric
-correlation matrix, plus an optional stage-to-profile schedule:
+Named profiles of correlation groups, with an optional stage-to-profile
+schedule:
 
 ```json
 {
@@ -169,28 +169,13 @@ correlation matrix, plus an optional stage-to-profile schedule:
 }
 ```
 
-| Field       | Required | Description |
-| ----------- | -------- | ----------- |
-| `method`    | Yes      | Correlation decomposition method. Accepts only `"spectral"` (eigendecomposition + clipped square root, methodology §6.3); `"cholesky"` is rejected as an unknown method. |
-| `profiles`  | Yes      | Named profiles, each holding one or more `correlation_groups`. Must not be empty. |
-| `schedule`  | No       | Optional array of `{ stage_id, profile_name }` entries activating a named profile for a specific stage. Absent means the `"default"` profile (or the sole profile) applies to every stage. Every `profile_name` referenced must exist in `profiles`. |
+Correlation is modelled **independently per entity class** — inflow, load, and
+NCS each carry their own spatial correlation structure, and there is **no**
+cross-class correlation term (see
+[Scenario Generation §2.1](/math/scenario-generation/#21-correlated-noise-generation)).
 
-Each correlation group's `matrix` must be square, match the length of
-`entities`, have diagonal entries exactly `1.0`, off-diagonal entries in
-`[-1.0, 1.0]`, and be symmetric.
-
-**Valid entity types** in `entities[].type`:
-
-- `"inflow"` — hydro inflow series (`id` matches `id` in `hydros.json`)
-- `"load"` — stochastic load demand (`id` matches `id` in `buses.json`)
-- `"ncs"` — non-controllable source availability (`id` matches `id` in
-  `non_controllable_sources.json`)
-
-**Same-type enforcement**: every entity within a single correlation group must
-share the same `type`. Mixing types in one group is rejected at case-load
-time. Correlation is modelled **independently per entity class** — inflow,
-load, and NCS each carry their own spatial correlation structure, and there is
-**no** cross-class correlation term.
+Every field and load rule of the file is in
+[`scenarios/correlation.json`](/reference/case-directory-format/#scenarioscorrelationjson).
 
 ### Out-of-sample fallback
 

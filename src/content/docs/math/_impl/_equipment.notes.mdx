@@ -59,7 +59,7 @@ accepted but flagged, since it does not read the forward commitment.
 ### Over-commitment is rejected at case load, not reconciled per solve
 
 A delivered commitment's forward value is held as commitment-ring state, so at
-its delivery stage the fish row ([LP formulation §5c](/math/lp-formulation#ring-rows)) reads the solver's computed value
+its delivery stage the fish row ([State Augmentation §5](/math/state-augmentation#ring-rows)) reads the solver's computed value
 — accurate only to the LP backend's feasibility tolerance, not exact. Cobre runs
 **no** per-solve reconciliation pass. Instead, the outgoing state is
 **canonicalized onto its admissible bounds when it is read back** from each

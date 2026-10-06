@@ -30,7 +30,7 @@
 // fence-tracking at all).
 //
 // Because this corpus mixes single-long-line paragraphs with hard-wrapped
-// files (`math/lp-warm-start.md` wraps at ~80 cols), matching is done against
+// files (`math/lp-warm-start.mdx` wraps at ~80 cols), matching is done against
 // PARAGRAPH blocks (contiguous non-blank lines joined with a space), not bare
 // physical lines — a real narration phrase in this tree ("removed entirely in
 // the\nv0.8.2 restructure") is split by a mid-sentence line wrap, and a

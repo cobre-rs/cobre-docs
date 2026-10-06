@@ -14,6 +14,27 @@ surface — see [See Also](#see-also).
 
 ---
 
+## Diagnosing Performance
+
+The timing tables and the printed `Time split` hold rank 0's view, so another
+rank's imbalance appears as rank 0's time in `cut_sync_ms`, `state_exchange_ms`
+and `mpi_allreduce_ms`. [Reading the `Time split` breakdown](/running/interpreting-results/#reading-the-time-split-breakdown)
+explains how to read the printed block. An enumerated backward pass records zero in
+`cut_sync_ms`, `state_exchange_ms` and `bwd_load_imbalance_ms`.
+
+| Symptom                                                        | Metric                                                                                                                                                                                                                                                                                                                                                                                        | Knob                                                                                                                                                                                                                                                                                                                                                                                         |
+| -------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Backward time grows each iteration                             | `time_backward_ms` and `cuts_active` in [`training/convergence.parquet`](/reference/output-format/#trainingconvergenceparquet); `cuts_active_after` and `active_after_budget` in [`training/cut_selection/iterations.parquet`](/reference/output-format/#trainingcut_selectioniterationsparquet)                                                                                              | [`training.cut_selection.selection`](/running/configuration/#trainingcut_selection) and [`training.cut_selection.max_active_per_stage`](/running/configuration/#trainingcut_selection)                                                                                                                                                                                                       |
+| Lazy-selection solves load many rows                           | `mean_rows_in_lp` in `training/convergence.parquet` (0 when no lazy selection ran); `lazy_scoring_ms` in [`training/timing/iterations.parquet`](/reference/output-format/#trainingtimingiterationsparquet)                                                                                                                                                                                    | The `dynamic` method's parameters under [`training.cut_selection.selection`](/running/configuration/#trainingcut_selection)                                                                                                                                                                                                                                                                  |
+| Workers wait inside a phase                                    | `fwd_load_imbalance_ms` and `bwd_load_imbalance_ms` in `training/timing/iterations.parquet`; the wait share of each phase in the printed time split                                                                                                                                                                                                                                           | Backward: `by_node` with `block_size` under [`training.parallelism.backward_scheduler`](/running/configuration/#trainingparallelism), see [By-Node Scheduling](#by-node-scheduling) (no effect while lazy selection is active). Forward: a [`training.selection.forward_passes`](/running/configuration/#trainingselection) that is a multiple of the worker count (ranks times `--threads`) |
+| Workers idle for want of trajectories                          | `forward_passes` in `training/convergence.parquet` against `distribution.world_size` and `distribution.threads_per_rank` in [`training/metadata.json`](/reference/output-format/#trainingmetadatajson)                                                                                                                                                                                        | Raise [`training.selection.forward_passes`](/running/configuration/#trainingselection), or run fewer ranks or fewer threads per rank; see [Parallel Execution Model](#parallel-execution-model)                                                                                                                                                                                              |
+| Collective time on multi-rank runs                             | `cut_sync_ms`, `state_exchange_ms` and `mpi_allreduce_ms` in `training/timing/iterations.parquet`                                                                                                                                                                                                                                                                                             | Balance the work as in the two rows above, or run fewer ranks with more `--threads` each, typically [one rank per node](/running/hpc-deployment/#hybrid-mpi--threads); see [Parallel Execution Model](#parallel-execution-model)                                                                                                                                                             |
+| Lower-bound evaluation takes a growing share of iteration time | `lower_bound_ms` in `training/timing/iterations.parquet`                                                                                                                                                                                                                                                                                                                                      | None: the evaluation is serial on rank 0, one LP solve per stage-0 opening; see [Lower Bound Evaluation](#lower-bound-evaluation)                                                                                                                                                                                                                                                            |
+| Solves retry                                                   | `lp_retries` and `retry_attempts` in [`training/solver/iterations.parquet`](/reference/output-format/#trainingsolveriterationsparquet); `retry_level` in [`training/solver/retry_histogram.parquet`](/reference/output-format/#trainingsolverretry_histogramparquet); the LP prescaling diagnostics in [`training/scaling_report.json`](/reference/output-format/#trainingscaling_reportjson) | The per-phase solver profiles [`training.solver.backward`](/running/configuration/#trainingsolver), [`training.solver.forward`](/running/configuration/#trainingsolver) and [`simulation.solver`](/running/configuration/#solver-profile-fields); [`modeling.cost_scale_factor`](/running/configuration/#modelingcost_scale_factor)                                                          |
+| Slow start                                                     | `setup.load_seconds`, `setup.stochastic_fit_seconds`, `setup.production_fit_seconds`, `setup.evaporation_fit_seconds` and `setup.broadcast_seconds` in `training/metadata.json` (collected on rank 0)                                                                                                                                                                                         | For the stochastic fit, export the fitted artifacts once and reuse them: [`exports.stochastic`](/running/configuration/#exports) and [Exporting Stochastic Artifacts](/running/running-studies/#exporting-stochastic-artifacts)                                                                                                                                                              |
+
+---
+
 ## Solver Safeguards
 
 When HiGHS returns a non-terminal error, the solver automatically escalates
@@ -38,12 +59,12 @@ Before each stage's LP template is built, Cobre applies its own geometric-mean
 row/column prescaler that normalizes the constraint-matrix coefficients toward
 1.0, improving numerical conditioning. The prescaling mechanism and its
 exact-unscaling guarantee are documented in the math layer under
-[LP Scaling](/math/lp-formulation#12-lp-scaling).
+[LP Layout and Scaling](/math/lp-layout-and-scaling#2-lp-scaling).
 
 ### Cost Scale Factor
 
 The objective is divided by a cost-scale factor (default `1_000_000.0`,
-configurable as [`modeling.cost_scale_factor`](/running/configuration/#cost_scale_factor))
+configurable as [`modeling.cost_scale_factor`](/running/configuration/#modelingcost_scale_factor))
 to reduce the magnitude of objective coefficients, improving simplex numerical
 stability.
 
@@ -52,7 +73,7 @@ Because the prescaler already conditions the matrix, HiGHS's internal scaling
 overridable per phase via the solver profile's `scale` field: selecting
 `solver_scaling` re-enables solver-side scaling and forgoes the exact
 single-unscaling guarantee. See
-[`PhaseSolverProfileConfig`](/running/configuration/#phasesolverprofileconfig-fields)
+[Solver profile fields](/running/configuration/#solver-profile-fields)
 for the field and its trade-off.
 
 The scaling diagnostics are written to `training/scaling_report.json` after
@@ -82,7 +103,7 @@ s1 -> s2
 ### Stage 1: Strategy-Based Selection
 
 Four strategies are available, configured via
-[`cut_selection`](/running/configuration/#cut_selection) in `config.json`:
+[`cut_selection`](/running/configuration/#trainingcut_selection) in `config.json`:
 
 | Strategy     | Selection Mechanism                                                                                                                                                                                     | Aggressiveness |
 | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------- |
@@ -107,7 +128,7 @@ controls how closely a cut must approach the per-state maximum to be retained;
 per-solve lazy selection loop that adds cuts on demand rather than
 deactivating from a full pool scan. It does not respect `check_frequency`, and
 its initial active set is seeded from the `seed_window` most recent iterations.
-See [`cut_selection`](/running/configuration/#cut_selection) for the full
+See [`cut_selection`](/running/configuration/#trainingcut_selection) for the full
 parameter reference.
 
 ### Stage 2: Budget Enforcement
@@ -164,7 +185,55 @@ The row management pipeline writes per-stage statistics to
 
 ---
 
-## Parallel Execution
+## Parallel Execution Model
+
+A run has two levels of parallelism: MPI ranks, and worker threads inside each
+rank. `--threads` sets the number of worker threads per rank (default `1`, at
+least `1`); the launcher sets the rank count (see
+[HPC Deployment](/running/hpc-deployment/)). This section describes how the
+work is partitioned across ranks and threads, which collectives tie the ranks
+together, the thread rules, and what each rank holds in memory.
+
+The `Execution` block of the run banner reports both levels. The excerpt below
+is from a two-rank run with two threads per rank on one host; it omits the
+`Solver` line and writes the hostname as `<host>`:
+
+{/* capture: LD_LIBRARY_PATH=/opt/mpich/lib /opt/mpich/bin/mpiexec -n 2 "$COBRE_MPI_BIN" run <case> --threads 2 | cobre   v0.17.0 | binary: cobre-mpi sha256 af289cff | case: temporary 1dtoy copy ("$COBRE_MPI_BIN" init --template 1dtoy <case>), no diff; MPICH 4.3.2, one host, exit 0; excerpt: the Solver line and the rest of the run are not quoted, the hostname on the Layout line is written <host> (format of crates/cobre-cli/src/summary.rs:150 at v0.17.0) */}
+
+```text
+Execution
+  Backend:   MPI (MPICH 4.3.2, MPI 4.1)
+  Threads:   Funneled, 2 rayon threads per rank
+  Layout:    2 ranks on <host>
+```
+
+The `Threads:` line gives the MPI thread level and the worker threads per rank;
+the `Layout:` line gives the rank count and the host. A run on several hosts
+shows `across N nodes` there, with the ranks of each host listed below it.
+
+### Work Partition
+
+Under a sampled forward pass, the `forward_passes` trajectories of an iteration
+(see [`training.selection`](/running/configuration/#trainingselection)) are
+split over the ranks in contiguous blocks. Each rank takes
+`forward_passes / ranks` of them, rounded down, and the first
+`forward_passes mod ranks` ranks take one extra: 50 passes on 4 ranks give 13,
+13, 12 and 12, and ranks beyond the number of passes receive none. A rank then
+splits its block
+statically over its worker threads the same way, so the assignment of
+trajectories to threads depends on the counts only, never on thread
+scheduling. Simulation scenarios are split over ranks and threads the same way.
+
+Each rank runs the backward pass for the trial points of its own forward
+passes; the work units handed to its worker threads are defined under
+[Backward-Pass Scheduling](#backward-pass-scheduling). Under an enumerated
+forward pass, the backward pass instead splits the successor outcomes of each
+node across the ranks, which allgather them so that every rank derives the
+same cut.
+
+Every rank must run with the same `--threads` value: the backward pass of a
+sampled forward pass compares the worker counts across the ranks and stops the
+run when they differ.
 
 ### Backward-Pass Scheduling
 
@@ -173,15 +242,14 @@ trial point. The optional `by_node` scheduler uses finer
 `(trial point, opening block)` work units for better load balance when trial
 points solve in variable time. Either way the produced cut set and lower bound
 are independent of worker and thread count. See
-[`parallelism.backward_scheduler`](/running/configuration/#parallelism) for the
+[`parallelism.backward_scheduler`](/running/configuration/#trainingparallelism) for the
 configuration, and the
 [`cobre-sddp` README](https://github.com/cobre-rs/cobre/blob/main/crates/cobre-sddp/README.md)
 for the scheduler and inter-rank communication internals.
 
 #### By-Node Scheduling
 
-By default, the backward pass claims one whole trial point per work unit (see
-above). The `by_node` scheduler shrinks the work unit to one
+The `by_node` scheduler shrinks the work unit from one trial point to one
 `(trial point, opening block)` pair, giving the work-stealing counter more,
 finer-grained units to hand out. This improves load balance specifically when
 trial points solve in variable time: a worker that finishes a cheap trial
@@ -196,7 +264,7 @@ changes only which worker processes which block, and when — it is
 **result-neutral**: the produced cut set and the training lower bound are
 identical to canonical (whole-trial-point) claiming.
 
-See [`parallelism.backward_scheduler`](/running/configuration/#parallelism)
+See [`parallelism.backward_scheduler`](/running/configuration/#trainingparallelism)
 for the config field that enables `by_node` and sets its `block_size`.
 
 :::caution[By-Node Scheduling and Dynamic Cut Selection]
@@ -206,7 +274,7 @@ cut-free lazy core. When DCS is enabled
 (`cut_selection.selection.method = "dynamic"`), an active DCS iteration
 **always** falls back to `by_scenario` scheduling — so from DCS's
 `start_iteration` (default `2`) onward, configuring `by_node` has
-almost no effect. No warning or error is emitted.
+no effect. No warning or error is emitted.
 
 DCS is **opt-in**: row selection (including DCS) is disabled by default
 (`cut_selection.selection` absent from `config.json`). This fallback applies
@@ -220,7 +288,7 @@ Each algorithmic phase — forward sweep, backward sweep, and simulation — can
 override the built-in solver profile (feasibility tolerances, per-attempt
 iteration caps, pricing strategy, the `scale` field, and more) via
 `training.solver.backward`, `training.solver.forward`, and `simulation.solver`.
-See [`PhaseSolverProfileConfig`](/running/configuration/#phasesolverprofileconfig-fields)
+See [Solver profile fields](/running/configuration/#solver-profile-fields)
 for the full field list, the built-in profile each phase starts from, and the
 single-unscaling trade-off carried by `scale`.
 
@@ -230,10 +298,12 @@ balance across worker threads and shortens wall-clock training time.
 
 ### Forward Pass and Simulation
 
-Forward-pass and simulation scenarios are statically partitioned across solver
-workspaces, so the scenario-to-worker assignment is deterministic. Within each
-scenario the stage LP is loaded once and only its row bounds are patched per
-scenario.
+Under a sampled forward pass and in simulation, scenarios are assigned to
+workers by the static partition described under
+[Work Partition](#work-partition). Within each scenario the stage LP is loaded
+once. Per stage, the forward-pass and simulation solves patch the
+incoming-state column bounds, the stochastic NCS generation column bounds, and
+the load-balance and inflow row bounds.
 
 ### Lower Bound Evaluation
 
@@ -242,12 +312,70 @@ runs as a single-threaded serial loop on rank 0. Each opening patches
 correctness-critical per-opening state (e.g. NCS column bounds) on a shared
 solver in sequence, so the step is not parallelized.
 
+### Communication and Threads
+
+The ranks exchange data through blocking MPI collectives, so communication does
+not overlap computation. MPI is initialized at the `Funneled` thread level,
+which the `Threads:` line of the `Execution` block names: only one thread of a
+rank makes MPI calls. An allgatherv gives every rank the data of all ranks, an
+allreduce combines a value over all ranks, and a broadcast sends a value from
+rank 0 to the others. On every run the main collectives are:
+
+- an allgatherv of the forward-pass costs, reduced in canonical order, so the
+  result does not depend on the rank count;
+- allreduce sums of integer counters, among them the solve counts of the printed
+  summary;
+- a broadcast of the lower bound, which rank 0 evaluates (see
+  [Lower Bound Evaluation](#lower-bound-evaluation)) and the other ranks wait
+  for.
+
+Under a sampled forward pass the backward pass adds:
+
+- an allgatherv of the trial states of all ranks at the start of each backward
+  stage (timed as `state_exchange_ms`);
+- a per-stage allgatherv of the cuts generated in the backward pass, at the end
+  of each backward stage, which every rank waits on (timed as `cut_sync_ms`);
+- an allreduce sum of the per-iteration cut-binding increments.
+
+The enumerated backward pass has neither the state exchange nor the cut
+exchange; it uses an allgatherv of the successor outcomes of each node instead
+(see [Work Partition](#work-partition)). The communicator backends are documented in
+the [`cobre-comm` README](https://github.com/cobre-rs/cobre/blob/main/crates/cobre-comm/README.md).
+
+Each LP solve runs on one thread: the bundled HiGHS is built without its
+default threads, so during the forward pass, the sampled backward pass and
+simulation the number of LPs a rank solves at the same time is its `--threads`.
+The enumerated backward pass runs on one worker thread per rank.
+
+Rank 0 writes the training outputs. The timing tables and the printed
+`Time split` show rank 0's view: the phase wall, wait, and serial values are
+rank 0's own, not an aggregate over the ranks. The printed solve counts are
+sums over all ranks, and the printed `solve` time is the mean per worker over
+all ranks.
+
+### Memory and Case Access
+
+Each rank holds its own full copy of the case data, the opening tree, the cut
+pool, and the stage templates; ranks on one node do not share memory. The cut
+pool is sized at startup from the iteration budget (the largest `iteration_limit`
+in the stopping rules, or 100 when there is none) times the forward passes, for
+every stage. The memory of every rank is set by that size, and placing more ranks
+on a node multiplies that node's memory use.
+
+Rank 0 loads the case and broadcasts the system data, the configuration, and
+any user-supplied opening tree; the other ranks rebuild the stochastic context
+and the hydro models from the case directory. Every rank must read the case
+directory, so it must be visible at the same path on every node (a shared
+filesystem or a staged copy). A resume or warm start also loads the policy
+checkpoint on every rank, from the output directory.
+
 ---
 
 ## See Also
 
-- [Configuration](/running/configuration/#cut_selection) — row-selection and row management configuration
+- [Configuration](/running/configuration/#trainingcut_selection) — row-selection and row management configuration
 - [Output Format](/reference/output-format/) — timing, solver statistics, and row-selection output schemas
 - [cobre-solver](https://github.com/cobre-rs/cobre/blob/main/crates/cobre-solver/README.md) — solver interface and retry-escalation internals (cobre developer guide)
 - [cobre-sddp](https://github.com/cobre-rs/cobre/blob/main/crates/cobre-sddp/README.md) — training-loop architecture, scheduling, and data structures (cobre developer guide)
+- [cobre-comm](https://github.com/cobre-rs/cobre/blob/main/crates/cobre-comm/README.md) — communicator backends and collectives (cobre developer guide)
 - [ARCHITECTURE.md](https://github.com/cobre-rs/cobre/blob/main/ARCHITECTURE.md) — cobre crate topology and dependency graph (cobre developer guide)

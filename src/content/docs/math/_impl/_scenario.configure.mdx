@@ -1,4 +1,4 @@
-You set the sampling scheme, the opening-tree method and the seeds in `config.json` and `stages.json`, and supply the input files named below. This tab maps the concepts of the methodology above to those keys and files; [Configuration](/running/configuration/#scenario_source) and [Case Directory Format](/reference/case-directory-format) own the field tables.
+You set the sampling scheme, the opening-tree method and the seeds in `config.json` and `stages.json`, and supply the input files named below. This tab maps the concepts of the methodology above to those keys and files; [Configuration](/running/configuration/#trainingscenario_source) and [Case Directory Format](/reference/case-directory-format) own the field tables.
 
 ### Sampling schemes
 
@@ -13,7 +13,7 @@ You set the sampling scheme, the opening-tree method and the seeds in `config.js
 
 For `out_of_sample`, the forward draw is fresh noise from a seed independent of the tree's, drawn with the stage's `sampling_method` (plain Monte Carlo at `selective` and `historical_residuals` stages), with correlation applied to every draw.
 
-`historical` is valid for the `inflow` class only. The key `training.scenario_source.historical_years` restricts the pool of historical windows; see [scenario_source](/running/configuration/#scenario_source). `simulation.scenario_source` sets the simulation schemes in the same way, and when it is absent simulation uses `training.scenario_source`. Every scheme other than `in_sample` needs `training.scenario_source.seed` (see [Seeds](#seeds)). A class of `simulation.scenario_source` that is not `in_sample` also requires `simulation.scenario_source.seed` for admission, but no draw reads its value.
+`historical` is valid for the `inflow` class only. The key `training.scenario_source.historical_years` restricts the pool of historical windows; see [scenario_source](/running/configuration/#trainingscenario_source). `simulation.scenario_source` sets the simulation schemes in the same way, and when it is absent simulation uses `training.scenario_source`. Every scheme other than `in_sample` needs `training.scenario_source.seed` (see [Seeds](#seeds)). A class of `simulation.scenario_source` that is not `in_sample` also requires `simulation.scenario_source.seed` for admission, but no draw reads its value.
 
 ### Opening-tree methods
 
@@ -35,7 +35,7 @@ For `out_of_sample`, the forward draw is fresh noise from a seed independent of 
 | `training.tree_seed`            | The opening tree and the in-sample opening draws       | `42` when absent; a negative value is used by its absolute value |
 | `training.scenario_source.seed` | The out-of-sample draws, in training and in simulation | None; required unless every class is `in_sample`                 |
 
-Historical-window and external-scenario selection use no seed. [Seed resolution](/reference/case-directory-format/#seed-resolution) owns the rules.
+Historical-window and external-scenario selection use no seed. [Seed resolution](/running/configuration/#seed-resolution) owns the rules.
 
 ### Inputs
 

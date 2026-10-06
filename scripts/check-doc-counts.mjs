@@ -26,6 +26,15 @@
 // Exports `checkText(text)` (the pure per-file detector) behind a direct-run
 // guard, mirroring check-figures.mjs / check-doc-voice.mjs.
 //
+// Two further pure detectors cover counts that no adjacent "N columns" line
+// introduces. `checkVariableCatalogCount` reads the `## Variable catalog`
+// section of the generic-constraints reference and compares every "N LP
+// variable types" / "N variables" statement in it with the data rows of the
+// section's first table. `checkSchemaCount` compares every "N vendored JSON
+// Schema files" / "N schemas" statement on the JSON Schemas reference, and
+// the data rows of its `## Available schemas` table, with the number of
+// `*.schema.json` files the caller counts under `public/schemas/`.
+//
 // Run any time (no build needed — reads source content, not dist/):
 //   node scripts/check-doc-counts.mjs   |   npm run check:counts
 
@@ -164,6 +173,153 @@ export function checkText(text, label = "<text>") {
     }
   }
   return problems;
+}
+
+// A count token (digits or a spelled cardinal) followed by the noun phrase
+// each detector reads; `g` so one line can hold several statements.
+const NUMBER = `\\d+|${Object.keys(WORD_TO_INT).join("|")}`;
+const VARIABLE_COUNT_RE = new RegExp(
+  `(?<![\\w-])(${NUMBER})\\s+(?:LP\\s+)?variable(?:s|\\s+types)\\b`,
+  "gi",
+);
+const SCHEMA_COUNT_RE = new RegExp(
+  `(?<![\\w-])(${NUMBER})\\s+(?:vendored\\s+)?(?:JSON\\s+Schema\\s+files|schemas)\\b`,
+  "gi",
+);
+
+// Per-line flags: true for a fence delimiter and every line inside a fence.
+function fencedLines(lines) {
+  let inFence = false;
+  return lines.map((line) => {
+    const stripped = line.trimStart();
+    if (stripped.startsWith("```") || stripped.startsWith("~~~")) {
+      inFence = !inFence;
+      return true;
+    }
+    return inFence;
+  });
+}
+
+/**
+ * Compare every variable-count statement in the `## Variable catalog`
+ * section (up to the next `#`/`##` heading) with the data rows of the
+ * section's first table.
+ *
+ * @param {string} text file contents
+ * @param {string} label a display name for the file, used in messages
+ * @returns {{statements: number, catalogRows: number | null, problems: string[]}}
+ */
+export function checkVariableCatalogCount(text, label = "<text>") {
+  const lines = text.split("\n");
+  const fenced = fencedLines(lines);
+  const heading = lines.findIndex(
+    (line, i) => !fenced[i] && /^##\s+Variable catalog\s*$/.test(line),
+  );
+  if (heading === -1) {
+    return {
+      statements: 0,
+      catalogRows: null,
+      problems: [`${label}: no "## Variable catalog" section`],
+    };
+  }
+  let end = lines.findIndex(
+    (line, i) => i > heading && !fenced[i] && /^#{1,2}\s/.test(line),
+  );
+  if (end === -1) end = lines.length;
+
+  let catalogRows = null;
+  for (let i = heading + 1; i < end; i++) {
+    if (
+      !fenced[i] &&
+      lines[i].trimStart().startsWith("|") &&
+      isTableSeparator(lines[i + 1] ?? "")
+    ) {
+      catalogRows = countTableRows(lines, i);
+      break;
+    }
+  }
+
+  const problems = [];
+  if (catalogRows === null) {
+    problems.push(
+      `${label}:${heading + 1}: "## Variable catalog" has no table`,
+    );
+  }
+  let statements = 0;
+  for (let i = heading + 1; i < end; i++) {
+    if (fenced[i]) continue;
+    for (const match of lines[i].matchAll(VARIABLE_COUNT_RE)) {
+      statements += 1;
+      if (catalogRows !== null && parseCount(match[1]) !== catalogRows) {
+        problems.push(
+          `${label}:${i + 1}: states ${JSON.stringify(match[0])} but the catalog table has ${catalogRows} data rows`,
+        );
+      }
+    }
+  }
+  return { statements, catalogRows, problems };
+}
+
+/**
+ * Compare every schema-count statement in the file (frontmatter included)
+ * and the data rows of the first table under `## Available schemas` with
+ * `vendoredCount`, the number of `*.schema.json` files under `public/schemas`.
+ *
+ * @param {string} text file contents
+ * @param {string} label a display name for the file, used in messages
+ * @param {number} vendoredCount number of vendored schema files
+ * @returns {{statements: number, tableRows: number | null, problems: string[]}}
+ */
+export function checkSchemaCount(text, label, vendoredCount) {
+  const lines = text.split("\n");
+  const fenced = fencedLines(lines);
+  const problems = [];
+  let statements = 0;
+  for (let i = 0; i < lines.length; i++) {
+    if (fenced[i]) continue;
+    for (const match of lines[i].matchAll(SCHEMA_COUNT_RE)) {
+      statements += 1;
+      if (parseCount(match[1]) !== vendoredCount) {
+        problems.push(
+          `${label}:${i + 1}: states ${JSON.stringify(match[0])} but public/schemas holds ${vendoredCount} vendored schema files`,
+        );
+      }
+    }
+  }
+
+  const heading = lines.findIndex(
+    (line, i) => !fenced[i] && /^##\s+Available schemas\s*$/.test(line),
+  );
+  if (heading === -1) {
+    problems.push(`${label}: no "## Available schemas" section`);
+    return { statements, tableRows: null, problems };
+  }
+  let end = lines.findIndex(
+    (line, i) => i > heading && !fenced[i] && /^#{1,6}\s/.test(line),
+  );
+  if (end === -1) end = lines.length;
+
+  let tableRows = null;
+  for (let i = heading + 1; i < end; i++) {
+    if (
+      !fenced[i] &&
+      lines[i].trimStart().startsWith("|") &&
+      isTableSeparator(lines[i + 1] ?? "")
+    ) {
+      tableRows = countTableRows(lines, i);
+      break;
+    }
+  }
+  if (tableRows === null) {
+    problems.push(
+      `${label}:${heading + 1}: "## Available schemas" has no table`,
+    );
+  } else if (tableRows !== vendoredCount) {
+    problems.push(
+      `${label}:${heading + 1}: the "## Available schemas" table has ${tableRows} data rows but public/schemas holds ${vendoredCount} vendored schema files`,
+    );
+  }
+  return { statements, tableRows, problems };
 }
 
 // ---------------------------------------------------------------------------

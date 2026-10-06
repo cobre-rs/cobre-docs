@@ -106,13 +106,7 @@ Each stage objective multiplies $\theta$ by its one-step factor $d_{t \to t+1}$ 
 
 ## 6 Lower Bound with Discounting
 
-The deterministic lower bound at iteration $k$ is:
-
-$$
-\underline{z}^k = c_1(\hat{x}_1^k) + d_{1 \to 2} \cdot \theta_1^k
-$$
-
-where $\theta_1^k$ is the optimal value of the future cost variable at stage 1. Because the discount factor cascades through $\theta$ at each stage, the lower bound already reflects cumulative discounting to stage 1 present value.
+The lower bound $\underline{z}^k$ at iteration $k$ is the first stage's risk-adjusted value over its openings at the initial state $x_0$ ([Upper Bound Evaluation — Lower bound](/math/upper-bound-evaluation#lower-bound)). In each opening's first-stage problem the future cost variable $\theta_1$ enters the objective with the one-step factor $d_{1 \to 2}$, and each later stage's factor carries its cost to stage 1 once (§4), so the lower bound is stated in stage 1 present value.
 
 ## 7 Upper Bound (Simulation) with Discounting
 

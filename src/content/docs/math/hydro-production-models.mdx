@@ -35,7 +35,7 @@ with:
 
 **Per-stage productivity**: the productivity coefficient is authored **per (hydro, stage)** rather than per plant. A plant can therefore carry a stage-varying constant productivity — useful when the reference head differs between near-term and far-future stages of the same study, or when the constant model is being used as a coarse approximation that needs different operating points across the horizon. Section 5.1 describes how that per-(hydro, stage) value is resolved at load time.
 
-**LP treatment**: constant productivity adds no generation column and no row: the turbined-flow column of each (hydro, bus) cell (§2.9) enters its bus's load balance with coefficient $\rho_{h,t}$ in every block, so $g_{h,k} = \rho_{h,t} \cdot q_{h,k}$ holds by construction. Simple and fast, but ignores head variation with storage **within a stage**.
+**LP treatment**: constant productivity adds no generation column and no production row: the turbined-flow column of each (hydro, bus) cell (§2.9) enters its bus's load balance with coefficient $\rho_{h,t}$ in every block, so $g_{h,k} = \rho_{h,t} \cdot q_{h,k}$ holds by construction. Simple and fast, but ignores head variation with storage **within a stage**.
 
 **Data requirements**: a per-stage productivity scalar per hydro plant. No geometry or hyperplane data needed.
 
@@ -61,7 +61,7 @@ This section uses consistent notation with the LP formulation. The following tab
 | $q_{out}$  | $Q_{jus}$                           | Total downstream outflow    | m³/s  |
 
 :::note[Note on lateral flow]
-Spillage and upstream outflows raise the tailrace level ($Q_{jus}$). In the current LP formulation the default is $q_{out} = q + s$ (own turbine + own spill). For FPHA fitting, the lateral-flow secant (§2.7) captures the spillage effect; more general lateral contributions (upstream defluences, post-incremental inflows) are deferred to a future version.
+The tailrace level depends on the outflow below the plant, which this model takes as $q_{out} = q + s$ (the plant's own turbined and spilled flow). The lateral-flow secant (§2.7) captures the spillage effect, and upstream releases or other inflows below the dam do not enter $q_{out}$.
 :::
 
 ### 2.2 Exact Production Function
@@ -178,7 +178,7 @@ The plane is fitted once per plant (§2.1–§2.8); a plant split across buses e
 | ----------- | ---- | ------------------------------------------------- |
 | $\gamma_0$  | —    | Intercept (MW at zero storage, flow, spillage); its sign is not validated |
 | $\gamma_v$  | ≥ 0  | Higher storage → higher forebay → more generation |
-| $\gamma_q$  | ≥ 0  | More turbined flow → more generation              |
+| $\gamma_q$  | ≥ 0 (> 0 for precomputed planes) | More turbined flow → more generation              |
 | $\gamma_s$  | ≤ 0  | More spillage → higher tailrace → less net head   |
 
 **Source of hyperplanes**: planes are either pre-computed (read from `fpha_hyperplanes.parquet`) or computed from topology data during preprocessing. The computed fit is described in §2.6.
@@ -204,7 +204,7 @@ Each cloud point is capped at the plant's installed capacity $\bar{G}_h$. Spilla
 
 #### 2.6.2 Convex Hull
 
-The 3-D convex hull of the $(V, Q, \text{generation})$ cloud is computed via the qhull library. The **upper-envelope facets** — those whose outward normal has a positive generation component — are selected. Each is read as $\text{generation} = \gamma_0 + \gamma_v V + \gamma_q Q$. Before the $k_{FPHA}$ correction of §2.6.3, the result is a **concave outer approximation** (the smallest concave function lying above $\phi$); non-concave regions of $\phi$ fall inside the hull and their facets drop out. Near-parallel coplanar facets arising from hull triangulation are deduplicated by exact coefficient comparison.
+The 3-D convex hull of the $(V, Q, \text{generation})$ cloud is computed via the qhull library. The **upper-envelope facets** — those whose outward normal has a positive generation component — are selected. Each is read as $\text{generation} = \gamma_0 + \gamma_v V + \gamma_q Q$. Before the $k_{FPHA}$ correction of §2.6.3, the result is a **concave outer approximation** (the smallest concave function lying above $\min(\phi, \bar{G}_h)$ at the capped cloud points); non-concave regions of $\phi$ fall inside the hull and their facets drop out. Near-parallel coplanar facets arising from hull triangulation are deduplicated by exact coefficient comparison.
 
 #### 2.6.3 Least-Squares $k_{FPHA}$ Correction
 
@@ -238,7 +238,7 @@ where MLT is the long-term mean inflow (m³/s). The **representative operating p
 
 **Sign**: $\gamma_s \le 0$ (more lateral flow raises the tailrace, reduces generation). Near-zero slopes $|\gamma_s| < 10^{-10}$ of either sign are **snapped to exactly 0** to protect LP column scaling from near-zero structural coefficients.
 
-**Default lateral axis**: own spillage ($q_{lat} = s$). The more general $Q_{jus}$ composition (upstream defluences, post-incremental inflows with participation factors) is a deferred future extension.
+**Default lateral axis**: own spillage ($q_{lat} = s$). The lateral axis is the plant's own spillage; upstream releases and post-incremental inflows do not enter it.
 
 ### 2.8 Similar-Hyperplane Reduction
 
@@ -253,7 +253,7 @@ An optional post-fit step merges consecutive **near-parallel or near-coincident*
 
 ### 2.9 LP Integration
 
-A hydro plant is partitioned into one or more **(hydro, bus) cells** — one per distinct bus among its declared unit groups (see [system elements §5](/math/system-elements)) — and FPHA is evaluated **per cell**, not per plant: a plant's fitted hyperplane set (§2.1–§2.8) is fitted once per plant and consumed by every one of its cells, apportioned as described below. A single-cell plant's constraint is byte-identical to the pre-partition, per-plant form.
+A hydro plant is partitioned into one or more **(hydro, bus) cells** — one per distinct bus among its declared unit groups (see [system elements §5](/math/system-elements)) — and FPHA is evaluated **per cell**, not per plant: a plant's fitted hyperplane set (§2.1–§2.8) is fitted once per plant and consumed by every one of its cells, apportioned as described below. For a single-cell plant the per-cell constraint is the plant-level constraint.
 
 #### Final FPHA Constraint
 
@@ -293,10 +293,10 @@ When using FPHA, the generation variable $g_{h,b,k}$ is **not** directly compute
 
 1. Generation is a free LP variable per cell, bounded by $[0, \bar{G}_{h,b}]$, where $\bar{G}_{h,b}$ sums the cell's own unit groups' declared `max_generation_mw` and closes against the plant's own resolved maximum (see [LP Formulation §6](/math/lp-formulation))
 2. FPHA constraints (one per plane $m$, per cell) provide upper bounds relating generation to storage, flow, and spillage
-3. The optimizer maximizes generation subject to FPHA constraints
+3. Where generation has value, the optimizer raises it until an FPHA plane or a tighter bound such as $\bar{G}_{h,b}$ binds
 4. At an optimum where generation has value, each cell's generation lies on one of its FPHA hyperplane facets or on a tighter bound, such as $\bar{G}_{h,b}$
 
-**Key insight**: Because minimizing cost includes maximizing hydro generation (which has zero fuel cost), the optimizer naturally pushes generation to the FPHA surface boundary. Where generation has no value, turbined flow beyond what the planes convert produces nothing, and the turbined cost of section 2.10 decides between turbining that water and spilling it; on a binding plane with $\gamma_q^m = 0$, spillage still lowers the plane through $\gamma_s^m$ (section 2.7), which the LP weighs against that cost.
+**Key insight**: Because minimizing cost includes maximizing hydro generation (which has zero fuel cost), the optimizer naturally pushes generation to the FPHA surface boundary or to a tighter bound such as $\bar{G}_{h,b}$. Where generation has no value, turbined flow beyond what the planes convert produces nothing, and the turbined cost of section 2.10 decides between turbining that water and spilling it; on a binding plane with $\gamma_q^m = 0$, spillage still lowers the plane through $\gamma_s^m$ (section 2.7), which the LP weighs against that cost.
 
 ### 2.10 Turbined Cost
 
@@ -326,7 +326,7 @@ For the complete cut coefficient computation, see [cut management](/math/cut-man
 
 #### Production Model and Cut Validity
 
-A production model that varies by stage or season is part of the model the policy is trained on: its cuts lower-approximate that model's cost-to-go whichever production model each stage uses ([Cut Management §4](/math/cut-management#4-cut-validity)). A policy simulated under a different production model than the one it was trained on is a heuristic, with no bound guarantee: the trained lower bound need not bound the simulated model's optimal value, and the gap between the two certifies nothing.
+A production model that varies by stage or season is part of the model the policy is trained on: its cuts lower-approximate that model's cost-to-go whichever production model each stage uses ([Cut Management — when bounds and certificates hold](/math/cut-management#when-bounds-and-certificates-hold)). A policy simulated under a different production model than the one it was trained on is a heuristic, with no bound guarantee: the trained lower bound need not bound the simulated model's optimal value, and the gap between the two certifies nothing.
 
 ## 3. Linearized Head Model (Reserved — Resolves to Constant Productivity)
 
@@ -344,7 +344,7 @@ The substantive choice during training is between `constant_productivity` and `f
 | ------------------------------ | --------------------- | ---------------------------------- |
 | High-head storage reservoirs   | FPHA                  | Significant head variation (>20%)  |
 | Large storage variation plants | FPHA                  | Operating across wide volume range |
-| Run-of-river plants            | FPHA or Constant      | Hull now supports run-of-river     |
+| Run-of-river plants            | FPHA or Constant      | The hull fit handles run-of-river plants (§2.6.1) |
 | Initial algorithm testing      | Constant productivity | Fast iteration, debug focus        |
 | Near-term stages               | FPHA                  | Accuracy for operational decisions |
 | Far-future stages              | Constant productivity | Computational efficiency           |

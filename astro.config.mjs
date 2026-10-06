@@ -139,7 +139,7 @@ export default defineConfig({
     "/specs/math/upper-bound-evaluation.html": "/math/upper-bound-evaluation/",
     "/specs/math/determinism-guarantees.html": "/math/determinism-guarantees/",
     "/specs/math/reproducibility-and-provenance.html":
-      "/math/reproducibility-and-provenance/",
+      "/math/determinism-guarantees/",
     // Part 5 — Coupling and Boundary Conditions
     "/specs/math/horizon-modes.html": "/math/horizon-modes/",
     "/specs/math/discount-rate.html": "/math/discount-rate/",
@@ -184,6 +184,7 @@ export default defineConfig({
     "/examples/4ree.html": "/examples/toy-four-reservoir/",
     // Retired site slugs (merged chapters; R8): one hop to the survivor
     "/math/weekly-monthly-coupled-studies": "/math/post-study-boundary/",
+    "/math/reproducibility-and-provenance": "/math/determinism-guarantees/",
   },
   // D4: manual math renderer — remark-math parses $…$ / $$…$$, rehype-katex
   // renders to static .katex HTML at build time (zero client JS). NOT
@@ -328,7 +329,6 @@ export default defineConfig({
             "math/stopping-rules",
             "math/upper-bound-evaluation",
             "math/determinism-guarantees",
-            "math/reproducibility-and-provenance",
           ],
         },
         {
@@ -342,13 +342,14 @@ export default defineConfig({
         {
           label: "Running Cobre",
           items: [
-            "running/configuration",
             "running/running-studies",
+            "running/configuration",
             "running/policy-management",
             "running/performance",
             "running/hpc-deployment",
             "running/case-conversion",
             "running/interpreting-results",
+            "running/troubleshooting",
           ],
         },
         {
@@ -365,6 +366,7 @@ export default defineConfig({
             "reference/error-codes",
             "reference/flatbuffers-schema",
             "reference/cli-reference",
+            "reference/python-api",
             "reference/glossary",
             "reference/bibliography",
           ],

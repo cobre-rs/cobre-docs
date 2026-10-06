@@ -14,8 +14,8 @@ of any kind. This is the default.
 
 | Field                    | Type    | Default | Description |
 | ------------------------ | ------- | ------- | ----------- |
-| `row_activity_tolerance` | number  | `0.0`   | Minimum dual-multiplier magnitude for a cut row to count as binding at a solution point. Rows whose dual falls below this are treated as inactive for `active_count` / `last_active_iter` tracking — the staleness metadata Stage 2 (below) sorts on. This is **not** the same tolerance as a selection method's own near-optimal band (`tie_tolerance` / `domination_tolerance`, methodology §6); it feeds tracking metadata, not the value-evaluation kernel itself. |
-| `max_active_per_stage`   | integer | `null` (no cap) | Hard cap on active rows per stage LP, enforced every iteration after the selection method (if any) runs — this is "Stage 2" of the row-management pipeline, distinct from the strategy-based "Stage 1" the `selection` object configures. When the cap is exceeded, rows are evicted least-recently-active first (`last_active_iter` ascending), tie-broken by least-frequently-active (`active_count` ascending); rows generated in the current iteration are never evicted. |
+| `row_activity_tolerance` | number  | `0.0`   | Minimum dual-multiplier magnitude for a cut row to count as binding at a solution point. Rows whose dual falls below this are treated as inactive for `active_count` / `last_active_iter` tracking — the staleness metadata the budget pass (below) sorts on. This is **not** the same tolerance as a selection method's own near-optimal band (`tie_tolerance` / `domination_tolerance`, methodology §6); it feeds tracking metadata, not the value-evaluation kernel itself. |
+| `max_active_per_stage`   | integer | `null` (no cap) | Hard cap on active rows per stage LP, enforced every iteration — the budget pass, which runs after the selection pass (if one is configured) the `selection` object configures. When the cap is exceeded, rows are evicted least-recently-active first (`last_active_iter` ascending), tie-broken by least-frequently-active (`active_count` ascending); rows generated in the current iteration are never evicted. |
 | `selection`              | object or `null` | `null` | The active selection method and its parameters — see below. |
 
 ```json
@@ -55,7 +55,7 @@ fields:
 
 #### `"domination"`
 
-The most aggressive periodic-pruning method (methodology §7.3):
+Domination applies Level-1's test with its own tolerance (methodology §7.3):
 
 | Field                  | Type    | Default | Description |
 | ---------------------- | ------- | ------- | ----------- |
@@ -74,7 +74,7 @@ The per-solve lazy method (methodology §8):
 | --------------------- | ------- | ------- | ----------- |
 | `start_iteration`     | integer | `2`     | First 1-based training iteration at which the lazy loop becomes active. Must be `>= 1`. |
 | `seed_window`         | integer | `5`     | Number of most-recent iterations whose cuts seed the initial resident set (methodology §8.5). `0` is valid — seeds only the current iteration. |
-| `candidate_recency`   | integer or `null` | `null` (unbounded) | Only cuts generated within the last `candidate_recency` iterations are scored as candidates. `null` (the default) is unbounded — every pool cut is a candidate, which preserves the exactness guarantee (methodology §8.2, §9). `Some(n)` (must be `>= 1`) makes the loop deliberately inexact: cuts older than the window are never added, even when violated. |
+| `candidate_recency`   | integer or `null` | `null` (unbounded) | Only cuts generated within the last `candidate_recency` iterations are scored as candidates. `null` (the default) is unbounded — every pool cut is a candidate, which preserves the exactness guarantee (methodology §8.2, §9). An integer `n` (at least `1`) makes the loop deliberately inexact: cuts older than the window are never added, even when violated. |
 | `max_added_per_round` | integer | `10`    | Maximum number of most-violated candidate cuts added per lazy-solve round. Must be `>= 1`. |
 | `violation_tolerance` | number  | `1e-10` | Absolute violation tolerance for accepting a candidate cut. Must be `> 0`. |
 
@@ -139,6 +139,9 @@ of methodology §2.
 | `storage`     | boolean | `true`  | Project the cuts onto the storage dimensions. |
 | `inflow_lags` | boolean | `false` | Project the cuts onto the inflow-lag dimensions. |
 
+With `inflow_lags` set to `true` on a stage, the cuts that stage generates also
+carry the inflow-lag coefficients; with `false`, they carry no inflow-lag coefficients.
+
 An absent `state_variables` gives the storage-only default,
 `{ "storage": true, "inflow_lags": false }`; an unknown field is rejected at
 load. In-transit buckets and commitment-ring slots are always projected in and
@@ -147,10 +150,15 @@ have no field.
 A study that supplies AR coefficients of order above zero
 (`scenarios/inflow_ar_coefficients.parquet`) but has `inflow_lags` set to
 `false` on every study stage, explicitly or by default, draws a
-[`ModelQuality`](/reference/error-codes/#modelquality) validation warning; a
-PAR model estimated from the inflow history never draws it, because the check
-runs on the supplied table before estimation. Either way the lag columns are
-still pinned for the AR dynamics, but no cut carries their coefficients.
+[`ModelQuality`](/reference/error-codes/#modelquality) validation warning that
+does not block the run; a PAR model estimated from the inflow history never
+draws it, because the check runs on the supplied table before estimation. With
+the lags projected out, the lag columns are still pinned for the AR dynamics,
+but no cut generated in training carries their coefficients (cuts imported from
+a boundary policy can).
+
+To keep the inflow lags in the cuts a stage generates, set both fields on that
+stage:
 
 ```json
 "state_variables": { "storage": true, "inflow_lags": true }

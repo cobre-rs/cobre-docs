@@ -48,3 +48,26 @@ test("trapezoid CDF is monotone non-decreasing and ends at ≈ 1.0", () => {
     `CDF ends at ${c[c.length - 1]}`,
   );
 });
+
+test("alpha is the tail fraction", () => {
+  const xs = samples(3, 15).map((p) => p.x);
+  const c = cdf(3, 15);
+  for (const alpha of [0.05, 0.1, 0.5]) {
+    const { varAlpha } = riskMoments(3, 15, alpha);
+    // Probability mass on the grid at or beyond VaR_alpha: 1 − F(VaR_alpha).
+    const tailMass = 1 - c[xs.findIndex((x) => x >= varAlpha)];
+    assert.ok(
+      Math.abs(tailMass - alpha) < 0.01,
+      `alpha=${alpha}: mass at or beyond VaR=${varAlpha} is ${tailMass}`,
+    );
+  }
+});
+
+test("alpha = 1 gives the expectation", () => {
+  const { expected, cvarAlpha } = riskMoments(3, 15, 1);
+  // The worst 100% of outcomes is every outcome, so CVaR collapses to E[Z].
+  assert.ok(
+    Math.abs(cvarAlpha - expected) < 0.5,
+    `CVaR_1=${cvarAlpha} not within 0.5 of E[Z]=${expected}`,
+  );
+});

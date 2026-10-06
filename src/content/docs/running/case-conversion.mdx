@@ -1,11 +1,12 @@
 ---
 title: Case Conversion (cobre-bridge)
-description: Convert legacy hydrothermal dispatch case data to the Cobre input format with the standalone cobre-bridge Python package.
+description: Convert NEWAVE and DECOMP cases to the Cobre input format and compare their results with the standalone cobre-bridge Python package.
 ---
 
-**cobre-bridge** is a standalone Python package that converts power system case
-data from legacy formats to the Cobre input format. It currently supports
-conversion from the data format used by Brazilian hydrothermal dispatch tools.
+**cobre-bridge** is a standalone Python package that converts NEWAVE
+(long-term) and DECOMP (short-term) hydrothermal dispatch cases into Cobre case
+directories and compares the source model's published results with Cobre's
+simulation output.
 
 The package is maintained in a separate repository:
 [github.com/cobre-rs/cobre-bridge](https://github.com/cobre-rs/cobre-bridge).
@@ -15,23 +16,52 @@ The package is maintained in a separate repository:
 ## Installation
 
 ```bash
-pip install cobre-bridge
+uv tool install cobre-bridge    # isolated, on-PATH CLI (recommended)
+pipx install cobre-bridge       # alternative
+pip install cobre-bridge        # into the current environment
 ```
+
+cobre-bridge requires Python 3.12 or newer. The `cobre` CLI (the solver) is
+installed separately (see [installing cobre](/getting-started/installation/))
+and is needed only to run `cobre validate` and `cobre run` on the converted
+case.
 
 `cobre-python` is a **required** runtime dependency, not an optional extra —
 it provides the Python bindings that `convert --validate`, `dashboard`, and
-`convert decomp`'s boundary-FCF import need, so `pip install cobre-bridge` pulls
+`convert decomp`'s boundary-FCF import need, so installing cobre-bridge pulls
 it in automatically. (`compare` does not use the bindings: it reads Cobre's
 simulation-output parquet files directly.)
 
 A cobre-bridge release `X.Y.Z` targets cobre `X.Y.Z`: the converted case
 follows that release's input contract. The bridge records its minimum cobre
 version (`0.17.0`) in the conversion manifest and uses it to decide whether the
-installed `cobre-python` can run `convert --validate`; a packaging test keeps
-that minimum in lockstep with the `cobre-python>=0.17.0,<0.18` pin. If the
+installed `cobre-python` can run `convert --validate`.
+The [Dependencies](#dependencies) section lists the pin that tracks that
+minimum. If the
 installed `cobre-python` is older than the minimum cobre version,
 `convert --validate` skips its validation step (printing a note) instead of
 failing.
+
+---
+
+## Conversion workflow
+
+A NEWAVE case goes from preflight check to results comparison in six steps.
+The `cobre validate` and `cobre run` steps use the `cobre` CLI, which is
+installed separately from cobre-bridge.
+
+```bash
+cobre-bridge check newave <newave-dir>                          # preflight check; exit 2 = will not convert
+cobre-bridge convert newave <newave-dir> <case-dir> --dry-run   # convert in memory, write nothing
+cobre-bridge convert newave <newave-dir> <case-dir> --validate  # convert, then validate with cobre-python
+cobre validate <case-dir>                                       # validate the converted case
+cobre run <case-dir>                                            # solve; results go to <case-dir>/output/
+cobre-bridge compare newave <newave-dir> <case-dir>/output      # published NEWAVE results vs Cobre simulation
+```
+
+For a DECOMP deck, replace `newave` with `decomp` in the cobre-bridge commands;
+[Converting a DECOMP Deck](#converting-a-decomp-deck) covers the boundary-FCF
+import that `convert decomp` runs by default.
 
 ---
 
@@ -56,7 +86,7 @@ cobre-bridge convert newave /path/to/source/case /path/to/output/case
 | `--json`                  | Emit a single machine-readable JSON verdict to stdout and suppress the human-readable (Rich) output.                   |
 | `--dry-run`               | Run the full conversion in memory and report what would be written, without creating or modifying the destination.     |
 | `-v, --verbose INTEGER`   | Increase console log verbosity (`-v` INFO, `-vv` DEBUG). Default: `0`.                                                  |
-| `--log-file PATH`         | Write the full DEBUG log to `PATH` (the console verbosity is unaffected).                                               |
+| `--log-file PATH`         | Write the full DEBUG log to `PATH` (the console verbosity is unaffected). Missing parent directories are created; a path that cannot be opened is reported as a `--log-file` option error and the command exits `2`. |
 | `--no-color`              | Disable coloured output (also honoured via the `NO_COLOR` env var).                                                     |
 | `--quiet`                 | Suppress the summary and info notes; warnings/errors still show.                                                        |
 
@@ -70,7 +100,10 @@ cobre-bridge convert newave /path/to/source/case /path/to/output/case
 | `1`  | Conversion error.                       |
 | `2`  | `--validate` reported a load failure.   |
 
-`convert decomp` uses the same `0`/`1`/`2` exit-code set.
+`convert decomp` uses the same `0`/`1`/`2` exit-code set. On every cobre-bridge
+command, a usage error (an unknown option, a missing argument, or an invalid
+option value such as an unwritable `--log-file` path) also exits `2`, with a
+usage message.
 
 #### `--json` output
 
@@ -134,6 +167,8 @@ and
 
 ### Output Directory Structure
 
+`convert newave` writes this file set:
+
 ```
 output/
   config.json
@@ -173,6 +208,22 @@ Files marked *(conditional)* are written only when the source deck supplies
 the corresponding data; `--dry-run` writes nothing at all (the conversion
 report's `would_write_paths` previews the set a real run would write).
 
+A case written by `convert decomp` does not write `scenarios/inflow_history.parquet`,
+`constraints/penalty_overrides_bus.parquet` or
+`constraints/penalty_overrides_hydro.parquet`, and it also writes files that
+`convert newave` never writes:
+
+- `system/energy_contracts.json` and `system/pumping_stations.json`
+- `scenarios/external_inflow_scenarios.parquet`,
+  `scenarios/external_load_scenarios.parquet` and
+  `scenarios/external_ncs_scenarios.parquet`
+- `constraints/contract_bounds.parquet`,
+  `constraints/hydro_unit_group_bounds.parquet` and
+  `constraints/pumping_bounds.parquet`
+- `post_study_stages.json` at the top level
+- the imported boundary under `boundary/` (see
+  [Converting a DECOMP Deck](#converting-a-decomp-deck))
+
 ---
 
 ## Comparing Results
@@ -199,6 +250,20 @@ subdirectory).
 | `--out-dir PATH`    | Directory for file artifacts. Default `<cobre_output_dir>/comparison_artifacts`. Env `COBRE_BRIDGE_OUT_DIR`.                     |
 | `--json`            | Emit a single machine-readable JSON verdict to stdout instead of the Rich tables.                                               |
 
+`compare` also shares `convert`'s `-v/--verbose`, `--log-file`, `--no-color`,
+and `--quiet` flags.
+
+`--tolerance`, `--format` and `--out-dir` each take their value from the first
+source that sets it: the flag, then the environment variable, then the config
+file, then the built-in default. `compare` reads one config file, the first of
+these that exists: `cobre-bridge.toml` in the current directory or any parent;
+`$XDG_CONFIG_HOME/cobre-bridge/config.toml`, only when `XDG_CONFIG_HOME` is set
+and non-empty; `~/.config/cobre-bridge/config.toml`. It is not merged with the
+others.
+It can set `[compare.results] tolerance`, `[compare] format` and
+`[compare] out_dir`; a malformed file, or a key of the wrong type, is ignored
+with a warning on stderr.
+
 `compare` is informational: it reports every divergence it finds, beyond
 tolerance or not, but a divergence never fails the run. On both the `newave` and
 `decomp` tracks the exit code reports only whether the comparison could run:
@@ -209,17 +274,19 @@ tolerance or not, but a divergence never fails the run. On both the `newave` and
 | `1`       | `compare newave` only: the NEWAVE case directory is missing. (On `compare decomp` a missing deck directory exits `2`.) |
 | `2`       | An invalid `--format` token, or a source deck or Cobre output file that cannot be read (missing or malformed data). |
 
-:::note
-The command's `--help` text says it always exits 0. The current release exits
-`1` or `2` in the setup failures listed above; this page documents the code's
-behaviour.
-:::
+A NEWAVE case whose `dger.dat` requests training without a final simulation
+(`tipo_execucao` 1 with `tipo_simulacao_final` 0) converts with
+`simulation.enabled` set to `false`. `cobre run` then writes no simulation
+output, so `compare newave` finds no Cobre simulation output to read and exits `2`, naming
+the missing `simulation/hydro_bus_generation/` directory.
 
 ---
 
 ## Python API
 
-For programmatic use, import the conversion pipeline directly:
+For programmatic use, install cobre-bridge into your project environment
+(`pip install cobre-bridge`; an isolated `uv tool` or `pipx` install exposes
+only the CLI), then import the conversion pipeline directly:
 
 ```python
 from pathlib import Path
@@ -302,18 +369,35 @@ cobre-bridge dashboard /path/to/cobre/case
 
 ## Conversion Details
 
-### Entity ID Remapping
+### Entity ID Renumbering
 
-Source systems typically use 1-based integer IDs. cobre-bridge remaps all
-entity IDs to 0-based integers in a deterministic order derived from the
-source configuration files. This ensures consistent output regardless of
-file ordering.
+NEWAVE identifies subsystems and plants by arbitrary 1-based codes; Cobre uses
+0-based ids with no gaps. cobre-bridge sorts the source codes in ascending order and
+assigns the ids 0, 1, 2 and so on in that order, so an id does not depend on
+how the deck orders its entities, and an entity keeps the same id in every
+output file. `compare newave` rebuilds the same numbering from the source case,
+so results trace back to the source codes. `convert decomp` sorts the deck's
+codes the same way and adds one converter-created transshipment bus after the
+declared subsystems.
 
-### Fictitious Plant Filtering
+### Which Plants Are Converted
 
-Plants marked as fictitious in the source data (used internally by some
-tools for accounting purposes) are automatically excluded from the
-conversion output.
+In a NEWAVE case, a hydro becomes a Cobre entity when `confhd.dat` marks it in
+service: operating (`EX`) or operating with an expansion still to come (`EE`).
+An `EE` plant operates from the first stage at the machine configuration
+`modif.dat` declares for the study start, and gains the machines listed in
+`exph.dat` as they enter service, through per-stage bounds. Plants that do not
+exist yet are left out, except a future plant whose `exph.dat` schedule fills
+its dead volume. Fictitious accounting plants are removed; they are identified
+structurally, as a plant with zero productivity that shares its inflow gauge
+with a generating plant, and a cascade link through a removed plant is rewired
+to the next real plant downstream.
+
+`convert decomp` converts the deck's operated hydros, with the deck's registry
+overrides applied, and its small plants as must-run non-controllable sources.
+
+For the full list of conversion rules, see the cobre-bridge
+[NEWAVE track guide](https://github.com/cobre-rs/cobre-bridge/blob/v0.17.0/docs/newave.md).
 
 ### Risk Measure Support
 
@@ -348,24 +432,15 @@ merged with sequential integer IDs, and per-stage right-hand-side bounds in
 
 ## Dependencies
 
-| Package                     | Purpose                                                                              |
-| ---------------------------- | ------------------------------------------------------------------------------------- |
-| `idecomp`                    | Reads legacy DECOMP fixed-width and binary deck files                                |
-| `inewave>=1.16.1`             | Reads legacy NEWAVE fixed-width and binary input files                               |
-| `pyarrow`                    | Writes Parquet output tables                                                          |
-| `pandas`                     | DataFrame manipulation during conversion                                             |
-| `plotly`                     | Renders the `dashboard` HTML charts                                                   |
-| `polars`                     | DataFrame manipulation for the `compare` and `dashboard` pipelines                    |
-| `rich`                       | Console rendering (progress bars, tables, diagnostics)                                |
-| `typer`                      | The CLI framework                                                                     |
-| `cobre-python>=0.17.0,<0.18` | **Required.** Powers `convert --validate`, `dashboard`, and `convert decomp`'s boundary-FCF import. |
+cobre-bridge 0.17.0 installs its runtime dependencies with the package. Two
+pins matter:
 
-`cobre-python`'s floor tracks cobre-bridge's own `MIN_COBRE_VERSION`
-constant: cobre-bridge 0.17.0 requires `cobre-python>=0.17.0,<0.18`, kept in
-lockstep with the pin above by a packaging test. As stated under
-[Installation](#installation), a cobre-bridge release `X.Y.Z` always targets
-cobre `X.Y.Z`. The minimum does not make versions interchangeable: an imported
-boundary needs an exact version match (see the caution under
+- `cobre-python>=0.17.0,<0.18`: the floor is the bridge's `MIN_COBRE_VERSION`
+  (`0.17.0`), and a packaging test keeps the pin and that constant in lockstep.
+- `inewave>=1.16.1`: the NEWAVE file reader.
+
+The minimum cobre version does not make versions interchangeable: an imported boundary
+needs an exact version match (see the caution under
 [Converting a DECOMP Deck](#converting-a-decomp-deck)).
 
 ---

@@ -270,7 +270,7 @@ travel down the **main cascade arc** to `downstream_id`.
 | `travel_time_hours` | number or null | No       | Travel time on the main cascade arc, in hours. When present, strictly positive, and the plant has a `downstream_id`, the part of each release that the travel time carries past the end of the release stage reaches the downstream reservoir in later stages; the rest arrives within the stage (see [Cascade Travel Time](/math/system-elements#cascade-travel-time)). Absent, `null`, or `0.0` means an instantaneous transfer. |
 
 When an arc is declared, Cobre carries the water in transit as additional
-Bellman state (see [LP formulation §5d](/math/lp-formulation) and
+Bellman state (see [State Augmentation §6](/math/state-augmentation#6-water-travel-time) and
 [system elements §5](/math/system-elements)). Travel time applies to the main
 cascade arc only — diversion and pumping transfers are always instantaneous.
 Declaring an arc requires seeding the pre-study releases already in transit via
@@ -533,17 +533,17 @@ options are ignored. The parquet schema:
 
 | Column            | Type    | Required | Description |
 | ----------------- | ------- | -------- | ----------- |
-| `hydro_id`        | INT32   | Yes      | Hydro plant identifier |
-| `stage_id`        | INT32?  | No       | Stage the plane applies to (`null` = all stages) |
-| `plane_id`        | INT32   | Yes      | Plane index within this hydro |
-| `gamma_0`         | DOUBLE  | Yes      | Intercept coefficient (MW) |
-| `gamma_v`         | DOUBLE  | Yes      | Volume coefficient (MW/hm³). Must be non-negative (`>= 0`); run-of-river plants have `gamma_v = 0`. |
-| `gamma_q`         | DOUBLE  | Yes      | Turbined flow coefficient (MW per m³/s) |
-| `gamma_s`         | DOUBLE  | Yes      | Spillage coefficient (MW per m³/s). Must be `<= 0`. |
-| `kappa`           | DOUBLE? | No       | Intercept-only correction factor, defaulting to `1.0`; validated in `(0, 1]`. Applies only to precomputed planes — the computed path does not use `kappa` (see Implementation notes). |
-| `valid_v_min_hm3` | DOUBLE? | No       | Minimum volume where this plane is valid (hm³) |
-| `valid_v_max_hm3` | DOUBLE? | No       | Maximum volume where this plane is valid (hm³) |
-| `valid_q_max_m3s` | DOUBLE? | No       | Maximum turbined flow where this plane is valid (m³/s) |
+| `hydro_id`        | Int32   | Yes      | Hydro plant identifier |
+| `stage_id`        | Int32   | No       | Stage the plane applies to (`null` = all stages) |
+| `plane_id`        | Int32   | Yes      | Plane index within this hydro |
+| `gamma_0`         | Float64 | Yes      | Intercept coefficient (MW) |
+| `gamma_v`         | Float64 | Yes      | Volume coefficient (MW/hm³). Must be non-negative (`>= 0`); run-of-river plants have `gamma_v = 0`. |
+| `gamma_q`         | Float64 | Yes      | Turbined flow coefficient (MW per m³/s) |
+| `gamma_s`         | Float64 | Yes      | Spillage coefficient (MW per m³/s). Must be `<= 0`. |
+| `kappa`           | Float64 | No       | Intercept-only correction factor, defaulting to `1.0`; validated in `(0, 1]`. Applies only to precomputed planes — the computed path does not use `kappa` (see Implementation notes). |
+| `valid_v_min_hm3` | Float64 | No       | Minimum volume where this plane is valid (hm³) |
+| `valid_v_max_hm3` | Float64 | No       | Maximum volume where this plane is valid (hm³) |
+| `valid_q_max_m3s` | Float64 | No       | Maximum turbined flow where this plane is valid (m³/s) |
 
 **`source: "computed"`** — hyperplanes are fitted at runtime from the plant's
 physical geometry. Cobre evaluates the exact production function on a

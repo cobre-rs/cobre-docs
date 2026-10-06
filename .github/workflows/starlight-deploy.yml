@@ -1,23 +1,25 @@
 # ──────────────────────────────────────────────────────────────────────────────
-# ACTIVE production deploy for the Astro/Starlight build — cutover 2026-06-25
-# (authored in E8 / ticket-030).
+# Production deploy for the Astro/Starlight docs.
 #
-# This is the live production deploy for methodology.cobre-rs.dev: it builds site/,
-# runs the FULL gate suite, writes the methodology.cobre-rs.dev CNAME (dist/CNAME),
-# and publishes to GitHub Pages. It now OWNS the `push: [main]` → Pages path.
+# On every push to `main` (and on manual dispatch) this workflow builds the
+# multi-version site, runs the checks below, writes dist/CNAME for
+# docs.cobre-rs.dev and publishes dist/ to GitHub Pages.
 #
-# The cutover was the atomic commit that added this file's `push: [main]` trigger
-# AND disabled the mdBook .github/workflows/deploy.yml `push` trigger together, so
-# exactly one workflow owns the push→Pages path (shared `concurrency: group:
-# "pages"` is a second backstop). See:
-#   plans/starlight-migration/epic-08-parity-cutover/cutover-runbook.md
+# Checks, in step order:
+#   `npm run gen:notices` with `git diff --exit-code` on the notices file,
+#   `npm run check:figures`, `npm run check:d2`, `npm run check:spdx`,
+#   `npm run build:versions`, `npm test`, `npm run check`, `npm run check:math`,
+#   `npm run check:links`, `npm run check:e10`.
+# A failing step stops the `build` job, and the `deploy` job (`needs: build`)
+# never runs.
 #
-# ROLLBACK: `git revert` the cutover commit — that restores deploy.yml's `push`
-# trigger (mdBook re-publishes) and drops it here. The mdBook artifacts remain in
-# the tree until the separate decommission step, so the rollback is one revert.
+# The doc-lint gates (`check:voice`, `check:counts`, `check:version`,
+# `check:narration`, the vendored-schema check and every gate added after them)
+# run only in starlight-ci.yml, on pull requests to `main` and on manual dispatch;
+# this workflow does not repeat them.
 #
-# Build recipe (Node + pinned d2 + build:versions) and gate order mirror
-# starlight-ci.yml; the upload/deploy actions are pinned-SHA copies of deploy.yml.
+# The build recipe (Node, pinned d2, `build:versions`) matches starlight-ci.yml,
+# and every action is pinned by commit SHA.
 # ──────────────────────────────────────────────────────────────────────────────
 
 name: Starlight deploy
@@ -27,15 +29,14 @@ on:
     branches: [main]
   workflow_dispatch:
 
-# Same deploy permissions as deploy.yml: Pages write + OIDC token for deploy-pages.
+# Pages write + OIDC token for actions/deploy-pages; contents stays read-only.
 permissions:
   contents: read
   pages: write
   id-token: write
 
-# SAME group as deploy.yml ("pages") so the mdBook deploy and this Starlight deploy
-# can never publish to the repo's one Pages site concurrently. Do not cancel an
-# in-flight deploy.
+# The `pages` group keeps two runs of this workflow from publishing at once; an
+# in-flight deploy is never cancelled.
 concurrency:
   group: "pages"
   cancel-in-progress: false
@@ -45,10 +46,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
-    # The Astro project lives in site/, not the repo root. Run every `run:` step
-    # there once instead of `cd site` per step. NB: setup-node's cache option
-    # keys cache-dependency-path off the REPO ROOT regardless, so that path stays
-    # `site/package-lock.json` below.
+    # Steps run at the repository root, where the Astro project lives; setup-node's
+    # cache-dependency-path is the root `package-lock.json`.
     defaults:
       run:
         working-directory: .
@@ -71,8 +70,7 @@ jobs:
       # astro-d2 shells out to a `d2` executable that must be on PATH at build
       # time, or D2 fenced blocks silently render nothing. Install a PINNED
       # release asset (reproducible) — NOT `curl … d2lang.com/install.sh | sh`
-      # (the banned, unpinned curl|bash pattern). Mirrors ci.yml's
-      # binary-then-`sudo mv` style.
+      # (the banned, unpinned curl|bash pattern).
       # sha256 pinned: d2 v0.7.1 ships no checksums file, so this hash was
       # computed from the released linux-amd64 asset. A tampered or replaced
       # tarball fails `sha256sum -c` and aborts the step before extraction.
@@ -94,10 +92,8 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      # ── FULL gate suite (starlight-ci.yml order), fail-closed BEFORE deploy ──
-      # Any failing gate fails this job; the deploy job (needs: build) never runs.
-      # This is exactly the build where the FOSS notices + parity must be proven,
-      # so the cutover keeps the full sweep — no gate is dropped.
+      # ── Checks, fail-closed before the Pages upload ──
+      # starlight-ci.yml owns the doc-lint gates; this workflow does not repeat them.
 
       # E10 ticket-031: regenerate the third-party notices file and fail if
       # the committed copy is stale (drift guard). Uses permissions: contents: read
@@ -148,16 +144,15 @@ jobs:
         run: npm run check:links
 
       # E10 ticket-029 completion gate: the aggregate assertion that the E10
-      # FOSS-notices/licensing workstream is complete. The public cutover is exactly
-      # when the notices + parity must be proven, so this gate is fail-closed here.
+      # FOSS-notices/licensing workstream is complete. It reads dist/ and asserts
+      # that the third-party notices and the content license ship in the built site.
       - name: Check E10 completion gate
         run: npm run check:e10
 
       # ── Publish ──
-      # Write the CNAME so the published artifact preserves the custom domain (a
-      # Pages deploy without it drops methodology.cobre-rs.dev and serves the
-      # *.github.io URL). Mirrors deploy.yml's `echo … > book/CNAME`; the Starlight
-      # equivalent is dist/CNAME (the dir upload-pages-artifact uploads).
+      # dist/ is the directory upload-pages-artifact uploads. Without dist/CNAME a
+      # Pages deploy loses the docs.cobre-rs.dev custom domain and serves the
+      # *.github.io URL.
       - name: Add CNAME for custom domain
         run: echo "docs.cobre-rs.dev" > dist/CNAME
 

@@ -11,6 +11,8 @@
 //                 coherent tail risk the risk-averse policy hedges against.
 // Defaults mirror the Python source's constants: shape=3, scale=15, alpha=0.10
 // (so the mean is shape·scale = 45 and the distribution is right-skewed).
+// alpha is the tail fraction: the worst alpha-fraction of outcomes lies at or
+// beyond VaR_alpha, and alpha = 1 makes CVaR_alpha the expectation.
 
 export interface Point {
   x: number;
@@ -122,9 +124,11 @@ function interp(query: number, xs: number[], ys: number[]): number {
 
 /**
  * Risk moments derived by numerical integration of the gamma PDF — markers
- * correct by construction. `expected` is ∫x·f dx; `varAlpha` is the (1−alpha)
- * quantile via trapezoid-CDF inversion; `cvarAlpha` is the tail mean
- * ∫_{x≥VaR} x·f / ∫_{x≥VaR} f. Defaults mirror the Python source.
+ * correct by construction. `alpha` is the tail fraction: the worst
+ * `alpha`-fraction of outcomes lies at or beyond `varAlpha`. `expected` is
+ * ∫x·f dx; `varAlpha` is the (1−alpha) quantile via trapezoid-CDF inversion;
+ * `cvarAlpha` is the tail mean ∫_{x≥VaR} x·f / ∫_{x≥VaR} f (the expectation at
+ * alpha = 1). Defaults mirror the Python source.
  */
 export function riskMoments(shape = 3, scale = 15, alpha = 0.1): RiskMoments {
   const grid = samples(shape, scale);
@@ -161,7 +165,10 @@ export function cdf(shape = 3, scale = 15): number[] {
   return trapezoidCdf(samples(shape, scale));
 }
 
-/** The shaded worst-alpha tail: grid points at or beyond VaR_alpha. */
+/**
+ * The shaded worst-alpha tail: grid points at or beyond VaR_alpha, which carry
+ * probability mass alpha (`alpha` is the tail fraction).
+ */
 export function tailRegion(shape = 3, scale = 15, alpha = 0.1): TailRegion {
   const { varAlpha } = riskMoments(shape, scale, alpha);
   return {

@@ -205,4 +205,4 @@ The penalty is proportional to $\sigma_m \cdot \xi_h$, which is the actual inflo
 - [PAR Inflow Model](/math/par-inflow-model) — Defines the PAR(p) model that produces the inflow realizations handled here
 - [Penalty System](/math/penalty-system) — Penalty hierarchy and cascade resolution
 - [Scenario Generation](/math/scenario-generation) — The noise term $\varepsilon$ in the inflow equation comes from the fixed opening tree (pre-generated noise vectors), not from per-iteration random sampling
-- [Configuring inflow non-negativity](/running/configuration#inflow_non_negativity) — the software-layer setting that selects which of these four methods a study uses and where the penalty cost $c^{inf}_h$ is authored
+- [Configuring inflow non-negativity](/running/configuration#modelinginflow_non_negativity) — the software-layer setting that selects which of these four methods a study uses and where the penalty cost $c^{inf}_h$ is authored

@@ -30,7 +30,7 @@ The σ = 0 rule of §4.3 compares the standard deviation with `0.0` exactly. At 
 
 ### Warnings
 
-Cobre logs these four warnings and continues. Each text below is fixed apart from the values at its placeholders.
+Cobre logs these six warnings and continues. Each text below is fixed apart from the values at its placeholders.
 
 - **Clamp by external scenarios.** A class on the external scheme has fewer raw external scenarios at a stage than the stage's `branching_factor`, and no tighter clamp applies:
   {/* quoted from source: crates/cobre-stochastic/src/tree/generate.rs:137-145 at cobre v0.17.0 */}
@@ -54,6 +54,18 @@ Cobre logs these four warnings and continues. Each text below is fixed apart fro
   ```text
   fewer windows ({}) than forward passes ({forward_passes}): historical sampling will repeat windows across forward passes
   ```
+- **Few windows in the historical library.** Cobre checks the historical window pool again when it validates the library built from it, so the same shortfall logs a second warning:
+  {/* quoted from source: crates/cobre-stochastic/src/sampling/historical.rs:551-559 at cobre v0.17.0 */}
+  ```text
+  historical library has fewer windows ({}) than forward passes ({}); windows will be reused across forward passes
+  ```
+- **Few scenarios in the external library.** No stage of an external scenario library holds as many scenarios as there are forward passes; each class on the external scheme is checked on its own:
+  {/* quoted from source: crates/cobre-stochastic/src/sampling/external.rs:785-795 at cobre v0.17.0 */}
+  ```text
+  external {class} library has fewer scenarios ({n_scenarios}) than forward passes ({forward_passes}); scenarios will be reused across forward passes
+  ```
+
+  The `{class}` placeholder reads `inflow`, `load` or `ncs`.
 
 ### Sobol dimension limit
 

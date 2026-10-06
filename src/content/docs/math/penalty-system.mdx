@@ -94,7 +94,7 @@ $$
 c^{def} \;>\; \frac{c^{fill}}{\kappa\,\bar\rho_{acum}}
 $$
 
-A commissioning fill schedule must not be defended as hard as load shedding — when nature physically cannot both serve load and keep a filling reservoir on its accumulation schedule, the solver should serve load and let the filling floor slip. The filling-target penalty's position _relative to the operational-constraint tier_ (minimum turbined flow, outflow, generation, evaporation, withdrawal) is left to study calibration: it is only pinned below deficit, not against those operational slacks.
+A commissioning fill schedule must not be defended as hard as load shedding — when nature physically cannot both serve load and keep a filling reservoir on its accumulation schedule, the solver should serve load and let the filling floor slip. The filling-target penalty's position _relative to the operational-constraint tier_ (minimum turbined flow, outflow, generation, evaporation, withdrawal) is left to study calibration: Cobre expects it below deficit, checked as given by [Penalty Ordering Validation](#penalty-ordering-validation), and sets nothing against those operational slacks.
 
 ### Penalty Ordering Validation
 
@@ -141,7 +141,7 @@ The **minimum storage** $\underline{V}_h$ (the dead volume) is a hard bound for 
 
 The **maximum storage** $\bar{V}_h$ is a hard physical limit (the reservoir capacity); excess water leaves through spillage. No slack variable is used.
 
-**Filling floors**: While a plant is filling (`[start_stage_id, entry_stage_id)`), each stage carries a **per-stage minimum end-of-stage storage** $V^{\text{target}}_t$ that rises toward the dead volume $\underline{V}_h$, reaching it at the last filling stage. Each floor is soft, $v_h + \sigma^{fill}_h \geq V^{\text{target}}_t$, priced at $c^{fill}_h$. This penalty sits **below** deficit (a fill schedule is not defended as hard as load serving); the slack absorbs the gap only when no cheaper feasible dispatch reaches the floor. See [§6 Dead-Volume Filling Specifics](#dead-volume-filling-specifics) for the floor trajectory.
+**Filling floors**: While a plant is filling (`[start_stage_id, entry_stage_id)`), each stage carries a **per-stage minimum end-of-stage storage** $V^{\text{target}}_t$ that reaches the dead volume exactly at the last filling stage $L$. Each floor is soft, $v_h + \sigma^{fill}_h \geq V^{\text{target}}_t$, priced at $c^{fill}_h$. This penalty sits **below** deficit (a fill schedule is not defended as hard as load serving); the slack absorbs the gap only when no cheaper feasible dispatch reaches the floor. See [§6 Dead-Volume Filling Specifics](#dead-volume-filling-specifics) for the floor trajectory.
 
 ### Lines
 
@@ -190,16 +190,16 @@ The per-variable bounds and the slack each bound carries are tabulated in the [C
 During the filling period (`[start_stage_id, entry_stage_id)`), the hydro is in commissioning state: the reservoir accumulates water toward `min_storage_hm3` (dead volume) before it can begin generating. This is Cobre's own dead-volume filling model (`enchimento de volume morto`), whose per-stage accumulation schedule is specified below.
 
 :::note[Before filling — the PreFilling phase]
-These specifics govern the **filling** window `[start_stage_id, entry_stage_id)`. Before that window — and, for a **non-filling** hydro, at any stage outside its commissioning window — the plant is **PreFilling**: it does not yet exist in the dispatch. Turbine, spillage, and diversion are all pinned to zero, so **spillage is frozen and incurs no `spillage_cost`** (unlike during filling), storage is held constant by a frozen identity, and natural inflow is routed past the site to the first active downstream plant. See [system elements §5](/math/system-elements) for the full lifecycle.
+These specifics govern the **filling** window `[start_stage_id, entry_stage_id)`. Before that window — and, for a **non-filling** hydro, at any stage outside its commissioning window — the plant is **PreFilling**: it does not yet exist in the dispatch. Turbine, spillage, and diversion are all pinned to zero, so **spillage is frozen and incurs no `spillage_cost`** (unlike during filling), storage is held constant by a frozen identity, and natural inflow is routed past the site to the first active downstream plant. [LP Formulation — Lifecycle Phases](/math/lp-formulation#lifecycle-phases) tabulates every phase.
 :::
 
-Filling is governed by a **minimum accumulation rate** `filling_min_rate_m3s` rather than a single end-of-period target. The rate is _not_ an applied inflow and _not_ a cap on natural inflow — it is the floor below which the reservoir is not allowed to lag the fill schedule. From it, Cobre derives a **per-stage minimum end-of-stage storage** $V^{\text{target}}_t$ that rises stage by stage and reaches the dead volume exactly at the last filling stage $L = \text{entry\_stage\_id} - 1$.
+Filling is governed by a **minimum accumulation rate** `filling_min_rate_m3s` rather than a single end-of-period target. The rate is _not_ an applied inflow and _not_ a cap on natural inflow — it is the floor below which the reservoir is not allowed to lag the fill schedule. From it, Cobre derives a **per-stage minimum end-of-stage storage** $V^{\text{target}}_t$ that reaches the dead volume exactly at the last filling stage $L = \text{entry\_stage\_id} - 1$.
 
-[LP Formulation §8](/math/lp-formulation#8-variable-bounds-and-minimum-constraints) gives the floor in closed form: the dead volume at $L$ minus the accumulation the schedule still owes after stage $t$, never above the dead volume in force at stage $t$. The schedule must be able to reach the dead volume from the storage the plant starts filling with; Cobre rejects a case whose schedule cannot ([Configure tab](#implementation-in-cobre)).
+[LP Formulation §8](/math/lp-formulation#8-variable-bounds-and-minimum-constraints) gives the floor in closed form: the dead volume at $L$ minus the accumulation the schedule still owes after stage $t$, never above the dead volume in force at stage $t$. The schedule must be able to reach the plant's declared dead volume, not a stage override of it, from the storage the plant starts filling with; Cobre rejects a case whose schedule cannot ([Configure tab](#implementation-in-cobre)).
 
 **Operational constraints during filling**:
 
-- **No generation**: `turbined_flow = 0`, `generation = 0` (hard constraint — turbines not installed/operational, so the plant is excluded from the production-function constraints)
+- **No generation**: `turbined_flow = 0`, `generation = 0` (hard constraint — turbines not installed/operational, so the plant is excluded from the production-function constraints); a positive turbined or generation floor of the plant then falls wholly on its slack ([Lifecycle Phases](/math/lp-formulation#lifecycle-phases))
 - **Outflow via spillage only**: the turbines and the diversion are pinned to zero while the plant fills, so it releases water only by spilling; spillage is a free decision within its bounds, whatever the storage level.
 - **Min outflow requirement**: a minimum outflow is met through spillage; when the reservoir cannot release enough water, the outflow-below slack absorbs the shortfall at its penalty.
 - **Natural inflow flows freely**: incremental inflow and upstream cascade releases enter the reservoir through the ordinary water balance — there is no retention or impound cap that diverts inflow to storage. Whatever nature provides is what fills the reservoir.

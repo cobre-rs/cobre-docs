@@ -170,7 +170,7 @@ a weekly cycle the 53rd week of a 53-week year takes the season of the 52nd
 and joins its group. The sampling rule is stated in
 [Scenario Generation](/math/scenario-generation); the group assignment
 depends on the stage calendar alone, so every MPI rank computes the same
-groups (see [Determinism Guarantees](/math/determinism-guarantees)).
+groups (see [Determinism & Provenance](/math/determinism-guarantees)).
 
 Along a trajectory, the stages inside one lag period see the same lags (§2).
 

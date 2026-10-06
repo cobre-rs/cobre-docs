@@ -387,9 +387,12 @@ d2 draws directed graphs natively:
   prose carries the detail; an overloaded node balloons the layout (a 3-line box
   in a 5-node vertical chain runs ~1.5k px tall).
 
-Starting point: the SDDP iteration-cycle loop in
-`src/content/docs/math/sddp-algorithm.mdx` §3 (forward → backward → converged? →
-loop / stop). The d2 source IS the spec source — no committed asset.
+Starting point: the SDDP iteration loop in
+`src/content/docs/math/sddp-algorithm.mdx` §3 — a forward-pass container, a
+backward-pass container whose solve → aggregate → synchronize chain loops over
+the stages, then cut selection, the lower bound and a "Stopping rules met?"
+diamond that loops back to the forward pass or exits to simulation. The d2
+source IS the spec source — no committed asset.
 
 ---
 

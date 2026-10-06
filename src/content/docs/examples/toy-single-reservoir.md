@@ -1,29 +1,34 @@
 ---
 title: Toy Single-Reservoir SDDP Walkthrough
-description: Hand-traceable one-reservoir SDDP iteration — forward pass, backward pass, cut construction, and lower-bound update on a four-stage system with 0-order inflow.
+description: Hand-traceable one-reservoir SDDP walkthrough — two iterations of forward pass, backward pass, cut construction, and lower-bound update on a four-stage system with 0-order inflow.
 ---
 
 ## Purpose
 
-This chapter walks through one complete SDDP iteration on a deliberately
+This chapter walks through two complete SDDP iterations on a deliberately
 small system — one reservoir, one thermal unit, one demand block, four
 stages, and a 0-order (pure seasonal-sampling) inflow model — using
 numbers chosen so every cut coefficient and every dual variable can be
 verified by hand. The goal is to make the abstract machinery of forward
 pass, backward pass, cut construction, and lower-bound update tangible.
 
-Cobre ships an actual reference case at `examples/1dtoy/` that a curious
-reader can run end-to-end (`cobre run examples/1dtoy`). That case has
-two thermals, eight monthly stages, and ten openings per stage; the
-chapter here uses simpler numbers — one thermal, four stages, three
-openings — chosen for tractability. **This walkthrough is a pedagogical
-caricature, not a reproduction of the shipped case.**
+Cobre ships a reference case, `examples/1dtoy/` in the cobre
+repository, that `cobre init --template 1dtoy <dir>` scaffolds and the
+[Quickstart](/getting-started/quickstart) runs end to end. That case
+has one bus, one hydro plant, two thermal plants, four monthly stages
+(January to April 2024), ten openings per stage and an annual discount
+rate of 0.12. The walkthrough keeps the single bus, the single hydro
+plant and the four stages, and replaces the rest with numbers chosen
+for hand verification: one thermal unit, three openings per stage, no
+discounting and idealised units (see the units note in section 1).
+**This walkthrough is a pedagogical caricature, not a reproduction of
+the shipped case.**
 
 The chapter does not explain how the underlying mechanisms work; it
 shows them working. It does not cover multi-reservoir effects, spatial
 inflow correlation, the FPHA production model, risk-measure weighting,
 or autoregressive inflow memory. Those topics belong to the chapters
-cited in section 9 and to the multi-reservoir companion in
+cited in section 10 and to the multi-reservoir companion in
 [Toy Four-Reservoir Walkthrough](/examples/toy-four-reservoir).
 
 ---
@@ -75,6 +80,20 @@ def -> bus
 Demand is set above the mean inflow ($D = 40 > \mu = 30$) so the
 reservoir depletes over the four stages, eventually forcing thermal
 dispatch and producing non-trivial dual variables in the backward pass.
+The thermal unit has no capacity limit, so the deficit $\delta$ stays at
+zero throughout.
+
+:::note[Units]
+Storage, inflow and turbined flow share one water unit, the volume that
+one unit of flow delivers over a stage, so the flow-to-volume factor is
+$\zeta = 1$: turbining $q$ withdraws $q$ storage units. Each stage is one
+block of 1 h and the plant's productivity is 1, so $q$ is also the hydro
+output in MW and its energy in MWh. Demand and thermal output are in MW
+and costs are in \$: a stage's thermal output $g_{th}$ costs
+$50\, g_{th}$. A cobre case derives $\zeta$ from the stage's block
+hours, in hm³ per m³/s
+([Notation Conventions](/overview/notation-conventions#31-time-and-conversion)).
+:::
 
 ---
 
@@ -122,11 +141,12 @@ $$
 0 \leq v \leq 100, \quad q \geq 0, \quad g_{th} \geq 0, \quad \delta \geq 0, \quad \theta \geq 0
 $$
 
-**Future cost variable $\theta$**: in the terminal stage 4 there are no
+**Cost-to-go variable $\theta$**: in the terminal stage 4 there are no
 cuts, and $\theta$ is bound to zero. As the backward pass runs, cuts of
 the form $\theta \geq \beta_0 + \beta^v\, v$ are added to earlier stages'
-LPs. Because the value function $V(v)$ is decreasing in storage (more
-water means lower future cost), the cut slope $\beta^v$ is negative.
+LPs. The cost-to-go $V(v)$ is non-increasing in storage (more water never
+raises the cost of the remaining stages), so every cut slope $\beta^v$ is
+zero or negative.
 
 Note the absence of any AR-lag state variable: the 0-order inflow has
 no memory across stages, so storage is the only state.
@@ -145,12 +165,15 @@ $$
 with $\mu = 30$ and $\sigma = 10$ for every stage in this walkthrough.
 The draws across stages are independent. This is the degenerate $p = 0$
 case of the [PAR Inflow Model](/math/par-inflow-model): no lag
-terms, no AR coefficients, no initial-lag state. The data file
-`inflow_seasonal_stats.parquet` carries only $\mu_t$ and $\sigma_t$ per
-hydro and per stage, and the `inflow_ar_coefficients.parquet` file is
-absent — the order-selection procedure landed at $p_m = 0$ for every
-season (the white-noise case described in section 4 of
-[PAR Inflow Model](/math/par-inflow-model)).
+terms, no AR coefficients, no initial-lag state. A cobre case expresses
+it by supplying `scenarios/inflow_seasonal_stats.parquet` ($\mu_t$ and
+$\sigma_t$ per hydro and per stage) with neither
+`inflow_history.parquet` nor `inflow_ar_coefficients.parquet`: cobre
+then applies the seasonal statistics as white noise, $p_m = 0$ for
+every season, and runs no order selection (the order selection of
+[PAR Inflow Model §3.6](/math/par-inflow-model#36-order-selection) needs
+an inflow history). The shipped `1dtoy` is built this way, and
+`cobre run` reports its estimation path as `user_stats_white_noise`.
 
 The three openings used in the backward pass correspond to
 $\varepsilon \in \{-1, 0, +1\}$ with equal probability $p = 1/3$,
@@ -194,18 +217,34 @@ gap), $\delta = 0$, $v_4 = 0$. Stage cost: $50 \times 10 = 500$.
 | 4     | 0               | 30    | 30  | 10       | 0     | 500        |
 
 **Upper-bound estimate from this trajectory**: $0 + 0 + 0 + 500 = 500$.
-This is one realisation of total cost; the statistical upper bound is
-the average over many simulated trajectories.
+This is one realisation of total cost, a statistical estimate. It falls
+below the iteration-1 lower bound of section 6, $5000/9 \approx 555.6$,
+as a single sampled trajectory can; averaging many trajectories reduces
+the sampling error, and only an exact upper bound certifies the optimality gap
+([Cut Management — Tier 3](/math/cut-management#tier-3-gap-certificate)).
 
 ---
 
 ## 5. Iteration 1 — Backward Pass
 
-The backward pass walks stages $4 \to 1$. At each stage it fixes the
-incoming storage to the trial point from the forward pass, evaluates
-all three openings, reads the reduced cost of the pinned incoming-storage
-column, computes per-opening intercepts, and aggregates into one cut (see
-[Cut Management](/math/cut-management) sections 2–3).
+The backward pass walks stages $4 \to 2$. At each stage $t$ it pins the
+incoming storage to the forward pass's trial point $\hat{v}_{t-1}$,
+solves all three openings, reads the reduced cost of the pinned
+incoming-storage column
+([Reduced-Cost Extraction](/math/cut-management#2-reduced-cost-extraction)),
+computes per-opening intercepts, and aggregates them into one cut on
+stage $t-1$ ([Single-Cut Aggregation](/math/cut-management#3-single-cut-aggregation)).
+The stage-1 solves are the lower-bound evaluation of section 6.
+
+**Kinks.** When an opening's available water exactly meets demand, or
+its end storage sits where two pieces of the stage's cost-to-go
+approximation meet (two cuts, or a cut and the zero floor), the stage
+cost has a kink at the trial point: one unit less and one unit more of
+incoming storage change the cost at different rates, and every value
+between the two rates is a valid subgradient. The reduced cost an LP
+solver returns there depends on its final basis. This walkthrough takes,
+at every kink, the rate for one more unit of incoming storage (the right
+derivative).
 
 ### Stage 4 (terminal)
 
@@ -226,9 +265,11 @@ theorem applied to the pinned bound $v^{in}_4 = \hat{v}_3$:
   extra unit of $\hat{v}_3$ enables one extra unit of turbining,
   displacing one unit of thermal worth $50$. Optimal cost falls by
   $50$, so $\beta^v_4(\omega) = -50$.
-- For $\omega_3$ (demand met exactly by hydro alone): the LP already
-  has $q = 40 = D$; extra storage flows into terminal $v_4$, which has
-  zero value at the terminal stage. $\beta^v_4(\omega_3) = 0$.
+- For $\omega_3$ (available water exactly meets demand) the stage cost
+  has a kink: one more unit of $\hat{v}_3$ ends in the terminal storage
+  $v_4$, which has zero value, while one unit less needs one unit of
+  thermal worth $50$. Every value in $[-50, 0]$ is a valid subgradient,
+  and the walkthrough's rule gives $\beta^v_4(\omega_3) = 0$.
 
 | Opening    | $\beta^v_4$ |
 | ---------- | --------- |
@@ -297,10 +338,11 @@ at $500/3 \approx 167$.
 
 - $\omega_1$ (water-limited): one extra unit of $\hat{v}_2$ frees one
   extra turbine unit, saves $50$ of thermal. $\beta^v_3(\omega_1) = -50$.
-- $\omega_2$ (demand exactly met): the LP is at a kink; both
-  $\beta^v = -50$ (water-limited regime) and $\beta^v = -100/3$
-  (storage-flow regime) are valid subgradients. The walkthrough takes
-  the basis returning $\beta^v_3(\omega_2) = -50$.
+- $\omega_2$ (available water exactly meets demand): a kink. One unit
+  less of $\hat{v}_2$ needs one unit of thermal ($-50$); one unit more
+  raises $v_3$ and lowers the cut value by $100/3$. Every value in
+  $[-50, -100/3]$ is a valid subgradient, and the rule gives
+  $\beta^v_3(\omega_2) = -100/3$.
 - $\omega_3$ (water surplus, holding storage): one extra unit of
   $\hat{v}_2$ raises $v_3$ by one, lowers the cut value by $100/3$.
   $\beta^v_3(\omega_3) = -100/3$.
@@ -311,36 +353,58 @@ $\beta_{0,3}(\omega) = Q_3(\omega) - \beta^v_3(\omega)\,\hat{v}_2$:
 | Opening    | $Q_3$   | $\beta^v_3 \cdot \hat{v}_2$ | $\beta_{0,3}$ |
 | ---------- | ------- | ------------------------- | ---------------- |
 | $\omega_1$ | $1000$  | $-500$                    | $1500$           |
-| $\omega_2$ | $500$   | $-500$                    | $1000$           |
+| $\omega_2$ | $500$   | $-1000/3$                 | $2500/3$         |
 | $\omega_3$ | $500/3$ | $-1000/3$                 | $500$            |
 
 **Aggregation** ($p = 1/3$):
 
 $$
-\bar{\beta}_0 = \tfrac{1}{3}(1500 + 1000 + 500) = 1000, \qquad
-\bar{\beta}^v = \tfrac{1}{3}\!\left(-50 - 50 - \tfrac{100}{3}\right) = -\tfrac{400}{9}
+\bar{\beta}_0 = \tfrac{1}{3}\Bigl(1500 + \tfrac{2500}{3} + 500\Bigr) = \tfrac{8500}{9}, \qquad
+\bar{\beta}^v = \tfrac{1}{3}\!\left(-50 - \tfrac{100}{3} - \tfrac{100}{3}\right) = -\tfrac{350}{9}
 $$
 
 **Cut added to stage 2's LP**:
 
 $$
-\theta \;\geq\; 1000 \;-\; \tfrac{400}{9}\, v
+\theta \;\geq\; \tfrac{8500}{9} \;-\; \tfrac{350}{9}\, v
 $$
 
 **Sanity check.** At $v = \hat{v}_2 = 10$ the cut evaluates to
-$1000 - 4000/9 \approx 555.6$, matching the probability-weighted
+$(8500 - 3500)/9 = 5000/9 \approx 555.6$, matching the probability-weighted
 expectation $\bar{Q}_3 = (1/3)(1000 + 500 + 500/3) = 5000/9 \approx 555.6$.
 
-### Stages 2 and 1
+### Stage 2
 
-The same procedure repeats at stages 2 and 1. At each stage:
+**Trial point**: $\hat{v}_1 = 20$. The stage-2 LP carries the cut
+$\theta \geq 8500/9 - (350/9)\, v_2$. A stored unit is worth at most
+$350/9 \approx 38.9 < 50$, so every opening turbines up to demand.
 
-1. Pin the incoming storage to the trial point from the forward pass (column bounds).
-2. Solve all three opening LPs, including the cut from the next stage.
-3. Read the reduced cost of the pinned incoming-storage column.
-4. Compute per-opening intercepts via $\beta_0(\omega) = Q(\omega) - \beta^v(\omega)\,\hat{v}_{t-1}$.
-5. Aggregate by probability-weighted averaging.
-6. Add the cut to the previous stage's LP.
+| Opening    | $a_2$ | Available | $q$ | $g_{th}$ | $v_2$ | $\theta^*$ | $Q_2$    | $\beta^v_2$ | $\beta_{0,2}$ |
+| ---------- | ----- | --------- | --- | -------- | ----- | ---------- | -------- | ----------- | ------------- |
+| $\omega_1$ | 20    | 40        | 40  | 0        | 0     | $8500/9$   | $8500/9$ | $-350/9$    | $15500/9$     |
+| $\omega_2$ | 30    | 50        | 40  | 0        | 10    | $5000/9$   | $5000/9$ | $-350/9$    | $4000/3$      |
+| $\omega_3$ | 40    | 60        | 40  | 0        | 20    | $500/3$    | $500/3$  | $-350/9$    | $8500/9$      |
+
+$\omega_1$ is a kink (available water exactly meets demand; every value in
+$[-50, -350/9]$ is a valid subgradient) and the rule gives $-350/9$; in
+$\omega_2$ and $\omega_3$ one more unit of $\hat{v}_1$ raises $v_2$ along
+the cut. The intercepts are $\beta_{0,2}(\omega) = Q_2(\omega) - \beta^v_2(\omega)\,\hat{v}_1$.
+
+**Aggregation** ($p = 1/3$):
+
+$$
+\bar{\beta}_0 = \tfrac{1}{3}\Bigl(\tfrac{15500}{9} + \tfrac{4000}{3} + \tfrac{8500}{9}\Bigr) = \tfrac{4000}{3}, \qquad
+\bar{\beta}^v = -\tfrac{350}{9}
+$$
+
+**Cut added to stage 1's LP**:
+
+$$
+\theta \;\geq\; \tfrac{4000}{3} \;-\; \tfrac{350}{9}\, v
+$$
+
+At $v = \hat{v}_1 = 20$ the cut evaluates to $5000/9 \approx 555.6$, the
+probability-weighted expectation $\bar{Q}_2$.
 
 By the end of the backward pass, stages 1 through 3 each carry one
 cut. Stage 4 has none (it is the terminal stage and has no future to
@@ -350,101 +414,177 @@ approximate).
 
 ## 6. Iteration 1 — Lower Bound
 
-After the backward pass installs a cut at stage 1, the lower bound for
-iteration 1 is computed by solving the stage-1 LP for every opening
-with the cut active and taking the probability-weighted expectation
-(see [SDDP Algorithm](/math/sddp-algorithm) section 3.3):
+After the backward pass installs a cut at stage 1, the iteration-1 lower
+bound solves the stage-1 LP for every opening with that cut active, from
+the fixed initial storage $x_0 = v_0 = 30$, and takes the
+probability-weighted expectation of the opening objectives (the
+risk-neutral case of the
+[lower bound](/math/upper-bound-evaluation#lower-bound)):
 
 $$
 \underline{z}^1 = \mathbb{E}_{\omega}\bigl[\, Q_1^1(x_0, \omega) \,\bigr]
 $$
 
 where $Q_1^1$ is the stage-1 optimal objective under opening $\omega$
-with the iteration-1 cut in place, and $x_0 = v_0 = 30$ is the fixed
-initial storage. The lower bound rises from $0$ (before the first iteration, no cuts)
-to a positive value once the first cut is installed; the value
-reflects the policy's expected cost given the partial information
-encoded in the single iteration-1 cut at each stage.
+with the iteration-1 cut in place.
 
-The lower bound is non-decreasing across iterations — adding cuts only
-tightens the outer approximation, never loosening it (see
-[Cut Management](/math/cut-management) section 1).
+| Opening    | $a_1$ | Available | $q$ | $g_{th}$ | $v_1$ | $\theta^*$ | $Q_1^1$  |
+| ---------- | ----- | --------- | --- | -------- | ----- | ---------- | -------- |
+| $\omega_1$ | 20    | 50        | 40  | 0        | 10    | $8500/9$   | $8500/9$ |
+| $\omega_2$ | 30    | 60        | 40  | 0        | 20    | $5000/9$   | $5000/9$ |
+| $\omega_3$ | 40    | 70        | 40  | 0        | 30    | $500/3$    | $500/3$  |
+
+$$
+\underline{z}^1 = \tfrac{1}{3}\Bigl(\tfrac{8500}{9} + \tfrac{5000}{9} + \tfrac{500}{3}\Bigr) = \tfrac{5000}{9} \approx 555.6
+$$
+
+The lower bound rises from $0$ (before the first iteration, no cuts) to
+$5000/9$. It does not decrease across iterations, because cuts are only
+added; [Cut Management — Tier 1](/math/cut-management#tier-1-valid-lower-bound)
+states when it is a valid lower bound. Here it stays below the optimal
+expected cost of section 9.
 
 ---
 
-## 7. The Future Cost Function Across Iterations
+## 7. Iteration 2
 
-After iteration 1 each non-terminal stage holds one Benders cut. As the
-algorithm continues:
+The second forward pass draws $\varepsilon = (+1, 0, 0, 0)$: a wet first
+stage, then mean inflows. Each stage LP carries its iteration-1 cut.
 
-- **Iteration 2** samples a different forward trajectory (different
-  $\varepsilon$ draws), visits different trial points, and adds a
-  second cut at each non-terminal stage.
-- **Subsequent iterations** each add one cut per non-terminal stage.
-  The outer approximation tightens around the true convex future-cost
-  function (FCF) — each new cut is tangent at a new trial point,
-  ruling out overestimates in that region.
+| Stage | $\hat{v}_{t-1}$ | $a_t$ | $q$ | $g_{th}$ | $v_t$ | $\theta^*$ | Stage cost |
+| ----- | --------------- | ----- | --- | -------- | ----- | ---------- | ---------- |
+| 1     | 30              | 40    | 40  | 0        | 30    | $500/3$    | 0          |
+| 2     | 30              | 30    | 40  | 0        | 20    | $500/3$    | 0          |
+| 3     | 20              | 30    | 40  | 0        | 10    | $500/3$    | 0          |
+| 4     | 10              | 30    | 40  | 0        | 0     | $0$        | 0          |
 
-For this case the FCF at each stage is a univariate function of
-storage $v$. Each cut is a line in this one-dimensional state space,
-and the outer approximation is the pointwise maximum over all cuts:
+The trajectory costs $0$, and every trial point sits 10 units above the
+iteration-1 one. The backward pass then adds a second cut on each of
+stages 3, 2 and 1; each non-terminal stage LP it solves carries both of that stage's
+cuts, and every kink takes the right derivative:
+
+| Stage | Trial point     | Opening    | $a_t$ | $v_t$ | $\theta^*$ | $Q_t$    | $\beta^v_t$ | $\beta_{0,t}$ |
+| ----- | --------------- | ---------- | ----- | ----- | ---------- | -------- | ----------- | ------------- |
+| 4     | $\hat{v}_3 = 10$ | $\omega_1$ | 20    | 0     | $0$        | $500$    | $-50$       | $1000$        |
+| 4     | $\hat{v}_3 = 10$ | $\omega_2$ | 30    | 0     | $0$        | $0$      | $0$ (kink)  | $0$           |
+| 4     | $\hat{v}_3 = 10$ | $\omega_3$ | 40    | 10    | $0$        | $0$      | $0$         | $0$           |
+| 3     | $\hat{v}_2 = 20$ | $\omega_1$ | 20    | 0     | $500$      | $500$    | $-100/3$ (kink) | $3500/3$  |
+| 3     | $\hat{v}_2 = 20$ | $\omega_2$ | 30    | 10    | $500/3$    | $500/3$  | $-50/3$ (kink) | $500$      |
+| 3     | $\hat{v}_2 = 20$ | $\omega_3$ | 40    | 20    | $0$        | $0$      | $0$ (kink)  | $0$           |
+| 2     | $\hat{v}_1 = 30$ | $\omega_1$ | 20    | 10    | $5000/9$   | $5000/9$ | $-350/9$    | $15500/9$     |
+| 2     | $\hat{v}_1 = 30$ | $\omega_2$ | 30    | 20    | $2000/9$   | $2000/9$ | $-50/3$     | $6500/9$      |
+| 2     | $\hat{v}_1 = 30$ | $\omega_3$ | 40    | 30    | $500/9$    | $500/9$  | $-50/3$     | $5000/9$      |
+
+At stage 3 the available water of $\omega_1$ exactly meets demand, the
+end storage $v_3 = 10$ of $\omega_2$ sits where the two stage-3 cuts
+meet, and $v_3 = 20$ of $\omega_3$ where the second cut reaches zero, so
+all three openings are kinks there. Averaging with
+$p = 1/3$ gives the iteration-2 cuts:
+
+| Cut on stage | From trial point  | $\bar{\beta}_0$ | $\bar{\beta}^v$ | At the trial point |
+| ------------ | ----------------- | --------------- | --------------- | ------------------ |
+| 3            | $\hat{v}_3 = 10$  | $1000/3$        | $-50/3$         | $500/3$            |
+| 2            | $\hat{v}_2 = 20$  | $5000/9$        | $-50/3$         | $2000/9$           |
+| 1            | $\hat{v}_1 = 30$  | $1000$          | $-650/27$       | $2500/9$           |
+
+With both stage-1 cuts active, the stage-1 openings end at $v_1 = 10$,
+$20$ and $30$ with $\theta^* = 8500/9$, $5000/9$ and $2500/9$ (the second
+cut is the larger one only at $v_1 = 30$), so
 
 $$
-\underline{V}_t^k(v) \;=\; \max_{i = 1, \ldots, k}
-\bigl\{ \bar{\beta}_0^i + \bar{\beta}^{v,i}\, v \bigr\}.
+\underline{z}^2 = \tfrac{1}{3}\Bigl(\tfrac{8500}{9} + \tfrac{5000}{9} + \tfrac{2500}{9}\Bigr) = \tfrac{16000}{27} \approx 592.6
 $$
-
-Because $V_t$ is decreasing in storage (more water means lower future
-cost) and convex, the slopes $\bar{\beta}^{v,i}$ are negative and the
-approximation is a lower envelope of decreasing lines. As $k$ grows,
-visited trial points spread across the state space — low-storage
-trajectories force the algorithm to evaluate cut quality in the
-scarcity region, adding cuts that are informative for water-stressed
-scenarios.
 
 ---
 
-## 8. Convergence on This Case
+## 8. The Cost-to-Go Across Iterations
 
-As iterations accumulate, the lower bound $\underline{z}^k$ rises and
-the simulation-based upper-bound estimate $\bar{z}^k$ (the mean over
-many forward trajectories) converges. The relative gap (the percent
-form of the [optimality gap](/math/stopping-rules#optimality-gap))
-narrows as cuts accumulate. For a problem of this size (one reservoir,
-four stages, three openings) the relative gap typically narrows below 1% within
-tens of iterations and below 0.1% within a few hundred. These are
-illustrative scales, not guarantees: the actual iteration count
-depends on the demand-to-inflow ratio, the initial storage, and the
-noise level — all of which determine how often the reservoir reaches
-zero and how sensitive the value function is to small state changes.
+After iteration 2 each non-terminal stage holds two cuts. In this case
+the cost-to-go $V_t(v)$, the expected cost of stages $t$ to $4$ from the
+storage $v$ left at the end of stage $t-1$, is a convex, piecewise-linear
+and non-increasing function of one variable, and each cut on stage $t-1$
+is a line in the same variable. The stage-$(t-1)$ LP's $\theta$ sees the
+approximation
 
-The stopping rule fires when the gap falls below the configured
-tolerance or the iteration limit is reached — see
-[Stopping Rules](/math/stopping-rules) for the available criteria
-and their combinations. The upper-bound estimator used here is the
-simulation-based estimator; a deterministic inner-approximation bound
-is also available — see
+$$
+\underline{V}_t^k(v) \;=\; \max\Bigl\{0,\; \max_{i = 1, \ldots, k}
+\bigl\{ \bar{\beta}_0^i + \bar{\beta}^{v,i}\, v \bigr\}\Bigr\},
+$$
+
+the pointwise maximum (upper envelope) of the cut lines and the floor
+$\theta \geq 0$. Every cut lies on or below $V_t$, so the upper envelope
+lies on or below $V_t$ too: it is a lower approximation, and each new cut
+can only raise it.
+
+The table compares $V_3$, the cost of stages 3 and 4, with the two cuts
+on stage 2 (trial points $\hat{v}_2 = 10$ in iteration 1 and
+$\hat{v}_2 = 20$ in iteration 2):
+
+| $v$ | $V_3(v)$ | Iteration-1 cut | Iteration-2 cut | $\underline{V}_3^2(v)$ |
+| --- | -------- | --------------- | --------------- | ---------------------- |
+| 0   | $1000$   | $8500/9$        | $5000/9$        | $8500/9$               |
+| 10  | $5000/9$ | $5000/9$        | $3500/9$        | $5000/9$               |
+| 15  | $3500/9$ | $3250/9$        | $2750/9$        | $3250/9$               |
+| 20  | $2000/9$ | $1500/9$        | $2000/9$        | $2000/9$               |
+| 30  | $500/9$  | $-2000/9$       | $500/9$         | $500/9$                |
+| 40  | $0$      | $-5500/9$       | $-1000/9$       | $0$                    |
+
+The envelope touches $V_3$ at both trial points and on $[20, 30]$, where
+the iteration-2 cut coincides with a linear piece of $V_3$, and equals
+$V_3$ for $v \geq 40$, where the floor and $V_3$ are both zero; it stays
+strictly below $V_3$ elsewhere, as at $v = 0$ and $v = 15$. Later
+iterations that visit other trial points, low-storage ones in
+particular, add cuts that raise the envelope where it is still below
+$V_3$.
+
+---
+
+## 9. Convergence on This Case
+
+Two iterations raise the lower bound from $5000/9 \approx 555.6$ to
+$16000/27 \approx 592.6$. The optimal expected cost of this case is
+$17000/27 \approx 629.6$: no unit of stored water saves more than one
+unit of thermal output, so turbining up to demand is optimal at every
+stage, and averaging that policy's cost over the $3^4 = 81$ equally
+likely inflow sequences from $v_0 = 30$ gives the value. Later
+iterations keep or raise the lower bound, and under the hypotheses of
+[Cut Management — Tier 2](/math/cut-management#tier-2-convergence) it
+converges to this value.
+
+The two trajectory costs, $500$ and $0$, are single-sample estimates of
+the policy's expected cost; both fall below the lower bound of their
+iteration and neither certifies anything. A gap certificate needs an
+exact upper bound from an enumerated forward pass (Tier 3); the percent
+form of the [optimality gap](/math/stopping-rules#optimality-gap) then
+divides the gap by the magnitude of the lower bound. The shipped `1dtoy`
+runs one sampled forward pass per iteration and stops at its iteration
+limit of 128; cobre rejects a `gap` stopping rule at setup under a
+sampled forward pass (see [Stopping Rules](/math/stopping-rules)). The
+upper-bound mechanisms are compared in
 [Upper Bound Evaluation](/math/upper-bound-evaluation).
 
 ---
 
-## 9. What This Example Does Not Show
+## 10. What This Example Does Not Show
 
 This case isolates the core SDDP loop in its simplest form. It cannot
 illustrate:
 
-- **Multi-reservoir effects**: the cut becomes a multivariate hyperplane
-  with one storage coefficient per reservoir; the optimiser must
-  balance releases across plants. See
-  [Toy Four-Reservoir Walkthrough](/examples/toy-four-reservoir).
+- **Multi-reservoir effects**: the cut becomes a hyperplane with one
+  storage coefficient per reservoir; the
+  [Toy Four-Reservoir Walkthrough](/examples/toy-four-reservoir) shows
+  one on four decoupled reservoirs. Trading water between reservoirs
+  needs a coupling (transmission, a cascade or a shared constraint)
+  that neither walkthrough includes.
 - **Spatial inflow correlation**: when multiple plants share a wet/dry
   signal, their innovations $\varepsilon$ must be drawn from a
   correlated multivariate normal via the spectral factorisation
   described in [PAR Inflow Model §6](/math/par-inflow-model#6-spatial-correlation-factorisation).
 - **Autoregressive inflow memory**: a PAR(p) model with $p \geq 1$ adds
-  one lag state variable per lag and one cut coefficient per lag; the
-  cut becomes a hyperplane in storage _and_ lag state space. See
-  [PAR Inflow Model](/math/par-inflow-model).
+  one lag state variable per lag; whether a stage's cuts carry a
+  coefficient for each lag is that stage's cut-state projection
+  ([State Augmentation §7](/math/state-augmentation#7-cut-state-projection)).
+  See [PAR Inflow Model](/math/par-inflow-model).
 - **FPHA production model**: nonlinear head-dependent efficiency
   approximated by piecewise-linear hyperplanes; one of the planes can
   bind, contributing to the storage cut coefficient. See
@@ -454,18 +594,19 @@ illustrate:
   [Risk Measures](/math/risk-measures).
 
 The [Toy Four-Reservoir Walkthrough](/examples/toy-four-reservoir) extends
-this case to four independent reservoirs at four buses with
-transmission coupling, illustrating how the cut hyperplane and the
-per-bus dispatch mechanics scale up.
+this case to four independent reservoirs at four buses with no
+transmission, illustrating how the cut hyperplane and the per-bus
+dispatch mechanics scale up.
 
 ---
 
 ## Cross-References
 
 - [SDDP Algorithm](/math/sddp-algorithm) — Forward and backward pass structure, lower-bound computation, convergence monitoring
-- [LP Formulation](/math/lp-formulation) — Complete stage LP: load balance, water balance, column-bound state pinning, objective taxonomy
+- [LP Formulation](/math/lp-formulation) — Complete stage LP: load balance, water balance, objective taxonomy
+- [State Augmentation](/math/state-augmentation) — Column-bound state pinning
 - [Cut Management](/math/cut-management) — Dual extraction, per-opening intercepts, single-cut aggregation, cut validity, sign convention
 - [PAR Inflow Model](/math/par-inflow-model) — Inflow model definition; the $p = 0$ degenerate case (white noise) used in this walkthrough; stored vs computed quantities
 - [Stopping Rules](/math/stopping-rules) — Iteration limit, gap threshold, bound-stalling criteria
 - [Upper Bound Evaluation](/math/upper-bound-evaluation) — Simulation-based and inner-approximation upper bounds
-- [Toy Four-Reservoir Walkthrough](/examples/toy-four-reservoir) — Multi-reservoir extension at 4 buses with transmission and independent 0-order inflows
+- [Toy Four-Reservoir Walkthrough](/examples/toy-four-reservoir) — Multi-reservoir extension at 4 buses with no transmission and independent 0-order inflows

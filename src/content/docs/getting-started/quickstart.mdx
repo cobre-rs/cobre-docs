@@ -80,6 +80,8 @@ The validation pipeline checks all layers — schema, references, physical
 feasibility, stochastic consistency, and solver feasibility — and prints a
 single line of entity counts on success:
 
+{/* capture: cobre validate my_first_study | cobre   v0.17.0 | binary: cobre-cli sha256 23916b46 | case: 1dtoy (cobre init --template 1dtoy) */}
+
 ```
 Valid case: 1 buses, 1 hydros, 2 thermals, 0 lines
 ```
@@ -103,6 +105,8 @@ Cobre runs the SDDP training loop (128 iterations, 1 forward pass each) followed
 a simulation pass (100 scenarios). Output is written to `my_first_study/results/`.
 The banner, an execution/setup header, and progress bars are printed to stderr;
 once the progress bars finish, the rest of stderr is the post-run summary:
+
+{/* capture: cobre run my_first_study --output my_first_study/results 2>&1, post-run summary excerpt | cobre   v0.17.0 | binary: cobre-cli sha256 23916b46 | case: 1dtoy (cobre init --template 1dtoy); timings vary run to run */}
 
 ```
 Training complete in 0.4s (128 iterations, iteration_limit)
@@ -128,29 +132,6 @@ Simulation complete in 0.1s (100 scenarios)
 Writing simulation outputs...
 Output written to my_first_study/results/ (0.0s)
 ```
-
-> **Why is the gap negative?**
-> The 1dtoy config uses `forward_passes: 1`, which means each training iteration
-> draws a single scenario trajectory for the upper-bound estimate. A single scenario
-> is an extremely noisy sample of the true expected cost — one unlucky trajectory
-> can land far below the lower bound, driving the gap negative (the gap is measured
-> relative to the lower bound, so it bottoms out at -100%). This is
-> expected behavior, not a solver error. The gap only becomes well-behaved and
-> stable when training runs with multiple forward passes, because
-> averaging over more scenarios produces a reliable upper-bound estimate. The 1dtoy
-> template keeps `forward_passes: 1` for speed; in a production study you would
-> increase this value and add a convergence-based stopping rule so training halts
-> when the gap truly stabilizes.
-
-The bounds, gap, expected cost, and policy-row and LP-solve counts above are
-reproducible: the template fixes the scenario seed
-(`training.scenario_source.seed` in `config.json`), so every run draws the same
-scenarios. Only the timings — the `complete in` durations, `Avg iter`,
-`Avg/scenario`, the `Time split` lines, and the write times — vary with the
-machine and the run. Changing the seed, the stopping rule, or `forward_passes`
-changes the bounds and the gap. The complete summary format, including the
-`Time split` block, is documented in
-[CLI Reference → Output format](/reference/cli-reference/#output-format).
 
 The results directory contains training convergence data, a FlatBuffers policy
 checkpoint, and Hive-partitioned Parquet files for simulation dispatch results.
@@ -194,6 +175,65 @@ always created), and cases with other entities add further simulation
 partitions — for example `pumping_stations/`, `contracts/`, `in_transit/`, and
 generic-constraint `violations/`. See [Output Format](/reference/output-format/)
 for the authoritative, conditional schema of every file.
+
+---
+
+## What You Just Ran
+
+The `1dtoy` case has one bus whose unserved demand (deficit) costs `7500 $/MWh`. The hydro plant
+`UHE1` has a 1000 hm³ reservoir that starts at 83.222 hm³ and turbines up to 50 m³/s at
+1 MW per m³/s. The thermal plants `UTE1` and `UTE2` provide 15 MW each, at 5 and 10 `$/MWh`.
+Demand is a constant 75 MW.
+
+The horizon has four monthly stages, stage 1 (January 2024) to stage 4 (April 2024), with
+one load block each. Every stage draws ten inflow openings (`num_openings`) from the
+seasonal statistics in `scenarios/` (mean 40 m³/s), with no autoregressive lags. The annual
+discount rate is 0.12.
+
+Configuration files and outputs identify the same stages by their declared `stage_id`,
+0 to 3 here; the policy files `000.bin` … `003.bin` are numbered from 0 in stage order.
+See [Stage Indexing](/overview/notation-conventions/#stage-indexing).
+
+For an SDDP iteration worked by hand on a one-reservoir system, see the
+[Toy Single-Reservoir SDDP Walkthrough](/examples/toy-single-reservoir/); the
+[Toy Four-Reservoir SDDP Walkthrough](/examples/toy-four-reservoir/) extends it to four
+reservoirs.
+
+### Reading the Summary
+
+- **Units.** The lower bound, the upper bound and the expected cost are each an expected
+  total for the whole horizon: the four stages' costs, discounted to the start of stage 1,
+  in the currency of the case's costs. Despite the `$/stage` label, none of them is a
+  per-stage value.
+- **Band.** The number after `+/-` on the `Upper bound` line is the standard deviation of
+  that iteration's forward-pass costs. With `forward_passes: 1` there is one cost per
+  iteration, so the spread is zero and the line prints `+/- 0.00000e0`. On the
+  `Expected cost` line, `+/-` is the half-width of the 95 % confidence interval for the
+  mean and `std` is the standard deviation of the scenario costs.
+- **Negative gap.** The upper bound is the cost of the iteration's one sampled trajectory.
+  The [optimality gap](/math/stopping-rules/#optimality-gap) is that cost minus the lower
+  bound, relative to the lower bound, so a trajectory cheaper than the lower bound gives a
+  negative gap. Most trajectories of this case cost about 6e5; the ones that run short of
+  water pay the deficit cost, up to about 1.5e8 across the 128 iterations. The last
+  iteration drew a cheap one. With sampled forward passes the gap is an estimate, not a
+  guarantee.
+- **Lower bound above the simulated mean.** The
+  [lower bound](/math/upper-bound-evaluation/#lower-bound) is the first stage's expected
+  value over its ten openings with the trained cuts. The expected cost is the mean of 100
+  scenarios drawn from the same ten openings per stage. Their standard deviation
+  (2.36965e7) is more than twice the mean: most scenarios are cheap and a few are very
+  expensive, so a 100-scenario mean often falls below the expected cost it estimates,
+  and the lower bound never exceeds that expected cost. A larger
+  `simulation.selection.num_scenarios` narrows the interval.
+- **Reproducibility.** The bounds, the gap, the expected cost and the policy-row and
+  LP-solve counts are the same on every run; only the timings vary with the machine. The
+  ten inflow openings and the in-sample draws are seeded by `training.tree_seed` (unset in
+  the template, so the default 42 applies). `training.scenario_source.seed` seeds only out-of-sample
+  draws, which this case does not use; [Seed resolution](/running/configuration/#seed-resolution)
+  describes both seeds. Changing `training.tree_seed`, the stopping rule or
+  `forward_passes` changes the bounds. The complete
+  summary format, including the `Time split` block, is documented in
+  [CLI Reference → Output format](/reference/cli-reference/#output-format).
 
 ---
 

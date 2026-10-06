@@ -1,0 +1,145 @@
+Cobre's stopping settings are two keys of the `training` object of
+`config.json`: `stopping_rules`, the list of rules, and `stopping_mode`, how
+they combine. This tab is the field-level configuration reference; each rule's
+stop condition stays in the methodology sections above
+([§2 Iteration Limit](/math/stopping-rules#2-iteration-limit),
+[§3 Time Limit](/math/stopping-rules#3-time-limit),
+[§4 Bound Stalling](/math/stopping-rules#4-bound-stalling) and
+[§5 Gap-Based Stopping](/math/stopping-rules#5-gap-based-stopping-recommended)).
+
+### `training.stopping_rules` — Rules
+
+The key is required: a `config.json` without it fails to load with the schema
+error `required field is missing`. The array may hold any set of rules. A set
+without an `iteration_limit` entry, or an empty array, is accepted and runs at
+most 100 iterations. Each entry is an object whose `type` selects the rule;
+its other fields are that rule's own, and a field that belongs to another rule
+type is a load error.
+
+#### `iteration_limit`
+
+| Field   | Type    | Required | Description                                  |
+| ------- | ------- | -------- | -------------------------------------------- |
+| `limit` | integer | Yes      | The iteration count at which training stops. |
+
+```json
+{ "type": "iteration_limit", "limit": 50 }
+```
+
+In either `stopping_mode` the loop runs no further than the largest
+`iteration_limit`; a set with no `iteration_limit` entry runs at most 100
+iterations. A run that reaches the end of that range with no rule triggered
+records `iteration_limit` as its termination reason.
+
+Use one `iteration_limit` entry. On a resumed run its `limit` counts the
+iterations of the earlier runs as well
+([Train in slices](/running/policy-management/#train-in-slices)).
+
+#### `time_limit`
+
+| Field     | Type   | Required | Description                                                                         |
+| --------- | ------ | -------- | ----------------------------------------------------------------------------------- |
+| `seconds` | number | Yes      | Wall-clock seconds since this run's training started, checked after each iteration. |
+
+```json
+{ "type": "time_limit", "seconds": 3600 }
+```
+
+Each MPI rank evaluates `time_limit` on its own clock, from its own start of
+training, and the ranks' stop decisions are not reconciled, even on a single
+node; a multi-rank job leaves `time_limit` out and bounds its run with
+`iteration_limit` instead
+([Train in slices](/running/policy-management/#train-in-slices)).
+
+#### `bound_stalling`
+
+| Field        | Type    | Required | Description                                                       |
+| ------------ | ------- | -------- | ----------------------------------------------------------------- |
+| `iterations` | integer | Yes      | The window: the number of most recent lower bounds compared.      |
+| `tolerance`  | number  | Yes      | The relative improvement below which the bound counts as stalled. |
+
+```json
+{ "type": "bound_stalling", "iterations": 10, "tolerance": 0.0001 }
+```
+
+The rule cannot trigger before the current run has recorded `iterations`
+bounds, so a resumed run starts with an empty window. With a positive
+`tolerance`, a window of `1` compares the bound with itself and triggers at the
+first iteration.
+
+#### `gap`
+
+| Field                | Type   | Required       | Description                                            |
+| -------------------- | ------ | -------------- | ------------------------------------------------------ |
+| `tolerance`          | number | One of the two | Absolute gap tolerance, in currency units.             |
+| `relative_tolerance` | number | One of the two | Relative gap tolerance, in percent of the lower bound. |
+
+```json
+{ "type": "gap", "tolerance": 1.0, "relative_tolerance": 0.1 }
+```
+
+A `gap` entry with neither field is rejected. When both are set,
+training stops as soon as either is satisfied.
+
+### `training.stopping_mode` — Combination
+
+| Field           | Type   | Default | Description                                                                                                                        |
+| --------------- | ------ | ------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| `stopping_mode` | string | `"any"` | `"any"` stops when any rule triggers; `"all"` stops when all rules trigger at the same iteration. Any other value is a load error. |
+
+The following set stops when the gap closes or at 500 iterations, whichever
+comes first:
+
+```json
+{
+  "training": {
+    "stopping_rules": [
+      { "type": "iteration_limit", "limit": 500 },
+      { "type": "gap", "tolerance": 1.0, "relative_tolerance": 0.1 }
+    ],
+    "stopping_mode": "any"
+  }
+}
+```
+
+Its `gap` rule needs an enumerated training forward pass; a sampled run stops
+as described in [Sampled runs](#sampled-runs).
+
+### Shutdown Requests
+
+A shutdown request is not an entry of `stopping_rules`, and `stopping_mode`
+does not apply to it. `cobre run` has no signal path for one: a SIGTERM ends
+the process with status 143 before the training results and the policy
+checkpoint are written. The Python API requests one when the `on_iteration`
+callback returns a truthy value or raises
+([Python API](/reference/python-api/)); the stop is asynchronous, so the run ends
+at a later iteration boundary that is not fixed; a run ended this way records
+`unknown` ([What a stopped run records](#what-a-stopped-run-records)).
+
+### What a stopped run records
+
+The `convergence`, `bounds` and `iterations` blocks of
+[`training/metadata.json`](/reference/output-format/#trainingmetadatajson)
+record how the run stopped:
+
+- `convergence.termination_reason` names the first rule that triggered, in the
+  order `stopping_rules` lists them, or is `iteration_limit` when the run
+  reached the end of its iteration range with no rule triggered, which includes
+  a set with no `iteration_limit` entry that stops at 100 iterations. It is
+  `unknown` when a Python `on_iteration` callback ended the run and no rule
+  triggered at that iteration.
+- `convergence.achieved` is `true` exactly when `termination_reason` is
+  `bound_stalling`, so a run the `gap` rule stopped on a closed exact gap
+  records `false`.
+- `convergence.final_gap_percent` is `null` when the final lower bound is not
+  positive.
+- `bounds.final_lower_bound` and `bounds.final_upper_bound` are the bounds at
+  the last iteration, and `iterations.completed` is the iteration count at which
+  the run ended, earlier runs included.
+
+**Lower bound and gap under projected cuts.** Under a PAR(p > 0) model with the
+inflow lags projected out of the cuts, the lower bound and the gap carry the
+caveat of
+[Storage-only cut projection](/math/cut-management/#storage-only-cut-projection);
+the key and its default are in
+[`stages[].state_variables`](/math/cut-management/#stagesstate_variables--cut-projection).

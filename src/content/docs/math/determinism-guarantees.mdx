@@ -1,38 +1,55 @@
 ---
-title: Determinism Guarantees
-description: Bit-identical outputs across re-runs, MPI topology changes, and IEEE 754-conformant hardware — the coordinated mechanisms that make Cobre's SDDP results reproducible.
+title: Determinism & Provenance
+description: Bit-identical results per binary at any rank or thread count, the mechanisms that make them so, and what each run records.
 ---
+
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+import { Content as ProvenanceIO } from './_impl/_provenance.io.mdx';
 
 ## Purpose
 
-This chapter defines what "deterministic" means in Cobre. The guarantee is
-bit-identical outputs: given the same inputs, the same random seed, the same
-MPI topology, and hardware that conforms to IEEE 754, every Cobre run produces
-the same lower bounds, the same cuts, the same trial-point trajectories, the
-same simulation costs, and the same scenario tree — byte for byte.
+This chapter defines what "deterministic" means in Cobre and what a run records
+so that its results can be re-derived. The guarantee is bit-identical numerical
+results per binary: given the same inputs and the same random seed, one Cobre
+binary on one platform image produces the same lower bounds, the same cuts, the
+same trial-point trajectories, the same simulation costs, and the same scenario
+tree, bit for bit, at any MPI rank count and any thread count, and on every
+re-run, up to the stopping iteration under a wall-clock stopping criterion
+(section 4).
 
 This property is not incidental to the implementation. It is an explicit
 methodology commitment, achieved through a set of coordinated mechanisms
-described in section 3. The companion chapter [Reproducibility and Provenance](/math/reproducibility-and-provenance)
-defines the bookkeeping that makes this commitment actionable: what Cobre
-records so that any run can be independently re-derived.
+described in section 3. Section 5 defines the bookkeeping that makes this
+commitment actionable: what Cobre records so that any run can be independently
+re-derived.
 
 ## 1. Definition
 
-Cobre guarantees **bit-identical results** across the three axes that
-practitioners most often vary:
+Cobre guarantees **bit-identical results per binary**. A binary is one build of
+Cobre: one release asset or one local build. A platform image is the operating
+system together with the system libraries the binary loads — the math library,
+the C++ runtime and, for the `cobre-mpi` release asset, the MPI library — and a
+multi-node job runs the same platform image on every node. Given the same inputs
+and the same random seed, one binary on one platform image produces bit-identical
+numerical results across the three axes that practitioners most often vary:
 
-- **Re-runs at identical inputs.** Running the same study twice, on the same
-  machine, with the same configuration and the same base seed, produces
-  output values that are identical to the last bit.
-- **MPI topology changes.** Distributing the same study across a different
-  number of ranks — or re-ordering ranks — does not change the computed lower
-  bounds, cuts, trial points, or simulation costs. The same answer is reached
-  regardless of how work is partitioned.
-- **Hardware variants within IEEE 754 conformance.** On any hardware that
-  implements the IEEE 754-2008 standard faithfully, Cobre produces identical
-  results for the same inputs. Compiler-driven floating-point reorderings and
-  wall-clock variation are out of scope (section 4).
+- **Re-runs at identical inputs.** Running the same study again, with the same
+  configuration and the same base seed, produces output values that are
+  identical to the last bit.
+- **MPI rank count.** Distributing the same study across a different number of
+  ranks does not change the computed lower bounds, cuts, trial points, or
+  simulation costs. The same answer is reached regardless of how work is
+  partitioned.
+- **Thread count.** Changing the number of threads per rank, the same on every
+  rank, does not change them either.
+
+Two builds are two binaries, and their outputs are not promised equal. The
+single-process `cobre` release asset and the `cobre-mpi` release asset are
+different builds, so a `cobre` run is not promised to reproduce a `cobre-mpi`
+run at any rank count; a binary built with another LP backend is likewise a
+different build. Wall-clock variation, including the stopping iteration under a
+wall-clock stopping criterion, and the other quantities outside the guarantee are
+listed in section 4.
 
 The definition applies to the full SDDP output corpus: training produces the
 same lower bounds at every iteration, the same cut coefficients appended to the
@@ -55,17 +72,18 @@ set of scenarios regardless of rank assignment. Per-scenario costs and the
 aggregate expected cost are identical across runs.
 
 **Scenario-tree generation.** The opening tree is generated before training
-begins by deriving one seed per (opening index, stage) pair from the base seed.
-Because both the seed derivation and the noise-group assignment (consecutive
-stages sharing a `(season_id, year)` group reuse one draw) are pure functions
+begins by deriving seeds from the base seed, one per (opening index, stage) pair
+under Monte Carlo sampling and one per stage under a batch method (section 3).
+Because both the seed derivation and the noise-group assignment (on the opening
+tree, consecutive stages in one noise group reuse one draw) are pure functions
 of globally known inputs — the base seed and the stage calendar of the
 broadcast system — every MPI rank generates the same tree bit-identically. See
 [Scenario Generation](/math/scenario-generation)
 for the seed derivation procedure and opening-tree construction.
 
-**Out of scope.** Wall-clock time, peak memory, and compiler-optimisation-driven
-floating-point reorderings within a single hardware target are not covered by
-this guarantee. These are addressed in section 4.
+**Out of scope.** Wall-clock time, peak memory, the stopping iteration under a
+wall-clock criterion, different builds, and runs on different processor models
+are not covered by this guarantee. These are addressed in section 4.
 
 ## 3. Methodology Mechanisms
 
@@ -80,12 +98,13 @@ stage; it begins by resetting the solver's retained basis and factorization and
 reloading the stage's frozen LP template, then appends the cuts generated during
 the current iteration. Warm-starting enters at exactly one point in the chain:
 at its first-solved opening, the basis captured for that trial point's own
-`(scenario, stage)` slot — one capture per trial point per stage, not one shared
-per stage — is loaded as the starting point. The remaining openings in the chain
-warm-continue from the factorization the previous opening left in place,
-advancing along the pinned solve order, since only the noise-dependent bounds
-change from one opening to the next. See [LP Warm-Start](/math/lp-warm-start)
-for the basis-cache and reconstruction mechanism in full.
+`(scenario, node)` slot — one capture per trial point per node, not one shared
+by every trial point — is loaded as the starting point. The remaining openings
+in the chain warm-continue from the factorization the previous opening left in
+place, advancing along the pinned solve order, since only the noise-dependent
+bounds change from one opening to the next. See
+[LP Warm-Start](/math/lp-warm-start) for the basis-store and reconstruction
+mechanism in full.
 
 Warm-starting is compatible with the guarantee, but for a more specific reason
 than "the answer does not depend on the basis". An LP's optimal _value_ is
@@ -117,7 +136,7 @@ noise content and computed identically on every rank, independently of how work
 is partitioned. That order fixes the entire warm-start chain: which captured
 basis anchors the first-solved opening, and the sequence of retained
 factorizations the remaining openings continue from. Because the anchoring basis
-is keyed to the trial point's `(scenario, stage)` slot rather than to the worker
+is keyed to the trial point's `(scenario, node)` slot rather than to the worker
 that happens to execute it, repartitioning the same study over a different number
 of ranks or threads presents each solve with the same starting basis it would
 have seen under any other partition. The subproblem result for opening $\omega$
@@ -192,11 +211,36 @@ the calling rank. The same threshold is therefore reached at the same iteration
 regardless of how scenarios are distributed across ranks, ensuring that all ranks
 reach the same algorithmic decisions at the same time.
 
-**Deterministic seed derivation across MPI ranks.** Each noise vector is
-produced by a pseudo-random number generator seeded from a value derived
-deterministically from the base seed and the tuple that identifies the noise:
-(base seed, iteration, scenario, stage) for the forward pass, and (base seed,
-opening index, stage) for the opening tree. Because the derivation uses only
+**Reductions in canonical order.** The bounds and costs that combine results
+from every rank are reduced in one fixed order. Forward-pass costs from all ranks
+are gathered into one buffer in canonical scenario order and reduced there: by
+compensated summation for an exact bound under the expectation, by the nested
+risk-measure recursion over the enumerated scenario tree for an exact bound under
+a risk-averse measure, and by a streaming mean and variance for a sampled bound.
+The lower bound is evaluated on one rank from the first stage's openings in
+canonical order and broadcast, and simulation costs are likewise gathered in
+canonical scenario order and reduced there. None of these reductions therefore
+depends on how work is partitioned. See [Performance](/running/performance/) for
+the rank partition and the collectives.
+
+**Deterministic seed derivation across MPI ranks.** Each draw is produced by a
+pseudo-random number generator seeded from a value derived deterministically
+from a root seed and a tuple that identifies the draw. The tuple depends on the
+sampling method and on the pass:
+
+- **In-sample forward pass:** (base seed, iteration, scenario, stage), under
+  every sampling method; it selects an opening.
+- **Opening tree, Monte Carlo sampling:** (base seed, opening index, stage).
+- **Opening tree, batch method** (Latin hypercube or quasi-Monte Carlo): a batch
+  method draws all of a stage's openings together, so the tuple is (base seed,
+  stage).
+- **Out-of-sample forward pass:** a forward seed, separate from the base seed,
+  with the stage replaced by the stage's noise group. Under Monte Carlo sampling
+  the tuple is (forward seed, iteration, scenario, noise group); under a batch
+  method (forward seed, iteration, noise group) seeds the iteration's batch, and
+  the scenario's index selects its point.
+
+Because the derivation uses only
 globally known constants and an identical deterministic hash, every rank
 independently computes the same seed for any given tuple without communicating.
 There are no broadcast races, no per-rank entropy, and no dependence on MPI
@@ -204,8 +248,8 @@ message ordering. See [Scenario Generation](/math/scenario-generation) for
 the hash input encoding and the little-endian byte layout that ensures
 cross-platform stability.
 
-**Rank-invariant terminal-boundary injection.** When a study seeds its terminal
-cost-to-go from an imported boundary policy, the imported cut set is reconciled
+**Rank-invariant terminal-boundary injection.** When a study imports its
+terminal function from a boundary policy, the imported cut set is reconciled
 onto the study's own terminal state **once** — the dated, hour-weighted fan-out
 and per-family reconciliation described in
 [Post-Study Boundary §4](/math/post-study-boundary) — and the single reconciled
@@ -214,7 +258,7 @@ reconciliation is a pure function of globally known inputs: the imported source
 policy, together with the current study's own stage calendar and state layout —
 quantities every rank already holds. It therefore does not depend on the number
 of ranks, on how work is partitioned, or on which rank reads the source policy.
-Every rank injects the same terminal cut set, so the seeded outer approximation,
+Every rank injects the same terminal cut set, so the imported terminal function,
 and every lower bound and cut derived from it, is identical across topologies —
 the same rank-count invariance already established for internally generated cuts,
 trial points, and simulation costs.
@@ -261,34 +305,102 @@ or the memory consumed across runs, even at identical inputs. These quantities
 are functions of hardware load, OS scheduling, memory allocator behaviour, and
 MPI library implementation — none of which are under Cobre's control.
 
-**Compiler-optimisation-driven floating-point reorderings within a single
-hardware target.** The IEEE 754 standard allows implementations to fuse multiply-
-add operations and, under `-ffast-math` or equivalent flags, to reassociate
-floating-point additions. Cobre does not use relaxed floating-point flags on
-production builds, so this source of variation is suppressed in practice. The
-determinism guarantee nonetheless applies only to builds with identical compiler
-flags and compiler versions targeting the same hardware. Moving to a different
-compiler version, a different optimisation level, or a different target
-architecture is not guaranteed to preserve bit-identical results.
+**System load.** Background processes, thermal throttling, NUMA placement, and
+other system-state effects change timing, not the numerical result of any
+iteration, and are not recorded. Under a wall-clock stopping criterion
+([Stopping Rules §3](/math/stopping-rules#3-time-limit)), elapsed time decides
+the iteration at which training stops, so system load and thread count can
+change how many iterations a single-process run completes; two such runs agree
+iteration by iteration up to the earlier stop. Under such a criterion each rank
+of a multi-rank run measures elapsed time on its own clock and the ranks do not
+reconcile the stop ([multi-rank runs](/running/configuration/#time_limit)), so
+iteration count, not elapsed time, is the reproducible bound of such a run.
+
+**Different builds.** A binary built with another compiler, other compiler
+flags, another LP backend, another target, or from another release is another
+binary, and the guarantee makes no promise across binaries; the single-process
+`cobre` and the `cobre-mpi` release assets are two such builds. Runs on different
+processor models are not promised equal either, nor is a multi-node job whose
+nodes differ in processor model, since the system libraries a binary loads can
+select code paths by processor features.
 
 **Cross-platform binary equality of output files.** Timestamps, schema-version
 fields, and file-format padding may differ across platforms and library versions.
 The guarantee covers the numerical content of the outputs, not the raw bytes of
 the output files. Independent re-derivation of numerical content is the subject
-of [Reproducibility and Provenance](/math/reproducibility-and-provenance).
+of section 5.
 
-## 5. Pairing with Provenance
+**Policy reuse across software versions.** A stored policy loads only in the
+software version that wrote it, so the guarantee covers re-deriving a policy
+from its recorded inputs, not loading a stored policy in another version (see
+[Version gate](/running/policy-management/#version-gate)).
+
+## 5. Provenance
 
 Determinism is the algorithmic property; provenance is the bookkeeping that
-makes it actionable. Knowing that Cobre is deterministic is useful only if the
-inputs that determine the output are themselves recorded. The companion chapter
-[Reproducibility and Provenance](/math/reproducibility-and-provenance) defines
-what Cobre records — input fingerprints, random-seed lineage, solver and library
-identifiers, and execution topology — and what that recording enables: independent
-re-derivation of cuts and policy, audit trails for regulatory or scientific
-reporting, and diff-of-runs analysis. The sharp boundary between the two
-chapters is intentional: this chapter proves the property exists; the companion
-chapter proves it can be exercised.
+makes it actionable. A guarantee that identical inputs produce identical results
+is empty if the inputs are unknown. Cobre therefore records, with every run,
+metadata from which anyone who holds the run's inputs can re-derive its
+numerical content — the same cuts, the same policy, and the same simulation
+costs — by re-running it within the scope of sections 1 and 4, without the
+original operator or any other context. The commitment covers numerical content,
+not file bytes. The files that carry the record are a software-layer concern.
+
+### 5.1 What Is Recorded
+
+- **Stochastic-model provenance.** Which source fed each part of the inflow
+  model — the seasonal statistics, the autoregressive coefficients, the
+  correlation, and the opening tree — and, for a fitted model, the
+  order-selection method and the largest order selected. For how opening-tree
+  entries are generated from these parts, see
+  [Scenario Generation](/math/scenario-generation).
+- **Random-seed lineage.** The base seed: the run metadata records it as the
+  study configures it, or records none when the study configures none and the
+  run uses a fixed default, and a stored policy records the base seed in effect.
+  Every derived seed follows from a root seed — the base seed, or the separate
+  seed of an out-of-sample forward pass — by the fixed rule of
+  [Scenario Generation](/math/scenario-generation); the out-of-sample seed is
+  read from the study's configuration and is not recorded.
+- **Solver and library identifiers.** The LP solver and its version, the MPI
+  library of an MPI run, and the software version. A different solver version
+  makes a different build, which may terminate at different optimal bases and
+  therefore produce different, equally valid cuts (section 3); the identifiers
+  show whether two runs used the same solver and software versions.
+- **Execution topology.** The rank count, the threads per rank, and the hosts.
+  Section 1 guarantees that the rank and thread counts do not change the
+  numerical results of one binary; the recorded topology lets an auditor re-run
+  under the original one and check that claim.
+
+Cobre records no hash of the input files, so a study's case directory is kept
+with its outputs.
+
+### 5.2 What This Enables
+
+**Independent re-derivation of cuts and policy.** A researcher, auditor, or
+collaborator who holds a run's inputs and its recorded metadata can reproduce
+every cut coefficient and every policy decision without any communication with
+the original operator. Cobre's methodology is open to external verification.
+
+**Audit trail for regulatory or scientific reporting.** Studies submitted to
+regulators or cited in scientific literature must be traceable. An auditor
+presented with the recorded metadata and the corresponding case directory can
+verify that the reported results follow from those inputs by re-running Cobre
+and comparing outputs. The audit does not depend on trust in the operator.
+
+**Diff-of-runs analysis.** When two runs produce different outputs, comparing
+their recorded metadata and their case directories isolates where the runs
+diverged — in the case data, the configuration, the stochastic model, the seed,
+or the solver and software versions — and narrows the root cause of the
+difference to one or more of these.
+
+## Implementation in Cobre
+
+The methodology above defines what Cobre guarantees and what every run records;
+the tab below lists the output files and field names that carry that record.
+
+<Tabs>
+  <TabItem label="Inputs & Outputs"><ProvenanceIO /></TabItem>
+</Tabs>
 
 ## Cross-References
 
@@ -300,6 +412,5 @@ chapter proves it can be exercised.
   bit-identical lower-bound sequence guarantee
 - [LP Formulation](/math/lp-formulation) — LP construction determinism; the
   column and row ordering that the canonical state-block layout preserves
-- [Reproducibility and Provenance](/math/reproducibility-and-provenance) — The
-  companion chapter that records what enables independent verification of the
-  determinism guarantee
+- [LP Warm-Start](/math/lp-warm-start) — The basis store whose chain order §3
+  pins

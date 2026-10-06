@@ -37,6 +37,10 @@ For a glossary of domain terms used throughout the book, see
   Convergence analysis, complexity bounds, and risk-averse extensions for SDDP.
   _Cited in [Risk Measures](/math/risk-measures) §11._
 
+- **Dowson, O.** (2020). The policy graph decomposition of multistage stochastic programming problems. _Networks_, 76(1), 3–23. [doi:10.1002/net.21932](https://doi.org/10.1002/net.21932)
+  Defines the policy graph: nodes with local subproblems and cut pools, linked by probability-weighted arcs.
+  _Cited in [Policy Graphs](/math/policy-graphs) §4._
+
 ---
 
 ## Cut Management and Convergence
@@ -62,7 +66,7 @@ For a glossary of domain terms used throughout the book, see
 
 - **Philpott, A.B., de Matos, V.L. & Finardi, E.C.** (2013). On solving multistage stochastic programs with coherent risk measures. _Operations Research_, 61(4), 957–970. [doi:10.1287/opre.2013.1175](https://doi.org/10.1287/opre.2013.1175)
   Time-consistent risk-averse SDDP with CVaR. Dual representation and aggregation weights for risk-averse cut generation.
-  _Cited in [Risk Measures](/math/risk-measures) §11 and [Upper Bound Evaluation](/math/upper-bound-evaluation) §12._
+  _Cited in [Risk Measures](/math/risk-measures) §11 and [Upper Bound Evaluation](/math/upper-bound-evaluation) (References)._
 
 ---
 
@@ -70,7 +74,7 @@ For a glossary of domain terms used throughout the book, see
 
 - **Costa, B.F.P. & Leclère, V.** (2023). Duality of upper bounds in stochastic dynamic programming. _Optimization Online_. [optimization-online.org/?p=23738](https://optimization-online.org/?p=23738)
   Duality framework for inner-approximation upper bounds. Basis for the SIDP inner-approximation estimator described in [Upper Bound Evaluation](/math/upper-bound-evaluation).
-  _Cited in [Upper Bound Evaluation](/math/upper-bound-evaluation) §12._
+  _Cited in [Upper Bound Evaluation](/math/upper-bound-evaluation) (References)._
 
 ---
 
@@ -122,7 +126,7 @@ For a glossary of domain terms used throughout the book, see
 
 - **Dowson, O. & Kapelevich, L.** (2021). SDDP.jl: A Julia Package for Stochastic Dual Dynamic Programming. _INFORMS Journal on Computing_, 33(1), 27–33. [doi:10.1287/ijoc.2020.0987](https://doi.org/10.1287/ijoc.2020.0987). Documentation: [sddp.dev](https://sddp.dev/stable/).
   Reference SDDP implementation in Julia. Influenced cut-management patterns, sampling-scheme abstractions, the state-pinning cut-extraction technique (realised in Cobre via column bounds and reduced costs), and notation conventions in Cobre.
-  _Cited in [Notation Conventions](/overview/notation-conventions), [LP Formulation](/math/lp-formulation) §11, [Cut Management](/math/cut-management) §2, [Scenario Generation](/math/scenario-generation) §3, [Risk Measures](/math/risk-measures) §3._
+  _Cited in [Notation Conventions](/overview/notation-conventions), [LP Formulation](/math/lp-formulation) §11, [Cut Management](/math/cut-management) §2, [Scenario Generation](/math/scenario-generation) §3, [Risk Measures](/math/risk-measures) §3, [Policy Graphs](/math/policy-graphs) §4._
 
 - **Huangfu, Q. & Hall, J.A.J.** (2018). Parallelizing the dual revised simplex method. _Mathematical Programming Computation_, 10(1), 119–142. [doi:10.1007/s12532-017-0130-5](https://doi.org/10.1007/s12532-017-0130-5)
   HiGHS dual simplex implementation. HiGHS is Cobre's default LP solver.
@@ -133,7 +137,7 @@ For a glossary of domain terms used throughout the book, see
 
 - **Curtis, A.R. & Reid, J.K.** (1972). On the automatic scaling of matrices for Gaussian elimination. _IMA Journal of Applied Mathematics_, 10(1), 118–124. [doi:10.1093/imamat/10.1.118](https://doi.org/10.1093/imamat/10.1.118)
   Geometric-mean matrix equilibration — the row/column scaling heuristic Cobre applies to condition the stage LP.
-  _Cited in [LP Formulation](/math/lp-formulation) §12._
+  _Cited in [LP Layout and Scaling](/math/lp-layout-and-scaling) §2._
 
 - **Higham, N.J.** (2002). Computing the nearest correlation matrix — a problem from finance. _IMA Journal of Numerical Analysis_, 22(3), 329–343. [doi:10.1093/imanum/22.3.329](https://doi.org/10.1093/imanum/22.3.329)
   The nearest positive-semidefinite / correlation-matrix problem underlying the clip-negative-eigenvalues projection used when factorising the spatial correlation matrix.

@@ -64,12 +64,10 @@ Maceira & Damázio iterative reduction it triggers are applied automatically
 whenever Cobre estimates from `inflow_history.parquet`. Three runtime details
 sit alongside that rule but are not part of the derivation:
 
-- **`min_observations_per_season` is a warning, not a load-time error.** When
-  a (hydro, season) group has fewer **fully-covered stage occurrences of that
-  season** than the configured value (default 30) — occurrences whose
-  historical window is only partially covered are excluded from the count —
-  Cobre logs a warning naming the plant and season and proceeds with the fit
-  anyway.
+- **`min_observations_per_season`**: a recommended minimum that only draws a
+  warning, never an error; see
+  [Configuration — `estimation`](/running/configuration/#estimation) for how
+  groups are counted and when the warning is drawn.
 - **A season with a single observation rejects the case.** Whenever Cobre
   estimates from `inflow_history.parquet`, it first estimates the seasonal
   statistics from the history, even when the case also supplies
@@ -119,7 +117,7 @@ order-stable parallel fitting guarantee: coefficients are fit independently
 per hydro and reassembled into a canonical per-hydro slot, so the fitted
 model is a function of the inputs alone — independent of how many threads
 run or how hydros are distributed across them. See
-[Determinism Guarantees §3](/math/determinism-guarantees) for the full
+[Determinism & Provenance §3](/math/determinism-guarantees#3-methodology-mechanisms) for the full
 mechanism, which this chapter's estimation pipeline shares with the
 computed-FPHA fitting pipeline described in
 [Hydro Production Models](/math/hydro-production-models).

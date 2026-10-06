@@ -17,9 +17,9 @@ This document follows [SDDP.jl](https://sddp.dev/stable/) notation conventions f
 | $\omega \in \Omega_t$ | Opening (a realization of the stage noise) at stage $t$ |
 | $j \in \{1, \ldots, N_t\}$ | Opening index within the opening tree of stage $t$ |
 | $N_t$ | Branching factor: the number of openings of stage $t$ |
-| $p(\omega)$ | Probability of opening $\omega$, uniform: $p(\omega) = 1/N_t$ |
+| $p(\omega)$ | Probability of opening $\omega$, uniform: $p(\omega) = 1/N_t$; on a policy graph, $p_{n'}(\omega)$, uniform within node $n'$ |
 | $n$ | Node of a policy graph |
-| p₁, p₂, … | Transition probabilities of the edges leaving a policy-graph node, as the policy-graph diagrams label them; they sum to $1$ over the node's edges |
+| $P(n \to n')$ | Transition probability of the edge from node $n$ to its child $n'$ (the policy-graph diagrams label the edges p₁, p₂, …); the probabilities of a node's edges sum to $1$ |
 | $x_t$ | State vector at the end of stage $t$; $x_0$ is the initial state |
 | $\hat{x}_{t-1}$ | Incoming state of stage $t$ (the trial point) |
 | $u_t$ | Control vector of stage $t$ |
@@ -30,13 +30,12 @@ This document follows [SDDP.jl](https://sddp.dev/stable/) notation conventions f
 | $V_t(x)$                 | Value function (cost-to-go) at stage $t$  |
 | $\mathbb{E}_{\omega_t}$ | Expectation over the opening of stage $t$ |
 | $\theta_t$ | Epigraph variable approximating $V_{t+1}(x_t)$ |
-| $\theta_\omega$ | Per-opening future-cost variable of the multi-cut formulation |
 | $\pi$                    | Dual variables (row Lagrange multipliers) |
 | $(\beta_0, \beta)$ | Cut intercept and coefficients: the cut $\theta_t \geq \beta_0 + \beta^\top x_t$ |
 | $i$ | Cut index ($\beta_{0,i}$, $\beta_i$) |
 | $\underline{V}_\tau(x)$ | Outer (cut) approximation of the value function, $\max_i \{\beta_{0,i} + \beta_i^\top x\}$, per stage, or per season $\tau$ of a cyclic policy graph |
 | $k$                      | Iteration counter                         |
-| $\underline{z}^k$ | Lower bound at iteration $k$ (deterministic, from the cuts): the stage-1 value of the outer approximation |
+| $\underline{z}^k$ | Lower bound at iteration $k$: the first stage's risk-adjusted value over its openings with the current cuts |
 | $\bar{z}^k$ | Upper-bound estimate at iteration $k$: the mean discounted cost of the iteration's $M$ forward-pass trajectories, a statistical estimate; exact, $\bar{z}_{\text{exact}}$, under an enumerated forward pass |
 | $M$, $m$ | Number of trajectories averaged in the upper-bound estimate, and the trajectory index $m \in \{1, \ldots, M\}$ |
 | $N_{\text{forward\_passes}}$ | Number of forward-pass trajectories per iteration |
@@ -50,8 +49,9 @@ This document follows [SDDP.jl](https://sddp.dev/stable/) notation conventions f
 | $V'(v)$ | Slope of the one-reservoir value function at a trial storage $v$: the slope of the tangent cut in the value-function figures |
 | $\text{iterations}$ | Number of training iterations, in growth orders such as $\mathcal{O}(\text{iterations} \times N_{\text{forward\_passes}})$ |
 | $\mathcal{O}(\cdot)$ | Asymptotic order of a count or cost |
-| $\rho^{\lambda, \alpha}$ | Convex-combination risk measure, $\rho^{\lambda, \alpha}[Z] = (1 - \lambda)\, \mathbb{E}[Z] + \lambda\, \text{CVaR}_\alpha[Z]$; per stage, $\rho_t$ |
+| $\rho^{\lambda, \alpha}$ | Convex-combination risk measure, $\rho^{\lambda, \alpha}[Z] = (1 - \lambda)\, \mathbb{E}[Z] + \lambda\, \text{CVaR}_\alpha[Z]$; per stage, $\rho_t$, the measure of the stage that owns a cut, which aggregates the next stage's openings into it |
 | $\lambda$ | Risk-aversion weight, $\lambda \in [0, 1]$: $0$ is risk-neutral, $1$ is pure CVaR |
+| $\mu^*$ | Risk-adjusted probability weights of a cut: $\mu^* = (1-\lambda)\, p + \lambda\, q^*$, between the floor $(1-\lambda)\, p_\omega$ and the cap $(1-\lambda)\, p_\omega + \lambda\, p_\omega / \alpha$ |
 | $\alpha$ | CVaR tail fraction, $\alpha \in (0, 1]$; $\alpha = 1$ gives the expectation |
 | $\text{CVaR}_\alpha$ | Conditional value-at-risk: the expected cost over the worst $\alpha$-fraction of outcomes |
 | $\mathrm{VaR}_\alpha$ | Value-at-risk: the $(1 - \alpha)$-quantile of the cost, the optimal $\eta$ |
@@ -65,23 +65,23 @@ This document follows [SDDP.jl](https://sddp.dev/stable/) notation conventions f
 A glyph takes a second meaning only on pages that never carry its first; each such reuse is declared here:
 
 - $k$ indexes the blocks of a stage, $k \in \mathcal{K}$, in the System Modelling chapters and [Scenario Generation](/math/scenario-generation); it counts training iterations in [SDDP Algorithm](/math/sddp-algorithm), [Cut Management](/math/cut-management), [LP Warm-Start](/math/lp-warm-start), [Stopping Rules](/math/stopping-rules), [Upper Bound Evaluation](/math/upper-bound-evaluation), [Horizon Modes](/math/horizon-modes), [Discount Rate](/math/discount-rate), [The SDDP Framework in One Page](/overview/sddp-framework-overview) and the worked examples; in [PAR(p) Inflow Model](/math/par-inflow-model) it is the candidate order of the partial-autocorrelation test.
-- $k_{max}$ is the number of slots in every anticipated thermal's commitment ring in [LP Formulation](/math/lp-formulation); in [Stopping Rules](/math/stopping-rules) it is the iteration limit.
+- $k_{max}$ is the number of slots in every anticipated thermal's commitment ring in [State Augmentation](/math/state-augmentation); in [Stopping Rules](/math/stopping-rules) it is the iteration limit.
 - $\ell$ is the lag index of the autoregressive inflow model; in [Stopping Rules](/math/stopping-rules) and [Upper Bound Evaluation](/math/upper-bound-evaluation) it indexes the leaf paths of an enumerated scenario tree.
 - $\lambda$ is the risk-aversion weight of the convex-combination risk measure; in [PAR(p) Inflow Model](/math/par-inflow-model) $\lambda_i$ are the eigenvalues of the correlation matrix, and in [LP Formulation](/math/lp-formulation), [System Elements](/math/system-elements) and [Hydro Production Models](/math/hydro-production-models) $\lambda_{h,b}$ is the share of cell $(h, b)$ in the turbine capacity of plant $h$.
-- $L$ is the last filling stage of a filling hydro in [LP Formulation](/math/lp-formulation) and [Penalty System](/math/penalty-system); in [PAR(p) Inflow Model](/math/par-inflow-model) it is the lower-triangular Cholesky factor of the correlation matrix, and in [Upper Bound Evaluation](/math/upper-bound-evaluation) $L_t$ is the Lipschitz constant of the stage-$t$ value function.
+- $L$ is the last filling stage of a filling hydro in [LP Formulation](/math/lp-formulation) and [Penalty System](/math/penalty-system); in [PAR(p) Inflow Model](/math/par-inflow-model) it is the lower-triangular Cholesky factor of the correlation matrix, and in [Upper Bound Evaluation](/math/upper-bound-evaluation) $L_t$ is the vector of per-state-component Lipschitz constants $L_{t,j}$ of the stage-$t$ value function.
 - $\psi_{m,\ell}$ is the autoregressive coefficient of the inflow model ($\psi^*_{m,\ell}$ standardized; $\psi^{A*}_m$ and $\psi^A_m$ the annual coefficient of PAR(p)-A); in [Risk Measures](/math/risk-measures) $\psi(p, \mu)$ is the penalty function of the dual representation of a convex risk measure.
 - A hat on a state quantity marks its incoming (trial) value ($\hat{x}_{t-1}$, $\hat{v}_h$, $\hat{a}_{h,\ell}$); a hat on a model parameter marks its sample estimate from the historical record ($\hat{\mu}_m$, $\hat{s}_m$, $\hat{\rho}_m(\ell)$); the two never decorate the same base symbol.
 - $\tau_k$ is the duration of block $k$; in [Stopping Rules](/math/stopping-rules) $\tau$ is the bound-stalling window, and in [Horizon Modes](/math/horizon-modes) and [Upper Bound Evaluation](/math/upper-bound-evaluation) it indexes the seasons of a cyclic policy graph.
-- $\phi(v, q, s)$ is the exact hydro production function in [Hydro Production Models](/math/hydro-production-models); in [LP Formulation](/math/lp-formulation) $\phi_{h,k}$ is the arrival density that spreads a maturing in-transit volume over the blocks of its arrival stage; in [PAR(p) Inflow Model](/math/par-inflow-model) $\phi$ names the AR-coefficient notation of other implementations, which that chapter writes $\psi$.
+- $\phi(v, q, s)$ is the exact hydro production function in [Hydro Production Models](/math/hydro-production-models); in [LP Formulation](/math/lp-formulation) and [State Augmentation](/math/state-augmentation) $\phi_{h,k}$ is the arrival density that spreads a maturing in-transit volume over the blocks of its arrival stage; in [PAR(p) Inflow Model](/math/par-inflow-model) $\phi$ names the AR-coefficient notation of other implementations, which that chapter writes $\psi$.
 - $i$ is the Benders cut index; in [PAR(p) Inflow Model](/math/par-inflow-model) $(i, j)$ index the rows and columns of the periodic Yule-Walker system, in [Scenario Generation](/math/scenario-generation) $i$ indexes the entities of a correlation group, and in [Upper Bound Evaluation](/math/upper-bound-evaluation) it indexes the vertices of the inner approximation.
 - $j$ is the thermal-plant index; in [Scenario Generation](/math/scenario-generation), [SDDP Algorithm](/math/sddp-algorithm) and the worked examples it indexes the openings of a stage, and in [Cut Management](/math/cut-management) and [Upper Bound Evaluation](/math/upper-bound-evaluation) it indexes the components of the state vector.
 - $M$ is the number of seasons in the cycle of the inflow model and of a cyclic policy graph; in [Hydro Production Models](/math/hydro-production-models) it is the number of FPHA hyperplanes of a plant, and in [SDDP Algorithm](/math/sddp-algorithm), [Discount Rate](/math/discount-rate) and [Upper Bound Evaluation](/math/upper-bound-evaluation) the number of forward-pass trajectories of an iteration.
 - $m$ indexes the seasons of the inflow model, with $m(t)$ the season of stage $t$, and, in $\gamma^m$ and $\pi^{fpha}_m$, the planes $m \in \mathcal{M}_h$ of an FPHA model; in [SDDP Algorithm](/math/sddp-algorithm), [Discount Rate](/math/discount-rate) and [Upper Bound Evaluation](/math/upper-bound-evaluation) it indexes trajectories, forward-pass or simulated.
-- $N$ is the number of hydro plants; in [Scenario Generation](/math/scenario-generation) it is the uniform branching factor of the scenario tree ($N_t = N$), in [SDDP Algorithm](/math/sddp-algorithm) the number of threads, and in [Upper Bound Evaluation](/math/upper-bound-evaluation) the number of out-of-sample simulation scenarios.
+- $N$ is the number of hydro plants; in [Scenario Generation](/math/scenario-generation) it is the uniform branching factor of the scenario tree ($N_t = N$), and in [Upper Bound Evaluation](/math/upper-bound-evaluation) the number of out-of-sample simulation scenarios.
 - $n$ is a node of a policy graph or of an enumerated scenario tree; in [Horizon Modes](/math/horizon-modes) it counts cycle repetitions, in [LP Formulation](/math/lp-formulation), [System Elements](/math/system-elements), [Equipment Formulations](/math/equipment-formulations) and [Penalty System](/math/penalty-system) it is the transmission-line index, in [PAR(p) Inflow Model](/math/par-inflow-model) it is the dimension of the correlation matrix with eigenvalues $\lambda_1, \ldots, \lambda_n$, and in [Hydro Production Models](/math/hydro-production-models) the superscript of $h_{tail}^{(n)}$ indexes the segments of a piecewise-quartic tailrace curve.
 - $p(\omega)$ is the probability of opening $\omega$; in [Hydro Production Models](/math/hydro-production-models) $p$ is the security-curve fraction of the maximum stored energy, and in [LP Formulation](/math/lp-formulation), [System Elements](/math/system-elements) and [Equipment Formulations](/math/equipment-formulations) $p_{y,k}$ is the pumped flow of station $y$.
 - $Q_t$ is the optimal value of the stage-$t$ LP as a function of its incoming state; in [Hydro Production Models](/math/hydro-production-models) $Q$ is the turbined-flow coordinate of the FPHA fitting grid.
-- $q_{h,k}$ is the turbined flow of hydro $h$; in [Upper Bound Evaluation](/math/upper-bound-evaluation) $q_{n \to n'}$ is the conditional probability of reaching child node $n'$ from node $n$ of an enumerated scenario tree.
+- $q_{h,k}$ is the turbined flow of hydro $h$; in [Upper Bound Evaluation](/math/upper-bound-evaluation) $q_{n \to n'}$ is the conditional probability of reaching child node $n'$ from node $n$ of an enumerated scenario tree; in [Risk Measures](/math/risk-measures) $q^*$ is the vector of CVaR tail weights.
 - $r_h$ is the water-withdrawal target of hydro $h$ in [LP Formulation](/math/lp-formulation), [System Elements](/math/system-elements), [Block Formulations](/math/block-formulations) and [Penalty System](/math/penalty-system); in [PAR(p) Inflow Model](/math/par-inflow-model) and [Scenario Generation](/math/scenario-generation) $r_m$ is the standardized innovation scale of season $m$, and in [Discount Rate](/math/discount-rate) $r_t$ is the annual discount rate that applies to stage $t$.
 - $u_{h,k}$ is the diversion flow of hydro $h$, and $u$ indexes the unit groups of a (hydro, bus) cell, in the System Modelling chapters; in [SDDP Algorithm](/math/sddp-algorithm), [Risk Measures](/math/risk-measures), [Upper Bound Evaluation](/math/upper-bound-evaluation), [Horizon Modes](/math/horizon-modes), [Discount Rate](/math/discount-rate), [The SDDP Framework in One Page](/overview/sddp-framework-overview) and the [Glossary](/reference/glossary) $u_t$ is the control vector of the stage problem.
 - $w_k$ is the weight of block $k$ in the System Modelling chapters; in [Upper Bound Evaluation](/math/upper-bound-evaluation) $w_m$ is the census weight of simulation scenario $m$, in [PAR(p) Inflow Model](/math/par-inflow-model) $w$ indexes the rolling windows of a season bucket, and in [Multi-Resolution Studies](/math/multi-resolution-studies) $w_{t,\mathcal{W}}$ is the share of lag period $\mathcal{W}$ covered by stage $t$.
@@ -151,7 +151,7 @@ Two term choices are pinned corpus-wide:
 | $\Omega_t$ | Openings of stage $t$ |
 
 :::note[Entity Indexing]
-Every operational entity index set above ($\mathcal{B}$, $\mathcal{H}$, $\mathcal{T}$, $\mathcal{R}$, $\mathcal{L}$, $\mathcal{C}$, $\mathcal{P}$) is enumerated in the canonical $(\text{operational\_start\_date}, \text{id})$ order: primarily by each entity's operational start date, then — among entities sharing a date — by its unique id. This is the order every state block, the dense LP column layout, and the output column order follow. See [Determinism Guarantees](/math/determinism-guarantees) and [LP Formulation](/math/lp-formulation).
+Every operational entity index set above ($\mathcal{B}$, $\mathcal{H}$, $\mathcal{T}$, $\mathcal{R}$, $\mathcal{L}$, $\mathcal{C}$, $\mathcal{P}$) is enumerated in the canonical $(\text{operational\_start\_date}, \text{id})$ order: primarily by each entity's operational start date, then — among entities sharing a date — by its unique id. This is the order every state block, the dense LP column layout, and the output column order follow. See [Determinism & Provenance](/math/determinism-guarantees) and [LP Layout and Scaling](/math/lp-layout-and-scaling).
 :::
 
 ## 3. Parameters
@@ -376,7 +376,7 @@ Slack variables for soft constraints:
 A row dual $\pi$ is the Lagrange multiplier of one LP row: the rate at which the optimal stage cost changes per unit increase of the row's right-hand side.
 The cut slope $\beta$ is a subgradient of the value function $V_t$ with respect to the incoming state at the trial point $\hat{x}_{t-1}$; each component equals the dual of the bound that pins its state coordinate at the trial value.
 Its components include the storage slope $\beta^v_h$, the AR-lag slope $\beta^{lag}_{h,\ell}$ and the slopes on the in-transit buckets and the anticipated ring slots; with the stored intercept $\beta_0$ they form the cut $(\beta_0, \beta)$ of §1.
-Sign convention: more incoming storage lowers the cost-to-go wherever the extra water displaces thermal generation or deficit, so the storage slope $\beta^v_h$ is non-positive there, and it can turn positive where the extra water can only leave the reservoir at a cost; see [Cut Management](/math/cut-management) for the cut coefficients and [LP Formulation](/math/lp-formulation) for the rows and the state pinning.
+Sign convention: more incoming storage lowers the cost-to-go wherever the extra water displaces thermal generation or deficit, so the storage slope $\beta^v_h$ is non-positive there, and it can turn positive where the extra water can only leave the reservoir at a cost; see [Cut Management](/math/cut-management) for the cut coefficients, [LP Formulation](/math/lp-formulation) for the rows and [State Augmentation](/math/state-augmentation) for the state pinning.
 
 | Symbol           | Row                              | Meaning                                                 |
 | ---------------- | -------------------------------- | ------------------------------------------------------- |
@@ -387,9 +387,11 @@ Sign convention: more incoming storage lowers the cost-to-go wherever the extra 
 ## Cross-References
 
 - [LP Formulation](/math/lp-formulation) — Complete LP subproblem using this notation
+- [State Augmentation](/math/state-augmentation) — the state vector, its pinning, the outgoing state and the state families' mechanics
+- [LP Layout and Scaling](/math/lp-layout-and-scaling) — column and row layout, prescaling and cost scale
 - [SDDP Algorithm](/math/sddp-algorithm) — Algorithm overview and cut generation process
 - [Cut Management](/math/cut-management) — Cut coefficient computation and aggregation details
 - [PAR Inflow Model](/math/par-inflow-model) — Detailed PAR(p) model using inflow parameters defined here
 - [Hydro Production Models](/math/hydro-production-models) — FPHA plane coefficients ($\gamma$) and productivity ($\rho$)
 - [Equipment Formulations](/math/equipment-formulations) — Thermal, contract, pumping variable notation
-- [What Cobre Solves](/overview/what-cobre-solves) — methodology principles (reproducibility, determinism, declaration order invariance, code as ground truth, agent-readability) that frame this book
+- [What Cobre Solves](/overview/what-cobre-solves) — the methodology principles: reproducibility, determinism, declaration order invariance and agent-readability

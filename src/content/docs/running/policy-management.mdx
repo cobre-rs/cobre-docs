@@ -46,9 +46,12 @@ cuts count as the initial future-cost approximation.
 ```
 
 Use `"warm_start"` to continue training from a previous run's cuts, for example
-with more iterations or other stopping rules. A warm-start load reads the whole
-saved policy, so it must pass every check of the
-[Policy Load Contract](#policy-load-contract).
+with more iterations or other stopping rules. The loop runs up to the largest
+`iteration_limit` in `training.stopping_rules`, and that limit counts only the new
+iterations: a warm start with limit 20 runs up to 20 iterations on top of the
+loaded cuts, whereas under [Resume](#resume) the limit also counts the completed
+iterations. A warm-start load reads the whole saved policy, so it must pass every
+check of the [Policy Load Contract](#policy-load-contract).
 
 ### Resume
 
@@ -148,15 +151,18 @@ previous slice's checkpoint and trains up to a larger iteration total. A slice
 must finish, and write its checkpoint, before its wall time ends: a job killed
 first writes no checkpoint, and its iterations are lost. Run every slice on the
 same case with the same output directory: each slice reads the previous
-checkpoint from `policy.path` and writes its own checkpoint back to it.
+checkpoint from `policy.path` and writes its own checkpoint back to it. Under
+MPI every rank loads that checkpoint, so the output directory is visible at the
+same path on every node.
 
 **Multi-rank (MPI) jobs** slice with `iteration_limit` only. Size each slice from
 the [`time_total_ms`](/reference/output-format/#trainingconvergenceparquet) trend
 in the previous slice's `training/convergence.parquet`, which holds only the
 iterations of the slice that wrote it. Per-iteration time grows as cuts
 accumulate, so leave a margin. The stopping-rule set holds no `time_limit`
-entry, not even as a fallback, because each rank evaluates `time_limit` on its
-own clock and the stop decision is not reconciled across ranks.
+entry, not even as a fallback, because each rank times `time_limit` from its own
+start of training and the ranks do not reconcile the stop decision, even on a
+single node.
 
 Slice 1 trains to the first iteration total:
 
@@ -183,7 +189,7 @@ total, which counts the iterations of all earlier slices:
 **Single-process runs** may end each slice with a `time_limit` rule, measured
 from the start of that slice's training. Keep an `iteration_limit` holding the
 total in the set, because without one training stops at 100 iterations, and leave
-[`stopping_mode`](/running/configuration/#stopping_mode) at its default, `"any"`,
+[`stopping_mode`](/running/configuration/#trainingstopping_mode) at its default, `"any"`,
 so that `time_limit` alone ends a slice. Cobre checks `time_limit` after each
 iteration, so a slice runs up to one iteration past `seconds`. Set `seconds`
 below the job's wall time by that iteration, the case load, and the checkpoint
@@ -210,7 +216,7 @@ The five `policy.checkpointing` keys (`enabled`, `initial_iteration`,
 `interval_iterations`, `store_basis`, and `compress`) are accepted and have no
 effect. Cobre writes one checkpoint at the end of training, always with its LP
 bases (see [Stored-basis gate](#stored-basis-gate)); the keys are listed under
-[Configuration](/running/configuration/#checkpointing).
+[Configuration](/running/configuration/#policycheckpointing).
 
 ---
 
@@ -241,7 +247,10 @@ policy/
 ```
 
 File names are zero-padded to three digits (`NNN.bin`). Under `cuts/`, the id
-is the **pool id**; under `basis/` and `states/`, the id is the **stage id**.
+is the **pool id**; under `basis/`, it is the policy-graph node's canonical
+0-based position (not its declared node id); under `states/`, it is the 0-based
+stage position. On a stage chain the node position and the stage position
+coincide.
 The file name itself is not read for identity — each buffer carries its own
 id internally, and the reader derives pool/stage identity from the payload,
 never from the name.
@@ -374,7 +383,7 @@ counts, while a full-FCF load refuses the change.
 ## Cost-Scale Canonicalization
 
 Cobre's objective cost-scale factor
-([`modeling.cost_scale_factor`](/running/configuration/#cost_scale_factor))
+([`modeling.cost_scale_factor`](/running/configuration/#modelingcost_scale_factor))
 is configurable per study. Cut coefficients and intercepts are computed in the
 solving study's internally scaled cost space, so policy export and load
 convert between that scaled space and a canonical, scale-independent
@@ -414,26 +423,34 @@ from one over the in-memory policy that wrote it.
 
 Boundary cuts allow a Cobre study to load terminal-stage future cost function
 (FCF) approximations from a different Cobre policy checkpoint. This is the
-mechanism for **model coupling** — a short-horizon study (e.g., weekly+monthly
-coupled study) can use the long-horizon policy (e.g., a monthly long-horizon model)
-as its terminal boundary condition, ensuring that end-of-horizon decisions
-account for the long-term future cost of water.
+mechanism for **chained studies**: a downstream study imports one cut pool of an
+upstream study's policy as its terminal boundary condition, so its
+end-of-horizon decisions account for the upstream study's future cost of water.
+The downstream study may have a shorter horizon or finer stages than the
+upstream one. For the method, see
+[Post-Study Boundary & Chained Studies §5](/math/post-study-boundary#5-chained-studies).
 
 ### How it works
 
-1. **Run a monthly study** and produce a policy checkpoint (the "outer" model).
-   The checkpoint comes from a Cobre training run or is authored in Python
+1. **Run the upstream study** to produce a policy checkpoint, or author the
+   checkpoint in Python
    ([Read and Write Checkpoints from Python](#read-and-write-checkpoints-from-python)).
-2. **Run a weekly+monthly study** with `policy.boundary` pointing to the
-   monthly checkpoint. Cobre selects the source pool priced at the coupled
+2. **Run the downstream study** with `policy.boundary` pointing to the
+   upstream checkpoint. Cobre selects the source pool priced at the downstream
    study's **terminal boundary date** — the last non-negative stage's
    `end_date` — and injects its cuts into the terminal stage's row pool as
    fixed boundary conditions. There is no stage-index knob: the pool is chosen
    by matching that date against each source pool's own priced-state date.
 
 The imported boundary cuts are **not updated** by the SDDP training algorithm.
-They remain fixed throughout training and simulation, providing a floor on
-the terminal-stage future cost.
+Their coefficients remain fixed throughout training and simulation, and the
+active ones provide a floor on the terminal-stage future cost.
+The `training.cut_selection.max_active_per_stage` setting
+([`cut_selection`](/running/configuration/#trainingcut_selection)) caps the active cuts
+of every pool, including the terminal pool that holds the imported boundary
+cuts, and only cuts generated in the current iteration are exempt, so a cap
+below the number of active imported boundary cuts evicts (deactivates) some of
+them.
 
 ### Configuration
 
@@ -444,7 +461,7 @@ Add a `boundary` object to the `policy` section of `config.json`:
   "policy": {
     "mode": "fresh",
     "boundary": {
-      "path": "../monthly_study/output/policy",
+      "path": "../upstream_study/output/policy",
       "strict": false
     }
   }
@@ -453,7 +470,7 @@ Add a `boundary` object to the `policy` section of `config.json`:
 
 | Field    | Type    | Default | Description                                                                                                                                                                                            |
 | -------- | ------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `path`   | string  | —       | Path to the source checkpoint directory; see [`policy.boundary`](/running/configuration/#boundary) for how it resolves.                                                                                |
+| `path`   | string  | —       | Path to the source checkpoint directory; see [`policy.boundary`](/running/configuration/#policyboundary) for how it resolves.                                                                          |
 | `strict` | boolean | `false` | Governs a **superset** source (one pricing an entity or commitment this study does not model). `false` drops the surplus, records it in the reconciliation report, and loads; `true` rejects the load. |
 
 When `boundary` is absent or `null`, no boundary cuts are loaded (the default).
@@ -474,8 +491,8 @@ binding to the current study's slot for the same entity. A source coordinate
 that couples a state slot the current study does not model cannot be carried; it
 is reported in a **per-family reconciliation summary** and dropped, and the load
 still **succeeds** by default. See
-[Post-Study Boundary §4](/math/post-study-boundary) for the reconciliation
-mechanism.
+[Post-Study Boundary & Chained Studies §4](/math/post-study-boundary#4-calendar-reconciliation-fan-out) for the
+reconciliation mechanism.
 
 That leniency is the default reconcile path, but the load still enforces hard
 requirements. A boundary load runs its checks in this order, and the first
@@ -492,8 +509,15 @@ failure stops the run:
 4. **Single-node source.** The resolved pool is a single-node terminal pool, not
    one shared across several study nodes. A shared pool is refused with
    `boundary policy at {path}: a boundary source must be a single-node terminal pool; the resolved pool is shared by multiple nodes`.
-5. **Inflow-lag depth.** An internal consistency check that a user case does not
-   trigger. A message starting `internal:` is a Cobre defect; report it.
+5. **Inflow-lag depth.** Before building the study, Cobre reads the deepest
+   inflow-lag slot that any cut pool of the boundary checkpoint references and
+   extends the study's inflow-lag state to at least that depth
+   ([Post-Study Boundary & Chained Studies §5.2](/math/post-study-boundary#52-compatibility-conditions));
+   when the depth is above zero, `cobre run` without `--quiet` prints
+   `Boundary policy: inflow-lag depth {d}` while loading. This check confirms
+   that the resolved pool references no lag deeper than the extended state, so
+   a user case does not trigger it. A message starting
+   `internal:` is a Cobre defect; report it.
 6. **Season and PAR order.** When the study declares a season cycle, the
    source's `season_manifest` is present and agrees with the study's season
    cycle, season count, and per-hydro PAR orders.
@@ -565,6 +589,37 @@ is rejected regardless of `strict`:
 - **Missing inflow-lag** — the source has no inflow-lag coefficient at a depth
   the study needs: `boundary policy has no inflow-lag coefficient for {names}: the boundary is lag-depth-incompatible with the current study`.
 
+**Lag-date reject.** A source inflow-lag coefficient and the current study's
+inflow-lag slot for the same hydro and depth may each carry a reference date.
+When both are dated and the dates differ, the load is rejected regardless of
+`strict`; this reject runs after list item 10 and before list item 11:
+`boundary policy's inflow-lag coefficient for hydro {id} at lag depth {depth} references a different past than the current study: boundary {date}, current {date}`.
+
+**Lag coverage and dating.** An interior source pool, any pool other than the
+upstream study's terminal pool, carries inflow-lag coefficients only when its
+successor stage's
+[`stages[].state_variables`](/math/cut-management/#stagesstate_variables--cut-projection)
+selection includes `inflow_lags`, which defaults to `false`. The terminal pool
+of a trained upstream study is sized by that study's full state, with every
+inflow-lag slot of that state, whatever the selection; training never adds a
+cut to it, so it holds only the cuts loaded into it, such as that study's own
+boundary cuts. The current (downstream) study's terminal state has inflow-lag
+slots when its own inflow model is autoregressive or when any pool of the
+source references a lag (the extension of list item 5), and a source pool that
+lacks a coefficient for any of those slots is rejected with the
+**Missing inflow-lag** message. An autoregressive upstream study always
+triggers that extension, because its terminal pool references every lag of its
+state even when it holds no cuts. To chain from an interior pool, set
+`inflow_lags: true` on the upstream stage that follows the source pool's stage.
+Each study dates its own lags: lag 1 by the start date of the pool's own stage,
+and each deeper lag by the start date of one stage further back in that
+study's full stage list, pre-study stages included. The source pool's stage and
+the current study's last stage must therefore start on the same date, and so
+must each pair of stages the same number of places before them, down to the
+deepest lag both sides date, or the lag-date reject applies. In particular, it
+applies wherever several stages of the current study together span one source
+stage within that depth.
+
 **Superset behavior (`strict`).** When the source prices _more_ than the study
 models, the surplus source slots are dropped during reconciliation either way.
 With `strict: false` (the default) the drop is recorded in the reconciliation
@@ -582,28 +637,31 @@ paths:
   line `N copied, N fanned out, N defaulted to 0.0, N dropped`.
 - **`cobre validate --json`** emits a boundary object with `configured`,
   `boundary_date`, and `report` fields carrying the full per-family report
-  (worked example under [Configuration → boundary](/running/configuration/#boundary)).
+  (worked example under [Configuration → boundary](/running/configuration/#policyboundary)).
 - **`cobre validate`** (human mode) prints `boundary policy priced at {date}`
   followed by the one-line summary
   `boundary reconciliation: N copied, N fanned out, N defaulted to 0.0, N source slots dropped`.
 
 ### Production coupling workflow
 
-The typical production coupling pipeline uses boundary cuts as follows:
+A chained-study pipeline uses boundary cuts as follows:
 
 ```d2
 direction: down
 
-monthly: "Monthly study\npolicy checkpoint: cut pools priced by date" {shape: rectangle}
-coupled: "Weekly+monthly coupled study\n(W1 · W2 · W3 · W4 · M2)" {shape: rectangle}
+upstream: "Upstream study\npolicy checkpoint: cut pools priced by date" {shape: rectangle}
+downstream: "Downstream (chained) study" {shape: rectangle}
 
-monthly -> coupled: "policy.boundary.path = ../monthly/output/policy\nsource pool priced at the coupled study's terminal date → terminal FCF"
+upstream -> downstream: "policy.boundary.path = ../upstream_study/output/policy\nsource pool priced at the downstream study's terminal date → terminal FCF"
 ```
 
-The coupled study's terminal stage (M2) receives the monthly model's March
-cuts as its future cost function. The lag accumulation mechanism ensures that
-the state vector's lag values at the terminal stage are monthly averages,
-making the imported cut coefficients evaluate correctly.
+The upstream study writes a policy checkpoint whose cut pools are each priced at
+a date. The downstream study names that checkpoint in `policy.boundary.path`,
+and the pool priced at the downstream study's terminal boundary date becomes its
+terminal future cost function. The dependency runs one way: the upstream study
+never reads the downstream one. The conditions under which the imported cuts
+apply to the downstream study's state are in
+[Post-Study Boundary & Chained Studies §5.2](/math/post-study-boundary#52-compatibility-conditions).
 
 ### Interaction with warm-start
 
@@ -615,15 +673,15 @@ Boundary cuts and warm-start are independent features. You can combine them:
     "mode": "warm_start",
     "path": "./policy",
     "boundary": {
-      "path": "../monthly/output/policy"
+      "path": "../upstream_study/output/policy"
     }
   }
 }
 ```
 
-This loads the previous coupled study's own cuts via warm-start AND loads
-the monthly model's boundary cuts at the terminal stage. Both sets of cuts
-contribute to the lower bound.
+This loads the downstream study's own cuts from its previous run via
+warm-start AND loads the upstream policy's boundary cuts at the terminal stage.
+Both sets of cuts contribute to the lower bound.
 
 ---
 

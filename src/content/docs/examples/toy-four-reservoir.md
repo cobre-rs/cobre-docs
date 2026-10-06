@@ -12,18 +12,20 @@ four-reservoir, four-bus system, still using a 0-order
 phenomena that the single-reservoir case cannot exhibit:
 
 - **Multi-dimensional cuts.** The cut becomes a hyperplane with one
-  storage coefficient per reservoir; the optimiser must balance
-  releases across plants by reading the per-storage reduced cost of
-  each pinned incoming-storage column.
+  storage coefficient per reservoir: the probability-weighted reduced
+  cost of that reservoir's pinned incoming-storage column.
 - **Per-bus dispatch with independent supply.** Each bus carries its
   own demand and is served by its local hydro and a local thermal;
   the LP solves the regional dispatches simultaneously inside one
   stage problem.
 
-Cobre ships an actual reference case at `examples/4ree/` modelling the
-four-region Brazilian interconnected system (SUDESTE, SUL, NORDESTE,
-NORTE) with 24 monthly stages, 126 thermals, and two transmission
-lines (SUDESTE–SUL and SUDESTE–NORDESTE). The shipped case has no
+Cobre's repository ships a reference case at `examples/4ree/` modelling
+the four-region Brazilian interconnected system (SUDESTE, SUL, NORDESTE,
+NORTE) over 12 monthly stages (January to December 2015), with 126
+thermals, five buses and five transmission lines. The fifth bus,
+NOFICT1, is a fictitious transit node with no load and no generation;
+the lines are SUDESTE–SUL, SUDESTE–NORDESTE, SUDESTE–NOFICT1,
+NORDESTE–NOFICT1 and NORTE–NOFICT1. The shipped case has no
 inter-reservoir cascade coupling (each region's reservoir is
 independent), no spatial inflow correlation, and uses a constant
 hydro productivity model. This walkthrough preserves those
@@ -34,7 +36,7 @@ reproduction of the shipped case.**
 
 The chapter does not cover transmission, cascade coupling, the FPHA
 production model, an infinite-horizon cyclic policy, multi-resolution
-coupling, or risk measures. Those topics are addressed in the
+studies, or risk measures. Those topics are addressed in the
 chapters cited in section 8.
 
 ---
@@ -200,9 +202,10 @@ drawn independently.
 
 The three openings used in the backward pass correspond to a single
 shared $\varepsilon \in \{-1, 0, +1\}$ applied uniformly to all four
-hydros (a simplifying choice — in the production code each hydro
-draws its own $\varepsilon$ and the joint distribution lives over a
-larger sample-tree). Each opening has equal probability $p = 1/3$.
+hydros (a simplifying choice: in cobre each opening is one noise vector
+with a value for every stochastic entity, each hydro included, so the
+hydros' inflows need not move together). Each opening has equal
+probability $p = 1/3$.
 
 ---
 
@@ -215,7 +218,8 @@ the per-bus thermal and deficit costs at each stage.
 
 Because at the initial state every bus has enough hydro plus storage
 to meet demand from hydro alone, stages 1–3 carry zero cost. Stage 4
-runs water-short on three of the four buses.
+runs water-short on two of the four buses, and a third (B3) has exactly
+enough.
 
 **Stage 1** — incoming storage $\hat x_0 = (30, 30, 20, 20)$, inflows
 $(15, 12, 10, 8)$. At every bus, $q_h = D_b$ (demand met from hydro);
@@ -248,7 +252,8 @@ $$
 Stage cost: $0$.
 
 **Stage 4** — $\hat x_3 = (0, 6, 5, 8)$, inflows $(15, 12, 10, 8)$.
-Now three buses go water-short:
+Now two buses go water-short, and B3's available water exactly meets
+its demand:
 
 | Bus | $\hat v_{h,3}$ | $a$ | Avail. | $D$ | $q$ | $g^{th}$ | $\delta$ |
 | --- | ---------- | --- | ------ | --- | --- | -------- | -------- |
@@ -312,9 +317,12 @@ hydro alone have $\beta^v_h = 0$.
 | B3  | 15     | 15  | 15  | 0        | 0          | $0$       |
 | B4  | 16     | 12  | 12  | 0        | 0          | $0$       |
 
-$Q_4(\omega_2) = 600$. B3 is at a knife edge ($D = $ avail.); the
-walkthrough takes the basis returning $\beta^v_3(\omega_2) = 0$ (extra
-storage flows to terminal $x_4$ which has zero value).
+$Q_4(\omega_2) = 600$. B3 is at a kink (available water exactly meets
+demand): one more unit of storage ends in the terminal $x_4$, which has
+zero value, while one unit less needs one unit of thermal worth $50$.
+Every value in $[-50, 0]$ is a valid subgradient; as in the
+single-reservoir walkthrough, the walkthrough takes the rate for one
+more unit of storage, $\beta^v_3(\omega_2) = 0$.
 
 **$\omega_3$ (wet):**
 
@@ -366,9 +374,10 @@ $$
 = \tfrac{2900 - 600 - 250}{3} = \tfrac{2050}{3} \approx 683.3.
 $$
 
-The probability-weighted expected stage-4 cost at the trial is
-$\bar Q_4 = (1/3)(1200 + 600 + 250) = 2050/3 \approx 683.3$. The cut is
-tight at the trial point, as required for cut validity. ✓
+This equals the probability-weighted expected stage-4 cost at the
+trial point, $\bar Q_4 = (1/3)(1200 + 600 + 250) = 2050/3 \approx 683.3$:
+the cut is exact there by construction, and it lies on or below the
+expected stage-4 cost at every other storage vector.
 
 The four storage coefficients $(-50, -100/3, -50/3, 0)$ rank by how
 much each reservoir reduces expected future cost. H1 is the most
@@ -410,22 +419,26 @@ $$
 
 Several practical consequences follow:
 
-**Per-reservoir marginal water value.** The four slopes
-$\bar\beta^v_h$ at the iteration-1 stage-3 cut — $-50$, $-100/3$,
-$-50/3$, $0$ — encode where storage matters most at the visited
-trial point. The optimiser at stage 3 sees these slopes and
-preferentially holds water at H1 (highest marginal value) and
-releases water at H4 (zero marginal value) when both choices are
-available.
+**Per-reservoir slopes.** At the terminal stage the buses share no
+constraint, so the stage problem splits into four independent bus
+problems, and each slope of the iteration-1 stage-3 cut comes from its
+own bus alone: $\bar\beta^v_h$ averages the reduced cost of hydro $h$'s
+pinned incoming-storage column over the three openings, whatever the
+other reservoirs hold. The slopes are $-50$, $-100/3$, $-50/3$ and $0$:
+one more unit at H1 saves $50$ in every opening, and one more unit at H4
+saves nothing at this trial point. The cut stacks four independent
+marginal water values; trading water between reservoirs needs a
+coupling that the caricature leaves out, such as transmission or a
+cascade (section 8).
 
-**Cut tightness is local, not global.** The cut is a tangent
-hyperplane at the trial point only; far from the trial point the
-hyperplane is a loose lower bound on the true value function. The
-forward pass spreads trial points across the storage state space as
-iterations progress, and each new trial point produces a cut that
-tightens the approximation in its neighbourhood. The pointwise
-maximum over many such hyperplanes converges to the convex value
-function.
+**Cut tightness is local, not global.** Each cut equals the expected
+cost the backward pass computed at its trial point; far from the trial
+point it can be a loose lower bound on the cost-to-go. The forward pass
+spreads trial points across the storage state space as iterations
+progress, and each new trial point produces a cut that tightens the
+approximation in its neighbourhood. When the cuts bound the cost-to-go
+from below and when the approximation converges is set out in
+[Cut Management — when bounds and certificates hold](/math/cut-management#when-bounds-and-certificates-hold).
 
 **Per-bus thermal regime drives slope structure.** A bus whose
 thermal is always idle (B4 in this trial) gets $\bar\beta^v_h = 0$;
@@ -439,17 +452,18 @@ where every reservoir's storage carries a non-zero marginal value.
 
 ## 7. Convergence on This Case
 
-The relative gap (the percent form of the
-[optimality gap](/math/stopping-rules#optimality-gap))
-narrows as cuts accumulate. Convergence is faster than for one
-reservoir because the four-reservoir cuts contain four times as much
-information per iteration, but the state space being explored is also
-larger; the practical iteration counts depend on the demand-to-inflow
-ratios, the reservoir capacities, and the variance of the inflows.
-The stopping rule fires when the gap falls below the configured
-tolerance or the iteration limit is reached — see
-[Stopping Rules](/math/stopping-rules) for the available
-criteria.
+The percent form of the
+[optimality gap](/math/stopping-rules#optimality-gap) divides the gap
+by the magnitude of the lower bound, $\lvert\underline{z}^k\rvert$
+(floored at one currency unit). The iteration count needed to close it
+depends on the demand-to-inflow ratios, the reservoir capacities and
+the variance of the inflows, and the upper bound of a sampled forward
+pass is a statistical estimate that certifies nothing
+([Cut Management — Tier 3](/math/cut-management#tier-3-gap-certificate)).
+The shipped `4ree` runs four sampled forward passes per iteration and
+stops at its iteration limit of 256; cobre rejects a `gap` stopping
+rule at setup under a sampled forward pass. See
+[Stopping Rules](/math/stopping-rules) for the available criteria.
 
 ---
 
@@ -458,9 +472,9 @@ criteria.
 The toy walkthrough above keeps to four reservoirs at four buses with
 no transmission. It does not cover:
 
-- **Transmission networks**: the actual `examples/4ree/` case has two
-  transmission lines (SUDESTE–SUL, SUDESTE–NORDESTE) that allow
-  cheap thermal at one bus to serve another. With transmission, the
+- **Transmission networks**: the shipped `examples/4ree/` case has five
+  transmission lines, three of them through the fictitious transit bus
+  NOFICT1, that let cheap generation at one bus serve another. With transmission, the
   load balance becomes a network constraint and the per-bus thermal
   share depends on line capacities and exchange costs. The cut
   structure does not change — still one storage coefficient per
@@ -483,28 +497,32 @@ no transmission. It does not cover:
   multivariate normal via spectral factorisation. See
   [PAR Inflow Model §6](/math/par-inflow-model#6-spatial-correlation-factorisation).
 - **Autoregressive inflow memory**: a PAR(p) model with $p \geq 1$
-  adds one lag state variable per hydro per lag and one AR-lag cut
-  coefficient per lag; the cut becomes a hyperplane in storage _and_
-  lag state space.
+  adds one lag state variable per hydro per lag; whether a stage's cuts
+  carry a coefficient for each lag is that stage's cut-state projection
+  ([State Augmentation §7](/math/state-augmentation#7-cut-state-projection)).
 - **Risk measures**: CVaR weighting that shifts cut aggregation
   probabilities away from uniform $p = 1/N_t$ toward worst scenarios,
   raising cut intercepts and slopes in the dry direction. See
   [Risk Measures](/math/risk-measures).
-- **Cyclic policy graphs**: the four-stage horizon terminates without
-  a cut linking back to stage 1. Cyclic-mode SDDP — periodic policy
-  graphs where the last stage's cuts would feed into the first stage —
-  is a reserved target design; Cobre's policy graph loader accepts only
-  `finite_horizon` today. See [Horizon Modes](/math/horizon-modes).
-- **Multi-resolution coupling**: weekly intra-stage blocks embedded
-  in a monthly horizon, with policy transfer between resolutions.
-  See [Multi-Resolution Studies](/math/multi-resolution-studies).
+- **Cyclic policy graphs**: the four-stage horizon ends without a cut
+  linking back to stage 1. A cyclic (periodic) policy graph, in which
+  the first stage's cost-to-go would feed the last stage, is a reserved
+  design: `stages.json` accepts only `finite_horizon` as
+  `policy_graph.type` and rejects `cyclic` at case load. See
+  [Horizon Modes](/math/horizon-modes#1-finite-acyclic-mode).
+- **Multi-resolution studies**: stages of different lengths in one
+  horizon, for example a weekly head followed by a monthly tail,
+  sharing one set of cuts. See
+  [Multi-Resolution Studies](/math/multi-resolution-studies).
 
 ---
 
 ## Cross-References
 
 - [Toy Single-Reservoir Walkthrough](/examples/toy-single-reservoir) — Single-reservoir baseline; core SDDP loop, 0-order inflow, forward/backward/cut in the simplest setting
-- [LP Formulation](/math/lp-formulation) — Complete stage LP, column and row layout, column-bound state pinning, reduced-cost extraction
+- [LP Formulation](/math/lp-formulation) — Complete stage LP
+- [LP Layout and Scaling](/math/lp-layout-and-scaling) — Column and row layout
+- [State Augmentation](/math/state-augmentation) — Column-bound state pinning, reduced-cost extraction
 - [System Elements](/math/system-elements) — Hydro plant element, cascade topology (not exercised here), water-balance convention, FPHA overview
 - [Hydro Production Models](/math/hydro-production-models) — Constant-productivity (used here) and FPHA hyperplane fitting; impact on Benders cut coefficients
 - [PAR Inflow Model](/math/par-inflow-model) — Inflow model definition; the $p = 0$ degenerate case (white noise) used here; spatial correlation factorisation for multivariate cases

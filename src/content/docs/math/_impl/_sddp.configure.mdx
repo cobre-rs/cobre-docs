@@ -7,12 +7,10 @@ above ([§3.2 Backward Pass](/math/sddp-algorithm#32-backward-pass),
 
 ### `training.parallelism` — Backward-Pass Scheduler Configuration
 
-`parallelism` groups result-preserving worker-scheduling knobs alongside the
-algorithm-semantics fields at the `training` root — a pure addition; no
-existing `training` field moved. Its sole member, `backward_scheduler`,
-selects how backward-pass work units are claimed by workers. It is tagged on
-`method`; supplying a field that does not belong to the selected method is a
-load-time error (`deny_unknown_fields`), not a silently ignored key.
+`parallelism` groups result-preserving worker-scheduling knobs at the
+`training` root. Its sole member, `backward_scheduler`, selects how
+backward-pass work units are claimed by workers. It is tagged on `method`;
+unknown fields, including a field of another method, are rejected at load.
 
 | `method`        | Default | Work unit                                                                          |
 | ---------------- | :-----: | ----------------------------------------------------------------------------------- |
@@ -47,7 +45,7 @@ load-time error (`deny_unknown_fields`), not a silently ignored key.
 
 Two configurations are load-time errors, not silently accepted:
 
-- `block_size` supplied under `"by_scenario"` — rejected (`deny_unknown_fields`).
+- `block_size` supplied under `"by_scenario"` — rejected at load (unknown field).
 - `block_size: 0` — rejected (minimum `1`).
 
 Within a stage, opening-blocks are claimed **hardest-first**: blocks are

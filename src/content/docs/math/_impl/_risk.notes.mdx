@@ -1,0 +1,22 @@
+Non-normative software behavior for risk measures — what Cobre computes, beyond
+the equations above. This tab states the weighting Cobre applies and references
+the methodology body
+([§7](/math/risk-measures#7-cut-generation-with-risk-measures)) for the weights
+it derives rather than restating them.
+
+### Applied CVaR weights
+
+Cobre fills the costliest openings, in descending order of cost, up to
+$(1-\lambda)\,p_\omega + \lambda\,p_\omega/\alpha$ and gives the other openings no
+weight, with no $(1-\lambda)\,p_\omega$ floor. The measure it applies is
+therefore the CVaR at the tail fraction
+$\alpha' = \frac{\alpha}{\lambda + (1-\lambda)\,\alpha}$, because
+$(1-\lambda)\,p_\omega + \lambda\,p_\omega/\alpha = p_\omega/\alpha'$.
+The cuts and the training lower bound stay valid for that measure under the
+[Tier 1 hypotheses](/math/cut-management#tier-1-valid-lower-bound), because
+CVaR at $\alpha'$ is a coherent risk measure
+([Risk Measures §10](/math/risk-measures#10-lower-bound-validity-with-risk-measures)).
+Four equiprobable openings with costs 10,
+20, 30 and 40 at $\alpha = \lambda = 0.5$ give 31.25, the CVaR at
+$\alpha' = 2/3$, against the 30.0 of the convex combination in
+[Risk Measures §7](/math/risk-measures#7-cut-generation-with-risk-measures).

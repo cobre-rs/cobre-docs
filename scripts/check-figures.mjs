@@ -25,7 +25,7 @@
 // FAIL if violated (not just informational):
 //   • the three HPC stems (d07/d08/d09) appear in ZERO content files — they were
 //     never ported (scope: drop d07/d08/d09);
-//   • a `ConvergencePlot` (the re-homed d21) figure IS present in
+//   • a `ConvergencePanelsPlot` (the re-homed d21) figure IS present in
 //     `math/stopping-rules` (scope: port + re-home d21).
 //
 // index.mdx is intentionally IN scope: it keeps the harness/D2/mermaid renderer
@@ -294,7 +294,7 @@ function main() {
 
   // Track scope-confirmation evidence while walking.
   const hpcHits = []; // { rel, stem } — must stay empty
-  let convergencePlotHost = null; // rel of the file embedding <ConvergencePlot ...
+  let convergencePanelsPlotHost = null; // rel of the file embedding <ConvergencePanelsPlot ...
 
   for (const sourcePath of sourceFiles) {
     const rel = sourcePath.slice(contentRoot.length);
@@ -323,14 +323,14 @@ function main() {
       if (text.includes(stem)) hpcHits.push({ rel, stem });
     }
 
-    // Scope evidence: the re-homed d21 figure is a <ConvergencePlot ... embed in
+    // Scope evidence: the re-homed d21 figure is a <ConvergencePanelsPlot ... embed in
     // math/stopping-rules. Match the embed tag (a usage, not just the import) so
     // a dangling import without a render does not satisfy the assertion.
     if (
       rel.replace(/\\/g, "/").startsWith("math/stopping-rules") &&
-      /<ConvergencePlot[\s/>]/.test(text)
+      /<ConvergencePanelsPlot[\s/>]/.test(text)
     ) {
-      convergencePlotHost = rel;
+      convergencePanelsPlotHost = rel;
     }
   }
 
@@ -344,9 +344,9 @@ function main() {
     );
   }
 
-  if (convergencePlotHost === null) {
+  if (convergencePanelsPlotHost === null) {
     scopeErrors.push(
-      "scope: expected a <ConvergencePlot /> embed (the re-homed d21 figure) in math/stopping-rules, but none was found.",
+      "scope: expected a <ConvergencePanelsPlot /> embed (the re-homed d21 figure) in math/stopping-rules, but none was found.",
     );
   }
 
@@ -401,7 +401,7 @@ function main() {
 
   console.log(
     `check:figures: ${sourceFiles.length} content files checked, 0 retired-figure references; ` +
-      `d07/d08/d09 absent, ConvergencePlot (d21) present in ${convergencePlotHost}; ` +
+      `d07/d08/d09 absent, ConvergencePanelsPlot (d21) present in ${convergencePanelsPlotHost}; ` +
       `${islands.length} Plot islands import a tested src/figures module with role=img and a non-empty aria-label.`,
   );
   process.exit(0);

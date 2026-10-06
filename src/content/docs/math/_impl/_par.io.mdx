@@ -83,6 +83,12 @@ Rules Cobre enforces (or that silently mis-scale the model if broken):
   [Case Directory Format](/reference/case-directory-format/) and
   [Running Cobre — configuration](/running/configuration/)) — this applies on
   every load path, including a plain file-load with no fitting.
+- **The lags advance only under `season_definitions`.** A per-stage
+  `season_id` satisfies the rule above, but without `season_definitions` no
+  stage completes a lag period and the derived inflow-lag seed is all zero,
+  whatever `inflow_history` and `recent_observations` hold: the load succeeds
+  (with a warning that the initial inflow lags seed to 0), and every stage
+  receives those zero lags.
 
 ### Outputs
 
@@ -95,7 +101,7 @@ The entire `output/stochastic/` directory is written **only when the case sets `
 | `output/stochastic/inflow_annual_component.parquet` | Fitted PAR(p)-A annual triple — written only when `order_selection: "pacf_annual"` and the estimation path ran. |
 | `output/stochastic/fitting_report.json` | Per-hydro summary of the selected AR order and coefficients — a human-readable complement to the parquet outputs above. |
 | `output/stochastic/correlation.json` | Round-trip export of the resolved correlation model, in the same schema as the `scenarios/correlation.json` input. |
-| `output/stochastic/noise_openings.parquet` | The backward-pass opening tree actually used during training, exported when `exports.stochastic: true`. Copying it back into `scenarios/noise_openings.parquet` replays the same opening tree on a subsequent run — see [Scenario Generation](/math/scenario-generation) for the opening-tree mechanics themselves (out of scope here). |
+| `output/stochastic/noise_openings.parquet` | The backward-pass opening tree actually used during training, exported when `exports.stochastic: true`. Copying it back into `scenarios/noise_openings.parquet` replays the same opening tree on a subsequent run when the case's declared stage ids are 0, 1, 2, … (the export numbers stages by 0-based position, and the load refuses other ids) — see [Scenario Generation](/math/scenario-generation) for the opening-tree mechanics themselves (out of scope here). |
 
 For the complete output schema (columns, types, file layout), see the
 [Output Format](/reference/output-format/) reference page in the Reference

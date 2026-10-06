@@ -1,0 +1,22 @@
+{
+  "$schema": "https://raw.githubusercontent.com/cobre-rs/cobre/refs/tags/v0.17.0/schemas/initial_conditions.schema.json",
+  "storage": [
+    {
+      "hydro_id": 0,
+      "value_hm3": 500.0
+    },
+    {
+      "hydro_id": 1,
+      "value_hm3": 500.0
+    },
+    {
+      "hydro_id": 10,
+      "value_hm3": 500.0
+    },
+    {
+      "hydro_id": 11,
+      "value_hm3": 500.0
+    }
+  ],
+  "filling_storage": []
+}
