@@ -90,11 +90,11 @@ jobs:
       # (check:error-coverage reads them).
       # Only the binary is extracted, so the directory is empty after the move and
       # nothing is left in the checkout for the build.
-      - name: Install cobre (pinned v0.17.0, sha256-verified)
+      - name: Install cobre (pinned v0.18.0, sha256-verified)
         run: |
           cobre_tarball=cobre-cli-x86_64-unknown-linux-gnu.tar.xz
-          cobre_sha256=23916b4639c20b8f7a93aa24be1655c26167ddbeb3e3fa7d648e62e35a8309aa
-          curl -fsSL "https://github.com/cobre-rs/cobre/releases/download/v0.17.0/${cobre_tarball}" -o "${cobre_tarball}"
+          cobre_sha256=93cb730702539bb53e11667dd740995b4cf830333f6af3cb2fb1f96a35672baa
+          curl -fsSL "https://github.com/cobre-rs/cobre/releases/download/v0.18.0/${cobre_tarball}" -o "${cobre_tarball}"
           echo "${cobre_sha256}  ${cobre_tarball}" | sha256sum -c -
           tar xJf "${cobre_tarball}" cobre-cli-x86_64-unknown-linux-gnu/cobre
           sudo mv cobre-cli-x86_64-unknown-linux-gnu/cobre /usr/local/bin/cobre

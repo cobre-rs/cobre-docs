@@ -292,6 +292,21 @@ two constraints.
 }
 ```
 
+**A second positional block argument on one variable, equal or not.**
+
+```json title="constraints/generic_constraints.json" gc-check="reject"
+{
+  "constraints": [
+    {
+      "id": 1,
+      "name": "c1",
+      "expression": "thermal_generation(0, 0, 1) <= 10",
+      "slack": { "enabled": false }
+    }
+  ]
+}
+```
+
 ---
 
 ## Variable catalog

@@ -1268,7 +1268,6 @@ PumpingStation {id}: active at stage {stage_id} while its {side} hydro {hid} is 
 
 ### `WarmStartIncompatible`
 
-**Status:** Reserved.
 {/* quoted from source: crates/cobre-sddp/src/policy/policy_load.rs:704-709 and 736-741 at cobre v0.18.0 */}
 `cobre validate` reports a refused warm-start or simulation-only load as its `phase`, with the message labelled
 `<output dir>/<policy.path>: `, and exits `1`; a checkpoint the OS refuses to read reports `IoError` and exits `2`.
@@ -1282,7 +1281,6 @@ and
 
 ### `ResumeIncompatible`
 
-**Status:** Reserved.
 {/* quoted from source: crates/cobre-sddp/src/policy/policy_load.rs:704-709 and 736-741 at cobre v0.18.0 */}
 `cobre validate` reports a refused resume load as its `phase`, with the message labelled
 `<output dir>/<policy.path>: `, and exits `1`; a checkpoint the OS refuses to read reports `IoError` and exits `2`.

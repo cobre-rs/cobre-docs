@@ -15,4 +15,4 @@
 // sync and must always name an EXISTING tag, never a not-yet-cut one (the
 // cobre-ref test enforces equality).
 
-export const DEFAULT_COBRE_REF = "v0.17.0";
+export const DEFAULT_COBRE_REF = "v0.18.0";
