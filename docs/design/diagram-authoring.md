@@ -11,11 +11,8 @@ widgets) — those are user-facing onboarding artifacts for
 `methodology.cobre-rs.dev` and `cobre-rs.dev`. This guide is the rulebook
 for **every diagram you author inside a spec file**.
 
-> **Paths in this guide are post-promotion (repo-root).** All references such as
-> `src/content/docs/`, `src/components/`, `src/styles/diagrams.css`, and
-> `astro.config.mjs` assume the Starlight app sits at the repo root. Until the E9
-> `site/`→root promotion runs, those files live under `site/` (e.g.
-> `site/astro.config.mjs`).
+> **Paths in this guide are repo-root-relative**: `src/content/docs/`,
+> `src/components/`, `src/styles/diagrams.css`, and `astro.config.mjs`.
 
 ---
 
@@ -185,7 +182,7 @@ the tested-compute model over a static rendering approach.
 **Use when** the diagram is a composition of labeled boxes, data-flow arrows, or
 a spatial schematic (power-system one-line, hardware topology, LP column layout).
 D2 is the single tool for both topology/layout diagrams and spatial domain
-diagrams — the three-tool pipeline has no fourth option.
+diagrams — the two-tool pipeline (§1.1) has no third option.
 
 ### 4.1 Inline fence placement
 
@@ -270,7 +267,7 @@ it. See §2 for the TALA watermark rationale.
 
 ### 4.4 Reference implementations
 
-- `src/content/docs/math/lp-formulation.md` — inline ` ```d2 ` block (LP
+- `src/content/docs/math/lp-layout-and-scaling.md` — inline ` ```d2 ` block (LP
   column-layout schematic, d24)
 - `src/content/docs/math/par-inflow-model.mdx` — inline ` ```d2 ` block (PAR
   stored-vs-computed schematic, d23 equivalent)
@@ -278,7 +275,7 @@ it. See §2 for the TALA watermark rationale.
   (power-system one-line; exercises the semantic node-colour vocabulary in §4.2)
 - `src/content/docs/math/sddp-algorithm.mdx` — inline ` ```d2 ` block (the SDDP
   iteration-cycle **loop/flowchart**; a folded decision diamond)
-- `src/content/docs/examples/toy-single-reservoir.md` — inline ` ```d2 ` block
+- `src/content/docs/examples/toy-single-reservoir.mdx` — inline ` ```d2 ` block
   (network one-line with the semantic `hydro` / `thermal` / `deficit` classes)
 
 ### 4.5 Sizing & readability
@@ -387,9 +384,12 @@ d2 draws directed graphs natively:
   prose carries the detail; an overloaded node balloons the layout (a 3-line box
   in a 5-node vertical chain runs ~1.5k px tall).
 
-Starting point: the SDDP iteration-cycle loop in
-`src/content/docs/math/sddp-algorithm.mdx` §3 (forward → backward → converged? →
-loop / stop). The d2 source IS the spec source — no committed asset.
+Starting point: the SDDP iteration loop in
+`src/content/docs/math/sddp-algorithm.mdx` §3 — a forward-pass container, a
+backward-pass container whose solve → aggregate → synchronize chain loops over
+the stages, then cut selection, the lower bound and a "Stopping rules met?"
+diamond that loops back to the forward pass or exits to simulation. The d2
+source IS the spec source — no committed asset.
 
 ---
 
@@ -412,8 +412,10 @@ Observable Plot components do not need a numeric prefix — name by semantic rol
 
 Before committing a diagram change:
 
-- `npm run check:figures` — asserts every `.astro` island has a paired `src/figures/<name>.ts`
-  and `src/figures/<name>.test.ts`.
+- `npm run check:figures` — asserts every `src/components/*Plot.astro` island imports a
+  `src/figures/<name>.ts` that has a sibling `src/figures/<name>.test.ts`, and carries
+  `role="img"` with a non-empty `aria-label`; it also asserts the content corpus references
+  no retired figure.
 - `npm run check:d2` — asserts all ` ```d2 ` fences use ELK layout (no TALA).
 - `npm run check:math` — asserts math rendering parity (remark-math + rehype-katex).
 - `npm test` — runs the full test suite including `src/figures/*.test.ts`; the

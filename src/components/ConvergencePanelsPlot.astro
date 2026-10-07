@@ -1,0 +1,151 @@
+---
+// Render layer — Observable Plot island. Reads the theme palette from CSS vars
+// and re-renders on the light/dark toggle (Tier 2). Data comes from the tested
+// compute module (figures/convergence.ts), never hand-typed. The two panels are
+// facets of one plot, so they share the y scale by construction.
+---
+
+<div
+  id="convergence-panels-plot"
+  class="vf-plot"
+  role="img"
+  aria-label="Two panels of SDDP bound evolution: left, a monotone lower bound and a sampled upper bound whose 95% confidence band reaches below the lower bound late in the run; right, the same lower bound and an exact upper bound that stays above it and closes the gap"
+>
+</div>
+
+<script>
+  import * as Plot from "@observablehq/plot";
+  import { panels } from "../figures/convergence.ts";
+
+  function cssVar(name: string): string {
+    return getComputedStyle(document.documentElement)
+      .getPropertyValue(name)
+      .trim();
+  }
+
+  function render(): void {
+    const el = document.getElementById("convergence-panels-plot");
+    if (!el) return;
+
+    const text = cssVar("--dgm-text") || "#c8c6c2";
+    // The upper bounds and the confidence band are NOT hydro -> warm accent
+    // (Patina), per brand §2.4 #3 (Flow Blue is reserved for water marks). The
+    // lower bound rides --dgm-storage (copper). Literals mirror the palette.css
+    // fallbacks (warm, not blue).
+    const accent = cssVar("--dgm-accent") || "#4a8b6f";
+    const storage = cssVar("--dgm-storage") || "#b87333";
+
+    const sampledPanel = "sampled forward pass";
+    const exactPanel = "enumerated forward pass";
+    const { sampled, exact } = panels();
+    const sampledRows = sampled.map((d) => ({ ...d, panel: sampledPanel }));
+    const exactRows = exact.map((d) => ({ ...d, panel: exactPanel }));
+    const gapPoint = exactRows[10];
+    const gapSegment = [
+      { k: gapPoint.k, y: gapPoint.lb, panel: exactPanel },
+      { k: gapPoint.k, y: gapPoint.ubExact, panel: exactPanel },
+    ];
+    const legend = [
+      { panel: sampledPanel, label: "sampled upper bound", fill: accent, dy: 6 },
+      { panel: sampledPanel, label: "confidence band", fill: accent, dy: 22 },
+      { panel: sampledPanel, label: "lower bound", fill: storage, dy: 38 },
+      { panel: exactPanel, label: "exact upper bound", fill: accent, dy: 6 },
+      { panel: exactPanel, label: "lower bound", fill: storage, dy: 22 },
+    ];
+
+    el.replaceChildren(
+      Plot.plot({
+        width: 720,
+        height: 380,
+        marginTop: 40,
+        marginRight: 20,
+        marginBottom: 48,
+        marginLeft: 60,
+        style: { background: "transparent", color: text, fontSize: "13px" },
+        x: {
+          label: "iteration",
+          labelOffset: 40,
+          grid: true,
+          domain: [0, 25],
+          ticks: 5,
+        },
+        y: { label: "total expected cost", grid: true },
+        fx: {
+          label: null,
+          domain: [sampledPanel, exactPanel],
+          axis: "top",
+          tickSize: 0,
+          padding: 0.1,
+        },
+        marks: [
+          Plot.areaY(sampledRows, {
+            x: "k",
+            y1: "ciLo",
+            y2: "ciHi",
+            fx: "panel",
+            fill: accent,
+            fillOpacity: 0.2,
+          }),
+          Plot.line(sampledRows, {
+            x: "k",
+            y: "ubMean",
+            fx: "panel",
+            stroke: accent,
+            strokeWidth: 2,
+          }),
+          Plot.line(exactRows, {
+            x: "k",
+            y: "ubExact",
+            fx: "panel",
+            stroke: accent,
+            strokeWidth: 2,
+          }),
+          Plot.line([...sampledRows, ...exactRows], {
+            x: "k",
+            y: "lb",
+            fx: "panel",
+            z: "panel",
+            stroke: storage,
+            strokeWidth: 2.5,
+          }),
+          Plot.line(gapSegment, {
+            x: "k",
+            y: "y",
+            fx: "panel",
+            stroke: storage,
+            strokeWidth: 1.2,
+            strokeDasharray: "2 2",
+          }),
+          Plot.text([gapPoint], {
+            x: "k",
+            y: (d) => (d.lb + d.ubExact) / 2,
+            fx: "panel",
+            text: () => "gap",
+            fill: storage,
+            dx: 10,
+            textAnchor: "start",
+            fontWeight: 600,
+          }),
+          ...legend.map((entry) =>
+            Plot.text([entry], {
+              fx: "panel",
+              text: "label",
+              frameAnchor: "top-right",
+              textAnchor: "end",
+              dx: -8,
+              dy: entry.dy,
+              fill: entry.fill,
+              fontWeight: 600,
+            }),
+          ),
+        ],
+      }),
+    );
+  }
+
+  render();
+  new MutationObserver(render).observe(document.documentElement, {
+    attributes: true,
+    attributeFilter: ["data-theme"],
+  });
+</script>

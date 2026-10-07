@@ -1,0 +1,122 @@
+---
+// Render layer — Observable Plot island. Reads the theme palette from CSS vars
+// and re-renders on the light/dark toggle (Tier 2). Data comes from the tested
+// compute module (figures/cvarWeights.ts), never hand-typed.
+---
+
+<div
+  id="cvar-weights-plot"
+  class="vf-plot"
+  role="img"
+  aria-label="Bar chart of CVaR weights for four equiprobable openings with costs 10, 20, 30 and 40 at tail fraction α = 0.5 and risk weight λ = 0.5: nominal probability 0.25 each, floor 0.125 each, risk-adjusted weights 0.125, 0.125, 0.375 and 0.375"
+>
+</div>
+
+<script>
+  import * as Plot from "@observablehq/plot";
+  import { exampleRows } from "../figures/cvarWeights.ts";
+
+  function cssVar(name: string): string {
+    return getComputedStyle(document.documentElement)
+      .getPropertyValue(name)
+      .trim();
+  }
+
+  function render(): void {
+    const el = document.getElementById("cvar-weights-plot");
+    if (!el) return;
+
+    const text = cssVar("--dgm-text") || "#c8c6c2";
+    // Weights are NOT hydro -> no Flow Blue (brand §2.4 #3): the nominal
+    // reference is the neutral stroke, the floor rides the copper ramp and the
+    // risk-adjusted weight takes the warm accent (Patina). Literals mirror the
+    // palette.css fallbacks.
+    const neutral = cssVar("--dgm-stroke") || "#8b9298";
+    const curve = cssVar("--dgm-curve") || "#d4956a";
+    const accent = cssVar("--dgm-accent") || "#4a8b6f";
+
+    const nominal = "nominal probability";
+    const floor = "floor";
+    const adjusted = "risk-adjusted weight μ*";
+    const rows = exampleRows();
+    const bars = rows.flatMap((row) => [
+      { opening: String(row.cost), series: nominal, weight: row.nominal },
+      { opening: String(row.cost), series: floor, weight: row.floor },
+      { opening: String(row.cost), series: adjusted, weight: row.mu },
+    ]);
+
+    const seriesOrder = [nominal, floor, adjusted];
+    const legend = seriesOrder.map((series, i) => ({
+      series,
+      opening: String(rows[0].cost),
+      dy: -56 + 18 * i,
+    }));
+
+    el.replaceChildren(
+      Plot.plot({
+        width: 640,
+        height: 420,
+        marginTop: 84,
+        marginRight: 20,
+        marginBottom: 48,
+        marginLeft: 60,
+        style: { background: "transparent", color: text, fontSize: "13px" },
+        color: {
+          domain: seriesOrder,
+          range: [neutral, curve, accent],
+        },
+        fx: {
+          label: "opening cost",
+          labelOffset: 40,
+          axis: "bottom",
+          domain: rows.map((row) => String(row.cost)),
+          padding: 0.12,
+        },
+        x: { axis: null, domain: seriesOrder },
+        y: { label: "weight", grid: true },
+        marks: [
+          Plot.barY(bars, {
+            fx: "opening",
+            x: "series",
+            y: "weight",
+            fill: "series",
+          }),
+          Plot.text(bars, {
+            fx: "opening",
+            x: "series",
+            y: "weight",
+            text: (d) => d.weight.toFixed(3),
+            dy: -8,
+            fontSize: 11,
+          }),
+          Plot.ruleY([0]),
+          ...legend.flatMap((entry) => [
+            Plot.dot([entry], {
+              fx: "opening",
+              frameAnchor: "top-left",
+              symbol: "square",
+              r: 5,
+              dx: 14,
+              dy: entry.dy,
+              fill: "series",
+            }),
+            Plot.text([entry], {
+              fx: "opening",
+              frameAnchor: "top-left",
+              text: "series",
+              textAnchor: "start",
+              dx: 26,
+              dy: entry.dy,
+            }),
+          ]),
+        ],
+      }),
+    );
+  }
+
+  render();
+  new MutationObserver(render).observe(document.documentElement, {
+    attributes: true,
+    attributeFilter: ["data-theme"],
+  });
+</script>

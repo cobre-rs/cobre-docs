@@ -3,16 +3,16 @@ methodology above prices into the objective. Entity-level and stage-level
 overrides layer on top of these defaults through the resolution cascade
 described in [§1 Cascade Resolution](#1-cascade-resolution) and
 [§3 Penalty Defaults and Overrides](#3-penalty-defaults-and-overrides). This
-tab is the field-level configuration reference; the penalty-priority ordering
-itself stays in the methodology body above, not here.
+tab covers how the defaults are supplied, how overrides resolve and the checks
+Cobre runs on the configured costs; the penalty-priority ordering itself is in
+[Penalty Priority Ordering](#penalty-priority-ordering) above.
 
 ### `penalties.json` — Global Penalty Defaults
 
-`penalties.json` is required in every case directory. All four top-level
-sections — `bus`, `line`, `hydro`, `non_controllable_source` — are required,
-and every scalar cost must be strictly positive (`> 0.0`), with one exception:
-the hydro `turbined_cost` regularization cost is validated `>= 0.0` (a `0.0`
-turbined cost — no turbine-flow penalty — is valid).
+[Penalty Files](/reference/case-format/penalties/#penaltiesjson) owns
+the field table for `penalties.json` (every field, its type and the load rules).
+The example below sets the required costs only; the optional ones (the four
+directional costs and `inflow_nonnegativity_cost`) are omitted.
 
 ```json
 {
@@ -42,52 +42,22 @@ turbined cost — no turbine-flow penalty — is valid).
 }
 ```
 
-#### Bus Section
+Bus (`deficit_segments[].cost`, `excess_cost`), line (`exchange_cost`) and
+non-controllable-source (`curtailment_cost`) costs are in \$ per MWh. Hydro
+costs are in \$ per hm³ for `storage_violation_below_cost` and
+`filling_target_violation_cost`, in \$ per MWh for
+`generation_violation_below_cost`, and in \$ per (m³/s)·h for every other hydro
+cost.
 
-| Field              | Type   | Description                                                                                                          |
-| ------------------ | ------ | --------------------------------------------------------------------------------------------------------------------- |
-| `deficit_segments` | array  | Piecewise-linear deficit cost tiers — see [Bus `deficit_segments`](#bus-deficit_segments--two-tier-resolution) below. |
-| `excess_cost`      | number | Cost per MWh of excess (surplus) generation.                                                                          |
-
-#### Line Section
-
-| Field           | Type   | Description                                                                            |
-| --------------- | ------ | ---------------------------------------------------------------------------------------- |
-| `exchange_cost` | number | Cost per MWh of inter-bus exchange flow, applied to every transmission line in both flow directions. |
-
-#### Hydro Section
-
-| Field                                 | Type            | Description                                                                                       |
-| -------------------------------------- | --------------- | --------------------------------------------------------------------------------------------------- |
-| `spillage_cost`                        | number          | Spillage regularization cost.                                                                       |
-| `turbined_cost`                        | number          | Turbined-flow regularization cost, applied to every hydro's turbine column.                         |
-| `diversion_cost`                       | number          | Diversion-flow regularization cost.                                                                 |
-| `storage_violation_below_cost`         | number          | Storage-below-minimum violation cost.                                                               |
-| `filling_target_violation_cost`        | number          | Filling-target violation cost.                                                                      |
-| `turbined_violation_below_cost`        | number          | Turbined-flow-below-minimum violation cost.                                                         |
-| `outflow_violation_below_cost`         | number          | Total-outflow-below-minimum violation cost.                                                         |
-| `outflow_violation_above_cost`         | number          | Total-outflow-above-maximum violation cost.                                                         |
-| `generation_violation_below_cost`      | number          | Generation-below-minimum violation cost.                                                            |
-| `evaporation_violation_cost`           | number          | Symmetric evaporation-violation cost (both directions, when the two fields below are absent).       |
-| `evaporation_violation_pos_cost`       | number or null  | Optional over-evaporation override. Absent = the resolved symmetric `evaporation_violation_cost`.   |
-| `evaporation_violation_neg_cost`       | number or null  | Optional under-evaporation override. Absent = the resolved symmetric `evaporation_violation_cost`.  |
-| `water_withdrawal_violation_cost`      | number          | Symmetric water-withdrawal-violation cost.                                                          |
-| `water_withdrawal_violation_pos_cost`  | number or null  | Optional over-withdrawal override. Absent = the resolved symmetric `water_withdrawal_violation_cost`. |
-| `water_withdrawal_violation_neg_cost`  | number or null  | Optional under-withdrawal override. Absent = the resolved symmetric `water_withdrawal_violation_cost`. |
-| `inflow_nonnegativity_cost`            | number or null  | Optional inflow non-negativity slack cost. Absent defaults to `1000.0`.                              |
+A parallel stage prices its one evaporation slack pair over the stage hours,
+and a chronological stage each block's pair over the block hours
+([Signed Net Evaporation](#signed-net-evaporation)).
 
 The entity-level `hydros[].penalties` block that overrides these defaults per
-plant — together with the directional-cost fallback order and the
-`evaporation` / `filling` config blocks these particular costs price — is
-documented in the
-[Hydro Production Models Configure tab](/math/hydro-production-models#implementation-in-cobre).
-This chapter does not repeat that field list.
-
-#### Non-Controllable Source Section
-
-| Field              | Type   | Description                                        |
-| ------------------- | ------ | --------------------------------------------------- |
-| `curtailment_cost` | number | Cost per MWh of curtailed non-controllable generation. |
+plant is documented in the
+[System Element Modeling Overview](/math/system-elements#implementation-in-cobre) Configure tab;
+the directional-cost fallback is described under
+[Directional evaporation and withdrawal costs](#directional-evaporation-and-withdrawal-costs).
 
 ### Bus `deficit_segments` — Two-Tier Resolution
 
@@ -103,10 +73,11 @@ cumulative — the first `depth_mw` MW of unmet demand cost the first segment's
 ]
 ```
 
-| Field      | Type           | Description                                                                                                                        |
-| ---------- | -------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
-| `depth_mw` | number or null | MW of deficit covered by this segment. The **last segment must be `null`** — unbounded, which guarantees the LP always has a feasible solution regardless of the shortfall size. |
-| `cost`     | number         | Cost per MWh of deficit in this segment. Must be positive; segments must be listed in **ascending cost** order.                       |
+The last segment is unbounded, so the LP is always feasible whatever the
+shortfall. The field rules (a non-empty list, positive and strictly increasing
+costs, and a last `depth_mw` of `null`) are under
+[`penalties.json`](/reference/case-format/penalties/#penaltiesjson) and
+[`system/buses.json`](/reference/case-format/system/#systembusesjson).
 
 `deficit_segments` resolves from exactly two sources and does **not** support
 stage-level overrides:
@@ -131,6 +102,9 @@ at a more specific tier:
 | `line.exchange_cost`                          | `lines[].exchange_cost` in `system/lines.json` | `constraints/penalty_overrides_line.parquet`       |
 | `non_controllable_source.curtailment_cost`    | `non_controllable_sources[].curtailment_cost` in `system/non_controllable_sources.json`                                | `constraints/penalty_overrides_ncs.parquet`        |
 
+The global `exchange_cost` applies to every line without an override, in both
+flow directions.
+
 ### Resolution Cascade at a Glance
 
 The table below consolidates the tiers each penalty field supports — the
@@ -141,5 +115,154 @@ tiers differ per field, so this is a lookup table, not a single uniform rule:
 | `bus.deficit_segments`                          | not supported                                     | `buses[].deficit_segments`                                                          | `penalties.json` → `bus.deficit_segments`                     |
 | `bus.excess_cost`                                | `penalty_overrides_bus.parquet`                   | not supported                                                                       | `penalties.json` → `bus.excess_cost`                          |
 | `line.exchange_cost`                             | `penalty_overrides_line.parquet`                  | `lines[].exchange_cost`                                                             | `penalties.json` → `line.exchange_cost`                       |
-| `hydro.*`                       | `penalty_overrides_hydro.parquet`        | `hydros[].penalties` — see the [Hydro Configure tab](/math/hydro-production-models#implementation-in-cobre) | `penalties.json` → `hydro.*`                                  |
+| `hydro.*`                       | `penalty_overrides_hydro.parquet`        | `hydros[].penalties` — see the [System Element Modeling Overview](/math/system-elements#implementation-in-cobre) Configure tab | `penalties.json` → `hydro.*`                                  |
 | `non_controllable_source.curtailment_cost`      | `penalty_overrides_ncs.parquet`                   | `non_controllable_sources[].curtailment_cost`                                                                       | `penalties.json` → `non_controllable_source.curtailment_cost` |
+
+#### Resolution example
+
+Take `spillage_cost` with a global default of 0.01, an entity override of 0.005
+on Hydro 0 and a stage override of 0.02 on Hydro 0 at stage 60. The most
+specific value present wins:
+
+| Query                       | Stage Override? | Entity Override? | Result                |
+| --------------------------- | --------------- | ---------------- | --------------------- |
+| Hydro 0, Stage 30, spillage | No              | Yes (0.005)      | 0.005 (entity)        |
+| Hydro 0, Stage 60, spillage | Yes (0.02)      | Yes (0.005)      | 0.02 (stage)          |
+| Hydro 1, Stage 30, spillage | No              | No               | 0.01 (global default) |
+
+### Directional evaporation and withdrawal costs
+
+The LP prices the evaporation and withdrawal slacks with four directional
+costs: `evaporation_violation_pos_cost` above the target,
+`evaporation_violation_neg_cost` below it,
+`water_withdrawal_violation_pos_cost` for over-delivery and
+`water_withdrawal_violation_neg_cost` for under-delivery. The symmetric costs
+`evaporation_violation_cost` and `water_withdrawal_violation_cost` supply their
+defaults and enter the load-time checks; no slack is priced at a symmetric cost.
+
+- In `penalties.json`, an absent directional cost takes that file's symmetric
+  cost.
+- A plant with no `penalties` block takes every `penalties.json` value,
+  directional costs included.
+- A plant's `penalties` block has no directional keys. With the block present,
+  each directional cost takes the block's symmetric cost when the block sets
+  it, else the `penalties.json` symmetric cost, never a `penalties.json`
+  directional cost. A `penalties.json` directional cost therefore reaches only
+  the plants that have no `penalties` block.
+- A `penalty_overrides_hydro.parquet` row changes a directional cost only
+  through its directional column. Its symmetric columns replace the stage's
+  symmetric value, which prices no slack.
+
+### Hydro variable bounds
+
+| Variable                   | Lower Bound                                                                                                | Upper Bound            | Lower Slack                                    | Upper Slack  |
+| -------------------------- | ---------------------------------------------------------------------------------------------------------- | ---------------------- | ---------------------------------------------- | ------------ |
+| `storage`                  | `min_storage_hm3`; `0` for a filling hydro in every phase and for a hydro outside its commissioning window | `max_storage_hm3`      | Hard (soft for a filling hydro once operating) | Spillage     |
+| `turbined_flow`            | `0`; the `min_turbined_m3s` minimum, summed over a (hydro, bus) cell's unit groups, is a soft row          | `max_turbined_m3s`     | With penalty, when that minimum is `> 0`       | Hard         |
+| `spillage`                 | `min_spillage_m3s` (default `0`)                                                                           | `max_spillage_m3s` (default unbounded) | Hard                                           | Hard         |
+| `outflow`                  | `min_outflow_m3s`                                                                                          | `max_outflow_m3s` (optional) | With penalty, when that minimum is `> 0`       | With penalty, when that maximum is set |
+| `generation`               | `0`; the `min_generation_mw` minimum, summed over a (hydro, bus) cell's unit groups, is a soft row         | `max_generation_mw`    | With penalty, when that minimum is `> 0`       | Hard         |
+| `evaporation`              | minus the per-stage bound of [Signed Net Evaporation](#signed-net-evaporation)                             | plus that bound        | With penalty                                   | With penalty |
+| `withdrawal` (stage-level) | `water_withdrawal_m3s`                                                                                     | `water_withdrawal_m3s` | With penalty                                   | With penalty |
+
+The spillage bounds come from `constraints/hydro_bounds.parquet`; a PreFilling
+hydro's spillage is fixed at `0`.
+
+:::note[Generation bounds]
+The user explicitly sets `min_generation_mw` and `max_generation_mw`. These are
+not derived from turbined flow bounds, because the production function is not
+always constant productivity. When a complete hydro model is available, the
+installed capacity provides a natural hard upper bound. A positive cell minimum is
+enforced by a soft row whose slack is priced at `generation_violation_below_cost`;
+a zero cell minimum leaves that slack fixed at `0`.
+:::
+
+Relationship: `outflow = turbined_flow + spillage`,
+`generation = f(turbined_flow, storage)` (depends on production model)
+
+### Load-time penalty checks
+
+Cobre checks the configured costs when the case loads. The checks read each
+hydro's entity-level costs: the `penalties.json` defaults with the plant's
+`penalties` block applied. Stage overrides are not checked. The deficit side of
+each comparison is the largest deficit-segment cost of any bus, and 0 when the
+case has no bus. The comparisons use the configured values as given, without
+converting them to energy, so a case that passes them can still invert the
+energy-equivalent ordering of the methodology above.
+
+Each check issues at most one warning, a `ModelQuality` warning on
+`penalties.json` that does not stop the run. The warning names a hydro count
+and a worst-case hydro.
+
+| Check                                      | Warns when                                                                                                            | Hydros reported                                                                          |
+| ------------------------------------------ | --------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| Filling target below deficit               | a hydro's `filling_target_violation_cost` is at least the deficit cost; skipped when the deficit cost is not positive | every hydro that meets the condition; the worst case has the largest filling-target cost |
+| Storage violation above deficit            | a hydro's `storage_violation_below_cost` is at most the deficit cost                                                  | every hydro that meets the condition; the worst case has the smallest storage cost       |
+| Deficit above constraint violations        | the deficit cost is at most the largest constraint-violation cost over all hydros                                     | 1 hydro, the one with the largest constraint-violation cost                              |
+| Constraint violations above resource costs | the smallest constraint-violation cost over all hydros is at most the largest resource cost over all hydros           | 1 hydro, the one with the smallest constraint-violation cost                             |
+| Resource costs positive                    | a hydro's smaller resource cost is at most 0                                                                          | every hydro that meets the condition; the worst case has the smallest of those costs     |
+
+The constraint-violation costs of a hydro are `turbined_violation_below_cost`,
+`outflow_violation_below_cost`, `outflow_violation_above_cost`,
+`generation_violation_below_cost`, `evaporation_violation_cost` and
+`water_withdrawal_violation_cost`, the symmetric evaporation and withdrawal
+costs. "Resource costs" means the hydro `spillage_cost` and `diversion_cost`.
+These five checks read no thermal, contract, excess, exchange or curtailment
+cost, and neither `turbined_cost` nor `inflow_nonnegativity_cost`.
+
+The storage check reads every hydro's `storage_violation_below_cost`, although
+the slack it prices exists only for a filling hydro from its entry stage on; for
+any other hydro the checked value prices no slack.
+
+{/* quoted from source: crates/cobre-io/src/validation/semantic/scenarios.rs:54-59, 81-86, 121-126, 162-167, 192-197 at cobre v0.17.0 */}
+
+Each warning text is fixed apart from its numbers and hydro ids, written `{…}`
+here, and begins `Penalty ordering violation:`:
+
+- Filling target below deficit:
+  `Penalty ordering violation: filling_target_violation_cost ({…}) should be < deficit_cost ({…}) so filling is not as hard as load shedding -- {…} hydro(s) affected, worst-case hydro {…}`
+- Storage violation above deficit:
+  `Penalty ordering violation: storage_violation_below_cost ({…}) should be > max(deficit_segment_costs) ({…}) -- {…} hydro(s) affected, worst case: Hydro {…}`
+- Deficit above constraint violations:
+  `Penalty ordering violation: max(deficit_segment_costs) ({…}) should be > max(constraint_violation_costs) ({…}) -- 1 hydro(s) affected, worst case: Hydro {…}`
+- Constraint violations above resource costs:
+  `Penalty ordering violation: min(constraint_violation_costs) ({…}) should be > max(resource_costs) ({…}) -- 1 hydro(s) affected, worst case: Hydro {…}`
+- Resource costs positive:
+  `Penalty ordering violation: min(resource_costs) ({…}) should be > 0 (regularization costs must be positive to prevent LP degeneracy) -- {…} hydro(s) affected, worst case: Hydro {…}`
+
+To clear a warning, change the costs in `penalties.json` or in the plant's
+`penalties` block until the comparison in the message holds: for `should be >`,
+raise the cost on the left or lower the one on the right, and for
+`should be <`, the reverse. A warning names `penalties.json` even when a plant's
+`penalties` block supplies the cost, and the `Hydro {…}` in it is the plant's
+numeric `id`.
+
+Two rules reject the case as a `BusinessRuleViolation` error (see
+[Error Codes — `BusinessRuleViolation`](/reference/error-codes/#businessruleviolation)):
+
+{/* quoted from source: crates/cobre-io/src/validation/semantic/scenarios.rs:223-226, 1202-1208 at cobre v0.17.0 */}
+
+- **Negative turbined cost on an FPHA hydro.** A hydro whose `generation.model`
+  is `fpha` and whose `turbined_cost` is negative is rejected on
+  `penalties.json`; zero is accepted. The message reads
+  `Hydro {…}: turbined_cost ({…}) must be non-negative (>= 0) for FPHA hydros; negative values distort LP dispatch`.
+  To fix it, set `turbined_cost` to 0 or more in `penalties.json` or in the
+  plant's `penalties` block.
+- **Filling schedule that cannot reach the dead volume (the filling-sufficiency
+  check).** For each hydro with a `filling` block and an `entry_stage_id`, the
+  sum over the stages from `start_stage_id` up to, not including,
+  `entry_stage_id` of the stage's total hours times 3600 / 1,000,000 times the
+  stage's minimum accumulation rate must reach `min_storage_hm3` less the seed
+  storage. The rate is the `filling_min_rate_m3s` of the stage's `hydro_bounds`
+  row when it has one, else the plant's `filling_min_rate_m3s`; the seed is the
+  hydro's `filling_storage` entry in `initial_conditions.json`, or 0 when it has
+  none. The case is rejected on `system/hydros.json` when the sum falls short by
+  more than a relative tolerance of `1e-9`, applied to the larger of `|min_storage_hm3 − seed|` and 1 hm³. The message reads
+  `Hydro {…}: filling schedule is insufficient to reach the dead volume before stage {…}; cumulative minimum-rate capacity over stages [{…}, {…}) is {…} hm3 but {…} hm3 (min_storage {…} - seed {…}) is required`.
+  To fix it, raise the plant's `filling_min_rate_m3s` (or a stage's
+  `hydro_bounds` rate), start filling at an earlier stage, move
+  `entry_stage_id` later, or declare a larger `filling_storage` seed in
+  `initial_conditions.json`.
+
+Setting `turbined_cost` above `spillage_cost` is advised for every hydro and is
+not checked.

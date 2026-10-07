@@ -5,40 +5,36 @@ description: Four methods for handling negative PAR(p) inflow realizations — n
 
 ## Purpose
 
-This spec defines the four methods available for handling negative inflow realizations produced by the PAR(p) model, including their LP formulations, objective function modifications, and trade-offs.
+This chapter defines the four methods available for handling negative inflow realizations produced by the PAR(p) model, including their LP formulations, objective function modifications, and trade-offs.
 
 ## 1. Problem Statement
 
 The PAR(p) model's inflow equation — using the AR coefficient [$\psi_{m,\ell}$](/overview/notation-conventions#35-inflow-model-parameters) — can produce a negative realization:
 
 $$
-a_h = \underbrace{\mu_m - \sum_{\ell=1}^{p} \psi_{m,\ell} \mu_{m-\ell}}_{\text{deterministic base}} + \underbrace{\sum_{\ell=1}^{p} \psi_{m,\ell} \cdot \hat{a}_{h,\ell}}_{\text{lag contribution}} + \underbrace{\sigma_m \cdot \varepsilon}_{\text{noise term}}
+a_h = \underbrace{b_{h,m}}_{\text{deterministic base}} + \underbrace{\sum_{\ell=1}^{p} \psi_{m,\ell} \cdot \hat{a}_{h,\ell}}_{\text{lag contribution}} + \underbrace{\sigma_m \cdot \varepsilon}_{\text{noise term}}
 $$
 
 When the [innovation](/overview/notation-conventions#35-inflow-model-parameters) $\varepsilon$ is sufficiently negative (e.g., $\varepsilon < -2$), the total can become negative. That is not itself a physical impossibility: $a_h$ is _incremental_ inflow — a plant's natural flow minus its upstream plants' — so a genuinely negative value is real hydrology (a reach that loses water over the period), and the same $a_h < 0$ case arises whether the realization comes from PAR(p) noise or from replaying a negative window of historical/observed data directly (`inflow_history`/`recent_observations`; see [PAR(p) Inflow Model](/math/par-inflow-model)). What the methods below solve is the LP's water-balance consequence of $a_h < 0$: absorbing it without the other water-balance variables (storage, release, spillage — all bounded $\geq 0$) being driven infeasible.
 
 ## 2. Penalty Classification
 
-The inflow non-negativity penalty $c^{inf}$ is a **Category 2 constraint violation penalty** — it provides slack for a physical constraint (non-negative inflow) that may be impossible to satisfy under extreme noise realizations. Its position in the penalty hierarchy (see [LP Formulation](/math/lp-formulation)):
-
-$$
-c^{tv-}, c^{ov\pm}, c^{gv-}, c^{ev\pm}, c^{wv\pm}, c^{inf} > c^{th}, c^{ctr}
-$$
+The inflow non-negativity penalty $c^{inf}_h$ prices a **Category 1 recourse slack** ([Penalty System — Category 1](/math/penalty-system#category-1-recourse-slacks-lp-feasibility)): the slack adds water to the hydro's water balance, so every subproblem stays feasible when a negative inflow realization leaves the balance without a solution. Its cost is ordered with the constraint-violation penalties: converted to an energy-equivalent cost in \$/MWh, it lies above the thermal and contract costs and below deficit ([Penalty System — Penalty Priority Ordering](/math/penalty-system#penalty-priority-ordering)).
 
 Since inflow $a_h$ is defined per stage (not per block), the inflow non-negativity penalty appears **outside** the block summation in the objective, alongside storage violation penalties:
 
 $$
-+ \sum_{h \in \mathcal{H}} c^{inf} \cdot \sigma^{inf}_h \cdot T
++ \sum_{h \in \mathcal{H}} c^{inf}_h \cdot \sigma^{inf}_h \cdot H_t
 $$
 
-where $T = \sum_k \tau_k$ is the total stage duration in hours. The product $\sigma^{inf}_h \cdot T$ converts the slack rate (m³/s) to an energy-equivalent dimension over the full stage.
+where $H_t = \sum_k \tau_k$ is the total stage duration in hours. The product $\sigma^{inf}_h \cdot H_t$ is the volume of water the slack adds, in (m³/s)·h, so $c^{inf}_h$ is a cost per (m³/s)·h of added water.
 
 ## 3. Method: `none`
 
 **LP Formulation**: Standard AR constraint (unchanged):
 
 $$
-a_h = \text{deterministic\_base} + \sum_{\ell=1}^{p} \psi_{m,\ell} \cdot a_{h,\ell} + \sigma_m \cdot \varepsilon
+a_h = b_{h,m} + \sum_{\ell=1}^{p} \psi_{m,\ell} \cdot a_{h,\ell} + \sigma_m \cdot \varepsilon
 $$
 
 **Implications**:
@@ -54,25 +50,21 @@ $$
 | ---------------- | -------- | ----- | --------------------------- |
 | $\sigma^{inf}_h$ | $\geq 0$ | m³/s  | Inflow non-negativity slack |
 
-**Modified AR Constraint**:
+**Water-balance term**: the slack enters the hydro's water balance beside the realized inflow, every term on the left-hand side ([LP Formulation §4](/math/lp-formulation#4-hydro-water-balance)):
 
 $$
-a_h + \sigma^{inf}_h = \text{deterministic\_base} + \sum_{\ell=1}^{p} \psi_{m,\ell} \cdot a_{h,\ell} + \sigma_m \cdot \varepsilon
+-\zeta \,\big( a_h + \sigma^{inf}_h \big) \;\; \text{(parallel stage)}, \qquad -\zeta_k \,\big( a_h + \sigma^{inf}_h \big) \;\; \text{(block } k \text{ of a chronological stage)}
 $$
 
-**Interpretation**: When the AR model produces negative $a_h$, the slack $\sigma^{inf}_h$ absorbs the violation, making the effective inflow:
-
-$$
-a_h^{effective} = a_h + \sigma^{inf}_h \geq 0
-$$
+so the slack adds $\zeta\,\sigma^{inf}_h$ hm³ of water over the stage, $\zeta_k\,\sigma^{inf}_h$ in block $k$. The realized-inflow row ([LP Formulation §5](/math/lp-formulation#5-realized-inflow-definition-rows)) is unchanged: the AR equation keeps the realization $a_h$. A PreFilling hydro's frozen identity row carries no slack. **Interpretation**: the water reaching the reservoir is $a_h^{effective} = a_h + \sigma^{inf}_h$. The LP uses the slack whenever the water balance cannot be met otherwise, or whenever the added water is worth more than its cost; nothing ties it to the sign of the realization.
 
 **Objective Function Addition** (outside block summation):
 
 $$
-+ \sum_{h \in \mathcal{H}} c^{inf} \cdot \sigma^{inf}_h \cdot T
++ \sum_{h \in \mathcal{H}} c^{inf}_h \cdot \sigma^{inf}_h \cdot H_t
 $$
 
-where $c^{inf}$ is the penalty cost and $T = \sum_k \tau_k$ is the total stage duration in hours.
+where $c^{inf}_h$ is the penalty cost of hydro $h$ and $H_t = \sum_k \tau_k$ is the total stage duration in hours.
 
 **Advantages**:
 
@@ -82,7 +74,7 @@ where $c^{inf}$ is the penalty cost and $T = \sum_k \tau_k$ is the total stage d
 
 **Disadvantages**:
 
-- Adds variables and constraints
+- Adds one slack column per hydro
 - Slightly affects marginal water values
 
 ## 5. Method: `truncation`
@@ -90,7 +82,7 @@ where $c^{inf}$ is the penalty cost and $T = \sum_k \tau_k$ is the total stage d
 **Scenario Generation**:
 
 $$
-a_h = \max\left(0, \text{deterministic\_base} + \sum_{\ell=1}^{p} \psi_{m,\ell} \cdot \hat{a}_{h,\ell} + \sigma_m \cdot \varepsilon\right)
+a_h = \max\left(0, b_{h,m} + \sum_{\ell=1}^{p} \psi_{m,\ell} \cdot \hat{a}_{h,\ell} + \sigma_m \cdot \varepsilon\right)
 $$
 
 **LP Formulation**: Standard AR constraint with the already-truncated $a_h$ value:
@@ -119,7 +111,7 @@ The two preceding methods each handle one side of the problem well but leave the
 The PAR(p) noise is clamped outside the LP before the scenario is patched in, exactly as in the `truncation` method:
 
 $$
-a_h = \max\left(0, \text{deterministic\_base} + \sum_{\ell=1}^{p} \psi_{m,\ell} \cdot \hat{a}_{h,\ell} + \sigma_m \cdot \varepsilon\right)
+a_h = \max\left(0, b_{h,m} + \sum_{\ell=1}^{p} \psi_{m,\ell} \cdot \hat{a}_{h,\ell} + \sigma_m \cdot \varepsilon\right)
 $$
 
 Inside the LP, penalty slack columns $\sigma^{inf}_h$ are added to the water-balance constraint, exactly as in the `penalty` method:
@@ -130,16 +122,12 @@ Inside the LP, penalty slack columns $\sigma^{inf}_h$ are added to the water-bal
 | ---------------- | -------- | ----- | --------------------------- |
 | $\sigma^{inf}_h$ | $\geq 0$ | m³/s  | Inflow non-negativity slack |
 
-**Modified AR Constraint** (inside LP, using the clamped $a_h$):
-
-$$
-a_h + \sigma^{inf}_h = \text{deterministic\_base} + \sum_{\ell=1}^{p} \psi_{m,\ell} \cdot a_{h,\ell} + \sigma_m \cdot \varepsilon
-$$
+**Water-balance term**: as in §4, with the clamped $a_h$ on the realized-inflow row.
 
 **Objective Function Addition** (outside block summation):
 
 $$
-+ \sum_{h \in \mathcal{H}} c^{inf} \cdot \sigma^{inf}_h \cdot T
++ \sum_{h \in \mathcal{H}} c^{inf}_h \cdot \sigma^{inf}_h \cdot H_t
 $$
 
 ### 6.2 Why the hybrid
@@ -147,10 +135,10 @@ $$
 Clamping and slack columns serve complementary roles that together preserve relatively complete recourse:
 
 - **Clamping handles the common case cheaply.** Most negative excursions are small — the noise term dips slightly below zero for a handful of stages in a scenario tree. Clamping those excursions to zero outside the LP adds no LP variables and no solver work. The inflow handed to the LP is always non-negative, so the water-balance constraint is never violated by the noise term alone.
-- **Slack columns absorb rare large excursions without rejecting the scenario.** When the PAR(p) model produces an extreme realisation, the deterministic base and lag contribution combined with the noise term can still yield a zero inflow after clamping, and the LP's water-balance may still be infeasible without relief. The $\sigma^{inf}_h$ slack column lets the solver relax the non-negativity at a known cost rather than declaring infeasibility. The stage is kept in the training set; the penalty signal propagates into future-cost cuts.
-- **Together they guarantee LP feasibility (Category 1 recourse) across the full noise distribution**, without biasing the distribution upward beyond what truncation already does for small excursions, and without adding LP slack columns for every stage regardless of whether they are needed.
+- **Slack columns absorb rare large excursions without rejecting the scenario.** When the PAR(p) model produces an extreme realisation, the deterministic base and lag contribution combined with the noise term can still yield a zero inflow after clamping, and the LP's water-balance may still be infeasible without relief. The $\sigma^{inf}_h$ slack column lets the solver add water to the stage's balance at a known cost rather than declaring infeasibility. The stage is kept in the training set; the penalty signal propagates into future-cost cuts.
+- **Together they guarantee LP feasibility (Category 1 recourse) across the full noise distribution**, without biasing the distribution upward beyond what truncation already does for small excursions.
 
-### 6.3 Reference design and equivalence
+### 6.3 Reference design
 
 The literature formulates the same problem using a dimensionless noise-adjustment slack $\xi_h$. This reference design is presented here so readers familiar with the Brazilian stochastic-dispatch literature can map between the two formulations.
 
@@ -173,7 +161,7 @@ where $\varepsilon_h$ is the original (possibly very negative) noise realization
 **Part B — Inflow with adjusted noise**:
 
 $$
-a_h = \text{deterministic\_base} + \sum_{\ell=1}^{p} \psi_{m,\ell} \cdot a_{h,\ell} + \sigma_m \cdot \varepsilon_h^{adj}
+a_h = b_{h,m} + \sum_{\ell=1}^{p} \psi_{m,\ell} \cdot a_{h,\ell} + \sigma_m \cdot \varepsilon_h^{adj}
 $$
 
 **Non-negativity constraint**:
@@ -185,36 +173,36 @@ $$
 **Interpretation**: The optimizer chooses $\xi_h$ to be the minimum adjustment needed to make $a_h \geq 0$:
 
 $$
-\xi_h = \max\left(0, -\varepsilon_h - \frac{\text{deterministic\_base} + \sum_\ell \psi_{m,\ell} \cdot \hat{a}_{h,\ell}}{\sigma_m}\right)
+\xi_h = \max\left(0, -\varepsilon_h - \frac{b_{h,m} + \sum_\ell \psi_{m,\ell} \cdot \hat{a}_{h,\ell}}{\sigma_m}\right)
 $$
 
 **Objective Function Addition** (outside block summation):
 
 $$
-+ \sum_{h \in \mathcal{H}} c^{inf} \cdot \sigma_m \cdot \xi_h \cdot T
++ \sum_{h \in \mathcal{H}} c^{inf}_h \cdot \sigma_m \cdot \xi_h \cdot H_t
 $$
 
 The penalty is proportional to $\sigma_m \cdot \xi_h$, which is the actual inflow adjustment in m³/s. Note that $\sigma_m$ varies by season, so the effective penalty for a given noise adjustment $\xi_h$ is larger in high-variability seasons and smaller in low-variability seasons. This is by design — a given noise adjustment represents a larger physical inflow correction when $\sigma_m$ is large.
 
-**Equivalence with the clamp-plus-slack formulation**: The $\xi_h$ reference design and the clamp-plus-slack formulation are economically equivalent when both use the same penalty cost $c^{inf}$. In both cases the objective penalty equals $c^{inf}$ multiplied by the physical inflow correction in m³/s·h. The clamp-plus-slack formulation reuses the existing truncation and penalty mechanisms without introducing a separate noise-adjustment constraint inside the LP, which simplifies the solver's constraint matrix.
+**Relation to the clamp-plus-slack formulation**: both price added water at $c^{inf}_h$ per (m³/s)·h, and they differ in two ways. The clamp-plus-slack formulation lifts a negative realization to zero outside the LP, at no cost, while the reference design pays for that lift through $\xi_h$. And the reference design's adjustment changes $a_h$ itself, which the AR lags of later stages carry, while the slack adds water beside an unchanged realized-inflow row, so the lags carry the clamped realization (the raw one under `penalty`). The clamp-plus-slack formulation adds no noise-adjustment constraint to the LP.
 
 ## 7. Comparison Summary
 
-| Method                    | LP Size    | Bias    | AR Preservation | Feasibility |
-| ------------------------- | ---------- | ------- | --------------- | ----------- |
-| `none`                    | Base       | None    | Full            | May fail    |
-| `penalty`                 | +vars/cons | Minimal | Full            | Guaranteed  |
-| `truncation`              | Base       | Upward  | Partial         | Guaranteed  |
-| `truncation_with_penalty` | +vars/cons | Minimal | Full            | Guaranteed  |
+| Method                    | LP Size             | Bias    | AR Preservation | Feasibility |
+| ------------------------- | ------------------- | ------- | --------------- | ----------- |
+| `none`                    | Base                | None    | Full            | May fail    |
+| `penalty`                 | +1 column per hydro | Minimal | Full            | Guaranteed  |
+| `truncation`              | Base                | Upward  | Partial         | Guaranteed  |
+| `truncation_with_penalty` | +1 column per hydro | Upward  | Partial         | Guaranteed  |
 
 ## 8. Reference
 
-> Larroyd, P.V., Pedrini, R., Beltran, F., Teixeira, G., Finardi, E.C., & Picarelli, L.B. (2022). "Dealing with Negative Inflows in the Long-Term Hydrothermal Scheduling Problem." _Energies_, 15(3), 1115. https://doi.org/10.3390/en15031115
+- [Larroyd et al. (2022)](/reference/bibliography/#inflow-modelling)
 
 ## Cross-References
 
-- [LP Formulation](/math/lp-formulation) — Objective function structure and penalty taxonomy where $c^{inf}$ is a Category 2 constraint violation penalty
-- [PAR Inflow Model](/math/par-inflow-model) — Defines the PAR(p) model that produces the inflow realizations handled here
+- [LP Formulation](/math/lp-formulation) — Objective function structure and penalty taxonomy, where $c^{inf}_h$ prices a Category 1 recourse slack
+- [PAR(p) Inflow Model](/math/par-inflow-model) — Defines the PAR(p) model that produces the inflow realizations handled here
 - [Penalty System](/math/penalty-system) — Penalty hierarchy and cascade resolution
 - [Scenario Generation](/math/scenario-generation) — The noise term $\varepsilon$ in the inflow equation comes from the fixed opening tree (pre-generated noise vectors), not from per-iteration random sampling
-- [Configuring inflow non-negativity](/running/configuration#inflow_non_negativity) — the software-layer setting that selects which of these four methods a study uses and where the penalty cost $c^{inf}$ is authored
+- [Configuring inflow non-negativity](/running/configuration#modelinginflow_non_negativity) — the software-layer setting that selects which of these four methods a study uses and where the penalty cost $c^{inf}_h$ is authored

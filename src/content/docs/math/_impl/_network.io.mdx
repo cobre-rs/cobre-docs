@@ -1,8 +1,8 @@
-This is a topic-scoped index of the files the network layer touches — it
+This is a topic-scoped index of the files the network layer ([System Element Modeling Overview §2](/math/system-elements#2-buses-regional-subsystems)–[§3](/math/system-elements#3-transmission-lines)) touches — it
 names each file and its role, it does not repeat their field-by-field
 schemas. The exhaustive, field-by-field case-directory and output reference
-is owned by the Reference corpus ([Case Directory Format](/reference/case-directory-format/)
-and [Output Format](/reference/output-format/) pages).
+is owned by the Reference corpus ([Case Format](/reference/case-format/)
+and [Output Format](/reference/output/) pages).
 
 ### Inputs
 
@@ -15,13 +15,13 @@ and [Output Format](/reference/output-format/) pages).
 The stage-varying **penalty** overrides that touch these same two files —
 `excess_cost` on buses and `exchange_cost` on lines — are separate sparse
 parquet inputs owned by the penalty system; see the
-[Penalty System Inputs & Outputs tab](/math/penalty-system#implementation-in-cobre)
+[Penalty System](/math/penalty-system#implementation-in-cobre) Inputs & Outputs tab
 for `constraints/penalty_overrides_bus.parquet` and
 `constraints/penalty_overrides_line.parquet`. This chapter does not repeat
 that index.
 
 For the complete field-by-field schema of every file above, see the
-[Case Directory Format](/reference/case-directory-format/) reference page in
+[Case Format](/reference/case-format/) reference page in
 the Reference corpus.
 
 ### Outputs
@@ -37,5 +37,5 @@ the term — see [Generic Constraints](/reference/generic-constraints/) for
 the full addressing form.
 
 For the complete output schema (columns, types, file layout), see the
-[Output Format](/reference/output-format/) reference page in the Reference
+[Output Format](/reference/output/) reference page in the Reference
 corpus.

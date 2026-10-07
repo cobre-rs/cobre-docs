@@ -1,0 +1,143 @@
+---
+// Render layer — Observable Plot island for the computed-FPHA fit
+// (math/hydro-production-models §2.6.3). Reads the theme palette from CSS vars
+// and re-renders on the light/dark toggle. Data comes from the tested compute
+// module (figures/fpha.ts), never hand-typed.
+---
+
+<div
+  id="fpha-plot"
+  class="vf-plot"
+  role="img"
+  aria-label="Synthetic hydro plant with normalized axes, sliced at one storage: generation against turbined flow, with the cloud points and the exact production capped at installed capacity, the raw hull envelope FPHA₀ on or above every cloud point, the corrected envelope k_FPHA·FPHA₀ and the dashed line ρ_eq·q"
+>
+</div>
+
+<script>
+  import * as Plot from "@observablehq/plot";
+  import { figureData } from "../figures/fpha.ts";
+
+  const X_DOMAIN: [number, number] = [0, 1];
+  const Y_TOP = 1.12;
+
+  function cssVar(name: string): string {
+    return getComputedStyle(document.documentElement)
+      .getPropertyValue(name)
+      .trim();
+  }
+
+  function render(): void {
+    const el = document.getElementById("fpha-plot");
+    if (!el) return;
+
+    // The plant's own data (cloud, exact production) is water -> Flow Blue
+    // (--dgm-hydro). The fitted lines are not hydro -> copper curve and
+    // Patina accent; the equivalent-productivity line is a reference ->
+    // stroke grey. Literals mirror the palette.css fallbacks.
+    const hydro = cssVar("--dgm-hydro") || "#4a90b8";
+    const curve = cssVar("--dgm-curve") || "#d4956a";
+    const accent = cssVar("--dgm-accent") || "#4a8b6f";
+    const reference = cssVar("--dgm-stroke") || "#8b9298";
+    const text = cssVar("--dgm-text") || "#c8c6c2";
+    const bg = cssVar("--dgm-bg") || "#0f1419";
+
+    const { cloud, exact, raw, corrected, equivalent } = figureData();
+    const rowY = (i: number) => Y_TOP - 0.05 - 0.09 * i;
+    const swatchFrom = 0.03;
+    const swatchTo = 0.09;
+    const labelAt = 0.11;
+    const legend = [
+      { label: "exact φ, capped at Ḡ", color: hydro, width: 2 },
+      { label: "FPHA₀, raw hull", color: curve, width: 2.5 },
+      { label: "k_FPHA·FPHA₀, corrected", color: accent, width: 2.5 },
+      { label: "ρ_eq·q", color: reference, width: 1.6, dash: "6 4" },
+    ];
+
+    el.replaceChildren(
+      Plot.plot({
+        width: 640,
+        height: 420,
+        marginTop: 24,
+        marginRight: 24,
+        marginBottom: 48,
+        marginLeft: 60,
+        style: { background: "transparent", color: text, fontSize: "13px" },
+        x: {
+          label: "turbined flow q / q_max",
+          labelOffset: 40,
+          domain: X_DOMAIN,
+        },
+        y: { label: "generation g / Ḡ", grid: true, domain: [0, Y_TOP] },
+        marks: [
+          Plot.ruleY([0], { stroke: text, strokeOpacity: 0.5 }),
+          Plot.line(exact, { x: "q", y: "g", stroke: hydro, strokeWidth: 2 }),
+          Plot.line(raw, { x: "q", y: "g", stroke: curve, strokeWidth: 2.5 }),
+          Plot.line(corrected, {
+            x: "q",
+            y: "g",
+            stroke: accent,
+            strokeWidth: 2.5,
+          }),
+          Plot.line(equivalent, {
+            x: "q",
+            y: "g",
+            stroke: reference,
+            strokeWidth: 1.6,
+            strokeDasharray: "6 4",
+          }),
+          Plot.dot(cloud, {
+            x: "q",
+            y: "g",
+            fill: hydro,
+            stroke: bg,
+            strokeWidth: 1.5,
+            r: 5,
+          }),
+          Plot.dot([{ q: (swatchFrom + swatchTo) / 2, g: rowY(0) }], {
+            x: "q",
+            y: "g",
+            fill: hydro,
+            stroke: bg,
+            strokeWidth: 1.5,
+            r: 5,
+          }),
+          Plot.text([{ q: labelAt, g: rowY(0), label: "cloud points" }], {
+            x: "q",
+            y: "g",
+            text: "label",
+            textAnchor: "start",
+            fill: text,
+          }),
+          ...legend.flatMap((row, i) => [
+            Plot.line(
+              [
+                { q: swatchFrom, g: rowY(i + 1) },
+                { q: swatchTo, g: rowY(i + 1) },
+              ],
+              {
+                x: "q",
+                y: "g",
+                stroke: row.color,
+                strokeWidth: row.width,
+                strokeDasharray: row.dash,
+              },
+            ),
+            Plot.text([{ q: labelAt, g: rowY(i + 1), label: row.label }], {
+              x: "q",
+              y: "g",
+              text: "label",
+              textAnchor: "start",
+              fill: text,
+            }),
+          ]),
+        ],
+      }),
+    );
+  }
+
+  render();
+  new MutationObserver(render).observe(document.documentElement, {
+    attributes: true,
+    attributeFilter: ["data-theme"],
+  });
+</script>

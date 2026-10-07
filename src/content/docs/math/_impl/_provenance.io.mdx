@@ -1,0 +1,68 @@
+This tab lists where a run records the categories of
+[Determinism & Provenance §5](/math/determinism-guarantees#5-provenance), by file
+and field name: run metadata, stochastic-model provenance and the policy
+checkpoint, and what is not recorded. The full field tables are in
+[Output Format](/reference/output/).
+
+### Run metadata
+
+[`training/metadata.json`](/reference/output/metadata/#trainingmetadatajson) and
+[`simulation/metadata.json`](/reference/output/metadata/#simulationmetadatajson)
+record the software, the timing and the execution environment of the run. The
+training file also records the configuration.
+
+- **Version, solver and host.** `cobre_version` is the version of the Cobre crate
+  that wrote the file. `hostname` names the machine, `solver` the LP backend and
+  `solver_version` its version; `solver_version` is omitted when the version is
+  unknown.
+- **Timing.** `started_at`, `completed_at` and `duration_seconds`.
+- **Seed and configuration** (`training/metadata.json` only). The `configuration`
+  object holds `seed`, `max_iterations`, `forward_passes`, `stopping_mode` and
+  `policy_mode`. `seed` is `training.tree_seed` as the study configures it, and is
+  `null` when the study sets none; the run then uses the default seed 42. The
+  seed in effect is `rng_seed` in the [policy checkpoint](#policy-checkpoint).
+- **Distribution.** The `distribution` object holds `backend` (`"mpi"` or
+  `"local"`), `world_size`, `ranks_participated`, `num_hosts`, `threads_per_rank`
+  and `hosts`, one entry per host, with the ranks placed on it. An MPI run also holds
+  `mpi_library`, `mpi_standard` and `thread_level`; a local run omits them.
+  `slurm_job_id` is omitted when absent; see [Not recorded](#not-recorded) for the
+  builds that write it.
+
+### Stochastic-model provenance
+
+[`training/model_provenance.json`](/reference/output/metadata/#trainingmodel_provenancejson)
+is written on every run. Its `inflow` object records the
+`estimation_path` taken and the source of each part of the inflow model in
+`seasonal_stats_source`, `ar_coefficients_source`, `correlation_source` and
+`opening_tree_source`, each `estimated`, `user_file` or `n/a`. For an estimated
+autoregressive model, `ar_method` names the order-selection method and
+`ar_max_order` the largest order selected; `white_noise_fallbacks` lists the ids
+of the hydros that fell back to white noise. `n_hydros` counts the plants.
+`historical_library_seed_digest` is a SipHash-1-3 digest of the inflow-lag
+seed derived for the historical scenario library; it is written only when such a
+library was built. The
+`hydro_production` object counts the hydros by the source of their FPHA
+hyperplanes and of their evaporation reference level.
+
+### Policy checkpoint
+
+[`policy/manifest.bin`](/reference/output/policy/#policymanifestbin) is the
+checkpoint's manifest, written last. It records `format_version`,
+`cobre_version` and `created_at` for the checkpoint, and `completed_iterations`,
+`final_lower_bound`, `max_iterations`, `forward_passes` and `rng_seed` for the
+training run that wrote it, beside the graph manifest. `rng_seed` is the seed in
+effect: the absolute value of `training.tree_seed`, or the default seed 42 when
+the study sets none.
+
+### Not recorded
+
+Cobre records no hash of any input file, so the case directory is kept with the
+outputs. The out-of-sample forward seed, `training.scenario_source.seed`, is
+written to no output file; keep the configuration that sets it with the case
+directory. The record holds no compiler, build profile, target
+or source commit: `cobre_version` is the crate version string, and the
+`cobre version` banner shows the architecture and operating system of the
+binary in hand and whether it is a release or a debug build. `slurm_job_id` is
+written only by builds with NUMA-aware topology support
+([HPC & Cluster Deployment](/running/hpc-deployment/)) and is absent from the metadata of
+the `cobre-mpi` release asset, even in a SLURM job.

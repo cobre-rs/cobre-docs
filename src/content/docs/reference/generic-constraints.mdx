@@ -3,59 +3,47 @@ title: Generic Constraints
 description: The generic-constraints authoring language -- file set, interval and shape derivation, the activation grid, the variable catalog, the `@name` grammar, and the resolved echo.
 ---
 
-v0.14.0 turns generic constraints from a small per-file field table into a full
-**authoring language**: three input files, one output, and a grammar layer
-(named `@expressions`, inline relational RHS, interval bounds). This page is
-the authority for that language. For the per-file column tables, see
-[Case Directory Format](/reference/case-directory-format/); for the LP
+Generic constraints are written in an **authoring language**: three input
+files, one output, and a grammar (named `@expressions`, inline relational
+right-hand sides, interval bounds). This page is the authority for that
+language. For the per-file field tables, see
+[Constraint Files](/reference/case-format/constraints/); for the LP
 formulation these constraints desugar into, see
 [LP Formulation §10](/math/lp-formulation#10-generic-constraints).
 
-## Worked example: v0.13.0 → v0.14.0
+## File set
 
-### Before (v0.13.0): a two-constraint band
+| File                                                | Role                                                                                                                                                                    |
+| ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `constraints/generic_constraints.json`               | Declares the constraints, each a linear expression over the [variable catalog](#variable-catalog) with an optional inline bound and a slack setting, and the named expressions they share; field table: [Constraint Files](/reference/case-format/constraints/#constraintsgeneric_constraintsjson). |
+| `constraints/generic_constraint_bounds.parquet`      | The **activation grid**: one row per constraint, stage and optional block the constraint is active for, carrying the nullable lower and upper bound endpoints (the parquet base); field table: [Constraint Files](/reference/case-format/constraints/#constraintsgeneric_constraint_boundsparquet). |
+| `constraints/generic_parameters.json`                | Declares the named scalar parameters that constraint expressions, inline bound endpoints and other named expressions reference by `@name`; field table: [Constraint Files](/reference/case-format/constraints/#constraintsgeneric_parametersjson). |
+| `generic_constraints/resolved_echo.parquet` (output) | The fully-resolved, desugared form of every generic constraint the solver actually built — one row per `(constraint, stage, block, term)`. Written whenever the study has generic constraints; the directory is entirely absent otherwise.            |
 
-Every constraint carried one `sense` (`">="`, `"<="`, or `"=="`) and every
-bounds row carried one `bound` column. Expressing a two-sided band meant
-authoring the **same expression twice**, under two different constraint ids:
+---
 
-```json
-{
-  "constraints": [
-    {
-      "id": 1,
-      "name": "southeast_hydro_floor",
-      "expression": "hydro_generation(10) + hydro_generation(11)",
-      "sense": ">=",
-      "slack": { "enabled": true, "penalty": 5000.0 }
-    },
-    {
-      "id": 2,
-      "name": "southeast_hydro_cap",
-      "expression": "hydro_generation(10) + hydro_generation(11)",
-      "sense": "<=",
-      "slack": { "enabled": true, "penalty": 5000.0 }
-    }
-  ]
-}
-```
+## Interval and shape derivation
 
-`generic_constraint_bounds.parquet` (v0.13.0 shape, one `bound` column):
+A bound's shape is derived purely from which of `bound_lower`/`bound_upper`
+are present, after the parquet base and any inline affine remainder (below)
+have been folded together:
 
-| constraint_id | stage_id | block_id | bound |
-| ------------- | -------- | -------- | ----- |
-| 1             | 0        | null     | 35.0  |
-| 2             | 0        | null     | 100.0 |
+| `bound_lower` | `bound_upper` | Derived shape                               |
+| ------------- | ------------- | -------------------------------------------- |
+| present       | absent        | `floor`                                      |
+| absent        | present       | `cap`                                        |
+| present       | present, different | `band`                                 |
+| present       | present, bit-identical | `equality`                         |
+| absent        | absent        | rejected (see [the activation grid](#the-activation-grid)) |
 
-Two constraint ids, two LP rows, two slack variables — for one logical band.
+The equal-vs-different check is an exact bit-for-bit comparison of the two
+values, never a tolerance — a very narrow but distinct band stays `band`, not
+`equality`.
 
-### After (v0.14.0): one constraint, a derived band
+For example, one constraint with both endpoints on its bounds row derives the
+`band` shape:
 
-`sense` is gone. `generic_constraint_bounds.parquet` now carries nullable
-`bound_lower`/`bound_upper`, and the shape (`floor`/`cap`/`band`/`equality`) is
-**derived** from which of the two is present:
-
-```json
+```json title="constraints/generic_constraints.json" gc-check="accept"
 {
   "constraints": [
     {
@@ -72,83 +60,14 @@ Two constraint ids, two LP rows, two slack variables — for one logical band.
 | ------------- | -------- | -------- | ----------- | ----------- |
 | 1             | 0        | null     | 35.0        | 100.0       |
 
-One constraint id, one row, `bound_lower=35.0 != bound_upper=100.0` derives to
-`"band"`.
+The two endpoints differ, so the row derives `band`.
 
-### Further (v0.14.0): inline relational RHS + a named expression
-
-Instead of hard-coding `35.0`/`100.0` in the parquet, the cap can be authored
-inline against a named scalar parameter, and the repeated LHS declared once as
-a named expression:
-
-```json
-{
-  "expressions": [
-    {
-      "name": "southeast_hydro",
-      "expression": "hydro_generation(10) + hydro_generation(11)"
-    }
-  ],
-  "constraints": [
-    {
-      "id": 1,
-      "name": "southeast_hydro_cap",
-      "expression": "@southeast_hydro <= @demand_cap",
-      "slack": { "enabled": true, "penalty": 5000.0 }
-    }
-  ]
-}
-```
-
-with `@demand_cap` declared in `constraints/generic_parameters.json`. The
-bounds parquet still needs a row to **activate** constraint 1 at stage 0 — but
-with the inline `<=` supplying `bound_upper` entirely, that row's own endpoints
-can both be `null`:
-
-| constraint_id | stage_id | block_id | bound_lower | bound_upper |
-| ------------- | -------- | -------- | ----------- | ----------- |
-| 1             | 0        | null     | null        | null        |
-
-This is legal only because the constraint's own inline remainder fills
-`bound_upper` — see [the activation grid](#the-activation-grid) below.
-
----
-
-## File set
-
-| File                                                | Role                                                                                                                                                                    |
-| ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `constraints/generic_constraints.json`               | Declares each constraint's `id`, `name`, `expression` (LHS, plus an optional inline relational operator), `description?`, and `slack` config; an optional top-level `expressions` array declares named linear expressions shared by every constraint. |
-| `constraints/generic_constraint_bounds.parquet`      | The **activation grid**: one row per `(constraint_id, stage_id[, block_id])` cell the constraint is active for, carrying the nullable `bound_lower`/`bound_upper` parquet base.                                                                        |
-| `constraints/generic_parameters.json`                | Declares named scalar parameters (top-level key `"scalar_parameters"`, unchanged across the rework) referenced by `@name` from constraint expressions, inline bound endpoints, and other named expressions.                                          |
-| `generic_constraints/resolved_echo.parquet` (output) | The fully-resolved, desugared form of every generic constraint the solver actually built — one row per `(constraint, stage, block, term)`. Written whenever the study has generic constraints; the directory is entirely absent otherwise.            |
-
----
-
-## Interval and shape derivation
-
-`sense` no longer exists anywhere in the grammar. A bound's shape is derived
-purely from which of `bound_lower`/`bound_upper` are present, after the
-parquet base and any inline affine remainder (below) have been folded
-together:
-
-| `bound_lower` | `bound_upper` | Derived shape                               |
-| ------------- | ------------- | -------------------------------------------- |
-| present       | absent        | `floor`                                      |
-| absent        | present       | `cap`                                        |
-| present       | present, different | `band`                                 |
-| present       | present, bit-identical | `equality`                         |
-| absent        | absent        | rejected (see [the activation grid](#the-activation-grid)) |
-
-The equal-vs-different check is an exact `f64::to_bits()` comparison, never a
-tolerance — a very narrow but distinct band stays `band`, not `equality`.
-
-The parquet's numeric base and the constraint's inline affine remainder
+The bounds file's numeric base and the constraint's inline affine remainder
 **compose additively** on the same endpoint rather than conflicting:
 `resolved = base + remainder` when both are present on that endpoint, or
-either alone when only one is (`fold_endpoint` in the LP builder). The fold
-runs per `(stage, block)`, since the remainder may itself resolve a
-stage/block-varying named parameter (a `per_stage_block` kind — see
+either alone when only one is. The fold runs per `(stage, block)`, since the
+remainder may itself resolve a stage/block-varying named parameter (a
+`per_stage_block` kind — see
 [`generic_parameters.json`](#generic_parametersjson-the-five-parameter-kinds)
 below).
 
@@ -167,7 +86,7 @@ base: "parquet base\nbound_upper (nullable)" {shape: parallelogram}
 const_term: "affine remainder: constant\ninline \"<= 12.0\"" {shape: rectangle}
 param_term: "affine remainder: @name term\nresolved via generic_parameters.json" {shape: rectangle}
 
-fold: "fold_endpoint\nbase + remainder (additive)" {shape: rectangle}
+fold: "base + remainder\n(additive)" {shape: rectangle}
 resolved: "resolved bound_upper\nLP row bound + resolved_echo" {shape: oval}
 
 base -> fold
@@ -192,15 +111,17 @@ if a row exists for it there.
   "declares a bound reference but has no activation rows in
   generic_constraint_bounds.parquet: the reference would apply to nothing."
   The parquet still decides *where* the constraint applies, even when it
-  supplies none of the bound *value*.
+  supplies none of the bound *value*. A constraint with no inline affine remainder
+  and no rows is not an error; it applies to nothing.
 - **A both-null row is legal only when a reference fills a side.** A row with
   `bound_lower = null` and `bound_upper = null` is accepted when the
   constraint's own `bound_lower_affine`/`bound_upper_affine` supplies at least
   one endpoint — the row's only job is then to activate that cell; the value
-  comes entirely from the remainder (this is exactly the third worked example
-  above). A both-null row on a constraint with **no** affine remainder on
-  either side is `InvalidValue`: "has neither bound_lower nor bound_upper: at
-  least one endpoint is required."
+  comes entirely from the remainder (as in the
+  [security-curve example](#worked-example-a-security-curve)). A both-null row
+  on a constraint with **no** affine remainder on either side is
+  `InvalidValue`: "has neither bound_lower nor bound_upper: at least one
+  endpoint is required."
 - **A degenerate equal band is accepted, an inverted one is not.**
   `bound_upper == bound_lower` derives to `equality` and is fine;
   `bound_upper < bound_lower` (checked only when both are statically
@@ -219,9 +140,163 @@ if a row exists for it there.
 
 ---
 
+## Expression grammar
+
+An `expression` string follows the grammar below; whitespace between tokens is
+ignored and every name is case-sensitive.
+
+```text
+relation  ::= side ( ( "<=" | ">=" | "==" ) side )?
+side      ::= ( "+" | "-" )? term ( ( "+" | "-" ) term )*
+term      ::= number "*" "@" name "*" variable | "@" name "*" variable
+            | number "*" "@" name | "@" name
+            | number "*" variable | number "*" group | group | variable
+            | number
+group     ::= "(" ( "+" | "-" )? term ( ( "+" | "-" ) term )* ")"
+variable  ::= var_name "(" integer ( "," integer )? ( "," "bus" "=" integer )? ")"
+            | "line_exchange" "(" bus_pair ")"
+bus_pair  ::= "source_bus" "=" integer "," "target_bus" "=" integer
+            | "target_bus" "=" integer "," "source_bus" "=" integer
+number    ::= one or more digits with at most one ".",
+              then an optional exponent ("e" or "E", an optional sign, digits)
+integer   ::= a non-negative whole number
+name      ::= a letter or "_", then letters, digits or "_"
+```
+
+The productions do not show these rules:
+
+- A bare `number` term is accepted only on a side of a relation, never inside a
+  `group` and never in an expression with no relational operator.
+- An expression holds at most one relational operator outside parentheses.
+- `var_name` is one of the names in the [variable catalog](#variable-catalog).
+  Only `hydro_turbined` and `hydro_generation` take `bus=`; `hydro_storage`,
+  `hydro_withdrawal` and `anticipated_decision` take no block argument; only
+  `line_exchange` takes a `bus_pair`.
+- Write `@` directly against its name (`@name`, never `@ name`). How an `@name`
+  term reads (a parameter coefficient or a named-expression reference) is
+  stated under [The `@name` grammar](#the-name-grammar).
+- Give at most one block argument: a second one replaces the first, and no error
+  is reported.
+- A named-expression definition in `expressions` takes neither a relational
+  operator nor a bare number.
+
+### Not supported
+
+Each construct below is rejected when the case loads, reported as
+[`SchemaViolation`](/reference/error-codes/#schemaviolation).
+
+**A sign on a later term.** Write `hydro_generation(0) - thermal_generation(0)`.
+
+```json title="constraints/generic_constraints.json" gc-check="reject"
+{
+  "constraints": [
+    {
+      "id": 1,
+      "name": "c1",
+      "expression": "hydro_generation(0) + -thermal_generation(0)",
+      "slack": { "enabled": false }
+    }
+  ]
+}
+```
+
+**Division.** Write `0.5 * hydro_generation(0)`.
+
+```json title="constraints/generic_constraints.json" gc-check="reject"
+{
+  "constraints": [
+    {
+      "id": 1,
+      "name": "c1",
+      "expression": "hydro_generation(0) / 2",
+      "slack": { "enabled": false }
+    }
+  ]
+}
+```
+
+**A coefficient after the variable.** Write `2 * hydro_generation(0)`.
+
+```json title="constraints/generic_constraints.json" gc-check="reject"
+{
+  "constraints": [
+    {
+      "id": 1,
+      "name": "c1",
+      "expression": "hydro_generation(0) * 2",
+      "slack": { "enabled": false }
+    }
+  ]
+}
+```
+
+**A bare `<` or `>`.** Write `<=` or `>=`.
+
+```json title="constraints/generic_constraints.json" gc-check="reject"
+{
+  "constraints": [
+    {
+      "id": 1,
+      "name": "c1",
+      "expression": "hydro_generation(0) < 30",
+      "slack": { "enabled": false }
+    }
+  ]
+}
+```
+
+**A constant inside a group.** Write
+`hydro_generation(0) <= 2 * thermal_generation(0) + 10`.
+
+```json title="constraints/generic_constraints.json" gc-check="reject"
+{
+  "constraints": [
+    {
+      "id": 1,
+      "name": "c1",
+      "expression": "hydro_generation(0) <= 2 * (thermal_generation(0) + 5)",
+      "slack": { "enabled": false }
+    }
+  ]
+}
+```
+
+**Two relational operators.** Give both endpoints in the bounds file, or write
+two constraints.
+
+```json title="constraints/generic_constraints.json" gc-check="reject"
+{
+  "constraints": [
+    {
+      "id": 1,
+      "name": "c1",
+      "expression": "10 <= hydro_generation(0) <= 30",
+      "slack": { "enabled": false }
+    }
+  ]
+}
+```
+
+**A name in another case.** Write `hydro_generation(0)`.
+
+```json title="constraints/generic_constraints.json" gc-check="reject"
+{
+  "constraints": [
+    {
+      "id": 1,
+      "name": "c1",
+      "expression": "Hydro_generation(0)",
+      "slack": { "enabled": false }
+    }
+  ]
+}
+```
+
+---
+
 ## Variable catalog
 
-All 26 LP variable types are addressable from an `expression`. The reference
+An `expression` can name any of the 26 variables below. The reference
 grammar is `var_name(entity_id[, block_id][, bus=bus_id])` — an optional
 positional block argument, then an optional named `bus=` selector, in that
 order (`f(id)`, `f(id, block)`, `f(id, bus=b)`, `f(id, block, bus=b)` all
@@ -231,10 +306,10 @@ parse).
 | -------------------------------- | --------- | ------ | -------------------------------------------------------------------------- |
 | `hydro_storage(id)`              | No        | No     | Stage-level stock                                                        |
 | `hydro_withdrawal(id)`           | No        | No     | Stage-level                                                              |
-| `hydro_evaporation(id[, block])` | Yes       | No     | `None` = block 0 (parallel-mode stage evaporation); **rejected** with `None` in chronological mode with more than one block — a block must be named |
-| `hydro_inflow(id[, block])`      | Yes       | No     | `None` always expands to **one row per block** (upstream releases are per-block columns) — never collapses |
-| `hydro_storage_initial(id[, block])` | Yes (boundary) | No | `Some(k)` = incoming column of block `k`; `None` = stage-initial anchor S⁰ |
-| `hydro_storage_final(id[, block])`   | Yes (boundary) | No | `Some(k)` = outgoing column of block `k`; `None` = stage-final Sᴷ (equal to `hydro_storage`) |
+| `hydro_evaporation(id[, block])` | Yes       | No     | One stage-level quantity on a parallel stage, one per block on a chronological stage; some references are **rejected** on their block argument — see [block references](#hydro_evaporation-block-references) |
+| `hydro_inflow(id[, block])`      | Yes       | No     | The plant's inflow in the block ([`hydro_inflow`](#hydro_inflow)); a bound with no `block_id` expands to one row per block; a `hydro_inflow` term never collapses to a stage-level row, and a term with no block argument reads the block of its row |
+| `hydro_storage_initial(id[, block])` | Yes (boundary) | No | With a block `k`, the storage at the start of block `k`; with no block, the stage's initial storage |
+| `hydro_storage_final(id[, block])`   | Yes (boundary) | No | With a block `k`, the storage at the end of block `k`; with no block, the stage's final storage (the `hydro_storage` value) |
 | `hydro_useful_volume_initial(id[, block])` | Yes (boundary) | No | Same column and block semantics as `hydro_storage_initial`; stands for storage − `reservoir.min_storage_hm3` (see below) |
 | `hydro_useful_volume_final(id[, block])`   | Yes (boundary) | No | Same column and block semantics as `hydro_storage_final`; stands for storage − `reservoir.min_storage_hm3` (see below) |
 | `hydro_turbined(id[, block][, bus=])` | Yes    | Yes    | `bus=` selects one `(hydro, bus)` cell; omitted sums over the plant's cells |
@@ -254,10 +329,28 @@ parse).
 | `contract_export(id[, block])`   | Yes       | No     |                                                                           |
 | `non_controllable_generation(id[, block])` | Yes | No   |                                                                           |
 | `non_controllable_curtailment(id[, block])` | Yes | No  |                                                                           |
-| `anticipated_decision(id)`       | **No** (rejected if given) | No | Stage-level scalar commitment column; no block index at all — use `anticipated_decision(N)` |
+| `anticipated_decision(id)`       | **No** (rejected if given) | No | Stage-level scalar commitment column of a thermal that declares [`anticipated_config`](/reference/case-format/system/#systemthermalsjson); no block index at all — use `anticipated_decision(N)` |
 
 Only `hydro_turbined` and `hydro_generation` accept `bus=`; any other
-variable rejects it as "does not accept a bus selector."
+variable rejects it as "does not accept a bus selector." A `(hydro, bus)` cell
+is the part of a plant on one bus: a plant has one cell per distinct bus among
+its [unit groups](/reference/case-format/hydros/#systemhydrosjson), and `bus=`
+must name one of those buses.
+
+A `hydro_withdrawal`, `non_controllable_generation` or
+`non_controllable_curtailment` term is accepted when the case loads but adds no
+coefficient to the LP row. A `contract_import` or `contract_export` term adds a
+coefficient only when the named contract exists and has that direction, a
+`hydro_evaporation` term only on a stage where the plant has an evaporation
+model and is not PreFilling, and a `hydro_generation` term on a plant with an
+FPHA model only on a stage where the plant is neither PreFilling nor Filling; in
+these cases the term's quantity is zero. The [resolved echo](#the-resolved-echo)
+still lists every such term.
+
+A constraint whose every term adds no coefficient leaves a row with no LP
+variable from its terms: without a slack the LP is infeasible when the bound
+excludes zero, and the row has no effect otherwise; with a slack, the slack absorbs the excluded amount at the constraint's slack penalty. When only some terms add no
+coefficient, the bound applies to the remaining terms alone.
 
 **Useful-volume bound fold.** A term `c * hydro_useful_volume_initial(h)` or
 `c * hydro_useful_volume_final(h)` is built on plant `h`'s storage column, and
@@ -270,6 +363,66 @@ same rule. The constraint therefore reads as a quantity above dead storage while
 the LP column keeps the absolute storage value; no extra LP variable is
 created, and the folded endpoints are visible in
 [the resolved echo](#the-resolved-echo).
+
+### `hydro_evaporation` block references
+
+With `h` a hydro id and `K` the number of blocks the stage declares, the
+generic-constraint check rejects a `hydro_evaporation` reference that the
+stage's [`block_mode`](/reference/case-format/stages/#stagesjson) cannot
+expose:
+
+- On a parallel stage with two or more blocks, `hydro_evaporation(h)` and
+  `hydro_evaporation(h, 0)` address the one stage-level evaporation, and a block
+  from 1 to `K - 1` is rejected.
+- On a chronological stage with more than one block, a block is required:
+  `hydro_evaporation(h)` is rejected.
+- On a stage with one block, on either stage mode, `hydro_evaporation(h)` and
+  `hydro_evaporation(h, 0)` both address the single block.
+- A block at or beyond `K` is rejected on every stage, for an evaporation or a
+  storage reference.
+- The same check rejects a `hydro_storage_initial`, `hydro_storage_final`,
+  `hydro_useful_volume_initial` or `hydro_useful_volume_final` reference that
+  names an interior block boundary, one between two blocks, on a parallel stage.
+
+```text
+hydro_evaporation(h)      parallel: the stage-level evaporation; chronological with K > 1: rejected
+hydro_evaporation(h, 1)   parallel: rejected; chronological with K > 1: block 1
+```
+
+The check runs only for a (constraint, stage) pair that has a row in
+`generic_constraint_bounds.parquet`. Each rejection is a `BusinessRuleViolation`;
+the messages are quoted in
+[Error Codes — Per-block generic-constraint references](/reference/error-codes/#per-block-generic-constraint-references).
+
+For any reference not covered above, the block argument is not checked when the
+case loads: keep it below `K` on every stage where the constraint is active. A
+block at or beyond `K` passes `cobre validate`, and the term can then land on a
+column outside that entity's own blocks. `cobre run` stops with an
+index-out-of-bounds panic when the block addresses past the last column of the
+stage LP, and for a block at or beyond `K` on a `hydro_inflow` term of a plant
+that receives water through an upstream `travel_time_hours` arc.
+
+### `hydro_inflow`
+
+A `hydro_inflow` term reads the plant's inflow in the block, a rate in m³/s, made
+of:
+
+- the plant's local inflow;
+- the flows diverted into it;
+- the upstream releases credited to the block by travel time;
+- the share of the in-transit volume maturing at the stage that arrives in the
+  block, as a rate;
+- the water of upstream
+  [PreFilling](/math/system-elements#not-yet-commissioned-hydros-prefilling)
+  plants passing through.
+
+It excludes pumping, the inflow non-negativity slack, the plant's own outflows,
+evaporation and withdrawal. On a parallel stage only the duration-weighted stage
+total matches the water balance; the split across blocks is a convention. For a plant that is PreFilling at the stage, the plant's inflow enters the
+water-balance row of its nearest downstream plant that is not PreFilling, so the
+term equals no row's own inflow.
+
+Definition: [LP Formulation — Hydro Inflow](/math/lp-formulation#hydro-inflow).
 
 ### `line_exchange(source_bus=, target_bus=)`
 
@@ -293,13 +446,11 @@ target_bus_id)` pair and its reverse:
   orientation folds `-1.0` into the term's scale — so an author never needs to
   know which way a given line happened to be declared.
 
-The pair form desugars at parse time to exactly the same `LineExchange
-{ line_id }` term the direct-id form produces; there is no separate storage or
-downstream special-casing. If two *distinct* lines share the same unordered
-bus pair, the pair no longer identifies a single line and the reference is
-rejected at line-topology build time ("buses ... are connected by more than
-one line ... reference the intended line by its id, or sum the lines with a
-named expression").
+The pair form reads exactly the line that the direct-id form reads, with the
+orientation sign applied. When two lines connect the same pair of buses, the
+pair identifies no single line, and the case is rejected whenever it has a
+`constraints/generic_constraints.json` file, even if no expression uses the
+pair form ([Authoring errors](#authoring-errors)).
 
 <div style="width:min(100%,560px)">
 
@@ -310,7 +461,7 @@ decl: "system/lines.json\nsource_bus_id, target_bus_id" {shape: parallelogram}
 idx: "line-topology index\n(source,target) and its reverse" {shape: rectangle}
 ref: "line_exchange(source_bus=3, target_bus=7)" {shape: rectangle}
 resolve: "resolve pair -> (line_id, orientation)" {shape: rectangle}
-term: "LineExchange { line_id }\nscale *= +-1.0" {shape: oval}
+term: "line_exchange(id)\nsign +1 or -1" {shape: oval}
 
 decl -> idx
 idx -> resolve
@@ -326,8 +477,9 @@ resolve -> term
 
 Two authoring roles share **one namespace**: scalar parameters (declared in
 `constraints/generic_parameters.json`) and named expressions (declared in the
-constraints file's own top-level `expressions` array). Declaring the same name
-in both is rejected: "name ... is declared as both a scalar parameter and a
+constraints file's own optional top-level `expressions` array and shared by
+every constraint). Declaring the same name in both is rejected: "name ... is
+declared as both a scalar parameter and a
 named expression; the \"@name\" namespace is shared."
 
 **Disambiguation.** `@name` immediately followed by `* variable` is a
@@ -341,7 +493,7 @@ flat linear-core representation.
 composition resolves transitively, with each reference's scale distributed
 into every substituted term:
 
-```json
+```json title="constraints/generic_constraints.json" gc-check="accept"
 {
   "expressions": [
     { "name": "base", "expression": "hydro_generation(0)" },
@@ -349,26 +501,23 @@ into every substituted term:
     { "name": "outer", "expression": "@inner + hydro_generation(1)" }
   ],
   "constraints": [
-    { "id": 0, "name": "c0", "expression": "2.0 * @outer", "slack": { "enabled": false } }
+    { "id": 1, "name": "c0", "expression": "2.0 * @outer", "slack": { "enabled": false } }
   ]
 }
 ```
 
 `2.0 * @outer` inlines to `6.0 * hydro_generation(0) + 2.0 * hydro_generation(1)`.
 
-**Cycle detection.** Before any substitution runs, an iterative three-colour
-DFS walks the reference graph. A self-reference (`@e = @e`) is a cycle of
-length one; a longer cycle (`@a = @b`, `@b = @a`) is rejected with the full
-path in the message (`"a -> b -> a"`). The walk is iterative, never recursive
-over the chain, so a deep dependency chain cannot overflow the stack.
+**Cycle detection.** A reference cycle among named expressions, including an
+expression that references itself, is rejected before any constraint is built,
+even when no constraint uses those expressions; the message names the cycle
+(`a -> b -> a`).
 
 **Term budget.** Substitution caps at 100,000 materialized terms per
 expansion — catching an exponential doubling chain (`@e_k = @e_{k-1} +
-@e_{k-1}`) fast, well before a 2⁶⁰-term vector would ever materialize.
-Declaring such an expression is not itself an error: an existence-only,
-non-expanding walk checks that every reference *resolves* at declaration
-time regardless of size; the term-budget cap only fires when something
-actually inlines it.
+@e_{k-1}`) fast. Declaring such an expression is not itself an error: every
+reference must resolve when the expression is declared, regardless of its
+size, and the term-budget cap only fires when something actually inlines it.
 
 **Grouping.** A parenthesized group scaled by a leading literal coefficient
 (`2.0 * (@fnese - hydro_generation(2))`) distributes that coefficient into
@@ -387,9 +536,9 @@ b: "@b\n\"@a\"" {shape: rectangle}
 a -> b
 b -> a
 
-detect: "detect_cycles()\nthree-colour DFS" {shape: diamond}
-inline: "inline()\nsubstitute terms" {shape: rectangle}
-rejected: "SchemaError\n\"a -> b -> a\"" {shape: oval}
+detect: "cycle check" {shape: diamond}
+inline: "substitute terms" {shape: rectangle}
+rejected: "[SchemaViolation]\n\"a -> b -> a\"" {shape: oval}
 
 b -> detect
 detect -> inline: acyclic
@@ -402,14 +551,12 @@ detect -> rejected: cycle found
 
 ## Inline relational RHS
 
-Grammar: `relation ::= side (('<=' | '>=' | '==') side)?`. An expression
-carries **at most one** top-level relational operator; a double range (`LI <=
-expr <= LS`) is explicitly unsupported — split into two constraints, or fold
-both endpoints through the bounds-parquet base directly.
+An expression carries at most one relational operator
+([Expression grammar](#expression-grammar)); for a range, give both endpoints in
+the bounds file or write two constraints.
 
-- **No operator**: `expression` is the flat one-sided LHS (the v0.13.0-minus-`sense`
-  shape); the interval comes entirely from the parquet base / affine-remainder
-  mechanism described above.
+- **No operator**: `expression` is the flat one-sided LHS; the interval comes
+  entirely from the parquet base / affine-remainder mechanism described above.
 - **One operator**: every RHS variable term moves onto the merged LHS,
   sign-flipped; a same-variable, same-coefficient-kind pair (across either
   side) merges by summing its effective contribution, and a merged literal
@@ -422,13 +569,13 @@ A bound-position `@name` resolves as a scalar parameter **only when it is not
 a declared named expression**. When it *is* one, it still inlines into the
 merged LHS as variable terms rather than becoming part of the remainder:
 
-```json
+```json title="constraints/generic_constraints.json" gc-check="accept"
 {
   "expressions": [
     { "name": "fnese", "expression": "hydro_generation(10) + hydro_generation(11)" }
   ],
   "constraints": [
-    { "id": 0, "name": "c0", "expression": "hydro_generation(0) >= @fnese", "slack": { "enabled": false } }
+    { "id": 1, "name": "c0", "expression": "hydro_generation(0) >= @fnese", "slack": { "enabled": false } }
   ]
 }
 ```
@@ -441,24 +588,21 @@ affine bound, never "no bound."
 
 ## `generic_parameters.json`: the five parameter kinds
 
-The top-level JSON key remains `"scalar_parameters"` (an array), unchanged
-across the rework, even though the file itself now lives at
-`constraints/generic_parameters.json`.
+The file's top-level JSON key is `"scalar_parameters"` (an array). The [field table](/reference/case-format/constraints/#constraintsgeneric_parametersjson) lists
+the field each kind fills.
 
-| `kind`            | Payload field                                        | Value semantics                                                              |
-| ------------------ | ------------------------------------------------------ | ------------------------------------------------------------------------------ |
-| `constant`         | `"value": <f64>`                                       | One value for every stage                                                    |
-| `per_stage`        | `"values": [[stage_id, value], ...]`                   | Explicit value per stage; `stage_id`s must be a contiguous range from `0`     |
-| `seasonal`         | `"values": [[season_id, value], ...]`                  | One value per season; stages inherit their season's value; `season_id`s must be unique |
-| `computed`         | `"computed_spec": { "tag": "<variant>", "hydro_id": <int> }` | Derived from hydro geometry/operational data at LP-build time — one of ten hydro-derived tags (e.g. `equivalent_productivity`); see [Case Directory Format](/reference/case-directory-format/#constraintsgeneric_parametersjson) |
-| `per_stage_block`  | `"block_values": [[stage_id, block_id, value], ...]`   | Explicit value per `(stage_id, block_id)` pair; each pair unique              |
+| `kind`            | Value semantics                                                                                                                                                                                                               |
+| ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `constant`        | One value for every stage                                                                                                                                                                                                     |
+| `per_stage`       | Explicit value per stage; `stage_id`s must be a contiguous range from `0`                                                                                                                                                     |
+| `seasonal`        | One value per season; stages inherit their season's value; `season_id`s must be unique                                                                                                                                        |
+| `computed`        | Derived from hydro geometry/operational data at LP-build time — one of ten hydro-derived tags (e.g. `equivalent_productivity`); see [Constraint Files](/reference/case-format/constraints/#constraintsgeneric_parametersjson) |
+| `per_stage_block` | Explicit value per `(stage_id, block_id)` pair; each pair unique                                                                                                                                                              |
 
-:::note[The vendored schema's `kind` description is stale]
-[`generic_parameters.schema.json`](/schemas/generic_parameters.schema.json)'s
-`kind` description lists four kinds (`constant`, `per_stage`, `seasonal`,
-`computed`); the `cobre-io` parser accepts five, including `per_stage_block`,
-which is fully validated. This page follows the parser.
-:::
+The vendored [`generic_parameters.schema.json`](/schemas/generic_parameters.schema.json)
+lists four `kind` values and does not restrict the field; the loader accepts
+all five kinds above. For editor validation with the vendored schema, see
+[JSON Schemas](/reference/json-schemas/).
 
 `per_stage_block` is the mechanism that makes a generic-constraint bound (or
 coefficient) genuinely block-varying — and, per
@@ -471,8 +615,11 @@ affine remainder suppresses the stage-level row collapse.
 
 Slack config (`slack.enabled`/`slack.penalty`) is declared once per
 constraint and applies uniformly to every row the activation grid produces
-for it. How many LP columns that costs is a property of the **row's own**
-resolved endpoint pair, never a constraint-level label:
+for it. `slack` is required on every constraint; with `enabled: true`,
+`penalty` is required and must be greater than zero
+([Authoring errors](#authoring-errors)). How many LP columns the slack adds is
+a property of the **row's own** resolved endpoint pair, never a
+constraint-level label:
 
 | Row shape             | Slack columns                          |
 | ----------------------- | ----------------------------------------- |
@@ -512,21 +659,21 @@ invariant, so the same case always echoes the same rows in the same order. A
 term-less (constant-only) constraint contributes a single placeholder row
 whose per-term columns are all null.
 
-| Column             | Type    | Description                                                                          |
-| -------------------- | --------- | ---------------------------------------------------------------------------------------- |
-| `stage_id`           | INT32     | Study stage id                                                                          |
-| `block_id`           | INT32, nullable | Null on a collapsed stage-level row                                              |
-| `constraint_id`      | INT32     | Generic constraint id                                                                   |
-| `constraint_name`    | UTF8      | Generic constraint name                                                                 |
-| `term_index`         | INT32, nullable | Position in the resolved LHS; null on the term-less placeholder row              |
-| `variable_kind`      | UTF8, nullable | `VariableRef` discriminant (e.g. `"thermal_generation"`); null on the placeholder |
-| `variable`           | UTF8, nullable | Rendered variable label (e.g. `"thermal_generation(id=3, block=all)"`); null on the placeholder            |
-| `coefficient`        | DOUBLE, nullable | Fully resolved numeric coefficient (`resolve(coefficient, stage, block) * scale`); null on the placeholder |
-| `bound_lower`        | DOUBLE, nullable | Lower interval endpoint after folding — including each useful-volume term's `coef × min_storage_hm3` shift; null when unbounded below                 |
-| `bound_upper`        | DOUBLE, nullable | Upper interval endpoint after folding — including each useful-volume term's `coef × min_storage_hm3` shift; null when unbounded above                 |
-| `derived_shape`      | UTF8      | The same `floor`/`cap`/`band`/`equality` label as above — never an authored sense       |
-| `slack_enabled`      | BOOLEAN   | Whether the constraint carries a slack term                                             |
-| `slack_penalty`      | DOUBLE, nullable | Slack penalty; null when slack is disabled                                       |
+| Name              | Type    | Nullable | Units | Description                                                                                                                           |
+| ----------------- | ------- | -------- | ----- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| `stage_id`        | Int32   | No       | —     | Study stage id                                                                                                                        |
+| `block_id`        | Int32   | Yes      | —     | Null on a collapsed stage-level row                                                                                                   |
+| `constraint_id`   | Int32   | No       | —     | Generic constraint id                                                                                                                 |
+| `constraint_name` | Utf8    | No       | —     | Generic constraint name                                                                                                               |
+| `term_index`      | Int32   | Yes      | —     | Position in the resolved LHS; null on the term-less placeholder row                                                                   |
+| `variable_kind`   | Utf8    | Yes      | —     | Variable name (e.g. `"thermal_generation"`); null on the placeholder                                                                  |
+| `variable`        | Utf8    | Yes      | —     | Rendered variable label (e.g. `"thermal_generation(id=3, block=all)"`); null on the placeholder                                       |
+| `coefficient`     | Float64 | Yes      | —     | Fully resolved numeric coefficient (`resolve(coefficient, stage, block) * scale`); null on the placeholder                            |
+| `bound_lower`     | Float64 | Yes      | —     | Lower interval endpoint after folding — including each useful-volume term's `coef × min_storage_hm3` shift; null when unbounded below |
+| `bound_upper`     | Float64 | Yes      | —     | Upper interval endpoint after folding — including each useful-volume term's `coef × min_storage_hm3` shift; null when unbounded above |
+| `derived_shape`   | Utf8    | No       | —     | The same `floor`/`cap`/`band`/`equality` label as above — never an authored sense                                                     |
+| `slack_enabled`   | Boolean | No       | —     | Whether the constraint carries a slack term                                                                                           |
+| `slack_penalty`   | Float64 | Yes      | —     | Slack penalty; null when slack is disabled                                                                                            |
 
 The echo is the place to observe a folded bound: the input
 `constraints/generic_constraint_bounds.parquet` shows the pre-fold value. For
@@ -538,8 +685,11 @@ This is the fully **desugared** form: every named-expression reference is
 already inlined into flat terms, every inline relational RHS has already
 normalized into the `bound_lower`/`bound_upper` pair, and every `@name`
 coefficient or bound has already resolved to its numeric value at that
-`(stage, block)`. It is exactly what the solver saw — the tool for auditing an
-authored expression against the LP that was actually built.
+`(stage, block)`. It is exactly what the solver saw, apart from the terms that
+add no coefficient (see the note under the [variable catalog](#variable-catalog))
+and a term with an out-of-range block
+([block references](#hydro_evaporation-block-references)) — the tool for
+auditing an authored expression against the LP that was actually built.
 
 ---
 
@@ -548,13 +698,13 @@ authored expression against the LP that was actually built.
 A security curve keeps plant `h`'s end-of-stage stored energy above a fraction
 `p` of its maximum, stated in energy terms with the useful-range mean
 productivity of
-[Hydro Production Models §5.3](/math/hydro-production-models#53-useful-range-mean-productivity):
+[Hydro Production Function Models §5.3](/math/hydro-production-models#53-useful-range-mean-productivity):
 `@rho_int * hydro_useful_volume_final(h) >= p * @emax`.
 
 `constraints/generic_parameters.json` declares the two computed parameters for
 hydro `0`:
 
-```json
+```json title="constraints/generic_parameters.json" gc-check="accept"
 {
   "scalar_parameters": [
     {
@@ -575,7 +725,7 @@ hydro `0`:
 
 `constraints/generic_constraints.json` states the curve for `p = 0.3`:
 
-```json
+```json title="constraints/generic_constraints.json" gc-check="accept"
 {
   "constraints": [
     {
@@ -607,15 +757,20 @@ the same range `@emax` spans. Pairing `max_stored_energy` with the
 reference-point `accumulated_productivity` instead does not cancel and raises a
 [`SemanticAmbiguity`](/reference/error-codes/#semanticambiguity) warning.
 
+{/* capture: cobre run case --output out --quiet | cobre   v0.17.0 | binary: cobre-cli sha256 23916b46 | case: temporary 1dtoy derivative (ticket-179 overlay + the security-curve fences; constraints/generic_constraint_bounds.parquet rows for constraint 1, stages 0-3, both bounds null; config.json training stopped at 3 iterations, simulation disabled; run with NO_COLOR=1, exit code 0) */}
+
 **What the echo shows.** On a plant with `reservoir.min_storage_hm3 = 100`,
-the stage-0 [resolved echo](#the-resolved-echo) row reads `coefficient = 1.493`,
-`bound_lower = 552.41` and
+`reservoir.max_storage_hm3 = 1000`, `specific_productivity_mw_per_m3s_per_m = 0.0088`
+and a three-row volume-height-area geometry table (100, 500 and 1000 hm³),
+the stage-0 [resolved echo](#the-resolved-echo) row reads `coefficient = 2.8136`,
+`bound_lower = 1041.02` and
 `variable = "hydro_useful_volume_final(id=0, block=all)"`: the RHS
-`0.3 × 1343.7` plus the useful-volume fold `1.493 × 100`.
+`0.3 × 2532.2` (`0.3 × @emax`, where `@emax = 2.8136 × (1000 − 100)`) plus the
+useful-volume fold `2.8136 × 100` (`@rho_int × min_storage_hm3`).
 
 Writing the same curve by hand on `hydro_storage_final(h)`, with the dead-volume
-energy `@rho_int × min_storage_hm3` pre-folded into the bound (here
-`bound_lower = 552.41` on `@rho_int * hydro_storage_final(0)`), is equivalent.
+energy `@rho_int × min_storage_hm3` pre-folded into the bound (on the same plant,
+`bound_lower = 1041.02` on `@rho_int * hydro_storage_final(0)`) is equivalent.
 
 ---
 
@@ -623,19 +778,33 @@ energy `@rho_int × min_storage_hm3` pre-folded into the bound (here
 
 The failure modes below are the ones an author is most likely to hit while
 writing this grammar; see [Error Codes](/reference/error-codes/) for the
-exhaustive catalog and resolutions — it is not repeated here.
+exhaustive catalog and resolutions — it is not repeated here. The Kind column
+names each failure's kind; on an error line, `cobre validate` prints it in
+brackets, as in `error: [SchemaViolation] …`.
 
-| Situation                                                                    | Error                        |
+| Situation                                                                    | Kind                         |
 | ------------------------------------------------------------------------------ | ------------------------------- |
-| Unknown variable name, unknown `@parameter`, or a grammar violation           | `SchemaError` (parse-time)      |
-| Duplicate constraint `id`, duplicate parameter `id`/`name`, or a name colliding across the scalar-parameter/named-expression namespace | `SchemaError`  |
-| Reference cycle among named expressions                                      | `SchemaError` (see [`CycleDetected`](/reference/error-codes/#cycledetected)) |
+| An unknown variable name, including a catalog name written in another case (`Hydro_generation(0)`) | [`SchemaViolation`](/reference/error-codes/#schemaviolation) |
+| An unknown `@parameter`, or any construct under [Not supported](#not-supported) | [`SchemaViolation`](/reference/error-codes/#schemaviolation) |
+| `bus=` on a variable other than `hydro_turbined` and `hydro_generation`, or a block argument on `hydro_storage`, `hydro_withdrawal` or `anticipated_decision` | [`SchemaViolation`](/reference/error-codes/#schemaviolation) |
+| A duplicate constraint `id`, or a duplicate parameter `id` or `name` | [`SchemaViolation`](/reference/error-codes/#schemaviolation) |
+| A name declared both as a scalar parameter and as a named expression | [`SchemaViolation`](/reference/error-codes/#namespace-collision-between-a-scalar-parameter-and-a-named-expression) |
+| A reference cycle among named expressions, a self-reference included | [`SchemaViolation`](/reference/error-codes/#named-expression-reference-cycle) |
+| A key the constraint entry does not declare (for example `sense`) | [`ParseError`](/reference/error-codes/#unknown-field-in-a-generic-constraint-entry) |
+| A constraint entry with no `slack` object | [`ParseError`](/reference/error-codes/#parseerror) |
+| `slack.enabled: true` with no `penalty`, or with a `penalty` of zero or less | [`SchemaViolation`](/reference/error-codes/#schemaviolation) |
+| A term naming an entity id the case does not declare (`hydro_generation(7)` with no hydro `7`) | [`InvalidReference`](/reference/error-codes/#invalidreference) |
+| `bus=` naming a bus on which the plant has no unit group | [`InvalidReference`](/reference/error-codes/#invalidreference) |
+| `anticipated_decision(N)` where thermal `N` has no `anticipated_config` | [`BusinessRuleViolation`](/reference/error-codes/#businessruleviolation) |
+| `line_exchange(source_bus=, target_bus=)` naming two buses that no line connects | [`SchemaViolation`](/reference/error-codes/#schemaviolation) |
+| Two lines connecting the same pair of buses, in either direction, in a case that has `constraints/generic_constraints.json`, whether or not an expression uses the bus-pair form | [`SchemaViolation`](/reference/error-codes/#schemaviolation) |
 | Constraint declares a bound reference but has no activation rows             | [`InvalidReference`](/reference/error-codes/#invalidreference) |
 | A bounds row with neither endpoint, and no affine remainder to fill one      | [`InvalidValue`](/reference/error-codes/#invalidvalue) |
 | Inverted interval (`bound_upper < bound_lower`, both statically resolvable)  | [`InvalidValue`](/reference/error-codes/#invalidvalue) |
-| `block_id` out of range for the stage's block count | [`BusinessRuleViolation`](/reference/error-codes/#businessruleviolation) |
+| A bounds row whose `block_id` is not a block of its stage | [`BusinessRuleViolation`](/reference/error-codes/#businessruleviolation) |
+| An evaporation or storage reference naming a block that its stage does not have ([block references](#hydro_evaporation-block-references)) | [`BusinessRuleViolation`](/reference/error-codes/#per-block-generic-constraint-references) |
 | The same bound column (`bound_lower` or `bound_upper`) set twice for one `(constraint_id, stage_id, block_id)` — a `bound_lower` row and a `bound_upper` row for the same triple are distinct keys and legal | [`DuplicateId`](/reference/error-codes/#duplicateid) |
-| Two distinct lines sharing one unordered bus pair, addressed via `line_exchange(source_bus=, target_bus=)` | `SchemaError` |
+| A `contract_import` or `contract_export` term naming no declared contract | [`UnusedEntity`](/reference/error-codes/#unusedentity) — warning, the case still validates |
 | `max_stored_energy(h)` and `accumulated_productivity(h)` for the same hydro in one constraint (the matching coefficient is `integrated_accumulated_productivity`) | [`SemanticAmbiguity`](/reference/error-codes/#semanticambiguity) — warning, the case still validates |
 
 ---
@@ -644,8 +813,8 @@ exhaustive catalog and resolutions — it is not repeated here.
 
 - [LP Formulation §10](/math/lp-formulation#10-generic-constraints) — the math
   formulation these constraints desugar into.
-- [Case Directory Format](/reference/case-directory-format/#constraintsgeneric_constraintsjson) —
-  per-file field tables for the three input files.
+- [Constraint Files](/reference/case-format/constraints/#constraintsgeneric_constraintsjson) — field tables for
+  the three input files.
 - [Error Codes](/reference/error-codes/) — the exhaustive `LoadError`/`ErrorKind` catalog.
 - [JSON Schemas](/reference/json-schemas/) — vendored
   [`generic_constraints.schema.json`](/schemas/generic_constraints.schema.json) and

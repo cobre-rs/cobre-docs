@@ -1,8 +1,7 @@
 // Unit fixture for the shared zoneOf() predicate (Epic 04 ticket-015).
 //
 // Pins the zone map so check-doc-voice.mjs and check-doc-version.mjs cannot
-// silently drift apart on what counts as strict/lenient/excluded. The four
-// mappings below are exactly the ones the ticket's Acceptance Criteria name.
+// silently drift apart on what counts as strict/lenient/excluded.
 
 import test from "node:test";
 import assert from "node:assert/strict";
@@ -19,8 +18,16 @@ test("math/_impl/* is lenient (software layer nested under math/)", () => {
 });
 
 test("reference/* is lenient", () => {
-  assert.equal(zoneOf("reference/output-format.mdx"), ZONE_LENIENT);
-  assert.equal(zoneOf("reference/case-directory-format.mdx"), ZONE_LENIENT);
+  assert.equal(zoneOf("reference/error-codes.mdx"), ZONE_LENIENT);
+  assert.equal(zoneOf("reference/case-format/hydros.mdx"), ZONE_LENIENT);
+});
+
+test("reference/glossary.md is strict (math zone, R97)", () => {
+  assert.equal(zoneOf("reference/glossary.md"), ZONE_STRICT);
+  // One file, not the directory: its siblings stay lenient.
+  assert.equal(zoneOf("reference/bibliography.md"), ZONE_LENIENT);
+  // Exact path match: a lookalike name is not the glossary.
+  assert.equal(zoneOf("reference/glossary.mdx"), ZONE_LENIENT);
 });
 
 test("running/* is lenient", () => {
@@ -40,8 +47,8 @@ test("overview/* is strict", () => {
   assert.equal(zoneOf("overview/what-cobre-solves.md"), ZONE_STRICT);
 });
 
-test("index.mdx is excluded", () => {
-  assert.equal(zoneOf("index.mdx"), ZONE_EXCLUDED);
+test("index.mdx is lenient", () => {
+  assert.equal(zoneOf("index.mdx"), ZONE_LENIENT);
 });
 
 test("pt-br/* is excluded", () => {

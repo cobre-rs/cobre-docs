@@ -1,0 +1,22 @@
+{
+  "scalar_parameters": [
+    {
+      "id": 1,
+      "name": "rho_int",
+      "kind": "computed",
+      "computed_spec": {
+        "tag": "integrated_accumulated_productivity",
+        "hydro_id": 0
+      }
+    },
+    {
+      "id": 2,
+      "name": "emax",
+      "kind": "computed",
+      "computed_spec": {
+        "tag": "max_stored_energy",
+        "hydro_id": 0
+      }
+    }
+  ]
+}

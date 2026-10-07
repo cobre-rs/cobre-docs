@@ -1,0 +1,135 @@
+---
+// Render layer — Observable Plot island. Reads the theme palette from CSS vars
+// and re-renders on the light/dark toggle (Tier 2). Data comes from the tested
+// compute module (figures/acfPacf.ts), never hand-typed.
+---
+
+<div
+  id="acf-pacf-plot"
+  class="vf-plot"
+  role="img"
+  aria-label="Periodic autocorrelation and partial autocorrelation of one season of a synthetic PAR(1) series: sample versus model autocorrelation at lags 1 to 6, and the sample and model partial autocorrelation against the ±1.96/√Nₘ significance band"
+>
+</div>
+
+<script>
+  import * as Plot from "@observablehq/plot";
+  import { figureData, Z_ALPHA } from "../figures/acfPacf.ts";
+
+  function cssVar(name: string): string {
+    return getComputedStyle(document.documentElement)
+      .getPropertyValue(name)
+      .trim();
+  }
+
+  function render(): void {
+    const el = document.getElementById("acf-pacf-plot");
+    if (!el) return;
+
+    // Sample values are inflow data -> Flow Blue (--dgm-hydro). The model and
+    // the significance band are NOT hydro -> copper curve and warm accent
+    // (Patina), per brand §2.4 #3. Literals mirror the palette.css fallbacks.
+    const hydro = cssVar("--dgm-hydro") || "#4a90b8";
+    const curve = cssVar("--dgm-curve") || "#d4956a";
+    const accent = cssVar("--dgm-accent") || "#4a8b6f";
+    const text = cssVar("--dgm-text") || "#c8c6c2";
+
+    const { seasonLabel, years, bandEdges, lagDomain, acf, pacf } =
+      figureData();
+    const rows = [
+      ...acf.map((r) => ({ ...r, panel: "ACF" })),
+      ...pacf.map((r) => ({ ...r, panel: "PACF" })),
+    ];
+    const band = bandEdges.map((y) => ({ y, panel: "PACF" }));
+    const legend = [
+      { panel: "ACF", label: "sample", fill: hydro, dy: 6 },
+      { panel: "ACF", label: "model", fill: curve, dy: 22 },
+      { panel: "PACF", label: "sample", fill: hydro, dy: 6 },
+      { panel: "PACF", label: "model", fill: curve, dy: 22 },
+      {
+        panel: "PACF",
+        label: `±${Z_ALPHA}/√Nₘ band, Nₘ = ${years}`,
+        fill: accent,
+        dy: 38,
+      },
+    ];
+
+    el.replaceChildren(
+      Plot.plot({
+        width: 640,
+        height: 420,
+        marginTop: 24,
+        marginRight: 60,
+        marginBottom: 48,
+        marginLeft: 60,
+        style: { background: "transparent", color: text, fontSize: "13px" },
+        x: {
+          label: `lag ℓ (season ${seasonLabel})`,
+          labelOffset: 40,
+          domain: lagDomain,
+          ticks: acf.map((r) => r.lag),
+          tickFormat: "d",
+        },
+        y: { label: "correlation", grid: true, domain: [-0.5, 1] },
+        fy: {
+          label: null,
+          domain: ["ACF", "PACF"],
+          axis: "right",
+          padding: 0.25,
+        },
+        marks: [
+          Plot.ruleY([0], { stroke: text, strokeOpacity: 0.5 }),
+          Plot.ruleY(band, {
+            y: "y",
+            fy: "panel",
+            stroke: accent,
+            strokeWidth: 1.4,
+            strokeDasharray: "4 3",
+          }),
+          Plot.ruleX(rows, {
+            x: "lag",
+            y1: 0,
+            y2: "sample",
+            fy: "panel",
+            stroke: hydro,
+            strokeWidth: 6,
+          }),
+          Plot.line(rows, {
+            x: "lag",
+            y: "model",
+            fy: "panel",
+            stroke: curve,
+            strokeWidth: 2,
+          }),
+          Plot.dot(rows, {
+            x: "lag",
+            y: "model",
+            fy: "panel",
+            stroke: curve,
+            strokeWidth: 2,
+            fill: "none",
+            r: 4,
+          }),
+          ...legend.map((entry) =>
+            Plot.text([entry], {
+              fy: "panel",
+              text: "label",
+              frameAnchor: "top-right",
+              textAnchor: "end",
+              dx: -8,
+              dy: entry.dy,
+              fill: entry.fill,
+              fontWeight: 600,
+            }),
+          ),
+        ],
+      }),
+    );
+  }
+
+  render();
+  new MutationObserver(render).observe(document.documentElement, {
+    attributes: true,
+    attributeFilter: ["data-theme"],
+  });
+</script>

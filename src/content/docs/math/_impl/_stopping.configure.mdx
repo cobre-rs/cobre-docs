@@ -1,0 +1,78 @@
+Cobre's stopping settings are two keys of the `training` object of
+`config.json`: `stopping_rules`, the list of rules a run can stop on, and
+`stopping_mode`, how they combine. This tab gives one combined set and links
+the configuration entries that list every field and default; each rule's stop
+condition stays in the methodology sections above
+([§2 Iteration Limit](/math/stopping-rules#2-iteration-limit),
+[§3 Time Limit](/math/stopping-rules#3-time-limit),
+[§4 Bound Stalling](/math/stopping-rules#4-bound-stalling) and
+[§5 Gap-Based Stopping](/math/stopping-rules#5-gap-based-stopping-recommended)).
+
+### `training.stopping_rules` — Rules
+
+The configuration reference lists the fields of each rule
+([`iteration_limit`](/running/configuration/#iteration_limit),
+[`time_limit`](/running/configuration/#time_limit),
+[`bound_stalling`](/running/configuration/#bound_stalling) and
+[`gap`](/running/configuration/#gap)), and the values and default of
+[`training.stopping_mode`](/running/configuration/#trainingstopping_mode).
+
+### `training.stopping_mode` — Combination
+
+The following set stops when the gap closes or at 500 iterations, whichever
+comes first:
+
+```json
+{
+  "training": {
+    "stopping_rules": [
+      { "type": "iteration_limit", "limit": 500 },
+      { "type": "gap", "tolerance": 1.0, "relative_tolerance": 0.1 }
+    ],
+    "stopping_mode": "any"
+  }
+}
+```
+
+Its `gap` rule needs an enumerated training forward pass; a sampled run stops
+as described in [Sampled runs](#sampled-runs).
+
+### Shutdown Requests
+
+A shutdown request is not an entry of `stopping_rules`, and `stopping_mode`
+does not apply to it. `cobre run` has no signal path for one: a SIGTERM ends
+the process with status 143 before the training results and the policy
+checkpoint are written. The Python API requests one when the `on_iteration`
+callback returns a truthy value or raises
+([Python API](/reference/python-api/)); the stop is asynchronous, so the run ends
+at a later iteration boundary that is not fixed; a run ended this way records
+`unknown` when no rule triggered at that iteration
+([What a stopped run records](#what-a-stopped-run-records)).
+
+### What a stopped run records
+
+The `convergence`, `bounds` and `iterations` blocks of
+[`training/metadata.json`](/reference/output/metadata/#trainingmetadatajson)
+record how the run stopped:
+
+- `convergence.termination_reason` names the first rule that triggered, in the
+  order `stopping_rules` lists them, or is `iteration_limit` when the run
+  reached the end of its iteration range with no rule triggered, which includes
+  a set with no `iteration_limit` entry that stops at 100 iterations. It is
+  `unknown` when a Python `on_iteration` callback ended the run and no rule
+  triggered at that iteration, and `error` after a training that failed.
+- `convergence.achieved` is `true` exactly when `termination_reason` is
+  `bound_stalling`, so a run the `gap` rule stopped on a closed exact gap
+  records `false`.
+- `convergence.final_gap_percent` is `null` when the final lower bound is not
+  positive.
+- `bounds.final_lower_bound` and `bounds.final_upper_bound` are the bounds at
+  the last iteration, and `iterations.completed` is the iteration count at which
+  the run ended, earlier runs included.
+
+**Lower bound and gap under projected cuts.** Under a PAR(p > 0) model with the
+inflow lags projected out of the cuts, the lower bound and the gap carry the
+caveat of
+[Storage-only cut projection](/math/cut-management/#storage-only-cut-projection);
+the key and its default are in
+[`stages[].state_variables`](/math/cut-management/#stagesstate_variables--cut-projection).

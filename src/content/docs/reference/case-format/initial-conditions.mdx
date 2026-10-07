@@ -1,0 +1,164 @@
+---
+title: Initial Condition Files
+description: The initial_conditions.json file, field by field — the initial reservoir storage, the pre-study releases in transit, the recent inflow observations and the committed windows of anticipated thermals.
+---
+
+This page documents `initial_conditions.json`, which holds the reservoir storage and the pre-study records at the start of
+a study. The [File summary](/reference/case-format/#file-summary) maps every case file to its page, and
+[Conventions](/reference/case-format/#conventions) states the rules shared by all of them.
+
+---
+
+## `initial_conditions.json`
+
+**Methodology:** [State Augmentation](/math/state-augmentation/) · [System Element Modeling Overview](/math/system-elements/)
+
+Initial reservoir storage, pre-study releases already in transit on declared
+travel-time arcs, and recent observations at the start of the study.
+
+| Name                           | Type  | Required | Default | Units | Description                                                                                                                                                      |
+| ------------------------------ | ----- | -------- | ------- | ----- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `storage`                      | array | Yes      | —       | —     | Array of `{ "hydro_id": integer, "value_hm3": number }` entries for operating hydros                                                                             |
+| `filling_storage`              | array | Yes      | —       | —     | Array of `{ "hydro_id": integer, "value_hm3": number }` entries for filling hydros                                                                               |
+| `past_defluences`              | array | No       | —       | —     | Array of windowed pre-study release records seeding the in-transit buckets of a declared travel-time arc (see below)                                             |
+| `recent_observations`          | array | No       | —       | —     | Array of observed inflow entries for mid-season study starts (see below)                                                                                         |
+| `past_anticipated_commitments` | array | No       | —       | —     | Array of windowed committed-MW records for anticipated thermals — the plant's pre-study decisions, whether they deliver in-study or past the horizon (see below) |
+
+**`storage[]` and `filling_storage[]` entry fields:**
+
+| Name                          | Type    | Required | Default | Units | Description                                                                                             |
+| ----------------------------- | ------- | -------- | ------- | ----- | ------------------------------------------------------------------------------------------------------- |
+| `storage[].hydro_id`          | integer | Yes      | —       | —     | Hydro plant identifier of an operating hydro; unique within `storage` and absent from `filling_storage` |
+| `storage[].value_hm3`         | number  | Yes      | —       | hm³   | Initial reservoir volume of the operating hydro; `>= 0`                                                 |
+| `filling_storage[].hydro_id`  | integer | Yes      | —       | —     | Hydro plant identifier of a filling hydro; unique within `filling_storage` and absent from `storage`    |
+| `filling_storage[].value_hm3` | number  | Yes      | —       | hm³   | Initial reservoir volume of the filling hydro; `>= 0`                                                   |
+
+The PAR lag chain and the mid-period accumulator are seeded from
+`scenarios/inflow_history.parquet`'s windowed record, shadowed day-wise by
+`recent_observations` wherever the two overlap.
+
+**`past_defluences`** supplies the pre-study releases already in transit on a
+declared travel-time arc (`hydros[].travel_time_hours`), so the first stages'
+delayed-arrival buckets are seeded rather than empty. Each entry gives a release
+window and its average rate for an upstream plant whose outflow feeds a
+downstream arc:
+
+| Name                           | Type    | Required | Default | Units | Description                                                                            |
+| ------------------------------ | ------- | -------- | ------- | ----- | -------------------------------------------------------------------------------------- |
+| `past_defluences[].hydro_id`   | integer | Yes      | —       | —     | Upstream plant whose release feeds the arc                                             |
+| `past_defluences[].start_date` | string  | Yes      | —       | —     | Start of the release window (inclusive), ISO 8601 YYYY-MM-DD                           |
+| `past_defluences[].end_date`   | string  | Yes      | —       | —     | End of the release window (exclusive), ISO 8601 YYYY-MM-DD; must be after `start_date` |
+| `past_defluences[].value_m3s`  | number  | Yes      | —       | m³/s  | Average release rate over the window in m³/s; finite and non-negative                  |
+
+The windows must cover the arc's in-transit span at study start —
+`[start_0 − travel_time, start_0)` — with no gap and none future-dated past the
+study start; otherwise the study is rejected. There is no fallback for
+incomplete coverage. Optional; defaults to an empty array when no arc needs
+seeding.
+
+**`recent_observations`** provides observed inflow data for partial periods
+before the study start. Used to seed the lag accumulator when a study begins
+mid-season (e.g., a coupled study starting on January 5 needs observed inflow
+for January 1--4). Each entry has:
+
+| Name                               | Type    | Required | Default | Units | Description                                                      |
+| ---------------------------------- | ------- | -------- | ------- | ----- | ---------------------------------------------------------------- |
+| `recent_observations[].hydro_id`   | integer | Yes      | —       | —     | Hydro plant identifier                                           |
+| `recent_observations[].start_date` | string  | Yes      | —       | —     | Start of the observation period (inclusive), ISO 8601 YYYY-MM-DD |
+| `recent_observations[].end_date`   | string  | Yes      | —       | —     | End of the observation period (exclusive), ISO 8601 YYYY-MM-DD   |
+| `recent_observations[].value_m3s`  | number  | Yes      | —       | m³/s  | Average inflow observed during the period, in m³/s               |
+
+Date ranges for the same hydro must not overlap; adjacent ranges
+(`start_date == previous end_date`) are accepted. Values must be finite; a
+negative value is accepted — the quantity is incremental inflow (a plant's
+natural flow minus its upstream plants'), so a negative window is real
+hydrology, and the LP prices it through the inflow non-negativity slack.
+Semantic validation reports one warning per file naming the negative count
+and the most-negative value's hydro, so a genuinely sign-flipped series still
+stands out. Optional; defaults to an empty array when absent.
+
+**`past_anticipated_commitments`** supplies the externally-decided committed MW
+rate for an anticipated thermal plant — every delivery the plant **decided
+before the study begins**, whether that delivery matures inside the horizon
+(seeding its ring slot at the first stage) or past it (a commitment decided
+before the study and delivered past the horizon; for the equivalent term in
+other planning tools, see the [Glossary](/reference/glossary)). Each entry is a
+dated window carrying a constant rate:
+
+| Name                                        | Type    | Required | Default | Units | Description                                                                                   |
+| ------------------------------------------- | ------- | -------- | ------- | ----- | --------------------------------------------------------------------------------------------- |
+| `past_anticipated_commitments[].thermal_id` | integer | Yes      | —       | —     | Anticipated thermal plant identifier; must reference a thermal declaring `anticipated_config` |
+| `past_anticipated_commitments[].start_date` | string  | Yes      | —       | —     | Start of the commitment window (inclusive), ISO 8601 YYYY-MM-DD                               |
+| `past_anticipated_commitments[].end_date`   | string  | Yes      | —       | —     | End of the commitment window (exclusive), ISO 8601 YYYY-MM-DD; must be after `start_date`     |
+| `past_anticipated_commitments[].value_mw`   | number  | Yes      | —       | MW    | Committed MW rate held constant over the window; finite                                       |
+
+A plant's windows must **tile every delivery stage the plant decided before
+the study, exactly** — coverage `1.0`, no gap, no overlap. Those stages may
+fall on **either side** of the horizon: the leading in-study delivery stages,
+and any post-horizon stages of a delivery decided before the study. A window
+may **never** cover a stage the study itself decides, and a
+single window may not straddle the horizon end — split it into an in-study
+window ending at the horizon and a post-study window starting there. A stretch
+with no scheduled commitment still needs an explicit `0.0`-rate window rather
+than a gap left to be inferred. An in-study window's `value_mw` is checked
+against the resolved generation bounds of every covered stage at which the
+plant is in service, and a purely post-horizon window's against the plant's
+static `[min_generation_mw, max_generation_mw]`; a non-zero window may not
+cover a stage outside the plant's commissioning window, when it declares one.
+The values are **sunk cost**: their fuel never enters the study objective. With
+a boundary loaded, a post-horizon window's state contribution is folded once,
+at load, into every boundary cut's intercept, and the window is echoed at its
+real delivery date in `anticipated/fixed_deliveries.parquet`.
+Optional; defaults to an empty
+array when no anticipated thermals are present.
+
+See
+[System Element Modeling Overview §4](/math/system-elements#anticipated-thermal-plants) for
+the delivery-stage mechanics the windows tile against.
+
+```json
+{
+  "past_anticipated_commitments": [
+    {
+      "thermal_id": 2,
+      "start_date": "2026-01-01",
+      "end_date": "2026-02-01",
+      "value_mw": 0.0
+    }
+  ]
+}
+```
+
+:::note[Post-horizon deliveries have two declaration surfaces]
+A commitment **decided in-study** whose delivery matures after the horizon is
+bounded and costed **solely** by a `thermal_bounds[]` cell in
+[`post_study_stages.json`](/reference/case-format/stages/#post_study_stagesjson) — the study itself
+decides the MW, so only its price and capability need declaring. A commitment
+**decided before the study** and delivered past the horizon is instead a
+`past_anticipated_commitments` window extending past the horizon end (above).
+See [Post-Study Boundary & Chained Studies](/math/post-study-boundary) for the boundary
+formulation both feed.
+:::
+
+Example:
+
+```json
+{
+  "storage": [{ "hydro_id": 0, "value_hm3": 15000.0 }],
+  "filling_storage": [],
+  "recent_observations": [
+    {
+      "hydro_id": 0,
+      "start_date": "2026-04-01",
+      "end_date": "2026-04-04",
+      "value_m3s": 500.0
+    },
+    {
+      "hydro_id": 0,
+      "start_date": "2026-04-04",
+      "end_date": "2026-04-11",
+      "value_m3s": 480.0
+    }
+  ]
+}
+```

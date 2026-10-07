@@ -117,3 +117,13 @@ test("a third-party version in the lenient zone is also clean", () => {
   const v = detectVersionViolations("Compatible with PSR's SDDP (v17.3+).", ZONE_LENIENT);
   assert.deepEqual(v, []);
 });
+
+test("the gate reads raw text: a version token after a fence that never closes is still reported", () => {
+  const text =
+    "# T\n\n```js\nconst x = 1;\n\nOutput shows COBRE v0.9.1 on startup.\n";
+  const v = detectVersionViolations(text, ZONE_STRICT);
+  assert.deepEqual(
+    v.map((x) => [x.lineno, x.rule]),
+    [[6, "cobre-version-banner"]],
+  );
+});

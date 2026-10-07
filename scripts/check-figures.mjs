@@ -1,49 +1,50 @@
-// Figure-dependency gate (E4 ticket-020, the epic's Python-independence exit gate).
+// Figure-dependency gate: the content must not reference a retired
+// matplotlib/Excalidraw figure, and every Observable Plot island must be a thin
+// render shell over a tested compute module. The gate needs no dependency beyond
+// Node and is bound to CI, so a retired figure path cannot re-enter the content
+// unnoticed.
 //
-// E4 retooled all 7 referenced figures onto three browser-native renderers
-// (Observable Plot, D2, mermaid) and dropped the 3 HPC figures, so the migrated
-// corpus must no longer reference ANY retired matplotlib/Excalidraw SVG. This
-// script is the durable, CI-bound guardrail that proves — mechanically and with
-// no new dependency — that future content cannot silently re-introduce a
-// Python/Excalidraw-built figure path. (The retired SVGs in `src/images/*.svg`
-// and the `diagrams/` Python still physically exist by design; their deletion is
-// E9/ticket-036, explicitly out of scope here. This gate checks the *content no
-// longer references them*, not that the files are gone.)
+// It makes three checks.
 //
-// It walks every `*.md`/`*.mdx` under `src/content/docs/` (the migrated corpus
-// only — NOT `diagrams/` or `src/images/`, which still exist until E9) and exits
-// non-zero, with a per-file message naming the file + the offending substring +
-// the rule violated, if it finds any of:
+// 1. Retired figure references. It walks every routed `*.md`/`*.mdx` under
+//    `src/content/docs/` (index.mdx included, `pt-br/` excluded, underscore-
+//    prefixed partials skipped) and exits non-zero, with a per-file message
+//    naming the file + the offending substring + the rule violated, if it finds
+//    any of:
 //   (a) an image-asset reference: `../../images/` or `/images/`  (a Python/
 //       Excalidraw SVG would manifest here),
-//   (b) a residual figure-deferral aside: `Figure — retooled in E4`  (the E3
-//       placeholder that 017/018 were to replace),
+//   (b) a residual figure-deferral aside: `Figure — retooled in E4`  (the
+//       placeholder text that a real figure replaces),
 //   (c) a reference to a retired figure stem: the nine matplotlib stems
 //       (d02…d24) plus the Excalidraw `system-element-overview`.
 //
-// It then runs two scope-confirmation checks that encode E4's resolved scope and
-// FAIL if violated (not just informational):
-//   • the three HPC stems (d07/d08/d09) appear in ZERO content files — they were
-//     never ported (scope: drop d07/d08/d09);
-//   • a `ConvergencePlot` (the re-homed d21) figure IS present in
-//     `math/stopping-rules` (scope: port + re-home d21).
+// 2. Scope assertions, which FAIL the gate when violated:
+//   • the three HPC stems (d07/d08/d09) appear in ZERO content files (no HPC
+//     figure belongs to the corpus);
+//   • a `ConvergencePanelsPlot` embed (the d21 convergence-bounds figure) is
+//     present in `math/stopping-rules`.
 //
-// index.mdx is intentionally IN scope: it keeps the harness/D2/mermaid renderer
-// DEMOS (a `ValueFunctionPlot` component import + fenced ```mermaid / ```d2
-// blocks), none of which are retired-SVG references, so it passes the banned
-// checks naturally — it is not special-cased. pt-br/ is excluded to mirror
-// check-math-parity.mjs (a future locale; only the root English corpus is gated).
+// 3. Plot-island contract: each `src/components/*Plot.astro` must import a
+//    `src/figures/<name>.ts` module that has a sibling `<name>.test.ts`, and
+//    carry `role="img"` with a non-empty `aria-label`. It also fails when no
+//    island is found at all (a vacuous pass).
 //
-// Run any time (no build needed — it reads source content, not dist/). Exits 0
+// Run with `npm run check:figures` (or `node scripts/check-figures.mjs`) any
+// time (no build needed — it reads source content, not dist/). Exits 0
 // with a one-line summary when clean; exits 1 listing each violation, or with a
 // clear message if the content root is missing or a file cannot be read.
 
 import { readFileSync, readdirSync, existsSync } from "node:fs";
+import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 const contentRoot = fileURLToPath(
   new URL("../src/content/docs/", import.meta.url),
 );
+const componentsRoot = fileURLToPath(
+  new URL("../src/components/", import.meta.url),
+);
+const figuresRoot = fileURLToPath(new URL("../src/figures/", import.meta.url));
 
 // --- Retired figure stems ---------------------------------------------------
 // The exact hyphenated filename stems of the 10 retired assets (9 matplotlib +
@@ -99,8 +100,9 @@ export function detectFigureViolations(text) {
     }
   }
 
-  // (b) Residual figure-deferral aside (the E3 placeholder text). The em-dash
-  // (—, U+2014) is part of the marker; match it literally.
+  // (b) Residual figure-deferral aside (the placeholder text that a real
+  // figure replaces). The em-dash (—, U+2014) is part of the marker; match it
+  // literally.
   {
     const needle = "Figure — retooled in E4";
     let index = text.indexOf(needle);
@@ -140,22 +142,16 @@ function extractContext(text, index, length) {
 // --- File walk --------------------------------------------------------------
 // Recursively collect every .md/.mdx under src/content/docs/, excluding pt-br/
 // (future locale; mirrors check-math-parity.mjs). index.mdx is intentionally
-// INCLUDED (its renderer demos are not retired-SVG references — see header).
+// INCLUDED (it is walked like every other page, not special-cased).
 //
-// Exported (Epic 04 ticket-015 R5 fold-in) so the underscore-basename
-// exclusion below can be pinned directly by a node:test fixture
-// (check-figures.test.mjs), already safe to import since this module already
-// sits behind a direct-run guard (see main() at the bottom).
+// Exported so check-figures.test.mjs can pin the underscore-basename exclusion
+// below directly; importing this module is safe because main() sits behind a
+// direct-run guard at the bottom.
 //
-// FIXED alongside the export (mirrors the identical fix in
-// check-math-parity.mjs — see that file's comment for the full rationale):
-// the underscore-basename exclusion is scoped to FILES only; a directory is
-// always recursed into regardless of its own name (previously `math/_impl/`
-// the directory was itself skipped, so a hypothetical non-underscore file
-// nested inside it could never be collected). Behaviorally invisible on the
-// committed tree today (every file under _impl/ already has its own
-// underscore basename) — verified check:figures reports byte-identical
-// output before/after.
+// The underscore-basename exclusion is scoped to FILES only (the same rule as
+// check-math-parity.mjs): a directory is always recursed into regardless of its
+// own name, so a non-underscore file nested inside `math/_impl/` is still
+// collected.
 export function collectSourceFiles(dir) {
   const files = [];
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
@@ -176,6 +172,96 @@ export function collectSourceFiles(dir) {
   return files;
 }
 
+// --- Plot-island contract ----------------------------------------------------
+// An Observable Plot island is a thin render shell over a tested compute module.
+// Given the text of one `*Plot.astro` and a Set of the basenames present in
+// `src/figures/`, return { rule, match } for each broken clause: no
+// `../figures/<m>` (or `<m>.ts`) import, an imported `<m>.ts` or its sibling
+// `<m>.test.ts` absent from `src/figures/`, no `role="img"`, and no `aria-label`
+// or one that is blank. The `aria-label` must be a quoted literal: a computed
+// value cannot be checked statically. Pure and synchronous like
+// detectFigureViolations; a clean island returns [].
+const FIGURE_IMPORT = /from\s+["']\.\.\/figures\/([A-Za-z0-9_]+)(?:\.ts)?["']/g;
+const ROLE_IMG = /(?<![\w-])role\s*=\s*(["'])img\1/;
+const ARIA_LABEL = /(?<![\w-])aria-label\s*=\s*(["'])(.*?)\1/gs;
+
+export function detectPlotIslandViolations(source, figureFiles) {
+  const violations = [];
+
+  const imports = [...source.matchAll(FIGURE_IMPORT)];
+  if (imports.length === 0) {
+    violations.push({
+      rule: "no src/figures module import (an island must import a tested ../figures/<name>.ts)",
+      match: "(no ../figures/<name> import found)",
+    });
+  }
+  for (const found of imports) {
+    const name = found[1];
+    const match = extractContext(source, found.index, found[0].length);
+    if (!figureFiles.has(`${name}.ts`)) {
+      violations.push({
+        rule: `imported module absent from src/figures ('${name}.ts')`,
+        match,
+      });
+    }
+    if (!figureFiles.has(`${name}.test.ts`)) {
+      violations.push({
+        rule: `imported module has no sibling test ('${name}.test.ts' absent from src/figures)`,
+        match,
+      });
+    }
+  }
+
+  if (!ROLE_IMG.test(source)) {
+    violations.push({
+      rule: 'no role="img" attribute',
+      match: "(attribute not found)",
+    });
+  }
+
+  const labels = [...source.matchAll(ARIA_LABEL)];
+  const blank = labels.find((label) => label[2].trim() === "");
+  if (labels.length === 0 || blank) {
+    violations.push({
+      rule: "no aria-label attribute with a non-empty value",
+      match: blank ? blank[0] : "(no literal aria-label found; a computed {expression} value is not accepted)",
+    });
+  }
+
+  return violations;
+}
+
+// Walk the islands directly under `componentsDir`: the `Plot.astro` suffix selects
+// an island (Footer.astro, VersionPicker.astro and the rest are ignored by name).
+// Returns the island basenames (sorted, so reports are stable) and every failure
+// as { file, rule, match }; an unreadable island is a failure, never a skip.
+export function checkPlotIslands(componentsDir, figuresDir) {
+  const figureFiles = new Set(readdirSync(figuresDir));
+  const islands = readdirSync(componentsDir)
+    .filter((name) => /Plot\.astro$/.test(name))
+    .sort();
+  const failures = [];
+
+  for (const file of islands) {
+    let source;
+    try {
+      source = readFileSync(join(componentsDir, file), "utf8");
+    } catch (error) {
+      failures.push({
+        file,
+        rule: `unreadable file (${error.code ?? error.name}: ${error.message})`,
+        match: "(could not read file)",
+      });
+      continue;
+    }
+    for (const violation of detectPlotIslandViolations(source, figureFiles)) {
+      failures.push({ file, ...violation });
+    }
+  }
+
+  return { islands, failures };
+}
+
 // --- Main (run only when invoked directly, not when imported by a test) ------
 // Walk the corpus, collect violations + scope evidence, print, and exit. Kept
 // behind a direct-run guard so importing this module for `detectFigureViolations`
@@ -193,7 +279,7 @@ function main() {
 
   // Track scope-confirmation evidence while walking.
   const hpcHits = []; // { rel, stem } — must stay empty
-  let convergencePlotHost = null; // rel of the file embedding <ConvergencePlot ...
+  let convergencePanelsPlotHost = null; // rel of the file embedding <ConvergencePanelsPlot ...
 
   for (const sourcePath of sourceFiles) {
     const rel = sourcePath.slice(contentRoot.length);
@@ -222,19 +308,20 @@ function main() {
       if (text.includes(stem)) hpcHits.push({ rel, stem });
     }
 
-    // Scope evidence: the re-homed d21 figure is a <ConvergencePlot ... embed in
+    // Scope evidence: the re-homed d21 figure is a <ConvergencePanelsPlot ... embed in
     // math/stopping-rules. Match the embed tag (a usage, not just the import) so
     // a dangling import without a render does not satisfy the assertion.
     if (
       rel.replace(/\\/g, "/").startsWith("math/stopping-rules") &&
-      /<ConvergencePlot[\s/>]/.test(text)
+      /<ConvergencePanelsPlot[\s/>]/.test(text)
     ) {
-      convergencePlotHost = rel;
+      convergencePanelsPlotHost = rel;
     }
   }
 
   // --- Scope-confirmation assertions ----------------------------------------
-  // These encode E4's resolved scope and FAIL the gate if violated.
+  // These assert the content scope (no HPC figure stem, the d21 embed in
+  // math/stopping-rules) and FAIL the gate if violated.
   const scopeErrors = [];
 
   for (const hit of hpcHits) {
@@ -243,14 +330,31 @@ function main() {
     );
   }
 
-  if (convergencePlotHost === null) {
+  if (convergencePanelsPlotHost === null) {
     scopeErrors.push(
-      "scope: expected a <ConvergencePlot /> embed (the re-homed d21 figure) in math/stopping-rules, but none was found.",
+      "scope: expected a <ConvergencePanelsPlot /> embed (the re-homed d21 figure) in math/stopping-rules, but none was found.",
+    );
+  }
+
+  // --- Plot-island contract -------------------------------------------------
+  // Zero islands is a vacuous pass (a renamed suffix or directory would silence
+  // the check), so it fails like a scope assertion.
+  const { islands, failures: islandFailures } = checkPlotIslands(
+    componentsRoot,
+    figuresRoot,
+  );
+  if (islands.length === 0) {
+    scopeErrors.push(
+      "scope: expected at least one src/components/*Plot.astro island, but none was found.",
     );
   }
 
   // --- Report ---------------------------------------------------------------
-  if (failures.length > 0 || scopeErrors.length > 0) {
+  if (
+    failures.length > 0 ||
+    scopeErrors.length > 0 ||
+    islandFailures.length > 0
+  ) {
     if (failures.length > 0) {
       console.error(
         `check:figures: ${failures.length} retired-figure reference(s) across ${sourceFiles.length} content file(s):\n`,
@@ -268,12 +372,23 @@ function main() {
       }
       console.error("");
     }
+    if (islandFailures.length > 0) {
+      console.error(
+        `check:figures: ${islandFailures.length} Plot-island violation(s) across ${islands.length} island(s) in src/components/:\n`,
+      );
+      for (const f of islandFailures) {
+        console.error(
+          `  ${f.file}\n    rule:  ${f.rule}\n    found: ${f.match}\n`,
+        );
+      }
+    }
     process.exit(1);
   }
 
   console.log(
     `check:figures: ${sourceFiles.length} content files checked, 0 retired-figure references; ` +
-      `d07/d08/d09 absent, ConvergencePlot (d21) present in ${convergencePlotHost}.`,
+      `d07/d08/d09 absent, ConvergencePanelsPlot (d21) present in ${convergencePanelsPlotHost}; ` +
+      `${islands.length} Plot islands import a tested src/figures module with role=img and a non-empty aria-label.`,
   );
   process.exit(0);
 }

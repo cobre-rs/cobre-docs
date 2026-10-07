@@ -1,43 +1,49 @@
 This is a topic-scoped index of the files cut management touches. Cuts have
 no case-directory input file of their own — the only configuration surface is
-`training.cut_selection` in `config.json` (see the Configure tab). The topic's
+`training.cut_selection` in `config.json` (see [its configuration entry](/running/configuration/#trainingcut_selection)). The topic's
 I/O surface is the **policy checkpoint**: the FlatBuffers `.bin` files that
 persist the cut pool between runs. This tab names that surface and its role;
 it does not repeat the field-by-field record layout, which is owned by the
-Reference corpus ([Case Directory Format](/reference/case-directory-format/)
-and [Output Format](/reference/output-format/) pages).
+Reference corpus ([Case Format](/reference/case-format/)
+and [Output Format](/reference/output/) pages).
 
 ### Inputs
 
 There is no case-directory input file for cuts. Two input paths re-read a
 **previous run's output** as cuts:
 
-- **Warm-start / resume** — when the run's policy mode is `"warm_start"` or
-  `"resume"`, Cobre loads `policy/cuts/NNN.bin` from a prior checkpoint
-  directory and repopulates the cut pool before training resumes. A checkpoint
-  written before `FORMAT_VERSION 2` — a pre-`manifest.bin` artifact, or a
-  `manifest.bin` stamped with an earlier `format_version` — is **rejected on
-  load**: there is no in-place upgrade, so re-export or retrain it (see
-  [Format Version and Migration](/running/policy-management/#format-version-and-migration)).
+- **Warm-start, resume, and simulation-only** — when the run's policy mode is
+  `"warm_start"` or `"resume"`, or training is disabled for a simulation-only
+  run, Cobre loads `policy/cuts/NNN.bin` from the checkpoint at `policy.path`
+  and repopulates the cut pool before training or simulation begins. The load
+  applies the
+  [Policy Load Contract](/running/policy-management/#policy-load-contract),
+  which requires the running cobre version to have written the checkpoint
+  ([version gate](/running/policy-management/#version-gate)) and the stored
+  bases to fit the stage LPs
+  ([stored-basis gate](/running/policy-management/#stored-basis-gate)).
   See Implementation notes for how a warm-started cut is tracked once it is back
   in the pool.
 - **Boundary source** — when `policy.boundary.path` is set, Cobre loads a
   second checkpoint and injects its terminal cuts as a fixed boundary condition
   at the study's terminal stage. The source pool is selected by the study's
   terminal boundary date and reconciled onto the current state — lenient by
-  default (surplus source slots dropped and reported), strict-rejectable. See
-  [Post-Study Boundary](/math/post-study-boundary) and
+  default (surplus source slots dropped and reported), strict-rejectable. The
+  boundary checkpoint must also come from the running cobre version
+  ([Compatibility requirements](/running/policy-management/#compatibility-requirements)
+  lists the check order).
+  See [Post-Study Boundary & Chained Studies](/math/post-study-boundary) and
   [Policy Management — Boundary Cuts](/running/policy-management/#boundary-cuts).
 
 ### Outputs
 
 | File                          | Role |
 | ----------------------------- | ---- |
-| `policy/cuts/NNN.bin`   | One FlatBuffers binary per **pool** (`NNN` is the pool id — equal to the stage id on a plain stage chain, differing on a branching graph), root table `StageCuts`: every cut's intercept, coefficient vector, and active flag. The coefficient vector is a bare `float64[]`; each position maps to a state variable via the per-slot entity manifest embedded in the same file (see the [Output Format](/reference/output-format/) reference). Written every training run and re-read on the next `warm_start` / `resume` run (see Inputs above). |
+| `policy/cuts/NNN.bin`   | One FlatBuffers binary per **pool** (`NNN` is the pool id — on a plain stage chain the 0-based stage position, which is not the declared stage id; on a branching graph the pool id differs from the stage position), root table `StageCuts`: every cut's intercept, coefficient vector, and active flag. The coefficient vector is a bare `float64[]`; each position maps to a state variable via the per-slot entity manifest embedded in the same file (see the [Output Format](/reference/output/) reference). Written every training run and re-read on the next warm-start, resume, or simulation-only run (see Inputs above). |
 
 For the complete field-by-field record layout (`AffinePiece`, `StageCuts`) and the
 checkpoint-wide `policy/manifest.bin` summary, see the
-[Output Format](/reference/output-format/) reference page in the Reference
+[Output Format](/reference/output/) reference page in the Reference
 corpus. For the schema file itself and per-language `flatc` codegen
 recipes (Python, C++, TypeScript, …) to read a checkpoint outside Cobre, see
 the [FlatBuffers Policy Schema](/reference/flatbuffers-schema/) reference page.

@@ -1,0 +1,56 @@
+Cobre reads the policy graph from the `policy_graph` object of `stages.json`.
+This tab gives the spellings of the nodes, transitions and probabilities that
+[Policy Graphs](/math/policy-graphs) defines above, and the rule that checks the
+probabilities at load; the full field table is in
+[`stages.json`](/reference/case-format/stages/#stagesjson).
+
+### Node and transition fields
+
+A `policy_graph.nodes[]` entry has the keys `id`, `stage_id`, `scenario_id` and
+`label`. The keys `id` and `stage_id` are required, `label` is an optional
+human-readable name, and `scenario_id` is present only at a node whose stage
+carries an externally supplied scenario.
+
+A `policy_graph.transitions[]` entry has the keys `source_id`, `target_id` and
+`probability`. The two endpoints are node ids when `nodes[]` is declared and
+stage ids otherwise. In the stage-chain dialect (no `nodes[]`) a transition
+may also carry `annual_discount_rate_override`; under `nodes[]` it is rejected.
+The override's rules are in the Configure tab of
+[Discount Rate Formulation](/math/discount-rate#implementation-in-cobre).
+
+The key `scenario_id` applies only under an enumerated forward pass. There it is
+required at every node whose stage carries an externally supplied scenario, and
+it must index a valid column of every such external class; it is rejected at a
+node whose stage carries none. A sampled forward pass rejects any `scenario_id`
+at setup, naming the first node that declares one and its stage.
+
+The following `policy_graph` object declares a terminal fan under an enumerated forward
+pass: a trunk node at stage 0 that pins its stage's one external scenario, and
+three children at stage 1 that each pin one of three externally supplied scenarios.
+
+```json
+{
+  "policy_graph": {
+    "type": "finite_horizon",
+    "annual_discount_rate": 0.06,
+    "nodes": [
+      { "id": 0, "stage_id": 0, "scenario_id": 0, "label": "trunk" },
+      { "id": 1, "stage_id": 1, "scenario_id": 0, "label": "dry" },
+      { "id": 2, "stage_id": 1, "scenario_id": 1, "label": "normal" },
+      { "id": 3, "stage_id": 1, "scenario_id": 2, "label": "wet" }
+    ],
+    "transitions": [
+      { "source_id": 0, "target_id": 1, "probability": 0.25 },
+      { "source_id": 0, "target_id": 2, "probability": 0.5 },
+      { "source_id": 0, "target_id": 3, "probability": 0.25 }
+    ]
+  }
+}
+```
+
+### Transition probabilities
+
+The outgoing `probability` values of each source must sum to 1 within `1e-6`;
+a source whose sum is further off fails the load, and the error names the
+source and the sum. When the check passes, the loader rescales the outgoing probabilities of each
+source so that they sum to 1. A zero or non-finite sum is rejected.

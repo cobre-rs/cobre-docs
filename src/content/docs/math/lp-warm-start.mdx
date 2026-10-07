@@ -1,0 +1,224 @@
+---
+title: LP Warm-Start
+description: Per-(scenario, node) basis store, its forward and backward hand-off, and cut-aware basis reconstruction by slot identity.
+---
+
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+import { Content as WarmStartNotes } from './_impl/_warm-start.notes.mdx';
+
+## Purpose
+
+This chapter describes how Cobre reuses an LP basis to accelerate solves. Two
+related mechanisms are covered. The **per-(scenario, node) basis store** holds
+at most one basis per trial point per policy-graph node, and the forward and
+backward passes hand bases to one another through it, so that a basis found by
+one solve seeds the next solve of the same trial point at the same node.
+**Cut-aware basis reconstruction by slot identity** maps a stored basis onto a
+cut pool whose active set has churned through cut selection, which is what lets
+a reused basis — whether captured earlier in the run or loaded from a saved
+policy by a warm-start or resume run — align to the current LP.
+
+## 1. The Repeated-LP Problem
+
+The [SDDP Algorithm](/math/sddp-algorithm) backward pass solves, at each stage,
+one LP per opening per trial point per iteration. Across a training run these
+LPs are not independent: the LP at stage $t$ in iteration $k+1$ differs from the
+LP at stage $t$ in iteration $k$ only in two ways — the active cut set has
+changed (grown by the cuts added during iteration $k$, and possibly changed
+further by cut selection, which deactivates and reactivates cuts; §3), and the
+trial point may have shifted. The constraint matrix columns, the objective, the
+bounds other than those that pin the incoming state, and the majority of
+constraint rows are identical between consecutive iterations.
+
+A **cold start** discards this structural similarity. The LP solver begins
+from scratch each time, choosing an initial basis by its own heuristic
+(typically Phase-I primal feasibility). On a well-structured LP this wastes
+simplex pivots whose only purpose is to rediscover a basis that was already
+known.
+
+A **warm start** avoids this waste by supplying the solver with the basis
+from a previous solve at the same stage. The solver checks whether the
+supplied basis is primal feasible, dual feasible, or both for the new LP; if
+it is, it can proceed immediately to optimality iterations rather than
+rebuilding feasibility from scratch. The benefit is proportional to how
+similar consecutive LPs are — and in the SDDP backward pass, consecutive
+solves at the same stage are very similar.
+
+## 2. Per-(Scenario, Node) Basis Store
+
+Cobre keeps a basis store keyed by `(scenario, node)`: the scenario identifies a
+trial point, and the node is a node of the [policy graph](/math/policy-graphs);
+on a stage chain (one node per stage) a node is a stage. The store holds at most
+one captured basis — the partition of variables and constraints into basic and
+non-basic — for each trial point at each node.
+
+The forward and backward passes of an iteration hand bases to one another
+through the store. A forward solve at a node starts from its trial point's slot
+when the slot holds a basis, and stores its own optimal basis there. The
+backward pass runs after the forward pass of the same iteration; when it solves
+that node's openings from the same trial point's incoming state, it seeds the
+first-solved opening from the slot, which then holds the forward capture, and
+stores that opening's optimal basis in its place. The next iteration's forward
+solve at the node starts from that backward capture. One backward scheduling
+option reads the forward capture without storing its own; under an enumerated
+forward pass the backward pass uses no stored basis; and while dynamic cut
+selection is active no solve uses the store (see the implementation notes).
+
+```d2
+shape: sequence_diagram
+fwd: Forward pass
+slot: Stored basis\n(trial point, node)
+bwd: Backward pass
+
+slot -> fwd: seeds the solve
+fwd -> slot: stores its basis
+slot -> bwd: seeds the first-solved opening
+bwd -> slot: stores that opening's basis
+slot -> fwd: seeds the next iteration's solve
+```
+
+Within each chain of openings solved in sequence, the store is read at most
+once, by the first-solved opening; the remaining openings continue from the
+basis and factorization the previous opening left in place, since consecutive
+openings differ only in their realization.
+
+The basis a solve starts from therefore depends on the order in which its
+chain's openings are solved. That order is fixed in advance, and it changes the
+starting basis, never the validity of a cut, since every optimal basis of an
+opening's LP yields a valid cut;
+[Determinism & Provenance §3](/math/determinism-guarantees#3-methodology-mechanisms)
+sets out how the fixed order keeps the run reproducible.
+
+A warm-start or resume run seeds the store from the bases the saved policy
+carries, so that its first iteration also warm-starts, through the
+reconstruction of §4.
+
+## 3. Cut-Set Changes
+
+A stored basis stops matching the LP at stage $t$ when that LP changes shape.
+The relevant change is cut-set growth: each
+iteration adds one new cut per trial point at every stage except the last. The
+cut pool and the persistent lower-bound LP are append-only, while each
+iteration's stage template carries the active cuts only (deactivation is covered
+at the end of this section; see [Cut Management](/math/cut-management) for the
+append-only monotonicity guarantee). A new cut adds one constraint row to the
+LP.
+
+Appending a cut row to a previously solved LP, with the new row's slack basic,
+keeps that LP's optimal basis dual feasible: the new row's dual is zero because
+its slack is basic, so no reduced cost changes. If the new cut holds at the
+previous primal solution, the basis stays optimal. If the cut is violated there,
+the basis is primal infeasible, and the dual simplex, which keeps dual
+feasibility, restores primal feasibility starting from that basis rather than
+from cold.
+
+When cut selection leaves the active set untouched, this growth is purely
+monotone: rows are only ever added, never removed or reordered. The structural
+relationship between consecutive LP instances is then predictable — the new LP
+is a proper extension of the previous one, sharing every row of it — so the
+row-append facts above apply to each new cut row. Cut selection can break that
+pure-append case, which the next paragraph turns to.
+
+Cut deactivation follows a different route on the backward-pass solve path. A
+deactivated cut is **excluded from the rebaked frozen template** rather than
+left in place with a relaxed bound: at the LP level its row is dropped, not
+merely slackened, so the active cut set can shrink and reorder from one
+iteration to the next, not only grow. The cut is not lost — its stable slot is
+retained in the append-only pool, and reactivation re-bakes the cut at that same
+slot. Because the active set can change this way, a stored basis cannot be
+replayed by row position; the slot-identity reconstruction of §4 reconciles it
+to the current active set, which is what keeps warm-starting valid across
+deactivation and reactivation. See [Cut Management](/math/cut-management) for the
+full deactivation mechanism, including the separate persistent-lower-bound-LP
+route, which is **append-only** — its cut rows are never removed, so
+deactivation changes nothing there and the lower bound stays monotone.
+
+## 4. Cut-Aware Basis Reconstruction by Slot Identity
+
+Between solves, cut selection (see [Cut Management](/math/cut-management))
+deactivates and reactivates cuts and the backward pass appends new ones, so the
+set of active cut rows in the stage LP **churns** from one iteration to the
+next. A stored basis records a status for each row it contained; if those
+statuses were replayed by row position, a churned cut set of the same length
+would misalign — and the solver would warm-start from a corrupted basis or fall
+back to a cold start.
+
+Cobre avoids this by reconciling on **slot identity**, not position. The cut
+pool assigns every cut a stable slot index (see [Cut Management §5](/math/cut-management)),
+and a stored basis carries, for each cut row it held, the pool slot that
+generated it. To reconstruct a basis for the current LP:
+
+- The non-cut (template) row statuses and all column statuses are copied
+  directly.
+- Each current cut row is matched to the stored basis **by its slot**. If the
+  slot was present in the stored basis, its saved status is reused; if the slot
+  is new — a cut that was not in the LP when the basis was captured — the row is
+  set **BASIC** (slack), the default under which the new row changes no reduced
+  cost (§3); if the cut is violated at the starting point, the dual simplex
+  repairs the resulting primal infeasibility.
+- Setting new cut rows BASIC preserves the solver's basis-count invariant by
+  construction (each new cut adds exactly one row and one basic entry). When
+  selection instead _drops_ a cut whose row was non-basic (binding), the
+  reconstructed basis carries one basic entry too many for each such row,
+  because a basic row leaves together with its basic slack whereas a non-basic
+  row takes no basic entry with it; a final pass demotes the trailing excess of
+  basic cut rows to non-basic until the invariant holds. Under the
+  reconstruction's premises — a stored basis captured against the same LP
+  shape — the obligation is one-sided: reconstruction can only ever leave an
+  excess. A basic-count **deficit** therefore proves the stored basis was
+  captured against a differently-shaped LP; it is rejected with a named error
+  reporting the basic-count arithmetic, identically on either solver backend —
+  never repaired, since demotion cannot create the missing basics and
+  promotion would fabricate a basis the stored one never described.
+
+This single mechanism handles all three churn cases — drops, reorders, and
+additions — and serves both within-run reactivation and the cross-run
+checkpoint reconstruction used on warm-start/resume (§2).
+
+## 5. Trade-offs
+
+**Warm-start benefit degrades with LP change magnitude.** The stored basis is
+most valuable when consecutive LP instances are nearly identical. Early in a
+training run, when the cut set is growing rapidly and each new cut can shift
+the active face of the optimal basis substantially, warm-starting provides
+smaller savings than in the middle and late phases of training when the cut
+set has largely stabilized and new cuts make only incremental changes to the
+LP geometry.
+
+**Relationship to cut-aware reconstruction.** The basis store and the
+reconstruction of §4 answer different questions. The store answers "which stored
+basis should seed this `(scenario, node)` subproblem's first solve?" — supplying
+a basis captured for that same slot. Reconstruction answers the narrower
+question that arises because the active cut set baked into the current template
+may have churned since that basis was captured: "which stored row statuses still
+apply, and what status should cut rows new to this LP take?" The store provides
+the starting point; reconstruction reconciles it to the current cut set by slot
+identity, defaulting cut rows with no stored slot to BASIC.
+
+## Implementation in Cobre
+
+The methodology above defines the basis store, its hand-off and its
+reconstruction; the tab below covers how Cobre's training and simulation passes
+use the store at runtime.
+
+<Tabs>
+  <TabItem label="Implementation notes"><WarmStartNotes /></TabItem>
+</Tabs>
+
+## Cross-References
+
+- [Cut Management](/math/cut-management) — The append-only cut lifecycle with
+  stable slot indices that drives cut-set changes and underpins slot-identity
+  reconstruction; cut deactivation mechanism and selection strategies that
+  determine how frequently the cut pool changes.
+- [SDDP Algorithm](/math/sddp-algorithm) — The iteration loop in which the
+  forward and backward passes share the basis store; forward and backward pass
+  structure, how each stage's openings are visited, and the synchronization
+  barriers that separate stages.
+- [Policy Graphs](/math/policy-graphs) — The nodes that key the basis store, and
+  the stages they map to.
+- [Determinism & Provenance](/math/determinism-guarantees) — The deterministic
+  pinning of the chain order described in
+  [Determinism & Provenance §3](/math/determinism-guarantees#3-methodology-mechanisms),
+  which is what keeps warm-starting compatible with bit-identical
+  reproducibility across runs.

@@ -1,0 +1,12 @@
+{
+  "constraints": [
+    {
+      "id": 1,
+      "name": "overlay_default",
+      "expression": "hydro_generation(0)",
+      "slack": {
+        "enabled": false
+      }
+    }
+  ]
+}

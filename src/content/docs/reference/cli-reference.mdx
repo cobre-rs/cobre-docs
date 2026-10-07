@@ -37,15 +37,17 @@ so a new user can start from a working example.
 
 | Argument      | Type | Description                                           |
 | ------------- | ---- | ----------------------------------------------------- |
-| `[DIRECTORY]` | Path | Target directory where template files will be written |
+| `[DIRECTORY]` | Path | Target directory where template files will be written. Required unless `--list` is given; not accepted with `--list` |
 
 ### Options
 
 | Option              | Type   | Default | Description                                      |
 | ------------------- | ------ | ------- | ------------------------------------------------ |
-| `--template <NAME>` | string | —       | Template name to scaffold (e.g., `1dtoy`)        |
-| `--list`            | flag   | off     | List all available templates and exit            |
+| `--template <NAME>` | string | —       | Template name to scaffold (e.g., `1dtoy`). Required unless `--list` is given; not accepted with `--list` |
+| `--list`            | flag   | off     | List all available templates and exit. Not accepted with `--template` or a directory |
 | `--force`           | flag   | off     | Overwrite existing files in the target directory |
+
+Without `--list`, both `--template` and the directory are required.
 
 ### Examples
 
@@ -85,8 +87,8 @@ Stochastic artifact export is controlled by `exports.stochastic` in `config.json
 | Option           | Type    | Default              | Description                                                                                                                                                            |
 | ---------------- | ------- | -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `--output <DIR>` | Path    | `<CASE_DIR>/output/` | Output directory for results                                                                                                                                           |
-| `--threads <N>`  | integer | `1`                  | Number of worker threads per MPI rank. Each thread solves its own LP instances; scenarios are distributed across threads. |
-| `--comm-backend <WHICH>` | `auto` \| `local` \| `mpi` | `auto` | Communication backend. `auto` selects the MPI backend when the process is launched under an MPI launcher (`mpiexec`/`mpirun`/`srun`) and the local backend otherwise; `local` forces a single process; `mpi` forces the MPI backend and fails with a clear message on a binary built without MPI support. |
+| `--threads <N>`  | integer | `1`                  | Number of worker threads per MPI rank. Each thread solves its own LP instances; scenarios are distributed across threads. Must be `1` or more. |
+| `--comm-backend <WHICH>` | `auto` \| `local` \| `mpi` | `auto` | Communication backend. `auto` selects the MPI backend when a binary built with MPI support (the `cobre-mpi` release asset) is launched under an MPI launcher (`mpiexec`/`mpirun`/`srun`), and the local backend otherwise; `local` forces a single process; `mpi` forces the MPI backend and fails with a clear message on a binary built without MPI support. |
 | `--quiet`        | flag    | off                  | Suppress the banner and progress bars. Errors still go to stderr                                                                                                       |
 
 ### Config-First Principle
@@ -121,8 +123,8 @@ cobre run /data/cases/hydro_study --quiet
 # Force color output when running under mpiexec
 cobre --color always run /data/cases/hydro_study
 
-# Run with MPI across 4 ranks
-mpiexec -np 4 cobre run /data/cases/hydro_study
+# Run across 4 MPI ranks (requires the MPI build; see HPC & Cluster Deployment)
+mpiexec -np 4 cobre-mpi run /data/cases/hydro_study
 ```
 
 ### Output format
@@ -160,23 +162,23 @@ phase-wall timing is unavailable.
 
 This printout is for reading, not parsing. The machine-readable record of the
 same run is the metadata `cobre run` writes into the output directory —
-`training/metadata.json` always, and `simulation/metadata.json` when
+`training/metadata.json` when training ran, and `simulation/metadata.json` when
 simulation ran — which you can query directly with `jq`:
 
 ```bash
 # Run status and final bounds
 jq '{status, bounds}' /data/cases/hydro_study/output/training/metadata.json
 
-# Check the run status in a script
-status=$(jq -r '.status' /data/cases/hydro_study/output/training/metadata.json)
-if [ "$status" = "complete" ]; then
-  echo "Training converged"
-fi
+# Extract the training termination reason
+jq -r '.convergence.termination_reason' /data/cases/hydro_study/output/training/metadata.json
+
+# When simulation ran, fail a CI job if a scenario's output could not be written
+[ "$(jq -r '.scenarios.failed' /data/cases/hydro_study/output/simulation/metadata.json)" = "0" ] || exit 1
 ```
 
 From Python, `cobre.results.load_results(output_dir)` returns both metadata
 files as dicts. Every field is documented in
-[Output Format → Metadata Files](/reference/output-format/#metadata-files).
+[Metadata Files](/reference/output/metadata/).
 
 ### SLURM clusters
 
@@ -211,6 +213,20 @@ violation exits with code 1. An unreadable case directory is reported as an I/O
 error on stderr, without the summary. See [Exit Codes](#exit-codes) for the full
 mapping.
 
+When `config.json` configures `policy.boundary`, `cobre validate` loads and
+reconciles that boundary policy, including the
+[version gate](/running/policy-management/#version-gate). A refusal exits `1`,
+as does a boundary checkpoint that cannot be read. Under `--json`, a refusal
+reports phase `BoundaryReconciliationError` and an unreadable checkpoint prints
+no JSON object; see
+[Policy-load errors](/reference/error-codes/#policy-load-errors).
+
+`cobre validate` does not read `policy.path`, so a warm-start, resume, or
+simulation-only checkpoint is checked only when `cobre run` loads it. For a
+`policy.path` checkpoint that `cobre run` refuses, `cobre validate` reports the
+case valid and exits `0`, although the hint printed with the refusal suggests running
+`cobre validate`.
+
 ### Arguments
 
 | Argument     | Type | Description                            |
@@ -240,8 +256,8 @@ cobre validate /data/cases/hydro_study --json
 
 ## `cobre schema`
 
-Manages JSON Schema files for case directory input types. Currently supports
-exporting schemas.
+Manages JSON Schema files for case directory input types. Its one subcommand is
+`export`.
 
 ### Subcommands
 
@@ -272,8 +288,10 @@ support, host architecture, and build profile.
 
 ### Output lines
 
+{/* capture: cobre version | cobre   v0.17.0 | binary: cobre-cli sha256 23916b46 | case: none */}
+
 ```
-cobre   v0.16.0
+cobre   v0.17.0
 solver: HiGHS 1.13.1
 comm:   local
 zstd:   enabled
@@ -283,12 +301,12 @@ build:  release (lto=thin)
 
 | Line                               | Description                                                             |
 | ---------------------------------- | ----------------------------------------------------------------------- |
-| `cobre v{version}`                 | Binary version from `Cargo.toml`                                        |
+| `cobre v{version}`                 | The cobre release version                                               |
 | `solver: {name} {version}`         | Active LP solver backend and its library version — `HiGHS 1.13.1` in standard builds; a CLP build reports `CLP <version>` |
 | `comm: local` or `comm: mpi`       | Communication backend (`mpi` only when compiled with the `mpi` feature) |
 | `zstd: enabled`                    | Output compression support                                              |
 | `arch: {arch}-{os}`                | Host CPU architecture and operating system                              |
-| `build: release` or `build: debug` | Cargo build profile                                                     |
+| `build: release (lto=thin)` or `build: debug` | Build profile                                                |
 
 ### Arguments
 
@@ -305,25 +323,27 @@ None.
 | Code | Category   | Cause                                                                                                                |
 | ---- | ---------- | -------------------------------------------------------------------------------------------------------------------- |
 | `0`  | Success    | The command completed without errors                                                                                 |
-| `1`  | Validation | A parse, schema, or semantic-constraint error in any case file — including `config.json` — collected into the validation report (both subcommands); `cobre run` also exits `1` for every other non-I/O load failure |
-| `2`  | I/O        | File not found, permission denied, disk full, or write failure during loading or output (both subcommands)           |
-| `3`  | Solver     | LP infeasible subproblem or numerical solver failure during training or simulation                                   |
-| `4`  | Internal   | Communication failure, unexpected channel closure, or other software/environment problem. `cobre validate` also maps the rare load errors that escape the validation report — a scenario-assembly schema error (an AR-coefficient count mismatch) or a policy-incompatibility error — to this code, where `cobre run` exits `1` |
+| `1`  | Validation | A parse, schema, or semantic-constraint error in any case file, `config.json` included, collected into the validation report, or a refused or unreadable `policy.boundary` checkpoint (both subcommands). `cobre run` also exits `1` for every other non-I/O load failure, and when a policy load is refused (another cobre version, or a stored basis or state that does not fit the study) |
+| `2`  | I/O or usage | A case directory that does not exist (both subcommands); a disk-full or other filesystem failure while writing the policy checkpoint or the training or simulation results after training starts, except the write of one simulation scenario's results, which is logged and leaves the exit code `0` (`cobre run`); or a command-line usage error — an unknown subcommand or option, a missing subcommand or argument, a conflicting argument, or an invalid option value — reported by the argument parser before any file is read |
+| `3`  | Solver     | LP infeasible subproblem or numerical solver failure during simulation, or a solver backend that cannot be initialized |
+| `4`  | Internal   | Communication failure, unexpected channel closure, or other software/environment problem. Under `cobre run`, exit `4` also covers a missing `policy.path` directory or a checkpoint that cannot be read, and a stochastic-preparation failure that is a stochastic-model error (`cobre validate` reports it as `StochasticPreparationError`, exit `1`, with `stochastic error:` after the file label). `cobre validate` also maps the rare load error that escapes the validation report — a scenario-assembly schema error (an AR-coefficient count mismatch) — to this code, where `cobre run` exits `1`. A training iteration that fails (an infeasible stage LP, a solver failure or a communication failure) also exits `4` under `cobre run`, after its training outputs are written. |
 
 A dangling reference (an entity ID that refers to a non-existent entity) surfaces
 as an `InvalidReference` line inside a semantic-constraint violation (exit code 1).
 
 Error messages are printed to stderr with `error:` prefix and hint lines. See
-[Error Codes](/reference/error-codes/) for a detailed catalog.
+[Error Codes](/reference/error-codes/) for a detailed catalog, including
+[Policy-load errors](/reference/error-codes/#policy-load-errors). For the cause and fix of the failures a study commonly meets, see [Troubleshooting](/running/troubleshooting/).
 
 :::note
 `cobre validate` and `cobre run` do not share one exit code for every load
 failure. Parse, schema, and semantic-constraint errors found while reading the
 case files are collected into the validation report and exit `1` under both
-subcommands. The load errors that surface only after that report is complete —
-a scenario-assembly schema error or a policy-incompatibility error — exit `4`
-under `cobre validate` but `1` under `cobre run`. These pages follow the binary
-as executed.
+subcommands. The load error that surfaces only after that report is complete —
+a scenario-assembly schema error — exits `4` under `cobre validate` but `1`
+under `cobre run`. A refusal of the fitted inflow model that arrives as a load
+error exits `1` under both subcommands. Message texts and renderings are under
+[`StochasticPreparationError`](/reference/error-codes/#stochasticpreparationerror).
 :::
 
 ---

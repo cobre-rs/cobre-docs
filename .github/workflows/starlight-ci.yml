@@ -1,28 +1,17 @@
-# Starlight site CI — PR verification for the Astro/Starlight docs in site/.
+# Starlight CI — pull-request verification for the Astro/Starlight docs.
 #
-# This is the verification half of the new pipeline (E7). It installs Node + a
-# pinned d2 binary, runs the test suite, builds the multi-version site, and runs
-# the corpus quality gates (figures, astro check, math-parity, link-check). It
-# does NOT deploy — no Pages artifact, no CNAME, no pages:/id-token: permissions
-# (that is ticket-026). It is additive and does NOT touch the live mdBook
-# ci.yml / deploy.yml.
+# On every pull request to `main` (and on manual dispatch) this workflow installs
+# Node, a pinned d2 and a pinned cobre, runs the static corpus gates before the
+# build, builds the multi-version site with `npm run build:versions`, then runs
+# `npm test`, `npm run check`, `npm run check:math`, `npm run check:links` and
+# `npm run check:e10`.
 #
-# ──────────────────────────────────────────────────────────────────────────────
-# Manual run & verify (for the maintainer — NOT performed by the author):
-#   1. (Recommended) Lint locally:  actionlint .github/workflows/starlight-ci.yml
-#   2. The workflow is committed on feat/starlight-migration (done by the author).
-#   3. Push the branch and open/refresh a PR to main; GitHub Actions runs
-#      `Starlight CI` automatically (no repo-settings change needed for a CI
-#      workflow using the default read-only GITHUB_TOKEN — Actions is already
-#      enabled, as the mdBook ci.yml runs).
-#   4. Or trigger it manually from the Actions tab via the workflow_dispatch
-#      button once the branch is pushed.
-#   5. Confirm the run is green: `d2 --version` prints v0.7.1, check:figures and
-#      `npm run build:versions` complete, then `npm test` passes (it is dist-gated,
-#      so it runs after the build), and check / check:math / check:links all pass.
-#      (Counts grow with version snapshots — the scripts assert lower bounds;
-#      nothing is hard-coded here.)
-# ──────────────────────────────────────────────────────────────────────────────
+# It deploys nothing: no Pages artifact, no CNAME, no pages: or id-token:
+# permissions. starlight-deploy.yml publishes on push to `main` and runs a subset
+# of these steps (ADR-019); the doc-lint gates and every gate added after them run
+# only here.
+#
+# Lint locally with `actionlint .github/workflows/starlight-ci.yml`.
 
 name: Starlight CI
 
@@ -47,10 +36,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
-    # The Astro project lives in site/, not the repo root. Run every `run:` step
-    # there once instead of `cd site` per step. NB: setup-node's cache option
-    # keys cache-dependency-path off the REPO ROOT regardless, so that path stays
-    # `site/package-lock.json` below.
+    # Steps run at the repository root, where the Astro project lives; setup-node's
+    # cache-dependency-path is the root `package-lock.json`.
     defaults:
       run:
         working-directory: .
@@ -73,8 +60,7 @@ jobs:
       # astro-d2 shells out to a `d2` executable that must be on PATH at build
       # time, or D2 fenced blocks silently render nothing. Install a PINNED
       # release asset (reproducible) — NOT `curl … d2lang.com/install.sh | sh`
-      # (the banned, unpinned curl|bash pattern). Mirrors ci.yml's
-      # binary-then-`sudo mv` style.
+      # (the banned, unpinned curl|bash pattern).
       # sha256 pinned: d2 v0.7.1 ships no checksums file, so this hash was
       # computed from the released linux-amd64 asset. A tampered or replaced
       # tarball fails `sha256sum -c` and aborts the step before extraction.
@@ -92,6 +78,32 @@ jobs:
       # before the build, instead of as confusing "missing figures" output.
       - name: Verify d2
         run: d2 --version
+
+      # ticket-243 (GRD-05, G3 decision B1, ADR-021): check:gc-examples runs the
+      # pinned non-MPI cobre release asset, installed the way d2 is: pinned URL,
+      # workflow-pinned sha256, extract, move onto PATH. The workflow pins the
+      # sha256 itself; the release `.sha256` sidecar is not the pin source. Bump the
+      # URL, the hash, this step's name, the README check:gc-examples line and
+      # scripts/cobre-ref.mjs DEFAULT_COBRE_REF together at each cobre sync: the
+      # gate exits 2 when `cobre version` differs from that ref. Re-vendor the
+      # error kinds in the same sync with `npm run refresh:error-kinds`
+      # (check:error-coverage reads them).
+      # Only the binary is extracted, so the directory is empty after the move and
+      # nothing is left in the checkout for the build.
+      - name: Install cobre (pinned v0.17.0, sha256-verified)
+        run: |
+          cobre_tarball=cobre-cli-x86_64-unknown-linux-gnu.tar.xz
+          cobre_sha256=23916b4639c20b8f7a93aa24be1655c26167ddbeb3e3fa7d648e62e35a8309aa
+          curl -fsSL "https://github.com/cobre-rs/cobre/releases/download/v0.17.0/${cobre_tarball}" -o "${cobre_tarball}"
+          echo "${cobre_sha256}  ${cobre_tarball}" | sha256sum -c -
+          tar xJf "${cobre_tarball}" cobre-cli-x86_64-unknown-linux-gnu/cobre
+          sudo mv cobre-cli-x86_64-unknown-linux-gnu/cobre /usr/local/bin/cobre
+          sudo chmod +x /usr/local/bin/cobre
+          rm -f "${cobre_tarball}"
+          rmdir cobre-cli-x86_64-unknown-linux-gnu
+
+      - name: Verify cobre
+        run: cobre version
 
       - name: Install dependencies
         run: npm ci
@@ -123,6 +135,27 @@ jobs:
       - name: Check doc version (cobre-version references vs the Synced-to anchor)
         run: npm run check:version
 
+      # R62/ADR-007: change-narration ratchet, both zones (static source read, pre-build).
+      # Pre-existing hits are grandfathered per owning epic in scripts/doc-lint-allow.txt.
+      - name: Check doc narration (change-narration ratchet, both zones)
+        run: npm run check:narration
+
+      # E13 ticket-218 (GRD-07): static source read, pre-build; ratchet: scripts/doc-lint-allow.txt.
+      - name: Check glossary (no software tokens; index complete)
+        run: npm run check:glossary
+
+      # E13 ticket-214 (GRD-08): every emitted ErrorKind/LoadError variant has an error-codes section; vendored copy, no cobre checkout (ADR-020).
+      - name: Check error coverage (error-codes vs vendored error kinds)
+        run: npm run check:error-coverage
+
+      # E13 ticket-215 (GRD-03): vendored input schemas vs the case-format tables, both directions (R87); static, pre-build.
+      - name: Check input schemas (vendored schemas vs case-format tables)
+        run: npm run check:input-schemas
+
+      # GRD-04 (R87): every public cobre-python stub symbol has an anchor in reference/python-api; reads the vendored scripts/pystubs/ (refresh:pystubs), no cobre checkout.
+      - name: Check python-api coverage (vendored stubs vs reference/python-api)
+        run: npm run check:python-api
+
       # ticket-014 (strategy §6b): advisory vendored-JSON-schema validation.
       # Asserts the COMMITTED public/schemas/ copy is present, exactly 18
       # files, and every file is well-formed JSON. This needs NO `cobre`
@@ -145,6 +178,21 @@ jobs:
             console.log("check:schemas: " + files.length + " vendored schemas present and well-formed");
           '
 
+      # ticket-243 (GRD-05): every gc-check fence on reference/generic-constraints behaves as marked under the pinned cobre (D-160-4, D-179-2).
+      # The script sets no spawnSync timeout, so a hung `cobre validate` is bounded here.
+      - name: Check generic-constraint examples (cobre validate)
+        run: npm run check:gc-examples
+        timeout-minutes: 5
+
+      # ticket-243a (GRD-09, XD-129): the committed quickstart.gif matches scripts/recordings-provenance.json. Check only:
+      # CI has no cobre checkout, so the tape blob prints "tape not checked" (D-198-4); never drop --check here.
+      - name: Check recordings provenance (quickstart.gif sha256)
+        run: npm run refresh:recordings -- --check
+
+      # ticket-244c (XD-128): every reference Type cell uses the reference-conventions §4 vocabulary of its file kind; static source read, pre-build.
+      - name: Check reference type spelling (§4 vocabulary)
+        run: npm run check:type-spelling
+
       # E10 ticket-032 (licensing.md item 3): assert D2 uses ELK, never the
       # proprietary TALA engine (unlicensed TALA watermarks output). A static
       # source grep of astro.config.mjs + ```d2 blocks under src/ — pre-build,
@@ -164,8 +212,8 @@ jobs:
         run: npm run build:versions
 
       # `npm test` MUST run AFTER the build: the scripts/*.test.mjs glob includes
-      # dist-gated tests (i18n-locale, version-assembly) that read dist/index.html
-      # and exit non-zero ("run npm run build first") when dist/ is absent. On a
+      # a dist-gated test (i18n-locale) that reads dist/index.html and exits
+      # non-zero ("run npm run build first") when dist/ is absent. On a
       # clean runner there is no dist/ until build:versions runs. (check:figures
       # stays pre-build — it reads src/, not dist/.) Keep the single glob'd
       # invocation so new tests are picked up automatically.
@@ -180,3 +228,9 @@ jobs:
 
       - name: Check links
         run: npm run check:links
+
+      # E10 ticket-029 completion gate, also run by starlight-deploy.yml (E15, XD-188).
+      # It reads dist/ and asserts that the third-party notices and the content
+      # license ship in the built site, so it runs after the build.
+      - name: Check E10 completion gate
+        run: npm run check:e10

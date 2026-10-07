@@ -5,10 +5,12 @@
 // describe CURRENT cobre as instance-agnostic fact — no cobre-version
 // annotations, no hedged "typical"/"about N" magnitudes (per the Methodology
 // Authoring Standards + the "No version numbers in the corpus" hard rule in
-// CLAUDE.md). Everything else that documents the SOFTWARE layer — the
-// `math/_impl/_*.mdx` interleave partials, `reference/*`, `running/*`,
-// `getting-started/*`, and `examples/*` (worked examples legitimately carry
-// concrete instance numbers) — may carry concrete config/CLI/version detail.
+// CLAUDE.md). `reference/glossary.md` is the one strict page under
+// `reference/` (math zone, R97). Everything else that documents the SOFTWARE
+// layer — the `math/_impl/_*.mdx` interleave partials, `reference/*`,
+// `running/*`, `getting-started/*`, and `examples/*` (worked examples
+// legitimately carry concrete instance numbers) — may carry concrete
+// config/CLI/version detail.
 //
 // `zoneOf(relPath)` is the single source of truth for this split, keyed
 // directly off path (Epic 03 learnings: the profile "can key directly off the
@@ -18,7 +20,7 @@
 //
 // `relPath` is expected relative to `src/content/docs/` (e.g.
 // "math/lp-formulation.mdx", "math/_impl/_hydro.io.mdx",
-// "reference/output-format.mdx"). Backslashes are normalised to forward
+// "reference/error-codes.mdx"). Backslashes are normalised to forward
 // slashes so the predicate is platform-independent.
 
 import { readdirSync } from "node:fs";
@@ -40,6 +42,10 @@ const LENIENT_TOP_LEVEL_DIRS = [
 // Strict top-level directories (the methodology layer).
 const STRICT_TOP_LEVEL_DIRS = ["overview/"];
 
+// Strict single pages inside an otherwise-lenient directory (R97): the
+// glossary is math-zone text although it sits under reference/.
+const STRICT_FILES = ["reference/glossary.md"];
+
 /**
  * Classify a content-relative path into one of the three voice zones.
  *
@@ -49,10 +55,11 @@ const STRICT_TOP_LEVEL_DIRS = ["overview/"];
 export function zoneOf(relPath) {
   const normalized = relPath.replace(/\\/g, "/").replace(/^\/+/, "");
 
-  // Excluded: the root landing page (a renderer/harness demo, not migrated
-  // content) and the pt-br/ subtree (a future locale, not yet gated).
-  if (normalized === "index.mdx") return ZONE_EXCLUDED;
+  // Excluded: the pt-br/ subtree (a future locale, not yet gated).
   if (normalized.startsWith("pt-br/")) return ZONE_EXCLUDED;
+
+  // The root landing page is software-layer content (CTAs, cards, links).
+  if (normalized === "index.mdx") return ZONE_LENIENT;
 
   // math/_impl/** is UNDER math/ but IS the software layer — must be checked
   // before the general math/ strict rule below, or it would wrongly inherit
@@ -63,6 +70,8 @@ export function zoneOf(relPath) {
   for (const dir of STRICT_TOP_LEVEL_DIRS) {
     if (normalized.startsWith(dir)) return ZONE_STRICT;
   }
+  // Must precede the lenient loop, or the glossary matches reference/.
+  if (STRICT_FILES.includes(normalized)) return ZONE_STRICT;
   for (const dir of LENIENT_TOP_LEVEL_DIRS) {
     if (normalized.startsWith(dir)) return ZONE_LENIENT;
   }
@@ -75,7 +84,7 @@ export function zoneOf(relPath) {
 /**
  * Recursively collect every `.md`/`.mdx` file under `contentRoot`, returning
  * paths RELATIVE to `contentRoot` (forward-slash separated), skipping any
- * file whose `zoneOf()` result is "excluded" (pt-br/, index.mdx, ...).
+ * file whose `zoneOf()` result is "excluded" (pt-br/ ...).
  *
  * Shared by check-doc-voice.mjs and check-doc-version.mjs so the two gates
  * can never walk different file sets. UNLIKE check-figures.mjs /
@@ -96,8 +105,10 @@ export function collectZonedSourceFiles(contentRoot) {
       const rel = prefix + entry.name;
       if (entry.isDirectory()) {
         files.push(...walk(join(dir, entry.name), `${rel}/`));
-      } else if (/\.(md|mdx)$/.test(entry.name)) {
-        if (zoneOf(rel) === ZONE_EXCLUDED) continue;
+      } else if (
+        /\.(md|mdx)$/.test(entry.name) &&
+        zoneOf(rel) !== ZONE_EXCLUDED
+      ) {
         files.push(rel);
       }
     }

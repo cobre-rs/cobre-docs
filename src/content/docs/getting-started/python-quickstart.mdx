@@ -1,389 +1,228 @@
 ---
 title: Python Quickstart
-description: Install the cobre Python package and run a complete SDDP study with cobre.run.run().
+description: Install the cobre Python package, run the 1dtoy example case with cobre.run.run(), and read and plot its results.
 ---
 
-Install Cobre and run a study in a few steps.
+Install the `cobre` Python package, scaffold the 1dtoy example case, run it with `cobre.run.run()`, then read and plot the results. The remaining sections change the configuration, validate a case and handle errors.
 
-## Installation
+## Install
 
 ```bash
-pip install cobre-python
+pip install cobre-python polars pyarrow matplotlib
 ```
 
-Requires Python 3.12, 3.13, or 3.14.
+The package imports as `cobre`; `polars`, `pyarrow` and `matplotlib` serve the read and plot steps. [Installation](/getting-started/installation/) lists the supported Python versions and platforms.
 
-## Run a Case
+## Scaffold a Case
+
+The Python package has no scaffold command. Create the 1dtoy example case with the `cobre` command-line tool from [Installation](/getting-started/installation/):
+
+```bash
+cobre init --template 1dtoy my_study
+```
+
+Alternatively, copy the repository's [examples/1dtoy](https://github.com/cobre-rs/cobre/tree/v0.17.0/examples/1dtoy) at the `v0.17.0` tag to `my_study/`. Run the snippets below, in order, from the directory that holds `my_study/`.
+
+## Run the Study
+
+`cobre.run.run()` loads the case, trains an SDDP policy, simulates 100 scenarios and writes the results to `my_study/output`. It returns a dict:
+
+{/* capture: python run | cobre-python 0.17.0 (PyPI wheel sha256 c0b117d2) | python 3.12.3 | case: 1dtoy (cobre init --template 1dtoy) as my_study; snippets run in page order */}
 
 ```python
 import cobre
 
-result = cobre.run.run("path/to/case")
+result = cobre.run.run("my_study")
+print(f"converged:   {result['converged']}")
+print(f"iterations:  {result['iterations']}")
+print(f"lower_bound: {result['lower_bound']:.6g}")
+print(f"upper_bound: {result['upper_bound']:.6g}")
+print(f"gap_percent: {result['gap_percent']:.1f}")
+print(f"simulation:  {result['simulation']}")
+print(f"output_dir:  {result['output_dir']}")
 ```
 
-The `cobre.run.run()` function loads the case, trains an SDDP policy, optionally
-runs simulation, and writes output files. It returns a dictionary with the
-following keys:
-
-| Key             | Type              | Description                                     |
-| --------------- | ----------------- | ------------------------------------------------ |
-| `converged`     | `bool`            | Whether training converged                      |
-| `iterations`    | `int`             | Number of training iterations completed         |
-| `lower_bound`   | `float`           | Final lower bound                               |
-| `upper_bound`   | `float` or `None` | Final upper bound (None if no simulation)       |
-| `gap_percent`   | `float` or `None` | Optimality gap percentage (None if unavailable)  |
-| `total_time_ms` | `int`             | Total wall-clock time in milliseconds           |
-| `output_dir`    | `str`             | Path to the output directory                    |
-| `simulation`    | `dict` or `None`  | Simulation summary (if enabled)                 |
-| `stochastic`    | `dict` or `None`  | Stochastic preprocessing summary                |
-| `hydro_models`  | `dict` or `None`  | Hydro model summary                             |
-| `provenance`    | `ProvenanceReport` or `None` | Build version and environment metadata (a `ProvenanceReport` typed dict, or `None` when provenance was not captured) |
-
-```python
-print(f"Converged: {result['converged']}")
-print(f"Iterations: {result['iterations']}")
-print(f"Lower bound: {result['lower_bound']:.2f}")
-if result['gap_percent'] is not None:
-    print(f"Gap: {result['gap_percent']:.2f}%")
-print(f"Output dir: {result['output_dir']}")
+```text
+converged:   False
+iterations:  128
+lower_bound: 1.55955e+07
+upper_bound: 579592
+gap_percent: -96.3
+simulation:  {'n_scenarios': 100, 'completed': 100}
+output_dir:  my_study/output
 ```
 
-## Optional Parameters
+The printed keys are part of the result dict; see [`RunResult`](/reference/python-api/#cobre_typesrunresult) for the full shape and [`cobre.run.run`](/reference/python-api/#cobrerunrun) for the parameters. `converged` is `True` only when the `bound_stalling` rule stops training. Here the 128-iteration limit stopped it, so `False` is expected. The bounds and the negative gap match the CLI quickstart, which explains them in [What You Just Ran](/getting-started/quickstart/#what-you-just-ran).
+
+## Read the Results
+
+Read the convergence record and the simulation costs back from the output directory:
+
+{/* capture: python read | cobre-python 0.17.0 (PyPI wheel sha256 c0b117d2) | python 3.12.3 | case: 1dtoy (cobre init --template 1dtoy) as my_study; snippets run in page order */}
 
 ```python
-result = cobre.run.run(
-    "path/to/case",
-    output_dir="path/to/output",   # default: case_dir/output
-    threads=4,                      # default: None → 1 worker
-    config_overrides={"simulation": {"enabled": False}},  # default: None
+import cobre
+import polars as pl
+
+conv = pl.from_arrow(cobre.results.load_convergence_arrow("my_study/output"))
+print(conv.select("iteration", "lower_bound", "upper_bound", "gap_percent").tail(3))
+
+costs = pl.from_arrow(
+    cobre.results.load_simulation_arrow("my_study/output", entity_type="costs")
 )
+per_scenario = costs.group_by("scenario_id").agg(
+    (pl.col("discount_factor") * pl.col("immediate_cost")).sum().alias("cost")
+)
+print(per_scenario.select(
+    pl.col("cost").mean().alias("mean"),
+    pl.col("cost").median().alias("median"),
+))
 ```
 
-- **`output_dir`**: where to write results (default: `case_dir/output`).
-- **`threads`**: worker count for the internal pool. Default `None` ⇒ **1 worker**. `0` is **rejected** (`ValueError: threads must be >= 1 when given`); a value `≥ 1` sets the worker count.
-- **`config_overrides`**: a dict merged into `config.json`. Both nested `{"simulation": {"enabled": False}}` and flat dotted `{"training.tree_seed": 7}` shapes are deep-merged into the configuration.
+```text
+shape: (3, 4)
+┌───────────┬─────────────┬───────────────┬─────────────┐
+│ iteration ┆ lower_bound ┆ upper_bound   ┆ gap_percent │
+│ ---       ┆ ---         ┆ ---           ┆ ---         │
+│ i32       ┆ f64         ┆ f64           ┆ f64         │
+╞═══════════╪═════════════╪═══════════════╪═════════════╡
+│ 126       ┆ 1.5596e7    ┆ 615923.497494 ┆ -96.050638  │
+│ 127       ┆ 1.5596e7    ┆ 615923.497494 ┆ -96.050638  │
+│ 128       ┆ 1.5596e7    ┆ 579592.198622 ┆ -96.283598  │
+└───────────┴─────────────┴───────────────┴─────────────┘
+shape: (1, 2)
+┌──────────┬───────────────┐
+│ mean     ┆ median        │
+│ ---      ┆ ---           │
+│ f64      ┆ f64           │
+╞══════════╪═══════════════╡
+│ 9.6794e6 ┆ 615923.497494 │
+└──────────┴───────────────┘
+```
+
+The two [`cobre.results`](/reference/python-api/#cobreresults) loaders return `pyarrow.Table`s, which `polars.from_arrow` wraps. A scenario's cost is the sum of `discount_factor * immediate_cost` over its `costs` rows, one per stage here; the mean matches the `Expected cost` line of the CLI run summary, and the median, far below the mean, shows that most scenarios are cheap.
+
+## Plot the Convergence
+
+Plot both bounds against the iteration:
+
+{/* capture: python plot | cobre-python 0.17.0 (PyPI wheel sha256 c0b117d2) | python 3.12.3 | case: 1dtoy (cobre init --template 1dtoy) as my_study; snippets run in page order */}
+
+```python
+import cobre
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
+import polars as pl
+
+conv = pl.from_arrow(cobre.results.load_convergence_arrow("my_study/output"))
+fig, ax = plt.subplots()
+ax.plot(conv["iteration"], conv["lower_bound"], label="lower bound")
+ax.plot(conv["iteration"], conv["upper_bound"], label="upper bound")
+ax.set_yscale("log")
+ax.set_xlabel("iteration")
+ax.set_ylabel("expected cost")
+ax.legend()
+fig.savefig("convergence.png")
+print("saved convergence.png")
+```
+
+```text
+saved convergence.png
+```
+
+The saved `convergence.png` uses a log axis. The lower bound rises from about 5.1e6 and flattens near 1.56e7. The upper bound is the cost of one forward pass per iteration; it sits near 6e5 with spikes above 1e8. `matplotlib.use("Agg")` draws to a file, so the script needs no display.
+
+## Change the Configuration
+
+`config_overrides` changes `config.json` settings for one call without editing the file. This call reruns the study with another seed:
+
+{/* capture: python seed | cobre-python 0.17.0 (PyPI wheel sha256 c0b117d2) | python 3.12.3 | case: 1dtoy (cobre init --template 1dtoy) as my_study; snippets run in page order */}
+
+```python
+import cobre
+
+result = cobre.run.run(
+    "my_study",
+    output_dir="my_study/output-seed7",
+    config_overrides={"training.tree_seed": 7},
+)
+print(f"lower_bound: {result['lower_bound']:.6g}")
+```
+
+```text
+lower_bound: 9.7055e+06
+```
+
+The keys are dotted `config.json` paths. `training.tree_seed` seeds the opening tree and the in-sample draws (default 42), so another seed gives another tree and another lower bound: 9.7055e+06 here, against 1.55955e+07 for the first run. Pass nested settings as dotted keys: a dict under a non-dotted key replaces that whole object. `output_dir` keeps this run apart from the first. [Seed resolution](/running/configuration/#seed-resolution) describes the seeds.
+
+A run with training disabled simulates the policy already in the output directory, here the one the first run wrote:
+
+{/* capture: python simonly | cobre-python 0.17.0 (PyPI wheel sha256 c0b117d2) | python 3.12.3 | case: 1dtoy (cobre init --template 1dtoy) as my_study; snippets run in page order */}
+
+```python
+import cobre
+
+result = cobre.run.run("my_study", config_overrides={"training.enabled": False})
+print(f"iterations:  {result['iterations']}")
+print(f"upper_bound: {result['upper_bound']}")
+print(f"gap_percent: {result['gap_percent']}")
+```
+
+```text
+iterations:  0
+upper_bound: 579592.1986224409
+gap_percent: None
+```
+
+With training disabled and simulation enabled, `iterations` is `0`, `gap_percent` is `None`, and `upper_bound` is the last training upper bound recorded in the policy checkpoint the run loads (`None` if it records no finite one). With both phases disabled, `lower_bound` is `0.0` and `upper_bound`, `gap_percent` and `simulation` are `None`. The `threads` argument of `cobre.run.run` sets the worker count (default 1); `0` raises `ValueError`.
 
 ## Validate a Case
 
-Before running a study, validate the case directory to check for errors:
+`cobre.io.validate` checks a case directory without running it:
+
+{/* capture: python validate | cobre-python 0.17.0 (PyPI wheel sha256 c0b117d2) | python 3.12.3 | case: 1dtoy (cobre init --template 1dtoy) as my_study; snippets run in page order */}
 
 ```python
-import cobre.io
+import cobre
 
-report = cobre.io.validate("path/to/case")
-# Returns: {"valid": bool, "errors": [...], "warnings": [...]}
-
-if not report["valid"]:
-    for e in report["errors"]:
-        print(f"{e['kind']}: {e['message']}")
+print(cobre.io.validate("my_study"))
 ```
 
-`Study(...).validate()` returns the same-shaped dict.
+```text
+{'valid': True, 'errors': [], 'warnings': []}
+```
+
+The dict has the keys `valid`, `errors` and `warnings`; each entry of `errors` is a dict with `kind` and `message`. `cobre.Study("my_study").validate()` returns a dict with the same keys.
 
 ## Error Handling
 
-Cobre defines a typed exception hierarchy under `cobre.errors`. All exceptions inherit from `CobreError` (the common base) and also from the matching builtin (`ValueError`, `OSError`, or `RuntimeError`), so existing `except OSError` handlers keep catching while new code can catch the typed class.
+A setting that fails validation raises a typed exception. This call misspells a config key:
 
-| Exception                  | Inherits                        | Description                                                                                         |
-| -------------------------- | ------------------------------- | --------------------------------------------------------------------------------------------------- |
-| `CobreError`               | `Exception`                     | Base class for every Cobre exception                                                                |
-| `ValidationError`          | `CobreError`, `ValueError`      | Case data or configuration failed validation                                                        |
-| `PolicyIncompatibleError`  | `CobreError`, `ValueError`      | A warm-start policy is incompatible with the current system                                         |
-| `CaseIoError`              | `CobreError`, `OSError`         | A filesystem read or write failure while loading or writing a case                                  |
-| `OutputError`              | `CobreError`, `OSError`         | An output serialization, schema, or manifest failure while writing results                          |
-| `SolverError`              | `CobreError`, `RuntimeError`    | A training or solver failure. For an infeasible subproblem, the `.stage`, `.iteration`, and `.scenario` attributes are the integer coordinates; otherwise they are `None` |
-| `SimulationError`          | `CobreError`, `RuntimeError`    | A simulation-phase failure                                                                          |
-| `InternalError`            | `CobreError`, `RuntimeError`    | An internal software or environment fault                                                           |
-
-See [Error Codes](/reference/error-codes/) for the full catalogue of error conditions.
-
-## Read Output with Polars
-
-Cobre writes results as Parquet files, which can be loaded directly with
-Polars or any Arrow-compatible library:
+{/* capture: python errors | cobre-python 0.17.0 (PyPI wheel sha256 c0b117d2) | python 3.12.3 | case: 1dtoy (cobre init --template 1dtoy) as my_study; snippets run in page order */}
 
 ```python
-import polars as pl
+import cobre
 
-# Convergence trajectory
-convergence = pl.read_parquet("output/training/convergence.parquet")
-print(convergence.head())
-
-# Simulation costs (if simulation was enabled) — Hive-partitioned
-costs = pl.read_parquet("output/simulation/costs/")
-print(costs.describe())
+try:
+    cobre.run.run("my_study", config_overrides={"training.tree_seeds": 7})
+except cobre.errors.CobreError as err:
+    print(type(err).__name__, isinstance(err, ValueError))
 ```
 
-## Arrow Zero-Copy Loading
-
-For larger datasets, use the built-in Arrow loaders that avoid serialization
-overhead:
-
-```python
-# Returns a pyarrow.Table (zero-copy)
-convergence_table = cobre.results.load_convergence_arrow("output/")
-simulation_tables = cobre.results.load_simulation_arrow("output/")
-
-# Convert to Polars without copying
-import polars as pl
-df = pl.from_arrow(convergence_table)
+```text
+ValidationError True
 ```
+
+The typed exceptions are in `cobre.errors`. Each specific class derives from the base `CobreError` and from a builtin (`ValueError`, `OSError` or `RuntimeError`), so an existing `except ValueError` also catches this `ValidationError`. Argument checks such as `threads=0` or a missing case directory raise the builtin directly. See [`cobre.errors`](/reference/python-api/#cobreerrors) for the classes, [Error Codes](/reference/error-codes/) for the messages and [Policy-load errors](/reference/error-codes/#policy-load-errors) for which load path raises which class.
 
 ## Policy Checkpoints
 
-A trained policy is a checkpoint of Benders cuts on disk (the on-disk
-`AffinePiece` layout is documented in the
-[FlatBuffers Policy Schema](/reference/flatbuffers-schema/)).
-`cobre.results.load_policy` reads a checkpoint into plain Python dicts, and
-`cobre.write_policy_checkpoint` writes one from dicts of the same shape — so a
-loaded checkpoint round-trips: load, edit, write. See
-[Policy Management](/running/policy-management/) for the cross-study
-boundary-cuts workflow this API supports.
-
-### Load a Policy (`load_policy`)
-
-```python
-cobre.results.load_policy(output_dir, policy_subdir="policy")
-```
-
-`output_dir` is the study's output directory; `load_policy` reads the
-checkpoint from `<output_dir>/<policy_subdir>` (`policy_subdir` defaults to
-`"policy"`). It returns a dict with three top-level keys:
-
-| Key           | Type         | Description                                                             |
-| ------------- | ------------ | ------------------------------------------------------------------------ |
-| `metadata`    | `dict`       | `format_version`, `cobre_version`, `created_at`, `num_stages`, `graph_manifest`, `season_manifest`, `producer` |
-| `stage_cuts`  | `list[dict]` | One entry per stage — see below                                        |
-| `stage_bases` | `list[dict]` | One entry per saved LP basis: `stage_id`, `iteration`, `column_status`, `row_status`, `num_cut_rows` |
-
-Each `stage_cuts` entry carries:
-
-| Key                | Type         | Description                                                    |
-| ------------------ | ------------ | ---------------------------------------------------------------- |
-| `stage_id`         | `int`        | Stage index                                                     |
-| `state_dimension`  | `int`        | Length every cut's `coefficients` must have                     |
-| `capacity`         | `int`        | Cut-pool slot capacity                                           |
-| `warm_start_count` | `int`        | Cuts loaded from a previous artifact at run start                |
-| `populated_count`  | `int`        | Number of populated cut slots                                    |
-| `entity_manifest`  | `list[dict]` | Per-slot entity markers — see below                              |
-| `cuts`             | `list[dict]` | Cut records — see below                                          |
-
-Each entry in `cuts` carries `cut_id`, `slot_index`, `iteration`,
-`forward_pass_index`, `intercept`, `coefficients`, and `is_active`. The
-Python dict key for a cut's id is `cut_id` (the FlatBuffers *wire* field is
-`piece_id`; `cut_id` is the record-level name used everywhere in this API).
-
-`entity_manifest` is new this release: a list of per-slot markers,
-`{entity_type, entity_id, subindex, was_active, reference_date, interval_start, interval_end}`,
-that let an externally-authored boundary-cut checkpoint round-trip through
-`write_policy_checkpoint` without losing slot identity. Which date marker a slot
-carries follows from its family: a `HydroInflowLag` slot carries `reference_date`
-(its reference past-stage `start_date`, encoded `YYYYMMDD`); the forward families
-(`HydroTransitBucket`, `AnticipatedThermalState`) carry the half-open
-`interval_start`/`interval_end` window (both encoded `YYYYMMDD`); every other slot reads the int32-minimum
-sentinel (`-2147483648`) in all three fields.
-
-### Write a Checkpoint (`write_policy_checkpoint`)
-
-```python
-write_policy_checkpoint(path, stage_cuts, metadata, stage_bases=None, stage_states=None, inflow_lag_depth=None)
-```
-
-`stage_cuts` and `metadata` mirror the `load_policy` shapes above, so a checkpoint
-loaded from disk round-trips through Python without reshaping — with one caveat:
-`active_cut_indices` is written by `write_policy_checkpoint` but not returned by
-`load_policy`, so a load → write cycle resets it, and cut activity round-trips
-through each cut's `is_active` flag instead. `inflow_lag_depth`, when set to
-`N > 0`, reserves `N` canonical `HydroInflowLag` state slots per storage hydro
-and places each cut's `inflow_lag_coefficients` at their `(hydro, depth)`
-positions (for authoring a boundary policy of a case with no autoregressive
-inflow model); absent or `0` it is byte-identical.
-`write_policy_checkpoint` writes `manifest.bin`, `cuts/`, `basis/`, and
-`states/` directly under `path` — pass a `policy/`-style directory as `path`,
-then load with `load_policy` on its *parent* directory (which joins
-`policy_subdir="policy"` onto it).
-
-The following example is copy-runnable and mirrors the shipped test fixture
-(`crates/cobre-python/tests/test_write_policy_checkpoint.py`): it authors a
-checkpoint from scratch, writes it, loads it back, appends a third cut, and
-writes the edited policy back to the same path.
-
-```python
-import tempfile
-
-import cobre
-import cobre.results
-
-parent = tempfile.mkdtemp()
-
-stage_cuts = [
-    {
-        "stage_id": 0,
-        "state_dimension": 3,
-        "capacity": 10,
-        "cuts": [
-            {
-                "cut_id": 1,
-                "slot_index": 0,
-                "iteration": 1,
-                "forward_pass_index": 0,
-                "intercept": 42.0,
-                "coefficients": [1.0, 2.0, 3.0],
-                "is_active": True,
-            },
-            {
-                "cut_id": 2,
-                "slot_index": 1,
-                "iteration": 1,
-                "forward_pass_index": 1,
-                "intercept": 10.5,
-                "coefficients": [0.5, -1.5, 2.5],
-                "is_active": True,
-            },
-        ],
-    }
-]
-
-metadata = {
-    "cobre_version": "0.13.0",
-    "created_at": "2026-07-30T00:00:00Z",
-    "num_stages": 1,
-    "producer": {
-        "completed_iterations": 5,
-        "final_lower_bound": 123.45,
-        "best_upper_bound": 130.0,
-        "max_iterations": 10,
-        "forward_passes": 4,
-        "warm_start_cuts": 0,
-        "warm_start_counts": [0],
-        "rng_seed": 42,
-        "total_visited_states": 0,
-        "training_block_mode": "parallel",
-        "training_block_mode_per_stage": [],
-        "cost_scale_factor": 2_500_000.0,
-    },
-}
-
-# Write to `<parent>/policy` — `load_policy` joins policy_subdir="policy" onto
-# the directory it is given, so it is loaded from `parent` below.
-cobre.write_policy_checkpoint(f"{parent}/policy", stage_cuts, metadata)
-
-loaded = cobre.results.load_policy(parent)
-assert loaded["metadata"]["format_version"] == 2
-assert loaded["stage_cuts"][0]["populated_count"] == 2
-
-# Edit: append a third cut. Its coefficients must match state_dimension (3).
-cuts = loaded["stage_cuts"][0]["cuts"]
-cuts.append(
-    {
-        "cut_id": 3,
-        "slot_index": 2,
-        "iteration": 2,
-        "forward_pass_index": 0,
-        "intercept": -5.0,
-        "coefficients": [4.0, -2.0, 0.0],
-        "is_active": True,
-    }
-)
-loaded["stage_cuts"][0]["populated_count"] = len(cuts)
-
-# Write back: same round-trip shape, one more cut than before.
-cobre.write_policy_checkpoint(
-    f"{parent}/policy", loaded["stage_cuts"], loaded["metadata"]
-)
-```
-
-### Input Validation
-
-`write_policy_checkpoint` raises `ValueError` when any of the following holds.
-The message locates the problem: the stage and cut for the two per-cut checks,
-the stage for a state-data mismatch, and the hydro for an unplaceable
-inflow-lag coefficient.
-
-- a cut's `coefficients` length does not match its stage's `state_dimension`;
-- a stage's state data length does not match `count * state_dimension`;
-- a cut carries `inflow_lag_coefficients` without a positive `inflow_lag_depth`;
-- (under `inflow_lag_depth`) a manifest lacks a leading storage block; or
-- (under `inflow_lag_depth`) an inflow-lag coefficient is unplaceable.
-
-A cut whose `coefficients` length disagrees with its stage's
-`state_dimension`:
-
-```python
-stage_cuts = [
-    {
-        "stage_id": 0,
-        "state_dimension": 3,
-        "capacity": 10,
-        "cuts": [
-            {
-                "cut_id": 1,
-                "slot_index": 0,
-                "iteration": 1,
-                "forward_pass_index": 0,
-                "intercept": 42.0,
-                "coefficients": [1.0, 2.0],  # length 2, but state_dimension=3
-                "is_active": True,
-            },
-        ],
-    }
-]
-
-cobre.write_policy_checkpoint("output/policy", stage_cuts, metadata)
-# ValueError: stage 0 cut 1: coefficients has 2 entries, expected state_dimension=3
-```
-
-A `stage_states` entry whose flat `data` length disagrees with
-`count * state_dimension`:
-
-```python
-stage_states = [
-    {
-        "stage_id": 0,
-        "state_dimension": 3,
-        "count": 2,
-        "data": [1.0, 2.0, 3.0],  # length 3, but count * state_dimension = 6
-    }
-]
-
-cobre.write_policy_checkpoint(
-    "output/policy", stage_cuts, metadata, stage_states=stage_states
-)
-# ValueError: stage 0: states data has 3 entries, expected count*state_dimension=6
-```
-
-A cut carrying `inflow_lag_coefficients` with no `inflow_lag_depth` passed to
-reserve the lag slots (keyed by **integer** hydro id; list index `0` = lag
-depth 1):
-
-```python
-stage_cuts = [
-    {
-        "stage_id": 0,
-        "state_dimension": 3,
-        "capacity": 10,
-        "cuts": [
-            {
-                "cut_id": 1,
-                "slot_index": 0,
-                "iteration": 1,
-                "forward_pass_index": 0,
-                "intercept": 42.0,
-                "coefficients": [1.0, 2.0, 3.0],
-                "is_active": True,
-                "inflow_lag_coefficients": {0: [0.5]},
-            },
-        ],
-    }
-]
-
-cobre.write_policy_checkpoint("output/policy", stage_cuts, metadata)
-# ValueError: stage 0 cut 1: inflow_lag_coefficients supplied without inflow_lag_depth; pass inflow_lag_depth=N to reserve the lag slots
-```
+Load a trained policy with `cobre.results.load_policy`, edit its cuts, and write a checkpoint Cobre can load with
+`cobre.write_policy_checkpoint`. The round-trip how-to is
+[Read and Write Checkpoints from Python](/running/policy-management/#read-and-write-checkpoints-from-python).
 
 ## Next Steps
 
-- See [Case Directory Format](/reference/case-directory-format/) for input file specifications.
+- See [Case Format](/reference/case-format/) for input file specifications.
 - Explore the [Worked Examples](/examples/toy-single-reservoir/) for small, fully worked cases.
-- Read the [Jupyter quickstart notebook](https://github.com/cobre-rs/cobre/blob/main/examples/notebooks/quickstart.ipynb)
-  for a complete end-to-end workflow with visualization.

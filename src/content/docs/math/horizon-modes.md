@@ -12,33 +12,29 @@ repeated traversals. Because the topology applies uniformly to every stage, a
 single mode governs the entire run; the choice is declared in the case
 configuration via the policy graph type field.
 
-Cobre's policy graph is **finite-horizon only**: the acyclic mode in
-section 1 is the one horizon mode the loader accepts. A **Cyclic**
-(infinite-periodic) mode — closing the stage graph into a cycle whose value
-functions stabilise across repeated traversals rather than terminating at a
-fixed stage — is a **reserved** target design: the policy graph type field's
-only accepted value is `finite_horizon`, and supplying `cyclic` is rejected
-at load with a named error rather than accepted as a mode a study can
-select. Sections 2 and 3 keep the cyclic methodology as a clearly marked
-reserved reference — the mathematics is complete and valid on its own terms,
-independent of current loader support, and documents the design the
-reservation anticipates.
+Cobre supports only the finite (acyclic) mode of section 1; a **cyclic**
+(infinite-periodic) mode, which closes the stage graph into a cycle whose
+value functions stabilise across repeated traversals rather than terminating
+at a fixed stage, is a **reserved** design.
 
 Section 2 introduces the reserved cyclic mode at the idea / guarantee / knob
 / trade-off level; section 3 gives its formal mathematical structure (the
 season function, the cycle convergence inequality, the season-indexed
 cut pool, and the fixed-point Bellman operator); section 4 describes the
 forward-pass termination logic the reserved design anticipates; section 5
-compares the supported and reserved modes as a reference. The mechanics of
-the per-transition discount factor and its role in the cycle convergence
-requirement belong to [Discount-Rate Handling](/math/discount-rate).
+compares the supported and reserved modes as a reference. The per-transition
+discount factor is defined in [Discount Rate Formulation](/math/discount-rate);
+its role in cycle convergence is set out in section 3.
 
 ## 1. Finite (Acyclic) Mode
 
 **Idea.** The stage graph is a linear chain: stage 1 leads to stage 2, which
 leads to stage 3, and so on up to stage T. The chain has a definite end. The
-terminal value function is zero — no water left in storage at stage T+1 has any
-value in the model.
+terminal value function is zero unless a fixed terminal function is imported
+from an upstream policy (see
+[Post-Study Boundary & Chained Studies](/math/post-study-boundary)); with the
+zero terminal value, no water left in storage at stage T+1 has any value in
+the model.
 
 **Guarantee.** Because the chain is acyclic, every stage is visited exactly
 once per forward or backward pass. The algorithm terminates naturally when it
@@ -52,24 +48,21 @@ number of stages T is the length of the chain.
 
 **Trade-off.** Finite mode is appropriate when the study has a bounded horizon
 and the modeller can accept the terminal condition. For short-to-medium
-planning horizons — say, a one- to five-year operational study — the end-of-chain
-effect is a manageable modelling assumption, and the simplicity of acyclic
-traversal makes the algorithm straightforward to interpret and debug. The
-limitation is that reservoir storage near the terminal stage is systematically
-undervalued: the zero terminal condition gives the optimiser an incentive to
-empty reservoirs before stage T, producing an artefact known as the
-end-of-world effect. When that artefact would distort the policy, cyclic mode
-is the better choice.
+planning horizons the end-of-chain effect is a manageable modelling
+assumption, and the simplicity of acyclic traversal makes the algorithm
+straightforward to interpret and debug. The limitation is that reservoir
+storage near the terminal stage is systematically undervalued: the zero
+terminal condition gives the optimiser an incentive to empty reservoirs before
+stage T, producing an artefact known as the end-of-world effect. When that
+artefact would distort the policy, an imported terminal function is the
+supported remedy for it, and the reserved cyclic design (section 2) the other.
 
 ## 2. Cyclic (Infinite-Periodic) Mode
 
-:::caution[Status: Reserved — Not Yet Implemented]
-Cobre's policy graph is finite-horizon only (section 1). Supplying `cyclic`
-as the policy graph type is rejected at load with a named error rather than
-accepted as a mode a study can select today. This section and section 3
-document the cyclic target design as a reserved reference: the methodology
-is complete and valid on its own terms, independent of current loader
-support.
+:::caution[Status: Reserved Design]
+Cobre supports only the finite mode of section 1. A cyclic policy graph is a
+reserved design that the case loader rejects. Sections 2 to 4 document that
+design; its mathematics is valid on its own terms.
 :::
 
 **Idea.** The stage graph contains a back-edge that returns from the last stage
@@ -91,10 +84,8 @@ section 3.
 policy graph type as cyclic and supply an annual discount rate; the discount
 rate, together with each transition's duration, determines the
 per-transition factor, and the product of factors around one cycle must be
-strictly below one (see [Discount-Rate Handling](/math/discount-rate) for
-the conversion mechanics). The policy graph type field's only currently
-accepted value is `finite_horizon` — supplying `cyclic` is rejected at load
-with a named error.
+strictly below one (see [Discount Rate Formulation](/math/discount-rate) for
+the conversion mechanics).
 
 **Trade-off.** Cyclic mode eliminates the end-of-world effect by representing
 the planning problem as an ongoing, perpetually recurring operation. It is the
@@ -108,32 +99,35 @@ reserved design anticipates.
 
 ## 3. Cyclic Mode — Mathematical Detail
 
-:::caution[Status: Reserved — Not Yet Implemented]
-The formal structure below is the reserved cyclic-mode target design
-introduced in section 2; Cobre's loader accepts only `finite_horizon`
-today. It is retained here as a complete, valid methodology reference.
-:::
-
 This section gives the formal structure that section 2 summarised in prose:
-the season function, the cycle convergence inequality, the season-indexed cut
-pool with its cut-sharing equation, the fixed-point Bellman interpretation,
-and the convergence criterion that the algorithm checks across consecutive
-cycles.
+the season function, the stationarity assumption, the cycle convergence
+inequality, the season-indexed cut pool with its cut-sharing equation, the
+fixed-point Bellman interpretation, and the convergence criterion that the
+algorithm checks across consecutive iterations.
 
 ### Season Function
 
-For a cycle of length $P$ stages (for example, twelve monthly stages making
+For a cycle of length $M$ stages (for example, twelve monthly stages making
 a calendar year), the **season** of stage $t$ is its position within one
 cycle:
 
 $$
-\tau(t) \;=\; (t - 1) \bmod P + 1 \;\in\; \{1, 2, \ldots, P\}.
+\tau(t) \;=\; (t - 1) \bmod M + 1 \;\in\; \{1, 2, \ldots, M\}.
 $$
 
-Two stages with the same season share the structural properties of the cycle
-at that position: demand pattern, inflow statistics, block definitions, and
-stochastic-process parameters. The cycle is the unit that repeats; the season
-is the position within it.
+The cycle is the unit that repeats; the season is the position within it.
+
+### Stationarity Assumption
+
+Let $\mathcal{C}_\tau = \{\,t : \tau(t) = \tau\,\}$ denote the set of all
+stages occupying season $\tau$. The cyclic design rests on one assumption:
+every stage of season $\tau$ has the same data in every cycle — the same
+costs, constraints, block structure, stochastic process and one-step discount
+factor $d_{t \to t+1}$. The problem that starts at any stage of
+$\mathcal{C}_\tau$, its own stage together with the infinite tail after it,
+is then the same for every stage of $\mathcal{C}_\tau$. This is what makes a
+cut generated at one stage of $\mathcal{C}_\tau$ valid at every stage of
+$\mathcal{C}_\tau$, and what lets $M$ pools represent the infinite horizon.
 
 ### Cycle Convergence Inequality
 
@@ -150,62 +144,88 @@ $$
 \lim_{n \to \infty} d_{\text{cycle}}^{\,n} \cdot V_t(x) \;=\; 0,
 $$
 
-so contributions from far-future cycles become negligible. A cyclic policy
-graph whose per-transition factors fail this inequality is rejected at
-validation. See [Discount-Rate Handling](/math/discount-rate) for the
-conversion from the annual rate to the per-transition factors.
+so contributions from far-future cycles become negligible. The reserved design
+requires this inequality of every cyclic graph. See
+[Discount Rate Formulation](/math/discount-rate) for the conversion from the
+annual rate to the per-transition factors.
 
 ### Season-Indexed Cut Pool
 
-Let $\mathcal{C}_\tau = \{\,t : \tau(t) = \tau\,\}$ denote the set of all
-stages occupying season $\tau$. A cut generated at any stage in
+By the stationarity assumption, a cut generated at any stage in
 $\mathcal{C}_\tau$ is valid for every stage in $\mathcal{C}_\tau$, so the
 cut pool is indexed by season rather than by absolute stage:
 
 $$
-\underline{V}_\tau(x) \;=\; \max_{k \in \mathcal{K}_\tau}
-\bigl\{\, \alpha_k + \pi_k^{\top} x \,\bigr\}.
+\underline{V}_\tau(x) \;=\; \max_{i \in \mathcal{I}_\tau}
+\bigl\{\, \beta_{0,i} + \beta_i^{\top} x \,\bigr\}.
 $$
 
-A single cycle of $P$ pools therefore represents the entire infinite
+A single cycle of $M$ pools therefore represents the entire infinite
 horizon. The pool-organisation difference between finite and cyclic mode
-reduces to: $T$ pools indexed by absolute stage versus $P$ pools indexed by
+reduces to: $T$ pools indexed by absolute stage versus $M$ pools indexed by
 season.
 
 ### Fixed-Point Bellman Operator
 
-The cyclic value function satisfies the seasonal Bellman recursion
+The cyclic value functions satisfy the seasonal Bellman recursion
 
 $$
-V_\tau \;=\; T_\tau\, V_{\tau + 1 \,(\bmod P)},
+V_\tau \;=\; \mathbb{T}_\tau\, V_{\tau \bmod M + 1},
+\qquad \tau \in \{1, \ldots, M\},
 $$
 
-where $T_\tau$ is the one-stage Bellman operator at season $\tau$:
+where $\tau \bmod M + 1$ is the season that follows $\tau$ (season $M$ is
+followed by season $1$) and $\mathbb{T}_\tau$ is the one-stage Bellman
+operator at season $\tau$:
 
 $$
-(T_\tau V)(x) \;=\; \mathbb{E}_{\omega_\tau}\!\left[\,
-\min_{x'}\, \bigl\{ c_\tau(x', u) + d \cdot V(x') \bigr\}
+(\mathbb{T}_\tau V)(x) \;=\; \mathbb{E}_{\omega_\tau}\!\left[\,
+\min_{(x', u) \in \mathcal{X}_\tau(x, \omega_\tau)}\,
+\bigl\{ c_\tau(x', u) + d_{t \to t+1}\, V(x') \bigr\}
 \,\right].
 $$
 
-Cyclic SDDP computes the fixed point of this seasonal operator chain: the
-policy is converged when the value function at every season is stable across
-consecutive cycles.
+Here $x$ is the incoming state, $x'$ the outgoing state and $u$ the control,
+$\mathcal{X}_\tau(x, \omega_\tau)$ is their feasible set under the
+realization $\omega_\tau$, and $t$ is any stage of season $\tau$: by
+stationarity, the stage cost $c_\tau$, the feasible set and the one-step
+factor $d_{t \to t+1}$ are the same at every such stage. Chaining the
+recursion once around the cycle gives the fixed-point equation of the first
+season,
+
+$$
+V_1 \;=\; \bigl(\mathbb{T}_1 \circ \mathbb{T}_2 \circ \cdots \circ
+\mathbb{T}_M\bigr)\, V_1 .
+$$
+
+With bounded stage costs and a nonempty feasible set for every incoming state
+in the state space and every realization, each $\mathbb{T}_\tau$ is monotone and, in the supremum
+norm, Lipschitz with constant its season's factor $d_{t \to t+1}$. A season's
+factor may equal one, so a single $\mathbb{T}_\tau$ need not be a
+contraction; the composition is Lipschitz with constant the product of the
+$M$ factors, which is $d_{\text{cycle}} < 1$ by the cycle convergence
+inequality. The chain is therefore a contraction with modulus
+$d_{\text{cycle}}$, and by the Banach fixed-point theorem on the bounded
+functions of the state the cyclic value functions exist and are unique: $V_1$
+is the unique fixed point of the chain, and the recursion determines the
+other seasons' value functions from it. Cyclic SDDP computes this fixed
+point; the policy is converged when the value function at every season is
+stable across consecutive iterations.
 
 ### Cycle Convergence Criterion
 
 The outer approximation has converged in cyclic mode when the lower bounds
-at every season stabilise across consecutive cycles:
+at every season stabilise across consecutive iterations:
 
 $$
-\max_{\tau \in \{1, \ldots, P\}}
-\bigl|\, \underline{z}^{\,k,\tau} - \underline{z}^{\,k - P,\tau} \,\bigr|
+\max_{\tau \in \{1, \ldots, M\}}
+\bigl|\, \underline{z}^{\,k,\tau} - \underline{z}^{\,k-1,\tau} \,\bigr|
 \;<\; \delta_{\text{cycle}},
 $$
 
-where the tolerance $\delta_{\text{cycle}}$ is a configured stopping
-parameter. See [Stopping Rules](/math/stopping-rules) for the catalogue of
-cyclic-mode stopping criteria.
+where $\underline{z}^{\,k,\tau}$ is the lower bound at season $\tau$ after
+iteration $k$, and the tolerance $\delta_{\text{cycle}}$ is a stopping
+parameter of the reserved design.
 
 ## 4. Forward-Pass Termination in Cyclic Mode
 
@@ -224,28 +244,25 @@ The pass would terminate at that point.
 **Condition 2 — Maximum-stage safety bound.** A configurable maximum-stage
 safety bound would prevent unbounded traversal in pathological cases where the
 cumulative discount shrinks slowly — for example, when the cycle discount is
-valid but close to one. A typical bound corresponds to roughly twenty years of
-monthly stages. If the cumulative-discount condition has not triggered by the
-time the safety bound is reached, the pass would terminate unconditionally.
+valid but close to one. If the cumulative-discount condition has not
+triggered by the time the safety bound is reached, the pass would terminate
+unconditionally.
 
 The forward pass would terminate when either condition is met, whichever comes
 first. The discount mechanics underlying the cumulative-discount condition —
 the formula relating the annual rate to the per-transition factor and the
-running product — are described in [Discount-Rate Handling](/math/discount-rate).
+running product — are described in [Discount Rate Formulation](/math/discount-rate).
 
 ## 5. Choosing Between Modes
 
-Finite mode (section 1) is the one mode Cobre's loader accepts today. The
-comparison below is kept as a modelling-decision reference between finite
-mode and the reserved cyclic design (sections 2–3) — the trade-offs a
-cyclic mode would offer once implemented, set against the finite mode
-available now.
+The comparison below is a modelling-decision reference between the supported
+finite mode (section 1) and the reserved cyclic design (sections 2–4).
 
 **Choose finite mode when:**
 
 - The study has a well-defined end date and the modeller can accept a zero
-  terminal condition (or supplements it with imported boundary cuts — see
-  [SDDP Algorithm](/math/sddp-algorithm) for the terminal boundary cut mechanism).
+  terminal condition (or supplement it with imported boundary cuts — see
+  [Post-Study Boundary & Chained Studies](/math/post-study-boundary)).
 - The planning horizon is short enough that the end-of-world effect is
   negligible or acceptable.
 - Interpretability and simplicity are priorities: acyclic traversal requires
@@ -260,7 +277,7 @@ available now.
 - The modeller has a meaningful annual discount rate that reflects the time
   value of future costs.
 - The cut pool compression offered by season-indexed pools is desirable:
-  instead of accumulating T independent pools, only P pools (one per season)
+  instead of accumulating T independent pools, only M pools (one per season)
   would be maintained regardless of how many cycle repetitions the forward
   pass traverses.
 
@@ -270,37 +287,38 @@ available now.
 | --------------------------- | ------------------------------- | ----------------------------------- |
 | Terminal condition          | V at T+1 = 0 (or imported cuts) | None; self-consistent across cycles |
 | End-of-world effect         | Present near terminal stage     | Absent                              |
-| Cut pools                   | T pools, one per stage          | P pools, one per season             |
+| Cut pools                   | T pools, one per stage          | M pools, one per season             |
 | Discount rate requirement   | None                            | Required; must give cycle < 1       |
 | Forward-pass stopping logic | Reaches terminal stage          | Two-condition explicit rule         |
 | Mathematical complexity     | Lower                           | Higher                              |
 
 The cut-generation mechanics that produce the cuts filling both pool
 organisations are covered in [Cut Management](/math/cut-management). The
-algorithm within which finite mode operates today, and within which the
-reserved cyclic design is specified to operate, is described in
+algorithm within which finite mode operates, and within which the reserved
+cyclic design is specified to operate, is described in
 [SDDP Algorithm](/math/sddp-algorithm).
 
 ## 6. Reference
 
-> Costa, B.F.P., Calixto, A.O., Sousa, R.F.S., Figueiredo, R.T., Penna, D.D.J., Khenayfis, L.S., & Oliveira, A.M.R. (2025). "Boundary conditions for hydrothermal operation planning problems: the infinite horizon approach." _Proceeding Series of the Brazilian Society of Computational and Applied Mathematics_, 11(1), 1–7. https://doi.org/10.5540/03.2025.011.01.0355
+- [Costa et al. (2025)](/reference/bibliography/#boundary-conditions-and-horizon-modes)
 
 The cyclic-mode formal structure in section 3 — the season function,
 the cycle convergence inequality, the season-indexed cut pool with its
-cut-sharing equation, and the fixed-point Bellman operator — is drawn
-from this paper. The full bibliographic entry is in
-[Bibliography](/reference/bibliography).
+cut-sharing equation, and the fixed-point Bellman operator — follows
+this paper; the stationarity assumption and the contraction of the
+operator chain are the standard discounted periodic dynamic-programming
+argument.
 
 ## Cross-References
 
-- [Discount-Rate Handling](/math/discount-rate) — Annual-rate-to-factor
-  conversion, per-transition discount mechanics, cumulative discounting, and
-  the cycle convergence requirement.
+- [Discount Rate Formulation](/math/discount-rate) — Annual-rate-to-factor
+  conversion, per-transition discount mechanics, and cumulative discounting.
 - [Cut Management](/math/cut-management) — Cut generation and aggregation
   mechanics that produce the cuts filling the per-stage or per-season pools.
 - [SDDP Algorithm](/math/sddp-algorithm) — The algorithm that the horizon mode
   parameterises; finite (supported) and cyclic (reserved) policy graph
   topologies; terminal boundary cut mechanism.
-- [Stopping Rules](/math/stopping-rules) — Cyclic-mode stopping criteria,
-  including the cycle convergence tolerance applied to seasonal lower
-  bounds.
+- [Post-Study Boundary & Chained Studies](/math/post-study-boundary) — The
+  terminal function a finite study may import from an upstream policy.
+- [Stopping Rules](/math/stopping-rules) — The stopping rules that end
+  training in the finite mode.

@@ -1,4 +1,3 @@
-// The correctness guarantee matplotlib never gave us: now it's a test.
 // Mirrors valueFunction.test.ts (node:test + node:assert/strict).
 import test from "node:test";
 import assert from "node:assert/strict";
@@ -26,14 +25,14 @@ test("PDF is finite and non-negative everywhere, including x = 0", () => {
   }
 });
 
-test("riskMoments(3,15,0.10): E[C] ≈ 45 and E[C] < VaR < CVaR (correct by construction)", () => {
+test("riskMoments(3,15,0.10): E[Z] ≈ 45 and E[Z] < VaR < CVaR (correct by construction)", () => {
   const { expected, varAlpha, cvarAlpha } = riskMoments(3, 15, 0.1);
   // Mean of Gamma(shape, scale) = shape·scale = 45; numeric quadrature within 0.5.
   assert.ok(Math.abs(expected - 45) < 0.5, `expected=${expected}`);
   // CVaR is the tail mean strictly beyond VaR for a continuous right-skewed law.
   assert.ok(varAlpha < cvarAlpha, `VaR=${varAlpha} not < CVaR=${cvarAlpha}`);
   // Full ordering for this right-skewed gamma: the mean sits below both tail marks.
-  assert.ok(expected < varAlpha, `E[C]=${expected} not < VaR=${varAlpha}`);
+  assert.ok(expected < varAlpha, `E[Z]=${expected} not < VaR=${varAlpha}`);
 });
 
 test("trapezoid CDF is monotone non-decreasing and ends at ≈ 1.0", () => {
@@ -47,5 +46,28 @@ test("trapezoid CDF is monotone non-decreasing and ends at ≈ 1.0", () => {
   assert.ok(
     Math.abs(c[c.length - 1] - 1) < 1e-3,
     `CDF ends at ${c[c.length - 1]}`,
+  );
+});
+
+test("alpha is the tail fraction", () => {
+  const xs = samples(3, 15).map((p) => p.x);
+  const c = cdf(3, 15);
+  for (const alpha of [0.05, 0.1, 0.5]) {
+    const { varAlpha } = riskMoments(3, 15, alpha);
+    // Probability mass on the grid at or beyond VaR_alpha: 1 − F(VaR_alpha).
+    const tailMass = 1 - c[xs.findIndex((x) => x >= varAlpha)];
+    assert.ok(
+      Math.abs(tailMass - alpha) < 0.01,
+      `alpha=${alpha}: mass at or beyond VaR=${varAlpha} is ${tailMass}`,
+    );
+  }
+});
+
+test("alpha = 1 gives the expectation", () => {
+  const { expected, cvarAlpha } = riskMoments(3, 15, 1);
+  // The worst 100% of outcomes is every outcome, so CVaR collapses to E[Z].
+  assert.ok(
+    Math.abs(cvarAlpha - expected) < 0.5,
+    `CVaR_1=${cvarAlpha} not within 0.5 of E[Z]=${expected}`,
   );
 });

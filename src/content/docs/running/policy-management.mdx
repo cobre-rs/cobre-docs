@@ -1,13 +1,13 @@
 ---
 title: Policy Management
-description: Policy checkpoints, warm-start and resume modes, checkpointing configuration, and cross-study boundary cuts.
+description: Policy checkpoints, warm-start and resume modes, the policy load contract, and cross-study boundary cuts.
 ---
 
-Cobre stores the trained future-cost function (cuts), LP basis, and visited
-states in a _policy directory_. The `policy` section of `config.json` controls
-where that directory lives, whether training starts from scratch or from a
-prior checkpoint, and how often intermediate checkpoints are written during
-training.
+Cobre stores the trained future-cost function (cuts) and LP basis in a _policy
+directory_, together with the visited states when
+[`exports.states`](/running/configuration/#exports) is `true`. The `policy`
+section of `config.json` controls where that directory lives and whether
+training starts from scratch or from a prior checkpoint.
 
 ---
 
@@ -15,6 +15,13 @@ training.
 
 The `policy.mode` field selects one of three initialization strategies. The
 default is `"fresh"`.
+
+`policy.path` (default `./policy`) resolves against the run's output directory,
+`<case>/output` unless `cobre run --output` names another (an absolute path is
+used as is), so the default checkpoint is `<case>/output/policy`. Training writes
+it there; warm-start, resume and simulation-only read it there.
+[`policy.boundary.path`](#boundary-cuts) differs: it resolves against the case
+directory.
 
 ### Fresh (Default)
 
@@ -38,96 +45,186 @@ cuts count as the initial future-cost approximation.
 { "policy": { "mode": "warm_start", "path": "./policy" } }
 ```
 
-Use `"warm_start"` when you have a policy from a previous run (possibly with
-different parameters) and want to accelerate convergence by reusing its cuts.
-Cobre always verifies that the state dimension and the per-slot entity layout of
-the saved policy match the current system before loading — a check that cannot
-be disabled.
+Use `"warm_start"` to continue training from a previous run's cuts, for example
+with more iterations or other stopping rules. The loop runs up to the largest
+`iteration_limit` in `training.stopping_rules`, and that limit counts only the new
+iterations: a warm start with limit 20 runs up to 20 iterations on top of the
+loaded cuts, whereas under [Resume](#resume) the limit also counts the completed
+iterations. A warm-start load reads the whole saved policy, so it must pass every
+check of the [Policy Load Contract](#policy-load-contract).
 
 ### Resume
 
-Cobre reads the checkpoint metadata to determine how many iterations were
-completed, then resumes training from that point. The RNG seed and iteration
-counter are restored so the noise sequences are identical to an uninterrupted
-run.
+Resume continues training from the end-of-training checkpoint at `policy.path`,
+whichever stopping rule ended the earlier run. Cobre reads the checkpoint's
+`completed_iterations` count and the loop continues from the next iteration. The
+load is a full-FCF load, so the checkpoint must pass every check of the
+[Policy Load Contract](#policy-load-contract).
 
 ```json
 { "policy": { "mode": "resume", "path": "./policy" } }
 ```
 
-Use `"resume"` after an interrupted training run (power loss, job timeout, or
-manual cancellation) to continue exactly where training stopped. Cobre always
-writes a single policy checkpoint at the **end** of training, so resume
-does **not** require any `checkpointing` config to have been set — resume reads
-the terminal checkpoint's `completed_iterations` and continues from there
-(warning if it already reached `max_iterations`).
+Cobre writes one checkpoint per run, at the **end** of training, so resume needs
+no `checkpointing` key. A job killed before that write, for example by a
+scheduler's wall-time limit, leaves no new checkpoint, and the policy directory
+still holds the previous one. A kill during the write leaves a directory without
+`manifest.bin`, which Cobre refuses to load (see
+[Checkpoint Directory Contents](#checkpoint-directory-contents)).
+[Train in Slices](#train-in-slices) fits a long training into wall-time-limited
+jobs.
+
+The loop runs up to the largest `iteration_limit` in `training.stopping_rules`.
+That limit counts all iterations, the completed ones included; when the
+checkpoint has already reached it, Cobre warns and trains no further.
+
+The seed comes from `config.json`, not from the checkpoint, and each iteration's
+forward-pass noise derives from the seed and the iteration number. With the
+training run's seed, a resumed iteration therefore samples the same forward-pass
+noise as that iteration in a run without a resume.
+
+Resume restores the cuts, the stored LP bases, and the iteration count.
+Everything else comes from the current run: the seed, the stopping rules, and
+the wall-clock timer that `time_limit` reads, which starts when the resumed
+training starts.
 
 ---
 
 ## Simulation-Only Mode
 
-To evaluate a previously trained policy without re-running training, disable
-training and load the policy in warm-start mode:
+With `training.enabled` set to `false` and simulation enabled, `cobre run` skips
+training, loads the checkpoint at `policy.path`, and simulates it.
+`policy.mode` is ignored in this mode.
+
+The load is a full-FCF load, so the checkpoint must pass every check of the
+[Policy Load Contract](#policy-load-contract): it comes from the running cobre
+version.
+
+Start from the `config.json` that trained the policy and change only
+`training.enabled` and the simulation settings. `training.selection` and
+`training.stopping_rules` stay required even though training does not run, and
+every key that shapes the stage LP must equal the training run's (the
+[Stored-basis gate](#stored-basis-gate) refuses the checkpoint otherwise). For
+example, a policy trained with `modeling.inflow_non_negativity` set to
+`{ "method": "none" }` is refused if the simulation-only config omits the key:
+it then defaults to `"penalty"`, which adds slack columns (one per hydro) to the
+stage LP.
+
+The keys to change, merged into that `config.json` (all other keys stay as in
+training):
 
 ```json
 {
-  "training": { "enabled": false },
-  "policy": { "mode": "warm_start", "path": "./policy" }
+  "training": {
+    "enabled": false,
+    "selection": { "method": "sampled", "forward_passes": 1 },
+    "stopping_rules": [{ "type": "iteration_limit", "limit": 128 }]
+  },
+  "simulation": {
+    "enabled": true,
+    "selection": { "method": "sampled", "num_scenarios": 100 }
+  },
+  "policy": { "path": "./policy" }
 }
 ```
 
-Cobre loads the cuts from `policy.path`, skips the training phase entirely, and
-runs the post-training simulation using the loaded future-cost function. This
-is useful for running additional simulation scenarios on a policy that has
-already converged, or for comparing multiple saved policies on the same
-scenarios.
+With these keys in `config.json`, `cobre validate` accepts the case. Validate
+does not read the checkpoint, so this confirms the config only; the
+[stored-basis gate](#stored-basis-gate) applies at `cobre run`:
+
+{/* capture: cobre validate case 2>&1 | cobre   v0.17.0 | binary: cobre-cli sha256 23916b46 | case: temporary 1dtoy derivative (cobre init --template 1dtoy; trained once with cobre run --quiet; then config.json: training.enabled false added and policy.path ./policy added, every other key unchanged) */}
+
+```text
+Valid case: 1 buses, 1 hydros, 2 thermals, 0 lines
+```
+
+Use this mode to run additional simulation scenarios on a policy that has
+already converged, or to compare multiple saved policies on the same scenarios.
 
 ---
 
-## Checkpointing Configuration
+## Train in Slices
 
-The `policy.checkpointing` section controls periodic checkpointing during
-training. All fields are optional; omitting a field leaves the solver default
-in effect.
+Split a training into slices when a scheduler's wall-time limit is shorter than
+the training needs. Each slice is a separate job that [resumes](#resume) from the
+previous slice's checkpoint and trains up to a larger iteration total. A slice
+must finish, and write its checkpoint, before its wall time ends: a job killed
+first writes no checkpoint, and its iterations are lost. Run every slice on the
+same case with the same output directory: each slice reads the previous
+checkpoint from `policy.path` and writes its own checkpoint back to it. Under
+MPI every rank loads that checkpoint, so the output directory is visible at the
+same path on every node.
 
-:::note[Periodic checkpointing not yet consumed]
-These `checkpointing` keys are accepted and validated, but the current Cobre binary
-does not perform **periodic** (mid-training) checkpointing — there is no consumer
-for the block. The terminal end-of-training checkpoint (`manifest.bin` + `cuts/`,
-and LP bases) is written unconditionally. These pages follow the binary.
-:::
+**Multi-rank (MPI) jobs** slice with `iteration_limit` only. Size each slice from
+the [`time_total_ms`](/reference/output/training/#trainingconvergenceparquet) trend
+in the previous slice's `training/convergence.parquet`, which holds only the
+iterations of the slice that wrote it. Per-iteration time grows as cuts
+accumulate, so leave a margin. The stopping-rule set holds no `time_limit`
+entry, not even as a fallback, because each rank times `time_limit` from its own
+start of training and the ranks do not reconcile the stop decision, even on a
+single node.
 
-| Field                 | Type            | Description                                                                                                      |
-| --------------------- | --------------- | ---------------------------------------------------------------------------------------------------------------- |
-| `enabled`             | boolean or null | Enable periodic checkpointing. When `null` or omitted, checkpointing is disabled.                                |
-| `initial_iteration`   | integer or null | First iteration at which a checkpoint is written. When `null`, the first checkpoint uses `interval_iterations`.  |
-| `interval_iterations` | integer or null | Number of iterations between successive checkpoints. When `null`, defaults to the solver's built-in interval.    |
-| `store_basis`         | boolean or null | Include LP basis files in checkpoints. Enables faster basis warm-start on resume. When `null`, basis is omitted. |
-| `compress`            | boolean or null | Compress checkpoint binary files. Reduces disk usage at the cost of slightly slower reads and writes.            |
-
-Example enabling checkpointing every 50 iterations starting at iteration 100,
-with basis storage and compression:
+Slice 1 trains to the first iteration total:
 
 ```json
 {
-  "policy": {
-    "path": "./policy",
-    "checkpointing": {
-      "enabled": true,
-      "initial_iteration": 100,
-      "interval_iterations": 50,
-      "store_basis": true,
-      "compress": true
-    }
+  "training": {
+    "stopping_rules": [{ "type": "iteration_limit", "limit": 50 }]
+  }
+}
+```
+
+Every later slice sets `policy.mode` to `"resume"` and raises `limit` to the new
+total, which counts the iterations of all earlier slices:
+
+```json
+{
+  "training": {
+    "stopping_rules": [{ "type": "iteration_limit", "limit": 100 }]
+  },
+  "policy": { "mode": "resume" }
+}
+```
+
+**Single-process runs** may end each slice with a `time_limit` rule, measured
+from the start of that slice's training. Keep an `iteration_limit` holding the
+total in the set, because without one training stops at 100 iterations, and leave
+[`stopping_mode`](/running/configuration/#trainingstopping_mode) at its default, `"any"`,
+so that `time_limit` alone ends a slice. Cobre checks `time_limit` after each
+iteration, so a slice runs up to one iteration past `seconds`. Set `seconds`
+below the job's wall time by that iteration, the case load, and the checkpoint
+write. The same set serves every slice, with `policy.mode` set to
+`"resume"` from the second slice on. This set ends each slice after 50 minutes of
+a one-hour job and stops the training at 200 iterations:
+
+```json
+{
+  "training": {
+    "stopping_rules": [
+      { "type": "time_limit", "seconds": 3000 },
+      { "type": "iteration_limit", "limit": 200 }
+    ]
   }
 }
 ```
 
 ---
 
+## Checkpointing Configuration
+
+The five `policy.checkpointing` keys (`enabled`, `initial_iteration`,
+`interval_iterations`, `store_basis`, and `compress`) are accepted and have no
+effect. Cobre writes one checkpoint at the end of training, always with its LP
+bases (see [Stored-basis gate](#stored-basis-gate)); the keys are listed under
+[Configuration](/running/configuration/#policycheckpointing).
+
+---
+
 ## Checkpoint Directory Contents
 
-A written checkpoint has the following layout under `policy.path`:
+A written checkpoint has the following layout under `policy.path` (resolved
+against the output directory, as described in [Policy Modes](#policy-modes));
+`policy/` below stands for that directory:
 
 ```text
 policy/
@@ -140,100 +237,153 @@ policy/
     001.bin               -- cut coefficients and intercepts for pool 1
     ...
   basis/
-    000.bin               -- LP basis for stage 0 (bases are written with the terminal checkpoint; store_basis is currently inert)
+    000.bin               -- LP basis for stage 0 (bases are always written with the terminal checkpoint)
     001.bin
     ...
-  states/
-    000.bin               -- visited states for dominated cut selection, stage 0
+  states/                 -- written only when exports.states is true
+    000.bin               -- visited states, stage 0
     001.bin
     ...
 ```
 
 File names are zero-padded to three digits (`NNN.bin`). Under `cuts/`, the id
-is the **pool id**; under `basis/` and `states/`, the id is the **stage id**.
+is the **pool id**; under `basis/`, it is the policy-graph node's canonical
+0-based position (not its declared node id); under `states/`, it is the 0-based
+stage position. On a stage chain the node position and the stage position
+coincide.
 The file name itself is not read for identity — each buffer carries its own
 id internally, and the reader derives pool/stage identity from the payload,
 never from the name.
 
 `manifest.bin` is written **last**. Its presence signals that the checkpoint
-is complete and safe to load. An interrupted write leaves `manifest.bin`
+is complete and safe to load. A write cut short leaves `manifest.bin`
 absent; Cobre treats a directory without `manifest.bin` as an incomplete
 checkpoint and refuses to load it.
 
-`manifest.bin` is a FlatBuffers root (the `CheckpointManifest` table) read
-**first** — its `format_version` marker is checked before any cut, basis, or
-state payload is parsed. See
-[Format Version and Migration](#format-version-and-migration) below. The
-hand-editable `policy/metadata.json` of earlier releases is gone; every
-study-global fact now lives in this binary manifest.
+`manifest.bin` is read **first**: its `format_version` marker is checked before
+any cut, basis, or state payload is parsed (step 1 of the
+[check order](#check-order)).
 
-`manifest.bin` records the study graph, the number of stages, and the producer
-provenance (completed iterations, lower- and upper-bound values, forward passes
-per iteration, and the RNG seed) — see
-[Output Format](/reference/output-format/#policymanifestbin) for the full
-field-by-field table. Compatibility with the current system is verified
-**structurally**, not by hash: Cobre checks the state dimension and the
-per-slot entity manifest carried inside each cuts payload against the
-current study, as described in [Warm Start](#warm-start) above and
-[Compatibility requirements](#compatibility-requirements) under Boundary
-Cuts below.
+`manifest.bin` records the study graph, the number of stages, the producing
+cobre version, and the producer provenance (completed iterations, lower- and
+upper-bound values, forward passes per iteration, and the RNG seed) — see
+[Policy Checkpoint](/reference/output/policy/#policymanifestbin) for the full
+field-by-field table. Whether a checkpoint loads into the current study is
+decided by the [Policy Load Contract](#policy-load-contract).
 
 ---
 
-## Format Version and Migration
+## Policy Load Contract
 
-`manifest.bin` is read first, before any `.bin` payload is parsed, and its
-`CheckpointManifest` carries a `format_version` marker. A checkpoint written by
-an earlier release has **no `manifest.bin` at all** — its study-global metadata
-lived in a `policy/metadata.json` this release no longer reads — so it is
-rejected at that first read as a missing file (an `IoError`), the clean-break
-signal that this is a pre-`manifest.bin` artifact:
+Warm-start, resume, and simulation-only runs are **full-FCF loads**: they read
+every cut pool of the future-cost function (FCF), the study graph, and the
+stored LP bases from the checkpoint at `policy.path`. The checks below run in
+order, and the first failure stops the run before training or simulation starts.
+A [boundary load](#boundary-cuts) runs its own checks, listed under
+[Compatibility requirements](#compatibility-requirements).
+
+### Check order
+
+1. **Read.** `manifest.bin` is present and its wire `format_version` is `2` (the
+   `format_version` gate). A `manifest.bin` stamped with another value is refused
+   with:
+   {/* quoted from source: crates/cobre-io/src/output/policy/codec.rs:1484-1485 at cobre v0.17.0 */}
+   ```text
+   unsupported checkpoint manifest format_version {format_version}; expected 2; re-export it with a current Cobre
+   ```
+2. **Cost scale.** The terminal pool records its `cost_scale_factor` (see
+   [Cost-Scale Canonicalization](#cost-scale-canonicalization)).
+3. **Version.** The recorded cobre version equals the running cobre version
+   exactly (see [Version gate](#version-gate)).
+4. **State and graph.** The state dimension, stage count, pool count, per-slot
+   entity identity, and study graph (nodes and edges) equal the current study's.
+5. **Stored bases.** Every stored LP basis fits its stage LP (see
+   [Stored-basis gate](#stored-basis-gate)).
+
+A refusal at step 4 means the study differs from the one that trained the
+policy. The message names the mismatch; restore the matching inputs, or train a
+new policy for the changed study.
+
+### Version gate
+
+A policy loads only in the cobre version that wrote it. Every load path —
+warm-start, resume, simulation-only, and boundary, from the CLI and from Python —
+requires the cobre version recorded in `manifest.bin` to equal the running cobre
+version exactly. An older or newer version is refused, and so is a different
+patch or pre-release build (for example 0.17.0 against 0.17.1).
+
+The refusal reads:
+
+{/* quoted from source: crates/cobre-sddp/src/error.rs:103-108 at cobre v0.17.0 — not capturable (needs a checkpoint written by another cobre version) */}
 
 ```text
-failed to read policy checkpoint: <path>/policy/manifest.bin: No such file or directory
+policy was written by cobre {policy_version}, but this is cobre {running}; a policy loads only in the cobre version that wrote it: retrain it, or re-export it, with cobre {running}
 ```
 
-A `manifest.bin` that is present but stamped with a different version fails the
-gate instead, reporting the expected `format_version` against the value found
-(`FORMAT_VERSION` is `2`):
+`{policy_version}` is the cobre version recorded in the checkpoint and
+`{running}` is the version of the cobre that is loading it. `cobre run` reports
+the refusal as a validation error before training or simulation starts;
+[Error Codes](/reference/error-codes/#policy-load-errors) lists the exit code
+and the Python exception.
+
+To load the policy, retrain it with the running version. Alternatively,
+re-export it by re-running the pipeline that wrote the checkpoint under the
+running version: the script that calls
+[`cobre.write_policy_checkpoint`](#read-and-write-checkpoints-from-python),
+or the boundary import of [Case Conversion (cobre-bridge)](/running/case-conversion/).
+
+A manifest that parses (step 1) is not thereby accepted: this gate decides
+whether the running version may load it.
+[FlatBuffers Policy Schema — Versioning policy](/reference/flatbuffers-schema/#versioning-policy)
+covers the wire level.
+
+### Stored-basis gate
+
+A full-FCF load refuses a checkpoint whose stored LP bases do not fit the
+current stage LPs, and `cobre run` stops with:
+
+{/* capture: cobre run case 2>&1 | cobre   v0.17.0 | binary: cobre-cli sha256 23916b46 | case: temporary 1dtoy derivative (cobre init --template 1dtoy; stages.json: every stage carries two blocks PEAK and OFFPEAK with hours h // 2 and h - h // 2 of the single block's hours h, block_mode parallel; config.json: training.stopping_rules iteration_limit 3, simulation.enabled false; trained once with cobre run; then stages.json block_mode chronological on every stage, config.json training.enabled false and simulation.enabled true); excerpt: the error line and the hint line, stderr through a pipe */}
 
 ```text
-unsupported checkpoint manifest format_version 1; expected 2; re-export it with a current Cobre
+error: stored basis for node 0 does not match its LP: the LP has 29 columns and 13 template rows, the stored basis has 28 columns and 14 rows with 3 recorded cut rows; retrain the policy
+  -> run `cobre validate <CASE_DIR>` for a full diagnostic report
 ```
 
-A checkpoint that clears the manifest but predates the self-describing cuts is
-caught one step later, when a resolved `cuts/<pool>.bin` carries no
-`cost_scale_factor`:
+The node and the counts come from an example case and differ per study. The
+remedy is to retrain the policy on the study that loads it.
 
-```text
-policy checkpoint predates self-describing cuts (its resolved cuts/<pool>.bin carries no cost_scale_factor); re-export it with a current Cobre
-```
+A stored LP basis fits when it has exactly the column count of its stage LP and a
+row count between that LP's template rows (the rows before any cut) and the
+template rows plus the cut rows the basis itself records.
 
-There is **no converter**: every policy checkpoint written by an earlier
-release must be **re-exported or retrained** — warm-start, resume,
-simulation-only, and terminal boundary injection alike are rejected by name,
-with no in-place upgrade.
+Warm-start and resume check the bases a checkpoint carries, simulation-only
+always checks them, and a [boundary load](#boundary-cuts) checks none.
 
-Every load path surfaces the same failure, tagged for its caller:
+Every training run writes its stage LP bases with the end-of-training
+checkpoint, and `policy.checkpointing.store_basis` has no effect on that. Any
+change that alters the column count of a stage LP therefore refuses a full-FCF
+load of any policy whose stored bases were trained on the previous structure.
+Examples are a different block count, a different entity set, and a different
+block mode on a stage with hydro plants and more than one block.
 
-- **`cobre.results.load_policy` / `Study.load_policy`**: a missing output directory or `manifest.bin` raises builtin `FileNotFoundError`; a checkpoint-version mismatch raises `cobre.errors.OutputError`.
-- **`cobre.run.run` / `Study.train` in warm-start or resume mode**: a failure reading the policy checkpoint surfaces as `cobre.errors.SolverError` (the run path wraps the read error before classification). See the note below.
-- **CLI** (`cobre run` in warm-start, resume, or simulation-only mode) prints a message prefixed `failed to read policy checkpoint: …`.
+The hint's diagnostic run does not report this refusal:
+[`cobre validate`](/reference/cli-reference/#cobre-validate) exits 0 on a case
+whose checkpoint is refused this way, because it does not read the checkpoint at
+`policy.path`.
 
-:::note[Checkpoint-read error class differs by entry point]
-The release notes say case-load and policy-load failures raise `CaseIoError` or `ValidationError`. The current binary raises `SolverError` when `run` / `Study` reads a checkpoint in warm-start or resume mode, and `OutputError` (or a builtin `FileNotFoundError` for a missing file) from `load_policy`, including for a malformed `manifest.bin`. Catch `cobre.errors.CobreError` to handle every path uniformly. These pages follow the binary.
+:::note
+The cuts themselves do not depend on the block structure
+([Block Formulation Variants](/math/block-formulations/)). The same cuts therefore still
+load through [`policy.boundary`](#boundary-cuts) across block modes and block
+counts, while a full-FCF load refuses the change.
 :::
-
-See
-[FlatBuffers Schema Versioning](/reference/flatbuffers-schema/#versioning-policy)
-for the wire-level mechanics behind this gate.
 
 ---
 
 ## Cost-Scale Canonicalization
 
 Cobre's objective cost-scale factor
-([`modeling.cost_scale_factor`](/running/configuration/#cost_scale_factor))
+([`modeling.cost_scale_factor`](/running/configuration/#modelingcost_scale_factor))
 is configurable per study. Cut coefficients and intercepts are computed in the
 solving study's internally scaled cost space, so policy export and load
 convert between that scaled space and a canonical, scale-independent
@@ -243,59 +393,29 @@ representation at rest:
   **writing** study's `cost_scale_factor`, so a persisted policy holds
   canonical currency units — not the writer's internal scaled cost space.
 - **Every load path** — warm-start, resume, simulation-only, and boundary-cut
-  injection — divides by the **loading** study's own `cost_scale_factor`,
-  converting the canonical values back into that study's internal scaled
-  space.
+  injection — divides by the **loading** study's own `cost_scale_factor`, even
+  when it equals the writer's, converting the canonical values back into that
+  study's internal scaled space.
 
 Each `cuts/<pool>.bin` (see the field table in
-[Output Format](/reference/output-format/#policymanifestbin)) carries its **own**
+[Policy Checkpoint](/reference/output/policy/#policymanifestbin)) carries its **own**
 `cost_scale_factor` provenance field recording the writing study's factor — the
-checkpoint is self-describing per pool, no longer dependent on a single
-study-global field. Every load path — warm-start, resume, simulation-only, and
-boundary-cut injection — **requires** each resolved pool to carry it: a pool
-whose `cost_scale_factor` reads absent is rejected with
+checkpoint is self-describing per pool. Every load path — warm-start, resume,
+simulation-only, and boundary-cut injection — **requires** each resolved pool to
+carry it: a pool whose `cost_scale_factor` reads absent is rejected. A full-FCF
+load refuses with
 
 ```text
 policy checkpoint predates self-describing cuts (its resolved cuts/<pool>.bin carries no cost_scale_factor); re-export it with a current Cobre
 ```
 
-(The `1_000_000.0` legacy-scale fallback for an absent factor survives only as
-an internal library seam for a direct API caller; none of Cobre's own load
-front ends reach it.)
+A [boundary load](#boundary-cuts) refuses with its own message, quoted in item 3
+of the [boundary load order](#compatibility-requirements).
 
-### Compatibility matrix
-
-Every real load path holds a marked pool to the first row; the unmarked rows are
-the internal-seam behaviour only, never reached by Cobre's own front ends (which
-reject an unmarked pool, per above).
-
-| Checkpoint | Loading factor | Behaviour |
-|---|---|---|
-| Marked (`cost_scale_factor` present) | any | divided by loading factor **unconditionally**, even when equal |
-| Unmarked (internal seam only) | `== 1e6` (default) | no-op — **bit-exact, no re-baseline** |
-| Unmarked (internal seam only) | `!= 1e6` | multiplied by `1e6 / loading_factor` |
-
-:::caution[Downgrading is unsafe]
-This compatibility contract is **one-directional**. A checkpoint written by
-this release must **not** be read by an earlier release: the earlier release
-has no concept of the self-describing `cost_scale_factor` provenance field, so
-it silently reinterprets the canonical at-rest values under the old scaled
-convention — no error, no warning, wrong numbers. In the other direction a
-checkpoint written by an earlier release does not load at all — it lacks the
-`manifest.bin` this release reads first (see
-[Format Version and Migration](#format-version-and-migration)) — and must be
-re-exported or retrained.
-
-[FlatBuffers Schema Versioning](/reference/flatbuffers-schema/#versioning-policy)
-reasons only about **wire** compatibility — whether a reader can parse the
-binary layout — not about the **value** semantics this contract governs.
-:::
-
-Loading a checkpoint written by this release's export path applies one extra
-floating-point division to every cut coefficient and intercept, moving each
-value by up to a few ULP. This is below solver tolerance and does not change
-training or simulation results — but a bit-exact hash computed over a
-policy-load path shifts once as a result.
+Loading applies one floating-point division to every cut coefficient and
+intercept, moving each value by up to a few units in the last place (ULP). This
+is below solver tolerance, but a bit-exact hash over a loaded policy can differ
+from one over the in-memory policy that wrote it.
 
 ---
 
@@ -303,60 +423,34 @@ policy-load path shifts once as a result.
 
 Boundary cuts allow a Cobre study to load terminal-stage future cost function
 (FCF) approximations from a different Cobre policy checkpoint. This is the
-mechanism for **model coupling** — a short-horizon study (e.g., weekly+monthly
-coupled study) can use the long-horizon policy (e.g., a monthly long-horizon model)
-as its terminal boundary condition, ensuring that end-of-horizon decisions
-account for the long-term future cost of water.
+mechanism for **chained studies**: a downstream study imports one cut pool of an
+upstream study's policy as its terminal boundary condition, so its
+end-of-horizon decisions account for the upstream study's future cost of water.
+The downstream study may have a shorter horizon or finer stages than the
+upstream one. For the method, see
+[Post-Study Boundary & Chained Studies §5](/math/post-study-boundary#5-chained-studies).
 
 ### How it works
 
-1. **Run a monthly study** and produce a policy checkpoint (the "outer" model).
-2. **Run a weekly+monthly study** with `policy.boundary` pointing to the
-   monthly checkpoint. Cobre selects the source pool priced at the coupled
+1. **Run the upstream study** to produce a policy checkpoint, or author the
+   checkpoint in Python
+   ([Read and Write Checkpoints from Python](#read-and-write-checkpoints-from-python)).
+2. **Run the downstream study** with `policy.boundary` pointing to the
+   upstream checkpoint. Cobre selects the source pool priced at the downstream
    study's **terminal boundary date** — the last non-negative stage's
    `end_date` — and injects its cuts into the terminal stage's row pool as
    fixed boundary conditions. There is no stage-index knob: the pool is chosen
    by matching that date against each source pool's own priced-state date.
 
 The imported boundary cuts are **not updated** by the SDDP training algorithm.
-They remain fixed throughout training and simulation, providing a floor on
-the terminal-stage future cost.
-
-### Authoring a checkpoint with `write_policy_checkpoint`
-
-Step 1 above assumes the outer-model checkpoint came from a full Cobre
-training run — but that is not the only way to produce one. The Python
-function `cobre.write_policy_checkpoint` authors a checkpoint directly from
-plain Python dicts and sequences, without running Cobre at all. This is the
-supported path for injecting a hand-built external boundary-cut future-cost
-function — for example, one derived analytically or produced by another
-tool — as a policy checkpoint Cobre can load.
-
-```python
-write_policy_checkpoint(path, stage_cuts, metadata, stage_bases=None, stage_states=None, inflow_lag_depth=None)
-```
-
-`stage_cuts` and `metadata` mirror the `"stage_cuts"` / `"metadata"` shapes
-that `cobre.results.load_policy` returns, so a checkpoint loaded from disk
-round-trips through Python (load, edit, write) without reshaping; `stage_bases` and `stage_states` default
-to empty when omitted. `inflow_lag_depth`, when set to `N > 0`, has Cobre
-reserve `N` canonical `HydroInflowLag` state slots per storage hydro in every
-stage's manifest and place each cut's `inflow_lag_coefficients` at their
-`(hydro, depth)` positions, so a boundary policy authored for a case with no
-autoregressive inflow model can still carry an inflow-lag-coupled terminal
-cost-to-go; absent or `0`, the written checkpoint is byte-identical. The
-function writes `manifest.bin`, `cuts/`, `basis/`, and `states/` directly under
-`path` — the same [Checkpoint Directory Contents](#checkpoint-directory-contents)
-layout described above, so `path` should be a `policy/`-style directory, the
-same kind of path used by `policy.path` and `policy.boundary.path` elsewhere
-on this page. Before writing, it validates the payload and raises
-`ValueError` on any of the conditions listed in
-[Python Quickstart — Input Validation](/getting-started/python-quickstart/#input-validation)
-(coefficient and state lengths, and inflow-lag coefficients without a
-positive `inflow_lag_depth`).
-
-See [Python Quickstart](/getting-started/python-quickstart/) for a full
-runnable load → edit → write round trip.
+Their coefficients remain fixed throughout training and simulation, and the
+active ones provide a floor on the terminal-stage future cost.
+The `training.cut_selection.max_active_per_stage` setting
+([`cut_selection`](/running/configuration/#trainingcut_selection)) caps the active cuts
+of every pool, including the terminal pool that holds the imported boundary
+cuts, and only cuts generated in the current iteration are exempt, so a cap
+below the number of active imported boundary cuts evicts (deactivates) some of
+them.
 
 ### Configuration
 
@@ -367,7 +461,7 @@ Add a `boundary` object to the `policy` section of `config.json`:
   "policy": {
     "mode": "fresh",
     "boundary": {
-      "path": "../monthly_study/policy",
+      "path": "../upstream_study/output/policy",
       "strict": false
     }
   }
@@ -376,36 +470,83 @@ Add a `boundary` object to the `policy` section of `config.json`:
 
 | Field    | Type    | Default | Description                                                                                                                                                                                            |
 | -------- | ------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `path`   | string  | —       | Path to the source Cobre policy checkpoint directory.                                                                                                                                                  |
+| `path`   | string  | —       | Path to the source checkpoint directory; see [`policy.boundary`](/running/configuration/#policyboundary) for how it resolves.                                                                          |
 | `strict` | boolean | `false` | Governs a **superset** source (one pricing an entity or commitment this study does not model). `false` drops the surplus, records it in the reconciliation report, and loads; `true` rejects the load. |
 
 When `boundary` is absent or `null`, no boundary cuts are loaded (the default).
 
 ### Compatibility requirements
 
-Unlike warm-start and resume — which require the saved policy's state dimension
-and per-slot entity layout to match the current study **exactly** (see
-[Warm Start](#warm-start), a check that cannot be disabled) — **boundary
-injection tolerates a source of a different state shape.** The source's terminal
-state is reconciled onto the current study's own state per slot **by entity
-identity and its per-family slot dates** (the inflow-lag `reference_date`, the
-forward-family `interval_start`/`interval_end`), not by position: a source trained with a different
+Unlike a [full-FCF load](#policy-load-contract) — which requires the saved
+policy's state dimension and per-slot entity layout to match the current study
+**exactly** (step 4 of the [check order](#check-order), a check that cannot be
+disabled) — **boundary injection tolerates a source of a different state
+shape.** The source's terminal state is reconciled onto the current study's own
+state per slot **by entity identity and its per-family slot dates** (the
+inflow-lag `reference_date`, the forward-family `interval_start`/`interval_end`),
+not by position: a source trained with a different
 set of state coordinates — no in-transit buckets, or monthly anticipated slots
 feeding a differently-shaped study — still injects, each source coefficient
 binding to the current study's slot for the same entity. A source coordinate
 that couples a state slot the current study does not model cannot be carried; it
 is reported in a **per-family reconciliation summary** and dropped, and the load
-still **succeeds** by default — where earlier releases rejected the load outright
-on the state-dimension check. See
-[Post-Study Boundary §4](/math/post-study-boundary) for the reconciliation
-mechanism.
+still **succeeds** by default. See
+[Post-Study Boundary & Chained Studies §4](/math/post-study-boundary#4-calendar-reconciliation-fan-out) for the
+reconciliation mechanism.
 
 That leniency is the default reconcile path, but the load still enforces hard
-requirements. Three classes of check are **independent of `strict`**.
+requirements. A boundary load runs its checks in this order, and the first
+failure stops the run:
+
+1. **Read.** The checkpoint at `policy.boundary.path` can be read; a read failure
+   is refused with `failed to read boundary policy checkpoint at {path}: {e}`,
+   where `{e}` is the underlying error.
+2. **Pool selection.** Exactly one pool of the source is priced at the study's
+   terminal boundary date.
+3. **Cost scale.** The resolved pool records its `cost_scale_factor` (see
+   [Cost-Scale Canonicalization](#cost-scale-canonicalization)); a pool without
+   it is refused with `boundary policy checkpoint at {path} predates self-describing cuts (its resolved cuts/<pool>.bin carries no cost_scale_factor); re-export it with a current Cobre`.
+4. **Single-node source.** The resolved pool is a single-node terminal pool, not
+   one shared across several study nodes. A shared pool is refused with
+   `boundary policy at {path}: a boundary source must be a single-node terminal pool; the resolved pool is shared by multiple nodes`.
+5. **Inflow-lag depth.** Before building the study, Cobre reads the deepest
+   inflow-lag slot that any cut pool of the boundary checkpoint references and
+   extends the study's inflow-lag state to at least that depth
+   ([Post-Study Boundary & Chained Studies §5.2](/math/post-study-boundary#52-compatibility-conditions));
+   when the depth is above zero, `cobre run` without `--quiet` prints
+   `Boundary policy: inflow-lag depth {d}` while loading. This check confirms
+   that the resolved pool references no lag deeper than the extended state, so
+   a user case does not trigger it. A message starting
+   `internal:` is a Cobre defect; report it.
+6. **Season and PAR order.** When the study declares a season cycle, the
+   source's `season_manifest` is present and agrees with the study's season
+   cycle, season count, and per-hydro PAR orders.
+7. **Topology subset.** When both checkpoints carry an entity manifest, the
+   source prices every hydro storage slot and every inflow-lag slot of the
+   current study.
+8. **Version.** The cobre version recorded in the source checkpoint equals the
+   running cobre version exactly (see [Version gate](#version-gate)); the checks
+   above run first, so a source written by another cobre version can fail one of
+   them before this one.
+9. **State dimension.** If either checkpoint has no entity manifest, slots cannot
+   be matched by identity, so the topology-subset and slot-date checks are
+   skipped and the source pool's state dimension must equal the study's. The
+   refusal starts `boundary policy state_dimension mismatch: policy has {n}, current system has {n}`.
+10. **Slot dates.** Every dated in-transit or anticipated slot of the source has
+    an `interval_start` and `interval_end` that decode to a date range of
+    positive length. A slot that fails is refused with one of:
+    - `boundary policy source forward-family slot (entity_id={entity_id}, subindex={subindex}) has an undecodable interval_start {interval_start}`
+    - `boundary policy source forward-family slot (entity_id={entity_id}, subindex={subindex}) has an undecodable interval_end {interval_end}`
+    - `boundary policy source forward-family slot (entity_id={entity_id}, subindex={subindex}) has a non-positive delivery interval: interval_start={interval_start}, interval_end={interval_end}`
+11. **Superset.** Applies only with `strict: true`: a source that prices more
+    than the study models is refused (with `strict: false` the surplus is
+    dropped and reported).
+
+Every check except **Superset** is independent of `strict`.
 
 **Date-selection rejects.** Before any coefficient is reconciled, Cobre resolves
-the source to exactly one pool priced at the study's terminal boundary date.
-Four conditions abort the load with a named error:
+the source to exactly one pool priced at the study's terminal boundary date
+(list item 2). Three conditions abort the load with a named error:
 
 - **Undated source** — no pool in the source checkpoint records a priced-state
   date: `boundary policy checkpoint at {path} carries no priced_state_date on any pool (a pool written before priced dates were recorded); re-export it with a current Cobre`.
@@ -413,18 +554,15 @@ Four conditions abort the load with a named error:
   `boundary policy at {path}: no pool is priced at the study's boundary date {date} (available: {dates})`.
 - **More than one pool at the date** — the source is ambiguous:
   `boundary policy at {path}: more than one pool is priced at the study's boundary date {date} (pools {pools}); boundary injection requires a unique priced source`.
-- **Shared-node source** — the resolved pool is not a single-node terminal pool:
-  `boundary policy at {path}: a boundary source must be a single-node terminal pool; the resolved pool is shared by multiple nodes`.
 
 **Season / PAR-order rejects.** When the loading study models a seasonal or
 per-hydro autoregressive (PAR) inflow process, the boundary source's season
 descriptor (`season_manifest`) must agree with the study's. This check is
 **always-on** — it is **not** gated by `strict`, and fires whenever the loading
 study declares a season cycle (a study modelling no seasonal/PAR inflow skips it
-entirely). It runs ahead of the subset checks below, and aborts the load with a
-validation error on the boundary-load path — distinct from the
-version-gate failure in [Format Version and Migration](#format-version-and-migration)
-above. A boundary source is rejected when its `season_manifest`:
+entirely). It aborts the load with a validation error on the boundary-load
+path — distinct from the [version gate](#version-gate) refusal. A boundary
+source is rejected when its `season_manifest`:
 
 - **is absent** — the source predates the season descriptor:
   `boundary policy checkpoint at {path} predates the season descriptor (its manifest carries no season cycle or PAR orders); re-export it with a current Cobre`.
@@ -441,7 +579,7 @@ above. A boundary source is rejected when its `season_manifest`:
   `boundary policy at {path}: hydro {id} PAR order mismatch at season {season} (study has order {n}, source has order {n})`.
 
 The `season_manifest` field shape is documented in
-[Output Format](/reference/output-format/#policymanifestbin).
+[Policy Checkpoint](/reference/output/policy/#policymanifestbin).
 
 **Subset rejects.** If the source prices _less_ than this study needs, the load
 is rejected regardless of `strict`:
@@ -451,45 +589,79 @@ is rejected regardless of `strict`:
 - **Missing inflow-lag** — the source has no inflow-lag coefficient at a depth
   the study needs: `boundary policy has no inflow-lag coefficient for {names}: the boundary is lag-depth-incompatible with the current study`.
 
+**Lag-date reject.** A source inflow-lag coefficient and the current study's
+inflow-lag slot for the same hydro and depth may each carry a reference date.
+When both are dated and the dates differ, the load is rejected regardless of
+`strict`; this reject runs after list item 10 and before list item 11:
+`boundary policy's inflow-lag coefficient for hydro {id} at lag depth {depth} references a different past than the current study: boundary {date}, current {date}`.
+
+**Lag coverage and dating.** An interior source pool, any pool other than the
+upstream study's terminal pool, carries inflow-lag coefficients only when its
+successor stage's
+[`stages[].state_variables`](/math/cut-management/#stagesstate_variables--cut-projection)
+selection includes `inflow_lags`, which defaults to `false`. The terminal pool
+of a trained upstream study is sized by that study's full state, with every
+inflow-lag slot of that state, whatever the selection; training never adds a
+cut to it, so it holds only the cuts loaded into it, such as that study's own
+boundary cuts. The current (downstream) study's terminal state has inflow-lag
+slots when its own inflow model is autoregressive or when any pool of the
+source references a lag (the extension of list item 5), and a source pool that
+lacks a coefficient for any of those slots is rejected with the
+**Missing inflow-lag** message. An autoregressive upstream study always
+triggers that extension, because its terminal pool references every lag of its
+state even when it holds no cuts. To chain from an interior pool, set
+`inflow_lags: true` on the upstream stage that follows the source pool's stage.
+Each study dates its own lags: lag 1 by the start date of the pool's own stage,
+and each deeper lag by the start date of one stage further back in that
+study's full stage list, pre-study stages included. The source pool's stage and
+the current study's last stage must therefore start on the same date, and so
+must each pair of stages the same number of places before them, down to the
+deepest lag both sides date, or the lag-date reject applies. In particular, it
+applies wherever several stages of the current study together span one source
+stage within that depth.
+
 **Superset behavior (`strict`).** When the source prices _more_ than the study
 models, the surplus source slots are dropped during reconciliation either way.
 With `strict: false` (the default) the drop is recorded in the reconciliation
 report and the load proceeds; with `strict: true` the same condition rejects the
 load: `boundary policy at {path} is a superset: {summary}; see the reconciliation report or set policy.boundary.strict = false`, where `{summary}` names every
 dropping family and its count. `strict` governs **only** this superset case — it
-does not relax the subset rejects or loosen the four date-selection rejects.
+does not relax the subset rejects or loosen the date-selection rejects.
 
-**Where the reconciliation report appears.** Whether the load proceeds or is
-rejected under `strict`, the per-family reconciliation is surfaced on three
+**Where the reconciliation report appears.** When the load proceeds (a `strict` rejection shows only the superset message's summary), the
+per-family reconciliation is surfaced on three
 paths:
 
-- **`cobre run`** prints a post-run **Boundary policy** block to stderr —
+- **`cobre run`** prints a **Boundary policy** block to stderr while it loads the case, before training —
   `Cuts loaded: N (priced at {date})`, `Source: {path}`, and a `Reconciliation:`
   line `N copied, N fanned out, N defaulted to 0.0, N dropped`.
 - **`cobre validate --json`** emits a boundary object with `configured`,
   `boundary_date`, and `report` fields carrying the full per-family report
-  (worked example under [Configuration → boundary](/running/configuration/#boundary)).
+  (worked example under [Configuration — boundary](/running/configuration/#policyboundary)).
 - **`cobre validate`** (human mode) prints `boundary policy priced at {date}`
   followed by the one-line summary
   `boundary reconciliation: N copied, N fanned out, N defaulted to 0.0, N source slots dropped`.
 
 ### Production coupling workflow
 
-The typical production coupling pipeline uses boundary cuts as follows:
+A chained-study pipeline uses boundary cuts as follows:
 
 ```d2
 direction: down
 
-monthly: "Monthly study\npolicy checkpoint: cut pools priced by date" {shape: rectangle}
-coupled: "Weekly+monthly coupled study\n(W1 · W2 · W3 · W4 · M2)" {shape: rectangle}
+upstream: "Upstream study\npolicy checkpoint: cut pools priced by date" {shape: rectangle}
+downstream: "Downstream (chained) study" {shape: rectangle}
 
-monthly -> coupled: "policy.boundary.path = ../monthly/policy\nsource pool priced at the coupled study's terminal date → terminal FCF"
+upstream -> downstream: "policy.boundary.path = ../upstream_study/output/policy\nsource pool priced at the downstream study's terminal date → terminal FCF"
 ```
 
-The coupled study's terminal stage (M2) receives the monthly model's March
-cuts as its future cost function. The lag accumulation mechanism ensures that
-the state vector's lag values at the terminal stage are monthly averages,
-making the imported cut coefficients evaluate correctly.
+The upstream study writes a policy checkpoint whose cut pools are each priced at
+a date. The downstream study names that checkpoint in `policy.boundary.path`,
+and the pool priced at the downstream study's terminal boundary date becomes its
+terminal future cost function. The dependency runs one way: the upstream study
+never reads the downstream one. The conditions under which the imported cuts
+apply to the downstream study's state are in
+[Post-Study Boundary & Chained Studies §5.2](/math/post-study-boundary#52-compatibility-conditions).
 
 ### Interaction with warm-start
 
@@ -501,15 +673,334 @@ Boundary cuts and warm-start are independent features. You can combine them:
     "mode": "warm_start",
     "path": "./policy",
     "boundary": {
-      "path": "../monthly/policy"
+      "path": "../upstream_study/output/policy"
     }
   }
 }
 ```
 
-This loads the previous coupled study's own cuts via warm-start AND loads
-the monthly model's boundary cuts at the terminal stage. Both sets of cuts
-contribute to the lower bound.
+This loads the downstream study's own cuts from its previous run via
+warm-start AND loads the upstream policy's boundary cuts at the terminal stage.
+Both sets of cuts contribute to the lower bound.
+
+---
+
+## Read and Write Checkpoints from Python
+
+`cobre.results.load_policy` reads a policy checkpoint into plain Python dicts,
+and `cobre.write_policy_checkpoint` writes one from dicts of the same shape, so
+a loaded checkpoint round-trips: load, edit, write. The supported use is
+authoring an external boundary future-cost function, for example one derived
+analytically or produced by another tool, as a checkpoint that Cobre loads
+through [`policy.boundary`](#boundary-cuts). The on-disk `AffinePiece` layout is
+documented in the [FlatBuffers Policy Schema](/reference/flatbuffers-schema/).
+A study loads the checkpoint only in the cobre version that wrote it
+([Version gate](#version-gate)); `cobre.results.load_policy` does not check the version.
+
+### Load a policy
+
+```python
+cobre.results.load_policy(output_dir, policy_subdir="policy")
+```
+
+`output_dir` is the study's output directory; `load_policy` reads the
+checkpoint from `<output_dir>/<policy_subdir>` (`policy_subdir` defaults to
+`"policy"`). It returns a dict with three top-level keys:
+
+| Key           | Type         | Description                                                                                                    |
+| ------------- | ------------ | -------------------------------------------------------------------------------------------------------------- |
+| `metadata`    | `dict`       | `format_version`, `cobre_version`, `created_at`, `num_stages`, `graph_manifest`, `season_manifest`, `producer` |
+| `stage_cuts`  | `list[dict]` | One entry per cut pool (one per stage on a stage chain) — see below                                            |
+| `stage_bases` | `list[dict]` | One entry per saved LP basis: `stage_id`, `iteration`, `column_status`, `row_status`, `num_cut_rows`           |
+
+Each `stage_cuts` entry carries:
+
+| Key                 | Type         | Description                                                                                                                                                                                            |
+| ------------------- | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `stage_id`          | `int`        | Pool id (0-based), the key that names `cuts/<pool>.bin`; the 0-based stage position on a stage chain                                                                                                   |
+| `state_dimension`   | `int`        | Length every cut's `coefficients` must have                                                                                                                                                            |
+| `capacity`          | `int`        | Cut-pool slot capacity                                                                                                                                                                                 |
+| `warm_start_count`  | `int`        | Cuts loaded from a previous artifact at run start                                                                                                                                                      |
+| `populated_count`   | `int`        | Number of populated cut slots                                                                                                                                                                          |
+| `cost_scale_factor` | `float`      | Cost-scale factor of the writing study, recorded for this pool (see [Cost-Scale Canonicalization](#cost-scale-canonicalization))                                                                       |
+| `node_id`           | `int`        | Policy-graph id of the node that owns the pool; `-1` for a pool with no single owning node                                                                                                             |
+| `graph_stage_id`    | `int`        | Graph-stage id of the node that owns the pool; `-1` when unresolved                                                                                                                                    |
+| `priced_state_date` | `int`        | The owning stage's `end_date` encoded `YYYYMMDD`, the date the pool's cuts price; the int32-minimum sentinel when not recorded. A [boundary load](#boundary-cuts) selects its source pool by this date |
+| `entity_manifest`   | `list[dict]` | Per-slot entity markers — see below                                                                                                                                                                    |
+| `cuts`              | `list[dict]` | Cut records — see below                                                                                                                                                                                |
+
+Each entry in `cuts` carries `cut_id`, `slot_index`, `iteration`,
+`forward_pass_index`, `intercept`, `coefficients`, and `is_active`. The Python
+dict key for a cut's id is `cut_id` (the FlatBuffers _wire_ field is
+`piece_id`; `cut_id` is the record-level name used everywhere in this API).
+
+`entity_manifest` is a list of per-slot markers,
+`{entity_type, entity_id, subindex, was_active, reference_date, interval_start, interval_end}`,
+that let an externally authored boundary-cut checkpoint round-trip through
+`write_policy_checkpoint` without losing slot identity. Which date marker a slot
+carries follows from its family. A `HydroInflowLag` slot carries
+`reference_date`, the `start_date` of its reference past stage, encoded
+`YYYYMMDD`. The forward families (`HydroTransitBucket`,
+`AnticipatedThermalState`) carry the half-open `interval_start`/`interval_end`
+window, both encoded `YYYYMMDD`; an anticipated slot carries it only while it
+holds a live commitment at the pool's stage. A date field that does not apply
+reads the int32-minimum sentinel (`-2147483648`): every other slot reads it in
+all three fields, and so does an anticipated slot that holds no live commitment
+at the pool's stage.
+
+`load_policy` applies no load gate: it reads any checkpoint this build can parse,
+whichever cobre version wrote it, and returns the recorded version as
+`metadata["cobre_version"]`, without comparing it with a study. A missing
+directory or `manifest.bin` raises `FileNotFoundError`, and an unreadable buffer
+raises `OutputError`. [Error Codes](/reference/error-codes/#policy-load-errors)
+lists the failure class of every load path.
+
+### Write a checkpoint
+
+```python
+cobre.write_policy_checkpoint(path, stage_cuts, metadata, stage_bases=None, stage_states=None, inflow_lag_depth=None)
+```
+
+`stage_cuts` and `metadata` mirror the `load_policy` shapes above, so a
+checkpoint loaded from disk round-trips through Python without reshaping, with
+one caveat: `active_cut_indices` is written by `write_policy_checkpoint` but not
+returned by `load_policy`, so a load → write cycle resets it, and cut activity
+round-trips through each cut's `is_active` flag instead. `stage_bases` and
+`stage_states` default to empty when omitted.
+
+An authored `metadata` needs `created_at`, `num_stages`, and a `producer` with
+`completed_iterations`, `final_lower_bound`, `max_iterations`, `forward_passes`,
+`warm_start_cuts`, and `rng_seed`. `format_version`, `graph_manifest`,
+`season_manifest`, and the other `producer` keys (`best_upper_bound`,
+`warm_start_counts`, `total_visited_states`, `training_block_mode`,
+`training_block_mode_per_stage`, `cost_scale_factor`) are optional.
+
+`inflow_lag_depth`, when set to `N > 0`, has Cobre reserve `N` canonical
+`HydroInflowLag` state slots per storage hydro in every stage's manifest and
+place each cut's `inflow_lag_coefficients` at their `(hydro, depth)` positions,
+so a boundary policy authored for a case with no autoregressive inflow model can
+still carry an inflow-lag-coupled terminal cost-to-go. Absent or `0`, the
+written checkpoint is byte-identical.
+
+The function writes `manifest.bin`, `cuts/`, and `basis/` directly under `path`,
+and `states/` only when `stage_states` is non-empty. That is the
+[Checkpoint Directory Contents](#checkpoint-directory-contents) layout, so
+`path` should be a `policy/`-style directory. To use it as
+`policy.boundary.path`, pass it relative to the consuming case directory, or as
+an absolute path. `load_policy` joins `policy_subdir` onto the directory it is
+given, so a checkpoint written to `<dir>/policy` is read back with `load_policy`
+on its parent directory, `<dir>`.
+
+`write_policy_checkpoint` stamps the running cobre version into the checkpoint
+and ignores a `cobre_version` key in `metadata`, so the checkpoint loads only in
+that version (see [Version gate](#version-gate)). A checkpoint written without
+`stage_bases` is not subject to the [stored-basis gate](#stored-basis-gate): it
+carries no bases to check.
+
+### Round-trip example
+
+The following example is copy-runnable. To edit a trained policy, load it with
+`cobre.results.load_policy("output/")` and apply the edit step below to
+`loaded["stage_cuts"]`; the example authors a checkpoint from scratch so it runs
+without a study. It writes the checkpoint, loads it back, appends a third cut,
+writes the edited policy back to the same path, and prints the reloaded cut
+count and the cobre version recorded in the checkpoint.
+
+```python
+import tempfile
+
+import cobre
+import cobre.results
+
+parent = tempfile.mkdtemp()
+
+stage_cuts = [
+    {
+        "stage_id": 0,
+        "state_dimension": 3,
+        "capacity": 10,
+        "cuts": [
+            {
+                "cut_id": 1,
+                "slot_index": 0,
+                "iteration": 1,
+                "forward_pass_index": 0,
+                "intercept": 42.0,
+                "coefficients": [1.0, 2.0, 3.0],
+                "is_active": True,
+            },
+            {
+                "cut_id": 2,
+                "slot_index": 1,
+                "iteration": 1,
+                "forward_pass_index": 1,
+                "intercept": 10.5,
+                "coefficients": [0.5, -1.5, 2.5],
+                "is_active": True,
+            },
+        ],
+    }
+]
+
+metadata = {
+    "created_at": "2026-07-30T00:00:00Z",
+    "num_stages": 1,
+    "producer": {
+        "completed_iterations": 5,
+        "final_lower_bound": 123.45,
+        "best_upper_bound": 130.0,
+        "max_iterations": 10,
+        "forward_passes": 4,
+        "warm_start_cuts": 0,
+        "warm_start_counts": [0],
+        "rng_seed": 42,
+        "total_visited_states": 0,
+        "training_block_mode": "parallel",
+        "training_block_mode_per_stage": [],
+        "cost_scale_factor": 2_500_000.0,
+    },
+}
+
+# Write to `<parent>/policy` — `load_policy` joins policy_subdir="policy" onto
+# the directory it is given, so it is loaded from `parent` below.
+cobre.write_policy_checkpoint(f"{parent}/policy", stage_cuts, metadata)
+
+loaded = cobre.results.load_policy(parent)
+assert loaded["metadata"]["format_version"] == 2
+assert loaded["stage_cuts"][0]["populated_count"] == 2
+
+# Edit: append a third cut. Its coefficients must match state_dimension (3).
+# Keep cut_id and slot_index unique, and set populated_count to the new cut count.
+cuts = loaded["stage_cuts"][0]["cuts"]
+cuts.append(
+    {
+        "cut_id": 3,
+        "slot_index": 2,
+        "iteration": 2,
+        "forward_pass_index": 0,
+        "intercept": -5.0,
+        "coefficients": [4.0, -2.0, 0.0],
+        "is_active": True,
+    }
+)
+loaded["stage_cuts"][0]["populated_count"] = len(cuts)
+
+# Write back: same round-trip shape, one more cut than before.
+cobre.write_policy_checkpoint(
+    f"{parent}/policy", loaded["stage_cuts"], loaded["metadata"]
+)
+
+# The reloaded checkpoint holds three cuts and records the running cobre version.
+reloaded = cobre.results.load_policy(parent)
+print(len(reloaded["stage_cuts"][0]["cuts"]), reloaded["metadata"]["cobre_version"])
+```
+
+The script prints the reloaded cut count and the version that
+`write_policy_checkpoint` stamped:
+
+{/* capture: python round-trip example (python script, last line: cut count and cobre_version) | cobre-python 0.17.0 (PyPI wheel sha256 c0b117d2) | python 3.12.3 | case: none */}
+
+```text
+3 0.17.0
+```
+
+### Input validation
+
+`write_policy_checkpoint` raises `ValueError` when any of the following holds.
+The message locates the problem: the stage and cut for the two per-cut checks,
+the stage for a state-data mismatch, and the hydro for an unplaceable
+inflow-lag coefficient.
+
+- a cut's `coefficients` length does not match its stage's `state_dimension`;
+- a stage's state data length does not match `count * state_dimension`;
+- a cut carries `inflow_lag_coefficients` without a positive `inflow_lag_depth`;
+- (under `inflow_lag_depth`) a manifest lacks a leading storage block; or
+- (under `inflow_lag_depth`) an inflow-lag coefficient is unplaceable.
+
+Each snippet below uses `metadata` from the round-trip example. The second also
+uses its `stage_cuts`; the third defines its own. Each snippet ends with the
+exception text it raises.
+
+A cut whose `coefficients` length disagrees with its stage's
+`state_dimension`:
+
+{/* capture: python input-validation snippet 1 of 3 (ValueError text) | cobre-python 0.17.0 (PyPI wheel sha256 c0b117d2) | python 3.12.3 | case: none; context: metadata of the round-trip example */}
+
+```python
+bad_cuts = [
+    {
+        "stage_id": 0,
+        "state_dimension": 3,
+        "capacity": 10,
+        "cuts": [
+            {
+                "cut_id": 1,
+                "slot_index": 0,
+                "iteration": 1,
+                "forward_pass_index": 0,
+                "intercept": 42.0,
+                "coefficients": [1.0, 2.0],  # length 2, but state_dimension=3
+                "is_active": True,
+            },
+        ],
+    }
+]
+
+cobre.write_policy_checkpoint("output/policy", bad_cuts, metadata)
+# ValueError: stage 0 cut 1: coefficients has 2 entries, expected state_dimension=3
+```
+
+A `stage_states` entry whose flat `data` length disagrees with
+`count * state_dimension`:
+
+{/* capture: python input-validation snippet 2 of 3 (ValueError text) | cobre-python 0.17.0 (PyPI wheel sha256 c0b117d2) | python 3.12.3 | case: none; context: metadata and stage_cuts of the round-trip example */}
+
+```python
+stage_states = [
+    {
+        "stage_id": 0,
+        "state_dimension": 3,
+        "count": 2,
+        "data": [1.0, 2.0, 3.0],  # length 3, but count * state_dimension = 6
+    }
+]
+
+cobre.write_policy_checkpoint(
+    "output/policy", stage_cuts, metadata, stage_states=stage_states
+)
+# ValueError: stage 0: states data has 3 entries, expected count*state_dimension=6
+```
+
+A cut carrying `inflow_lag_coefficients` with no `inflow_lag_depth` passed to
+reserve the lag slots (keyed by **integer** hydro id; list index `0` = lag
+depth 1):
+
+{/* capture: python input-validation snippet 3 of 3 (ValueError text) | cobre-python 0.17.0 (PyPI wheel sha256 c0b117d2) | python 3.12.3 | case: none; context: metadata of the round-trip example */}
+
+```python
+stage_cuts = [
+    {
+        "stage_id": 0,
+        "state_dimension": 3,
+        "capacity": 10,
+        "cuts": [
+            {
+                "cut_id": 1,
+                "slot_index": 0,
+                "iteration": 1,
+                "forward_pass_index": 0,
+                "intercept": 42.0,
+                "coefficients": [1.0, 2.0, 3.0],
+                "is_active": True,
+                "inflow_lag_coefficients": {0: [0.5]},
+            },
+        ],
+    }
+]
+
+cobre.write_policy_checkpoint("output/policy", stage_cuts, metadata)
+# ValueError: stage 0 cut 1: inflow_lag_coefficients supplied without inflow_lag_depth; pass inflow_lag_depth=N to reserve the lag slots
+```
 
 ---
 
@@ -518,4 +1009,4 @@ contribute to the lower bound.
 - **Theory:** [Cut Management](/math/cut-management/) — the cut pool that a policy checkpoint persists across runs.
 - [Configuration](/running/configuration/) — every `config.json` field documented
 - [Running Studies](/running/running-studies/) — common workflows including training-only and simulation-only runs
-- [Output Format](/reference/output-format/) — detailed description of every output file
+- [Output Format](/reference/output/) — detailed description of every output file

@@ -1,0 +1,435 @@
+---
+title: Training Output
+description: "Schemas of the training/ files cobre run writes: the convergence log, timing and solver statistics, the retry histogram, the scaling report, cut-selection statistics and the output dictionaries."
+---
+
+Each section below gives the schema of a file or directory that `cobre run`
+writes under `training/`, with the four output dictionary files last; the
+`training/metadata.json`, `training/model_provenance.json` and
+`training/hydro_models.json` schemas are on the Metadata Files and Hydro Model
+Artifacts pages.
+
+## `training/convergence.parquet`
+
+Per-iteration convergence log. One row per training iteration. 15 columns.
+
+**Methodology:** [Stopping Rules](/math/stopping-rules) · [Upper Bound Evaluation](/math/upper-bound-evaluation)
+
+| Name               | Type    | Nullable | Units | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| ------------------ | ------- | -------- | ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `iteration`        | Int32   | No       | —     | Training iteration number (1-based).                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| `lower_bound`      | Float64 | No       | —     | Lower bound on the risk-adjusted cost after this iteration: the first stage's risk-adjusted value over its openings with the current cuts ([lower bound](/math/upper-bound-evaluation/#lower-bound)).                                                                                                                                                                                                                                                        |
+| `upper_bound`      | Float64 | No       | —     | Upper bound for this iteration. Under a statistical (sampled) forward pass, the mean over forward-pass scenarios. Under an exact (enumerated) forward pass, the path-weighted expected cost of the enumerated paths; when the risk measure is the same CVaR at every stage, the root value of the nested risk-adjusted recursion instead (see [Cut Management — when bounds and certificates hold](/math/cut-management#when-bounds-and-certificates-hold)). |
+| `upper_bound_std`  | Float64 | Yes      | —     | Sample standard deviation of this iteration's forward-pass scenario costs. `null` on every row when `upper_bound_kind` is `"exact"`.                                                                                                                                                                                                                                                                                                                         |
+| `upper_bound_kind` | Utf8    | No       | —     | Run-level upper-bound regime, the same on every row: `"exact"` under `enumerated` selection, `"statistical"` under `sampled` selection.                                                                                                                                                                                                                                                                                                                      |
+| `gap_percent`      | Float64 | Yes      | %     | Relative gap between lower and upper bounds as a percentage. `null` when the lower bound is zero or negative.                                                                                                                                                                                                                                                                                                                                                |
+| `cuts_added`       | Int32   | No       | —     | Number of new cuts added to the pool during this iteration's backward pass.                                                                                                                                                                                                                                                                                                                                                                                  |
+| `cuts_removed`     | Int32   | No       | —     | Number of cuts deactivated by the cut selection strategy in this iteration.                                                                                                                                                                                                                                                                                                                                                                                  |
+| `cuts_active`      | Int64   | No       | —     | Total number of active cuts across all stages at the end of this iteration.                                                                                                                                                                                                                                                                                                                                                                                  |
+| `time_forward_ms`  | Int64   | No       | ms    | Wall-clock time spent in the forward pass, in milliseconds.                                                                                                                                                                                                                                                                                                                                                                                                  |
+| `time_backward_ms` | Int64   | No       | ms    | Wall-clock time spent in the backward pass, in milliseconds.                                                                                                                                                                                                                                                                                                                                                                                                 |
+| `time_total_ms`    | Int64   | No       | ms    | Total wall-clock time for this iteration, in milliseconds.                                                                                                                                                                                                                                                                                                                                                                                                   |
+| `forward_passes`   | Int32   | No       | —     | Number of forward-pass scenario trajectories evaluated in this iteration.                                                                                                                                                                                                                                                                                                                                                                                    |
+| `lp_solves`        | Int64   | No       | —     | Total number of LP solves across all stages and forward passes in this iteration.                                                                                                                                                                                                                                                                                                                                                                            |
+| `mean_rows_in_lp`  | Float64 | No       | —     | Mean number of resident cut rows loaded per LP solve under dynamic cut selection in this iteration; `0` when no dynamic cut selection ran.                                                                                                                                                                                                                                                                                                                   |
+
+---
+
+## `training/timing/iterations.parquet`
+
+Per-iteration wall-clock timing breakdown by phase. 19 columns. Emitted as one
+row per `(iteration, rank)` for rank-only sequential values (`worker_id` is
+NULL) and one row per `(iteration, rank, worker_id)` for per-worker
+parallel-region values; `SUM(col) GROUP BY iteration` recovers the
+per-iteration total for each timing column. `rank` and `worker_id` are nullable
+Int32; the 16 timing columns are non-nullable.
+
+The top-level non-overlapping phases are: `forward_wall_ms`,
+`backward_wall_ms`, `cut_selection_ms`, `mpi_allreduce_ms`, and
+`lower_bound_ms`. The backward parallel overhead is decomposed into three
+components: `bwd_setup_ms` (aggregate non-solve work summed across
+workers), `bwd_load_imbalance_ms` (max-worker minus average-worker),
+and `bwd_scheduling_overhead_ms` (parallel wall minus max-worker). The
+forward pass carries the same three sub-components with `fwd_` prefix.
+The backward phase also has the sub-components `cut_sync_ms`,
+`state_exchange_ms`, and `cut_batch_build_ms`. The residual not
+attributed to any phase is `overhead_ms`.
+
+| Name                         | Type  | Nullable | Units | Description                                                                                                                                                                                   |
+| ---------------------------- | ----- | -------- | ----- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `iteration`                  | Int32 | No       | —     | Training iteration number (1-based).                                                                                                                                                          |
+| `rank`                       | Int32 | Yes      | —     | MPI rank that produced this row. Nullable in the schema; always set in written output.                                                                                                        |
+| `worker_id`                  | Int32 | Yes      | —     | Worker index within the rank's thread pool. NULL for rank-only sequential rows.                                                                                                               |
+| `forward_wall_ms`            | Int64 | No       | ms    | Wall-clock time for the forward pass (all stages and scenarios).                                                                                                                              |
+| `backward_wall_ms`           | Int64 | No       | ms    | Wall-clock time for the backward pass (all stages and trial points).                                                                                                                          |
+| `cut_selection_ms`           | Int64 | No       | ms    | Time spent running the cut selection pass.                                                                                                                                                    |
+| `mpi_allreduce_ms`           | Int64 | No       | ms    | Time spent in the forward-pass bound synchronization: an allgatherv of the per-trajectory costs across ranks and their canonical-order reduction.                                             |
+| `cut_sync_ms`                | Int64 | No       | ms    | Time spent in per-stage cut sync allgatherv (sub-component of backward).                                                                                                                      |
+| `lower_bound_ms`             | Int64 | No       | ms    | Time spent evaluating the lower bound (stage-0 LP solves for all openings).                                                                                                                   |
+| `state_exchange_ms`          | Int64 | No       | ms    | Time spent in state exchange allgatherv (sub-component of backward).                                                                                                                          |
+| `cut_batch_build_ms`         | Int64 | No       | ms    | Time spent assembling cut row batches (sub-component of backward).                                                                                                                            |
+| `bwd_setup_ms`               | Int64 | No       | ms    | Aggregate non-solve work (model load, bound updates and basis installation) summed across backward workers, in ms. May exceed `backward_wall_ms`; it is a cost metric, not a wall-time slice. |
+| `bwd_load_imbalance_ms`      | Int64 | No       | ms    | Backward load imbalance: `max_worker_total - avg_worker_total`, clamped to zero.                                                                                                              |
+| `bwd_scheduling_overhead_ms` | Int64 | No       | ms    | Backward scheduling overhead: `parallel_wall - max_worker_total`, clamped to zero.                                                                                                            |
+| `fwd_setup_ms`               | Int64 | No       | ms    | Aggregate non-solve work summed across forward workers, in ms. Same aggregate semantics as `bwd_setup_ms`.                                                                                    |
+| `fwd_load_imbalance_ms`      | Int64 | No       | ms    | Forward load imbalance: `max_worker_total - avg_worker_total`, clamped to zero.                                                                                                               |
+| `fwd_scheduling_overhead_ms` | Int64 | No       | ms    | Forward scheduling overhead: `parallel_wall - max_worker_total`, clamped to zero.                                                                                                             |
+| `overhead_ms`                | Int64 | No       | ms    | Residual wall-clock time not attributed to any of the above phases.                                                                                                                           |
+| `lazy_scoring_ms`            | Int64 | No       | ms    | Per-worker time spent in lazy candidate scoring inside the lazy-selection solve. A sub-component of the forward/backward phases (not a top-level addend); `0` when the lazy path is unused.   |
+
+:::note[Column invariant]
+`load_imbalance + scheduling` holds within `parallel_wall` for both the
+forward and backward triples (`fwd_*` / `bwd_*`); `setup_ms` is a separate
+aggregate-across-workers cost and is not bounded by wall time.
+:::
+
+---
+
+## `training/solver/iterations.parquet`
+
+Per-iteration, per-phase, per-stage, per-opening, per-worker LP solver
+statistics for diagnosing conditioning issues and retry behavior. One row per
+`(iteration, phase, stage_id, opening_index, rank, worker_id)` tuple on the
+backward phase (per-opening, per-worker); one row per `(iteration, phase,
+stage_id)` tuple on the forward, `lower_bound`, and `simulation` phases. A
+training row fills `iteration` and leaves `scenario_id` NULL; a simulation row
+fills `scenario_id` and leaves `iteration` NULL. `stage_id` is NULL on
+`lower_bound` rows (no stage); `opening_index` and `worker_id` are NULL
+wherever the row has no per-opening/per-worker dimension, and `rank` is NULL on
+a simulation row only. 19 columns. `iteration`, `scenario_id`, `stage_id`,
+`opening_index`, `rank`, and `worker_id` are nullable Int32; all other columns
+are non-nullable.
+
+**Methodology:** [LP Warm-Start](/math/lp-warm-start)
+
+| Name                         | Type    | Nullable | Units | Description                                                                                                                                                                                                                       |
+| ---------------------------- | ------- | -------- | ----- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `iteration`                  | Int32   | Yes      | —     | Training iteration (1-based). NULL on a simulation row (`scenario_id` is filled instead).                                                                                                                                         |
+| `scenario_id`                | Int32   | Yes      | —     | Simulation scenario id (0-based). NULL on a training row (`iteration` is filled instead).                                                                                                                                         |
+| `phase`                      | Utf8    | No       | —     | `"forward"`, `"backward"`, `"lower_bound"`, or `"simulation"`.                                                                                                                                                                    |
+| `stage_id`                   | Int32   | Yes      | —     | Declared stage id (from `stages.json`). NULL on `lower_bound` rows.                                                                                                                                                               |
+| `opening_index`              | Int32   | Yes      | —     | Opening (noise realization) index within the stage for backward rows. NULL for forward, `lower_bound`, `simulation`.                                                                                                              |
+| `rank`                       | Int32   | Yes      | —     | MPI rank that produced this row. NULL on a simulation row.                                                                                                                                                                        |
+| `worker_id`                  | Int32   | Yes      | —     | Worker index within the rank's thread pool. NULL for rows without a per-worker dimension.                                                                                                                                         |
+| `lp_solves`                  | UInt32  | No       | —     | Number of LP solves in this row's bucket.                                                                                                                                                                                         |
+| `lp_successes`               | UInt32  | No       | —     | Number of solves that returned optimal.                                                                                                                                                                                           |
+| `lp_retries`                 | UInt32  | No       | —     | Number of solves that required at least one retry.                                                                                                                                                                                |
+| `lp_failures`                | UInt32  | No       | —     | Number of solves that failed after exhausting all retry levels.                                                                                                                                                                   |
+| `retry_attempts`             | UInt32  | No       | —     | Total retry attempts across all LP solves in this bucket.                                                                                                                                                                         |
+| `basis_offered`              | UInt32  | No       | —     | Number of solves offered a starting basis (warm-start attempts).                                                                                                                                                                  |
+| `basis_consistency_failures` | UInt32  | No       | —     | Number of warm-start solves whose basis the solver rejected as inconsistent with the model. A basis with fewer rows than the model is rejected before it reaches the solver; such a solve counts here but not in `basis_offered`. |
+| `simplex_iterations`         | UInt64  | No       | —     | Total simplex iterations (or IPM iterations) across all solves.                                                                                                                                                                   |
+| `solve_time_ms`              | Float64 | No       | ms    | Cumulative LP solve wall-clock time in milliseconds.                                                                                                                                                                              |
+| `load_model_time_ms`         | Float64 | No       | ms    | Cumulative time spent loading the stage model into the solver, in milliseconds.                                                                                                                                                   |
+| `set_bounds_time_ms`         | Float64 | No       | ms    | Cumulative time spent updating row and column bounds, in milliseconds.                                                                                                                                                            |
+| `basis_set_time_ms`          | Float64 | No       | ms    | Cumulative time spent installing bases for warm-start, in milliseconds.                                                                                                                                                           |
+
+---
+
+## `training/solver/retry_histogram.parquet`
+
+Per-level retry success counts, normalized from the solver iterations
+table. One row per `(iteration, phase, stage_id, retry_level)` tuple where
+the count is positive (sparse encoding). Rows cover `lower_bound` solves and, under `enumerated` training selection,
+`backward` solves. `forward` solves, and `backward` solves under `sampled`
+selection, add no rows; their retries appear only in `lp_retries` and
+`retry_attempts` of
+[`training/solver/iterations.parquet`](#trainingsolveriterationsparquet).
+5 columns. All non-nullable except `stage_id`.
+
+| Name          | Type   | Nullable | Units | Description                                                                                                                                                                                                                                    |
+| ------------- | ------ | -------- | ----- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `iteration`   | UInt32 | No       | —     | Training iteration number (1-based).                                                                                                                                                                                                           |
+| `phase`       | Utf8   | No       | —     | Algorithm phase: `"backward"` or `"lower_bound"`.                                                                                                                                                                                              |
+| `stage_id`    | Int32  | Yes      | —     | Declared stage id (from `stages.json`) on `backward` rows; `null` on `lower_bound` rows.                                                                                                                                                       |
+| `retry_level` | UInt32 | No       | —     | Retry escalation level: `0` to `11` under HiGHS; the CLP backend records no per-level counts, so a CLP run writes no rows. See the [Solver Safeguards](/running/performance/#solver-safeguards) section of the Performance Accelerators guide. |
+| `count`       | UInt64 | No       | —     | Number of LP solves recovered at this level. Counts are not summed across ranks or workers.                                                                                                                                                    |
+
+---
+
+## `training/scaling_report.json`
+
+LP prescaling diagnostics written once after stage template construction.
+Documents the coefficient ranges before and after column/row scaling for
+each stage, plus the applied scale-factor distributions. Useful for
+diagnosing numerical conditioning issues.
+
+**Methodology:** [LP Layout and Scaling](/math/lp-layout-and-scaling)
+
+The JSON is a single top-level object:
+
+```json
+{
+  "cost_scale_factor": 1000000.0,
+  "stages": [
+    {
+      "stage_id": 0,
+      "dimensions": { "num_cols": 128, "num_rows": 96, "num_nz": 412 },
+      "pre_scaling": {
+        "matrix_coeff_range": [0.001, 5000.0],
+        "matrix_coeff_ratio": 5000000.0,
+        "objective_range": [1.0, 250000.0],
+        "objective_ratio": 250000.0
+      },
+      "post_scaling": {
+        "matrix_coeff_range": [0.5, 4.2],
+        "matrix_coeff_ratio": 8.4,
+        "objective_range": [0.8, 3.1],
+        "objective_ratio": 3.875
+      },
+      "col_scale": { "min": 0.02, "max": 48.0, "median": 1.0, "count": 128 },
+      "row_scale": { "min": 0.1, "max": 12.0, "median": 1.0, "count": 96 }
+    }
+  ],
+  "summary": {
+    "worst_pre_scaling_matrix_ratio": 5000000.0,
+    "worst_post_scaling_matrix_ratio": 8.4,
+    "improvement_factor": 595238.1,
+    "num_stages": 1
+  }
+}
+```
+
+**Top-level fields:**
+
+| Name                | Type   | Nullable | Units | Description                                                                |
+| ------------------- | ------ | -------- | ----- | -------------------------------------------------------------------------- |
+| `cost_scale_factor` | number | No       | —     | Cost scale factor applied to objective coefficients during template build. |
+| `stages`            | array  | No       | —     | One entry per stage. See "`stages[]` fields" below.                        |
+| `summary`           | object | No       | —     | Cross-stage summary. See "`summary` fields" below.                         |
+
+**`stages[]` fields:**
+
+| Name                    | Type    | Nullable | Units | Description                                                                                      |
+| ----------------------- | ------- | -------- | ----- | ------------------------------------------------------------------------------------------------ |
+| `stages[].stage_id`     | integer | No       | —     | 0-based stage position in the study (not the declared stage id).                                 |
+| `stages[].dimensions`   | object  | No       | —     | LP dimensions for this stage's template. See "`dimensions` fields" below.                        |
+| `stages[].pre_scaling`  | object  | No       | —     | Coefficient ranges before column/row scaling. See "`pre_scaling` / `post_scaling` fields" below. |
+| `stages[].post_scaling` | object  | No       | —     | Coefficient ranges after column/row (and cost) scaling. Same shape as `pre_scaling`.             |
+| `stages[].col_scale`    | object  | No       | —     | Summary of the column scale-factor vector. See "`col_scale` / `row_scale` fields" below.         |
+| `stages[].row_scale`    | object  | No       | —     | Summary of the row scale-factor vector. Same shape as `col_scale`.                               |
+
+**`dimensions` fields:**
+
+| Name                           | Type    | Nullable | Units | Description                                         |
+| ------------------------------ | ------- | -------- | ----- | --------------------------------------------------- |
+| `stages[].dimensions.num_cols` | integer | No       | —     | Number of columns (decision variables).             |
+| `stages[].dimensions.num_rows` | integer | No       | —     | Number of structural rows (constraints).            |
+| `stages[].dimensions.num_nz`   | integer | No       | —     | Number of nonzero entries in the constraint matrix. |
+
+**`pre_scaling` / `post_scaling` fields:**
+
+| Name                                      | Type   | Nullable | Units | Description                                                                               |
+| ----------------------------------------- | ------ | -------- | ----- | ----------------------------------------------------------------------------------------- |
+| `stages[].pre_scaling.matrix_coeff_range` | array  | No       | —     | Array of two numbers: `[min, max]` absolute value over nonzero constraint-matrix entries. |
+| `stages[].pre_scaling.matrix_coeff_ratio` | number | No       | —     | Ratio of the largest to smallest absolute nonzero matrix coefficient (`max / min`).       |
+| `stages[].pre_scaling.objective_range`    | array  | No       | —     | Array of two numbers: `[min, max]` absolute value over nonzero objective coefficients.    |
+| `stages[].pre_scaling.objective_ratio`    | number | No       | —     | Ratio of the largest to smallest absolute nonzero objective coefficient (`max / min`).    |
+
+**`col_scale` / `row_scale` fields:**
+
+| Name                        | Type    | Nullable | Units | Description                                                                       |
+| --------------------------- | ------- | -------- | ----- | --------------------------------------------------------------------------------- |
+| `stages[].col_scale.min`    | number  | No       | —     | Minimum scale factor.                                                             |
+| `stages[].col_scale.max`    | number  | No       | —     | Maximum scale factor.                                                             |
+| `stages[].col_scale.median` | number  | No       | —     | Median scale factor.                                                              |
+| `stages[].col_scale.count`  | integer | No       | —     | Number of scale factors (`num_cols` for `col_scale`, `num_rows` for `row_scale`). |
+
+**`summary` fields:**
+
+| Name                                      | Type    | Nullable | Units | Description                                                         |
+| ----------------------------------------- | ------- | -------- | ----- | ------------------------------------------------------------------- |
+| `summary.worst_pre_scaling_matrix_ratio`  | number  | No       | —     | Maximum pre-scaling matrix coefficient ratio across all stages.     |
+| `summary.worst_post_scaling_matrix_ratio` | number  | No       | —     | Maximum post-scaling matrix coefficient ratio across all stages.    |
+| `summary.improvement_factor`              | number  | No       | —     | `worst_pre_scaling_matrix_ratio / worst_post_scaling_matrix_ratio`. |
+| `summary.num_stages`                      | integer | No       | —     | Number of stages.                                                   |
+
+---
+
+## `training/cut_selection/iterations.parquet`
+
+Per-stage cut selection statistics. One row per `(iteration, stage_id)` pair,
+written only at iterations where selection ran. 10 columns.
+
+**Methodology:** [Cut Management](/math/cut-management)
+
+| Name                  | Type    | Nullable | Units | Description                                                                       |
+| --------------------- | ------- | -------- | ----- | --------------------------------------------------------------------------------- |
+| `iteration`           | Int32   | No       | —     | Training iteration number (1-based).                                              |
+| `stage_id`            | Int32   | No       | —     | Declared stage id (from `stages.json`).                                           |
+| `cuts_populated`      | Int32   | No       | —     | Total cut slots containing cuts (active + inactive).                              |
+| `cuts_active_before`  | Int32   | No       | —     | Active cuts before this iteration's selection pass.                               |
+| `cuts_deactivated`    | Int32   | No       | —     | Cuts deactivated by the selection pass.                                           |
+| `cuts_reactivated`    | Int32   | No       | —     | Cuts reactivated by the selection pass.                                           |
+| `cuts_active_after`   | Int32   | No       | —     | Active cuts after the selection pass.                                             |
+| `selection_time_ms`   | Float64 | No       | ms    | Wall-clock time of this stage's selection pass.                                   |
+| `budget_evicted`      | Int32   | Yes      | —     | Cuts evicted by the budget pass. `null` when `max_active_per_stage` is not set.   |
+| `active_after_budget` | Int32   | Yes      | —     | Active cuts after the budget pass. `null` when `max_active_per_stage` is not set. |
+
+---
+
+## `training/dictionaries/`
+
+Four self-documenting files that allow output Parquet files to be interpreted
+without reference to the original input case. All files are written atomically.
+
+### `codes.json`
+
+Static mapping from integer codes to human-readable labels for all categorical
+fields used in Parquet output. The same mapping applies for the lifetime of a
+release (the version field tracks breaking changes).
+
+```json
+{
+  "version": "1.0",
+  "generated_at": "<timestamp>",
+  "operative_state": {
+    "0": "deactivated",
+    "1": "maintenance",
+    "2": "operating",
+    "3": "saturated"
+  },
+  "storage_binding": {
+    "0": "none",
+    "1": "below_minimum",
+    "2": "above_maximum",
+    "3": "both"
+  },
+  "contract_type": {
+    "0": "import",
+    "1": "export"
+  },
+  "entity_type": {
+    "0": "hydro",
+    "1": "thermal",
+    "2": "bus",
+    "3": "line",
+    "4": "pumping_station",
+    "5": "contract",
+    "7": "non_controllable",
+    "8": "hydro_unit_group"
+  },
+  "bound_type": {
+    "0": "storage_min",
+    "1": "storage_max",
+    "2": "turbined_min",
+    "3": "turbined_max",
+    "4": "outflow_min",
+    "5": "outflow_max",
+    "6": "generation_min",
+    "7": "generation_max",
+    "8": "flow_min",
+    "9": "flow_max"
+  }
+}
+```
+
+### `entities.csv`
+
+One row per entity across all entity types, plus one row per hydro unit group
+(entity type code `8`). Columns:
+
+| Name               | Type    | Nullable | Units | Description                                                                                                                                                                                                                                                                                         |
+| ------------------ | ------- | -------- | ----- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `entity_type_code` | integer | No       | —     | Integer entity type code (see `codes.json` `entity_type` mapping).                                                                                                                                                                                                                                  |
+| `entity_id`        | integer | No       | —     | Integer entity ID matching the `*_id` column in the corresponding simulation Parquet file. For a hydro unit group row, this is the group's `id`, which is scoped to its plant, not global.                                                                                                          |
+| `name`             | string  | No       | —     | Human-readable entity name from the case input files. A hydro unit group row's name is `"{hydro_id}/{group_name}"`, plant-qualified since the group id alone is not globally unique.                                                                                                                |
+| `bus_id`           | integer | No       | —     | Integer bus ID to which this entity is connected. For buses, equals `entity_id`. `-1` for a line (connects two buses) and for a hydro (the plant's unit groups own the bus association; a split plant has no single owning bus) — a hydro unit group row carries that group's own `bus_id` instead. |
+| `system_id`        | integer | No       | —     | System partition index. Always `0` (single-system cases).                                                                                                                                                                                                                                           |
+
+Rows are ordered by `entity_type_code` ascending, then by canonical entity
+order within each type (`operational_start_date`, then `entity_id`) — except
+type code `8`: a group's `entity_id` is plant-scoped, so those rows order
+plant-major (canonical hydro order), then group-minor (each plant's own
+id-sorted `unit_groups` order).
+
+### `variables.csv`
+
+One row per column of every output schema that carries a `variables.csv` label.
+The `file` column holds that label, not a file path; the label table below maps
+each label to its output file. Documents every column's name, type, unit of
+measure, description, and nullability. Useful for building generic result
+readers that do not hard-code column names.
+
+| Name          | Type   | Nullable | Units | Description                                                                                                                                                   |
+| ------------- | ------ | -------- | ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `file`        | string | No       | —     | Label of the output schema this column belongs to (e.g. `"hydros"`, `"costs"`); not a file path. The label table lists the files for each label.              |
+| `column`      | string | No       | —     | Exact column name as it appears in the Parquet file.                                                                                                          |
+| `type`        | string | No       | —     | Lowercase column type token: `i8`, `i32`, `i64`, `u32`, `u64`, `f64`, `bool`, `string`, `date32`, or `unknown`.                                               |
+| `unit`        | string | No       | —     | Physical unit, spelled in ASCII: `""` for dimensionless, code, boolean and id columns, or one of `$`, `$/hm3`, `MW`, `MW/(m3/s)`, `MWh`, `hm3`, `m3/s`, `ms`. |
+| `description` | string | No       | —     | Short description of the column's meaning.                                                                                                                    |
+| `nullable`    | string | No       | —     | `"true"` or `"false"`.                                                                                                                                        |
+
+The table below maps each `file` label to its output file or directory.
+
+| Label                       | Output file                                                                                    |
+| --------------------------- | ---------------------------------------------------------------------------------------------- |
+| `costs`                     | `simulation/costs/`                                                                            |
+| `hydros`                    | `simulation/hydros/`                                                                           |
+| `hydro_bus_generation`      | `simulation/hydro_bus_generation/`                                                             |
+| `thermals`                  | `simulation/thermals/`                                                                         |
+| `exchanges`                 | `simulation/exchanges/`                                                                        |
+| `buses`                     | `simulation/buses/`                                                                            |
+| `pumping_stations`          | `simulation/pumping_stations/`                                                                 |
+| `contracts`                 | `simulation/contracts/`                                                                        |
+| `non_controllables`         | `simulation/non_controllables/`                                                                |
+| `inflow_lags`               | `simulation/inflow_lags/`                                                                      |
+| `in_transit`                | `simulation/in_transit/`                                                                       |
+| `transit_seed`              | `simulation/transit_seed/`                                                                     |
+| `generic_violations`        | `simulation/violations/generic/`                                                               |
+| `paths`                     | `simulation/paths.parquet`                                                                     |
+| `scenario_summary`          | `simulation/scenario_summary.parquet`                                                          |
+| `convergence`               | `training/convergence.parquet`                                                                 |
+| `iteration_timing`          | `training/timing/iterations.parquet`                                                           |
+| `rank_timing`               | No output file: `cobre run` writes no per-rank timing file.                                    |
+| `cut_selection`             | `training/cut_selection/iterations.parquet`                                                    |
+| `solver_iterations`         | `training/solver/iterations.parquet` and `simulation/solver/iterations.parquet`                |
+| `retry_histogram`           | `training/solver/retry_histogram.parquet` and `simulation/solver/retry_histogram.parquet`      |
+| `hydro_energy_productivity` | No output file: its columns are those of the input `system/hydro_energy_productivity.parquet`. |
+
+`variables.csv` has no rows for `simulation/anticipated_lanes/`,
+`anticipated/fixed_deliveries.parquet`, `generic_constraints/resolved_echo.parquet`,
+`training/dictionaries/bounds.parquet`, or the Parquet files under `hydro_models/`
+and `stochastic/`.
+
+In `variables.csv`, the `unit` cell for the columns `spot_price` (`buses`) and
+`pumped_flow_m3s` (`pumping_stations`) reads `MW`, and for `pumped_volume_hm3`
+(`pumping_stations`) reads `m3/s`. For these three columns, the column name and
+the `buses` and `pumping_stations` simulation tables give the unit: monetary units per MWh, m³/s, and
+hm³.
+
+### `bounds.parquet`
+
+Per-entity, per-stage resolved bounds: each row holds the entity's value after
+stage overrides, not a penalty. Each (entity, stage, bound type) has one stage-level row with
+`block_id` null, plus one row with `block_id` set for each block that a per-block override
+resolves. Buses and non-controllable sources have no rows.
+The list below gives each entity family, named by its `codes.json`
+`entity_type` label, with its bound types:
+
+- `hydro`: `storage_min`, `storage_max`, `turbined_min`, `turbined_max`,
+  `outflow_min`, `outflow_max`, `generation_min`, `generation_max`. The
+  stage-level `outflow_max` row exists only for a plant that has a maximum
+  outflow. Block rows cover the turbined, outflow, and generation bounds.
+- `thermal`: `generation_min`, `generation_max`, with stage-level and block rows.
+- `line`: `flow_min`, always `0`, and `flow_max`, the direct capacity. Block rows
+  cover the direct capacity only; the reverse capacity is not reported.
+- `pumping_station` and `contract`: `flow_min`, `flow_max`, with stage-level and
+  block rows.
+- `hydro_unit_group`: `turbined_min`, `turbined_max`, `generation_min`,
+  `generation_max`, with stage-level and block rows. `hydro_id` holds the
+  owning plant's id, because a group's `entity_id` is plant-scoped.
+
+Only the ten bound types in `codes.json` are written. The line reverse
+capacity, the contract price, and the hydro diversion maximum have no rows, at
+the stage level or per block.
+
+| Name               | Type    | Nullable | Units | Description                                                                                                                       |
+| ------------------ | ------- | -------- | ----- | --------------------------------------------------------------------------------------------------------------------------------- |
+| `entity_type_code` | Int8    | No       | —     | Entity type code (see `codes.json`).                                                                                              |
+| `entity_id`        | Int32   | No       | —     | Entity ID.                                                                                                                        |
+| `hydro_id`         | Int32   | Yes      | —     | Owning plant id on a hydro unit group row (`entity_type_code` `8`), whose `entity_id` is plant-scoped; `null` on every other row. |
+| `stage_id`         | Int32   | No       | —     | Declared stage id from `stages.json` (not a position).                                                                            |
+| `block_id`         | Int32   | Yes      | —     | 0-based block index on a per-block override row; `null` on the stage-level row.                                                   |
+| `bound_type_code`  | Int8    | No       | —     | Bound type code (see `codes.json` `bound_type` mapping).                                                                          |
+| `bound_value`      | Float64 | No       | —     | Resolved bound value in the bound's natural unit.                                                                                 |

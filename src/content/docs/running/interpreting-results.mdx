@@ -3,7 +3,7 @@ title: Convergence & Diagnostics
 description: Practical analysis patterns for assessing convergence, extracting generation and cost statistics, and troubleshooting simulation results.
 ---
 
-The [Output Format Reference](/reference/output-format/) documents what each
+The [Output Format](/reference/output/) documents what each
 output file contains. This page goes one level deeper: it provides practical
 analysis patterns for answering domain questions from the data. It assumes you
 are comfortable loading Parquet files in your preferred tool.
@@ -15,59 +15,196 @@ common problems from the output data.
 
 ---
 
+## Loading Results in Python
+
+The `cobre.results` module of `cobre-python` reads a run's output directory
+into Python. [Python Quickstart](/getting-started/python-quickstart/) covers
+the installation. The snippets below read the output of
+`cobre run my_study --output results`, where `my_study` is the 1dtoy template
+from `cobre init --template 1dtoy my_study`, and run from the directory that
+holds `my_study/` and `results/`.
+
+`load_convergence` returns one dict per iteration, keyed by the columns of
+`training/convergence.parquet`, which
+[Reading Convergence History](#reading-convergence-history) lists.
+`load_convergence_arrow` returns the same table as a `pyarrow.Table`
+(`pyarrow` must be installed), which `polars.from_arrow` consumes.
+
+```python
+import cobre
+import polars as pl
+
+last = cobre.results.load_convergence("results")[-1]
+for key in ("iteration", "lower_bound", "upper_bound", "gap_percent"):
+    print(f"{key}: {last[key]:.6g}")
+
+conv = pl.from_arrow(cobre.results.load_convergence_arrow("results"))
+print(conv.select("iteration", "upper_bound", "upper_bound_kind", "gap_percent").tail(1))
+```
+
+{/* capture: python loading convergence (cobre.results) | cobre-python 0.17.0 (PyPI wheel sha256 c0b117d2) | python 3.12.3 | case: output of cobre run (cobre-cli sha256 23916b46) on 1dtoy (cobre init --template 1dtoy) */}
+
+```text
+iteration: 128
+lower_bound: 1.55955e+07
+upper_bound: 579592
+gap_percent: -96.2836
+shape: (1, 4)
+┌───────────┬───────────────┬──────────────────┬─────────────┐
+│ iteration ┆ upper_bound   ┆ upper_bound_kind ┆ gap_percent │
+│ ---       ┆ ---           ┆ ---              ┆ ---         │
+│ i32       ┆ f64           ┆ str              ┆ f64         │
+╞═══════════╪═══════════════╪══════════════════╪═════════════╡
+│ 128       ┆ 579592.198622 ┆ statistical      ┆ -96.283598  │
+└───────────┴───────────────┴──────────────────┴─────────────┘
+```
+
+The upper bound is the mean cost of the latest iteration's sampled forward
+passes (`upper_bound_kind` is `"statistical"`), so it can sit below the lower
+bound, as the negative `gap_percent` shows. [Reading the gap from
+`training/metadata.json`](#reading-the-gap-from-trainingmetadatajson)
+explains how to read a sampled gap.
+
+`load_simulation_arrow` reads one `simulation/` entity type, `hydros` here, as
+a single `pyarrow.Table` over all scenarios, ordered by `scenario_id`. The
+table names a plant by `hydro_id` only; `system/hydros.json` in the case
+directory pairs each plant's `id` with its `name`. The snippet joins the two,
+sums generation over blocks within each (`scenario_id`, `stage_id`,
+`hydro_id`) and averages across scenarios per plant name and stage. That is the
+order of aggregation in the Table grain note of
+[Analyzing Simulation Results](#analyzing-simulation-results). The template has
+one block per stage, so the block sum leaves the values unchanged here.
+
+```python
+import json
+
+import cobre
+import polars as pl
+
+with open("my_study/system/hydros.json") as f:
+    names = pl.DataFrame(
+        [{"hydro_id": h["id"], "name": h["name"]} for h in json.load(f)["hydros"]]
+    )
+
+hydros = pl.from_arrow(
+    cobre.results.load_simulation_arrow("results", entity_type="hydros")
+)
+mean_generation = (
+    hydros
+    .group_by(["scenario_id", "stage_id", "hydro_id"])
+    .agg(pl.col("generation_mwh").sum())
+    .join(names, on="hydro_id")
+    .group_by(["name", "stage_id"])
+    .agg(pl.col("generation_mwh").mean().alias("mean_generation_mwh"))
+    .sort(["name", "stage_id"])
+)
+print(mean_generation)
+```
+
+{/* capture: python loading simulation with plant names (cobre.results) | cobre-python 0.17.0 (PyPI wheel sha256 c0b117d2) | python 3.12.3 | case: output of cobre run (cobre-cli sha256 23916b46) on 1dtoy (cobre init --template 1dtoy) */}
+
+```text
+shape: (4, 3)
+┌──────┬──────────┬─────────────────────┐
+│ name ┆ stage_id ┆ mean_generation_mwh │
+│ ---  ┆ ---      ┆ ---                 │
+│ str  ┆ i32      ┆ f64                 │
+╞══════╪══════════╪═════════════════════╡
+│ UHE1 ┆ 0        ┆ 33480.0             │
+│ UHE1 ┆ 1        ┆ 31542.464448        │
+│ UHE1 ┆ 2        ┆ 34696.161217        │
+│ UHE1 ┆ 3        ┆ 33794.388576        │
+└──────┴──────────┴─────────────────────┘
+```
+
+`load_simulation` returns the same rows as Python dicts, a list for one
+`entity_type` or a dict of lists keyed by entity type without one, which suits
+small reads.
+
+The `hydro_id` values are the ids declared in the case's `system/hydros.json`.
+For a case converted from another planning tool, the converter writes `conversion_manifest.json` into
+the converted case directory, beside `config.json`, as its provenance record:
+the converter version, the source directory, the input-file hashes and the
+entity counts. How the converted entity ids relate to the source model's
+plant codes is on [Converting an existing case](/running/case-conversion/).
+
+---
+
 ## Convergence Diagnostics
 
 ### Reading the gap from `training/metadata.json`
 
 `training/metadata.json` is the first file to check after any run — it is the
 JSON run summary, not to be confused with the binary `policy/manifest.bin`
-checkpoint header. The key fields for convergence assessment are:
+checkpoint header. The key fields for convergence assessment are the
+`iterations` and `convergence` objects. The excerpt below is from a `cobre run`
+of the 1dtoy template:
+
+{/* capture: excerpt of training/metadata.json after cobre run | cobre   v0.17.0 | binary: cobre-cli sha256 23916b46 | case: 1dtoy (cobre init --template 1dtoy) */}
 
 ```json
 {
-  "convergence": {
-    "achieved": false,
-    "final_gap_percent": 0.6,
-    "termination_reason": "iteration_limit"
-  },
   "iterations": {
     "completed": 128,
     "converged_at": null
+  },
+  "convergence": {
+    "achieved": false,
+    "final_gap_percent": -96.28359773344324,
+    "termination_reason": "iteration_limit"
   }
 }
 ```
 
 | Field                            | What to look for                                                                                         |
 | -------------------------------- | -------------------------------------------------------------------------------------------------------- |
-| `convergence.achieved`           | `true` means a stopping rule declared convergence. `false` means the run exhausted its iteration budget. |
-| `convergence.final_gap_percent`  | The gap between lower and upper bounds at termination. Smaller is better. See guidelines below.          |
-| `convergence.termination_reason` | `"iteration_limit"` is the most common; `"bound_stalling"` means the gap stopped shrinking.              |
-| `iterations.converged_at`        | Non-null only when `achieved` is `true`. Tells you how many iterations the run actually needed.          |
+| `convergence.achieved`           | `true` only when the `bound_stalling` rule stopped the run; `false` for every other termination reason, `gap` included. |
+| `convergence.final_gap_percent`  | The relative gap at termination, in percent: the upper bound minus the lower bound, relative to the lower bound. Negative when the upper bound is below the lower bound; `null` when the final lower bound is not positive. See guidelines below. |
+| `convergence.termination_reason` | The name of the stopping rule that ended the run. The values are listed under [`training/metadata.json`](/reference/output/metadata/#trainingmetadatajson). |
+| `iterations.converged_at`        | Equal to `iterations.completed` when `achieved` is `true`, `null` otherwise.                             |
 
 **Gap guidelines.** There is no universal threshold — acceptable gap depends
-on the decision being made and the study's time horizon. As rough guidance:
+on the decision being made and the study's time horizon. As rough guidance
+for a gap without sampling noise, from an enumerated forward pass
+(`bounds.final_upper_bound_kind` is `"exact"` and the risk measure is the same at every stage):
 
-- Below 1%: acceptable for most decisions. The policy cost is within 1% of the
-  theoretical optimum.
+- Below 1%: acceptable for most decisions.
 - 1% to 5%: acceptable for long-horizon planning studies where model
   uncertainty is already large.
 - Above 5%: warrants investigation. The policy may be significantly
   suboptimal.
 
+With a sampled upper bound (`bounds.final_upper_bound_kind` is `"statistical"`)
+the [gap](/math/stopping-rules/#optimality-gap) is an estimate, not a
+certificate: it compares the mean cost of the latest iteration's sampled forward
+passes with the lower bound, carries sampling noise, and is negative whenever
+that mean falls below the lower bound, as in the excerpt above. The thresholds
+above do not apply to a sampled gap, which changes sign and size from one
+iteration to the next: read a sampled run by whether the lower bound has
+plateaued ([Reading Convergence History](#reading-convergence-history)). Under an
+enumerated forward pass (`"exact"`) the upper bound is exact and the gap carries
+no sampling noise, but the gap certifies the policy only when the risk measure
+is the same at every stage;
+see [when bounds and certificates
+hold](/math/cut-management/#when-bounds-and-certificates-hold).
+
 **What to do if the gap is large:**
 
-1. Increase `limit` in the `iteration_limit` stopping rule.
-2. Increase `forward_passes` in `config.json` to reduce noise in the upper
-   bound estimate per iteration.
+1. Increase `limit` in the [`iteration_limit`](/running/configuration/#iteration_limit)
+   stopping rule.
+2. Increase `training.selection.forward_passes`
+   ([`training.selection`](/running/configuration/#trainingselection)) to reduce
+   the noise of the upper-bound estimate.
 3. Check `training/convergence.parquet` (see next section) to see whether
-   the gap is still decreasing or has plateaued.
-4. Check for solver infeasibilities: if `simulation/metadata.json` shows
-   failed scenarios, the policy may be encountering numerically difficult
-   stages.
+   the lower bound is still rising or has plateaued.
+4. Check `solve_stats.retried` and `solve_stats.failed` in
+   `training/metadata.json`: solves that needed retries point to numerically
+   difficult stages, and a solve that still fails after its retries ends
+   training with an error.
 
 ### Reading the `Time split` breakdown
 
-`cobre run` prints a live `Time split` block once training finishes,
+`cobre run` prints a `Time split` block in its training summary once training finishes,
 decomposing the total training wall time into three walls — `Forward`,
 `Backward`, and `Serial`. See the [`cobre run` Output format
 sample](/reference/cli-reference/#output-format) for the full block this
@@ -79,17 +216,15 @@ section reads. Each phase wall (`Forward`/`Backward`) carries a
 `forward_wait` or `backward_wait` — signals **load imbalance** across
 workers: some workers finish their share of trial points well before others
 and sit idle waiting for the phase to close. This is exactly what the
-`by_node` backward scheduler ([Parallel
-Execution](/running/performance/#by-node-scheduling)) exists to
+`by_node` backward scheduler ([By-node
+scheduling](/running/performance/#by-node-scheduling)) exists to
 reduce, by shrinking the work unit from a whole trial point to a `(trial
 point, opening block)` pair so an idle worker can steal finer-grained work
-instead of waiting for an entire trial point to free up. Carry the DCS
-caveat when reading this: with Dynamic Cut Selection (DCS) active — active
-by default from its `start_iteration`, iteration 2 — the backward pass
-falls back to `by_scenario` scheduling regardless of the `by_node`
-setting, so `by_node` does almost nothing from that iteration onward.
-DCS itself is opt-in (row selection is disabled unless explicitly
-configured), so this caveat only bites once DCS has been enabled.
+instead of waiting for an entire trial point to free up. Dynamic Cut
+Selection is off by default (`training.cut_selection.selection` is `null`,
+[`training.cut_selection`](/running/configuration/#trainingcut_selection));
+when its `method` is `"dynamic"`, the backward pass schedules by scenario from
+its `start_iteration` on, whatever the `by_node` setting.
 
 **Serial buckets bound achievable speedup.** `bound`, `selection`,
 `allreduce`, `sync`, and `other` do not shrink as you add ranks or threads —
@@ -116,21 +251,21 @@ the full convergence history. Its schema:
 
 | Column             | Type    | Description                                                                            |
 | ------------------ | ------- | -------------------------------------------------------------------------------------- |
-| `iteration`        | INT32   | Iteration number (1-based)                                                             |
-| `lower_bound`      | FLOAT64 | Optimizer's proven lower bound on the expected cost                                    |
-| `upper_bound`      | FLOAT64 | Upper bound estimate — mean over forward passes for a statistical bound; the exact enumerated weighted bound otherwise |
-| `upper_bound_std`  | FLOAT64 | Standard deviation of the upper bound estimate. NULL on exact-bound rows (`upper_bound_kind` = `"exact"`) |
-| `upper_bound_kind` | STRING  | Bound kind for this row: `"exact"` (enumerated weighted bound) or `"statistical"` (sampled forward-pass mean) |
-| `gap_percent`      | FLOAT64 | Relative gap as a percentage (null when `lower_bound <= 0`)                            |
-| `cuts_added`       | INT32   | Cuts added to the pool in this iteration                                               |
-| `cuts_removed`     | INT32   | Cuts removed by the cut selection strategy                                             |
-| `cuts_active`      | INT64   | Total active cuts across all stages after this iteration                               |
-| `time_forward_ms`  | INT64   | Wall-clock time for the forward pass in milliseconds                                   |
-| `time_backward_ms` | INT64   | Wall-clock time for the backward pass in milliseconds                                  |
-| `time_total_ms`    | INT64   | Total wall-clock time for the iteration in milliseconds                                |
-| `forward_passes`   | INT32   | Number of forward pass scenarios in this iteration                                     |
-| `lp_solves`        | INT64   | Total LP solves across all ranks in this iteration (forward + backward + bound)        |
-| `mean_rows_in_lp`  | FLOAT64 | Mean cuts loaded per LP solve this iteration under dynamic cut selection (0 otherwise) |
+| `iteration`        | Int32   | Iteration number (1-based)                                                             |
+| `lower_bound`      | Float64 | Training lower bound on the risk-adjusted cost: the expected cost when the first stage's risk measure is the expectation ([lower bound](/math/upper-bound-evaluation/#lower-bound)) |
+| `upper_bound`      | Float64 | Upper bound estimate — mean over forward passes for a statistical bound; the exact enumerated weighted bound otherwise |
+| `upper_bound_std`  | Float64 | Standard deviation of the upper bound estimate. NULL on exact-bound rows (`upper_bound_kind` = `"exact"`) |
+| `upper_bound_kind` | Utf8    | Bound kind for this row: `"exact"` (enumerated weighted bound) or `"statistical"` (sampled forward-pass mean) |
+| `gap_percent`      | Float64 | Relative gap as a percentage (null when `lower_bound <= 0`)                            |
+| `cuts_added`       | Int32   | Cuts added to the pool in this iteration                                               |
+| `cuts_removed`     | Int32   | Cuts removed by the cut selection strategy                                             |
+| `cuts_active`      | Int64   | Total active cuts across all stages after this iteration                               |
+| `time_forward_ms`  | Int64   | Wall-clock time for the forward pass in milliseconds                                   |
+| `time_backward_ms` | Int64   | Wall-clock time for the backward pass in milliseconds                                  |
+| `time_total_ms`    | Int64   | Total wall-clock time for the iteration in milliseconds                                |
+| `forward_passes`   | Int32   | Number of forward pass scenarios in this iteration                                     |
+| `lp_solves`        | Int64   | Total LP solves across all ranks in this iteration (forward + backward + bound)        |
+| `mean_rows_in_lp`  | Float64 | Mean cuts loaded per LP solve this iteration under dynamic cut selection (0 otherwise) |
 
 ### Python (Polars)
 
@@ -155,7 +290,7 @@ plt.fill_between(
     label="Upper bound ± 1 std",
 )
 plt.xlabel("Iteration")
-plt.ylabel("Expected cost ($/stage)")
+plt.ylabel("Expected discounted cost (horizon total)")
 plt.legend()
 plt.tight_layout()
 plt.show()
@@ -165,7 +300,22 @@ final = df.filter(pl.col("iteration") == df["iteration"].max())
 print(final.select(["iteration", "lower_bound", "upper_bound", "gap_percent"]))
 ```
 
+{/* capture: python convergence snippet | cobre-python 0.17.0 (PyPI wheel sha256 c0b117d2) | python 3.12.3 | case: output of cobre run (cobre-cli sha256 23916b46) on 1dtoy */}
+
+```text
+shape: (1, 4)
+┌───────────┬─────────────┬───────────────┬─────────────┐
+│ iteration ┆ lower_bound ┆ upper_bound   ┆ gap_percent │
+│ ---       ┆ ---         ┆ ---           ┆ ---         │
+│ i32       ┆ f64         ┆ f64           ┆ f64         │
+╞═══════════╪═════════════╪═══════════════╪═════════════╡
+│ 128       ┆ 1.5596e7    ┆ 579592.198622 ┆ -96.283598  │
+└───────────┴─────────────┴───────────────┴─────────────┘
+```
+
 ### R
+
+{/* not run: R and DuckDB are outside the capture environment (design/python-env.md); same plot and final-gap read as the captured Python snippet */}
 
 ```r
 library(arrow)
@@ -188,7 +338,7 @@ ggplot(df, aes(x = iteration)) +
   ) +
   labs(
     x = "Iteration",
-    y = "Expected cost ($/stage)",
+    y = "Expected discounted cost (horizon total)",
     color = NULL
   ) +
   theme_minimal()
@@ -199,8 +349,11 @@ tail(df[, c("iteration", "lower_bound", "upper_bound", "gap_percent")], 1)
 
 **What to look for in the convergence plot:**
 
-- Both bounds should move toward each other over iterations. The lower bound
-  rises; the upper bound falls and its standard deviation narrows.
+- The lower bound rises and levels off. Under a sampled forward pass
+  (`upper_bound_kind` = `"statistical"`) the upper bound is a noisy estimate
+  that can sit below the lower bound, so judge convergence by the lower
+  bound's plateau, not by the two bounds meeting. Under an enumerated forward
+  pass (`"exact"`) the upper bound carries no sampling noise.
 - A lower bound that stays flat after the first few iterations suggests the
   backward pass cuts are not improving: check `cuts_added` to confirm cuts
   are being generated.
@@ -216,6 +369,70 @@ The simulation output is Hive-partitioned: results are stored in one
 Polars, Pandas, R arrow, and DuckDB all support reading the entire directory
 as a single table and filtering by `scenario_id` at the storage layer.
 
+:::note[Table grain]
+Each row of a dispatch table (`hydros`, `thermals`, `buses`, `exchanges`,
+`hydro_bus_generation`, and the other per-block families) is one
+(`scenario_id`, `stage_id`, `block_id`, entity id); `hydro_bus_generation`
+adds `bus_id`. `costs` is one row per (`scenario_id`, `stage_id`) with a null
+`block_id`. `node_id` names the visited policy-graph node; `stage_id` and
+`block_id` are the stage and block ids declared in `stages.json`.
+
+Aggregate within a (scenario, stage) first — sum energy and cost over blocks,
+weight a per-block rate such as `water_value_per_hm3` by block hours — and only then take statistics across
+scenarios. Each table's columns are listed in the
+[Output Format](/reference/output/).
+:::
+
+The printed outputs in this section and in
+[Common Analysis Tasks](#common-analysis-tasks) come from one study: a 1dtoy
+case modified to carry two blocks per stage, `PEAK` and `OFFPEAK`, that split
+the stage's hours (an odd hour count gives `OFFPEAK` the extra hour), run with
+100 simulation scenarios. The template as generated has one block per stage, so
+its numbers differ. The snippets run from the
+case directory, which here holds both `results/` and `stages.json`.
+
+### Reading a whole table
+
+Each `simulation/<entity>/` directory reads as one table over all scenarios;
+`scenario_id` is both the partition directory name and an in-file column (see
+[Hive Partitioning](/reference/output/#hive-partitioning)).
+
+```python
+# Polars — reads all scenarios at once, infers scenario_id from directory names
+import polars as pl
+
+df = pl.read_parquet("results/simulation/costs/")
+print(df.head())
+```
+
+{/* capture: python read-whole-table | cobre-python 0.17.0 (PyPI wheel sha256 c0b117d2) | python 3.12.3 | case: output of cobre run (cobre-cli sha256 23916b46) on 1dtoy (cobre init --template 1dtoy) */}
+
+```text
+shape: (5, 29)
+┌────────────┬──────────┬─────────┬──────────┬───┬────────────┬────────────┬───────────┬───────────┐
+│ scenario_i ┆ stage_id ┆ node_id ┆ block_id ┆ … ┆ turbined_c ┆ curtailmen ┆ exchange_ ┆ pumping_c │
+│ d          ┆ ---      ┆ ---     ┆ ---      ┆   ┆ ost        ┆ t_cost     ┆ cost      ┆ ost       │
+│ ---        ┆ i32      ┆ i32     ┆ i32      ┆   ┆ ---        ┆ ---        ┆ ---       ┆ ---       │
+│ i32        ┆          ┆         ┆          ┆   ┆ f64        ┆ f64        ┆ f64       ┆ f64       │
+╞════════════╪══════════╪═════════╪══════════╪═══╪════════════╪════════════╪═══════════╪═══════════╡
+│ 0          ┆ 0        ┆ 0       ┆ null     ┆ … ┆ 1674.0     ┆ 0.0        ┆ 0.0       ┆ 0.0       │
+│ 0          ┆ 1        ┆ 1       ┆ null     ┆ … ┆ 1566.0     ┆ 0.0        ┆ 0.0       ┆ 0.0       │
+│ 0          ┆ 2        ┆ 2       ┆ null     ┆ … ┆ 1674.0     ┆ 0.0        ┆ 0.0       ┆ 0.0       │
+│ 0          ┆ 3        ┆ 3       ┆ null     ┆ … ┆ 1563.31441 ┆ 0.0        ┆ 0.0       ┆ 0.0       │
+│            ┆          ┆         ┆          ┆   ┆ 8          ┆            ┆           ┆           │
+│ 1          ┆ 0        ┆ 0       ┆ null     ┆ … ┆ 1674.0     ┆ 0.0        ┆ 0.0       ┆ 0.0       │
+└────────────┴──────────┴─────────┴──────────┴───┴────────────┴────────────┴───────────┴───────────┘
+```
+
+{/* not run: pandas is outside the capture environment (design/python-env.md); it reads the same directory as the captured Polars snippet */}
+
+```python
+# Pandas with PyArrow backend
+import pandas as pd
+
+df = pd.read_parquet("results/simulation/costs/")
+```
+
 ### Aggregating across scenarios
 
 The most common operation is computing statistics across all scenarios for
@@ -229,9 +446,16 @@ import polars as pl
 # Load all hydro results across all scenarios
 hydros = pl.read_parquet("results/simulation/hydros/")
 
-# Mean generation per hydro plant per stage, across all scenarios
-mean_gen = (
+# Total generation per hydro plant per stage in each scenario (sum over blocks)
+by_scenario = (
     hydros
+    .group_by(["scenario_id", "stage_id", "hydro_id"])
+    .agg(pl.col("generation_mwh").sum())
+)
+
+# Mean and percentiles across scenarios per hydro plant per stage
+mean_gen = (
+    by_scenario
     .group_by(["hydro_id", "stage_id"])
     .agg(
         pl.col("generation_mwh").mean().alias("mean_generation_mwh"),
@@ -243,7 +467,25 @@ mean_gen = (
 print(mean_gen)
 ```
 
+{/* capture: python aggregating across scenarios (mean and percentiles) | cobre-python 0.17.0 (PyPI wheel sha256 c0b117d2) | python 3.12.3 | case: output of cobre run (cobre-cli sha256 23916b46) on a temporary 1dtoy derivative (cobre init --template 1dtoy; stages.json: every stage carries two blocks PEAK and OFFPEAK with hours h // 2 and h - h // 2 of the single block) */}
+
+```text
+shape: (4, 5)
+┌──────────┬──────────┬─────────────────────┬────────────────────┬────────────────────┐
+│ hydro_id ┆ stage_id ┆ mean_generation_mwh ┆ p10_generation_mwh ┆ p90_generation_mwh │
+│ ---      ┆ ---      ┆ ---                 ┆ ---                ┆ ---                │
+│ i32      ┆ i32      ┆ f64                 ┆ f64                ┆ f64                │
+╞══════════╪══════════╪═════════════════════╪════════════════════╪════════════════════╡
+│ 0        ┆ 0        ┆ 33480.0             ┆ 33480.0            ┆ 33480.0            │
+│ 0        ┆ 1        ┆ 31542.464448        ┆ 31320.0            ┆ 31320.0            │
+│ 0        ┆ 2        ┆ 34696.161217        ┆ 33480.0            ┆ 37200.0            │
+│ 0        ┆ 3        ┆ 33794.388576        ┆ 27557.374825       ┆ 36000.0            │
+└──────────┴──────────┴─────────────────────┴────────────────────┴────────────────────┘
+```
+
 **R:**
+
+{/* not run: R and DuckDB are outside the capture environment (design/python-env.md); same aggregation as the captured Python snippet */}
 
 ```r
 library(arrow)
@@ -252,8 +494,13 @@ library(dplyr)
 # Load all hydro results
 hydros <- open_dataset("results/simulation/hydros/") |> collect()
 
-# Mean and P10/P90 generation per hydro plant per stage
-mean_gen <- hydros |>
+# Total generation per hydro plant per stage in each scenario (sum over blocks)
+by_scenario <- hydros |>
+  group_by(scenario_id, stage_id, hydro_id) |>
+  summarise(generation_mwh = sum(generation_mwh), .groups = "drop")
+
+# Mean and percentiles across scenarios per hydro plant per stage
+mean_gen <- by_scenario |>
   group_by(hydro_id, stage_id) |>
   summarise(
     mean_generation_mwh = mean(generation_mwh),
@@ -268,19 +515,54 @@ print(mean_gen)
 
 ### Filtering to a single scenario
 
+A lazy scan with a predicate on the `scenario_id` partition column lets Polars
+read only the matching partition instead of every scenario's file.
+
 ```python
-# Polars — read only scenario 0 (avoids loading all partitions)
-costs_s0 = pl.read_parquet(
-    "results/simulation/costs/",
-    hive_partitioning=True,
-).filter(pl.col("scenario_id") == 0)
+# Polars — lazy scan; the scenario_id filter selects the scenario 0 partition
+import polars as pl
+
+costs_s0 = (
+    pl.scan_parquet("results/simulation/costs/", hive_partitioning=True)
+    .filter(pl.col("scenario_id") == 0)
+    .select("stage_id", "block_id", "immediate_cost", "future_cost", "total_cost")
+    .collect()
+)
+print(costs_s0)
 ```
+
+{/* capture: python single-scenario read (scan_parquet, hive_partitioning=True) | cobre-python 0.17.0 (PyPI wheel sha256 c0b117d2) | python 3.12.3 | case: output of cobre run (cobre-cli sha256 23916b46) on a temporary 1dtoy derivative (cobre init --template 1dtoy; stages.json: every stage carries two blocks PEAK and OFFPEAK with hours h // 2 and h - h // 2 of the single block) */}
+
+```text
+shape: (4, 5)
+┌──────────┬──────────┬────────────────┬─────────────┬────────────┐
+│ stage_id ┆ block_id ┆ immediate_cost ┆ future_cost ┆ total_cost │
+│ ---      ┆ ---      ┆ ---            ┆ ---         ┆ ---        │
+│ i32      ┆ i32      ┆ f64            ┆ f64         ┆ f64        │
+╞══════════╪══════════╪════════════════╪═════════════╪════════════╡
+│ 0        ┆ null     ┆ 169074.0       ┆ 3.1011e7    ┆ 3.1180e7   │
+│ 1        ┆ null     ┆ 158166.0       ┆ 4.1088e7    ┆ 4.1246e7   │
+│ 2        ┆ null     ┆ 169074.0       ┆ 1.9806e7    ┆ 1.9975e7   │
+│ 3        ┆ null     ┆ 8.6664e6       ┆ 0.0         ┆ 8.6664e6   │
+└──────────┴──────────┴────────────────┴─────────────┴────────────┘
+```
+
+{/* not run: R and DuckDB are outside the capture environment (design/python-env.md); same filter as the captured Python snippet */}
 
 ```sql
 -- DuckDB
 SELECT * FROM read_parquet('results/simulation/costs/**/*.parquet')
 WHERE scenario_id = 0
 ORDER BY stage_id;
+```
+
+{/* not run: R is outside the capture environment (design/python-env.md); same scenario filter as the captured Polars snippet */}
+
+```r
+# R with the arrow package
+library(arrow)
+ds <- open_dataset("results/simulation/costs/")
+dplyr::collect(dplyr::filter(ds, scenario_id == 0))
 ```
 
 ---
@@ -293,29 +575,68 @@ ORDER BY stage_id;
 import polars as pl
 
 hydros = pl.read_parquet("results/simulation/hydros/")
+
+# Sum over stages and blocks within each scenario, then average over scenarios
 expected = (
     hydros
+    .group_by(["scenario_id", "hydro_id"])
+    .agg(pl.col("generation_mwh").sum().alias("total_generation_mwh"))
     .group_by("hydro_id")
-    .agg(pl.col("generation_mwh").mean().alias("mean_annual_generation_mwh"))
+    .agg(pl.col("total_generation_mwh").mean().alias("expected_total_generation_mwh"))
     .sort("hydro_id")
 )
 print(expected)
 ```
 
+{/* capture: python common task (a) expected generation by hydro plant | cobre-python 0.17.0 (PyPI wheel sha256 c0b117d2) | python 3.12.3 | case: output of cobre run (cobre-cli sha256 23916b46) on a temporary 1dtoy derivative (cobre init --template 1dtoy; stages.json: every stage carries two blocks PEAK and OFFPEAK with hours h // 2 and h - h // 2 of the single block) */}
+
+```text
+shape: (1, 2)
+┌──────────┬───────────────────────────────┐
+│ hydro_id ┆ expected_total_generation_mwh │
+│ ---      ┆ ---                           │
+│ i32      ┆ f64                           │
+╞══════════╪═══════════════════════════════╡
+│ 0        ┆ 133513.014241                 │
+└──────────┴───────────────────────────────┘
+```
+
 ### (b) Expected thermal generation cost
 
 ```python
+import polars as pl
+
 thermals = pl.read_parquet("results/simulation/thermals/")
+
+# Sum over stages and blocks within each scenario, then average over scenarios
 thermal_cost = (
     thermals
+    .group_by(["scenario_id", "thermal_id"])
+    .agg(pl.col("generation_cost").sum().alias("total_cost"))
     .group_by("thermal_id")
-    .agg(pl.col("generation_cost").mean().alias("mean_total_cost"))
+    .agg(pl.col("total_cost").mean().alias("mean_total_cost"))
     .sort("thermal_id")
 )
 print(thermal_cost)
 ```
 
+{/* capture: python common task (b) expected thermal generation cost | cobre-python 0.17.0 (PyPI wheel sha256 c0b117d2) | python 3.12.3 | case: output of cobre run (cobre-cli sha256 23916b46) on a temporary 1dtoy derivative (cobre init --template 1dtoy; stages.json: every stage carries two blocks PEAK and OFFPEAK with hours h // 2 and h - h // 2 of the single block) */}
+
+```text
+shape: (2, 2)
+┌────────────┬─────────────────┐
+│ thermal_id ┆ mean_total_cost │
+│ ---        ┆ ---             │
+│ i32        ┆ f64             │
+╞════════════╪═════════════════╡
+│ 0          ┆ 217800.0        │
+│ 1          ┆ 394859.698389   │
+└────────────┴─────────────────┘
+```
+
 In R:
+
+{/* not run: R and DuckDB are outside the capture environment (design/python-env.md); same aggregation as the captured Python snippet */}
 
 ```r
 library(arrow)
@@ -323,9 +644,12 @@ library(dplyr)
 
 thermals <- open_dataset("results/simulation/thermals/") |> collect()
 
+# Sum over stages and blocks within each scenario, then average over scenarios
 thermal_cost <- thermals |>
+  group_by(scenario_id, thermal_id) |>
+  summarise(total_cost = sum(generation_cost), .groups = "drop") |>
   group_by(thermal_id) |>
-  summarise(mean_total_cost = mean(generation_cost), .groups = "drop") |>
+  summarise(mean_total_cost = mean(total_cost), .groups = "drop") |>
   arrange(thermal_id)
 
 print(thermal_cost)
@@ -333,60 +657,133 @@ print(thermal_cost)
 
 ### (c) Deficit probability per bus
 
-A scenario has a deficit at a given stage if `deficit_mwh > 0` for any bus
-in that stage. The deficit probability is the fraction of scenarios where
-this occurs.
+A scenario has a deficit at a given bus and stage if `deficit_mwh > 0` in any
+block of that stage. The deficit probability is the fraction of scenarios where
+this occurs. Dropping `bus_id` from both `group_by` key lists gives the
+probability that any bus has a deficit.
 
 ```python
-buses = pl.read_parquet("results/simulation/buses/")
-n_scenarios = buses["scenario_id"].n_unique()
+import polars as pl
 
+buses = pl.read_parquet("results/simulation/buses/")
+
+# A (scenario, stage, bus) has a deficit if any of its blocks does;
+# the probability is the mean of that flag over scenarios
 deficit_prob = (
     buses
+    .group_by(["scenario_id", "stage_id", "bus_id"])
+    .agg((pl.col("deficit_mwh") > 0).any().alias("has_deficit"))
     .group_by(["bus_id", "stage_id"])
-    .agg(
-        (pl.col("deficit_mwh") > 0).mean().alias("deficit_probability")
-    )
+    .agg(pl.col("has_deficit").mean().alias("deficit_probability"))
     .sort(["bus_id", "stage_id"])
 )
 print(deficit_prob)
 ```
 
+{/* capture: python common task (c) deficit probability per bus | cobre-python 0.17.0 (PyPI wheel sha256 c0b117d2) | python 3.12.3 | case: output of cobre run (cobre-cli sha256 23916b46) on a temporary 1dtoy derivative (cobre init --template 1dtoy; stages.json: every stage carries two blocks PEAK and OFFPEAK with hours h // 2 and h - h // 2 of the single block) */}
+
+```text
+shape: (4, 3)
+┌────────┬──────────┬─────────────────────┐
+│ bus_id ┆ stage_id ┆ deficit_probability │
+│ ---    ┆ ---      ┆ ---                 │
+│ i32    ┆ i32      ┆ f64                 │
+╞════════╪══════════╪═════════════════════╡
+│ 0      ┆ 0        ┆ 0.0                 │
+│ 0      ┆ 1        ┆ 0.03                │
+│ 0      ┆ 2        ┆ 0.05                │
+│ 0      ┆ 3        ┆ 0.22                │
+└────────┴──────────┴─────────────────────┘
+```
+
 ### (d) Water value (shadow price) from hydro output
 
-The `water_value_per_hm3` column in `simulation/hydros/` records the shadow
-price of reservoir storage at each stage — the marginal value of having one
-additional hm³ of stored water. This is the water value, a key output of
-the SDDP policy.
+The `water_value_per_hm3` column in `simulation/hydros/` is the dual of the
+plant's water-balance row, in monetary units per hm³: the change in cost from
+one more hm³ of water in the reservoir. On a parallel stage every block row
+carries the stage row's value; on a chronological stage each block row carries
+its own block's value, so to aggregate a chronological stage weight the blocks
+by their duration (the block hours in `stages.json`).
 
 ```python
+import json
+
+import polars as pl
+
+# Block hours from the case's stages.json, keyed like the output rows
+with open("stages.json") as f:
+    stages = json.load(f)["stages"]
+hours = pl.DataFrame(
+    [
+        {"stage_id": s["id"], "block_id": b["id"], "hours": b["hours"]}
+        for s in stages
+        for b in s["blocks"]
+    ]
+)
+
 hydros = pl.read_parquet("results/simulation/hydros/")
+
+# Hours-weighted mean over blocks within each (scenario, stage),
+# then the mean across scenarios
 water_value = (
     hydros
+    .join(hours, on=["stage_id", "block_id"])
+    .group_by(["scenario_id", "stage_id", "hydro_id"])
+    .agg(
+        (
+            (pl.col("water_value_per_hm3") * pl.col("hours")).sum()
+            / pl.col("hours").sum()
+        ).alias("stage_water_value")
+    )
     .group_by(["hydro_id", "stage_id"])
-    .agg(pl.col("water_value_per_hm3").mean().alias("mean_water_value"))
+    .agg(pl.col("stage_water_value").mean().alias("mean_water_value"))
     .sort(["hydro_id", "stage_id"])
 )
 print(water_value)
 ```
 
-A high water value at a given stage means the reservoir is scarce relative
-to expected future demand — the solver is conserving water for later stages.
-A water value near zero means the reservoir is abundant and water has little
-marginal value at that point in time.
+{/* capture: python common task (d) water value, hours-weighted | cobre-python 0.17.0 (PyPI wheel sha256 c0b117d2) | python 3.12.3 | case: output of cobre run (cobre-cli sha256 23916b46) on a temporary 1dtoy derivative (cobre init --template 1dtoy; stages.json: every stage carries two blocks PEAK and OFFPEAK with hours h // 2 and h - h // 2 of the single block) */}
+
+```text
+shape: (4, 3)
+┌──────────┬──────────┬──────────────────┐
+│ hydro_id ┆ stage_id ┆ mean_water_value │
+│ ---      ┆ ---      ┆ ---              │
+│ i32      ┆ i32      ┆ f64              │
+╞══════════╪══════════╪══════════════════╡
+│ 0        ┆ 0        ┆ -520915.887568   │
+│ 0        ┆ 1        ┆ -503157.367425   │
+│ 0        ┆ 2        ┆ -424729.996533   │
+│ 0        ┆ 3        ┆ -458827.777778   │
+└──────────┴──────────┴──────────────────┘
+```
+
+The value is zero or negative wherever one more hm³ lowers the cost, because
+the water displaces thermal generation or deficit now or later; a larger
+magnitude means scarcer water, which the solver conserves for later stages. A
+value near zero means the reservoir is abundant and water has little marginal
+value at that point in time. A positive value appears where extra water can only
+leave the reservoir at a cost, for example through a spillage penalty: one more
+hm³ then raises the cost.
 
 ### (e) Per-bus dispatch for a hydro plant split across buses
 
-`simulation/hydros/` always reports one row per `(hydro_id, stage_id)` — the
-plant's total, regardless of how many `unit_groups` it declares or how many
-buses they span. For the split by bus, read `simulation/hydro_bus_generation/`,
-keyed by `(stage, block, hydro, bus)`:
+`simulation/hydros/` reports one row per (`scenario_id`, `stage_id`,
+`block_id`, `hydro_id`) — the plant's total over its unit groups, regardless of
+how many `unit_groups` it declares or how many buses they span. For the split
+by bus, read `simulation/hydro_bus_generation/`, keyed by (`scenario_id`,
+`stage_id`, `block_id`, `hydro_id`, `bus_id`):
 
 ```python
+import polars as pl
+
 bus_gen = pl.read_parquet("results/simulation/hydro_bus_generation/")
 
+# Sum the blocks within each (scenario, stage), then average over scenarios
 per_bus = (
     bus_gen
+    .group_by(["scenario_id", "stage_id", "hydro_id", "bus_id"])
+    .agg(pl.col("generation_mwh").sum())
     .group_by(["hydro_id", "bus_id", "stage_id"])
     .agg(pl.col("generation_mwh").mean().alias("mean_generation_mwh"))
     .sort(["hydro_id", "bus_id", "stage_id"])
@@ -394,11 +791,28 @@ per_bus = (
 print(per_bus)
 ```
 
+{/* capture: python common task (e) per-bus dispatch for a hydro plant | cobre-python 0.17.0 (PyPI wheel sha256 c0b117d2) | python 3.12.3 | case: output of cobre run (cobre-cli sha256 23916b46) on a temporary 1dtoy derivative (cobre init --template 1dtoy; stages.json: every stage carries two blocks PEAK and OFFPEAK with hours h // 2 and h - h // 2 of the single block) */}
+
+```text
+shape: (4, 4)
+┌──────────┬────────┬──────────┬─────────────────────┐
+│ hydro_id ┆ bus_id ┆ stage_id ┆ mean_generation_mwh │
+│ ---      ┆ ---    ┆ ---      ┆ ---                 │
+│ i32      ┆ i32    ┆ i32      ┆ f64                 │
+╞══════════╪════════╪══════════╪═════════════════════╡
+│ 0        ┆ 0      ┆ 0        ┆ 33480.0             │
+│ 0        ┆ 0      ┆ 1        ┆ 31542.464448        │
+│ 0        ┆ 0      ┆ 2        ┆ 34696.161217        │
+│ 0        ┆ 0      ┆ 3        ┆ 33794.388576        │
+└──────────┴────────┴──────────┴─────────────────────┘
+```
+
 `turbined_m3s` rows sum bit-exactly to the plant's `simulation/hydros/` row on
-every production model. `generation_mw`/`generation_mwh` rows sum exactly only
-for FPHA or single-cell plants: splitting one shared cell's flow across its
-same-bus groups has no dual to determine an exact per-group split, so that
-split is not reported at all — only the per-bus total is.
+every production model. `generation_mw` rows sum bit-exactly only for FPHA or
+single-cell plants, and `generation_mwh` rows only for single-cell plants, since
+each row multiplies its own `generation_mw` by the block duration. A split of
+one cell's flow across its same-bus groups has no dual to determine it, so it is
+not reported at all — only the per-bus total is.
 
 ---
 
@@ -406,8 +820,10 @@ split is not reported at all — only the per-bus total is.
 
 ### Gap not converging
 
-The gap stays large after many iterations, or the lower bound rises very
-slowly.
+The lower bound is still rising after many iterations, or the gap stays large.
+Under a sampled upper bound the gap is a noisy estimate that can be negative
+(see [Reading the gap from `training/metadata.json`](#reading-the-gap-from-trainingmetadatajson)),
+so check whether the lower bound has plateaued before reading the gap.
 
 Possible causes:
 
@@ -463,5 +879,5 @@ Possible causes:
 ## Related Pages
 
 - **Theory:** [Upper Bound Evaluation](/math/upper-bound-evaluation/) — the statistical upper-bound estimator behind the convergence metrics this page analyzes.
-- [Output Format Reference](/reference/output-format/) — complete field-by-field schema for all output files
+- [Output Format](/reference/output/) — complete field-by-field schema for all output files
 - [Configuration](/running/configuration/) — all `config.json` fields including stopping rules and seed

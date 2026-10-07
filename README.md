@@ -18,7 +18,8 @@ with [Astro Starlight](https://starlight.astro.build/).
 
 Requires **Node 25+**. The [`d2`](https://d2lang.com/) binary (v0.7.1) must be on
 `PATH` for D2 figures to render — see `.github/workflows/starlight-ci.yml` for the
-pinned install; without it, ` ```d2 ` blocks render empty.
+pinned install; without it, `npm run build` and `npm run dev` abort with
+"Could not find D2".
 
 ```bash
 npm install            # or: npm ci
@@ -43,42 +44,61 @@ npm run build:versions # multi-version assembly (versions.json) → dist/
 ```
 src/
 ├── content/
-│   ├── docs/             # the unified corpus — math layer + interleaved software layer
-│   │   ├── index.mdx     #   landing page
-│   │   ├── overview/     #   Part 1 — Introduction
-│   │   ├── math/         #   Parts 2–5 — system & stochastic modelling, SDDP, coupling
-│   │   ├── examples/     #   Part 6 — worked examples
-│   │   ├── reference/    #   Part 7 — glossary, bibliography
-│   │   └── pt-br/        #   pt-BR locale (i18n)
-│   └── content.config.ts
+│   └── docs/             # the unified corpus — math layer + interleaved software layer
+│       ├── index.mdx     #   landing page
+│       ├── getting-started/ #   Get Started — installation, quickstart, Python quickstart
+│       ├── overview/     #   Get Started (what Cobre solves) and Introduction
+│       ├── math/         #   System Modelling, Stochastic Modelling, The SDDP Algorithm, Coupling & Boundary Conditions
+│       │   └── _impl/    #   software-layer Configure / I·O / Notes partials, rendered as tabs on the math pages
+│       ├── running/      #   Running Cobre
+│       ├── examples/     #   Worked Examples
+│       ├── reference/    #   Reference — CLI, error codes, schemas, Python API, glossary, bibliography
+│       │   ├── case-format/ #   Reference > Case Format
+│       │   └── output/   #   Reference > Output Format
+│       └── pt-br/        #   pt-BR locale scaffold (.gitkeep only); feeds no sidebar group
+├── content.config.ts
 ├── components/           # Astro islands (Observable Plot figures, version picker, footer)
 ├── figures/              # tested TypeScript compute layer for the plots (*.ts + *.test.ts)
 ├── styles/               # brand palette, figure/KaTeX/font CSS
 └── assets/               # logo / favicon
-astro.config.mjs          # integrations + the curated 7-Part sidebar/TOC
+astro.config.mjs          # integrations + the Starlight sidebar (groups and page order)
 build-versions.mjs        # multi-version build orchestrator
-scripts/                  # quality-gate scripts (see below)
-public/                   # static assets + THIRD-PARTY-NOTICES.txt
+scripts/                  # quality-gate and refresh scripts, with their tests and fixtures (see below)
+public/                   # static assets: vendored input schemas/, quickstart recordings, THIRD-PARTY-NOTICES.txt
 ```
 
 ## Quality gates
 
 ```bash
-npm test              # tested-compute layer + script unit tests (node --test)
+npm run build         # fails on any KaTeX strict-mode violation or parse error (scripts/rehype-katex-strict.mjs); run it first
+npm test              # tested-compute layer + script unit tests (node --test); the i18n-locale test reads dist/
 npm run check         # astro check (types)
-npm run check:math    # KaTeX $$-block render parity
-npm run check:links   # internal link integrity
-npm run check:figures # every plot island has a paired tested compute module
+npm run check:math    # KaTeX $$-block render parity (reads dist/)
+npm run check:links   # internal link integrity (reads dist/)
+npm run check:figures # no retired-figure reference, the figure scope assertions hold, and every Plot island imports a tested src/figures module with an aria-label
+npm run check:voice   # hype phrases, unpinned "typical" numbers, instance magnitudes (two-voice methodology)
+npm run check:counts  # stated counts match their tables and files: column/field counts, the generic-constraint variable catalog, the vendored schema count (public/schemas)
+npm run check:version # cobre-version references vs the Synced-to anchor
+npm run check:narration # change narration, both zones (ratchet: scripts/doc-lint-allow.txt)
+npm run check:glossary # glossary: no file/path/config tokens, A–Z index complete (ratchet: scripts/doc-lint-allow.txt)
+npm run check:error-coverage # every emitted ErrorKind/LoadError variant has an error-codes section; unemitted ones are reserved
+npm run check:input-schemas # vendored input schemas match the case-format tables: names both ways, required flags, enums
+npm run check:python-api # every public cobre-python stub symbol has an anchor in reference/python-api (stubs: scripts/pystubs/)
 npm run check:d2      # D2 uses the ELK engine, never TALA
 npm run check:spdx    # 100% FOSS dependency audit
+npm run check:gc-examples # every gc-check fence behaves as marked under cobre v0.17.0 (COBRE_BIN or cobre on PATH)
+npm run refresh:recordings -- --check # quickstart.gif matches scripts/recordings-provenance.json (check only)
+npm run check:type-spelling # reference Type cells use the reference-conventions §4 vocabulary
 npm run check:e10     # third-party-notices / content-licensing completeness
 ```
 
 ## Deployment
 
-A push to `main` triggers `.github/workflows/starlight-deploy.yml`, which runs the
-full gate suite, builds the site, and publishes it to GitHub Pages at
-`docs.cobre-rs.dev` (`methodology.cobre-rs.dev` 301-redirects in).
+A push to `main` triggers `.github/workflows/starlight-deploy.yml`, which builds the
+site, runs the build checks, and publishes it to GitHub Pages at
+`docs.cobre-rs.dev` (`methodology.cobre-rs.dev` 301-redirects in). The full gate
+suite, including the doc-lint gates, runs in `.github/workflows/starlight-ci.yml` on
+pull requests to `main`.
 
 ## License
 

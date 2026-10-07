@@ -3,14 +3,16 @@
 // into tested TypeScript. No rendering here; this only derives data from the math.
 // The renderer (Observable Plot) consumes it.
 //
-// Model: a right-skewed cost distribution C ~ Gamma(shape, scale). The risk
+// Model: a right-skewed cost distribution Z ~ Gamma(shape, scale). The risk
 // markers are derived *numerically* from the analytic PDF, never eyeballed:
-//   - E[C]      = ∫ x·f(x) dx                       (risk-neutral reference)
-//   - VaR_alpha = the (1−alpha) quantile of C        (inverse trapezoid CDF)
-//   - CVaR_alpha= E[C | C ≥ VaR_alpha]               (tail mean), the convex,
+//   - E[Z]      = ∫ x·f(x) dx                       (risk-neutral reference)
+//   - VaR_alpha = the (1−alpha) quantile of Z        (inverse trapezoid CDF)
+//   - CVaR_alpha= E[Z | Z ≥ VaR_alpha]               (tail mean), the convex,
 //                 coherent tail risk the risk-averse policy hedges against.
 // Defaults mirror the Python source's constants: shape=3, scale=15, alpha=0.10
 // (so the mean is shape·scale = 45 and the distribution is right-skewed).
+// alpha is the tail fraction: the worst alpha-fraction of outcomes lies at or
+// beyond VaR_alpha, and alpha = 1 makes CVaR_alpha the expectation.
 
 export interface Point {
   x: number;
@@ -24,7 +26,7 @@ export interface RiskMoments {
 }
 
 export interface TailRegion {
-  /** x-grid points at or beyond VaR_alpha (the shaded (1−alpha) tail). */
+  /** x-grid points at or beyond VaR_alpha (the shaded worst-alpha tail). */
   points: Point[];
 }
 
@@ -122,9 +124,11 @@ function interp(query: number, xs: number[], ys: number[]): number {
 
 /**
  * Risk moments derived by numerical integration of the gamma PDF — markers
- * correct by construction. `expected` is ∫x·f dx; `varAlpha` is the (1−alpha)
- * quantile via trapezoid-CDF inversion; `cvarAlpha` is the tail mean
- * ∫_{x≥VaR} x·f / ∫_{x≥VaR} f. Defaults mirror the Python source.
+ * correct by construction. `alpha` is the tail fraction: the worst
+ * `alpha`-fraction of outcomes lies at or beyond `varAlpha`. `expected` is
+ * ∫x·f dx; `varAlpha` is the (1−alpha) quantile via trapezoid-CDF inversion;
+ * `cvarAlpha` is the tail mean ∫_{x≥VaR} x·f / ∫_{x≥VaR} f (the expectation at
+ * alpha = 1). Defaults mirror the Python source.
  */
 export function riskMoments(shape = 3, scale = 15, alpha = 0.1): RiskMoments {
   const grid = samples(shape, scale);
@@ -161,7 +165,10 @@ export function cdf(shape = 3, scale = 15): number[] {
   return trapezoidCdf(samples(shape, scale));
 }
 
-/** The shaded (1−alpha) tail: grid points at or beyond VaR_alpha. */
+/**
+ * The shaded worst-alpha tail: grid points at or beyond VaR_alpha, which carry
+ * probability mass alpha (`alpha` is the tail fraction).
+ */
 export function tailRegion(shape = 3, scale = 15, alpha = 0.1): TailRegion {
   const { varAlpha } = riskMoments(shape, scale, alpha);
   return {

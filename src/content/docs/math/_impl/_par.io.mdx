@@ -2,22 +2,31 @@ This is a topic-scoped index of the files PAR(p) estimation touches — it
 names each file and its role, it does not repeat their field-by-field
 schemas beyond what the Configure tab already shows for the config-authoring
 surface. The exhaustive, field-by-field case-directory and output reference
-is owned by the Reference corpus ([Case Directory Format](/reference/case-directory-format/)
-and [Output Format](/reference/output-format/) pages).
+is owned by the Reference corpus ([Case Format](/reference/case-format/)
+and [Output Format](/reference/output/) pages).
 
 ### Inputs
 
 | File | Role |
 | ---- | ---- |
-| `scenarios/inflow_history.parquet` | Windowed historical inflow observations per (hydro, `[start_date, end_date)`) — drives the estimation path (H) when present, and is the base layer for the derived inflow-lag seed on every path (see the Configure tab). |
+| `scenarios/inflow_history.parquet` | Windowed historical inflow observations per (hydro, `[start_date, end_date)`). It has four roles, from estimation to the historical-residual openings (listed below the table). |
 | `scenarios/inflow_seasonal_stats.parquet` | User-supplied or fitted seasonal statistics per (hydro, stage). The `std_m3s` column is the **stored sample standard deviation** of the historical series — not the innovation standard deviation used for noise scaling (see Implementation notes). |
 | `scenarios/inflow_ar_coefficients.parquet` | User-supplied or fitted standardized AR coefficients, one row per (hydro, stage, lag) — schema `[hydro_id, stage_id, lag, coefficient]`. The AR order is derived from the row count, not stored explicitly. |
 | `scenarios/inflow_annual_component.parquet` | Optional user-supplied PAR(p)-A annual triple (coefficient, mean, std of the rolling 12-month average). Honored only on the pass-through paths — the estimation paths overwrite it with fitted values (see the Configure tab). |
 | `scenarios/correlation.json` | Named spatial-correlation profiles and optional stage schedule. Wins over estimated or identity correlation on every inflow-source path when present. |
-| `initial_conditions.json` (`recent_observations` rows) | Conditioning layer over the windowed `inflow_history` record: observed inflow for partial periods before the study start, shadowing `inflow_history` day-wise wherever the two overlap. Feeds the derived inflow-lag seed consumed by the opening study stages' lag terms and mid-period accumulator (methodology §7.5, and the Configure tab). |
+| `initial_conditions.json` (`recent_observations` rows) | Conditioning layer over the windowed `inflow_history` record: observed inflow for partial periods before the study start, shadowing `inflow_history` day-wise wherever the two overlap. Feeds the derived inflow-lag seed consumed by the opening study stages' lag terms and mid-period accumulator (methodology §2.5, and the Configure tab). |
+
+`scenarios/inflow_history.parquet` has four roles:
+
+1. It drives the estimation path (H) when present.
+2. It is the base layer for the derived inflow-lag seed on every path (see the Configure tab).
+3. It supplies the historical replay windows of the `historical` forward scheme.
+4. It supplies the historical-residual openings of the stages whose `sampling_method` is `historical_residuals`.
+
+The last two are described in [Scenario Generation](/math/scenario-generation).
 
 For the complete field-by-field schema of each file above, see the
-[Case Directory Format](/reference/case-directory-format/) reference page in
+[Case Format](/reference/case-format/) reference page in
 the Reference corpus.
 
 ### Externally-fitted PAR models
@@ -27,7 +36,7 @@ Cobre accepts fully user-supplied parameters — you may fit a PAR($p$) model wi
 `UserProvidedNoHistory` and `UserProvidedAll` paths on the Configure tab).
 Cobre then skips fitting, validates the inputs, and derives the innovation
 scale $r_m$ from your supplied $\psi^*$ via the periodic-ACF closure (see
-[Deriving the innovation scale](/math/par-inflow-model)). The fields do **not**
+[Deriving the innovation scale](/math/par-inflow-model#41-deriving-the-innovation-scale)). The fields do **not**
 encode Cobre's fitting method — they encode the [two-plane
 representation](/math/par-inflow-model) — so any fit maps onto them by the table
 below. Let $s_m$ be your series' seasonal sample std and $\psi_{m,\ell}$ your
@@ -42,7 +51,7 @@ original-unit AR coefficients.
 There is no column for your model's own innovation std $\sigma_m$: Cobre
 always **derives** $r_m = \sigma_m/s_m$ from the $\psi^*_{m,\ell}$ you supply,
 the same way it derives $r_m$ for an internally-fitted model (see
-[Deriving the innovation scale](/math/par-inflow-model)). If your own fit's
+[Deriving the innovation scale](/math/par-inflow-model#41-deriving-the-innovation-scale)). If your own fit's
 $\hat\sigma_m$ is not exactly consistent with your supplied $\psi^*$ under the
 periodic-ACF closure, Cobre's derived $\sigma_m$ differs from your original
 fit's — the closure derives the noise scale so the seasonal std $s_m$ you
@@ -53,16 +62,16 @@ Rules Cobre enforces (or that silently mis-scale the model if broken):
 - **Standardize by the seasonal std, consistently.** The coefficients are those
   of the series standardized by its seasonal sample std — the classical
   standardization — and the $s_m$ you divide by must be exactly the `std_m3s`
-  you store: Cobre reconstructs $\psi$ and $\sigma$ from the stored `std_m3s`,
+  you store: Cobre reconstructs $\psi_{m,\ell}$ and $\sigma_m$ from the stored `std_m3s`,
   so a mismatch is silent.
 - **Cobre hard-rejects a coefficient set that fails its stationarity gate.**
   The gate runs the [periodic-ACF closure](/math/par-inflow-model) on your
   supplied $\psi^*$ and rejects the whole load when the closure system is
-  singular, the implied innovation variance is not strictly positive for any
+  singular, the implied innovation variance is at or below a numerical floor for any
   season, any implied autocorrelation magnitude exceeds 1, or a conservative
   spectral-radius estimate of the periodic monodromy reaches 1. The gate runs
   only on directly-supplied coefficients; internally-fitted coefficients are
-  guarded during the fit itself (order reduction) and, like every load path, by
+  not tested for stationarity but, like every load path, are guarded by
   the closure derivation's own backstop — a non-finite derived $r_m$ is a hard
   load error naming the hydro and season.
 - Lags must be contiguous $1, 2, \ldots, p$; the **AR order $p$ is implicit** in
@@ -71,9 +80,15 @@ Rules Cobre enforces (or that silently mis-scale the model if broken):
 - **Resolvable season context is required whenever any AR order is $>0$.**
   Every (hydro, stage) group with at least one coefficient row must resolve to
   a season via `season_definitions` or a per-stage `season_id` (see
-  [Case Directory Format](/reference/case-directory-format/) and
-  [Running Cobre — configuration](/running/configuration/)) — this applies on
+  [Case Format](/reference/case-format/) and
+  [Configuration](/running/configuration/)) — this applies on
   every load path, including a plain file-load with no fitting.
+- **The lags advance only under `season_definitions`.** A per-stage
+  `season_id` satisfies the rule above, but without `season_definitions` no
+  stage completes a lag period and the derived inflow-lag seed is all zero,
+  whatever `inflow_history` and `recent_observations` hold: the load succeeds
+  (with a warning that the initial inflow lags seed to 0), and every stage
+  receives those zero lags.
 
 ### Outputs
 
@@ -81,13 +96,13 @@ The entire `output/stochastic/` directory is written **only when the case sets `
 
 | File | Role |
 | ---- | ---- |
-| `output/stochastic/inflow_seasonal_stats.parquet` | Fitted seasonal statistics, same schema as the input file — written whenever the estimation path ran. |
-| `output/stochastic/inflow_ar_coefficients.parquet` | Fitted AR coefficients, same schema as the input file — written whenever the estimation path ran. |
-| `output/stochastic/inflow_annual_component.parquet` | Fitted PAR(p)-A annual triple — written only when `order_selection: "pacf_annual"` and the estimation path ran. |
-| `output/stochastic/fitting_report.json` | Per-hydro summary of the selected AR order and coefficients — a human-readable complement to the parquet outputs above. |
+| `output/stochastic/inflow_seasonal_stats.parquet` | The seasonal statistics the run used, fitted or read from `scenarios/`, same schema as the input file — written on every stochastic export. |
+| `output/stochastic/inflow_ar_coefficients.parquet` | The AR coefficients the run used, fitted or read from `scenarios/`, same schema as the input file — written on every stochastic export. |
+| `output/stochastic/inflow_annual_component.parquet` | The PAR(p)-A annual triple the run used, fitted or read from `scenarios/` — written on every stochastic export; it carries rows only for the stage models with an annual term (a classical PAR(p) model has none), so it can hold no rows. |
+| `output/stochastic/fitting_report.json` | Per-hydro summary of the selected AR order and coefficients, a human-readable complement to the parquet outputs above — written only when Cobre estimated part or all of the inflow model (its seasonal statistics, its AR coefficients or both) from `inflow_history.parquet`. |
 | `output/stochastic/correlation.json` | Round-trip export of the resolved correlation model, in the same schema as the `scenarios/correlation.json` input. |
-| `output/stochastic/noise_openings.parquet` | The backward-pass opening tree actually used during training, exported when `exports.stochastic: true`. Copying it back into `scenarios/noise_openings.parquet` replays the same opening tree on a subsequent run — see [Scenario Generation](/math/scenario-generation) for the opening-tree mechanics themselves (out of scope here). |
+| `output/stochastic/noise_openings.parquet` | The backward-pass opening tree actually used during training, exported when `exports.stochastic: true`. To replay it on a subsequent run, follow [Running Studies — Round-trip workflow](/running/running-studies/#round-trip-workflow), which covers the copy into `scenarios/noise_openings.parquet` and the `openings` declaration; the copy loads only when the case's declared stage ids are 0, 1, 2, … (the export numbers stages by 0-based position, and the load refuses other ids) — see [Scenario Generation](/math/scenario-generation) for the opening-tree mechanics themselves (out of scope here). |
 
 For the complete output schema (columns, types, file layout), see the
-[Output Format](/reference/output-format/) reference page in the Reference
+[Output Format](/reference/output/) reference page in the Reference
 corpus.

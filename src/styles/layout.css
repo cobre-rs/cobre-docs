@@ -2,7 +2,7 @@
    A SEPARATE concern from colour (brand.css / neutrals.css / palette.css) and
    type (fonts.css): this file owns only how content uses horizontal space.
 
-   Two rules, both keyed off the same problem — Starlight's default article
+   Three rules, all following from the same problem — Starlight's default article
    measure (`--sl-content-width: 45rem` = 720px) is narrow for a reference that
    leans on wide multi-column config/schema tables, math display blocks, and
    code. It leaves large empty gutters on desktop AND starves dense tables. */
@@ -33,4 +33,17 @@
    columns in the notation tables from over-widening. */
 .sl-markdown-content table :is(th, td) {
   min-width: 6em;
+}
+
+/* 3. Right-sidebar TOC fit. The widened measure narrows Starlight's right
+   column to (viewport - measure) / 2, but Starlight caps the TOC container with
+   a formula tuned for its 45rem default, so between 72rem and ~1500px the TOC
+   runs past the viewport edge and cuts long entries. Cap it at the column it
+   has: 100% here is the panel's content box (viewport - 2 x panel padding). */
+@media (min-width: 72rem) {
+  .right-sidebar-panel .sl-container {
+    max-width: calc(
+      (100% - var(--sl-content-width)) / 2 - var(--sl-sidebar-pad-x)
+    );
+  }
 }

@@ -18,11 +18,15 @@
 //     re-rendered with the current renderer settings):
 //       git worktree add --force .src-<slug> <ref>
 //       astro build --root .src-<slug> --outDir <abs .dist-<slug>>
-//     NB: this is a repo-root checkout but the Astro project lives in site/, so
-//     --root points at `.src-<slug>` (not the worktree root), and --outDir
-//     must be ABSOLUTE — astro resolves a relative --outDir against --root, which
-//     would otherwise land the output inside the worktree instead of beside this
-//     script where the copy step reads it.
+//     --outDir must be ABSOLUTE — astro resolves a relative --outDir against
+//     --root, which would otherwise land the output inside the worktree instead
+//     of beside this script where the copy step reads it.
+//     Each ref worktree also receives the current versions.json (over the ref's
+//     own copy) so its version picker lists every version.
+//
+// A versioned entry's copied snapshot then has its author-written root-relative
+// href/src links (e.g. a markdown [x](/math/x)) prefixed with its `base`, since
+// astro emits those verbatim; the latest entry is never rewritten.
 //
 // Worktree cleanup is guaranteed via try/finally: the worktree is removed even
 // if the build throws, so a failed/interrupted build never leaves a tracked
@@ -34,10 +38,16 @@
 import { execFileSync } from "node:child_process";
 import { readFileSync, rmSync, cpSync, mkdirSync, existsSync } from "node:fs";
 import { resolve } from "node:path";
+import {
+  prefixSnapshotTree,
+  writeSnapshotVersions,
+} from "./scripts/version-snapshot.mjs";
 
-const cfg = JSON.parse(
-  readFileSync(new URL("./versions.json", import.meta.url), "utf8"),
+const versionsText = readFileSync(
+  new URL("./versions.json", import.meta.url),
+  "utf8",
 );
+const cfg = JSON.parse(versionsText);
 const builds = [cfg.latest, ...cfg.versions];
 
 rmSync("dist", { recursive: true, force: true });
@@ -88,6 +98,7 @@ for (const v of builds) {
     }
   }
   try {
+    if (v.ref) writeSnapshotVersions(`.src-${v.slug}`, versionsText);
     // execFileSync (args array, no shell): ref path builds FROM the worktree
     // with an ABSOLUTE outDir; no-ref path builds the current tree with a
     // relative outDir and no --root (behaviour preserved exactly).
@@ -95,6 +106,7 @@ for (const v of builds) {
       "node_modules/.bin/astro",
       [
         "build",
+        "--force",
         ...(v.ref ? ["--root", `.src-${v.slug}`] : []),
         "--outDir",
         v.ref ? resolve(tmp) : tmp,
@@ -108,6 +120,12 @@ for (const v of builds) {
     if (!existsSync(`${dest}/index.html`)) {
       throw new Error(
         `build:versions: "${v.label}" produced no index.html at ${dest}`,
+      );
+    }
+    if (base !== "/") {
+      const { files, rewritten } = prefixSnapshotTree(dest, base);
+      console.log(
+        `build:versions: prefixed ${rewritten} root-relative link(s) across ${files} HTML file(s) under ${dest}`,
       );
     }
   } finally {

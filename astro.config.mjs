@@ -6,6 +6,7 @@ import astroD2 from "astro-d2";
 import { unified } from "@astrojs/markdown-remark";
 import remarkMath from "remark-math";
 import rehypeKatex from "rehype-katex";
+import { createKatexStrict } from "./scripts/rehype-katex-strict.mjs";
 
 // Wrap each astro-d2 inline SVG in a <div class="d2-fig"> (scroll box + native
 // sizing — see src/styles/diagrams.css and Footer.astro `sizeD2Figures`).
@@ -54,6 +55,8 @@ function rehypeWrapD2() {
   return (/** @type {any} */ tree) => walk(tree);
 }
 
+const katexStrict = createKatexStrict();
+
 // astro-d2 is registered before starlight. d2 is the SINGLE diagram tool
 // (schematics, flowcharts, network one-lines); Observable-Plot islands cover
 // computed math plots. Mermaid was retired — d2 renders build-time (zero client
@@ -65,18 +68,20 @@ export default defineConfig({
   // Custom domain for absolute URLs (canonical links + sitemap). Cutover target;
   // methodology.cobre-rs.dev 301-redirects in. Env-overridable for a versioned build.
   site: process.env.DOCS_SITE ?? "https://docs.cobre-rs.dev",
-  // D5: mdBook→Starlight URL preservation (ticket-027). mdBook served each
-  // chapter at `/specs/<group>/<chapter>.html` (and the intro at
+  // D5: mdBook→Starlight URL preservation. Each key is an old mdBook (or
+  // retired-site) path and each destination is a live page slug, one hop. mdBook
+  // served each chapter at `/specs/<group>/<chapter>.html` (and the intro at
   // `/introduction.html`); Starlight serves the SAME chapters at clean
   // directory URLs with the `specs/` segment dropped: `/<group>/<chapter>/`
-  // (and the landing page at `/`). The mapping is therefore fully mechanical:
+  // (and the landing page at `/`). The mapping is therefore mechanical:
   //   `/specs/<group>/<chapter>.html`  ->  `/<group>/<chapter>/`
   //   `/introduction.html`             ->  `/`
-  // The `<group>/<chapter>` stems below are the 29 slugs from the starlight
-  // `sidebar` block (the single source of truth for the new slugs); this map is
+  // except that a chapter whose content lives on another page points at that
+  // page. Every destination other than `/` is a slug from the starlight
+  // `sidebar` block (the single source of truth for the page slugs); this map is
   // a hand-written static object literal (NOT computed from the sidebar at
-  // config-eval time) so it stays greppable and reviewable, ordered Part 1 →
-  // Part 7 to mirror src/SUMMARY.md.
+  // config-eval time) so it stays greppable and reviewable, and its entries are
+  // grouped by part, as the group comments mark.
   //
   // GitHub Pages serves static files only — no `_redirects`, no server-side
   // rewrites — so each entry must materialise as a static HTML page at the OLD
@@ -86,10 +91,15 @@ export default defineConfig({
   // ships in the same `dist/` the deploy serves and needs NO new dependency.
   //
   // base-awareness: keys AND destinations are written as site-absolute paths
-  // starting with "/" — do NOT hand-prefix `base`/`DOCS_BASE`; Astro applies
-  // `base` to both sides of `redirects` itself, so a versioned ("/vX.Y/")
-  // build resolves these correctly. Destinations are directory-style with a
-  // trailing slash to match Starlight's emitted URLs and avoid an extra hop.
+  // starting with "/" — do NOT hand-prefix `base`/`DOCS_BASE`: one map serves
+  // every build. Astro writes each stub at its key's path under the build's
+  // output root and its destination exactly as written (refresh target, title,
+  // link text, canonical link), prefixing neither with `base`. build-versions.mjs
+  // copies a versioned ("/vX.Y/") build under its `base` and prefixes each
+  // stub's refresh target there (scripts/version-snapshot.mjs); the title, link
+  // text and canonical link keep the unprefixed path. Destinations are
+  // directory-style with a trailing slash to match Starlight's emitted URLs and
+  // avoid an extra hop.
   //
   // TODO(D5, traffic data): the migration plan deferred the *policy* of URL
   // preservation to "decide with traffic data" — the entries below are the
@@ -97,8 +107,8 @@ export default defineConfig({
   // intentionally NOT pre-populated here. Pull inbound-link / referrer / 404
   // data for methodology.cobre-rs.dev, then decide:
   //   (a) Keep redirects at all? The site is young / blast radius is low, so the
-  //       plan's default is to SHIP these 30 (cheap, static, no downside) —
-  //       confirm or drop.
+  //       plan's default is to SHIP every entry below (cheap, static, no
+  //       downside) — confirm or drop.
   //   (b) Any NON-chapter inbound URLs to add? e.g. old asset paths, deep
   //       `#fragment` targets (note: <meta refresh> cannot preserve a fragment —
   //       such links land on the page top), or pre-revamp slugs that no longer
@@ -128,7 +138,7 @@ export default defineConfig({
     "/specs/math/multi-resolution-studies.html":
       "/math/multi-resolution-studies/",
     "/specs/math/weekly-monthly-coupled-studies.html":
-      "/math/weekly-monthly-coupled-studies/",
+      "/math/post-study-boundary/",
     "/specs/math/scenario-generation.html": "/math/scenario-generation/",
     // Part 4 — The SDDP Algorithm
     "/specs/math/sddp-algorithm.html": "/math/sddp-algorithm/",
@@ -139,7 +149,7 @@ export default defineConfig({
     "/specs/math/upper-bound-evaluation.html": "/math/upper-bound-evaluation/",
     "/specs/math/determinism-guarantees.html": "/math/determinism-guarantees/",
     "/specs/math/reproducibility-and-provenance.html":
-      "/math/reproducibility-and-provenance/",
+      "/math/determinism-guarantees/",
     // Part 5 — Coupling and Boundary Conditions
     "/specs/math/horizon-modes.html": "/math/horizon-modes/",
     "/specs/math/discount-rate.html": "/math/discount-rate/",
@@ -167,9 +177,9 @@ export default defineConfig({
     "/guide/interpreting-results.html": "/running/interpreting-results/",
     "/tutorial/understanding-results.html": "/running/interpreting-results/",
     "/guide/cli-reference.html": "/reference/cli-reference/",
-    "/guide/scalar-parameters.html": "/reference/case-directory-format/",
-    "/reference/case-format.html": "/reference/case-directory-format/",
-    "/reference/output-format.html": "/reference/output-format/",
+    "/guide/scalar-parameters.html": "/reference/case-format/constraints/",
+    "/reference/case-format.html": "/reference/case-format/",
+    "/reference/output-format.html": "/reference/output/",
     "/reference/flatbuffers-schema.html": "/reference/flatbuffers-schema/",
     "/reference/error-codes.html": "/reference/error-codes/",
     "/reference/schemas.html": "/reference/json-schemas/",
@@ -179,9 +189,14 @@ export default defineConfig({
     "/guide/thermal-units.html": "/math/equipment-formulations/",
     "/guide/stochastic-modeling.html": "/math/par-inflow-model/",
     "/guide/block-modes.html": "/math/block-formulations/",
-    "/guide/water-travel-time.html": "/math/lp-formulation/",
+    "/guide/water-travel-time.html": "/math/state-augmentation/",
     "/examples/1dtoy.html": "/examples/toy-single-reservoir/",
     "/examples/4ree.html": "/examples/toy-four-reservoir/",
+    // Retired site slugs (merged or split chapters; R8): one hop to the survivor or the split's index
+    "/math/weekly-monthly-coupled-studies": "/math/post-study-boundary/",
+    "/math/reproducibility-and-provenance": "/math/determinism-guarantees/",
+    "/reference/case-directory-format": "/reference/case-format/",
+    "/reference/output-format": "/reference/output/",
   },
   // D4: manual math renderer — remark-math parses $…$ / $$…$$, rehype-katex
   // renders to static .katex HTML at build time (zero client JS). NOT
@@ -189,12 +204,17 @@ export default defineConfig({
   // `markdown.processor` via `unified({...})` from @astrojs/markdown-remark;
   // the legacy top-level `markdown.remarkPlugins`/`rehypePlugins` keys are
   // deprecated in 6.4 and intentionally NOT used. `unified()` keeps GFM + smart
-  // punctuation on by default — we only extend it with the two math plugins.
+  // punctuation on by default — we only extend it with the math plugins below.
   // remark runs before rehype, so parse-then-render ordering is automatic.
+  // rehype-katex runs with `strict: "error"`, and the katex-strict recorder
+  // after it collects every KaTeX error rehype-katex records. Its
+  // `astro:build:done` hook then fails the build listing them
+  // (scripts/rehype-katex-strict.mjs).
   markdown: {
     processor: unified({
       remarkPlugins: [remarkMath],
-      rehypePlugins: [rehypeKatex, rehypeWrapD2],
+      // prettier-ignore
+      rehypePlugins: [[rehypeKatex, { strict: "error" }], katexStrict.rehypeKatexStrict, rehypeWrapD2],
     }),
   },
   integrations: [
@@ -266,12 +286,12 @@ export default defineConfig({
       // three `getting-started/*` pages); it also reclaims
       // `overview/what-cobre-solves` from the old first Part group, leaving the
       // renamed Introduction group with the remaining three overview slugs.
-      // Every other group's slug set is unchanged from the old 7-Part scaffold,
-      // just relabelled. The pure-software Running Cobre group (§5 sketch,
+      // The System Modelling, Stochastic Modelling and SDDP Algorithm groups
+      // follow spec §6.3. The pure-software Running Cobre group (§5 sketch,
       // ticket-013) lands between Coupling & Boundary Conditions and Worked
       // Examples: these `running/*` pages have no methodology twin, so they are
       // standalone MDX (no `<Tabs>`, no `_impl/` partials). The I/O reference
-      // entries (case-directory-format, output-format, error-codes,
+      // entries (the Case Format and Output Format groups, error-codes,
       // flatbuffers-schema) landed in the Reference group below (ticket-012);
       // `reference/cli-reference` (ticket-013) is the resolved borderline
       // decision — CLI reference lives in Reference, not Running Cobre. The
@@ -298,13 +318,13 @@ export default defineConfig({
         {
           label: "System Modelling",
           items: [
-            "math/lp-formulation",
             "math/system-elements",
             "math/equipment-formulations",
+            "math/lp-formulation",
+            "math/state-augmentation",
             "math/block-formulations",
             "math/hydro-production-models",
             "math/penalty-system",
-            "math/inflow-nonnegativity",
           ],
         },
         {
@@ -312,9 +332,9 @@ export default defineConfig({
           items: [
             "math/policy-graphs",
             "math/par-inflow-model",
-            "math/multi-resolution-studies",
-            "math/weekly-monthly-coupled-studies",
+            "math/inflow-nonnegativity",
             "math/scenario-generation",
+            "math/multi-resolution-studies",
           ],
         },
         {
@@ -322,12 +342,12 @@ export default defineConfig({
           items: [
             "math/sddp-algorithm",
             "math/cut-management",
+            "math/lp-layout-and-scaling",
             "math/lp-warm-start",
             "math/risk-measures",
             "math/stopping-rules",
             "math/upper-bound-evaluation",
             "math/determinism-guarantees",
-            "math/reproducibility-and-provenance",
           ],
         },
         {
@@ -341,13 +361,14 @@ export default defineConfig({
         {
           label: "Running Cobre",
           items: [
-            "running/configuration",
             "running/running-studies",
+            "running/configuration",
             "running/policy-management",
             "running/performance",
             "running/hpc-deployment",
             "running/case-conversion",
             "running/interpreting-results",
+            "running/troubleshooting",
           ],
         },
         {
@@ -357,13 +378,40 @@ export default defineConfig({
         {
           label: "Reference",
           items: [
-            "reference/case-directory-format",
+            {
+              label: "Case Format",
+              collapsed: true,
+              items: [
+                { slug: "reference/case-format", label: "Overview" },
+                "reference/case-format/stages",
+                "reference/case-format/system",
+                "reference/case-format/hydros",
+                "reference/case-format/production-models",
+                "reference/case-format/scenarios",
+                "reference/case-format/constraints",
+                "reference/case-format/penalties",
+                "reference/case-format/initial-conditions",
+              ],
+            },
             "reference/generic-constraints",
-            "reference/output-format",
+            {
+              label: "Output Format",
+              collapsed: true,
+              items: [
+                { slug: "reference/output", label: "Overview" },
+                "reference/output/training",
+                "reference/output/simulation",
+                "reference/output/policy",
+                "reference/output/metadata",
+                "reference/output/stochastic",
+                "reference/output/hydro-models",
+              ],
+            },
             "reference/json-schemas",
             "reference/error-codes",
             "reference/flatbuffers-schema",
             "reference/cli-reference",
+            "reference/python-api",
             "reference/glossary",
             "reference/bibliography",
           ],
@@ -403,8 +451,9 @@ export default defineConfig({
         "./src/styles/brand.css",
         "./src/styles/fonts.css",
         // layout.css (measure + table density) is a SEPARATE concern from the
-        // colour/type files above — it touches only --sl-content-width and
-        // table column floors, so its order among them is arbitrary.
+        // colour/type files above — it touches only --sl-content-width, table
+        // column floors and the right-sidebar TOC width, so its order among them
+        // is arbitrary.
         "./src/styles/layout.css",
       ],
       defaultLocale: "root",
@@ -414,5 +463,6 @@ export default defineConfig({
       },
       pagefind: false,
     }),
+    katexStrict.integration,
   ],
 });

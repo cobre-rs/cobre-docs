@@ -11,9 +11,10 @@ lives as per-crate `README.md` files + `ARCHITECTURE.md` in the `cobre` repo.
 
 - **Dev**: `npm run dev` (Astro dev server)
 - **Build**: `npm run build`; `npm run build:versions` for multi-version assembly
-- **Build hygiene**: `npm run build` needs a clean (committed) working tree —
-  Lunaria reads git history and errors on the `/lunaria` route with uncommitted
-  changes to tracked files. Build and verify on committed state.
+- **Build hygiene**: `npm run build` exits 1 when a page Lunaria tracks
+  (`src/content/docs/**/*.{md,mdx}` outside `pt-br/`, per `lunaria.config.json`)
+  has no commit history: Lunaria reads each tracked page's git history for the
+  `/lunaria` route. Build and verify on committed state.
 - **KaTeX**: manual remark-math + rehype-katex (D4) wired in `astro.config.mjs`
   — NOT a Starlight plugin. Math is rendered to static HTML at build time (zero
   client JS).
@@ -30,7 +31,7 @@ diverge from the code, the spec must be updated — not the other way around.
 
 ## Current State
 
-**Synced to: cobre v0.16.0 (2026-09-22).**
+**Synced to: cobre v0.17.0 (2026-10-01).**
 
 The corpus is a **unified two-layer reference**: the annotation-free **math
 layer** (formulation, algorithm, worked examples) interleaved per topic with a
@@ -63,12 +64,32 @@ snapshots yet.
 - **Serialization (cobre code fact)**: `postcard` for MPI broadcast,
   `FlatBuffers` for policy persistence. Never `bincode`.
 - **No `Box<dyn Trait>` (cobre code fact)**: cobre uses enum dispatch for
-  closed variant sets (e.g. solver `Profile`, `LocalCommKind`). Reflect this if
-  a chapter describes the solver interface.
+  closed variant sets (e.g. `CommBackend`, `LocalCommKind`). The solver
+  `Profile` is an associated type of `SolverInterface`, resolved at compile
+  time (a generic, not an enum). Reflect this if a chapter describes the solver
+  interface.
 - **Brand colours**: the site identity is **Copper** (`#B87333`), not blue — see
   [`docs/design/brand.md`](docs/design/brand.md) before any theming. **Never infer
   brand colour from the `spike/` palette** (its `--dgm-accent` is flow-blue for
   diagram/hydro use, not the UI accent).
+- **Current-state voice, both layers.** Every page in both layers states what
+  cobre does now, with no change narration (no "now", "no longer", "previously",
+  "used to", "formerly", "fixed in", "was broken", "BREAKING", "new in",
+  "as of vX", "this release", migration notes, Before/After examples,
+  removed-key lists, or "Earlier documentation…" / "Known discrepancy" boxes).
+  The software layer may state current version-scoped facts (keys, pins, flags)
+  but never change history; a current-behaviour caveat is a neutral fact, never
+  "a bug where…".
+- **Generic positioning.** Main areas (`index.mdx` lead, CTAs and persona cards,
+  `overview/*`, `getting-started/*`, the sidebar labels, and every section
+  heading outside `running/case-conversion.mdx` and `reference/glossary.md`)
+  name no other planning tool (no NEWAVE, DECOMP, DESSEM or GEVAZP) and use
+  generic phrasing such as "Coming from other software?" or "Converting an
+  existing case", linking to `running/case-conversion`. NEWAVE and DECOMP are
+  named on the bridge page; named term-mapping tables and named equivalent terms
+  live only in the glossary and the bridge page, and other pages carry a generic
+  pointer ("for equivalent terms in other planning tools, see the Glossary").
+  Literal file or identifier references and bibliography citations are exempt.
 
 ---
 
@@ -112,7 +133,7 @@ Part-1 docs review, 2026-06; scoped to `math/*` + overview/notation/glossary.)
   and structure — never "typical size/value" columns or instance counts (plant
   counts, `$/MWh` ranges, horizon lengths). Those hold for some studies and are
   absurd for others; concrete numbers belong only in an explicit **worked example**
-  (Part 6) or the software layer. If a number encoded a methodological _ordering_
+  (Worked Examples) or the software layer. If a number encoded a methodological _ordering_
   (e.g. a penalty hierarchy), keep the ordering in prose and drop the absolute
   values.
 - **Symbol keys stay conceptual.** Notation keys and overview tables define what a
@@ -121,19 +142,20 @@ Part-1 docs review, 2026-06; scoped to `math/*` + overview/notation/glossary.)
   owns them — reinforces _code > spec_.
 - **Don't justify symbol choices.** State the notation clearly; do not explain why a
   symbol was chosen (no etymology/provenance asides, especially Portuguese). The
-  bilingual **glossary** and practitioner term-maps (`reference/glossary.md`,
-  `hydro-production-models` §3) are a deliberate translation aid for
-  DECOMP/DESSEM/NEWAVE practitioners — those stay.
+  bilingual **glossary** and practitioner term-maps (`reference/glossary.md` and
+  the bridge (case-conversion) page, `running/case-conversion.mdx`) are a
+  deliberate translation aid for DECOMP/DESSEM/NEWAVE practitioners — those stay.
 - **Conceptual / overview chapters earn their visuals.** Introduce an idea with the
   equation(s) + a diagram + the tested-compute plots (use `.mdx` to embed the
   Observable Plot islands), and keep notation consistent with the deep chapters the
   overview previews. (Model: SDDP.jl `first_steps`.)
 - **No dev artifacts ship as content.** Spike/scaffold renderer-checks, TODO demos,
   and harness probes never appear on the published site.
-- **Voice gate (Epic 04).** `check:voice` runs the corpus-wide hype/unpinned-number
-  detector; `check:version` forbids cobre-version narration in the math zone. A
-  genuine pre-existing exception is grandfathered in `scripts/doc-lint-allow.txt`
-  (a ratchet — any NEW hit fails the gate).
+- **Voice gates.** `check:voice`, `check:version`, `check:narration` and
+  `check:glossary` share the ratchet `scripts/doc-lint-allow.txt`: an entry
+  grandfathers one rule at one `path:line`, any other hit fails its gate, and an
+  entry that matches no hit fails its gate as STALE. The commands are under
+  Quality Gates.
 
 ## Software-Layer Authoring Standards
 
@@ -147,46 +169,96 @@ partial filenames so the render split holds.
 
 ---
 
+## Quality Gates
+
+```bash
+# export COBRE_BIN=~/.local/opt/cobre-v0.17.0/cobre-cli-x86_64-unknown-linux-gnu/cobre
+npm run check:figures && npm run check:voice && npm run check:counts \
+  && npm run check:version && npm run check:narration && npm run check:error-coverage \
+  && npm run check:input-schemas && npm run check:glossary && npm run check:python-api \
+  && npm run check:gc-examples && npm run check:type-spelling && npm run check:d2 \
+  && npm run check:spdx && npm run refresh:recordings -- --check \
+  && npm run build && npm run check && npm run check:math && npm run check:links \
+  && npm run build:versions && npm test && npm run check:e10
+```
+
+- **d2 v0.7.1** on `PATH`: without it `npm run build` and `npm run dev` abort with
+  "Could not find D2".
+- **cobre v0.17.0** for `check:gc-examples`: `COBRE_BIN`, else `cobre` on `PATH`.
+  The gate exits 2 when the binary is missing, lies under a cargo
+  `target/release/` or `target/debug/` directory, or reports a version other
+  than `DEFAULT_COBRE_REF` in `scripts/cobre-ref.mjs`.
+- **KaTeX strict**: `npm run build` fails on any KaTeX strict-mode violation or
+  parse error (`scripts/rehype-katex-strict.mjs`); `npm run dev` does not run
+  this check.
+
+`.github/workflows/starlight-ci.yml` runs every gate on pull requests to `main`
+(the build as `npm run build:versions`); `.github/workflows/starlight-deploy.yml`
+runs only the build checks, on push to `main`. `README.md` describes each gate in
+one line (`## Quality gates`; `build:versions` under `## Local development`).
+
+---
+
 ## Spec File Patterns
 
 When **updating the LP / SDDP / cut / warm-start cluster** (`lp-formulation.md`,
-`cut-management.mdx`, `sddp-algorithm.mdx`, `lp-warm-start.md`,
-`determinism-guarantees.md`):
+`state-augmentation.md`, `lp-layout-and-scaling.md`, `cut-management.mdx`,
+`sddp-algorithm.mdx`, `lp-warm-start.mdx`, `determinism-guarantees.mdx`):
 
 → Verify column/row layout against `StateSpace` in
 `crates/cobre-sddp/src/lp/indexer/state_space.rs` (the
 `state_to_lp_incoming_column` resolver). LP construction lives in
-`crates/cobre-sddp/src/lp/builder/` (`columns.rs`, `rows.rs`, `entries.rs`,
-`template.rs`, `layout.rs`).
+`crates/cobre-sddp/src/lp/builder/` (`build_inputs.rs`, `columns.rs`,
+`delivery_ring.rs`, `entries.rs`, `fpha_cursor.rs`, `generic_constraints.rs`,
+`hydro_state.rs`, `layout.rs`, `patch.rs`, `rows.rs`, `scaling.rs`,
+`state_box.rs`, `template.rs`); `StageGeometry` is at
+`lp/builder/layout.rs:1707`. Other owners: `lp/indexer/entity_positions.rs`,
+`lp/indexer/anticipated_plants.rs`, `lp/indexer/block_row_family.rs`, the
+crate-root `block_clock.rs`, `time_value.rs` and `bucket_topology.rs`, and
+`setup/lp_build_inputs.rs`. The normative contract is cobre's
+`docs/design/lp-builder-contract.md`.
 → **State pinning**: incoming state (storage, AR lags, in-transit buckets,
 anticipated-thermal slots) is pinned by **column bounds** on the incoming-state
-columns. The `storage_fixing`/`lag_fixing`/`transit_bucket_fixing`/
-`anticipated_state_fixing` row ranges are permanent empty sentinels (`0..0`) —
-there are **no** state-fixing rows.
+columns, so the LP has **no** state-fixing row range. The z-inflow definition
+rows are rows `0..N`, one per hydro (`StateSpace::z_inflow_rows`), and lead each
+stage's row space.
 → **Cut subgradient**: cut coefficients are the **reduced costs** of the pinned
 columns, unscaled by **dividing** by `col_scale[col]` — not row duals. Which
 state dimensions a stage's cut projects onto is governed by its per-stage
 `state_variables` selection (`cut_state_projection.rs`, `duals_extraction.rs`):
 storage and inflow-lags are toggleable (default storage-only), while transit
-buckets and anticipated slots are always projected in.
+buckets and anticipated slots are always projected in. Anticipated slots project
+onto the union of live commitment slots over every decision stage
+(`for_each_live_commitment_slot` in `lp/indexer/anticipated_gate.rs`); the mask
+is structural, so a coefficient on a live slot may be zero.
 → **Chronological block mode**: `stages.json` per-stage `block_mode`
 (`parallel` default | `chronological`); a chronological stage chains per-block
 storage, computes per-block FPHA + evaporation on each block's **average**
 storage, and (PreFilling) freezes each block's storage identity
-(`rows.rs`/`entries.rs`). Cut coefficients are block-count/mode-independent, so a
-policy is **portable across block modes and counts** — policy load validates only
-state dimension + the per-slot entity manifest, never `block_mode`
-(`policy_load.rs`).
+(`rows.rs`/`entries.rs`). `push_z_inflow_coupling` (`entries.rs`) puts `z_h` on
+each water row of the target hydro: `−ζ` on a parallel stage, `−τ_k` per block
+on a chronological stage. `evaporation_slot_count` (`lp/builder/layout.rs`)
+gives one stage-level evaporation slot on a parallel stage and one per block on
+a chronological stage; `StageGeometry::water_balance_row` returns the block row
+on a chronological stage and the single stage row on a parallel stage. Cut
+coefficients are block-count/mode-independent, so the cuts are **portable across
+block modes and counts**: `validate_policy_load` (`policy_load.rs`) never reads
+`block_mode`. A full-FCF load (warm start, resume, simulation-only) also runs
+`build_basis_cache_from_checkpoint`, which refuses a stored basis whose column
+count differs or whose row count falls outside `[template rows, template rows +
+its cut rows]`, so a checkpoint with stored bases is refused across a changed
+block mode or count. Boundary injection uses no stored basis.
 → **LP scaling**: Cobre applies its own offline geometric-mean row/col prescaler
 plus a configurable cost-scale factor (`modeling.cost_scale_factor`, default
 `1_000_000.0` = `DEFAULT_COST_SCALE_FACTOR` in `setup/params.rs`); the LP
 backend's internal simplex scaler is **disabled by default** (HiGHS:
 `simplex_scale_strategy = 0`, pinned on all three phase profiles in
-`solve/solver_phase.rs`). It is now **overridable per phase** via the solver
+`solve/solver_phase.rs`). It is **overridable per phase** via the solver
 profile's `scale` field (`off` | `solver_scaling`) on
 `training.solver.{backward,forward}` and `simulation.solver`; enabling
 `solver_scaling` applies a second scaling and **breaks** the single-unscaling
-exactness that `lp-formulation.md` §12.3 states as holding by default only.
+exactness that `lp-layout-and-scaling.md` §2.3 states as holding by default
+only.
 (Backend is selectable at build time — HiGHS default, CLP opt-in — a
 software-layer/devguide concern; keep the math backend-generic.)
 → **Cut pool**: append-only with stable, deterministic slot indices; deactivation
@@ -201,17 +273,27 @@ sentinel. Periodic-pruning methods (`level1`/`lml1`/`domination`) deactivate;
 **DCS** keeps the pool whole and loads a bounded resident subset per solve
 (`crates/cobre-sddp/src/cut/dcs.rs`), and is inadmissible under enumerated
 forward traversal.
-→ **Checkpoint format (self-describing, introduced in v0.15.0)**: `policy/manifest.bin` (a
+→ **Checkpoint format (self-describing)**: `policy/manifest.bin` (a
 `FlatBuffers` `CheckpointManifest` root: study graph, stage count, producer
 provenance + `format_version`) is written LAST as the commit signal and read
-FIRST behind the version gate; it replaces the removed hand-editable
-`policy/metadata.json`. Each `cuts/<pool>.bin` self-describes its own
-`cost_scale_factor` + graph identity. Every earlier-release checkpoint is
-rejected (no in-place upgrade — re-export/retrain). Boundary injection now
-reconciles a differing-state-shape source per slot by
-ENTITY IDENTITY + per-family slot dates (per-family drop summary, load
-succeeds); warm-start/resume still require an
-exact state-dimension match (`crates/cobre-io/src/output/policy/`,
+FIRST behind the `format_version` gate. Each `cuts/<pool>.bin` self-describes its
+own `cost_scale_factor` + graph identity. `FORMAT_VERSION` is `2`; every load kind
+checks the exact cobre version in `validate_policy_load`, before any state check,
+and refuses a checkpoint from an older or a newer build (`PolicyVersionMismatch`,
+`POLICY_COBRE_VERSION`), and Python
+`write_policy_checkpoint` stamps `POLICY_COBRE_VERSION`. A full-FCF load also
+refuses a stored basis that does not fit its LP
+(`build_basis_cache_from_checkpoint`, `StoredBasisDimensionMismatch`). Boundary
+injection reconciles a differing-state-shape source per slot by ENTITY IDENTITY:
+a target storage or inflow-lag slot with no source counterpart is rejected
+(`RebindOp::Reject`), only forward-dated families are relaxed by interval
+overlap, a season cycle or per-hydro PAR order that disagrees is rejected, and
+the inflow-lag depth the boundary's cuts reference widens the current lag
+state; a source slot for an entity the study does not model is dropped and
+tallied per family (`policy.boundary.strict` rejects the load instead).
+Warm-start/resume still require an exact state-dimension match
+(`crates/cobre-io/src/output/policy/records.rs`,
+`crates/cobre-sddp/src/policy/policy_load.rs`,
 `crates/cobre-sddp/src/policy/reconcile.rs`).
 
 When **updating hydro production / FPHA** (`hydro-production-models.mdx`):
@@ -221,35 +303,54 @@ spillage = 0 (flow axis starts at 0; **no** spillage axis; **no** synthetic
 closing point — the q=0 column anchors), capped at installed capacity, with a
 least-squares **`α` correction** and a per-plane lateral-flow secant for `γ_S`.
 Per-stage fits; run-of-river supported (`γ_V` snapped to 0). **`reference_volume`**
-(`volume_hm3` XOR `percentile`) is the single source of truth. Verify against
-`crates/cobre-sddp/src/production/fpha_fitting/`.
+(`volume_hm3` XOR `percentile`) is the single source of truth. A computed-FPHA
+plant at or below `MIN_FITTABLE_MAX_TURBINED_M3S` (`1e-9` m³/s) turbine capacity
+resolves to constant productivity `0.0` with provenance
+`ProductionModelSource::NoTurbineCapacity` and no export rows. Verify against
+`crates/cobre-sddp/src/production/fpha_fitting/` and
+`crates/cobre-sddp/src/production/hydro_models/production.rs`.
 
-When **updating water travel time / cascade** (`lp-formulation.md §5d`,
+When **updating water travel time / cascade** (`state-augmentation.md §6`,
 `system-elements.mdx`, `_impl/_hydro.*`):
 
 → A hydro's `travel_time_hours` on its **main cascade arc** delays release as
 **augmented Benders state** — in-transit buckets, one slot per downstream plant
 per maturity lag, pinned by column bounds like all state (`state_space.rs`,
-shared `delivery_ring.rs`; declared arcs in `setup/bucket_topology.rs`).
+shared `delivery_ring.rs`; declared arcs in
+`crates/cobre-sddp/src/bucket_topology.rs`, `TransitBucketTopology::arcs`).
 `InitialConditions.past_defluences` seeds stage-0 buckets; validation requires
-history ≥ the arc travel time. Output: `simulation/in_transit/`. Volume maturing
-**past the last stage is dropped** (documented limitation).
+history ≥ the arc travel time. Output: `simulation/in_transit/`. Without a
+`policy.boundary`, volume maturing **past the last stage is dropped**
+(documented limitation): `build_transit_bucket_topology` caps the terminal
+deep-lag slots only then, and with a boundary they stay live and reach the
+boundary-priced projection.
 
-When **updating anticipated thermals** (`lp-formulation.md §5c`,
+When **updating anticipated thermals** (`state-augmentation.md §5`,
 `system-elements.mdx §4`, `_impl/_equipment.configure.mdx`):
 
 → Lead is one of `lead_stages` (calendar-free) XOR `lead_time_hours` (physical,
 resolved on the stage calendar) — `AnticipatedConfig::{LeadStages,LeadTime}`
 (`entities/thermal.rs`). Every commitment is **bounded, costed, and
 commissioning-gated at its delivery stage** `t+K` (`columns.rs`,
-`lead_time/mod.rs`); a sub-stage lead → ordinary thermal; fan-out (>1 delivery) is rejected at load;
-a lead reaching past the horizon is accepted only when it reaches a declared
-`post_study_stages.json` post-study stage — the sole surface for an in-study-decided
-post-horizon delivery, priced against the terminal boundary — else rejected
-(`validation/semantic/thermal.rs`). Pre-study-decided deliveries past the horizon
-(DECOMP já-comandada) ride `initial_conditions.json` `past_anticipated_commitments`
-windows extending past `T`, a sunk cost folded into the boundary cut intercepts
-(`future_anticipated_deliveries` is removed). Sub-tolerance drift at a delivery
+`lead_time/mod.rs`); a sub-stage lead → ordinary thermal; fan-out
+(`max_fanout() > 1`) is rejected at study setup with `SddpError::Validation`
+(`setup/mod.rs`; `cobre-io` has no fan-out check). A lead past the horizon is
+rejected at case load only when it exceeds the whole study horizon
+(`lead_stages` > stage count, or `lead_time_hours` > summed study hours) and the
+plant reaches no declared `post_study_stages.json` post-study stage
+(`validation/semantic/thermal.rs`); a decision stage whose delivery falls beyond
+the study horizon and the declared post-study stages is gated off
+(`lp/indexer/anticipated_gate.rs`). The decision column's cost is
+`cost × delivery hours × relative_delivery_discount(decision, delivery)`
+(`columns.rs`; `time_value.rs`, `D(t+K)/D(t)`). An in-study-decided
+post-horizon delivery is bounded and costed on its decision column by the
+`post_study_stages.json` cell, the sole surface for it, and only the commitment
+it carries into the terminal state is boundary-priced. Pre-study-decided
+deliveries past the horizon (DECOMP já-comandada) ride `initial_conditions.json`
+`past_anticipated_commitments` windows extending past `T`: their fuel is sunk and
+booked nowhere, and only their state contribution is folded into the boundary
+cut intercepts (`build_boundary_fold` in `policy/reconcile.rs`).
+Sub-tolerance drift at a delivery
 bound is absorbed by the read-back state canonicalization that clamps the outgoing
 state onto its resolved box (`solve/stage_solve.rs` `assemble_outgoing_state`), not
 by a per-solve reconcile pass; genuine over-commitment — a
@@ -265,15 +366,81 @@ When **updating filling / commissioning** (`penalty-system.mdx`,
 → **Filling**: `filling = {start_stage_id, filling_min_rate_m3s}`; per-stage
 `V_target[t]` ramp with a soft floor + `filling_target_violation_cost`;
 `deficit > filling_target_violation_cost`. **Commissioning**: half-open
-`[entry_stage_id, exit_stage_id)` via `commissioning_active` (`lp/builder/mod.rs`);
+`[entry_stage_id, exit_stage_id)` via `commissioning_active`
+(`crates/cobre-core/src/commissioning.rs`);
 for thermals/lines/NCS/pumping/contracts, outside-window columns pin to `[0,0]`.
 **Hydros are the exception**: outside its window a non-filling hydro is
 **PreFilling** — turbine/spillage/diversion pinned to 0, storage decoupled by a
 frozen identity, inflow passed downstream. **Spillage** is frozen to 0 in
-PreFilling only, free during Filling and Operating (`columns.rs`, `filling_phase`).
+PreFilling only, free during Filling and Operating (`columns.rs`; the phase is
+`hydro_phase` in `lp/builder/hydro_state.rs`, over `filling_phase` in
+`crates/cobre-core/src/commissioning.rs`).
 → **Required `operational_start_date`** (ISO) on every `system/*` entity; canonical
 entity order is `(operational_start_date, id)` — rename-invariant, id-renumber
 moves LP/cut/output order (`system/builder.rs` `sort_canonical`).
+
+When **updating stochastic sampling** (`scenario-generation.mdx` §2.5 and §3.2,
+`par-inflow-model.mdx`, `_impl/_scenario.configure.mdx`,
+`_impl/_scenario.notes.mdx`):
+
+→ For the forward `historical` scheme, window discovery
+(`discover_historical_windows`, `crates/cobre-stochastic/src/sampling/window.rs`)
+builds the window pool and refuses an empty one (`no valid historical windows
+found`); `standardize_historical_windows` and `validate_historical_library`
+(`crates/cobre-stochastic/src/sampling/historical.rs`) then standardize each
+window and run the V2.x checks: V2.1, V2.3, V2.5 and V2.9 are errors (the
+empty-pool refusal pre-empts V2.5), V2.6 is a warning, and V2.2, V2.4 and V2.7
+are construction invariants with no release-build check (only V2.7 is
+re-asserted, by a `debug_assert!`). Lag seasons come from the calendar walk in
+`crates/cobre-stochastic/src/season_cast/mod.rs` (`season_period_window`,
+`nth_previous_occurrence`, `StageCalendar::season_occurrences`), never from
+arithmetic on declared season ids. The `historical_residuals` noise method
+(`crates/cobre-io/src/stages.rs`) builds the opening tree from the same library
+(`build_opening_tree_library` in
+`crates/cobre-sddp/src/setup/stochastic_pipeline.rs`). `cobre validate` builds the
+opening-tree library but builds the forward scheme's library only inside
+`StudySetup`, which it constructs only when `policy.boundary` is configured, so
+`validate` can pass a case whose forward library `run` refuses.
+
+When **updating the generic-constraint `hydro_inflow` term**
+(`reference/generic-constraints.mdx`, section `hydro_inflow`; `lp-formulation.md`
+§10, Hydro Inflow):
+
+→ `hydro_inflow` parses as a block-capable variable
+(`crates/cobre-io/src/constraints/generic.rs`) and `resolve_hydro_inflow`
+(`crates/cobre-sddp/src/lp/builder/generic_constraints.rs`) resolves it to a
+**rate** identity (m³/s), not the `−τ`-weighted storage-balance row: the plant's
+local `z_inflow` column, inflow diverted into the plant, upstream releases
+weighted by the share the downstream balance row credits to the block, and
+maturing transit water. Each upstream PreFilling plant whose short-circuit
+targets this plant adds its own terms at `1.0`. The plant's own outflows,
+evaporation, withdrawal slacks, AR-lag `ψ` and pumping are excluded.
+
+When **updating policy reuse and its gates** (`running/policy-management.mdx`,
+`reference/error-codes.mdx`):
+
+→ `policy-management.mdx` owns the load contract (`## Policy Load Contract`,
+`### Check order`, `### Version gate`, `### Stored-basis gate`) and
+`error-codes.mdx` owns the error messages. The code is `validate_policy_load` and
+`build_basis_cache_from_checkpoint`
+(`crates/cobre-sddp/src/policy/policy_load.rs`),
+`crates/cobre-sddp/src/policy/reconcile.rs` and
+`crates/cobre-cli/src/commands/run/policy.rs`. The gate facts are in the
+**Checkpoint format** bullet of the LP cluster above.
+
+When **updating discounting** (`discount-rate.mdx`,
+`_impl/_discount.configure.mdx`, `post-study-boundary.md`):
+
+→ `compute_per_stage_discount_factors` (`crates/cobre-sddp/src/time_value.rs`)
+gives each stage the one-step factor `d_t = 1/(1+r_t)^(Δt/365.25)`, `Δt` the stage
+duration in days. `r_t` is the stage's `annual_discount_rate_override`
+(`crates/cobre-io/src/stages.rs`; in the chain dialect a stage without one takes
+its departing transition's override, a per-edge spelling `nodes[]` rejects), else
+the global `policy_graph.annual_discount_rate`. The θ objective coefficient is
+`discount_factors()[stage]`, not divided by the cost scale factor that divides
+every other objective coefficient (`crates/cobre-sddp/src/lp/builder/template.rs`).
+`relative_delivery_discount` (same `time_value.rs`) is `D(delivery)/D(decision)`,
+the cumulative-factor ratio that discounts an anticipated commitment's cost.
 
 When **authoring or editing a diagram** (inline ` ```d2 ` or a tested Observable
 Plot island under `src/figures/` + `src/components/`):
@@ -289,7 +456,7 @@ in diagram-authoring.md §4.2, not ad-hoc hex.
 
 **JSON schemas**: the 18 input schemas are generated in `cobre` from `cobre-io`
 types; this site **vendors** a committed copy (`public/schemas/`) refreshed by
-`npm run refresh:schemas --ref <tag>` (reads a git ref, never the cobre working
+`npm run refresh:schemas -- --ref <tag>` (reads a git ref, never the cobre working
 tree). Refresh on each cobre release; the freshness gate stays in `cobre`.
 
 ---

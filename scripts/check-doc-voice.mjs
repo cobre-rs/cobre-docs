@@ -4,7 +4,7 @@
 // cobre's book is single-voiced (software prose); cobre-docs is two-voiced
 // (Epic 03: methodology math vs the software-layer partials/pages). The gate
 // therefore keys every file off the shared `zoneOf()` predicate
-// (scripts/doc-zones.mjs) and runs two checks with different scope:
+// (scripts/doc-zones.mjs) and runs three checks with different scope:
 //
 //   1. Hype phrases — a curated list of marketing superlatives and
 //      contrasting-affirmative constructs. Runs in BOTH zones: a sober
@@ -15,20 +15,35 @@
 //      zone ONLY: the methodology states the invariant, not a transient
 //      number, while the lenient software-layer pages may legitimately carry
 //      concrete config/CLI numbers.
+//   3. Instance magnitudes — `instance-count` ("160+ hydro"),
+//      `instance-approx` ("≈ 2000 states", also KaTeX `\approx`) and
+//      `instance-span` ("5-10 iterations", "1 month - 5 years"). Runs in the
+//      STRICT zone ONLY: worked examples (`examples/*`) and the software layer
+//      carry concrete instance numbers by design. Matching runs per paragraph
+//      block, so a phrase split by a hard wrap is found; a hit is reported,
+//      and exempted by a doc-voice-ok marker, at the line it starts on.
 //
 // Scans PROSE only: fenced code blocks (``` / ~~~), inline `code` spans, and
-// HTML comments are blanked before matching, so code samples, identifiers, and
+// HTML comments are blanked before matching (shared preprocessing:
+// scripts/doc-text.mjs `proseLines`), so code samples, identifiers, and
 // config defaults are never flagged. A line carrying an inline
 // `<!-- doc-voice-ok: reason -->` marker is exempted (checked against the RAW
 // source line, since the marker itself is an HTML comment that would
-// otherwise be blanked out of the prose).
+// otherwise be blanked out of the prose). A fence still open at the end of a
+// page would blank the rest of it, so it is reported as `UNCLOSED-FENCE
+// <page>:<line>` (the opener's line) and fails the gate; no allowlist entry
+// applies.
 //
 // A committed baseline allowlist (scripts/doc-lint-allow.txt, R4) grandfathers
 // pre-existing strict-zone hits so the gate lands green and blocks only NEW
 // violations — see that file's header for the rationale-per-entry convention.
+// An entry grandfathers only the rule id it names, and an entry of this gate's
+// that matches no hit is reported as STALE and fails the gate.
 //
 // Exports `detectVoiceViolations(text, zone)` — the pure per-file detector —
-// behind a direct-run guard, mirroring check-figures.mjs / check-spdx.mjs.
+// `detectMagnitudeViolations(text, zone)` (rule 3 alone), `RULE_IDS` (the rule
+// ids this gate can emit) and `MAGNITUDE_RULE_IDS` (rule 3's ids) behind a
+// direct-run guard, mirroring check-figures.mjs / check-spdx.mjs.
 //
 // Run any time (no build needed — reads source content, not dist/):
 //   node scripts/check-doc-voice.mjs   |   npm run check:voice
@@ -37,7 +52,13 @@ import { readFileSync, existsSync } from "node:fs";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { join, dirname } from "node:path";
 import { zoneOf, ZONE_STRICT, collectZonedSourceFiles } from "./doc-zones.mjs";
-import { loadAllowlist, isAllowlisted } from "./doc-lint-allowlist.mjs";
+import { loadAllowlist, partitionByAllowlist } from "./doc-lint-allowlist.mjs";
+import {
+  proseLines,
+  unclosedFenceLine,
+  buildBlocks,
+  lineForOffset,
+} from "./doc-text.mjs";
 
 const scriptDir = dirname(fileURLToPath(import.meta.url));
 const contentRoot = join(scriptDir, "..", "src", "content", "docs") + "/";
@@ -149,40 +170,9 @@ const STRUCTURAL_NOUNS = new Set([
 const STRUCTURAL_SUFFIX = /^\d[\d.,]*-?(based|indexed|bit|byte|dimensional|d)\b/i;
 
 const OK_MARKER = /<!--\s*doc-voice-ok/;
-const INLINE_CODE = /`[^`]*`/g;
-const HTML_COMMENT = /<!--[\s\S]*?-->/g;
 
-// ---------------------------------------------------------------------------
-// Blank fenced code, inline code spans, and HTML comments; return
-// (lineno, prose) pairs, preserving line numbers for reporting — port of
-// `_prose_lines`.
-// ---------------------------------------------------------------------------
-function proseLines(text) {
-  const out = [];
-  let inFence = false;
-  const lines = text.split("\n");
-  for (let i = 0; i < lines.length; i++) {
-    const lineno = i + 1;
-    const line = lines[i];
-    const stripped = line.replace(/^\s+/, "");
-    if (stripped.startsWith("```") || stripped.startsWith("~~~")) {
-      inFence = !inFence;
-      continue;
-    }
-    if (inFence) continue;
-    let prose = line.replace(INLINE_CODE, " ");
-    prose = prose.replace(HTML_COMMENT, " ");
-    // Strip markdown bold markers ("**"): a hedge/hype phrase is routinely
-    // wrapped for emphasis (e.g. "not merely **policy quality**" or "is
-    // **removed entirely**"), and the literal "**" would otherwise break a
-    // `\s+`-only regex expecting the words to be separated by plain
-    // whitespace. Stripping (not blanking to a space) keeps the surrounding
-    // words adjacent, matching how the phrase actually reads once rendered.
-    prose = prose.replace(/\*\*/g, "");
-    out.push([lineno, prose]);
-  }
-  return out;
-}
+const UNPINNED_NUMBER_RULE = "unpinned-number";
+const INSTANCE_MAGNITUDE_RULE = "instance-magnitude";
 
 // Return a short description of the first unpinned-number hit, else null —
 // port of `_typical_number_hit`.
@@ -202,7 +192,7 @@ function typicalNumberHit(prose) {
     if (!m) continue;
     const preceding = (m[1] || "").trim().toLowerCase();
     if (STRUCTURAL_NOUNS.has(preceding)) continue;
-    let numPart = m[2].replace(/^\s+/, "");
+    let numPart = m[2];
     if (numPart.startsWith("~")) numPart = numPart.slice(1);
     if (STRUCTURAL_SUFFIX.test(numPart)) continue;
     return `${hedgeMatch[0]} ... ${numPart.slice(0, 12).trim()}`;
@@ -210,12 +200,66 @@ function typicalNumberHit(prose) {
   return null;
 }
 
+// Instance magnitudes that hold for some studies only: an open-ended count, an
+// approximate state-space size, and a span of stages/months/years/iterations
+// (number-first or unit-first).
+const MAGNITUDE_PATTERNS = [
+  [
+    "instance-count",
+    /\b\d[\d,]*\+\s*(?:hydros?|reservoirs?|plants?|thermals?|buses|stages|iterations|scenarios)\b/gi,
+  ],
+  ["instance-approx", /(?:≈|~|\\approx)\s*\$?\s*\d[\d,.]*\s+states?\b/gi],
+  [
+    "instance-span",
+    /\b\d[\d,.]*\s*(?:–|—|-{1,2}|to)\s*\d[\d,.]*\s+(?:stages|months|years|iterations)\b|\b\d+\s+(?:months?|years?)\s*(?:–|—|-{1,2}|to)\s*\d+\s+(?:months?|years?)\b/gi,
+  ],
+];
+
+export const MAGNITUDE_RULE_IDS = new Set(
+  MAGNITUDE_PATTERNS.map(([rule]) => rule),
+);
+
+// Every rule id this gate can emit (except `unreadable`); the allowlist applies
+// and reports only these.
+export const RULE_IDS = new Set([
+  ...HYPE_PATTERNS.map(([label]) => label),
+  UNPINNED_NUMBER_RULE,
+  INSTANCE_MAGNITUDE_RULE,
+  ...MAGNITUDE_RULE_IDS,
+]);
+
+// Pure strict-zone detector for the instance-magnitude rules. Non-prose lines
+// are blanked, not dropped, so a hit keeps its physical line number; each
+// paragraph block is then matched as one joined string. Returns
+// { lineno, rule, text } hits sorted by line (allowlist NOT applied).
+export function detectMagnitudeViolations(text, zone) {
+  if (zone !== ZONE_STRICT) return [];
+
+  const rawLines = text.split("\n");
+  const blanked = rawLines.map(() => "");
+  for (const [lineno, prose] of proseLines(text)) blanked[lineno - 1] = prose;
+
+  const violations = [];
+  for (const block of buildBlocks(blanked.join("\n"))) {
+    for (const [rule, pattern] of MAGNITUDE_PATTERNS) {
+      for (const m of block.joined.matchAll(pattern)) {
+        const lineno = lineForOffset(block, m.index);
+        if (OK_MARKER.test(rawLines[lineno - 1])) continue;
+        violations.push({ lineno, rule, text: m[0].trim() });
+      }
+    }
+  }
+
+  return violations.sort((a, b) => a.lineno - b.lineno);
+}
+
 // ---------------------------------------------------------------------------
 // Pure per-file detector (exported for the node:test fixture and for main()).
 //
 // `zone` is the file's `zoneOf()` result ("strict" | "lenient"). The hype
-// check always runs; the unpinned-number check runs only when zone === strict.
-// Returns an array of { lineno, rule, text } violations (allowlist NOT applied
+// check always runs; the unpinned-number check and the magnitude detector run
+// only when zone === strict. Returns an array of { lineno, rule, text }
+// violations sorted by line (allowlist NOT applied
 // here — that is layered on by the caller so the pure detector stays testable
 // without touching the filesystem).
 // ---------------------------------------------------------------------------
@@ -240,21 +284,22 @@ export function detectVoiceViolations(text, zone) {
     if (zone === ZONE_STRICT) {
       const hit = typicalNumberHit(prose);
       if (hit !== null) {
-        violations.push({ lineno, rule: "unpinned-number", text: hit });
+        violations.push({ lineno, rule: UNPINNED_NUMBER_RULE, text: hit });
       }
 
       const magnitude = INSTANCE_MAGNITUDE.exec(prose);
       if (magnitude) {
         violations.push({
           lineno,
-          rule: "instance-magnitude",
+          rule: INSTANCE_MAGNITUDE_RULE,
           text: magnitude[0].trim(),
         });
       }
     }
   }
 
-  return violations;
+  violations.push(...detectMagnitudeViolations(text, zone));
+  return violations.sort((a, b) => a.lineno - b.lineno);
 }
 
 // ---------------------------------------------------------------------------
@@ -280,6 +325,7 @@ function main() {
   const relFiles = collectZonedSourceFiles(contentRoot).sort();
 
   const violations = [];
+  const unclosed = [];
   let linesChecked = 0;
 
   for (const rel of relFiles) {
@@ -293,28 +339,32 @@ function main() {
         lineno: 0,
         rule: "unreadable",
         text: `${error.code ?? error.name}: ${error.message}`,
-        allowlisted: false,
       });
       continue;
     }
 
+    const openFence = unclosedFenceLine(text);
+    if (openFence !== null) unclosed.push({ rel, lineno: openFence });
+
     linesChecked += proseLines(text).filter(([, prose]) => prose.trim()).length;
 
     for (const v of detectVoiceViolations(text, zone)) {
-      const allowlisted = isAllowlisted(allowlist, rel, v.lineno);
-      violations.push({ rel, ...v, allowlisted });
+      violations.push({ rel, ...v });
     }
   }
 
-  const failing = violations.filter((v) => !v.allowlisted);
+  const { failing, grandfathered, stale } = partitionByAllowlist(
+    violations,
+    allowlist,
+    (id) => RULE_IDS.has(id),
+  );
 
-  if (failing.length === 0) {
-    const grandfathered = violations.length - failing.length;
+  if (failing.length === 0 && stale.length === 0 && unclosed.length === 0) {
     console.log(
       `OK: ${linesChecked} prose lines scanned across ${relFiles.length} files; ` +
-        `no NEW promotional voice or unpinned 'typical' numbers found` +
-        (grandfathered > 0
-          ? ` (${grandfathered} pre-existing hit(s) grandfathered via scripts/doc-lint-allow.txt).`
+        `no NEW promotional voice, unpinned 'typical' numbers or instance magnitudes found` +
+        (grandfathered.length > 0
+          ? ` (${grandfathered.length} pre-existing hit(s) grandfathered via scripts/doc-lint-allow.txt).`
           : "."),
     );
     process.exit(0);
@@ -323,10 +373,19 @@ function main() {
   for (const v of failing) {
     console.log(`VIOLATION [${v.rule}]: ${v.rel}:${v.lineno}: ${JSON.stringify(v.text)}`);
   }
+  for (const s of stale) {
+    console.log(
+      `STALE [${s.ruleId}]: ${s.key} — doc-lint-allow.txt:${s.fileLine} matches no voice hit`,
+    );
+  }
+  for (const u of unclosed) console.log(`UNCLOSED-FENCE ${u.rel}:${u.lineno}`);
   console.log(
-    `FAIL: ${failing.length} prose violation(s). Rewrite per the Methodology Authoring ` +
-      `Standards, mark a genuine exception with an inline '<!-- doc-voice-ok: reason -->', ` +
-      `or (for a pre-existing hit under editorial review) add a rationale to scripts/doc-lint-allow.txt.`,
+    `FAIL: ${failing.length} prose violation(s), ${stale.length} stale allowlist entry(ies), ${unclosed.length} unclosed fence(s). ` +
+      `Rewrite per the Methodology Authoring Standards (instance-count, instance-approx and ` +
+      `instance-span flag instance magnitudes, which belong in a worked example or the software layer), ` +
+      `mark a genuine exception with an inline ` +
+      `'<!-- doc-voice-ok: reason -->', or (for a pre-existing hit under editorial review) add a ` +
+      `rationale to scripts/doc-lint-allow.txt; delete or re-key a stale entry there.`,
   );
   process.exit(1);
 }

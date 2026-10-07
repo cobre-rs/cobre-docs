@@ -4,7 +4,7 @@
 // compute module, never hand-typed.
 ---
 
-<div id="vf-plot" class="vf-plot" role="img" aria-label="Future cost Q(v) with Benders tangents"></div>
+<div id="vf-plot" class="vf-plot" role="img" aria-label="Future cost V(v) with Benders tangents"></div>
 
 <script>
   import * as Plot from "@observablehq/plot";
@@ -45,8 +45,8 @@
         marginBottom: 48,
         marginLeft: 60,
         style: { background: "transparent", color: text, fontSize: "13px" },
-        x: { label: "stored volume v (hm³)", grid: true },
-        y: { label: "future cost Q(v)", grid: true },
+        x: { label: "stored volume v (hm³)", labelOffset: 40, grid: true },
+        y: { label: "future cost V(v)", grid: true },
         marks: [
           Plot.line(data, { x: "v", y: "q", stroke: curve, strokeWidth: 2.5 }),
           Plot.line(tangents, {

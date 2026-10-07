@@ -1,0 +1,835 @@
+---
+title: Scenario Generation
+description: Reproducible noise generation, correlated noise, the opening tree and its sampling methods, the sampling scheme abstraction (InSample/OutOfSample/External/Historical), external and historical scenario integration, load and non-controllable source scenarios, and enumerated scenario trees.
+---
+
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+import { Content as ScenarioConfigure } from './_impl/_scenario.configure.mdx';
+import { Content as ScenarioNotes } from './_impl/_scenario.notes.mdx';
+
+## Purpose
+
+This chapter defines the Cobre scenario generation methodology. It covers
+reproducible noise generation, correlated noise generation, the opening tree
+concept, the sampling scheme abstraction that governs how scenarios are selected
+in forward and backward passes, external scenario integration, load and
+non-controllable source scenarios, and enumerated scenario trees. For the
+mathematical definition of the PAR(p) model itself, see
+[PAR(p) Inflow Model](/math/par-inflow-model).
+
+## 1. The Inflow Model
+
+Scenario generation samples the applied PAR(p) model of
+[PAR(p) Inflow Model](/math/par-inflow-model), which defines the model and its
+estimation, the innovation-scale closure and the validation invariants. The
+inflow-lag seed that starts every trajectory is the lag state $x_0$ of §4.5.
+
+## 2. Noise Generation
+
+### 2.1 Correlated Noise Generation
+
+Hydros within the same correlation group share spatially **correlated** noise.
+Each group carries its own correlation matrix.
+
+The generation process:
+
+1. **Independent sampling** — Generate independent standard normal
+   $z_i \sim N(0,1)$ samples, one per entity in the correlation group
+2. **Spectral transform** — Pre-decompose the correlation matrix via
+   eigendecomposition $C = U \Lambda U^\top$ during
+   preprocessing. The spectral factor
+   $C^{1/2} = U \tilde{\Lambda}^{1/2} U^\top$ transforms
+   independent noise into the correlated [PAR innovation](/overview/notation-conventions#35-inflow-model-parameters):
+   $\varepsilon = C^{1/2} z$. Negative
+   eigenvalues are clipped to zero, which gives the nearest
+   positive-semidefinite matrix in the Frobenius norm; its diagonal can exceed
+   one (see [PAR(p) Inflow Model](/math/par-inflow-model#6-spatial-correlation-factorisation)).
+   Spectral factorisation is the only method Cobre implements, and the same
+   section gives the rationale.
+3. **Entity assignment** — Each entity in the group receives its own
+   correlated noise value $\varepsilon_i$ from the transformed vector.
+
+Entities in different correlation groups are independent of each other.
+Entities not assigned to any group receive independent $N(0,1)$ noise.
+
+For the spectral factorisation rationale and the full eigendecomposition
+derivation, see [PAR(p) Inflow Model](/math/par-inflow-model).
+
+### 2.2 Reproducible Sampling
+
+Noise generation must produce identical results regardless of MPI rank
+assignment, thread scheduling, or restart. This is achieved through
+**deterministic seed derivation**:
+
+- A base seed is fixed for the study
+- Each draw maps to a unique derived seed via a deterministic hash function of
+  a tuple that identifies it. The tuple depends on the sampling method and on
+  the pass: for example (iteration, scenario, stage) for the in-sample forward
+  choice of an opening and (opening, stage) for a Monte Carlo opening-tree draw;
+  [Determinism & Provenance §3](/math/determinism-guarantees#3-methodology-mechanisms)
+  lists the tuple of every pass
+- The RNG state is initialized from this derived seed before generating the
+  noise vector for that tuple
+
+This design ensures:
+
+- **Cross-rank reproducibility** — The same scenario/stage produces the same
+  noise regardless of which MPI rank processes it
+- **Restart reproducibility** — Resuming from a checkpoint produces identical
+  noise for subsequent iterations
+- **Order independence** — Results are identical regardless of the order in
+  which scenarios or stages are processed
+
+:::note[Architectural note]
+Because every rank can independently derive the same
+noise for any draw from its tuple by hashing identical
+inputs with the same RNG, no MPI broadcast of noise data is required. Each
+rank generates only the noise it needs, exactly when it needs it. This
+property eliminates the need for a dedicated scenario innovation noise
+broadcast format.
+:::
+
+Each seed is a hash of a fixed-width tuple of integers, encoded little-endian so
+that the result is identical on every platform. The Implementation notes tab
+under [Implementation in Cobre](#implementation-in-cobre) gives the tuple
+layouts.
+
+### 2.3 Opening Tree
+
+The backward pass in SDDP evaluates an aggregated cut at a node by solving
+**all** of that node's openings — the within-node opening set $\Omega_n$
+defined in [Policy Graphs](/math/policy-graphs) section 2. These openings must
+be identical across all iterations — the backward pass always "sees the same
+tree" at every node. Cobre fixes each node's opening set before training and
+visits all of it in every backward pass. This fixed, per-node structure is the
+**opening tree**. On the implicit stage chain — one (unnamed) node per stage,
+the case the rest of this chapter documents — $\Omega_n$ collapses to the
+per-stage branching factor $N_t$ used below.
+
+The tree is **generated once before training begins** and remains fixed
+throughout. Generation produces $|\Omega_n|$ noise vectors for each node —
+$N_t$ per stage on the implicit chain; the backward pass iterates over them at
+every iteration of the algorithm.
+
+Each node's opening count $|\Omega_n|$ is configured per study — the
+per-stage branching factor $N_t$ on the implicit chain. Uniform branching
+($N_t = N$ for all $t$) is the common case in standard SDDP, but per-node
+variable counts are supported.
+The backward pass solves one subproblem per opening at each node it visits, so
+its cost grows in proportion to $|\Omega_n|$; every count yields valid cuts, so
+the choice affects the cost of an iteration and the speed of convergence, not
+the validity of the lower bound.
+
+**Tree generation:**
+
+1. Before the first SDDP iteration, generate $N_t$ noise vectors per stage
+   $t$, producing a fixed opening tree with total element count
+   $\sum_t N_t \times \text{dim}$
+2. Each noise vector is generated from the base seed using deterministic seed
+   derivation, per (opening, stage) under Monte Carlo sampling and per stage
+   under a batch method (Latin hypercube or quasi-Monte Carlo), which draws all
+   of a stage's openings together — ensuring reproducibility across restarts
+   and MPI configurations (see section 2.2)
+3. Correlation is applied per the active profile for each stage (see section
+   2.4)
+4. In the opening tree, consecutive stages sharing a **noise group** — keyed by
+   season and year, as when several weekly stages fall inside one monthly
+   season — receive one shared noise draw per opening: the group's first stage
+   draws its noise as in step 2 and each later stage in the
+   group copies that stage's already-correlated noise. A stage without a
+   season gets its own group; in a uniform monthly study every group is
+   unique and every stage draws independently. See
+   [Multi-Resolution Studies](/math/multi-resolution-studies) for the
+   mechanism's role in mixed-resolution horizons.
+
+Each node's opening set $\Omega_n$ is drawn from the tree generated for its
+stage — on the implicit chain this is the entire stage-$t$ set of $N_t$
+vectors produced above.
+
+**Backward pass usage:** At each node $n$, the backward pass iterates over
+**all** of $\Omega_n$ — $N_t$ noise vectors at stage $t$ on the implicit
+chain — solving one subproblem per opening, then aggregates the resulting
+cuts, composed across successor nodes per the between-node edge weights (see
+[Policy Graphs](/math/policy-graphs) section 2). Because the tree is fixed,
+every iteration produces cuts that refine the same set of future cost
+scenarios.
+
+**Forward pass usage (InSample only):** When the `InSample` sampling scheme is
+active (see section 3.2), the forward pass samples a random opening
+$\omega \in \Omega_n$ at each node it visits — a random index
+$j \in \{1, \ldots, N_t\}$ on the implicit chain — and uses its
+corresponding noise vector $\varepsilon_{t,j}$ from the opening tree. The other
+sampling schemes do not access the opening tree: `OutOfSample` draws fresh
+noise with each stage's sampling method, plain Monte Carlo at selective and
+historical-residual stages (sections 2.3a and 3.2), and `External` and
+`Historical` use entirely separate data sources; the forward pass noise path is
+governed by the sampling scheme abstraction (section 3).
+
+The opening tree uses stage-major ordering so that all of a stage's noise
+vectors — the set its node(s) draw $\Omega_n$ from — are contiguous in
+memory, enabling linear access during the backward pass. The noise vector for
+a given (stage, opening) pair is read directly without iteration over
+the tree structure.
+
+The same tree is generated bit-identically on every MPI rank because both the
+seed derivation of step 2 and the noise-group assignment
+are pure functions of globally known inputs — the base seed and the stage
+calendar of the broadcast system. For the determinism guarantees that follow
+from this property, see [Determinism & Provenance](/math/determinism-guarantees).
+
+### 2.3a Sampling Method and Opening Tree Generation
+
+Each stage selects the sampling method that generates its openings — the set
+each stage's node(s) draw their $\Omega_n$ from. The method is **orthogonal**
+to the forward sampling scheme of section 3: the method governs _how_ the
+opening tree is populated with noise vectors; the scheme governs _which_ noise
+source the forward pass uses. The methods are:
+
+- **Plain Monte Carlo** — the default. Each opening's noise vector has
+  independent standard normal components, the openings are equiprobable,
+  $p(\omega) = 1/N_t$, and the correlation factor of section 2.1 then turns
+  each opening into its correlated noise vector $\varepsilon$.
+- **Latin hypercube** — For each coordinate, the unit interval is split into
+  $N_t$ equal strata and one uniform point is drawn in each stratum; an
+  independent random permutation per coordinate assigns the strata to the
+  openings, and $\Phi^{-1}$ maps each point to a standard-normal value.
+- **Scrambled Sobol** — The openings are $N_t$ points of a Sobol
+  low-discrepancy sequence with random linear scrambling of each coordinate,
+  mapped by $\Phi^{-1}$. The sequence is bounded in dimension: a stage whose
+  noise vector has more coordinates than the sequence supports is rejected.
+- **Scrambled Halton** — The openings are $N_t$ points of a Halton sequence,
+  each coordinate on its own prime base, with random digit scrambling, mapped
+  by $\Phi^{-1}$.
+- **Selective** — The openings are supplied as a pre-built tree, which provides
+  the openings of every stage, whatever method the stage selects. Cobre
+  generates none, and a stage selecting this method without a supplied tree is
+  rejected.
+- **Historical residuals** — Each opening carries the standardized inflow noise
+  of one window of the historical record, which already embeds the record's
+  cross-hydro correlation, so no correlation factor is applied (see §2.5).
+
+In the first four methods the correlation factor of section 2.1 is applied
+after the draws, so the stratification and the low-discrepancy properties hold
+for the uncorrelated draws; $\Phi^{-1}$ denotes the inverse of the standard
+normal distribution function. Under every method a stage's openings are
+equiprobable; where section 2.5 or 4.2 caps a stage's opening count below
+$N_t$, the capped count takes the place of $N_t$ in $p(\omega)$ and in the
+number of strata.
+
+**Per-stage variation.** The method can vary per stage, enabling mixed
+strategies in a single run.
+
+### 2.4 Time-Varying Correlation Profiles
+
+The correlation structure can vary across stages via the **profile + schedule**
+pattern: the correlation profiles and their stage schedule.
+
+- **Profiles** — Named correlation configurations (for example, a default
+  profile and profiles for the wet and dry seasons), each defining correlation
+  groups and matrices
+- **Schedule** — An optional assignment of stages to profile names. A stage the
+  schedule does not list uses the default profile.
+
+During preprocessing, the spectral decomposition is computed **once per
+profile** (not per stage). At runtime, the scenario generator looks up the
+active profile for the current stage via the schedule and uses its
+pre-computed spectral factor.
+
+### 2.5 Historical-Residual Openings
+
+Under any forward scheme, a generated opening tree fills a stage that uses the
+historical-residual method from the window pool and the applied PAR model of
+[Historical Window Pool](#historical-window-pool), with the same derived seed
+rooting each window's lag chain. The pool is the one built from the candidate
+years of training, and it takes the place of the noise generation of section 2.1
+at that stage. A supplied tree provides the openings of every stage, so this
+section does not apply to it (section 2.3a).
+
+**Opening count.** The branching factor is capped by the pool size and, when a
+class is external in training, by the stage's number of external scenarios
+(§4.2). Without an external class the opening count is
+
+$$
+N^{\rm eff}_t = \min(N_t, \lvert W\rvert)
+$$
+
+and with one, $N^{\rm eff}_t$ is the smaller of this minimum and the stage's
+number of external scenarios. The study is warned when the pool is smaller than
+$N_t$.
+
+**Draw.** Opening $j$ at stage $t$ reads window
+$H(\text{tree seed}, j, t) \bmod \lvert W\rvert$, where
+$H(\text{tree seed}, j, t)$ is the opening-tree seed derivation of section 2.2
+from the base seed, the opening index and the stage. The draw is independent per
+stage and with replacement: opening $j$ can read different windows at different
+stages, and two openings of one stage can read the same window. In the opening
+tree, a later stage of a noise group copies its group's first stage instead of
+drawing (section 2.3). Each opening carries probability $1/N^{\rm eff}_t$,
+whichever window it drew.
+
+**Content.** The opening that reads window $y$ carries that window's
+standardized inflow noise $\varepsilon_{h,t}(y)$ for every hydro $h$. All
+hydros' residuals come from the same window, so they already carry the record's
+cross-hydro correlation, and no spectral factor is applied. The load and NCS
+parts of the opening are zero, so at these stages load and NCS take their
+zero-noise realizations: the mean, truncated at zero for load and clamped to
+$[0, 1]$ for NCS, as in sections 5.1 and 5.4.
+
+**Application.** An opening is a residual, not an inflow. The backward pass
+applies it through the stage LP at the trial point's lag state, like any other
+opening (section 2.3): the residual enters the PAR equation with the trial
+point's lags, not with the window's own. §4.5 states when the two give the
+same inflow.
+
+## 3. Sampling Scheme Abstraction
+
+### 3.1 Three Orthogonal Concerns
+
+The SDDP algorithm has three concerns that govern
+how scenarios are handled during training. Cobre formalizes these as distinct
+abstractions, following the design established by SDDP.jl ([Dowson & Kapelevich, 2021](/reference/bibliography/#software-references)):
+
+| Concern                                              | Abstraction            | What It Controls                 | Default    |
+| ---------------------------------------------------- | ---------------------- | -------------------------------- | ---------- |
+| Which noise is selected at each forward pass stage   | **Sampling Scheme**    | Forward scenario selection       | `InSample` |
+| Which LP model is solved in the forward pass         | **Forward Pass Model** | Training LP vs alternative model | `Default`  |
+| Which noise terms are evaluated in the backward pass | **Backward Sampling**  | Branching completeness           | `Complete` |
+
+These three concerns are **orthogonal**: the choice for one does not constrain
+the choice for another. Two of them are fixed — the forward pass model is
+Default and backward sampling is Complete — so the sampling scheme is the one a
+study chooses.
+
+**Forward and backward noise source separation** is a natural consequence of
+this design: the sampling scheme controls the forward pass noise source, while
+backward sampling always draws from the fixed opening tree (section 2.3).
+These two sources may differ — for example, the forward pass may sample from
+external scenarios while the backward pass evaluates all openings through the
+applied PAR model (§4.2).
+
+Under the External and Historical schemes the forward trajectories follow the
+external or historical law, while the cuts and the lower bound are built on the
+opening tree, whose openings the stage LP turns into realizations with the
+applied model (§4.2). The forward-cost estimate is then the policy's expected
+cost under the forward law, and the lower bound bounds the value of the tree
+problem from below, so the gap of
+[Stopping Rules](/math/stopping-rules/#optimality-gap) compares two problems
+and need not close or stay non-negative.
+
+### 3.2 Forward Sampling Schemes
+
+The sampling scheme determines how the forward pass selects a scenario
+realization at each stage. Cobre supports four sampling schemes, chosen
+independently for each stochastic class (inflow, load, NCS); the Historical
+scheme applies to the inflow class only:
+
+#### InSample (Default)
+
+At each stage $t$, sample a random index
+$j \in \{1, \ldots, N_{\text{openings}}\}$ and use the corresponding noise
+vector $\varepsilon_{t,j}$ from the fixed opening tree (section 2.3). The PAR model
+dynamics equation is embedded in the LP as a constraint; the solver evaluates
+the inflow realization implicitly when it solves the LP with the fixed noise.
+
+- **Noise source**: Opening tree (same as backward pass)
+- **Use case**: Standard SDDP training — forward and backward passes see the
+  same noise distribution
+
+This is SDDP.jl's `InSampleMonteCarlo`: the forward pass samples from the
+same noise terms defined in the model.
+
+#### OutOfSample
+
+The forward pass draws from independently generated Monte Carlo noise that is
+distinct from the opening tree noise. Each iteration and trajectory draws fresh
+noise from the applied stochastic model of each class that selects
+out-of-sample, from a seed independent of the opening tree's. The draws use
+their stage's sampling method (section 2.3a), spread over the iteration's
+trajectories: the Latin-hypercube strata and the scrambled sequence points are
+shared out among the trajectories as the tree shares them out among the
+openings. At selective and historical-residual stages the draws are plain Monte
+Carlo. The correlation factor of section 2.1 is then applied to every draw. The
+backward pass uses the same fixed opening tree as InSample.
+
+- **Noise source**: Independently generated Monte Carlo noise (not from the
+  opening tree)
+- **Backward pass interaction**: The backward pass uses the fixed opening tree,
+  whose openings the stage LP turns into realizations with the same applied
+  model
+- **Use case**: Out-of-sample forward evaluation to reduce in-sample bias
+
+This corresponds to SDDP.jl's `OutOfSampleMonteCarlo`.
+
+#### External
+
+The forward pass draws from user-provided per-class scenario data (for example,
+a set of external inflow scenarios). Each forward trajectory replays one
+external scenario for all its stages, chosen with replacement by a hash of the
+training iteration and trajectory indices from its own fixed base. A
+policy-graph node whose openings point into its stage's external realization
+column uses that column instead (see [Policy Graphs](/math/policy-graphs)).
+
+- **Noise source**: External scenario values (not the opening tree)
+- **Realization computation**: External values must always be **inverted to
+  noise terms** (epsilon) before they can be used in the LP (see section 4.3).
+- **Backward pass interaction**: The backward pass still uses the fixed opening
+  tree, whose openings the stage LP turns into realizations with the applied
+  model: the PAR model for inflow, and a mean and standard deviation per entity
+  for load and NCS. Under the External scheme that model takes the external
+  samples' moments for the entities of
+  [§4.2](#42-backward-pass-with-external-forward-scenarios).
+- **Use case**: Training with imported Monte Carlo scenarios or stress-test
+  scenarios
+
+#### Historical
+
+Each forward trajectory replays one window of the
+[historical window pool](#historical-window-pool) for all its stages. The
+window of a trajectory is $H(\text{iteration}, \text{trajectory}) \bmod \lvert W\rvert$,
+a hash of the training iteration and trajectory indices from a fixed base, so
+windows are drawn with replacement and can repeat within and across
+iterations.
+
+- **Noise source**: The standardized noise of the window pool, one window
+  per trajectory
+- **Realization computation**: Historical values must be **inverted to noise
+  terms** (epsilon) before use in the LP. The same noise inversion procedure
+  applies (see section 4.3). The lag chain seeding the inversion is rooted at
+  the derived inflow-lag seed, the lag state of $x_0$, and advanced by the
+  per-stage transitions, not at the year-preceding raw historical lags. The
+  reason and consequences are spelled out in §4.5.
+- **Backward pass interaction**: The backward pass uses the fixed opening tree,
+  whose openings the stage LP turns into inflows with the study's PAR model as
+  its inputs define it; the Historical scheme substitutes nothing.
+- **Use case**: Policy validation against observed conditions, historical
+  replay analysis
+
+This matches the semantics of SDDP.jl's `Historical` sampling scheme.
+
+#### Historical Window Pool
+
+The Historical scheme draws its replayed sequences from a pool of windows of the
+historical record. A **window** is a year $y$, the year of stage 1's season
+occurrence (for a weekly cycle, its ISO week-numbering year). For stage $t$,
+window $y$ reads the occurrence of season $m(t)$ in year $y + \delta_t$, with
+$\delta_t$ the offset of stage $t$'s season-occurrence year from stage 1's, so
+$\delta_1 = 0$.
+
+**Calendar walk.** A window also covers the occurrences that precede stage 1's
+season on the calendar. The $\ell$-th preceding occurrence,
+$\ell = 1, \ldots, n_{\text{pre}}$, has season $m^{(\ell)}$ and year offset
+$\delta^{(\ell)}$, so window $y$ reads it in year $y + \delta^{(\ell)}$. Each
+step of the walk goes back one calendar month on a monthly cycle, seven days on
+a weekly cycle, and to the previous season definition in id order on a custom
+cycle; without a season map it goes back one calendar month. The walk runs up
+to the largest AR lag the applied model uses across all hydros and stages (at
+least twelve when the annual component is active) and stops early at an
+occurrence the calendar cannot place, so $n_{\text{pre}}$ is at most that lag.
+
+**Window pool.** A year is admissible when the record holds an observation of
+every hydro for every occurrence the window covers:
+
+$$
+W = \bigl\{\, y : a^{\text{obs}}_h(y + \delta_t,\, m(t)) \text{ exists for every } h, t, \text{ and } a^{\text{obs}}_h(y + \delta^{(\ell)},\, m^{(\ell)}) \text{ exists for every } h \text{ and } \ell \le n_{\text{pre}} \,\bigr\}
+$$
+
+with $a^{\text{obs}}_h(y', m)$ the record's observation of hydro $h$ for the
+occurrence of season $m$ in year $y'$. The candidate years are the years of the
+record, or a list of years the study supplies; a candidate outside $W$ is
+dropped, and an empty $W$ refuses the study (§4.3 lists the refusals). The
+preceding occurrences only decide admissibility: the replay's lag chain starts
+from the derived inflow-lag seed, the lag state of $x_0$, not from these
+observations (see §4.5).
+
+**Inversion.** Window $y$'s noise at stage $t$ inverts the PAR model on its
+observation:
+
+$$
+\varepsilon_{h,t}(y) = \frac{a^{\text{obs}}_h(y + \delta_t,\, m(t)) - b_{h,m(t)} - \sum_{\ell=1}^{P_h} \psi_{m(t),\ell}\, a^{(y)}_{h,t-\ell}}{\sigma_{m(t)}}
+$$
+
+where $a^{(y)}_{h,t-\ell}$ is window $y$'s lag chain: the derived seed before
+stage 1, then window $y$'s own observations
+([§4.3](#43-noise-inversion-for-external-and-historical-scenarios)). When
+$\sigma_{m(t)} = 0$, the noise is $0$ if the observation equals the
+deterministic value $b_{h,m(t)} + \sum_{\ell=1}^{P_h} \psi_{m(t),\ell}\, a^{(y)}_{h,t-\ell}$
+to within a numerical tolerance; otherwise the inversion has no finite value
+and the study is refused.
+
+```d2
+direction: down
+
+classes: {
+  hydro: {style: {stroke: "#4a90b8"}}
+}
+
+pre: "Preceding occurrences · admissibility only" {
+  grid-rows: 1
+  horizontal-gap: 60
+
+  first: "ℓ = nₚᵣₑ\nm⁽ⁿᵖʳᵉ⁾" {class: hydro}
+  mid: "ℓ\nm⁽ℓ⁾ in y + δ⁽ℓ⁾" {class: hydro}
+  last: "ℓ = 1\nm⁽¹⁾" {class: hydro}
+
+  first -> mid: "…"
+  mid -> last: "…"
+}
+
+study: "Study stages · replayed" {
+  grid-rows: 1
+  horizontal-gap: 60
+
+  first: "stage 1\nm(1) in y" {class: hydro}
+  mid: "stage t\nm(t) in y + δₜ" {class: hydro}
+  last: "stage T\nm(T)" {class: hydro}
+
+  first -> mid: "…"
+  mid -> last: "…"
+}
+
+pre -> study: "precede stage 1"
+```
+
+For every hydro, each window must cover the $n_{\text{pre}}$ occurrences that
+precede stage 1's season and the season occurrence of every study stage. The
+replay reads only the study stages' observations; the preceding occurrences
+decide admissibility alone.
+
+### 3.3 Forward Pass Model
+
+The forward pass model determines which LP is solved at each stage during the
+forward pass. Cobre implements one model:
+
+- **Default** — Solve the training LP (the convex LP used for cut generation)
+  with the scenario realization from the sampling scheme. This is the standard
+  SDDP forward pass.
+
+### 3.4 Backward Sampling
+
+The backward sampling scheme determines which noise terms are evaluated at each
+stage during the backward pass. Cobre implements one scheme:
+
+- **Complete** — Evaluate **all** $N_{\text{openings}}$ noise vectors from the
+  fixed opening tree. This is the standard SDDP backward pass that guarantees
+  proper cut generation by considering every branching.
+
+Every backward pass evaluates the full opening set; a Monte Carlo backward
+sampling variant would instead sample $n_{\text{sample}}$ openings with
+replacement.
+
+## 4. External Scenario Integration
+
+### 4.1 External Scenario Sources
+
+Cobre supports external scenarios — pre-generated realizations indexed by
+scenario, of which each forward trajectory replays one (§3.2) — as an
+alternative forward-pass noise source. External scenarios can drive the
+forward pass in **both training and simulation**. For each class that is
+external in training, the external samples' own mean and standard deviation
+replace the stored statistics of that class's entities: every load bus with load
+statistics or external values for the load class, every NCS source with
+availability statistics or external values for the NCS class, and, for the
+inflow class, every hydro whose inflow model has AR order 0 and no annual
+component. This includes
+the degenerate deterministic case, a constant column with standard deviation
+zero (see §4.4). A hydro with AR order above 0 or an annual component keeps the
+mean, standard deviation and coefficients of the study's PAR model.
+
+| Use Case           | Description                                |
+| ------------------ | ------------------------------------------ |
+| Historical replay  | Use actual historical inflows              |
+| Monte Carlo import | Pre-generated scenarios from external tool |
+| Stress testing     | Specific drought/flood scenarios           |
+
+### 4.2 Backward Pass with External Forward Scenarios
+
+When the `External` or `Historical` sampling scheme is active during training,
+the forward and backward passes use **different noise sources**. The backward
+pass still requires proper probabilistic branchings for valid cut generation,
+so it evaluates the fixed opening tree (section 2.3) through the applied model.
+
+The lifecycle is:
+
+1. **Moment substitution** — For each class under the External scheme, the
+   mean and the population standard deviation of that class's external values,
+   per entity and stage, replace the stored statistics of the class's entities:
+   every load bus with load statistics or external values for the load class,
+   every NCS source with availability statistics or external values for the
+   NCS class, and, for the inflow class, every hydro whose inflow model has
+   AR order 0 and no annual component; the divisor is the stage's number of
+   external scenarios.
+   Nothing is fitted to the external values: a hydro with AR order above 0 or
+   an annual component keeps the study's PAR model unchanged, AR structure
+   included. The forward-pass standardization uses the same moments, so the
+   two never disagree about whether a series is deterministic. The Historical
+   scheme substitutes nothing.
+2. **Opening tree generation** — Generate the fixed opening tree (section 2.3).
+   Its openings are standardized noise, which the stage LP turns into
+   realizations with the applied model — the study's model after step 1 — so
+   the backward branchings carry the external samples' moments for the
+   entities of step 1.
+3. **Training** — Forward pass samples from external data; backward pass
+   evaluates all openings through the applied model.
+
+When a class is external, a stage's generated opening count is at most that
+stage's number of external scenarios; at a historical-residual stage the
+window-pool bound of §2.5 applies as well, and the opening count is the
+smallest of $N_t$, $\lvert W\rvert$ and the stage's number of external
+scenarios.
+
+**Rationale:** The backward pass needs proper probabilistic branchings for
+valid cuts, so it samples the applied model through the opening tree rather
+than the external scenarios themselves; for the entities of step 1, the
+substituted moments carry the external samples' mean and spread into those
+branchings.
+
+### 4.3 Noise Inversion for External and Historical Scenarios
+
+When using external or historical scenarios, Cobre must compute the **implied
+noise values** that would have generated those inflows under the PAR model.
+This is required because the backward pass needs noise values to construct the
+appropriate RHS perturbations for cut generation, and the lower bound and
+upper bound must be evaluated at the same $x_0$ for the gap to be meaningful.
+
+Given target inflow $a_t^{\text{target}}$ at stage $t$ for hydro $h$ with
+season $m$:
+
+$$
+\varepsilon_t = \frac{a_t^{\text{target}} - b_{h,m} - \sum_{\ell=1}^{P_h} \psi_{m,\ell} \cdot a_{t-\ell}}{\sigma_m}
+$$
+
+where $b_{h,m} = \mu_m - \sum_{\ell=1}^{P_h} \psi_{m,\ell} \cdot \mu_{m-\ell}$ is
+the precomputed base value.
+
+All quantities ($\mu_m$, $\psi_{m,\ell}$, $\sigma_m$) are in their respective
+units as described in [PAR(p) Inflow Model](/math/par-inflow-model). The AR
+coefficients are in original units; $\sigma_m$ is the derived residual std.
+Under PAR(p)-A, the upper index $P_h$ of the lag sum equals the full width of
+the AR-dynamics row (twelve lags, or the classical order if larger, when any
+hydro carries the annual component), not the classical AR order — the annual
+coefficient is spread across the trailing lag positions and must enter the
+deterministic component of the inversion to keep the implied noise consistent
+with the LP's AR row.
+
+The inversion proceeds **sequentially through stages** (each stage updates the
+lag buffer for the next):
+
+1. Initialise the lag buffer from the derived inflow-lag seed — the observed
+   inflows before the study start, cast from the windowed inflow history and
+   shadowed day-wise by the initial conditions' recent observations wherever the
+   two overlap (see §4.5 for the reason this is the only admissible seed).
+2. For each stage $t$: compute the deterministic PAR component, solve for
+   $\varepsilon_t$, update the lag buffer with $a_t^{\text{target}}$.
+3. Validate the inverted noise:
+   - When $\sigma_m = 0$, the inverted noise is $0$ if $a_t^{\text{target}}$
+     equals the deterministic component to within a numerical tolerance, and
+     otherwise has no finite value, which refuses the study (the PAR model
+     says the series is deterministic, but the scenario disagrees).
+   - Building the inverted window pool, which serves both the historical
+     replay and the historical-residual openings (§2.5), refuses the study
+     when a study stage has no season, when an inverted noise value is the
+     $\sigma_m = 0$ mismatch above or is not a number, or when the window pool
+     is empty. [Error Codes](/reference/error-codes/#stochasticpreparationerror)
+     lists the messages and the exit codes.
+
+### 4.4 Deterministic (σ = 0) External Columns
+
+A class's external column may be **constant** — every realization identical,
+standard deviation zero. Because the class statistics are derived from the
+samples themselves (§4.1), Cobre reads that as a genuinely deterministic series
+rather than a malformed one, and **accepts** it for load, for non-controllable
+sources, and for an inflow with an **order-0** model (no autoregressive lag and
+no annual component): the deterministic base is exactly that constant value.
+
+A constant column is **rejected** only for an inflow whose model has an
+autoregressive lag or an annual component. A single deterministic value cannot
+stand in for such a model: it would have to equal the model's own stage-by-stage
+deterministic PAR output — which depends on the evolving lag state and is not
+reconstructed from a flat column — so the load fails, naming the class, stage,
+and entity. This is distinct from the §4.3 inversion anchor check: it is a
+load-time admissibility rule on the column, not a per-stage residual test. (The
+concrete rejection message is a software-layer concern — see
+[Error Codes](/reference/error-codes).)
+
+### 4.5 x₀ Consistency Under Historical Replay
+
+The historical and external schemes share the same SDDP forward pass: the
+sampler returns a standardised noise residual $\varepsilon_t$ and the LP reconstructs
+the realised inflow from $\varepsilon_t$ together with the lag state carried in the
+state vector. The lag state at stage 0 is taken uniformly from the derived
+inflow-lag seed for every scenario, so all forward replays share a single
+hydrological starting tendency.
+
+For the implied $\varepsilon_t$ on a historical window to reconstruct the raw
+historical observation exactly when the LP starts from the same $x_0$, the
+inversion lag chain must also be rooted at that same derived seed — not at
+the year-preceding raw historical inflows of the window being replayed. If
+the inversion is seeded from the window-preceding lags while the LP starts
+from the derived seed, the two paths build their lag chains from different
+roots and produce a systematic per-stage offset of
+
+$$
+\Delta a_{h,t} = a_t^{\text{target}} - a_t^{\text{reconstructed}}
+        = \sum_{\ell} \psi_{m,\ell} \cdot \bigl(\text{seed}_\ell - \text{window\_lag}_\ell\bigr)
+$$
+
+that propagates through every stage. This offset prevents exact replay of the
+historical observation even at stage 0 and shows up as a structural,
+typically-negative gap between the forward upper bound and the lower bound
+that does not close with iteration count.
+
+To eliminate this gap, the inversion runs as a **rolling lag chain seeded
+from the derived seed** and advanced at every stage with the same per-stage
+lag transitions the LP uses (see
+[Multi-Resolution Studies](/math/multi-resolution-studies)), for monthly,
+sub-monthly and multi-monthly stages alike.
+
+The cross-scheme implications are:
+
+- **Historical scheme.** Every scenario starts the forward LP from the
+  derived seed; the implied $\varepsilon$ rebuilds the raw historical observation to
+  within floating-point precision at every stage; the LB and UB evaluate
+  $V_0$ at the same $x_0$. The reconstruction is exact under the inflow
+  non-negativity methods that pass the noise through. Under the truncation
+  methods, a hydro's first negative observation replays as zero inflow, and
+  from that stage on the hydro's replayed lag chain departs from the observed
+  one (see [Inflow Non-Negativity Solution Methods](/math/inflow-nonnegativity)).
+- **Historical-residual openings.** When training replays history, the openings
+  of a historical-residual stage (§2.5) come from the same window pool, applied
+  PAR model and derived seed as the replay. At a trial point whose lags are
+  window $y$'s chain $a^{(y)}_{h,t-\ell}$, an opening that drew window $y$ at the
+  stage reproduces that window's observation there (under the truncation
+  methods, a negative observation replays as zero, as above); at any other lag
+  state the same residual enters the PAR equation with that state's lags and in
+  general yields a different inflow.
+- **External scheme.** Same rolling-chain machinery for inflow — the supplied
+  target series is inverted relative to the derived seed, preserving LB/UB
+  consistency at $x_0$ across all forward replays; load and NCS carry no lag
+  structure, and their values are standardized by the class's applied mean and
+  standard deviation alone. Under the truncation methods, a hydro's first
+  negative target value replays as zero inflow, and from that stage on the
+  hydro's replayed lag chain departs from the supplied series (see
+  [Inflow Non-Negativity Solution Methods](/math/inflow-nonnegativity)).
+- **InSample / OutOfSample.** Unaffected — their forward pass replays no
+  observed series, so it has no reconstruction to keep consistent. An
+  OutOfSample pass draws fresh noise (§3.2), plain Monte Carlo even at a
+  historical-residual stage. An InSample pass samples the opening tree, so at a
+  historical-residual stage it reads an inverted window residual (§2.5) and
+  applies it at the trajectory's own lag state, as the backward pass does.
+
+### 4.6 External Scenarios in Simulation
+
+Simulation selects a class's external scenario or historical window with
+the same hashes as training ([§3.2](#32-forward-sampling-schemes)), with the
+iteration argument held at a fixed value that no training iteration takes, so a
+simulated scenario's draw depends on its scenario index only. A policy-graph
+node that points into its stage's external realization column uses that
+column.
+
+## 5. Load and Non-Controllable Source Scenarios
+
+### 5.1 Load Uncertainty Model
+
+When load statistics are provided, the system generates stochastic
+load realizations per (bus, stage) using the stored mean and standard
+deviation. Load has no autoregressive structure: a load realization is the
+stored mean plus the standard deviation times a standard-normal noise,
+truncated at zero:
+
+$$
+d_{b,t} = \max\bigl(0,\; \mu_{b,t}^{\text{load}} + s_{b,t}^{\text{load}} \cdot \varepsilon_{b,t}^{\text{load}}\bigr)
+$$
+
+where $\varepsilon_{b,t}^{\text{load}} \sim N(0,1)$ is the bus's load noise
+(§5.3). When $s_{b,t}^{\text{load}} > 0$ the truncation raises the mean of
+$d_{b,t}$ above $\mu_{b,t}^{\text{load}}$, the more so the smaller
+$\mu_{b,t}^{\text{load}} / s_{b,t}^{\text{load}}$. Unless the load class is
+external in training, a bus whose standard deviation is zero at every stage
+carries $\mu_{b,t}^{\text{load}}$ itself, without the truncation.
+
+Without load statistics, every bus carries zero load, unless the load class is
+external in training: the buses of its external scenarios then take the
+external samples' moments (§4.1).
+
+### 5.2 Block Load Factors
+
+The base load realization $d_{b,t}$ is a **stage-level** value in MW.
+Block-level loads are obtained by applying **multiplicative block factors**:
+
+$$
+d_{b,t,k} = d_{b,t} \cdot f_{b,t,k}
+$$
+
+where $f_{b,t,k}$ is the block factor of bus $b$ at stage $t$ and block $k$.
+Where no block factor is given, a block factor of one applies.
+
+### 5.3 Load Correlation
+
+A correlation group holds entities of one class only: hydros, load buses or
+non-controllable sources. Load noise is correlated with the other load buses of
+its group through the factorisation of section 2.1, and is independent of
+inflow and NCS noise.
+
+### 5.4 Non-Controllable Source Availability
+
+The availability of non-controllable source $r$ at a stage is the ratio
+
+$$
+\xi_r = \mathrm{clamp}(\mu^{nc}_r + s^{nc}_r \cdot \varepsilon^{nc}_r,\,0,\,1)
+$$
+
+where $\mu^{nc}_r$ and $s^{nc}_r$ are the mean and standard deviation of the
+unclamped availability factor at the stage and $\varepsilon^{nc}_r \sim N(0,1)$ is its
+noise. The ratio is a dimensionless fraction of the installed capacity: the
+source's generation cap in a block is the installed capacity times $\xi_r$
+times the block factor
+([Equipment-Specific Formulations §6](/math/equipment-formulations#6-non-controllable-generation-sources)
+states that bound and curtailment). With $s^{nc}_r > 0$ the clamp raises the
+mean of $\xi_r$ above $\mu^{nc}_r$ when $\mu^{nc}_r < 1/2$ and lowers it when
+$\mu^{nc}_r > 1/2$. NCS noise is correlated only with the other sources of its
+group (§5.3).
+
+The model applies to a source with a stochastic availability model; a source
+without one takes its stage's available generation, the installed capacity
+unless the stage sets it, in place of the installed capacity times $\xi_r$, as
+Equipment Formulations §6 states.
+
+## 6. Enumerated Scenario Trees
+
+Sampling evaluates a node's opening set by drawing from it. An **enumerated**
+pass instead visits every node and every root-to-leaf path of a finite policy
+graph once, with no sampling, so its bounds are those of the declared tree: the
+upper bound is computed over every path rather than estimated from a sample
+([Upper Bound Evaluation §2](/math/upper-bound-evaluation/#2-exact-deterministic-upper-bound)).
+Its structural requirements — a singleton opening set at every node, and
+in-degree 1 everywhere, so the graph is a pure tree — are those of
+[Policy Graphs §6](/math/policy-graphs/#6-the-enumerated-tree-structural-requirement).
+Branching is therefore declared as sibling nodes, each with one opening, and
+the deterministic trunk with branching only at the final stage
+([Maceira et al., 2002](/reference/bibliography/#inflow-modelling)) is a chain of single-successor nodes ending in a terminal fan of sibling
+nodes.
+
+With a common branching count per stage, the number of root-to-leaf paths is
+the product of the per-stage branching counts, so it grows exponentially with
+the number of branching stages. Enumeration suits short horizons and trees that
+branch at few stages.
+
+## Implementation in Cobre
+
+The methodology above defines how scenarios are generated and sampled; the tabs below cover how Cobre's software surface configures the schemes, seeds and inputs, and how it implements seed derivation, the inversion lag chain and its warnings.
+
+<Tabs>
+  <TabItem label="Configure"><ScenarioConfigure /></TabItem>
+  <TabItem label="Implementation notes"><ScenarioNotes /></TabItem>
+</Tabs>
+
+## Cross-References
+
+- [PAR(p) Inflow Model](/math/par-inflow-model) — Mathematical definition, parameter set, stored vs. computed quantities, fitting procedure, spectral factorisation rationale, validation invariants
+- [Inflow Non-Negativity Solution Methods](/math/inflow-nonnegativity) — Handling of negative inflow realizations from PAR sampling
+- [SDDP Algorithm](/math/sddp-algorithm) — Forward/backward pass structure, cut generation, convergence; references sampling scheme abstraction (sections 3.1–3.2)
+- [Policy Graphs](/math/policy-graphs) — The node/transition/pool structure the opening tree's per-node opening set $\Omega_n$ (section 2.3) is scoped to
+- [Cut Management](/math/cut-management) — Cut generation, storage, and selection; uses opening tree branchings as the backward pass input
+- [Multi-Resolution Studies](/math/multi-resolution-studies) — Multi-resolution modeling configurations; uses scenario generation with varied stage counts
+- [Post-Study Boundary & Chained Studies](/math/post-study-boundary) — a study chained to an upstream policy; each study draws its own scenario tree
+- [Determinism & Provenance](/math/determinism-guarantees) — bit-identical results per binary at any rank or thread count and on every re-run; grounded in the seed derivation architecture of section 2.2

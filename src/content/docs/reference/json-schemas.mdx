@@ -9,16 +9,12 @@ setting at the appropriate file to get autocompletion, hover documentation,
 and inline error highlighting while authoring case inputs.
 
 For a complete description of each file's fields and validation rules, see
-the [Case Directory Format](/reference/case-directory-format/) reference page.
+the [Case Format](/reference/case-format/) reference page.
 
 :::note[`operational_start_date`]
-Every `system/*` entity registry schema (buses, hydros, thermals, lines,
-non-controllable sources, pumping stations, energy contracts) requires an
-`operational_start_date` field — an ISO-8601 calendar date (`YYYY-MM-DD`). It
-is provenance and the canonical `(operational_start_date, id)` ordering key
-only; see [Notation Conventions](/overview/notation-conventions) and
-[Case Directory Format](/reference/case-directory-format/) for field-level
-detail.
+Every `system/*` entity registry schema requires an `operational_start_date`
+field; [Case Format — Shared entity fields](/reference/case-format/#shared-entity-fields)
+states its format and its role in the canonical entity order.
 :::
 
 ## Available schemas
@@ -48,8 +44,7 @@ detail.
 
 Every schema is served straight from this site at a stable, versioned-free
 URL: `/schemas/<name>.schema.json` (for example
-`https://docs.cobre-rs.dev/schemas/config.schema.json` once the site
-is live at that domain). Point your editor's JSON Schema mapping there for
+`https://docs.cobre-rs.dev/schemas/config.schema.json`). Point your editor's JSON Schema mapping there for
 autocompletion and validation while authoring case inputs.
 
 ### VS Code
@@ -94,17 +89,35 @@ Go to **Preferences > Languages & Frameworks > Schemas and DTDs > JSON
 Schema Mappings**, add a new mapping, paste the schema URL, and select the
 file pattern.
 
+## What the schemas do not check
+
+The schemas and the `cobre` loader disagree on the three points below; the
+loader's check is the one that applies.
+
+- `config.schema.json` does not mark `training.selection` and
+  `training.stopping_rules` as required. A `config.json` without either is
+  rejected when the case loads
+  ([`SchemaViolation`](/reference/error-codes/#schemaviolation)).
+- `stages.schema.json` accepts any value for a top-level `scenario_source` key. The loader
+  rejects any value other than `null`: scenario sources belong in `config.json`
+  ([`config.json`](/reference/case-format/#configjson)).
+- `generic_parameters.schema.json` describes `kind` with four values and does
+  not restrict it, while the loader accepts five kinds, `per_stage_block` (with
+  its `block_values` array) included
+  ([the five parameter kinds](/reference/generic-constraints/#generic_parametersjson-the-five-parameter-kinds)).
+
 ## Provenance and refreshing
 
 These schemas are generated in the `cobre` repository from the `cobre-io`
 Rust types — the Rust types are the ground truth, and the schema files are
-their generated output, licensed Apache-2.0. This site vendors a committed
-copy (currently at the `v0.16.0` tag) under `public/schemas/` so the files
+their generated output, licensed Apache-2.0. This site vendors the copy
+generated at cobre `v0.17.0` under `public/schemas/` so the files
 have a stable URL to serve from and to link to.
 
 Do not hand-edit any vendored schema file. When `cobre` regenerates the
 schemas (after a change to a `cobre-io` input type), re-vendor the committed
-copy here with:
+copy here with (the command reads the `v0.17.0` tag by default; `-- --ref <tag>`
+selects another):
 
 ```bash
 npm run refresh:schemas
