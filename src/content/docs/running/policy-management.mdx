@@ -710,14 +710,14 @@ checkpoint from `<output_dir>/<policy_subdir>` (`policy_subdir` defaults to
 | Key           | Type         | Description                                                                                                    |
 | ------------- | ------------ | -------------------------------------------------------------------------------------------------------------- |
 | `metadata`    | `dict`       | `format_version`, `cobre_version`, `created_at`, `num_stages`, `graph_manifest`, `season_manifest`, `producer` |
-| `stage_cuts`  | `list[dict]` | One entry per stage — see below                                                                                |
+| `stage_cuts`  | `list[dict]` | One entry per cut pool (one per stage on a stage chain) — see below                                            |
 | `stage_bases` | `list[dict]` | One entry per saved LP basis: `stage_id`, `iteration`, `column_status`, `row_status`, `num_cut_rows`           |
 
 Each `stage_cuts` entry carries:
 
 | Key                 | Type         | Description                                                                                                                                                                                            |
 | ------------------- | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `stage_id`          | `int`        | Stage index                                                                                                                                                                                            |
+| `stage_id`          | `int`        | Pool id (0-based), the key that names `cuts/<pool>.bin`; the 0-based stage position on a stage chain                                                                                                   |
 | `state_dimension`   | `int`        | Length every cut's `coefficients` must have                                                                                                                                                            |
 | `capacity`          | `int`        | Cut-pool slot capacity                                                                                                                                                                                 |
 | `warm_start_count`  | `int`        | Cuts loaded from a previous artifact at run start                                                                                                                                                      |

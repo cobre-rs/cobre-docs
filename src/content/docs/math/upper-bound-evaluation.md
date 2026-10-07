@@ -350,7 +350,7 @@ Both approximations bound their future-cost variable from below in the LP: the c
 
 | Aspect                   | Impact                                                                   |
 | ------------------------ | ------------------------------------------------------------------------ |
-| **Vertices per stage**   | Typically $\mathcal{O}(\text{iterations} \times \text{forward\_passes})$ |
+| **Vertices per stage**   | Typically $\mathcal{O}(\text{iterations} \times N_{\text{forward\_passes}})$ |
 | **LP size increase**     | $n_{vertices} + 2 \times n_{state}$ additional variables                 |
 | **Evaluation frequency** | Trade-off between gap accuracy and runtime                               |
 | **Memory**               | Vertices stored separately from cuts                                     |

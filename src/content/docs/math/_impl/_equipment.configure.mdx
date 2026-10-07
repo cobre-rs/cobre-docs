@@ -25,8 +25,8 @@ carry the same optional pair of fields:
 
 Outside its window, an entity's decision columns remain present in the LP but
 are pinned to zero: it injects no power, withdraws no power, moves no water,
-and draws no bus power. `entry_stage_id` must fall within the stage range
-declared in `stages.json`. See [System Element Modeling Overview §1](/math/system-elements#entity-commissioning-windows)
+and draws no bus power. An `entry_stage_id` past the last study stage is accepted: the entity then
+stays out of service for the whole study. See [System Element Modeling Overview §1](/math/system-elements#entity-commissioning-windows)
 for the shared methodology statement — methodology §3–4 above cover how the
 window interacts with contract take-or-pay bounds and pumping flow.
 
@@ -185,7 +185,7 @@ declaration surfaces, by who decides the commitment:
 An in-study decision is charged on its decision column at the `cost_per_mwh`
 of its `thermal_bounds[]` cell, discounted from the delivery stage, and the
 loaded boundary prices the commitment carried into the terminal state; with no
-`config.policy.boundary` declared,
+`policy.boundary` declared in `config.json`,
 the study setup warns that the delivery prices at zero terminal value. A
 commitment decided before the study is sunk: its fuel enters no objective, and
 with a boundary loaded its state contribution enters the boundary cuts'

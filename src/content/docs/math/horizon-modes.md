@@ -107,12 +107,12 @@ algorithm checks across consecutive iterations.
 
 ### Season Function
 
-For a cycle of length $P$ stages (for example, twelve monthly stages making
+For a cycle of length $M$ stages (for example, twelve monthly stages making
 a calendar year), the **season** of stage $t$ is its position within one
 cycle:
 
 $$
-\tau(t) \;=\; (t - 1) \bmod P + 1 \;\in\; \{1, 2, \ldots, P\}.
+\tau(t) \;=\; (t - 1) \bmod M + 1 \;\in\; \{1, 2, \ldots, M\}.
 $$
 
 The cycle is the unit that repeats; the season is the position within it.
@@ -127,7 +127,7 @@ factor $d_{t \to t+1}$. The problem that starts at any stage of
 $\mathcal{C}_\tau$, its own stage together with the infinite tail after it,
 is then the same for every stage of $\mathcal{C}_\tau$. This is what makes a
 cut generated at one stage of $\mathcal{C}_\tau$ valid at every stage of
-$\mathcal{C}_\tau$, and what lets $P$ pools represent the infinite horizon.
+$\mathcal{C}_\tau$, and what lets $M$ pools represent the infinite horizon.
 
 ### Cycle Convergence Inequality
 
@@ -160,9 +160,9 @@ $$
 \bigl\{\, \beta_{0,i} + \beta_i^{\top} x \,\bigr\}.
 $$
 
-A single cycle of $P$ pools therefore represents the entire infinite
+A single cycle of $M$ pools therefore represents the entire infinite
 horizon. The pool-organisation difference between finite and cyclic mode
-reduces to: $T$ pools indexed by absolute stage versus $P$ pools indexed by
+reduces to: $T$ pools indexed by absolute stage versus $M$ pools indexed by
 season.
 
 ### Fixed-Point Bellman Operator
@@ -170,11 +170,11 @@ season.
 The cyclic value functions satisfy the seasonal Bellman recursion
 
 $$
-V_\tau \;=\; \mathbb{T}_\tau\, V_{\tau \bmod P + 1},
-\qquad \tau \in \{1, \ldots, P\},
+V_\tau \;=\; \mathbb{T}_\tau\, V_{\tau \bmod M + 1},
+\qquad \tau \in \{1, \ldots, M\},
 $$
 
-where $\tau \bmod P + 1$ is the season that follows $\tau$ (season $P$ is
+where $\tau \bmod M + 1$ is the season that follows $\tau$ (season $M$ is
 followed by season $1$) and $\mathbb{T}_\tau$ is the one-stage Bellman
 operator at season $\tau$:
 
@@ -195,7 +195,7 @@ season,
 
 $$
 V_1 \;=\; \bigl(\mathbb{T}_1 \circ \mathbb{T}_2 \circ \cdots \circ
-\mathbb{T}_P\bigr)\, V_1 .
+\mathbb{T}_M\bigr)\, V_1 .
 $$
 
 With bounded stage costs and a nonempty feasible set for every incoming state
@@ -203,7 +203,7 @@ in the state space and every realization, each $\mathbb{T}_\tau$ is monotone and
 norm, Lipschitz with constant its season's factor $d_{t \to t+1}$. A season's
 factor may equal one, so a single $\mathbb{T}_\tau$ need not be a
 contraction; the composition is Lipschitz with constant the product of the
-$P$ factors, which is $d_{\text{cycle}} < 1$ by the cycle convergence
+$M$ factors, which is $d_{\text{cycle}} < 1$ by the cycle convergence
 inequality. The chain is therefore a contraction with modulus
 $d_{\text{cycle}}$, and by the Banach fixed-point theorem on the bounded
 functions of the state the cyclic value functions exist and are unique: $V_1$
@@ -218,7 +218,7 @@ The outer approximation has converged in cyclic mode when the lower bounds
 at every season stabilise across consecutive iterations:
 
 $$
-\max_{\tau \in \{1, \ldots, P\}}
+\max_{\tau \in \{1, \ldots, M\}}
 \bigl|\, \underline{z}^{\,k,\tau} - \underline{z}^{\,k-1,\tau} \,\bigr|
 \;<\; \delta_{\text{cycle}},
 $$
@@ -277,7 +277,7 @@ finite mode (section 1) and the reserved cyclic design (sections 2–4).
 - The modeller has a meaningful annual discount rate that reflects the time
   value of future costs.
 - The cut pool compression offered by season-indexed pools is desirable:
-  instead of accumulating T independent pools, only P pools (one per season)
+  instead of accumulating T independent pools, only M pools (one per season)
   would be maintained regardless of how many cycle repetitions the forward
   pass traverses.
 
@@ -287,7 +287,7 @@ finite mode (section 1) and the reserved cyclic design (sections 2–4).
 | --------------------------- | ------------------------------- | ----------------------------------- |
 | Terminal condition          | V at T+1 = 0 (or imported cuts) | None; self-consistent across cycles |
 | End-of-world effect         | Present near terminal stage     | Absent                              |
-| Cut pools                   | T pools, one per stage          | P pools, one per season             |
+| Cut pools                   | T pools, one per stage          | M pools, one per season             |
 | Discount rate requirement   | None                            | Required; must give cycle < 1       |
 | Forward-pass stopping logic | Reaches terminal stage          | Two-condition explicit rule         |
 | Mathematical complexity     | Lower                           | Higher                              |

@@ -84,10 +84,10 @@ synchronization, in two passes:
    pool cuts.
 2. **Budget pass** (`max_active_per_stage`) — runs **every** iteration,
    regardless of `check_frequency`, as a hard-cap safety net on top of
-   whatever the selection pass (or DCS) leaves active. The cap applies to
-   every pool, including a terminal pool that holds a loaded boundary policy's
-   cuts. Only cuts generated in the current iteration are exempt, so a cap
-   below the number of active imported boundary cuts evicts some of them.
+   whatever the selection pass (or DCS) leaves active.
+   [Stage 2: Budget Enforcement](/running/performance/#stage-2-budget-enforcement)
+   gives the eviction order and the cap's reach into a terminal pool that holds
+   a loaded boundary policy's cuts.
 
 ### DCS is lazy, not a deactivation pass
 

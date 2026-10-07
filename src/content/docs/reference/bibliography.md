@@ -36,7 +36,7 @@ For domain terms, see [Glossary](/reference/glossary).
 
 - **Shapiro, A.** (2011). Analysis of stochastic dual dynamic programming method. _European Journal of Operational Research_, 209(1), 63–72. [doi:10.1016/j.ejor.2010.08.007](https://doi.org/10.1016/j.ejor.2010.08.007)
   Convergence analysis, complexity bounds, and risk-averse extensions for SDDP.
-  _Cited in [Risk Measures](/math/risk-measures) §11._
+  _Cited in [Risk Measures](/math/risk-measures) §10._
 
 - **Dowson, O.** (2020). The policy graph decomposition of multistage stochastic programming problems. _Networks_, 76(1), 3–23. [doi:10.1002/net.21932](https://doi.org/10.1002/net.21932)
   Defines the policy graph: nodes with local subproblems and cut pools, linked by probability-weighted arcs.
@@ -68,7 +68,7 @@ For domain terms, see [Glossary](/reference/glossary).
 
 - **Philpott, A.B., de Matos, V.L. & Finardi, E.C.** (2013). On solving multistage stochastic programs with coherent risk measures. _Operations Research_, 61(4), 957–970. [doi:10.1287/opre.2013.1175](https://doi.org/10.1287/opre.2013.1175)
   Time-consistent risk-averse SDDP with CVaR. Dual representation and aggregation weights for risk-averse cut generation.
-  _Cited in [Risk Measures](/math/risk-measures) §10, §11, [Upper Bound Evaluation](/math/upper-bound-evaluation) (References)._
+  _Cited in [Risk Measures](/math/risk-measures) §9, §10, [Upper Bound Evaluation](/math/upper-bound-evaluation) (References)._
 
 ---
 

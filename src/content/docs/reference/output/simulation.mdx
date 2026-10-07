@@ -445,7 +445,7 @@ folded into the boundary cuts' intercepts.
 | ------------ | ------- | -------- | ----- | -------------------------------------------------------- |
 | `thermal_id` | Int32   | No       | —     | Anticipated thermal unit ID.                             |
 | `start_date` | Date32  | No       | —     | First delivery date of the fixed window.                 |
-| `end_date`   | Date32  | No       | —     | Last delivery date of the fixed window.                  |
+| `end_date`   | Date32  | No       | —     | End of the fixed window (exclusive): the window's `end_date` as declared in `past_anticipated_commitments`. |
 | `value_mw`   | Float64 | No       | MW    | Committed delivery held constant over the window, in MW. |
 
 ---

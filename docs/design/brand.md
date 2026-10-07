@@ -47,7 +47,7 @@
   (`curve`). **Flow Blue is reserved for hydro/water** (`--dgm-hydro`); non-hydro
   "accent" marks (e.g. Benders tangents) use a warm tone. (The `.d2-svg` keystone uses
   d2's own hardcoded palette — a separate system, do not confuse with `--dgm`.)
-- **Logo + favicon:** the **icon mark beside the "Cobre Methodology" title**,
+- **Logo + favicon:** the **icon mark beside the "Cobre Documentation" title**,
   **theme-adaptive** via Starlight `logo:{dark,light}` — `cobre-icon.svg` (Midnight
   tile) on dark, `cobre-icon-light.svg` (light brand-surface tile; a **derived**
   variant with copper anchored on the readable `#B87333`..`#8B5E3C` range, since the
@@ -66,17 +66,17 @@
 ## Typography (§2.3 — already wired)
 
 IBM Plex Sans (body/headings) · JetBrains Mono (code), self-hosted via Fontsource
-(SIL OFL). See `site/src/styles/fonts.css`.
+(SIL OFL). See `src/styles/fonts.css`.
 
 ## Where it's implemented
 
 | File                           | Holds                                                                |
 | ------------------------------ | -------------------------------------------------------------------- |
-| `site/src/styles/brand.css`    | `--sl-color-accent*` copper ramp + the flow-blue prose-link override |
-| `site/src/styles/neutrals.css` | the warm-neutral Starlight greyscale/bg/text override                |
-| `site/src/styles/palette.css`  | `--dgm-*` diagram palette (copper/patina + `--dgm-hydro`)            |
-| `site/src/styles/fonts.css`    | brand fonts (`--sl-font` / `--sl-font-mono`)                         |
-| `site/astro.config.mjs`        | `logo`, favicon, `customCss` order                                   |
+| `src/styles/brand.css`         | `--sl-color-accent*` copper ramp + the flow-blue prose-link override |
+| `src/styles/neutrals.css`      | the warm-neutral Starlight greyscale/bg/text override                |
+| `src/styles/palette.css`       | `--dgm-*` diagram palette (copper/patina + `--dgm-hydro`)            |
+| `src/styles/fonts.css`         | brand fonts (`--sl-font` / `--sl-font-mono`)                         |
+| `astro.config.mjs`             | `logo`, favicon, `customCss` order                                   |
 
 ## Why this doc exists
 

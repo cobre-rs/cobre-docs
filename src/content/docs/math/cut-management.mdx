@@ -157,7 +157,7 @@ $\bar{z}^k - \underline{z}^k$ bounds from above the optimality gap of the policy
 
 ## 5. Cut Growth and Selection Motivation
 
-The number of cuts grows as $\mathcal{O}(\text{iterations} \times \text{forward\_passes})$. Many older cuts become redundant as newer, tighter cuts are generated. Without selection, the number of cut rows the LP carries grows linearly with iteration count.
+The number of cuts grows as $\mathcal{O}(\text{iterations} \times N_{\text{forward\_passes}})$. Many older cuts become redundant as newer, tighter cuts are generated. Without selection, the number of cut rows the LP carries grows linearly with iteration count.
 
 **Append-only pool with stable slots**: Cuts are never deleted. Every cut ever generated is retained for the lifetime of the run at a **stable, deterministic slot index** — the slot is a fixed function of the iteration and forward-pass index, which is what makes the cut order reproducible across runs and rank counts (see [Determinism & Provenance](/math/determinism-guarantees)). The pool is never compacted.
 

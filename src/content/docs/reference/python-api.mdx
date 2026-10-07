@@ -72,7 +72,6 @@ A loaded, reusable study. Construction loads the case, resolves the configuratio
 - `ValueError` (builtin) when `threads` is `0`, or when `config_overrides` has a non-`str` key or an unsupported value type.
 - `cobre.errors.ValidationError` for a configuration override, parse or read failure, for a missing or unreadable case file, and for a schema, parse or constraint failure in the case data.
 - `cobre.errors.CaseIoError` when writing one of those files fails, such as under an unwritable `output_dir`.
-- `cobre.errors.PolicyIncompatibleError` when a warm-start policy does not match the system.
 - `cobre.errors.SolverError` for any other preprocessing or construction failure.
 
 #### `cobre.Study.output_dir`
@@ -154,6 +153,7 @@ A second `train` call on the same `Study` runs against a setup that already carr
 **Raises**
 
 - `cobre.errors.SolverError` for a solver initialisation failure, a training failure, or a policy-mode failure such as a missing prior policy directory under warm start or resume.
+- `cobre.errors.PolicyIncompatibleError` when the warm-start or resume checkpoint at `policy.path` fails the [Policy Load Contract](/running/policy-management/#policy-load-contract), or a `policy.boundary` checkpoint was written by another cobre version.
 - `cobre.errors.CaseIoError` when writing the policy or a training artifact fails.
 - `cobre.errors.InternalError` when the callback thread panics.
 - Any exception raised by the callback, and `KeyboardInterrupt`, re-raised after the artifacts are written.
@@ -424,7 +424,6 @@ Loads and validates a case directory through the full validation pipeline and re
 
 - `OSError` (builtin) when the directory does not exist.
 - `cobre.errors.ValidationError` for a missing or unreadable case file (reported as a `[FileNotFound]` constraint violation) and for a parse, schema or constraint failure.
-- `cobre.errors.PolicyIncompatibleError` for a policy incompatibility.
 
 ### `cobre.io.validate`
 
@@ -609,7 +608,7 @@ Reads the policy checkpoint from `<output_dir>/<policy_subdir>` into plain dicts
 - `output_dir`: the output directory.
 - `policy_subdir`: the checkpoint directory under `output_dir`. Pass the configured `policy.path` when it is not `policy`.
 
-**Returns**: a dict with the keys `metadata`, `stage_cuts` and `stage_bases`. `stage_cuts` holds one entry per stage (four for the 1dtoy case). Intercepts and coefficients are in currency units; see [`cobre.Policy`](#cobrepolicy) for the scaled values of `cut_matrix`.
+**Returns**: a dict with the keys `metadata`, `stage_cuts` and `stage_bases`. `stage_cuts` holds one entry per cut pool, one per stage on a stage chain (four for the 1dtoy case). Intercepts and coefficients are in currency units; see [`cobre.Policy`](#cobrepolicy) for the scaled values of `cut_matrix`.
 
 **Raises**
 
@@ -1024,7 +1023,7 @@ The dict `cobre.Study.stochastic` returns.
 | `inflow_source` | `Optional[str]` | The source of the inflow seasonal statistics: one of `"estimated"` (computed from the historical records), `"loaded"` (read from the case files) or `None` (the component is not modelled). |
 | `n_hydros` | `int` | The number of hydro plants. |
 | `n_seasons` | `int` | The number of seasons in the PAR model. |
-| `ar_order` | `Optional[dict]` | The autoregressive (AR) order summary; `None` when the system has no hydros. The dict has the keys `method` (`str`, the order-selection method, for example `"AIC"`, or `"fixed"` when the orders come from the case files), `min_order` and `max_order` (`int`), `n_hydros` (`int`) and `order_counts` (`list[int]`, the number of hydros at each order, indexed by order). |
+| `ar_order` | `Optional[dict]` | The autoregressive (AR) order summary; `None` when the system has no hydros. The dict has the keys `method` (`str`, the order-selection method: `"PACF"` or `"PACF_ANNUAL"` for the `estimation.order_selection` that ran, or `"fixed"` when the orders come from the case files), `min_order` and `max_order` (`int`), `n_hydros` (`int`) and `order_counts` (`list[int]`, the number of hydros at each order, indexed by order). |
 | `correlation_source` | `Optional[str]` | The source of the correlation data: one of `"estimated"` (computed from the historical records), `"loaded"` (read from the case files) or `None` (the component is not modelled). |
 | `correlation_dim` | `Optional[str]` | The dimension of the correlation matrix as a string, for example `"1x1"`. `None` when there is no correlation matrix. |
 | `opening_tree_source` | `Optional[str]` | The source of the opening tree: one of `"estimated"` (computed from the historical records), `"loaded"` (read from the case files) or `None` (the component is not modelled). |
@@ -1057,7 +1056,7 @@ The dict `cobre.Study.provenance` returns.
 | `correlation_source` | `str` | The origin of the spatial correlation: one of `"estimated"` (computed from the inflow history), `"user_file"` (read from a case file) or `"n/a"` (not applicable). |
 | `opening_tree_source` | `str` | The origin of the noise opening tree: one of `"estimated"` (computed from the inflow history), `"user_file"` (read from a case file) or `"n/a"` (not applicable). |
 | `n_hydros` | `int` | The number of hydro plants. |
-| `ar_method` | `Optional[str]` | The order-selection method used when the AR coefficients were estimated, for example `"AIC"`. `None` when they were not estimated. |
+| `ar_method` | `Optional[str]` | The order-selection method used when the AR coefficients were estimated: `"PACF"` or `"PACF_ANNUAL"`. `None` when they were not estimated. |
 | `ar_max_order` | `Optional[int]` | The maximum AR order across all hydros when the AR coefficients were estimated. `None` otherwise. |
 | `white_noise_fallbacks` | `list[int]` | The ids of the hydros that fell back to white noise. Empty unless the path is `"partial_estimation"`. |
 | `hydro_production` | `dict` | The hydro-production source counts. The dict has the integer keys `n_fpha_computed_from_geometry`, `n_fpha_precomputed_hyperplanes`, `n_evaporation_ref_user_supplied` and `n_evaporation_ref_default_midpoint`. |

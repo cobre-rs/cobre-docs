@@ -11,11 +11,8 @@ widgets) — those are user-facing onboarding artifacts for
 `methodology.cobre-rs.dev` and `cobre-rs.dev`. This guide is the rulebook
 for **every diagram you author inside a spec file**.
 
-> **Paths in this guide are post-promotion (repo-root).** All references such as
-> `src/content/docs/`, `src/components/`, `src/styles/diagrams.css`, and
-> `astro.config.mjs` assume the Starlight app sits at the repo root. Until the E9
-> `site/`→root promotion runs, those files live under `site/` (e.g.
-> `site/astro.config.mjs`).
+> **Paths in this guide are repo-root-relative**: `src/content/docs/`,
+> `src/components/`, `src/styles/diagrams.css`, and `astro.config.mjs`.
 
 ---
 
@@ -185,7 +182,7 @@ the tested-compute model over a static rendering approach.
 **Use when** the diagram is a composition of labeled boxes, data-flow arrows, or
 a spatial schematic (power-system one-line, hardware topology, LP column layout).
 D2 is the single tool for both topology/layout diagrams and spatial domain
-diagrams — the three-tool pipeline has no fourth option.
+diagrams — the two-tool pipeline (§1.1) has no third option.
 
 ### 4.1 Inline fence placement
 

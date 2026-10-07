@@ -98,8 +98,8 @@ loader's check is the one that applies.
   `training.stopping_rules` as required. A `config.json` without either is
   rejected when the case loads
   ([`SchemaViolation`](/reference/error-codes/#schemaviolation)).
-- `stages.schema.json` accepts a top-level `scenario_source` key. The loader
-  rejects it: scenario sources belong in `config.json`
+- `stages.schema.json` accepts any value for a top-level `scenario_source` key. The loader
+  rejects any value other than `null`: scenario sources belong in `config.json`
   ([`config.json`](/reference/case-format/#configjson)).
 - `generic_parameters.schema.json` describes `kind` with four values and does
   not restrict it, while the loader accepts five kinds, `per_stage_block` (with

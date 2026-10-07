@@ -70,11 +70,11 @@ public/                   # static assets: vendored input schemas/, quickstart r
 ## Quality gates
 
 ```bash
-npm test              # tested-compute layer + script unit tests (node --test)
+npm run build         # fails on any KaTeX strict-mode violation or parse error (scripts/rehype-katex-strict.mjs); run it first
+npm test              # tested-compute layer + script unit tests (node --test); the i18n-locale test reads dist/
 npm run check         # astro check (types)
-npm run check:math    # KaTeX $$-block render parity
-npm run build         # fails on any KaTeX strict-mode violation or parse error (scripts/rehype-katex-strict.mjs)
-npm run check:links   # internal link integrity
+npm run check:math    # KaTeX $$-block render parity (reads dist/)
+npm run check:links   # internal link integrity (reads dist/)
 npm run check:figures # no retired-figure reference, the figure scope assertions hold, and every Plot island imports a tested src/figures module with an aria-label
 npm run check:voice   # hype phrases, unpinned "typical" numbers, instance magnitudes (two-voice methodology)
 npm run check:counts  # stated counts match their tables and files: column/field counts, the generic-constraint variable catalog, the vendored schema count (public/schemas)

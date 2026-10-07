@@ -208,8 +208,7 @@ slug is unique on the page (E13 ticket-214 reports a repeated kind heading as `D
 A per-rule entry is a `####` heading whose text is a noun phrase naming the rule. It carries no version words and no code
 identifier that names an implementation, and it is unique on the page. Its slug is the rule anchor.
 
-Until E13 ticket-212 merges the two enum listings, a kind that appears in both (`ParseError`) keeps the slugger's `-1`
-suffix on its second occurrence.
+A kind that is a variant of both enums (`ParseError`) has one kind section, `#parseerror`.
 
 **Door**: one-way.
 **Revisit trigger**: none known.
@@ -229,8 +228,9 @@ Values use double quotes only. A `gc-check` value other than `"accept"` or `"rej
 `gc-check` with no `title` is an error. A fence without `gc-check` is illustrative and is not checked. Expressive Code 0.43.1 ignores a meta option that no
 plugin reads, and `title="…"` renders a frame title.
 
-Each checked fence is spliced alone over one fixed overlay case, replacing the overlay file at its `title` path.
-Ticket-179 records the overlay in `plans/v0.17.0-docs-sync/design/e11-gc-validation.md`.
+Each checked fence is spliced alone into a fresh copy of one base case, the `cobre init --template 1dtoy` scaffold with
+the committed overlay `scripts/fixtures/gc-overlay/` copied over it, replacing the file at its `title` path (D-179-2).
+The overlay's files, splice rule, provenance and regeneration steps are in `scripts/fixtures/gc-overlay/README.md`.
 
 **Door**: one-way.
 **Revisit trigger**: none known.

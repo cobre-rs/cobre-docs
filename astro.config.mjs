@@ -451,8 +451,9 @@ export default defineConfig({
         "./src/styles/brand.css",
         "./src/styles/fonts.css",
         // layout.css (measure + table density) is a SEPARATE concern from the
-        // colour/type files above — it touches only --sl-content-width and
-        // table column floors, so its order among them is arbitrary.
+        // colour/type files above — it touches only --sl-content-width, table
+        // column floors and the right-sidebar TOC width, so its order among them
+        // is arbitrary.
         "./src/styles/layout.css",
       ],
       defaultLocale: "root",

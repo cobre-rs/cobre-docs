@@ -30,14 +30,11 @@ modes and block counts.
 
 :::note
 Every training run writes its stage LP bases into the checkpoint, and
-`policy.checkpointing.store_basis` has no effect on that write. The stored-basis
-gate therefore checks every full-FCF load of a trained checkpoint, and a
-block-structure change that alters a stage LP's column count refuses
-warm-start, resume, and simulation-only alike. On a derivative of the `1dtoy`
-template trained with two parallel blocks per stage and then simulated with the
-same blocks chronological, the refusal reports 29 columns and 13 template rows
-for the stage LP, against 28 columns and 14 rows with 3 recorded cut rows for
-the stored basis.
+`policy.checkpointing.store_basis` has no effect on that write, so the
+stored-basis gate checks every full-FCF load of a trained checkpoint.
+[Stored-basis gate](/running/policy-management/#stored-basis-gate) shows the
+refusal for a `1dtoy` derivative trained with two parallel blocks per stage and
+then simulated with the same blocks chronological.
 :::
 
 ### Recorded training block mode

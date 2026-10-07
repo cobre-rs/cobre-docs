@@ -182,9 +182,9 @@ will not produce `simulation/pumping_stations/`.
   generic_constraints/               # when the study has generic constraints
     resolved_echo.parquet
   hydro_models/
-    fpha_hyperplanes.parquet         (when any hydro uses source: "computed")
+    fpha_hyperplanes.parquet         (when a computed fit produces planes)
     evaporation_models.parquet       (when any hydro has evaporation)
-    fpha_deviation_points.parquet    (when exports.fpha_deviation_points = true)
+    fpha_deviation_points.parquet    (when exports.fpha_deviation_points = true and a deviation point exists)
   stochastic/                        # only when exports.stochastic = true (off by default)
     inflow_seasonal_stats.parquet    (always, when exported)
     inflow_ar_coefficients.parquet   (always, when exported)

@@ -257,15 +257,14 @@ not make `by_node` a no-op.
 ### Per-Phase Solver Profiles
 
 Each algorithmic phase — forward sweep, backward sweep, and simulation — can
-override the built-in solver profile (feasibility tolerances, per-attempt
-iteration caps, pricing strategy, the `scale` field, and more) via
+override the built-in solver profile (feasibility tolerances, the simplex
+update limit, pricing strategy, the `scale` field, and more) via
 `training.solver.backward`, `training.solver.forward`, and `simulation.solver`.
 See [Solver profile fields](/running/configuration/#solver-profile-fields)
 for the full field list, the built-in profile each phase starts from, and the
 single-unscaling trade-off carried by `scale`.
 
-Overriding the backward phase with tighter feasibility tolerances or a stricter
-iteration cap can reduce backward-pass solve-time variance, which improves load
+Overriding the backward phase with tighter feasibility tolerances can reduce backward-pass solve-time variance, which improves load
 balance across worker threads and shortens wall-clock training time.
 
 ### Forward Pass and Simulation

@@ -2,7 +2,7 @@
    A SEPARATE concern from colour (brand.css / neutrals.css / palette.css) and
    type (fonts.css): this file owns only how content uses horizontal space.
 
-   Two rules, both keyed off the same problem — Starlight's default article
+   Three rules, all following from the same problem — Starlight's default article
    measure (`--sl-content-width: 45rem` = 720px) is narrow for a reference that
    leans on wide multi-column config/schema tables, math display blocks, and
    code. It leaves large empty gutters on desktop AND starves dense tables. */

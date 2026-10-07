@@ -746,7 +746,7 @@ Controls physical modeling options.
   `penalties.json::hydro.inflow_nonnegativity_cost`.
 - `"truncation"` -- clamps negative PAR model draws to zero before applying noise.
 - `"truncation_with_penalty"` -- combines both: clamps the inflow to zero and adds
-  a bounded slack variable penalised by `penalties.json::hydro.inflow_nonnegativity_cost`,
+  a slack variable (`>= 0`, the same column as under `"penalty"`) penalised by `penalties.json::hydro.inflow_nonnegativity_cost`,
   providing a smooth backstop for extreme tail realisations.
 
 The four methods are defined in [Inflow Non-Negativity Solution Methods](/math/inflow-nonnegativity/).

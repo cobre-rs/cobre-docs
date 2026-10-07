@@ -808,10 +808,11 @@ shape: (4, 4)
 ```
 
 `turbined_m3s` rows sum bit-exactly to the plant's `simulation/hydros/` row on
-every production model. `generation_mw`/`generation_mwh` rows sum exactly only
-for FPHA or single-cell plants: splitting one shared cell's flow across its
-same-bus groups has no dual to determine an exact per-group split, so that
-split is not reported at all — only the per-bus total is.
+every production model. `generation_mw` rows sum bit-exactly only for FPHA or
+single-cell plants, and `generation_mwh` rows only for single-cell plants, since
+each row multiplies its own `generation_mw` by the block duration. A split of
+one cell's flow across its same-bus groups has no dual to determine it, so it is
+not reported at all — only the per-bus total is.
 
 ---
 

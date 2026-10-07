@@ -231,15 +231,8 @@ refitting on a subsequent run, copy this output file into `system/` and
 change `source` to `"precomputed"` in `hydro_production_models.json`.
 
 A computed-FPHA plant with no turbine capacity has no rows in the exported
-file. Once `fpha_hyperplanes.parquet` is in `system/`, every plant on the FPHA
-model needs rows in it, whatever its `source`; otherwise the case is rejected
-at load with `has no FPHA hyperplanes`. Before the copy, switch the no-capacity
-plant to `"constant_productivity"` in both `hydros.json` (`generation.model`)
-and its `hydro_production_models.json` entries. Give it a productivity value
-from exactly one source, `productivity_mw_per_m3s` in its
-`hydro_production_models.json` entries or an
-`equivalent_productivity_mw_per_m3s` row of
-`system/hydro_energy_productivity.parquet` (`0` marks a planned outage): with
-neither the case is rejected with
-`no productivity_mw_per_m3s available for (hydro_id=…, stage_id=…)`, and
-supplying both is also rejected.
+file, and once the file is in `system/` every FPHA plant needs rows in it, so
+switch such a plant to `"constant_productivity"` before the copy.
+[Hydro Model Artifacts — `hydro_models/fpha_hyperplanes.parquet`](/reference/output/hydro-models/#hydro_modelsfpha_hyperplanesparquet)
+gives the switch, the productivity source the plant then needs, and the load
+errors.
