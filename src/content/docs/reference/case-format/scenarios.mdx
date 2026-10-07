@@ -173,12 +173,12 @@ their mean and standard deviation from the file is stated under
   ordering under [`scenarios/noise_openings.parquet`](#scenariosnoise_openingsparquet)): every declared hydro, every
   bus with a row in `scenarios/load_seasonal_stats.parquet`, and every NCS with a row in
   `scenarios/non_controllable_stats.parquet`. `cobre run` refuses a class with a missing entity when it sets the study
-  up, with an `insufficient data` error that names the class and the entity, and exits `4`. A class that is `external`
+  up, with an `insufficient data` error that names the class and the entity, and exits `1`. A class that is `external`
   only in `simulation.scenario_source` is refused with a `library width mismatch` error (exit `1`) when its file adds
   an entity that the training noise vector does not place: a bus whose `std_mw` is `0`, or an NCS without a
-  `non_controllable_stats.parquet` row. `cobre validate` reports either refusal only for a case with
-  `policy.boundary` configured, with the message prefixed `policy.boundary: ` (phase `BoundaryReconciliationError`
-  under `--json`).
+  `non_controllable_stats.parquet` row. `cobre validate` reports either refusal on every case: as phase
+  `StudySetupError`, labelled `scenarios/` for `insufficient data` and `config.json` for the width mismatch, or as
+  `BoundaryReconciliationError` with the message prefixed `policy.boundary: ` when `policy.boundary` is configured.
 
 ---
 

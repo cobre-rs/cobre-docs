@@ -76,9 +76,10 @@ my_first_study/
 cobre validate my_first_study
 ```
 
-The validation pipeline checks all layers — schema, references, physical
-feasibility, stochastic consistency, and solver feasibility — and prints a
-single line of entity counts on success:
+The validation pipeline checks every layer — schema, references, physical
+feasibility and stochastic consistency — then
+builds the study as `cobre run` does and checks any policy the run would load,
+without solving an LP, and prints a single line of entity counts on success:
 
 {/* capture: cobre validate my_first_study | cobre   v0.17.0 | binary: cobre-cli sha256 23916b46 | case: 1dtoy (cobre init --template 1dtoy) */}
 
@@ -90,7 +91,8 @@ That is the whole output for a warning-free case; a case that raises warnings
 adds a `Validation: 0 errors, N warnings in <dir>` summary and one `warning:`
 line per finding. If any layer fails, Cobre prints a
 `Validation: N errors, 0 warnings in <dir>` summary followed by each error
-prefixed with `error:`, and exits with code 1. The 1dtoy template always passes
+prefixed with `error:`, and exits non-zero: `1` for a refused case, `2` for a declared opening-tree file that is absent
+(see [CLI Reference — Exit Codes](/reference/cli-reference/#exit-codes)). The 1dtoy template always passes
 validation.
 
 ---

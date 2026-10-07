@@ -183,7 +183,7 @@ Relationship: `outflow = turbined_flow + spillage`,
 Cobre checks the configured costs when the case loads. The checks read each
 hydro's entity-level costs: the `penalties.json` defaults with the plant's
 `penalties` block applied. Stage overrides are not checked. The deficit side of
-each comparison is the largest deficit-segment cost of any bus, and 0 when the
+the first comparison is the largest deficit-segment cost of any bus, and 0 when the
 case has no bus. The comparisons use the configured values as given, without
 converting them to energy, so a case that passes them can still invert the
 energy-equivalent ordering of the methodology above.
@@ -219,8 +219,7 @@ here, and begins `Penalty ordering violation:`:
 
 To clear a warning, change the costs in `penalties.json` or in the plant's
 `penalties` block until the comparison in the message holds: for `should be >`,
-raise the cost on the left or lower the one on the right, and for
-`should be <`, the reverse. A warning names `penalties.json` even when a plant's
+raise the cost on the left or lower the one on the right. A warning names `penalties.json` even when a plant's
 `penalties` block supplies the cost, and the `Hydro {…}` in it is the plant's
 numeric `id`.
 
@@ -244,7 +243,7 @@ Two rules reject the case as a `BusinessRuleViolation` error (see
   row when it has one, else the plant's `filling_min_rate_m3s`; the seed is the
   hydro's `filling_storage` entry in `initial_conditions.json`, or 0 when it has
   none. The case is rejected on `system/hydros.json` when the sum falls short by
-  more than a relative tolerance of `1e-9`, applied to the larger of `|min_storage_hm3 − seed|` and 1 hm³. The message reads
+  more than a relative tolerance of `1e-9`, applied to the larger of |`min_storage_hm3` − seed| and 1 hm³. The message reads
   `Hydro {…}: filling schedule is insufficient to reach the dead volume before stage {…}; cumulative minimum-rate capacity over stages [{…}, {…}) is {…} hm3 but {…} hm3 (min_storage {…} - seed {…}) is required`.
   To fix it, raise the plant's `filling_min_rate_m3s` (or a stage's
   `hydro_bounds` rate), start filling at an earlier stage, move
