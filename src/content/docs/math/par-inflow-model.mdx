@@ -503,18 +503,16 @@ history therefore does not perturb a partial-year fit.
 **Pre-study lag synthesis (for $p > 0$).** The first study stage's
 autoregressive lags reach back to seasons _before_ the study start. For each
 lag $\ell = 1, \ldots, \min(p,\, M - 1)$, the season $\ell$ calendar positions
-before the first study season is introduced as a **pre-study season** (modular
-on the true cycle length $M$) — unless that season is already covered by a
+before the first study season is introduced as a **pre-study season** — unless that season is already covered by a
 study stage (an in-window wrap lag, handled by the cycle-correct lag lookup).
 The seasonal statistics $(\hat{\mu}_m, \hat{s}_m)$ of those out-of-window
 seasons are estimated from history exactly as for in-window seasons, then feed
 the lag terms of the opening study stages — both the coefficient conversion
 (§2.2) and the deterministic base (§2.4).
 
-The wrap uses the **true cycle length** $M$ (the number of seasons in the
-season map), not the number of seasons in the study window, together with a
-season **offset** equal to the season of the first study stage — so, e.g., a
-March-start study maps the lag-1 season to February, not December.
+The walk steps back through the calendar occurrences of the first study season's own resolution,
+whatever the seasons' numbering — so, e.g., a March-start study maps the lag-1
+season to February, not December.
 
 **Full-cycle invariance.** When the study spans the full cycle (every season
 already has a study stage) or carries no out-of-window history, nothing is

@@ -11,8 +11,7 @@
 // respects: per-season mean and population standard deviation, year-aligned
 // pairs, population divisor (number of pairs), 0 when either season's std is
 // below machine epsilon or no pair exists, clamped to [−1, 1], lag 0 equal to 1.
-// Year-alignment is calendar-exact at every lag; cobre's `lag / n_seasons`
-// shortcut agrees for lags below one cycle and at whole cycles. The PACF is the
+// Year-alignment is calendar-exact at every lag, as in cobre. The PACF is the
 // last coefficient of the progressive periodic Yule-Walker solves (Gaussian
 // elimination with partial pivoting; a singular order ends the sequence).
 
