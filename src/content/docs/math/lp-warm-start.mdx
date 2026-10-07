@@ -89,9 +89,10 @@ opening's LP yields a valid cut;
 [Determinism & Provenance §3](/math/determinism-guarantees#3-methodology-mechanisms)
 sets out how the fixed order keeps the run reproducible.
 
-A warm-start or resume run seeds the store from the bases the saved policy
-carries, so that its first iteration also warm-starts, through the
-reconstruction of §4.
+A warm-start or resume run seeds the store from each saved basis that fits its
+stage LP, so that its first iteration also warm-starts at those nodes, through
+the reconstruction of §4;
+a node whose saved basis does not fit starts its first iteration cold.
 
 ## 3. Cut-Set Changes
 

@@ -53,17 +53,21 @@ the bases the end-of-training checkpoint carries.
 
 The end-of-training checkpoint carries one basis per node: the basis held in one
 trial point's slot when training ends. A warm-start or resume run copies each
-node's checkpoint basis into every trial point's slot on each rank before its
-first iteration. Outside dynamic cut selection, the first iteration's forward
+node's checkpoint basis that fits its stage LP into every trial point's slot on
+each rank before its first iteration; a node whose basis was left out
+starts its first solve cold and then reuses its own captures. Outside dynamic
+cut selection, the first iteration's forward
 solves then warm-start through the reconstruction of
 [§4](/math/lp-warm-start#4-cut-aware-basis-reconstruction-by-slot-identity); a
 fresh run has nothing to copy. Outside dynamic cut selection, simulation starts
 each visited node's solve from that node's basis, taken from the preceding
-training run or, in a simulation-only run, from the checkpoint; under dynamic
+training run or, in a simulation-only run, from the checkpoint when that basis
+fits its stage LP (a node whose checkpoint basis does not fit is solved without
+its own stored basis); under dynamic
 cut selection simulation solves start without a stored basis.
 
-A checkpoint load is refused when a stored basis does not fit its node's current
-stage LP (see
+A checkpoint basis that does not fit its node's current stage LP is left out
+(see
 [Stored-basis gate](/running/policy-management/#stored-basis-gate)). The load
 keeps a checkpoint basis's cut-row statuses only when the node's saved cut pool
 qualifies. The pool qualifies when the pool's active cuts are exactly its first
