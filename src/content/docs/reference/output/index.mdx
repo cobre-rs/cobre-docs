@@ -203,17 +203,26 @@ dictionary encoding and row groups of at most 100 000 rows.
 ## Success markers
 
 `cobre run` writes its files in a fixed order. `training/_SUCCESS` is an empty
-file written when training ran, and `simulation/_SUCCESS` one written when a
-simulation ran; each sits part-way through the sequence, not at its end:
+file written last when training ran, and `simulation/_SUCCESS` one written last
+when a simulation ran:
 
-1. Before training starts: `training/hydro_models.json`,
-   `training/model_provenance.json`, the `stochastic/` exports (when
-   `exports.stochastic = true`) and `training/scaling_report.json`.
-2. After training: the policy checkpoint under `policy.path` (`policy/` by
+1. Before training starts: when training will run, the stale
+   `training/_SUCCESS` and the conditional training files
+   (`training/cut_selection/`, `training/solver/` files,
+   `anticipated/fixed_deliveries.parquet`, `hydro_models/*.parquet`,
+   `generic_constraints/resolved_echo.parquet`) are removed; when a simulation
+   will run, `simulation/_SUCCESS` and every earlier simulation output (each
+   `simulation/<family>/` tree, `simulation/solver/` files, `paths.parquet`,
+   `scenario_summary.parquet` and `metadata.json`) are removed; then
+   `training/hydro_models.json`, `training/model_provenance.json`, the
+   `stochastic/` exports (when `exports.stochastic = true`) and
+   `training/scaling_report.json` are written.
+2. During training: periodic checkpoints under `policy.path` when
+   `policy.checkpointing.enabled` is `true`.
+3. After training: the policy checkpoint under `policy.path` (`policy/` by
    default; `manifest.bin` last inside it), then `training/dictionaries/`,
    `training/convergence.parquet`, `training/timing/iterations.parquet` and
-   `training/metadata.json`, then `training/_SUCCESS`.
-3. After `training/_SUCCESS`: `hydro_models/fpha_hyperplanes.parquet`,
+   `training/metadata.json`, then `hydro_models/fpha_hyperplanes.parquet`,
    `hydro_models/evaporation_models.parquet`,
    `hydro_models/fpha_deviation_points.parquet`,
    `generic_constraints/resolved_echo.parquet`,
@@ -221,18 +230,24 @@ simulation ran; each sits part-way through the sequence, not at its end:
    `training/solver/iterations.parquet`,
    `training/solver/retry_histogram.parquet` and
    `training/cut_selection/iterations.parquet`, each only when the run has
-   content for it.
-4. During simulation: the entity partitions under `simulation/` are written as
-   the scenarios run; then `simulation/metadata.json` and `simulation/_SUCCESS`.
-5. After `simulation/_SUCCESS`: `simulation/solver/iterations.parquet`,
+   content for it, then `training/_SUCCESS`.
+4. During simulation: the entity partitions under `simulation/`, as the
+   scenarios run.
+5. After simulation: `simulation/metadata.json`,
+   `simulation/solver/iterations.parquet`,
    `simulation/solver/retry_histogram.parquet`, `simulation/paths.parquet` and
-   `simulation/scenario_summary.parquet`.
+   `simulation/scenario_summary.parquet`, then `simulation/_SUCCESS`.
 
-A `_SUCCESS` marker therefore signals neither a complete directory (files
-follow it, as listed) nor a successful run. When training stops on a failure,
-`cobre run` writes the policy checkpoint, `training/metadata.json`
-(`convergence.termination_reason` is `"error"`) and `training/_SUCCESS`, then
-exits with status `4` (see [Exit Codes](/reference/cli-reference/#exit-codes)).
+A `stochastic/` export is never removed, and a training-only run leaves an
+earlier `simulation/` tree, its `_SUCCESS` included.
+
+A `_SUCCESS` marker therefore signals that its phase finished writing;
+`stochastic/` files are covered by neither marker. It is not a verdict on the
+run: when training stops on a failure, `cobre run` writes the policy
+checkpoint, every training output (`convergence.termination_reason` is
+`"error"`) and `training/_SUCCESS`, then exits with the code of the error (see
+[Exit Codes](/reference/cli-reference/#exit-codes)). A run that fails before a
+phase's last write leaves that phase without a marker.
 
 The exit status of `cobre run` is the run-outcome signal. A scenario whose
 output partitions could not be written does not change it: the scenario is

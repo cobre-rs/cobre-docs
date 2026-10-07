@@ -70,9 +70,9 @@ A loaded, reusable study. Construction loads the case, resolves the configuratio
 
 - `OSError` (builtin) when `case_dir` does not exist, before any work.
 - `ValueError` (builtin) when `threads` is `0`, or when `config_overrides` has a non-`str` key or an unsupported value type.
-- `cobre.errors.ValidationError` for a configuration override, parse or read failure, for a missing or unreadable case file, and for a schema, parse or constraint failure in the case data.
+- `cobre.errors.ValidationError` for a configuration override, parse or read failure, for a missing or unreadable case file, and for a schema, parse or constraint failure in the case data, for a refused `policy.path`, and for an invalid-input setup failure such as an unsupported stochastic model (`no valid historical windows found`).
 - `cobre.errors.CaseIoError` when writing one of those files fails, such as under an unwritable `output_dir`.
-- `cobre.errors.SolverError` for any other preprocessing or construction failure.
+- `cobre.errors.SolverError` for a solver or internal failure during preprocessing or construction.
 
 #### `cobre.Study.output_dir`
 
@@ -125,9 +125,9 @@ The model-provenance report, a dict fixed at construction. Its shape is [`cobre.
 def validate(self) -> dict[str, Any]: ...
 ```
 
-Reports the warnings captured during construction without re-reading the disk.
+Reports the warnings captured during construction and checks the configured policy load against the study's `output_dir`, without re-reading the case.
 
-**Returns**: `{"valid": True, "errors": [], "warnings": [...]}`. The result has the same shape as [`cobre.io.validate`](#cobreiovalidate). `valid` is always `True` and `errors` is always empty, because the constructor already raised on any validation failure.
+**Returns**: `{"valid": True, "errors": [], "warnings": [...]}`. The result has the same shape as [`cobre.io.validate`](#cobreiovalidate). `valid` is `False`, with the error `cobre.io.validate` reports for that directory, when the configured policy load fails; policy-load warnings join `warnings`.
 
 #### `cobre.Study.train`
 
@@ -144,7 +144,7 @@ Trains an SDDP policy against the study's in-memory setup and returns a [`cobre.
 
 - `on_iteration`: called once per iteration boundary with a dict holding `kind`, `iteration`, `lower_bound`, `upper_bound`, `gap` and `wall_time_ms`. `gap` is the raw relative gap, not multiplied by 100. A truthy return requests a cooperative stop at a later iteration boundary; the stop is asynchronous, so the iteration at which the run ends is not fixed. An exception raised by the callback is re-raised verbatim after the artifacts are written.
 
-A stop requested by the callback, or an exception raised by it, ends the run with `convergence.termination_reason` set to `"unknown"` in `training/metadata.json` when no stopping rule triggered at that iteration; see [`training/metadata.json`](/reference/output/metadata/#trainingmetadatajson).
+A stop requested by the callback, or an exception raised by it, ends the run with `convergence.termination_reason` set to `"graceful_shutdown"` and `status` set to `"partial"` in `training/metadata.json` unless the stopping rules or the iteration budget also ended it at that iteration; see [`training/metadata.json`](/reference/output/metadata/#trainingmetadatajson).
 
 **Returns**: a [`cobre.Policy`](#cobrepolicy). With `training.enabled` set to `false`, `train` returns a zero-iteration policy that holds no cuts; `simulate` rejects it. Load a trained policy with `load_policy` instead.
 
@@ -152,9 +152,10 @@ A second `train` call on the same `Study` runs against a setup that already carr
 
 **Raises**
 
-- `cobre.errors.SolverError` for a solver initialisation failure, a training failure, or a policy-mode failure such as a missing prior policy directory under warm start or resume.
-- `cobre.errors.PolicyIncompatibleError` when the warm-start or resume checkpoint at `policy.path` fails the [Policy Load Contract](/running/policy-management/#policy-load-contract), or a `policy.boundary` checkpoint was written by another cobre version.
-- `cobre.errors.CaseIoError` when writing the policy or a training artifact fails.
+- `cobre.errors.SolverError` for a solver initialisation failure or a training failure the solver classifies.
+- `cobre.errors.ValidationError` for a missing prior policy directory under warm start or resume (`Policy directory not found: ...`), and for a refused boundary or training input.
+- `cobre.errors.PolicyIncompatibleError` when the warm-start or resume checkpoint at `policy.path` fails the [Policy Load Contract](/running/policy-management/#policy-load-contract), a `policy.boundary` checkpoint was written by another software or version, or a checkpoint's `manifest.bin` is missing or cannot be decoded.
+- `cobre.errors.CaseIoError` when writing the policy or a training artifact fails; a periodic-checkpoint write failure raises `FileNotFoundError`, `CaseIoError`, `cobre.errors.OutputError` or `ValidationError` by its cause.
 - `cobre.errors.InternalError` when the callback thread panics.
 - Any exception raised by the callback, and `KeyboardInterrupt`, re-raised after the artifacts are written.
 
@@ -177,8 +178,9 @@ Reads a policy checkpoint from `<output_dir>/<policy.path>/` and returns a [`cob
 
 **Raises**
 
-- `cobre.errors.SolverError` when the policy directory is missing (`Policy directory not found: ...`) or the checkpoint cannot be read or reconstructed.
-- `cobre.errors.PolicyIncompatibleError` when policy validation rejects the checkpoint.
+- `cobre.errors.ValidationError` when the policy directory is missing (`Policy directory not found: ...`).
+- `cobre.errors.PolicyIncompatibleError` when the checkpoint cannot be read, decoded or reconstructed, or policy validation rejects it.
+- `cobre.errors.CaseIoError` when a checkpoint file cannot be opened.
 
 #### `cobre.Study.simulate`
 
@@ -329,7 +331,7 @@ def write_policy_checkpoint(
 ) -> None: ...
 ```
 
-Writes a policy checkpoint to `path` from plain Python dicts. `stage_cuts` and `metadata` mirror the `"stage_cuts"` and `"metadata"` keys that [`cobre.results.load_policy`](#cobreresultsload_policy) returns, so a loaded checkpoint round-trips. `stage_bases` and `stage_states` default to empty. The checkpoint always records the running cobre version; a `cobre_version` key in `metadata` is ignored. For the dict shapes, see [Write a checkpoint](/running/policy-management/#write-a-checkpoint), [Round-trip example](/running/policy-management/#round-trip-example) and [Input validation](/running/policy-management/#input-validation).
+Writes a policy checkpoint to `path` from plain Python dicts. `stage_cuts` and `metadata` mirror the `"stage_cuts"` and `"metadata"` keys that [`cobre.results.load_policy`](#cobreresultsload_policy) returns, so a loaded checkpoint round-trips. `stage_bases` and `stage_states` default to empty. The checkpoint always records the running cobre version; `software`, `software_version` or `cobre_version` keys in `metadata` are ignored. For the dict shapes, see [Write a checkpoint](/running/policy-management/#write-a-checkpoint), [Round-trip example](/running/policy-management/#round-trip-example) and [Input validation](/running/policy-management/#input-validation).
 
 `inflow_lag_depth = N` with `N > 0` reserves `N` inflow-lag state slots per storage hydro in every stage and places each cut's `inflow_lag_coefficients` at their `(hydro, depth)` positions. Use it to author a boundary policy for a converted case with no PAR model to infer the depth from. Absent or `0`, the checkpoint is identical to one written without the argument.
 
@@ -338,6 +340,7 @@ Writes a policy checkpoint to `path` from plain Python dicts. `stage_cuts` and `
 **Raises**
 
 - `ValueError` (builtin) when a cut's `coefficients` length differs from its stage's `state_dimension`, when a stage's state data length differs from `count * state_dimension`, when a cut carries `inflow_lag_coefficients` without a positive `inflow_lag_depth`, or, with `inflow_lag_depth` set, when a stage manifest lacks a leading storage block or an inflow-lag coefficient has no slot to be placed in.
+- [`cobre.errors.ValidationError`](#cobreerrorsvalidationerror) (a `ValueError`) when `path` (for a link, its target) or its `.staging` or `.previous` sibling holds an entry no checkpoint writer leaves there (`refusing to write a checkpoint: ...`); nothing on disk changes.
 - A [`cobre.errors`](#cobreerrors) class mapped from the underlying write failure for any other error, such as [`cobre.errors.OutputError`](#cobreerrorsoutputerror).
 
 ## `cobre.run`
@@ -365,7 +368,7 @@ Loads a case, trains, simulates when the configuration enables it, and writes th
 
 | Branch                                                 | `converged`                 | `iterations`     | `lower_bound`                  | `upper_bound`                                  | `gap_percent`               | `simulation`                                      |
 | ------------------------------------------------------ | --------------------------- | ---------------- | ------------------------------ | ---------------------------------------------- | --------------------------- | ------------------------------------------------- |
-| Training enabled                                       | `True` when the `bound_stalling` rule ended training; `False` for any other stopping reason | iterations run   | final lower bound              | final [upper bound](/math/upper-bound-evaluation/) | gap times 100               | the summary dict, or `None` if simulation is off  |
+| Training enabled                                       | `True` when the stopping rules ended training and a `gap` or `bound_stalling` rule triggered at that iteration; `False` for any other stopping reason | iterations run   | final lower bound              | final [upper bound](/math/upper-bound-evaluation/) | gap times 100               | the summary dict, or `None` if simulation is off  |
 | Training disabled, simulation enabled (simulation-only) | `False`                     | `0`              | the checkpoint's lower bound   | the checkpoint's recorded upper bound (the last training iteration's value), `None` if not finite | `None`                      | the summary dict                                  |
 | Both disabled                                          | `False`                     | `0`              | `0.0`                          | `None`                                         | `None`                      | `None`                                            |
 
@@ -373,7 +376,7 @@ Loads a case, trains, simulates when the configuration enables it, and writes th
 
 A Ctrl-C during the run is delivered as `KeyboardInterrupt` after the call returns to the interpreter, not at an iteration boundary. To end a run early, return a truthy value from `on_iteration`.
 
-A stop requested by `on_iteration` records `convergence.termination_reason` as `"unknown"` in `training/metadata.json` when no stopping rule triggered at that iteration; see [`training/metadata.json`](/reference/output/metadata/#trainingmetadatajson).
+A stop requested by `on_iteration` records `convergence.termination_reason` as `"graceful_shutdown"` in `training/metadata.json` unless the stopping rules or the iteration budget also ended it at that iteration; see [`training/metadata.json`](/reference/output/metadata/#trainingmetadatajson).
 
 **Raises**
 
@@ -431,15 +434,18 @@ Loads and validates a case directory through the full validation pipeline and re
 def validate(
     path: Union[str, Path],
     config_overrides: Optional[Mapping[str, Any]] = None,
+    *,
+    output_dir: Optional[Union[str, Path]] = None,
 ) -> dict[str, Any]: ...
 ```
 
-Runs the full validation pipeline (case structure, schema, configuration, stochastic preparation, hydro models, generic constraints, and boundary reconciliation when configured) and stops at the first failure. `validate` returns failures as data; it does not raise for an invalid case.
+Runs the full validation pipeline (case structure, schema, configuration, stochastic preparation, hydro models, generic constraints, study construction, boundary reconciliation when configured, and the configured warm-start, resume or simulation-only policy load from `<output_dir>/<policy.path>`) and stops at the first failure. `validate` returns failures as data; it does not raise for an invalid case.
 
 **Parameters**
 
 - `path`: the case directory. A missing directory yields a failure entry of kind `IoError`.
 - `config_overrides`: as for [`cobre.Study`](#cobrestudy).
+- `output_dir`: keyword-only; the directory the policy load reads from. Defaults to `<path>/output`; a relative path resolves from the working directory. Nothing is written, and an absent directory is not created.
 
 **Returns**: a dict with `valid` (`bool`), `errors` (a list of `{"kind", "message"}` dicts; empty when `valid` is `True`) and `warnings` (a list of `{"kind", "message", "file", "entity"}` dicts). Warnings do not change `valid`.
 
@@ -612,7 +618,7 @@ Reads the policy checkpoint from `<output_dir>/<policy_subdir>` into plain dicts
 
 **Raises**
 
-- `FileNotFoundError` (builtin) when `output_dir` or the policy directory is missing.
+- `FileNotFoundError` (builtin) when `output_dir` is missing, or the policy directory (for a link, its target) is missing and neither `<policy>.staging` nor `<policy>.previous` holds a `manifest.bin`.
 - `cobre.errors.OutputError` (an `OSError`) when a checkpoint buffer cannot be read.
 
 ### `cobre.results.load_stochastic`
@@ -841,7 +847,7 @@ The base class of every Cobre exception. Catch the typed class for one failure k
 class ValidationError(CobreError, ValueError): ...
 ```
 
-Case data or configuration failed validation. Raised for message prefixes `config override error`, `config parse error`, `config read error` and `setup validation error`, and for parse, schema and constraint failures in the case data. It also covers a missing or unreadable case file.
+Case data or configuration failed validation. Raised for an error of the invalid-input class, whatever its message prefix (a refused `policy.path`, a missing prior policy directory, and a checkpoint write refused for its manifest or a foreign entry included), and for message prefixes `config override error`, `config parse error`, `config read error` and `setup validation error`, and for parse, schema and constraint failures in the case data. It also covers a missing or unreadable case file.
 
 ### `cobre.errors.PolicyIncompatibleError`
 
@@ -849,7 +855,7 @@ Case data or configuration failed validation. Raised for message prefixes `confi
 class PolicyIncompatibleError(CobreError, ValueError): ...
 ```
 
-A warm-start policy is incompatible with the current system. Raised for the message prefix `policy validation error` and for a policy that validation rejects.
+A policy is incompatible with the current system or build. Raised for an error of the incompatible-policy class: a warm-start, resume or simulation-only checkpoint refused for its software, version or a failed contract check, a boundary checkpoint refused for its software or version, a warm-start, resume or simulation-only checkpoint file that is missing or cannot be decoded, and an FCF construction failure.
 
 ### `cobre.errors.CaseIoError`
 
@@ -857,7 +863,7 @@ A warm-start policy is incompatible with the current system. Raised for the mess
 class CaseIoError(CobreError, OSError): ...
 ```
 
-A filesystem read or write failure while loading or writing a case. Raised for message prefixes `output write error` and `policy checkpoint error`.
+A filesystem read or write failure while loading or writing a case. Raised for message prefixes `output write error` and `policy checkpoint error`. It also covers a policy checkpoint read that the operating system refuses.
 
 ### `cobre.errors.OutputError`
 
@@ -865,7 +871,7 @@ A filesystem read or write failure while loading or writing a case. Raised for m
 class OutputError(CobreError, OSError): ...
 ```
 
-An output serialization or schema failure, raised by `cobre.write_policy_checkpoint` and `cobre.results.load_policy`. A not-found I/O error raises the builtin `FileNotFoundError` and other I/O errors raise `CaseIoError`. A manifest failure raises `ValidationError`, not `OutputError`.
+An output serialization or schema failure, raised by `cobre.write_policy_checkpoint`, `cobre.results.load_policy` and a periodic checkpoint write during training. A not-found I/O error raises the builtin `FileNotFoundError` and other I/O errors raise `CaseIoError`. A manifest failure or a foreign entry raises `ValidationError`, not `OutputError`.
 
 ### `cobre.errors.SolverError`
 
@@ -876,7 +882,7 @@ class SolverError(CobreError, RuntimeError):
     scenario: int | None
 ```
 
-A training or solver failure. Any message prefix that no other class claims (for example `training error`) raises `SolverError`. The three attributes are always present. For an infeasible subproblem they hold the integer coordinates of the infeasibility; for every other failure they are `None`.
+A training or solver failure. An error of the solver or internal class raises `SolverError`, and so does a message whose prefix no other class claims; a simulation failure raises `SimulationError`. The three attributes are always present. For an infeasible subproblem they hold the integer coordinates of the infeasibility; for every other failure they are `None`.
 
 | Field | Type | Description |
 | --- | --- | --- |
@@ -978,7 +984,7 @@ The dict `cobre.run.run` returns.
 
 | Key | Type | Description |
 | --- | --- | --- |
-| `converged` | `bool` | `True` when the `bound_stalling` rule ended training. `False` for any other stopping reason and for a run without training. |
+| `converged` | `bool` | `True` when the stopping rules ended training and a `gap` or `bound_stalling` rule triggered at that iteration. `False` for any other stopping reason and for a run without training. |
 | `iterations` | `int` | The number of training iterations run. `0` when training did not run. |
 | `lower_bound` | `float` | The final lower bound, in currency units. |
 | `upper_bound` | `Optional[float]` | The final upper bound, in currency units. `None` when it is not available. |
@@ -998,7 +1004,7 @@ The six training headline keys that `RunResult` carries at its top level. No fun
 
 | Key | Type | Description |
 | --- | --- | --- |
-| `converged` | `bool` | `True` when the `bound_stalling` rule ended training. `False` for any other stopping reason and for a run without training. |
+| `converged` | `bool` | `True` when the stopping rules ended training and a `gap` or `bound_stalling` rule triggered at that iteration. `False` for any other stopping reason and for a run without training. |
 | `iterations` | `int` | The number of training iterations run. `0` when training did not run. |
 | `lower_bound` | `float` | The final lower bound, in currency units. |
 | `upper_bound` | `Optional[float]` | The final upper bound, in currency units. `None` when it is not available. |

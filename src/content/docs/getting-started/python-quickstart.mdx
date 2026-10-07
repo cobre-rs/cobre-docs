@@ -52,7 +52,7 @@ simulation:  {'n_scenarios': 100, 'completed': 100}
 output_dir:  my_study/output
 ```
 
-The printed keys are part of the result dict; see [`RunResult`](/reference/python-api/#cobre_typesrunresult) for the full shape and [`cobre.run.run`](/reference/python-api/#cobrerunrun) for the parameters. `converged` is `True` only when the `bound_stalling` rule stops training. Here the 128-iteration limit stopped it, so `False` is expected. The bounds and the negative gap match the CLI quickstart, which explains them in [What You Just Ran](/getting-started/quickstart/#what-you-just-ran).
+The printed keys are part of the result dict; see [`RunResult`](/reference/python-api/#cobre_typesrunresult) for the full shape and [`cobre.run.run`](/reference/python-api/#cobrerunrun) for the parameters. `converged` is `True` when a `gap` or `bound_stalling` rule stops training. Here the 128-iteration limit stopped it, so `False` is expected. The bounds and the negative gap match the CLI quickstart, which explains them in [What You Just Ran](/getting-started/quickstart/#what-you-just-ran).
 
 ## Read the Results
 
