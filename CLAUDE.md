@@ -31,7 +31,7 @@ diverge from the code, the spec must be updated — not the other way around.
 
 ## Current State
 
-**Synced to: cobre v0.17.0 (2026-10-01).**
+**Synced to: cobre v0.18.0 (2026-10-07).**
 
 The corpus is a **unified two-layer reference**: the annotation-free **math
 layer** (formulation, algorithm, worked examples) interleaved per topic with a
@@ -39,9 +39,14 @@ version-scoped **software layer** (Configure / I·O tabs, the I/O Reference, and
 Running Cobre), organised into the interleaved sidebar configured in
 `astro.config.mjs`. Only crate-internal/developer architecture lives outside this
 site, as `cobre` per-crate READMEs + `ARCHITECTURE.md` (see "Unified corpus & the
-developer surface" below). Versioning is **latest-only** for now (`versions.json`
-= `{ latest }`); the build-per-tag mechanism is wired but publishes no frozen
-snapshots yet.
+developer surface" below). Versioning is **build-per-version**
+(`versions.json`): `latest` is built from the working tree and served at `/`,
+and each `versions[]` entry is a frozen snapshot of one earlier cobre minor,
+built from its `ref` (a 40-hex commit SHA on `main`, never a tag) and served at
+`/vX.Y/`. A cobre patch release updates `latest` in place; a frozen snapshot is
+never edited (a fix branches from its SHA and moves `ref`). Every frozen minor
+is kept until cobre v1.0.0, then the last two or three. README `## Versioning`
+is the freeze runbook.
 
 ---
 
@@ -52,8 +57,9 @@ snapshots yet.
   notation/glossary carry no cobre version annotations (no "as of vX.Y",
   "added in", "earlier releases", migration notes) — the math is always-true and
   instance-agnostic. The **software layer** (`_impl/*` partials, `reference/*`,
-  `running/*`) may carry version-scoped config/I·O/CLI detail: each versioned
-  snapshot describes current cobre for its tag. This is the two-layer expression
+  `running/*`) may carry version-scoped config/I·O/CLI detail: each documentation
+  version (`latest` at `/` or a frozen `/vX.Y/` snapshot) describes the cobre
+  release its `versions.json` `cobre` field names. This is the two-layer expression
   of the T1 versioning tension.
 - **Batched edits**: a change that touches multiple chapters must land as a single
   batch (one commit / one PR) — there is no propagation registry, so the corpus
@@ -172,19 +178,19 @@ partial filenames so the render split holds.
 ## Quality Gates
 
 ```bash
-# export COBRE_BIN=~/.local/opt/cobre-v0.17.0/cobre-cli-x86_64-unknown-linux-gnu/cobre
+# export COBRE_BIN=~/.local/opt/cobre-v0.18.0/cobre-cli-x86_64-unknown-linux-gnu/cobre
 npm run check:figures && npm run check:voice && npm run check:counts \
   && npm run check:version && npm run check:narration && npm run check:error-coverage \
   && npm run check:input-schemas && npm run check:glossary && npm run check:python-api \
   && npm run check:gc-examples && npm run check:type-spelling && npm run check:d2 \
   && npm run check:spdx && npm run refresh:recordings -- --check \
-  && npm run build && npm run check && npm run check:math && npm run check:links \
-  && npm run build:versions && npm test && npm run check:e10
+  && npm run build && npm run check && npm run check:math \
+  && npm run build:versions && npm run check:links && npm test && npm run check:e10
 ```
 
 - **d2 v0.7.1** on `PATH`: without it `npm run build` and `npm run dev` abort with
   "Could not find D2".
-- **cobre v0.17.0** for `check:gc-examples`: `COBRE_BIN`, else `cobre` on `PATH`.
+- **cobre v0.18.0** for `check:gc-examples`: `COBRE_BIN`, else `cobre` on `PATH`.
   The gate exits 2 when the binary is missing, lies under a cargo
   `target/release/` or `target/debug/` directory, or reports a version other
   than `DEFAULT_COBRE_REF` in `scripts/cobre-ref.mjs`.
@@ -195,7 +201,8 @@ npm run check:figures && npm run check:voice && npm run check:counts \
 `.github/workflows/starlight-ci.yml` runs every gate on pull requests to `main`
 (the build as `npm run build:versions`); `.github/workflows/starlight-deploy.yml`
 runs only the build checks, on push to `main`. `README.md` describes each gate in
-one line (`## Quality gates`; `build:versions` under `## Local development`).
+one line (`## Quality gates`; `build:versions` under `## Local development`;
+the freeze runbook is `## Versioning`).
 
 ---
 
@@ -244,10 +251,13 @@ on a chronological stage and the single stage row on a parallel stage. Cut
 coefficients are block-count/mode-independent, so the cuts are **portable across
 block modes and counts**: `validate_policy_load` (`policy_load.rs`) never reads
 `block_mode`. A full-FCF load (warm start, resume, simulation-only) also runs
-`build_basis_cache_from_checkpoint`, which refuses a stored basis whose column
-count differs or whose row count falls outside `[template rows, template rows +
-its cut rows]`, so a checkpoint with stored bases is refused across a changed
-block mode or count. Boundary injection uses no stored basis.
+`build_basis_cache_from_checkpoint`, which uses a stored basis for its node
+only when `admit_stored_basis` passes (column count equals the template's, row
+count equals the template rows plus the record's own `num_cut_rows`, basic
+count equals the row count); a record that fails is left out with one
+aggregated warning (`UnusedStoredBases`), never a refusal, so a checkpoint
+loads across a changed block mode or count and the affected nodes start
+without a stored basis. Boundary injection uses no stored basis.
 → **LP scaling**: Cobre applies its own offline geometric-mean row/col prescaler
 plus a configurable cost-scale factor (`modeling.cost_scale_factor`, default
 `1_000_000.0` = `DEFAULT_COST_SCALE_FACTOR` in `setup/params.rs`); the LP
@@ -277,13 +287,15 @@ forward traversal.
 `FlatBuffers` `CheckpointManifest` root: study graph, stage count, producer
 provenance + `format_version`) is written LAST as the commit signal and read
 FIRST behind the `format_version` gate. Each `cuts/<pool>.bin` self-describes its
-own `cost_scale_factor` + graph identity. `FORMAT_VERSION` is `2`; every load kind
-checks the exact cobre version in `validate_policy_load`, before any state check,
-and refuses a checkpoint from an older or a newer build (`PolicyVersionMismatch`,
-`POLICY_COBRE_VERSION`), and Python
-`write_policy_checkpoint` stamps `POLICY_COBRE_VERSION`. A full-FCF load also
-refuses a stored basis that does not fit its LP
-(`build_basis_cache_from_checkpoint`, `StoredBasisDimensionMismatch`). Boundary
+own `cost_scale_factor` + graph identity. `FORMAT_VERSION` is `3`; every load kind
+checks in `validate_policy_load`, before any state check, that the checkpoint
+was written by exactly this build (`SoftwareIdentity::THIS_BUILD`: the same
+`SOFTWARE_NAME` at the same `SOFTWARE_VERSION`,
+`crates/cobre-io/src/output/software.rs`) and refuses any other with
+`PolicySoftwareMismatch`; Python
+`write_policy_checkpoint` stamps `THIS_BUILD`. A full-FCF load never fails over
+a stored basis: one that does not fit its LP is left out with one warning
+(`build_basis_cache_from_checkpoint`, `admit_stored_basis`, `UnusedStoredBases`). Boundary
 injection reconciles a differing-state-shape source per slot by ENTITY IDENTITY:
 a target storage or inflow-lag slot with no source counterpart is rejected
 (`RebindOp::Reject`), only forward-dated families are relaxed by interval
@@ -303,10 +315,12 @@ spillage = 0 (flow axis starts at 0; **no** spillage axis; **no** synthetic
 closing point — the q=0 column anchors), capped at installed capacity, with a
 least-squares **`α` correction** and a per-plane lateral-flow secant for `γ_S`.
 Per-stage fits; run-of-river supported (`γ_V` snapped to 0). **`reference_volume`**
-(`volume_hm3` XOR `percentile`) is the single source of truth. A computed-FPHA
-plant at or below `MIN_FITTABLE_MAX_TURBINED_M3S` (`1e-9` m³/s) turbine capacity
-resolves to constant productivity `0.0` with provenance
-`ProductionModelSource::NoTurbineCapacity` and no export rows. Verify against
+(`volume_hm3` XOR `percentile`) is the single source of truth. A plant without
+turbine capacity (`max_turbined_m3s` ≤ `1e-9` m³/s, `Hydro::has_turbine_capacity`)
+whose FPHA source is computed, or precomputed with no hyperplane rows, resolves
+to constant productivity `0.0` with provenance
+`ProductionModelSource::NoTurbineCapacity`, no export rows, and a
+`no_turbine_capacity` entry in `training/hydro_models.json`. Verify against
 `crates/cobre-sddp/src/production/fpha_fitting/` and
 `crates/cobre-sddp/src/production/hydro_models/production.rs`.
 
@@ -319,7 +333,13 @@ per maturity lag, pinned by column bounds like all state (`state_space.rs`,
 shared `delivery_ring.rs`; declared arcs in
 `crates/cobre-sddp/src/bucket_topology.rs`, `TransitBucketTopology::arcs`).
 `InitialConditions.past_defluences` seeds stage-0 buckets; validation requires
-history ≥ the arc travel time. Output: `simulation/in_transit/`. Without a
+history ≥ the arc travel time. Output: `simulation/in_transit/`. A release
+maturing into a plant that is PreFilling at maturity lands on the water-balance
+row(s) of that plant's short-circuit target (`−1` on a parallel stage,
+`−arrival_density[k]` per block on a chronological one;
+`push_maturing_bucket_coupling`, `fill_prefilling_shortcircuit` in
+`lp/builder/entries.rs`), and leaves at the system outlet when no downstream
+plant is non-PreFilling. Without a
 `policy.boundary`, volume maturing **past the last stage is dropped**
 (documented limitation): `build_transit_bucket_topology` caps the terminal
 deep-lag slots only then, and with a boundary they stay live and reach the
@@ -364,14 +384,20 @@ When **updating filling / commissioning** (`penalty-system.mdx`,
 `system-elements.mdx`, `lp-formulation.md`):
 
 → **Filling**: `filling = {start_stage_id, filling_min_rate_m3s}`; per-stage
-`V_target[t]` ramp with a soft floor + `filling_target_violation_cost`;
-`deficit > filling_target_violation_cost`. **Commissioning**: half-open
+`V_target[t]` ramp with a soft floor + `filling_target_violation_cost`,
+which sits below deficit in the energy-equivalent hierarchy
+(`penalty-system.mdx`) with no load-time check of it. **Commissioning**: half-open
 `[entry_stage_id, exit_stage_id)` via `commissioning_active`
 (`crates/cobre-core/src/commissioning.rs`);
-for thermals/lines/NCS/pumping/contracts, outside-window columns pin to `[0,0]`.
+for thermals/lines/NCS/pumping/contracts, outside-window columns pin to `[0,0]`;
+a pumping station in service where its source or destination hydro is not
+Operating (Filling counts as not Operating) is rejected at case load by
+`semantic.5a.52` (`check_pumping_operating_window`,
+`validation/semantic/pumping.rs`).
 **Hydros are the exception**: outside its window a non-filling hydro is
 **PreFilling** — turbine/spillage/diversion pinned to 0, storage decoupled by a
-frozen identity, inflow passed downstream. **Spillage** is frozen to 0 in
+frozen identity, inflow and maturing transit water passed downstream to its
+short-circuit target. **Spillage** is frozen to 0 in
 PreFilling only, free during Filling and Operating (`columns.rs`; the phase is
 `hydro_phase` in `lp/builder/hydro_state.rs`, over `filling_phase` in
 `crates/cobre-core/src/commissioning.rs`).
@@ -386,21 +412,30 @@ When **updating stochastic sampling** (`scenario-generation.mdx` §2.5 and §3.2
 → For the forward `historical` scheme, window discovery
 (`discover_historical_windows`, `crates/cobre-stochastic/src/sampling/window.rs`)
 builds the window pool and refuses an empty one (`no valid historical windows
-found`); `standardize_historical_windows` and `validate_historical_library`
-(`crates/cobre-stochastic/src/sampling/historical.rs`) then standardize each
-window and run the V2.x checks: V2.1, V2.3, V2.5 and V2.9 are errors (the
-empty-pool refusal pre-empts V2.5), V2.6 is a warning, and V2.2, V2.4 and V2.7
+found`), which pre-empts every later check; `check_historical_structure`,
+`standardize_historical_windows` and `validate_historical_library`
+(`crates/cobre-stochastic/src/sampling/historical.rs`) then run in that order:
+`check_historical_structure` runs V2.1 and V2.9 (errors) and returns the
+`HistoricalStructureProof` that standardization requires, standardization
+standardizes each window, and the library check runs V2.3 (an error) and V2.6
+(a warning); its V2.5 is unreachable behind the empty-pool refusal. V2.2, V2.4 and V2.7
 are construction invariants with no release-build check (only V2.7 is
 re-asserted, by a `debug_assert!`). Lag seasons come from the calendar walk in
 `crates/cobre-stochastic/src/season_cast/mod.rs` (`season_period_window`,
-`nth_previous_occurrence`, `StageCalendar::season_occurrences`), never from
-arithmetic on declared season ids. The `historical_residuals` noise method
+`previous_occurrence`, `nth_previous_occurrence`,
+`StageCalendar::season_occurrences`) over the per-level cycles of `SeasonCycles`
+(`crates/cobre-core/src/model/temporal.rs`; an `overlapping_pair` is refused in
+`crates/cobre-io/src/stages.rs`), never from arithmetic on declared season ids.
+Pre-study lag seasons for precompute and fitting come from `StitchedSeasonMap`
+(`season_cast/stitched.rs`), history keys from `observation_occurrence_year`,
+and fitting and correlation relabel to calendar positions on single-level maps
+only (`par/fitting/cycle_positions.rs`). The `historical_residuals` noise method
 (`crates/cobre-io/src/stages.rs`) builds the opening tree from the same library
 (`build_opening_tree_library` in
 `crates/cobre-sddp/src/setup/stochastic_pipeline.rs`). `cobre validate` builds the
-opening-tree library but builds the forward scheme's library only inside
-`StudySetup`, which it constructs only when `policy.boundary` is configured, so
-`validate` can pass a case whose forward library `run` refuses.
+opening-tree library and constructs `StudySetup` for every deck (`validate_study`,
+`crates/cobre-sddp/src/validate_phases.rs`), so it also builds the forward
+scheme's library and reports the refusals `run` reports for it.
 
 When **updating the generic-constraint `hydro_inflow` term**
 (`reference/generic-constraints.mdx`, section `hydro_inflow`; `lp-formulation.md`
@@ -413,7 +448,9 @@ When **updating the generic-constraint `hydro_inflow` term**
 local `z_inflow` column, inflow diverted into the plant, upstream releases
 weighted by the share the downstream balance row credits to the block, and
 maturing transit water. Each upstream PreFilling plant whose short-circuit
-targets this plant adds its own terms at `1.0`. The plant's own outflows,
+targets this plant adds its local inflow, diverted inflow and upstream releases
+at `1.0`, and its maturing bucket at the rate `arrival_density[blk]/τ(blk)`
+(`push_maturing_bucket_rate`). The plant's own outflows,
 evaporation, withdrawal slacks, AR-lag `ψ` and pumping are excluded.
 
 When **updating policy reuse and its gates** (`running/policy-management.mdx`,
@@ -421,11 +458,16 @@ When **updating policy reuse and its gates** (`running/policy-management.mdx`,
 
 → `policy-management.mdx` owns the load contract (`## Policy Load Contract`,
 `### Check order`, `### Version gate`, `### Stored-basis gate`) and
-`error-codes.mdx` owns the error messages. The code is `validate_policy_load` and
-`build_basis_cache_from_checkpoint`
-(`crates/cobre-sddp/src/policy/policy_load.rs`),
-`crates/cobre-sddp/src/policy/reconcile.rs` and
-`crates/cobre-cli/src/commands/run/policy.rs`. The gate facts are in the
+`error-codes.mdx` owns the error messages. The code is `validate_policy_load`,
+`build_basis_cache_from_checkpoint` and `admit_stored_basis`
+(`crates/cobre-sddp/src/policy/policy_load.rs`), `check_full_fcf_load` (the
+full-FCF load shared by the CLI and Python,
+`crates/cobre-sddp/src/policy/full_fcf_load.rs`), the software identity that
+`validate_policy_load` compares (`SoftwareIdentity`,
+`crates/cobre-io/src/output/software.rs`),
+`crates/cobre-sddp/src/policy/reconcile.rs`,
+`crates/cobre-sddp/src/validate_phases.rs` (`cobre validate` runs the
+configured load) and `crates/cobre-cli/src/commands/run/policy.rs`. The gate facts are in the
 **Checkpoint format** bullet of the LP cluster above.
 
 When **updating discounting** (`discount-rate.mdx`,

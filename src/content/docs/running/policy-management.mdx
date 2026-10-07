@@ -137,7 +137,7 @@ With these keys in `config.json`, `cobre validate` accepts the case.
 Validate reads the checkpoint at `policy.path` and applies the same load, so
 this confirms the config and the policy load:
 
-{/* capture: cobre validate case 2>&1 | cobre   v0.17.0 | binary: cobre-cli sha256 23916b46 | case: temporary 1dtoy derivative (cobre init --template 1dtoy; trained once with cobre run --quiet; then config.json: training.enabled false added and policy.path ./policy added, every other key unchanged) */}
+{/* capture: cobre validate case 2>&1 | cobre   v0.18.0 | binary: cobre-cli sha256 93cb7307 | case: temporary 1dtoy derivative (cobre init --template 1dtoy; trained once with cobre run --quiet; then config.json: training.enabled false added and policy.path ./policy added, every other key unchanged) */}
 
 ```text
 Valid case: 1 buses, 1 hydros, 2 thermals, 0 lines
@@ -367,7 +367,7 @@ covers the wire level.
 A full-FCF load uses a stored LP basis only when it fits its stage LP, leaves
 the others out with one warning, and proceeds. For example, `cobre run` prints:
 
-{/* capture: PENDING v0.18.0 — cobre run case 2>&1 | case: temporary 1dtoy derivative (cobre init --template 1dtoy; stages.json: every stage carries two blocks PEAK and OFFPEAK with hours h // 2 and h - h // 2 of the single block's hours h, block_mode parallel; config.json: training.stopping_rules iteration_limit 3, simulation.enabled false; trained once with cobre run; then stages.json block_mode chronological on every stage, config.json training.enabled false and simulation.enabled true) | expect: exit 0, the warning line on stderr */}
+{/* capture: cobre run case 2>&1 | cobre   v0.18.0 | binary: cobre-cli sha256 93cb7307 | case: temporary 1dtoy derivative (cobre init --template 1dtoy; stages.json: every stage carries two blocks PEAK and OFFPEAK with hours h // 2 and h - h // 2 of the single block's hours h, block_mode parallel; config.json: training.stopping_rules iteration_limit 3, simulation.enabled false; trained once with cobre run; then stages.json block_mode chronological on every stage, config.json training.enabled false and simulation.enabled true) */}
 
 ```text
 warning: stored bases not used: 4 of 4 do not fit the current LP (first: node 0, 28 columns, the LP has 29); a stored basis is used only when its column count equals the LP's, its row count equals the LP's template rows plus its recorded cut rows, and its basic count equals its row count; the policy was trained on a different LP
@@ -925,7 +925,7 @@ print(len(reloaded["stage_cuts"][0]["cuts"]), reloaded["metadata"]["software_ver
 The script prints the reloaded cut count and the version that
 `write_policy_checkpoint` stamped:
 
-{/* capture: PENDING v0.18.0 — python round-trip example | case: none | expect: 3 0.18.0 */}
+{/* capture: python round-trip example | cobre-python 0.18.0 (PyPI wheel sha256 8a31828a) | python 3.12.3 | case: none */}
 
 ```text
 3 0.18.0
@@ -952,7 +952,7 @@ exception text it raises.
 A cut whose `coefficients` length disagrees with its stage's
 `state_dimension`:
 
-{/* capture: python input-validation snippet 1 of 3 (ValueError text) | cobre-python 0.17.0 (PyPI wheel sha256 c0b117d2) | python 3.12.3 | case: none; context: metadata of the round-trip example */}
+{/* capture: python input-validation snippet 1 of 3 (ValueError text) | cobre-python 0.18.0 (PyPI wheel sha256 8a31828a) | python 3.12.3 | case: none; context: metadata of the round-trip example */}
 
 ```python
 bad_cuts = [
@@ -981,7 +981,7 @@ cobre.write_policy_checkpoint("output/policy", bad_cuts, metadata)
 A `stage_states` entry whose flat `data` length disagrees with
 `count * state_dimension`:
 
-{/* capture: python input-validation snippet 2 of 3 (ValueError text) | cobre-python 0.17.0 (PyPI wheel sha256 c0b117d2) | python 3.12.3 | case: none; context: metadata and stage_cuts of the round-trip example */}
+{/* capture: python input-validation snippet 2 of 3 (ValueError text) | cobre-python 0.18.0 (PyPI wheel sha256 8a31828a) | python 3.12.3 | case: none; context: metadata and stage_cuts of the round-trip example */}
 
 ```python
 stage_states = [
@@ -1003,7 +1003,7 @@ A cut carrying `inflow_lag_coefficients` with no `inflow_lag_depth` passed to
 reserve the lag slots (keyed by **integer** hydro id; list index `0` = lag
 depth 1):
 
-{/* capture: python input-validation snippet 3 of 3 (ValueError text) | cobre-python 0.17.0 (PyPI wheel sha256 c0b117d2) | python 3.12.3 | case: none; context: metadata of the round-trip example */}
+{/* capture: python input-validation snippet 3 of 3 (ValueError text) | cobre-python 0.18.0 (PyPI wheel sha256 8a31828a) | python 3.12.3 | case: none; context: metadata of the round-trip example */}
 
 ```python
 stage_cuts = [

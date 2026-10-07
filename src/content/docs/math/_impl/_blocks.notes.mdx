@@ -26,7 +26,7 @@ A boundary load reads no basis, so the same cuts still load through
 [`policy.boundary`](/running/policy-management/#boundary-cuts) across block
 modes and block counts.
 
-{/* capture: PENDING v0.18.0 — reused from running/policy-management.mdx, Stored-basis gate | case: temporary 1dtoy derivative, two parallel blocks per stage in training, the same blocks chronological in a simulation-only run | expect: exit 0, the stored-bases warning */}
+{/* capture: reused from running/policy-management.mdx, Stored-basis gate | cobre   v0.18.0 | binary: cobre-cli sha256 93cb7307 | case: temporary 1dtoy derivative, two parallel blocks per stage in training, the same blocks chronological in a simulation-only run */}
 
 :::note
 Every training run writes its stage LP bases into the checkpoint, and

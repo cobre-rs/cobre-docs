@@ -18,7 +18,7 @@ Cobre surfaces errors through four user-facing channels:
 
   A case with no `policy.boundary` succeeds with:
 
-  {/* capture: cobre validate --json case | cobre   v0.17.0 | binary: cobre-cli sha256 23916b46 | case: temporary 1dtoy case (cobre init --template 1dtoy case; unmodified; run with NO_COLOR=1, exit code 0) */}
+  {/* capture: cobre validate --json case | cobre   v0.18.0 | binary: cobre-cli sha256 93cb7307 | case: temporary 1dtoy case (cobre init --template 1dtoy case; unmodified; run with NO_COLOR=1, exit code 0) */}
 
   ```json
   {
@@ -30,7 +30,7 @@ Cobre surfaces errors through four user-facing channels:
 
   A hydro unit group that names a bus that does not exist fails with:
 
-  {/* capture: cobre validate --json badref | cobre   v0.17.0 | binary: cobre-cli sha256 23916b46 | case: temporary 1dtoy derivative (cobre init --template 1dtoy; system/hydros.json: hydro 0 unit group 0 bus_id changed from 0 to 99; run with NO_COLOR=1, exit code 1) */}
+  {/* capture: cobre validate --json badref | cobre   v0.18.0 | binary: cobre-cli sha256 93cb7307 | case: temporary 1dtoy derivative (cobre init --template 1dtoy; system/hydros.json: hydro 0 unit group 0 bus_id changed from 0 to 99; run with NO_COLOR=1, exit code 1) */}
 
   ```json
   {
@@ -122,7 +122,7 @@ each of them that is not found on disk.
 
 **Example:** A case directory without `system/hydros.json`:
 
-{/* capture: cobre validate fnf1 | cobre   v0.17.0 | binary: cobre-cli sha256 23916b46 | case: temporary 1dtoy derivative (cobre init --template 1dtoy fnf1; system/hydros.json deleted; run with NO_COLOR=1, exit code 1; the Validation summary line, which carries the temporary path, is not quoted, the error: prefix is not quoted and only the first of the two [FileNotFound] lines is quoted) */}
+{/* capture: cobre validate fnf1 | cobre   v0.18.0 | binary: cobre-cli sha256 93cb7307 | case: temporary 1dtoy derivative (cobre init --template 1dtoy fnf1; system/hydros.json deleted; run with NO_COLOR=1, exit code 1; the Validation summary line, which carries the temporary path, is not quoted, the error: prefix is not quoted and only the first of the two [FileNotFound] lines is quoted) */}
 
 ```text
 [FileNotFound] system/hydros.json: required file 'system/hydros.json' not found in case directory
@@ -132,7 +132,7 @@ A case directory without `system/buses.json` gives two
 `[FileNotFound]` lines: the first reports the missing required file, the second
 the failed read of it:
 
-{/* capture: cobre validate nobus | cobre   v0.17.0 | binary: cobre-cli sha256 23916b46 | case: temporary 1dtoy derivative (cobre init --template 1dtoy nobus; system/buses.json deleted; run with NO_COLOR=1, exit code 1; the Validation summary line, which carries the temporary path, is not quoted and the error: prefix is not quoted) */}
+{/* capture: cobre validate nobus | cobre   v0.18.0 | binary: cobre-cli sha256 93cb7307 | case: temporary 1dtoy derivative (cobre init --template 1dtoy nobus; system/buses.json deleted; run with NO_COLOR=1, exit code 1; the Validation summary line, which carries the temporary path, is not quoted and the error: prefix is not quoted) */}
 
 ```text
 [FileNotFound] system/buses.json: required file 'system/buses.json' not found in case directory
@@ -177,7 +177,7 @@ This format reaches you only for a parse error raised after the validation repor
 
 **Example:**
 
-{/* capture: cobre validate trunc | cobre   v0.17.0 | binary: cobre-cli sha256 23916b46 | case: temporary 1dtoy derivative (cobre init --template 1dtoy trunc; stages.json cut off after the opening bracket of the stages array, leaving one line that ends in a newline; run with NO_COLOR=1, exit code 1; the Validation summary line, which carries the temporary path, is not quoted and the error: prefix is not quoted) */}
+{/* capture: cobre validate trunc | cobre   v0.18.0 | binary: cobre-cli sha256 93cb7307 | case: temporary 1dtoy derivative (cobre init --template 1dtoy trunc; stages.json cut off after the opening bracket of the stages array, leaving one line that ends in a newline; run with NO_COLOR=1, exit code 1; the Validation summary line, which carries the temporary path, is not quoted and the error: prefix is not quoted) */}
 
 ```text
 [ParseError] stages.json: parse error: EOF while parsing a list at line 2 column 0
@@ -185,7 +185,7 @@ This format reaches you only for a parse error raised after the validation repor
 
 A missing required field, here a constraint entry without `slack`:
 
-{/* capture: cobre validate gcnoslack | cobre   v0.17.0 | binary: cobre-cli sha256 23916b46 | case: temporary 1dtoy derivative (cobre init --template 1dtoy gcnoslack; constraints/generic_constraints.json added as a single line holding a constraints array with one constraint, id 0, name cap, expression hydro_storage(0), and no slack object; run with NO_COLOR=1, exit code 1; the Validation summary line, which carries the temporary path, is not quoted and the error: prefix is not quoted) */}
+{/* capture: cobre validate gcnoslack | cobre   v0.18.0 | binary: cobre-cli sha256 93cb7307 | case: temporary 1dtoy derivative (cobre init --template 1dtoy gcnoslack; constraints/generic_constraints.json added as a single line holding a constraints array with one constraint, id 0, name cap, expression hydro_storage(0), and no slack object; run with NO_COLOR=1, exit code 1; the Validation summary line, which carries the temporary path, is not quoted and the error: prefix is not quoted) */}
 
 ```text
 [ParseError] constraints/generic_constraints.json: parse error: missing field `slack` at line 1 column 69
@@ -193,7 +193,7 @@ A missing required field, here a constraint entry without `slack`:
 
 A `bound_stalling` rule that carries `seconds`, a `time_limit` field:
 
-{/* capture: cobre validate secs | cobre   v0.17.0 | binary: cobre-cli sha256 23916b46 | case: temporary 1dtoy derivative (cobre init --template 1dtoy secs; config.json re-written with 2-space indentation, training.stopping_rules gains a bound_stalling rule with iterations 5, tolerance 0.01 and seconds 3; run with NO_COLOR=1, exit code 1; the Validation summary line, which carries the temporary path, is not quoted and the error: prefix is not quoted) */}
+{/* capture: cobre validate secs | cobre   v0.18.0 | binary: cobre-cli sha256 93cb7307 | case: temporary 1dtoy derivative (cobre init --template 1dtoy secs; config.json re-written with 2-space indentation, training.stopping_rules gains a bound_stalling rule with iterations 5, tolerance 0.01 and seconds 3; run with NO_COLOR=1, exit code 1; the Validation summary line, which carries the temporary path, is not quoted and the error: prefix is not quoted) */}
 
 ```text
 [ParseError] config.json: parse error: unknown field `seconds`, expected `iterations` or `tolerance` at line 19 column 5
@@ -225,7 +225,7 @@ as a `ParseError` with an `unknown field` message.
 
 **Example:** A constraint object with an extra `type` key:
 
-{/* capture: cobre validate gcunk | cobre   v0.17.0 | binary: cobre-cli sha256 23916b46 | case: temporary 1dtoy derivative (cobre init --template 1dtoy gcunk; constraints/generic_constraints.json added, written with 2-space indentation, holding a constraints array with one constraint, id 0, name cap, expression hydro_storage(0), slack enabled false, plus the extra key type set to upper; run with NO_COLOR=1, exit code 1; the Validation summary line, which carries the temporary path, is not quoted and the error: prefix is not quoted) */}
+{/* capture: cobre validate gcunk | cobre   v0.18.0 | binary: cobre-cli sha256 93cb7307 | case: temporary 1dtoy derivative (cobre init --template 1dtoy gcunk; constraints/generic_constraints.json added, written with 2-space indentation, holding a constraints array with one constraint, id 0, name cap, expression hydro_storage(0), slack enabled false, plus the extra key type set to upper; run with NO_COLOR=1, exit code 1; the Validation summary line, which carries the temporary path, is not quoted and the error: prefix is not quoted) */}
 
 ```text
 [ParseError] constraints/generic_constraints.json: parse error: unknown field `type`, expected one of `id`, `name`, `description`, `expression`, `slack` at line 10 column 12
@@ -252,7 +252,7 @@ file are checked.
 
 A negative penalty cost:
 
-{/* capture: cobre validate negdef | cobre   v0.17.0 | binary: cobre-cli sha256 23916b46 | case: temporary 1dtoy derivative (cobre init --template 1dtoy negdef; system/buses.json: deficit segment 0 cost changed from 7500.0 to -100.0; run with NO_COLOR=1, exit code 1; the Validation summary line, which carries the temporary path, is not quoted and the error: prefix is not quoted) */}
+{/* capture: cobre validate negdef | cobre   v0.18.0 | binary: cobre-cli sha256 93cb7307 | case: temporary 1dtoy derivative (cobre init --template 1dtoy negdef; system/buses.json: deficit segment 0 cost changed from 7500.0 to -100.0; run with NO_COLOR=1, exit code 1; the Validation summary line, which carries the temporary path, is not quoted and the error: prefix is not quoted) */}
 
 ```text
 [SchemaViolation] system/buses.json: field buses[0].deficit_segments[0].cost: penalty value must be > 0.0, got -100
@@ -260,7 +260,7 @@ A negative penalty cost:
 
 A reservoir whose minimum storage exceeds its maximum:
 
-{/* capture: cobre validate resv | cobre   v0.17.0 | binary: cobre-cli sha256 23916b46 | case: temporary 1dtoy derivative (cobre init --template 1dtoy resv; system/hydros.json: hydro 0 reservoir min_storage_hm3 changed from 0.0 to 800.0 and max_storage_hm3 from 1000.0 to 500.0; run with NO_COLOR=1, exit code 1; the Validation summary line, which carries the temporary path, is not quoted and the error: prefix is not quoted) */}
+{/* capture: cobre validate resv | cobre   v0.18.0 | binary: cobre-cli sha256 93cb7307 | case: temporary 1dtoy derivative (cobre init --template 1dtoy resv; system/hydros.json: hydro 0 reservoir min_storage_hm3 changed from 0.0 to 800.0 and max_storage_hm3 from 1000.0 to 500.0; run with NO_COLOR=1, exit code 1; the Validation summary line, which carries the temporary path, is not quoted and the error: prefix is not quoted) */}
 
 ```text
 [SchemaViolation] system/hydros.json: field hydros[0].reservoir: min_storage_hm3 (800) must be <= max_storage_hm3 (500)
@@ -268,7 +268,7 @@ A reservoir whose minimum storage exceeds its maximum:
 
 A stage with no openings:
 
-{/* capture: cobre validate nop | cobre   v0.17.0 | binary: cobre-cli sha256 23916b46 | case: temporary 1dtoy derivative (cobre init --template 1dtoy nop; stages.json: stage 0 num_openings changed from 10 to 0; run with NO_COLOR=1, exit code 1; the Validation summary line, which carries the temporary path, is not quoted and the error: prefix is not quoted) */}
+{/* capture: cobre validate nop | cobre   v0.18.0 | binary: cobre-cli sha256 93cb7307 | case: temporary 1dtoy derivative (cobre init --template 1dtoy nop; stages.json: stage 0 num_openings changed from 10 to 0; run with NO_COLOR=1, exit code 1; the Validation summary line, which carries the temporary path, is not quoted and the error: prefix is not quoted) */}
 
 ```text
 [SchemaViolation] stages.json: field stages[0].num_openings: num_openings must be > 0
@@ -276,7 +276,7 @@ A stage with no openings:
 
 A `config.json` without `training.selection`:
 
-{/* capture: cobre validate nosel | cobre   v0.17.0 | binary: cobre-cli sha256 23916b46 | case: temporary 1dtoy derivative (cobre init --template 1dtoy nosel; config.json re-written with 2-space indentation, training.selection removed; run with NO_COLOR=1, exit code 1; the Validation summary line, which carries the temporary path, is not quoted and the error: prefix is not quoted) */}
+{/* capture: cobre validate nosel | cobre   v0.18.0 | binary: cobre-cli sha256 93cb7307 | case: temporary 1dtoy derivative (cobre init --template 1dtoy nosel; config.json re-written with 2-space indentation, training.selection removed; run with NO_COLOR=1, exit code 1; the Validation summary line, which carries the temporary path, is not quoted and the error: prefix is not quoted) */}
 
 ```text
 [SchemaViolation] config.json: field training.selection: a forward-pass count is required via training.selection
@@ -284,7 +284,7 @@ A `config.json` without `training.selection`:
 
 Two buses that share an `id` in `system/buses.json`:
 
-{/* capture: cobre validate dupbus | cobre   v0.17.0 | binary: cobre-cli sha256 23916b46 | case: temporary 1dtoy derivative (cobre init --template 1dtoy dupbus; system/buses.json: bus 0 duplicated as a second entry; run with NO_COLOR=1, exit code 1; the Validation summary line, which carries the temporary path, is not quoted and the error: prefix is not quoted) */}
+{/* capture: cobre validate dupbus | cobre   v0.18.0 | binary: cobre-cli sha256 93cb7307 | case: temporary 1dtoy derivative (cobre init --template 1dtoy dupbus; system/buses.json: bus 0 duplicated as a second entry; run with NO_COLOR=1, exit code 1; the Validation summary line, which carries the temporary path, is not quoted and the error: prefix is not quoted) */}
 
 ```text
 [SchemaViolation] system/buses.json: field buses[1].id: duplicate id 0 in buses array
@@ -369,7 +369,7 @@ exactly one kind of thing.
 
 **Example:**
 
-{/* capture: cobre validate nscoll | cobre   v0.17.0 | binary: cobre-cli sha256 23916b46 | case: temporary 1dtoy derivative (cobre init --template 1dtoy nscoll; constraints/generic_parameters.json added, written with 2-space indentation, holding one seasonal scalar parameter, id 1, name demanda; constraints/generic_constraints.json added, written with 2-space indentation, holding an empty constraints array and one named expression, name demanda, expression hydro_storage(0); run with NO_COLOR=1, exit code 1; the Validation summary line, which carries the temporary path, is not quoted and the error: prefix is not quoted) */}
+{/* capture: cobre validate nscoll | cobre   v0.18.0 | binary: cobre-cli sha256 93cb7307 | case: temporary 1dtoy derivative (cobre init --template 1dtoy nscoll; constraints/generic_parameters.json added, written with 2-space indentation, holding one seasonal scalar parameter, id 1, name demanda; constraints/generic_constraints.json added, written with 2-space indentation, holding an empty constraints array and one named expression, name demanda, expression hydro_storage(0); run with NO_COLOR=1, exit code 1; the Validation summary line, which carries the temporary path, is not quoted and the error: prefix is not quoted) */}
 
 ```text
 [SchemaViolation] constraints/generic_constraints.json: field expressions[0].name: name "demanda" is declared as both a scalar parameter and a named expression; the "@name" namespace is shared
@@ -396,7 +396,7 @@ rejected before any expression is inlined, even if no constraint ever uses it.
 
 **Example:**
 
-{/* capture: cobre validate ncycle | cobre   v0.17.0 | binary: cobre-cli sha256 23916b46 | case: temporary 1dtoy derivative (cobre init --template 1dtoy ncycle; constraints/generic_constraints.json added, written with 2-space indentation, holding an empty constraints array and two named expressions, fnese referencing @fnese_margin and fnese_margin referencing @fnese; run with NO_COLOR=1, exit code 1; the Validation summary line, which carries the temporary path, is not quoted and the error: prefix is not quoted) */}
+{/* capture: cobre validate ncycle | cobre   v0.18.0 | binary: cobre-cli sha256 93cb7307 | case: temporary 1dtoy derivative (cobre init --template 1dtoy ncycle; constraints/generic_constraints.json added, written with 2-space indentation, holding an empty constraints array and two named expressions, fnese referencing @fnese_margin and fnese_margin referencing @fnese; run with NO_COLOR=1, exit code 1; the Validation summary line, which carries the temporary path, is not quoted and the error: prefix is not quoted) */}
 
 ```text
 [SchemaViolation] constraints/generic_constraints.json: field expressions: named-expression reference cycle detected: fnese -> fnese_margin -> fnese
@@ -428,7 +428,7 @@ without referencing it is a cheap existence check, not an expansion.
 
 **Example:**
 
-{/* capture: cobre validate nbudget | cobre   v0.17.0 | binary: cobre-cli sha256 23916b46 | case: temporary 1dtoy derivative (cobre init --template 1dtoy nbudget; constraints/generic_constraints.json added, written with 2-space indentation, holding one constraint, id 0, name c0, expression @e60, slack disabled, and 61 named expressions, e0 = hydro_storage(0) and e<k> = @e<k-1> + @e<k-1> for k 1 to 60; constraints/generic_constraint_bounds.parquet added with compression zstd and one row, constraint 0, stage 0, block_id and bound_lower null, bound_upper 1e9; run with NO_COLOR=1, exit code 1; the Validation summary line, which carries the temporary path, is not quoted and the error: prefix is not quoted) */}
+{/* capture: cobre validate nbudget | cobre   v0.18.0 | binary: cobre-cli sha256 93cb7307 | case: temporary 1dtoy derivative (cobre init --template 1dtoy nbudget; constraints/generic_constraints.json added, written with 2-space indentation, holding one constraint, id 0, name c0, expression @e60, slack disabled, and 61 named expressions, e0 = hydro_storage(0) and e<k> = @e<k-1> + @e<k-1> for k 1 to 60; constraints/generic_constraint_bounds.parquet added with compression zstd and one row, constraint 0, stage 0, block_id and bound_lower null, bound_upper 1e9; run with NO_COLOR=1, exit code 1; the Validation summary line, which carries the temporary path, is not quoted and the error: prefix is not quoted) */}
 
 ```text
 [SchemaViolation] constraints/generic_constraints.json: field constraints[0].expression: named-expression reference "@e60" expands to more than 100000 inlined terms; this indicates an exponential reference pattern (e.g. a doubling chain "@e = @prev + @prev")
@@ -499,7 +499,7 @@ whatever other name the file carries it, is a schema failure naming the required
 
 **Example:** A `scenarios/inflow_seasonal_stats.parquet` whose `hydro_id` column is named `hydro`:
 
-{/* capture: cobre validate pqcol | cobre   v0.17.0 | binary: cobre-cli sha256 23916b46 | case: temporary 1dtoy derivative (cobre init --template 1dtoy pqcol; scenarios/inflow_seasonal_stats.parquet re-written with pyarrow (compression zstd) with the column hydro_id renamed to hydro; run with NO_COLOR=1, exit code 1; the Validation summary line, which carries the temporary path, is not quoted and the error: prefix is not quoted) */}
+{/* capture: cobre validate pqcol | cobre   v0.18.0 | binary: cobre-cli sha256 93cb7307 | case: temporary 1dtoy derivative (cobre init --template 1dtoy pqcol; scenarios/inflow_seasonal_stats.parquet re-written with pyarrow (compression zstd) with the column hydro_id renamed to hydro; run with NO_COLOR=1, exit code 1; the Validation summary line, which carries the temporary path, is not quoted and the error: prefix is not quoted) */}
 
 ```text
 [SchemaViolation] scenarios/inflow_seasonal_stats.parquet: field hydro_id: missing required column "hydro_id"
@@ -533,7 +533,7 @@ the placeholders.
 **Example:** `cobre validate` on a case whose `training.scenario_source` sets the
 inflow class to `out_of_sample` and no `seed`:
 
-{/* capture: PENDING v0.18.0 — cobre validate noseed | case: temporary 1dtoy derivative (cobre init --template 1dtoy noseed; config.json re-written with 2-space indentation, simulation.enabled false, training.scenario_source replaced by one inflow class with scheme out_of_sample and no seed; run with NO_COLOR=1, exit code 1; the Validation summary line, which carries the temporary path, is not quoted and the error: prefix is not quoted) | expect: exit 1, one [SchemaViolation] line */}
+{/* capture: cobre validate noseed | cobre   v0.18.0 | binary: cobre-cli sha256 93cb7307 | case: temporary 1dtoy derivative (cobre init --template 1dtoy noseed; config.json re-written with 2-space indentation, simulation.enabled false, training.scenario_source replaced by one inflow class with scheme out_of_sample and no seed; run with NO_COLOR=1, exit code 1; the Validation summary line, which carries the temporary path, is not quoted and the error: prefix is not quoted) */}
 
 ```text
 [SchemaViolation] config.json: field training.scenario_source.seed: seed is required when any class uses out_of_sample or external scheme
@@ -575,25 +575,25 @@ three failures stop `system/thermals.json` at its first offending entry, so a fi
 with several bad leads reports only the first; the horizon rule reports every
 offending thermal. The captures follow the order of the list above.
 
-{/* capture: cobre validate <case> | cobre   v0.17.0 | binary: cobre-cli sha256 23916b46 | case: temporary 1dtoy derivative (cobre init --template 1dtoy; system/thermals.json: thermal 0 given anticipated_config with lead_stages 0; run with NO_COLOR=1, exit code 1; the Validation summary line is not quoted) */}
+{/* capture: cobre validate <case> | cobre   v0.18.0 | binary: cobre-cli sha256 93cb7307 | case: temporary 1dtoy derivative (cobre init --template 1dtoy; system/thermals.json: thermal 0 given anticipated_config with lead_stages 0; run with NO_COLOR=1, exit code 1; the Validation summary line is not quoted) */}
 
 ```text
 error: [SchemaViolation] system/thermals.json: field thermals[0].anticipated_config.lead_stages: lead_stages must be >= 1, got 0
 ```
 
-{/* capture: cobre validate <case> | cobre   v0.17.0 | binary: cobre-cli sha256 23916b46 | case: temporary 1dtoy derivative (cobre init --template 1dtoy; system/thermals.json: thermal 0 given anticipated_config with lead_time_hours -1.0; run with NO_COLOR=1, exit code 1; the Validation summary line is not quoted) */}
+{/* capture: cobre validate <case> | cobre   v0.18.0 | binary: cobre-cli sha256 93cb7307 | case: temporary 1dtoy derivative (cobre init --template 1dtoy; system/thermals.json: thermal 0 given anticipated_config with lead_time_hours -1.0; run with NO_COLOR=1, exit code 1; the Validation summary line is not quoted) */}
 
 ```text
 error: [SchemaViolation] system/thermals.json: field thermals[0].anticipated_config.lead_time_hours: lead_time_hours must be finite and > 0.0, got -1
 ```
 
-{/* capture: cobre validate <case> | cobre   v0.17.0 | binary: cobre-cli sha256 23916b46 | case: temporary 1dtoy derivative (cobre init --template 1dtoy; system/thermals.json: thermal 0 given anticipated_config with lead_stages 1 and lead_time_hours 24.0, one key per line after cost_per_mwh; run with NO_COLOR=1, exit code 1; the Validation summary line is not quoted) */}
+{/* capture: cobre validate <case> | cobre   v0.18.0 | binary: cobre-cli sha256 93cb7307 | case: temporary 1dtoy derivative (cobre init --template 1dtoy; system/thermals.json: thermal 0 given anticipated_config with lead_stages 1 and lead_time_hours 24.0, one key per line after cost_per_mwh; run with NO_COLOR=1, exit code 1; the Validation summary line is not quoted) */}
 
 ```text
 error: [ParseError] system/thermals.json: parse error: data did not match any variant of untagged enum RawAnticipatedConfig at line 18 column 5
 ```
 
-{/* capture: cobre validate <case> | cobre   v0.17.0 | binary: cobre-cli sha256 23916b46 | case: temporary 1dtoy derivative (cobre init --template 1dtoy, four stages and no post_study_stages.json; system/thermals.json: thermal 0 given anticipated_config with lead_stages 9; run with NO_COLOR=1, exit code 1; the Validation summary line and the second report line, which concerns the thermal's missing past_anticipated_commitments window, are not quoted) */}
+{/* capture: cobre validate <case> | cobre   v0.18.0 | binary: cobre-cli sha256 93cb7307 | case: temporary 1dtoy derivative (cobre init --template 1dtoy, four stages and no post_study_stages.json; system/thermals.json: thermal 0 given anticipated_config with lead_stages 9; run with NO_COLOR=1, exit code 1; the Validation summary line and the second report line, which concerns the thermal's missing past_anticipated_commitments window, are not quoted) */}
 
 ```text
 error: [BusinessRuleViolation] system/thermals.json (thermals[id=0].anticipated_config.lead_stages): Thermal 0: lead_stages exceeds study horizon (lead_stages=9, n_stages=4); the plant can never deliver within the study horizon
@@ -665,7 +665,7 @@ plant's unit groups' `bus_id` references a bus that is not in
 
 **Example:**
 
-{/* capture: cobre validate badref | cobre   v0.17.0 | binary: cobre-cli sha256 23916b46 | case: temporary 1dtoy derivative (cobre init --template 1dtoy badref; system/hydros.json: hydro 0 unit group 0 bus_id changed from 0 to 99; run with NO_COLOR=1, exit code 1; the Validation summary line, which carries the temporary path, is not quoted and the error: prefix is not quoted) */}
+{/* capture: cobre validate badref | cobre   v0.18.0 | binary: cobre-cli sha256 93cb7307 | case: temporary 1dtoy derivative (cobre init --template 1dtoy badref; system/hydros.json: hydro 0 unit group 0 bus_id changed from 0 to 99; run with NO_COLOR=1, exit code 1; the Validation summary line, which carries the temporary path, is not quoted and the error: prefix is not quoted) */}
 
 ```text
 [InvalidReference] system/hydros.json (Hydro 0 unit group 0): Hydro 0 unit group 0 references non-existent Bus 99 via field 'bus_id'
@@ -729,7 +729,7 @@ two-buses example there.
 
 **Example:**
 
-{/* capture: cobre validate dupug | cobre   v0.17.0 | binary: cobre-cli sha256 23916b46 | case: temporary 1dtoy derivative (cobre init --template 1dtoy dupug; system/hydros.json: unit group 0 of hydro 0 duplicated, with max_generation_mw and max_turbined_m3s of both copies set to 25.0; run with NO_COLOR=1, exit code 1; the Validation summary line, which carries the temporary path, is not quoted and the error: prefix is not quoted) */}
+{/* capture: cobre validate dupug | cobre   v0.18.0 | binary: cobre-cli sha256 93cb7307 | case: temporary 1dtoy derivative (cobre init --template 1dtoy dupug; system/hydros.json: unit group 0 of hydro 0 duplicated, with max_generation_mw and max_turbined_m3s of both copies set to 25.0; run with NO_COLOR=1, exit code 1; the Validation summary line, which carries the temporary path, is not quoted and the error: prefix is not quoted) */}
 
 ```text
 [DuplicateId] system/hydros.json (Hydro 0): Hydro 0: unit group id 0 is declared more than once; unit group ids must be unique within a plant
@@ -753,13 +753,13 @@ has an empty `blocks` array. A reservoir whose `min_storage_hm3` exceeds
 
 **Example:**
 
-{/* capture: cobre validate trans | cobre   v0.17.0 | binary: cobre-cli sha256 23916b46 | case: temporary 1dtoy derivative (cobre init --template 1dtoy trans; stages.json: policy_graph.transitions added as 0 to 1 with probability 0.5, 1 to 2 and 2 to 3 with probability 1.0; run with NO_COLOR=1, exit code 1; the Validation summary line, which carries the temporary path, is not quoted and the error: prefix is not quoted) */}
+{/* capture: cobre validate trans | cobre   v0.18.0 | binary: cobre-cli sha256 93cb7307 | case: temporary 1dtoy derivative (cobre init --template 1dtoy trans; stages.json: policy_graph.transitions added as 0 to 1 with probability 0.5, 1 to 2 and 2 to 3 with probability 1.0; run with NO_COLOR=1, exit code 1; the Validation summary line, which carries the temporary path, is not quoted and the error: prefix is not quoted) */}
 
 ```text
 [InvalidValue] stages.json: outgoing transition probabilities from stage 0 sum to 0.50000000 (expected 1.0 ±0.000001); probability must sum to 1.0
 ```
 
-{/* capture: cobre validate noblk | cobre   v0.17.0 | binary: cobre-cli sha256 23916b46 | case: temporary 1dtoy derivative (cobre init --template 1dtoy noblk; stages.json: stage 1 blocks replaced by an empty array; run with NO_COLOR=1, exit code 1; the Validation summary line, which carries the temporary path, is not quoted and the error: prefix is not quoted) */}
+{/* capture: cobre validate noblk | cobre   v0.18.0 | binary: cobre-cli sha256 93cb7307 | case: temporary 1dtoy derivative (cobre init --template 1dtoy noblk; stages.json: stage 1 blocks replaced by an empty array; run with NO_COLOR=1, exit code 1; the Validation summary line, which carries the temporary path, is not quoted and the error: prefix is not quoted) */}
 
 ```text
 [InvalidValue] stages.json: stage 1 declares no blocks; every study stage must declare at least one block
@@ -816,7 +816,7 @@ the override before it ever reaches the LP.
 
 **Example:**
 
-{/* capture: cobre validate divfloor | cobre   v0.17.0 | binary: cobre-cli sha256 23916b46 | case: temporary 1dtoy derivative (cobre init --template 1dtoy divfloor; constraints/hydro_bounds.parquet added with one row: hydro_id 0, stage_id 1, min_diversion_m3s 2.0, and the 1dtoy hydro declares no diversion channel; run with NO_COLOR=1, exit code 1; the Validation summary line is not quoted and the error: prefix is not quoted) */}
+{/* capture: cobre validate divfloor | cobre   v0.18.0 | binary: cobre-cli sha256 93cb7307 | case: temporary 1dtoy derivative (cobre init --template 1dtoy divfloor; constraints/hydro_bounds.parquet added with one row: hydro_id 0, stage_id 1, min_diversion_m3s 2.0, and the 1dtoy hydro declares no diversion channel; run with NO_COLOR=1, exit code 1; the Validation summary line is not quoted and the error: prefix is not quoted) */}
 
 ```text
 [InvalidValue] constraints/hydro_bounds.parquet (Hydro 0): Hydro 0: hydro_bounds row at stage_id=1 sets min_diversion_m3s=2, but the hydro declares no diversion channel; diversion is pinned [0, 0] with no channel, making a positive floor infeasible
@@ -842,7 +842,7 @@ acyclic; this check applies only when `nodes[]` is declared.
 
 **Messages:**
 
-{/* capture: cobre validate cyc | cobre   v0.17.0 | binary: cobre-cli sha256 23916b46 | case: temporary 1dtoy derivative (cobre init --template 1dtoy cyc; system/hydros.json: hydro 1 (a copy of hydro 0 named UHE2) added, hydro 0 downstream_id set to 1 and hydro 1 downstream_id set to 0; run with NO_COLOR=1, exit code 1; the command prints nine error lines, of which only the [CycleDetected] line is quoted; the Validation summary line, which carries the temporary path, is not quoted and the error: prefix is not quoted) */}
+{/* capture: cobre validate cyc | cobre   v0.18.0 | binary: cobre-cli sha256 93cb7307 | case: temporary 1dtoy derivative (cobre init --template 1dtoy cyc; system/hydros.json: hydro 1 (a copy of hydro 0 named UHE2) added, hydro 0 downstream_id set to 1 and hydro 1 downstream_id set to 0; run with NO_COLOR=1, exit code 1; the command prints nine error lines, of which only the [CycleDetected] line is quoted; the Validation summary line, which carries the temporary path, is not quoted and the error: prefix is not quoted) */}
 
 ```text
 [CycleDetected] system/hydros.json: hydro cascade contains a cycle involving hydro IDs: [0, 1]
@@ -879,7 +879,7 @@ require it.
 
 **Example:**
 
-{/* capture: cobre validate cyc | cobre   v0.17.0 | binary: cobre-cli sha256 23916b46 | case: temporary 1dtoy derivative (cobre init --template 1dtoy cyc; system/hydros.json: hydro 1 (a copy of hydro 0 named UHE2) added, hydro 0 downstream_id set to 1 and hydro 1 downstream_id set to 0; run with NO_COLOR=1, exit code 1; the command prints nine error lines, of which only the first [DimensionMismatch] line is quoted; the Validation summary line, which carries the temporary path, is not quoted and the error: prefix is not quoted) */}
+{/* capture: cobre validate cyc | cobre   v0.18.0 | binary: cobre-cli sha256 93cb7307 | case: temporary 1dtoy derivative (cobre init --template 1dtoy cyc; system/hydros.json: hydro 1 (a copy of hydro 0 named UHE2) added, hydro 0 downstream_id set to 1 and hydro 1 downstream_id set to 0; run with NO_COLOR=1, exit code 1; the command prints nine error lines, of which only the first [DimensionMismatch] line is quoted; the Validation summary line, which carries the temporary path, is not quoted and the error: prefix is not quoted) */}
 
 ```text
 [DimensionMismatch] scenarios/inflow_seasonal_stats.parquet (Hydro 1): Hydro 1 missing inflow seasonal stats for stage 0
@@ -905,7 +905,7 @@ cannot satisfy. One check reports a `BusinessRuleViolation` as a warning: when t
 
 **Example:**
 
-{/* capture: cobre validate fpha | cobre   v0.17.0 | binary: cobre-cli sha256 23916b46 | case: temporary 1dtoy derivative (cobre init --template 1dtoy fpha; system/hydros.json: hydro 0 generation.model changed from constant_productivity to fpha, and a penalties block with turbined_cost -0.05 added to hydro 0; run with NO_COLOR=1, exit code 1; the Validation summary line is not quoted) */}
+{/* capture: cobre validate fpha | cobre   v0.18.0 | binary: cobre-cli sha256 93cb7307 | case: temporary 1dtoy derivative (cobre init --template 1dtoy fpha; system/hydros.json: hydro 0 generation.model changed from constant_productivity to fpha, and a penalties block with turbined_cost -0.05 added to hydro 0; run with NO_COLOR=1, exit code 1; the Validation summary line is not quoted) */}
 
 ```text
 error: [BusinessRuleViolation] penalties.json (Hydro 0): Hydro 0: turbined_cost (-0.05) must be non-negative (>= 0) for FPHA hydros; negative values distort LP dispatch
@@ -980,7 +980,7 @@ rejected whatever its content; the loader never reads it, so a well-formed file 
 
 **Example:**
 
-{/* capture: cobre validate sp | cobre   v0.17.0 | binary: cobre-cli sha256 23916b46 | case: temporary 1dtoy derivative (cobre init --template 1dtoy sp; system/scalar_parameters.json added holding {"parameters": []}; run with NO_COLOR=1, exit code 1; the Validation summary line, which carries the temporary path, is not quoted and the error: prefix is not quoted) */}
+{/* capture: cobre validate sp | cobre   v0.18.0 | binary: cobre-cli sha256 93cb7307 | case: temporary 1dtoy derivative (cobre init --template 1dtoy sp; system/scalar_parameters.json added holding {"parameters": []}; run with NO_COLOR=1, exit code 1; the Validation summary line, which carries the temporary path, is not quoted and the error: prefix is not quoted) */}
 
 ```text
 [BusinessRuleViolation] system/scalar_parameters.json: system/scalar_parameters.json is no longer read; scalar parameters are now read from constraints/generic_parameters.json, beside the constraints that reference them by @name. Move the file (its contents are unchanged).
@@ -1031,7 +1031,7 @@ stages and for a lead given in hours alike.
 
 **Example:**
 
-{/* capture: cobre validate ac | cobre   v0.17.0 | binary: cobre-cli sha256 23916b46 | case: temporary 1dtoy derivative (cobre init --template 1dtoy ac; system/thermals.json: thermal 0 given anticipated_config with lead_stages 1; run with NO_COLOR=1, exit code 1; the Validation summary line, which carries the temporary path, is not quoted and the error: prefix is not quoted) */}
+{/* capture: cobre validate ac | cobre   v0.18.0 | binary: cobre-cli sha256 93cb7307 | case: temporary 1dtoy derivative (cobre init --template 1dtoy ac; system/thermals.json: thermal 0 given anticipated_config with lead_stages 1; run with NO_COLOR=1, exit code 1; the Validation summary line, which carries the temporary path, is not quoted and the error: prefix is not quoted) */}
 
 ```text
 [BusinessRuleViolation] initial_conditions.json (initial_conditions.past_anticipated_commitments): Thermal 0: missing entry in initial_conditions.past_anticipated_commitments; every anticipated thermal must have at least one commitment window
@@ -1228,7 +1228,7 @@ lines below show one message per template, in this order:
 4. A storage block of `K` or more.
 5. An evaporation reference with no block on a chronological stage.
 
-{/* capture: PENDING v0.18.0 — cobre validate case 2>&1 | case: temporary 1dtoy derivative (cobre init --template 1dtoy; stages.json: stages 0 and 1 carry two blocks PEAK and OFFPEAK with hours h // 2 and h - h // 2 of the single block's hours h, stage 0 block_mode parallel, stage 1 block_mode chronological; constraints/generic_constraints.json added with five constraints on hydro 0, slack disabled: id 0 evap_out_of_range hydro_evaporation(0, 5), id 1 evap_parallel_block hydro_evaporation(0, 1), id 2 storage_interior hydro_storage_final(0, 0), id 3 storage_out_of_range hydro_storage_initial(0, 5), id 4 evap_chronological_bare hydro_evaporation(0); constraints/generic_constraint_bounds.parquet added with compression zstd and one row per activation, constraints 0-3 at stage 0 and constraint 4 at stage 1, block_id and bound_lower null, bound_upper 1e9; run with NO_COLOR=1; the Validation summary line, which carries the temporary path, is not quoted) | expect: exit 1, five error lines */}
+{/* capture: cobre validate case 2>&1 | cobre   v0.18.0 | binary: cobre-cli sha256 93cb7307 | case: temporary 1dtoy derivative (cobre init --template 1dtoy; stages.json: stages 0 and 1 carry two blocks PEAK and OFFPEAK with hours h // 2 and h - h // 2 of the single block's hours h, stage 0 block_mode parallel, stage 1 block_mode chronological; constraints/generic_constraints.json added with five constraints on hydro 0, slack disabled: id 0 evap_out_of_range hydro_evaporation(0, 5), id 1 evap_parallel_block hydro_evaporation(0, 1), id 2 storage_interior hydro_storage_final(0, 0), id 3 storage_out_of_range hydro_storage_initial(0, 5), id 4 evap_chronological_bare hydro_evaporation(0); constraints/generic_constraint_bounds.parquet added with compression zstd and one row per activation, constraints 0-3 at stage 0 and constraint 4 at stage 1, block_id and bound_lower null, bound_upper 1e9; run with NO_COLOR=1; the Validation summary line, which carries the temporary path, is not quoted) */}
 
 ```text
 error: [BusinessRuleViolation] constraints/generic_constraints.json (constraint[id=0]): Constraint "evap_out_of_range": per-block evaporation reference `hydro_evaporation(0, 5)` at stage 0 references block 5 which does not exist at stage 0 (K = 2)
@@ -1386,7 +1386,7 @@ a warning.
 
 **Example:**
 
-{/* capture: PENDING v0.18.0 — cobre validate ord | case: temporary 1dtoy derivative (cobre init --template 1dtoy ord; system/hydros.json: hydro 0 gains a penalties block with generation_violation_below_cost 10000.0; run with NO_COLOR=1, exit code 0; the Valid case and Validation summary lines are not quoted) | expect: exit 0, one warning line */}
+{/* capture: cobre validate ord | cobre   v0.18.0 | binary: cobre-cli sha256 93cb7307 | case: temporary 1dtoy derivative (cobre init --template 1dtoy ord; system/hydros.json: hydro 0 gains a penalties block with generation_violation_below_cost 10000.0; run with NO_COLOR=1, exit code 0; the Valid case and Validation summary lines are not quoted) */}
 
 ```text
 warning: penalties.json: Penalty ordering violation: max(deficit_segment_costs) (7500) should be > generation_violation_below_cost (10000) (both $/MWh) -- 1 hydro(s) affected, worst case: Hydro 0
@@ -1448,7 +1448,7 @@ trigger it, both emitted by the business-rule check in
 
    **Example:** A generic constraint `thermal_generation(0)` on an anticipated thermal:
 
-   {/* capture: cobre validate sa1 | cobre   v0.17.0 | binary: cobre-cli sha256 23916b46 | case: temporary 1dtoy derivative (cobre init --template 1dtoy sa1; system/thermals.json: thermal 0 given anticipated_config with lead_stages 1; initial_conditions.json: past_anticipated_commitments gains one window for thermal 0, 2024-01-01 to 2024-02-01, value_mw 0.0; constraints/generic_constraints.json added holding one constraint, id 0, name peak_cap, expression thermal_generation(0), slack enabled false; constraints/generic_constraint_bounds.parquet added with compression zstd and one row, constraint 0, stage 1, block_id and bound_lower null, bound_upper 10.0; run with NO_COLOR=1, exit code 0; the Valid case and Validation summary lines and the first warning line, which concerns the thermal's stage-cadence transition, are not quoted) */}
+   {/* capture: cobre validate sa1 | cobre   v0.18.0 | binary: cobre-cli sha256 93cb7307 | case: temporary 1dtoy derivative (cobre init --template 1dtoy sa1; system/thermals.json: thermal 0 given anticipated_config with lead_stages 1; initial_conditions.json: past_anticipated_commitments gains one window for thermal 0, 2024-01-01 to 2024-02-01, value_mw 0.0; constraints/generic_constraints.json added holding one constraint, id 0, name peak_cap, expression thermal_generation(0), slack enabled false; constraints/generic_constraint_bounds.parquet added with compression zstd and one row, constraint 0, stage 1, block_id and bound_lower null, bound_upper 10.0; run with NO_COLOR=1, exit code 0; the Valid case and Validation summary lines and the first warning line, which concerns the thermal's stage-cadence transition, are not quoted) */}
 
    ```text
    warning: constraints/generic_constraints.json (constraint[id=0]): Constraint "peak_cap": thermal_generation(0) references an anticipated thermal. thermal_generation refers to the per-block generation at the delivery stage, not the forward commitment. If you intend to constrain the commitment itself, use anticipated_decision(0) instead.
@@ -1469,7 +1469,7 @@ trigger it, both emitted by the business-rule check in
 
    **Example:** A constraint that pairs the two tags for hydro 0:
 
-   {/* capture: cobre validate sa2 | cobre   v0.17.0 | binary: cobre-cli sha256 23916b46 | case: temporary 1dtoy derivative (cobre init --template 1dtoy sa2; constraints/generic_parameters.json added holding two computed parameters for hydro 0, id 1 name rho tag accumulated_productivity and id 2 name emax tag max_stored_energy; constraints/generic_constraints.json added holding one constraint, id 0, name sec_mismatch, expression @rho * hydro_useful_volume_final(0) >= 0.3 * @emax, slack enabled false; constraints/generic_constraint_bounds.parquet added with compression zstd and one row, constraint 0, stage 1, block_id, bound_lower and bound_upper null; run with NO_COLOR=1, exit code 0; the Valid case and Validation summary lines are not quoted) */}
+   {/* capture: cobre validate sa2 | cobre   v0.18.0 | binary: cobre-cli sha256 93cb7307 | case: temporary 1dtoy derivative (cobre init --template 1dtoy sa2; constraints/generic_parameters.json added holding two computed parameters for hydro 0, id 1 name rho tag accumulated_productivity and id 2 name emax tag max_stored_energy; constraints/generic_constraints.json added holding one constraint, id 0, name sec_mismatch, expression @rho * hydro_useful_volume_final(0) >= 0.3 * @emax, slack enabled false; constraints/generic_constraint_bounds.parquet added with compression zstd and one row, constraint 0, stage 1, block_id, bound_lower and bound_upper null; run with NO_COLOR=1, exit code 0; the Valid case and Validation summary lines are not quoted) */}
 
    ```text
    warning: constraints/generic_constraints.json (sec_mismatch): Constraint "sec_mismatch": pairs max_stored_energy(0) with accumulated_productivity(0) for hydro 0; the two ride different evaluators and would not cancel. The coefficient matching max_stored_energy is integrated_accumulated_productivity, not accumulated_productivity.
@@ -1620,7 +1620,7 @@ setup begins. File label: `config.json`.
 **Example:** A `gap` stopping rule with neither `tolerance` nor
 `relative_tolerance`:
 
-{/* capture: cobre validate gap | cobre   v0.17.0 | binary: cobre-cli sha256 23916b46 | case: temporary 1dtoy derivative (cobre init --template 1dtoy gap; config.json re-written with 2-space indentation, training.stopping_rules gains a gap rule with neither tolerance nor relative_tolerance; run with NO_COLOR=1, exit code 1; the Validation summary line, which carries the temporary path, is not quoted and the error: prefix is not quoted) */}
+{/* capture: cobre validate gap | cobre   v0.18.0 | binary: cobre-cli sha256 93cb7307 | case: temporary 1dtoy derivative (cobre init --template 1dtoy gap; config.json re-written with 2-space indentation, training.stopping_rules gains a gap rule with neither tolerance nor relative_tolerance; run with NO_COLOR=1, exit code 1; the Validation summary line, which carries the temporary path, is not quoted and the error: prefix is not quoted) */}
 
 ```text
 config.json: configuration validation error: gap stopping rule requires at least one of tolerance / relative_tolerance to be present
@@ -1687,7 +1687,7 @@ and the exit code is `1`. The `error:` line carries the file label and the
 `stochastic error:` prefix. This excerpt omits the `Validation:` summary line,
 which carries the case path.
 
-{/* capture: cobre validate case 2>&1 | cobre   v0.17.0 | binary: cobre-cli sha256 23916b46 | case: temporary 1dtoy derivative (cobre init --template 1dtoy; stages.json: season_definitions added with cycle_type monthly and twelve seasons, season_id 0 to 3 on the four stages, sampling_method historical_residuals on every stage; scenarios/inflow_history.parquet added with compression zstd, hydro 0, three monthly windows 2020-01-01 to 2020-04-01, values 41, 42 and 43; scenarios/inflow_ar_coefficients.parquet added with compression zstd and zero rows; run with NO_COLOR=1; the Validation summary line, which carries the temporary path, is not quoted) */}
+{/* capture: cobre validate case 2>&1 | cobre   v0.18.0 | binary: cobre-cli sha256 93cb7307 | case: temporary 1dtoy derivative (cobre init --template 1dtoy; stages.json: season_definitions added with cycle_type monthly and twelve seasons, season_id 0 to 3 on the four stages, sampling_method historical_residuals on every stage; scenarios/inflow_history.parquet added with compression zstd, hydro 0, three monthly windows 2020-01-01 to 2020-04-01, values 41, 42 and 43; scenarios/inflow_ar_coefficients.parquet added with compression zstd and zero rows; run with NO_COLOR=1; the Validation summary line, which carries the temporary path, is not quoted) */}
 
 ```text
 error: scenarios/inflow_history.parquet: stochastic error: insufficient data: no valid historical windows found: ensure that inflow history covers the required seasons for at least one starting year
@@ -1697,7 +1697,7 @@ error: scenarios/inflow_history.parquet: stochastic error: insufficient data: no
 validate hint follows it. This excerpt omits the banner, the `Execution` block and the
 `Loading case:` line.
 
-{/* capture: PENDING v0.18.0 — cobre run case 2>&1 | case: the same temporary 1dtoy derivative as the cobre validate capture above; run with NO_COLOR=1; the banner, the Execution block and the Loading case line, which carry the hostname and the temporary path, are not quoted | expect: exit 1, the error line and the validate hint */}
+{/* capture: cobre run case 2>&1 | cobre   v0.18.0 | binary: cobre-cli sha256 93cb7307 | case: the same temporary 1dtoy derivative as the cobre validate capture above; run with NO_COLOR=1; the banner, the Execution block and the Loading case line, which carry the hostname and the temporary path, are not quoted */}
 
 ```text
 error: stochastic error: insufficient data: no valid historical windows found: ensure that inflow history covers the required seasons for at least one starting year
@@ -1760,7 +1760,7 @@ openings source is 'file' but the conventional scenarios/noise_openings.parquet 
 `scenarios/` label and the `I/O error:` wording are how this phase reports a
 missing file, and `<case>` stands for the path of your case directory:
 
-{/* capture: PENDING v0.18.0 — cobre validate nofile 2>&1 | case: temporary 1dtoy derivative (cobre init --template 1dtoy nofile; config.json re-written with 2-space indentation, simulation.enabled false, training.scenario_source gains openings with source file, and no scenarios/noise_openings.parquet; run with NO_COLOR=1, exit code 2; the Validation summary line, which carries the temporary path, is not quoted; the fixture directory name nofile in the error lines is replaced by <case>) | expect: exit 2, the report line, the I/O error line and the hint */}
+{/* capture: cobre validate nofile 2>&1 | cobre   v0.18.0 | binary: cobre-cli sha256 93cb7307 | case: temporary 1dtoy derivative (cobre init --template 1dtoy nofile; config.json re-written with 2-space indentation, simulation.enabled false, training.scenario_source gains openings with source file, and no scenarios/noise_openings.parquet; run with NO_COLOR=1, exit code 2; the Validation summary line, which carries the temporary path, is not quoted; the fixture directory name nofile in the error lines is replaced by <case>) */}
 
 ```text
 error: scenarios/: I/O error: I/O error reading <case>/scenarios/noise_openings.parquet: openings source is 'file' but the conventional scenarios/noise_openings.parquet is absent
@@ -1786,7 +1786,7 @@ gate of the `gap` rule and of dynamic cut selection. File label: `scenarios/` fo
 
 **Example:**
 
-{/* capture: PENDING v0.18.0 — cobre validate historical 2>&1 | case: temporary 1dtoy derivative (cobre init --template 1dtoy historical; config.json re-written with 2-space indentation and training.scenario_source.inflow.scheme set to historical, with no scenarios/inflow_history.parquet; run with NO_COLOR=1, exit code 1; the Validation summary line, which carries the temporary path, is not quoted and the error: prefix is not quoted) | expect: exit 1, the report line and the error line */}
+{/* capture: cobre validate historical 2>&1 | cobre   v0.18.0 | binary: cobre-cli sha256 93cb7307 | case: temporary 1dtoy derivative (cobre init --template 1dtoy historical; config.json re-written with 2-space indentation and training.scenario_source.inflow.scheme set to historical, with no scenarios/inflow_history.parquet; run with NO_COLOR=1, exit code 1; the Validation summary line, which carries the temporary path, is not quoted and the error: prefix is not quoted) */}
 
 ```text
 scenarios/: stochastic error: insufficient data: no valid historical windows found: ensure that inflow history covers the required seasons for at least one starting year
@@ -1804,7 +1804,7 @@ model preparation. File label: `system/hydro_production_models.json`.
 **Example:** A plant whose `generation.model` is `fpha` and that has no entry in
 `system/hydro_production_models.json`:
 
-{/* capture: cobre validate h1 | cobre   v0.17.0 | binary: cobre-cli sha256 23916b46 | case: temporary 1dtoy derivative (cobre init --template 1dtoy h1; system/hydros.json: hydro 0 generation.model changed from constant_productivity to fpha; system/hydro_production_models.json deleted; run with NO_COLOR=1, exit code 1; the Validation summary line, which carries the temporary path, is not quoted and the error: prefix is not quoted) */}
+{/* capture: cobre validate h1 | cobre   v0.18.0 | binary: cobre-cli sha256 93cb7307 | case: temporary 1dtoy derivative (cobre init --template 1dtoy h1; system/hydros.json: hydro 0 generation.model changed from constant_productivity to fpha; system/hydro_production_models.json deleted; run with NO_COLOR=1, exit code 1; the Validation summary line, which carries the temporary path, is not quoted and the error: prefix is not quoted) */}
 
 ```text
 system/hydro_production_models.json: configuration validation error: hydro UHE1 (id=0) has generation_model: "fpha" in hydros.json but no entry in hydro_production_models.json. Add an entry with source: "precomputed" to specify the hyperplane source.
@@ -1829,7 +1829,7 @@ An `@name` that no file declares is reported at load time; see
 **Example:** A `seasonal` parameter whose only value is for season `5`, in a case with
 no season definitions:
 
-{/* capture: cobre validate sea | cobre   v0.17.0 | binary: cobre-cli sha256 23916b46 | case: temporary 1dtoy derivative (cobre init --template 1dtoy sea; constraints/generic_parameters.json added holding one seasonal parameter, id 1, name sea, values [[5, 1.0]]; constraints/generic_constraints.json added holding one constraint, id 0, name cap, expression @sea * hydro_storage(0), slack enabled false; constraints/generic_constraint_bounds.parquet added with compression zstd and one row, constraint 0, stage 0, block_id and bound_lower null, bound_upper 1e9; run with NO_COLOR=1, exit code 1; cobre validate prints its Valid case line before the error; the Validation summary line, which carries the temporary path, is not quoted and the error: prefix is not quoted) */}
+{/* capture: cobre validate sea | cobre   v0.18.0 | binary: cobre-cli sha256 93cb7307 | case: temporary 1dtoy derivative (cobre init --template 1dtoy sea; constraints/generic_parameters.json added holding one seasonal parameter, id 1, name sea, values [[5, 1.0]]; constraints/generic_constraints.json added holding one constraint, id 0, name cap, expression @sea * hydro_storage(0), slack enabled false; constraints/generic_constraint_bounds.parquet added with compression zstd and one row, constraint 0, stage 0, block_id and bound_lower null, bound_upper 1e9; run with NO_COLOR=1, exit code 1; the Validation summary line, which carries the temporary path, is not quoted and the error: prefix is not quoted) */}
 
 ```text
 constraints/: configuration validation error: parameter 'sea': no seasonal value for season_id=0 (needed by stage 0)
@@ -1844,7 +1844,7 @@ generation model and of whether the case declares generic constraints (see
 
 A plant whose geometry and losses leave a negative head:
 
-{/* capture: cobre validate e1 | cobre   v0.17.0 | binary: cobre-cli sha256 23916b46 | case: temporary 1dtoy derivative (cobre init --template 1dtoy e1; system/hydros.json: hydro 0 given specific_productivity_mw_per_m3s_per_m 0.009 and hydraulic_losses of type constant with value_m 450.0; system/hydro_geometry.parquet added with compression zstd, hydro 0, two rows at volume_hm3 0.0 and 1000.0, height_m 400.0 and area_km2 10.0 in both; run with NO_COLOR=1, exit code 1; cobre validate prints its Valid case line before the error; the Validation summary line, which carries the temporary path, is not quoted and the error: prefix is not quoted) */}
+{/* capture: cobre validate e1 | cobre   v0.18.0 | binary: cobre-cli sha256 93cb7307 | case: temporary 1dtoy derivative (cobre init --template 1dtoy e1; system/hydros.json: hydro 0 given specific_productivity_mw_per_m3s_per_m 0.009 and hydraulic_losses of type constant with value_m 450.0; system/hydro_geometry.parquet added with compression zstd, hydro 0, two rows at volume_hm3 0.0 and 1000.0, height_m 400.0 and area_km2 10.0 in both; run with NO_COLOR=1, exit code 1; the Validation summary line, which carries the temporary path, is not quoted and the error: prefix is not quoted) */}
 
 ```text
 constraints/: configuration validation error: hydro EntityId(0) has non-positive equivalent head h_eq=-50
@@ -2143,7 +2143,7 @@ A failure inside a training iteration ends training and exits with the code of i
 
 An infeasible stage LP in the first training iteration of a single-process run, on a case that `cobre validate` accepts, prints:
 
-{/* capture: PENDING v0.18.0 — cobre run case --output ./out | case: temporary 1dtoy derivative (cobre init --template 1dtoy case; config.json re-written with 2-space indentation, training.stopping_rules reduced to one iteration_limit rule with limit 3 and simulation disabled; constraints/generic_constraints.json added holding one constraint, id 0, name cap, expression hydro_storage(0), slack enabled false; constraints/generic_constraint_bounds.parquet added with compression zstd and one row, constraint 0, stage 0, block_id null, bound_lower 5000.0, bound_upper 1e9; cobre validate exits 0 on the case; run with NO_COLOR=1, exit code 3; the banner, the Execution block, the setup and progress lines, the training summary and the two output lines before the first quoted line are not quoted) | expect: exit 3, the ERROR line, the summary line, the error line and the two hint lines */}
+{/* capture: cobre run case --output ./out | cobre   v0.18.0 | binary: cobre-cli sha256 93cb7307 | case: temporary 1dtoy derivative (cobre init --template 1dtoy case; config.json re-written with 2-space indentation, training.stopping_rules reduced to one iteration_limit rule with limit 3 and simulation disabled; constraints/generic_constraints.json added holding one constraint, id 0, name cap, expression hydro_storage(0), slack enabled false; constraints/generic_constraint_bounds.parquet added with compression zstd and one row, constraint 0, stage 0, block_id null, bound_lower 5000.0, bound_upper 1e9; cobre validate exits 0 on the case; run with NO_COLOR=1, exit code 3; the banner, the Execution block, the setup and progress lines, the training summary and the two output lines before the first quoted line are not quoted) */}
 
 ```text
 ERROR training failed after 0 iterations: infeasible subproblem at stage 0, iteration 1, scenario 0
@@ -2186,7 +2186,7 @@ A stage-LP failure in simulation exits `3`, and every other simulation failure e
 
 Requesting the MPI backend from a binary built without MPI support prints:
 
-{/* capture: cobre run case --comm-backend mpi --output ./out-mpi | cobre   v0.17.0 | binary: cobre-cli sha256 23916b46 | case: temporary 1dtoy case (cobre init --template 1dtoy case; unmodified; run with NO_COLOR=1, exit code 4; no banner is printed and nothing is written) */}
+{/* capture: cobre run case --comm-backend mpi --output ./out-mpi | cobre   v0.18.0 | binary: cobre-cli sha256 93cb7307 | case: temporary 1dtoy case (cobre init --template 1dtoy case; unmodified; run with NO_COLOR=1, exit code 4; no banner is printed and nothing is written) */}
 
 ```text
 error: communication backend error: communication backend 'mpi' is not available in this build (available: local)
