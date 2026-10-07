@@ -138,20 +138,18 @@ costs: `evaporation_violation_pos_cost` above the target,
 `water_withdrawal_violation_pos_cost` for over-delivery and
 `water_withdrawal_violation_neg_cost` for under-delivery. The symmetric costs
 `evaporation_violation_cost` and `water_withdrawal_violation_cost` supply their
-defaults and enter the load-time checks; no slack is priced at a symmetric cost.
+defaults only; no slack is priced at a symmetric cost.
 
 - In `penalties.json`, an absent directional cost takes that file's symmetric
   cost.
 - A plant with no `penalties` block takes every `penalties.json` value,
   directional costs included.
 - A plant's `penalties` block has no directional keys. With the block present,
-  each directional cost takes the block's symmetric cost when the block sets
-  it, else the `penalties.json` symmetric cost, never a `penalties.json`
-  directional cost. A `penalties.json` directional cost therefore reaches only
-  the plants that have no `penalties` block.
-- A `penalty_overrides_hydro.parquet` row changes a directional cost only
-  through its directional column. Its symmetric columns replace the stage's
-  symmetric value, which prices no slack.
+  each directional cost takes the block's matching symmetric cost when the block
+  sets it, else the `penalties.json` directional cost. A `penalties.json`
+  directional cost therefore reaches every plant whose block does not set the matching symmetric key.
+- A `penalty_overrides_hydro.parquet` row's directional column sets that
+  direction at its stage; its symmetric column sets the stage's symmetric value and each matching direction the row leaves unset.
 
 ### Hydro variable bounds
 
@@ -196,37 +194,26 @@ and a worst-case hydro.
 
 | Check                                      | Warns when                                                                                                            | Hydros reported                                                                          |
 | ------------------------------------------ | --------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
-| Filling target below deficit               | a hydro's `filling_target_violation_cost` is at least the deficit cost; skipped when the deficit cost is not positive | every hydro that meets the condition; the worst case has the largest filling-target cost |
-| Storage violation above deficit            | a hydro's `storage_violation_below_cost` is at most the deficit cost                                                  | every hydro that meets the condition; the worst case has the smallest storage cost       |
-| Deficit above constraint violations        | the deficit cost is at most the largest constraint-violation cost over all hydros                                     | 1 hydro, the one with the largest constraint-violation cost                              |
-| Constraint violations above resource costs | the smallest constraint-violation cost over all hydros is at most the largest resource cost over all hydros           | 1 hydro, the one with the smallest constraint-violation cost                             |
+| Deficit above generation violation | a hydro's `generation_violation_below_cost` is at least the largest deficit cost | every hydro that meets the condition; the worst case has the largest generation-violation cost |
+| Flow violations above resource costs | a hydro's smallest flow-violation cost is at most the largest resource cost over all hydros | every hydro that meets the condition; the worst case has the smallest flow-violation cost |
 | Resource costs positive                    | a hydro's smaller resource cost is at most 0                                                                          | every hydro that meets the condition; the worst case has the smallest of those costs     |
 
-The constraint-violation costs of a hydro are `turbined_violation_below_cost`,
-`outflow_violation_below_cost`, `outflow_violation_above_cost`,
-`generation_violation_below_cost`, `evaporation_violation_cost` and
-`water_withdrawal_violation_cost`, the symmetric evaporation and withdrawal
-costs. "Resource costs" means the hydro `spillage_cost` and `diversion_cost`.
-These five checks read no thermal, contract, excess, exchange or curtailment
+The flow-violation costs of a hydro are `turbined_violation_below_cost`,
+`outflow_violation_below_cost`, `outflow_violation_above_cost` and the four
+directional evaporation and withdrawal costs. "Resource costs" means the hydro
+`spillage_cost` and `diversion_cost`. Each check compares only costs of one unit.
+These three checks read no thermal, contract, excess, exchange or curtailment
 cost, and neither `turbined_cost` nor `inflow_nonnegativity_cost`.
 
-The storage check reads every hydro's `storage_violation_below_cost`, although
-the slack it prices exists only for a filling hydro from its entry stage on; for
-any other hydro the checked value prices no slack.
-
-{/* quoted from source: crates/cobre-io/src/validation/semantic/scenarios.rs:54-59, 81-86, 121-126, 162-167, 192-197 at cobre v0.17.0 */}
+{/* quoted from source: crates/cobre-io/src/validation/semantic/scenarios.rs:57-62, 101-107, 131-137 at cobre v0.18.0 */}
 
 Each warning text is fixed apart from its numbers and hydro ids, written `{…}`
 here, and begins `Penalty ordering violation:`:
 
-- Filling target below deficit:
-  `Penalty ordering violation: filling_target_violation_cost ({…}) should be < deficit_cost ({…}) so filling is not as hard as load shedding -- {…} hydro(s) affected, worst-case hydro {…}`
-- Storage violation above deficit:
-  `Penalty ordering violation: storage_violation_below_cost ({…}) should be > max(deficit_segment_costs) ({…}) -- {…} hydro(s) affected, worst case: Hydro {…}`
-- Deficit above constraint violations:
-  `Penalty ordering violation: max(deficit_segment_costs) ({…}) should be > max(constraint_violation_costs) ({…}) -- 1 hydro(s) affected, worst case: Hydro {…}`
-- Constraint violations above resource costs:
-  `Penalty ordering violation: min(constraint_violation_costs) ({…}) should be > max(resource_costs) ({…}) -- 1 hydro(s) affected, worst case: Hydro {…}`
+- Deficit above generation violation:
+  `Penalty ordering violation: max(deficit_segment_costs) ({…}) should be > generation_violation_below_cost ({…}) (both $/MWh) -- {…} hydro(s) affected, worst case: Hydro {…}`
+- Flow violations above resource costs:
+  `Penalty ordering violation: min(flow_violation_costs) ({…}) should be > max(resource_costs) ({…}) (both $/(m³/s·h)) -- {…} hydro(s) affected, worst case: Hydro {…}`
 - Resource costs positive:
   `Penalty ordering violation: min(resource_costs) ({…}) should be > 0 (regularization costs must be positive to prevent LP degeneracy) -- {…} hydro(s) affected, worst case: Hydro {…}`
 
@@ -240,7 +227,7 @@ numeric `id`.
 Two rules reject the case as a `BusinessRuleViolation` error (see
 [Error Codes — `BusinessRuleViolation`](/reference/error-codes/#businessruleviolation)):
 
-{/* quoted from source: crates/cobre-io/src/validation/semantic/scenarios.rs:223-226, 1202-1208 at cobre v0.17.0 */}
+{/* quoted from source: crates/cobre-io/src/validation/semantic/scenarios.rs:164-167, 1138-1144 at cobre v0.18.0 */}
 
 - **Negative turbined cost on an FPHA hydro.** A hydro whose `generation.model`
   is `fpha` and whose `turbined_cost` is negative is rejected on

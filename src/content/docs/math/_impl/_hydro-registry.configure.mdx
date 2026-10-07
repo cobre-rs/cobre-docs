@@ -371,8 +371,9 @@ values.
 When present, every field is optional and independently falls back to the
 global default from `penalties.json`; the block accepts exactly these twelve
 keys and rejects any unknown field. The directional evaporation and withdrawal
-costs have no key in this block; a plant with this block takes them from its
-resolved symmetric costs ([Penalty System — Directional evaporation and
+costs have no key in this block; a plant takes each
+from the block's matching symmetric cost when the block sets it, else from `penalties.json`
+([Penalty System — Directional evaporation and
 withdrawal costs](/math/penalty-system#directional-evaporation-and-withdrawal-costs)).
 For the full field list, units, and the priority ordering across penalty
 categories, see [Penalty System](/math/penalty-system).

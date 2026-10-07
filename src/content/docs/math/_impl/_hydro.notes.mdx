@@ -46,35 +46,36 @@ plant with no useful storage still gets two distinct samples; when the
 volume-height curve spans a range of volumes, both samples are clamped into
 it.
 
-### Computed FPHA without turbine capacity
+### FPHA without turbine capacity
 
-A plant that requests computed FPHA (`fpha_config.source: "computed"` in any
-of its production-model entries) and declares `max_turbined_m3s` at or below
+A plant that requests FPHA, computed (`fpha_config.source: "computed"` in
+any of its production-model entries) or precomputed with no row in
+`system/fpha_hyperplanes.parquet`, and declares `max_turbined_m3s` at or below
 `1e-9` is not fitted; it is modelled with zero productivity at every stage
-([§2.6.1](#261-grid-and-cloud) above). The computed-FPHA prerequisites still
-apply: `tailrace`, `hydraulic_losses` and `efficiency` in `hydros.json` and
+([§2.6.1](#261-grid-and-cloud) above). The computed-FPHA prerequisites apply
+to a computed plant: `tailrace`, `hydraulic_losses` and `efficiency` in `hydros.json` and
 geometry rows in `system/hydro_geometry.parquet`; a missing one is a load-time
 error.
 
 A warning names the plant; `cobre validate` and `cobre run` both print it:
 
-{/* capture: cobre validate case 2>&1 | cobre   v0.17.0 | binary: cobre-cli sha256 23916b46 | case: temporary 1dtoy derivative (cobre init --template 1dtoy; system/hydros.json hydro 0: generation.model fpha, generation.max_turbined_m3s and unit_groups[0].max_turbined_m3s 0.0, specific_productivity_mw_per_m3s_per_m 0.0091 added, tailrace polynomial with coefficients [5.0, 0.001] added, hydraulic_losses factor 0.03 added, efficiency constant 0.93 added; system/hydro_production_models.json: the one stage range set to model fpha with fpha_config.source computed, productivity_mw_per_m3s removed; system/hydro_geometry.parquet added with hydro_id [0, 0, 0], volume_hm3 [0, 500, 1000], height_m [100, 110, 120], area_km2 [10, 15, 20], zstd compression; run with NO_COLOR=1) */}
+{/* capture: PENDING v0.18.0 — cobre validate case 2>&1 | case: temporary 1dtoy derivative (cobre init --template 1dtoy; system/hydros.json hydro 0: generation.model fpha, generation.max_turbined_m3s and unit_groups[0].max_turbined_m3s 0.0, specific_productivity_mw_per_m3s_per_m 0.0091 added, tailrace polynomial with coefficients [5.0, 0.001] added, hydraulic_losses factor 0.03 added, efficiency constant 0.93 added; system/hydro_production_models.json: the one stage range set to model fpha with fpha_config.source computed, productivity_mw_per_m3s removed; system/hydro_geometry.parquet added with hydro_id [0, 0, 0], volume_hm3 [0, 500, 1000], height_m [100, 110, 120], area_km2 [10, 15, 20], zstd compression; run with NO_COLOR=1) | expect: exit 0, the WARN line */}
 
 ```text
- WARN hydro UHE1 (id=0) requests computed FPHA but has no turbine capacity (max_turbined_m3s = 0); modeling it with zero productivity
+ WARN hydro UHE1 (id=0) requests FPHA but has no turbine capacity (max_turbined_m3s = 0); modeling it with zero productivity
 ```
 
 Every MPI rank prepares the production models, so a multi-rank run prints the
 warning once per rank.
 
 The plant counts as constant productivity: in `n_constant` of
-`training/hydro_models.json` and of the Python `hydro_models` summary, and in
+`training/hydro_models.json`, in its `no_turbine_capacity` list, in
+`n_constant` of the Python `hydro_models` summary, and in
 the `constant` count of the CLI `Production:` line. It is absent from
 `n_fpha`, `total_planes` and `fpha_details`, from
-`n_fpha_computed_from_geometry` in `training/model_provenance.json`, and from
-`hydro_models/fpha_hyperplanes.parquet`. Because the export holds no rows for
-this plant, see [Round-trip parquet export](#round-trip-parquet-export) before
-copying the file into `system/`.
+`n_fpha_computed_from_geometry` and `n_fpha_precomputed_hyperplanes` in
+`training/model_provenance.json`, and from
+`hydro_models/fpha_hyperplanes.parquet`.
 
 ### Fit-quality warning
 
@@ -129,7 +130,7 @@ for the water-balance treatment of the resulting flux.
 
 ### Commissioning: the PreFilling state
 
-A hydro's `entry_stage_id`/`exit_stage_id` commissioning window is honored even for a **non-filling** hydro (one with no `filling` block). At any stage outside its window — before `entry_stage_id`, or from `exit_stage_id` onward — the plant is **PreFilling**: the site is not in service, so its turbine, spillage, and diversion columns are pinned to zero, its storage is frozen by the identity $v_h = v^{in}_h$, and its local inflow, the upstream releases and the flows diverted in are routed past the site to the first downstream plant that is not PreFilling (or leaves the modelled system if there is none). Unlike the generic outside-window zero-pin used for the other entity types, the river is never trapped or duplicated at a site that is not in service. See [LP Formulation — Lifecycle Phases](/math/lp-formulation#lifecycle-phases) for every phase and [Penalty System](/math/penalty-system) for the spillage-frozen-versus-costed distinction.
+A hydro's `entry_stage_id`/`exit_stage_id` commissioning window is honored even for a **non-filling** hydro (one with no `filling` block). At any stage outside its window — before `entry_stage_id`, or from `exit_stage_id` onward — the plant is **PreFilling**: the site is not in service, so its turbine, spillage, and diversion columns are pinned to zero, its storage is frozen by the identity $v_h = v^{in}_h$, and its local inflow, the upstream releases, the flows diverted in and the in-transit water maturing into it are routed past the site to the first downstream plant that is not PreFilling (or leaves the modelled system if there is none). Unlike the generic outside-window zero-pin used for the other entity types, the river is never trapped or duplicated at a site that is not in service. See [LP Formulation — Lifecycle Phases](/math/lp-formulation#lifecycle-phases) for every phase and [Penalty System](/math/penalty-system) for the spillage-frozen-versus-costed distinction.
 
 ### Water travel time: in-transit seed and validation
 
@@ -166,7 +167,7 @@ Load-time validation of a declared arc:
   it is being read as undeclared, so a deliberate zero is flagged while an
   omitted field stays silent. A **negative or non-finite** `travel_time_hours`
   is a hard load-time error. See [Error Codes](/reference/error-codes).
-- **Model-quality warnings (non-blocking).** Three further conditions on a
+- **Model-quality warnings (non-blocking).** Two further conditions on a
   declared arc are reported as `warning:` lines after `Valid case: …`; the case
   still loads and runs. See
   [Error Codes — `ModelQuality`](/reference/error-codes/#modelquality).
@@ -179,15 +180,10 @@ Load-time validation of a declared arc:
     stage onward never arrive within the study, and the warning names the
     first such stage as the point from which the arc is economically inert.
     The in-transit sizing stays safe.
-  - **Downstream exit inside an arrival window.** When the downstream plant's
-    `exit_stage_id` falls inside the arrival window of a release made while
-    that plant is in service, the delivery maturing past the exit is dropped,
-    not consumed. The warning names the downstream plant, the upstream plant,
-    the release stage, and the arrival window.
 
 In-transit water that matures into a plant at a stage where the plant is
-PreFilling — from its `exit_stage_id` on, which the warning above reports —
-enters no water balance and leaves the modelled system.
+PreFilling enters the row of the first non-PreFilling plant downstream, and
+leaves the modelled system only when no such plant exists.
 
 **Horizon limitation.** Without a loaded terminal boundary, in-transit water
 that would mature after the last stage is dropped; with one, it is carried to
@@ -230,9 +226,6 @@ coefficients are automatically written to
 refitting on a subsequent run, copy this output file into `system/` and
 change `source` to `"precomputed"` in `hydro_production_models.json`.
 
-A computed-FPHA plant with no turbine capacity has no rows in the exported
-file, and once the file is in `system/` every FPHA plant needs rows in it, so
-switch such a plant to `"constant_productivity"` before the copy.
-[Hydro Model Artifacts — `hydro_models/fpha_hyperplanes.parquet`](/reference/output/hydro-models/#hydro_modelsfpha_hyperplanesparquet)
-gives the switch, the productivity source the plant then needs, and the load
-errors.
+A plant with no turbine capacity has no rows in the exported file and needs
+none: copied to `system/`, the file loads unedited, and the plant stays at
+zero productivity.

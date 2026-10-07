@@ -320,7 +320,7 @@ required per `(hydro_id, stage_id)` group.
 | `plane_id`        | Int32              | Yes      | —       | —         | Plane index within this hydro (and stage)                                                                            |
 | `gamma_0`         | Float64            | Yes      | —       | MW        | Intercept coefficient (MW)                                                                                           |
 | `gamma_v`         | Float64            | Yes      | —       | MW/hm³    | Volume coefficient (MW/hm³). `>= 0` (`0` for a run-of-river plant).                                                  |
-| `gamma_q`         | Float64            | Yes      | —       | MW/(m³/s) | Turbined flow coefficient (MW per m³/s). `> 0`.                                                                      |
+| `gamma_q`         | Float64            | Yes      | —       | MW/(m³/s) | Turbined flow coefficient (MW per m³/s). `>= 0`; each stage's planes need at least one with `> 0`.                   |
 | `gamma_s`         | Float64            | Yes      | —       | MW/(m³/s) | Spillage coefficient (MW per m³/s). `<= 0`.                                                                          |
 | `kappa`           | Float64 (nullable) | No       | `1.0`   | —         | Intercept-only correction factor (`gamma_0` is multiplied by it) in `(0, 1]`; defaults to `1.0` when absent or null. |
 | `valid_v_min_hm3` | Float64 (nullable) | No       | —       | hm³       | Volume range minimum where this plane is valid (hm³)                                                                 |
@@ -331,16 +331,14 @@ required per `(hydro_id, stage_id)` group.
 `gamma_q`, `gamma_s`) must be present with the correct types. Optional columns
 that are present must also have the correct types. Every row must have
 `gamma_v` `>= 0` and `gamma_s` `<= 0` at load, and once the file holds any row,
-every plant configured with FPHA, computed included, needs rows in it (the
+every FPHA plant with turbine capacity, computed included, needs rows in it (the
 computed fit does not read them). Each stage a plant runs with precomputed FPHA
 uses the rows carrying its `stage_id`, else the all-stage (`stage_id` null)
 rows, and must have one of the two; each row a stage uses must have `gamma_q`
-`> 0` and `kappa` in `(0, 1]` when the study is set up.
+`>= 0` and `kappa` in `(0, 1]`, at least one with `gamma_q > 0`, when the study is set up.
 
 The file produced by `output/hydro_models/fpha_hyperplanes.parquet` (written when
-`source: "computed"` is used) has this exact same 11-column schema. The setup check on planes read from `system/fpha_hyperplanes.parquet` requires `gamma_q > 0` on
-every plane, and a plant whose `max_generation_mw` caps the fitted surface writes a flat plane with `gamma_q = 0`, so
-such a file is rejected when the study is set up with it unedited as precomputed input.
+`source: "computed"` is used) has this exact same 11-column schema. It loads unedited as precomputed input: its flat cap plane (`gamma_q = 0`) is accepted, and a plant without turbine capacity needs no rows.
 
 ---
 

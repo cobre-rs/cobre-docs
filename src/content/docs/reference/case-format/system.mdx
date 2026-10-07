@@ -183,6 +183,7 @@ Stage-varying flow bounds can be overridden via `constraints/pumping_bounds.parq
 
 - `entry_stage_id` must be less than `exit_stage_id` when both are set.
 - `source_hydro_id` must differ from `destination_hydro_id`.
+- The station is in service only at stages where both its source and its destination hydro are Operating (neither PreFilling nor Filling); see [Equipment-Specific Formulations](/math/equipment-formulations/#implementation-in-cobre) for the rule.
 
 ---
 

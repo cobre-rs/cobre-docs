@@ -430,7 +430,7 @@ Cobre carries the water in transit on such an arc as additional **in-transit sta
 
 **Scope.** Travel time applies to the **main cascade arc only** — the arc from a plant to its downstream plant. Diversion and pumping transfers are instantaneous. A travel time that is absent or zero is treated as an instantaneous transfer, adding no state.
 
-**Downstream commissioning window.** A release made at a stage before the downstream plant's commissioning entry stage — while it is PreFilling or still filling — is rejected at load. A release made while the downstream plant is in service whose arrival reaches the plant's exit stage is accepted with a warning, and the water maturing from the exit stage on leaves the modeled system.
+**Downstream commissioning window.** A release made at a stage before the downstream plant's commissioning entry stage — while it is PreFilling or still filling — is rejected at load. A release made while the downstream plant is in service whose arrival reaches the plant's exit stage is accepted, and the water maturing from the exit stage on passes to the first downstream plant that is not PreFilling, leaving the modeled system only when there is none ([State Augmentation](/math/state-augmentation#delayed-arrival-water-balance-entry)).
 
 **Horizon limitation.** Without a loaded terminal boundary, in-transit water that would mature after the last stage is dropped; with one, it is carried to the terminal stage and priced there ([State Augmentation — Horizon limitation](/math/state-augmentation#horizon-limitation), [Post-Study Boundary & Chained Studies](/math/post-study-boundary)).
 
@@ -473,7 +473,7 @@ A hydro is **PreFilling** whenever it does not yet exist in the dispatch — a f
 
 - **Turbine, spillage, and diversion are pinned to zero** ($q_{h,k} = s_{h,k} = u_{h,k} = 0$) — a dam that does not yet exist can neither generate nor spill.
 - **Storage is decoupled** by a frozen identity $v_h = v^{in}_h$: the reservoir volume is held constant, injecting no phantom storage and trapping no water.
-- **Natural inflow is passed through** to the first downstream plant that is not PreFilling (or leaves the modeled system if none), so incremental inflow, upstream releases and the flows diverted into the plant reach the cascade below without being lost at the un-built site; the plant's withdrawal target moves with them to that plant.
+- **Natural inflow is passed through** to the first downstream plant that is not PreFilling (or leaves the modeled system if none), so incremental inflow, upstream releases, the flows diverted into the plant and the in-transit water maturing into it reach the cascade below without being lost at the un-built site; the plant's withdrawal target moves with them to that plant.
 
 The defining contrast with the filling phase below is **spillage**: it is frozen to zero while PreFilling (there is no reservoir to shed from), and becomes a free decision once filling begins. [LP Formulation — Lifecycle Phases](/math/lp-formulation#lifecycle-phases) gives the LP treatment of every phase.
 
@@ -485,7 +485,7 @@ Cobre models the commissioning of new hydro plants with a **filling period** (fr
 - Natural inflow flows freely through the ordinary water balance — there is no retention or impound cap diverting inflow to storage
 - Storage is allowed below $\underline{V}_h$ (the operating min-storage slack is absent)
 - Outflow is limited to spillage (turbines not operational), with the minimum-outflow slack $\sigma^{o-}_{h,k}$ if environmental flow cannot be met. Spillage is a **free** decision during filling — a real impounding reservoir can shed inflow it cannot yet hold — in contrast to the PreFilling state, where spillage is frozen to zero
-- A **per-stage filling floor** $v_h \geq V^{\text{target}}_t$ requires the reservoir to stay on a minimum-accumulation schedule set by its minimum filling rate. The floor reaches the dead volume exactly at the last filling stage; Cobre expects its slack $\sigma^{fill}_h$ to be priced **below** deficit (a fill schedule is not defended as hard as load serving), which [Penalty System — Penalty Ordering Validation](/math/penalty-system#penalty-ordering-validation) checks on the configured costs, compared as given
+- A **per-stage filling floor** $v_h \geq V^{\text{target}}_t$ requires the reservoir to stay on a minimum-accumulation schedule set by its minimum filling rate. The floor reaches the dead volume exactly at the last filling stage; Cobre expects its slack $\sigma^{fill}_h$ to be priced **below** deficit (a fill schedule is not defended as hard as load serving)
 
 When the plant enters service at its entry stage, its dead volume returns as a soft floor with slack $\sigma^{v-}_h$. For the per-stage floor trajectory and the penalty ordering, see [Penalty System](/math/penalty-system).
 
