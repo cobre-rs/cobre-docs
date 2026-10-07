@@ -84,12 +84,11 @@ location:
 cobre run /path/to/my_study --output /path/to/results
 ```
 
-`cobre run` does not clear the output directory. Each file a run writes replaces
-the earlier copy, and files it does not write stay in place (the policy checkpoint
-also removes its own stale files): after a run with
-fewer simulation scenarios, the `scenario_id=NNNN` partitions beyond the new count
-remain, as does the `stochastic/` export of an earlier run that set
-`exports.stochastic`. Use a fresh `--output` directory, or delete the old one,
+Before it writes a phase's outputs, `cobre run`
+removes the earlier run's outputs of that phase, as listed under
+[Output Format — Success markers](/reference/output/#success-markers); every
+other file stays until a run rewrites it, so the `stochastic/` export of an
+earlier run that set `exports.stochastic` remains. Use a fresh `--output` directory, or delete the old one,
 before comparing runs. Warm-start, resume, and simulation-only runs read the
 policy checkpoint from `policy.path` under the output directory, so keep that
 checkpoint when you plan one of those runs ([Policy Management](/running/policy-management/)).
@@ -229,7 +228,8 @@ each phase that ran: `training/metadata.json` when training ran, and
 jq '{status, bounds}' /path/to/my_study/output/training/metadata.json
 ```
 
-`status` reads `"complete"` in every written metadata file, including after a
+`status` reads `"partial"` when a shutdown request ended the phase early and
+`"complete"` otherwise, including after a
 training that failed, so a script must check the exit code of `cobre run` to learn
 whether the run succeeded ([Checking Exit Codes](#checking-exit-codes)). `bounds` carries the final lower and upper bounds. The
 convergence gap sits under `convergence`:
@@ -238,10 +238,12 @@ convergence gap sits under `convergence`:
 jq '.convergence.final_gap_percent' /path/to/my_study/output/training/metadata.json
 ```
 
-`convergence.achieved` is `true` only when the `bound_stalling` rule ended the run,
-so a run stopped by `gap` or `iteration_limit` reads `false`.
+`convergence.achieved` is `true` when the stopping rules ended the run and a `gap`
+or `bound_stalling` rule was satisfied at that iteration, so a run that
+`iteration_limit` or `time_limit` alone stopped reads `false`.
 `convergence.termination_reason` names the stopping rule that ended training
-(`iteration_limit`, `time_limit`, `bound_stalling`, or `gap`), or reads `error`
+(`iteration_limit`, `time_limit`, `bound_stalling`, or `gap`),
+reads `graceful_shutdown` when a shutdown request alone ended it, or `error`
 after a failed training:
 
 ```bash
@@ -288,7 +290,7 @@ set it above that number. See
 
 When a scheduler's wall-time limit is shorter than the training needs, train in
 slices: each later slice sets `policy.mode` to `"resume"` and raises the
-`iteration_limit` total. Multi-rank (MPI) jobs slice with `iteration_limit` only.
+`iteration_limit` total.
 See [Policy Management — Train in Slices](/running/policy-management/#train-in-slices).
 
 ---

@@ -158,7 +158,7 @@ of the 1dtoy template:
 
 | Field                            | What to look for                                                                                         |
 | -------------------------------- | -------------------------------------------------------------------------------------------------------- |
-| `convergence.achieved`           | `true` only when the `bound_stalling` rule stopped the run; `false` for every other termination reason, `gap` included. |
+| `convergence.achieved`           | `true` when the stopping rules ended the run and a `gap` or `bound_stalling` rule was satisfied at that iteration; `false` when only `iteration_limit` or `time_limit` triggered, when a shutdown request alone ended training, and after a failure. |
 | `convergence.final_gap_percent`  | The relative gap at termination, in percent: the upper bound minus the lower bound, relative to the lower bound. Negative when the upper bound is below the lower bound; `null` when the final lower bound is not positive. See guidelines below. |
 | `convergence.termination_reason` | The name of the stopping rule that ended the run. The values are listed under [`training/metadata.json`](/reference/output/metadata/#trainingmetadatajson). |
 | `iterations.converged_at`        | Equal to `iterations.completed` when `achieved` is `true`, `null` otherwise.                             |

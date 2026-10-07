@@ -329,7 +329,7 @@ all ranks.
 Each rank holds its own full copy of the case data, the opening tree, the cut
 pool, and the stage templates; ranks on one node do not share memory. The cut
 pool is sized at startup from the iteration budget (the largest `iteration_limit`
-in the stopping rules, or 100 when there is none) times the forward passes, for
+in the stopping rules) times the forward passes, for
 every stage. The memory of every rank is set by that size, and placing more ranks
 on a node multiplies that node's memory use.
 

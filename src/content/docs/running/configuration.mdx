@@ -59,7 +59,7 @@ Every `config.json` key down to the second level, with its type and default; eac
 | `policy.path`                                | string          | No       | `"./policy"` | —     | Policy directory, resolved against the run's output directory. See [`policy`](#policy).                                                            |
 | `policy.mode`                                | string          | No       | `"fresh"`    | —     | One of `"fresh"`, `"warm_start"`, `"resume"`. Initialization mode. See [`policy`](#policy).                                                        |
 | `policy.boundary`                            | object \| null  | No       | `null`       | —     | Terminal boundary cuts loaded from another study's checkpoint. See [`policy.boundary`](#policyboundary).                                           |
-| `policy.checkpointing`                       | object          | No       | `{}`         | —     | Accepted; no periodic checkpointing is performed. See [`policy.checkpointing`](#policycheckpointing).                                              |
+| `policy.checkpointing`                       | object          | No       | `{}`         | —     | Periodic checkpoints during training. See [`policy.checkpointing`](#policycheckpointing).                                              |
 | `upper_bound_evaluation`                     | object          | No       | `{}`         | —     | Accepted; no part of the run reads it. See [`upper_bound_evaluation`](#upper_bound_evaluation).                                                    |
 | `upper_bound_evaluation.enabled`             | boolean \| null | No       | `null`       | —     | Accepted; has no effect. See [`upper_bound_evaluation`](#upper_bound_evaluation).                                                                  |
 | `upper_bound_evaluation.initial_iteration`   | integer \| null | No       | `null`       | —     | Accepted; has no effect. See [`upper_bound_evaluation`](#upper_bound_evaluation).                                                                  |
@@ -82,7 +82,7 @@ Controls the SDDP training phase.
 | Field            | Type   | Description                                                                                                                                                                                            |
 | ---------------- | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `selection`      | object | Scenario-selection method for the training forward pass — `sampled{forward_passes}` or `enumerated{}` (see [`training.selection`](#trainingselection) below). No default: a missing `training.selection` is a hard load error. |
-| `stopping_rules` | array  | Stopping rules (see below). The key is required; any non-empty set is accepted. Training never runs past the largest `iteration_limit` in the set, or 100 iterations when the set has none. An empty array `[]` is treated as a single `iteration_limit` rule of 100 iterations. |
+| `stopping_rules` | array  | Stopping rules (see below). The key is required and the list must contain at least one `iteration_limit` rule; a list without one, `[]` included, is refused when the configuration loads. Training never runs past the largest `iteration_limit` in the list. |
 
 ### `training.selection`
 
@@ -133,10 +133,7 @@ policy graph and does not enumerate a node's openings. A node that pins a
 `scenario_id` carries one, and its stage declares no `num_openings`; any
 other node carries the openings its stage generates, so that stage declares
 `num_openings: 1` in `stages.json`. A case with a node carrying more is
-refused when `cobre run` sets the study up, before training, with exit code
-`1`. `cobre validate` checks it only for a case that configures
-`policy.boundary`; on any other case a passing validation does not rule it
-out.
+refused at study setup, by `cobre validate` and by `cobre run` before training, with exit code `1`.
 
 ### Optional Fields
 
@@ -144,7 +141,7 @@ out.
 | --------------- | ------------------ | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `enabled`       | boolean            | `true`  | Set to `false` to skip training and proceed directly to simulation (requires a pre-trained policy).                                                                                                     |
 | `tree_seed`     | integer \| null    | `null`  | Seed of the opening tree and of the in-sample opening draws. When `null`, the default seed 42 is used (deterministic but arbitrary), with no warning; a negative value is used by absolute value. See [Seed resolution](#seed-resolution) for how it relates to `scenario_source.seed`. |
-| `stopping_mode` | string             | `"any"` | One of `"any"`, `"all"`. How multiple stopping rules combine: `"any"` stops when the first rule is satisfied; `"all"` requires all rules to be satisfied simultaneously.                                |
+| `stopping_mode` | string             | `"any"` | One of `"any"`, `"all"`. How multiple stopping rules combine: `"any"` stops when the first rule is satisfied; `"all"` stops when every rule other than `iteration_limit` is satisfied at the same iteration, and the largest `iteration_limit` caps the run.                                |
 | `cut_selection`   | object             | `{}`                                  | Row-management (cut-selection) pipeline, nested at `training.cut_selection` (not a root key). See [`cut_selection`](#trainingcut_selection). |
 | `solver`          | object             | `{}`                                  | Optional per-phase LP solver profile overrides; the two `retry_*` keys have no effect. See [`training.solver`](#trainingsolver). |
 | `parallelism`     | object             | `{}`                                  | Backward-pass worker-scheduling knobs. See [`parallelism`](#trainingparallelism). |
@@ -162,7 +159,7 @@ pre-generated opening tree).
 
 | Field              | Type              | Default       | Description                                                                                             |
 | ------------------ | ----------------- | ------------- | ------------------------------------------------------------------------------------------------------- |
-| `seed`             | integer \| null   | `null`        | Forward seed of the out-of-sample draws, in training and in simulation; **required when any class is not `in_sample`** (`out_of_sample`, `historical`, or `external`). Historical-window and external-scenario selection use no seed. See [Seed resolution](#seed-resolution). |
+| `seed`             | integer \| null   | `null`        | Forward seed of training's out-of-sample draws, and of the simulation's when `simulation.scenario_source` is absent; **required when any class is `out_of_sample` or `external`**. Historical-window and external-scenario selection use no seed. See [Seed resolution](#seed-resolution). |
 | `inflow`           | object            | `in_sample`   | Sampling scheme for hydro inflow. Object with `"scheme"` key.                                           |
 | `load`             | object            | `in_sample`   | Sampling scheme for bus load. Object with `"scheme"` key.                                               |
 | `ncs`              | object            | `in_sample`   | Sampling scheme for NCS availability. Object with `"scheme"` key.                                       |
@@ -176,7 +173,7 @@ Admission rules (checked at load; the messages are listed under
 [Scenario-source admission rules](/reference/error-codes/#scenario-source-admission-rules)):
 
 - `historical` is valid for `inflow` only — `load` or `ncs` on `historical` is rejected.
-- `seed` is required when any class is not `in_sample`.
+- `seed` is required when any class is `out_of_sample` or `external`.
 - `historical_years` is rejected unless some class uses `historical`.
 - A `historical_years` range must have `from <= to`.
 - `openings` is accepted under `training.scenario_source` only; under
@@ -257,10 +254,6 @@ Stop after a wall-clock time budget is exhausted.
 
 The rule compares `seconds` with the wall-clock seconds since this run's training started, checked after each iteration.
 
-:::caution[Multi-rank runs]
-Under MPI each rank measures `time_limit` on its own clock, from its own start of training, and makes its own stop decision; the ranks do not reconcile it, even on a single node. Cobre accepts the rule at any rank count, so a multi-rank run bounds training with `iteration_limit` ([Train in Slices](/running/policy-management/#train-in-slices)) and leaves `time_limit` out of its stopping rules.
-:::
-
 #### `bound_stalling`
 
 Stop when the relative improvement in the lower bound falls below a threshold.
@@ -274,7 +267,7 @@ Stop when the relative improvement in the lower bound falls below a threshold.
 | `iterations` | integer | Window size: the number of most recent recorded lower bounds compared.                                   |
 | `tolerance`  | number  | Relative improvement threshold. Training stops when the improvement over the window is below this value. |
 
-The rule cannot trigger before the current run has recorded `iterations` bounds, so a resumed run starts with an empty window. With a positive `tolerance`, a window of `1` compares the bound with itself and triggers at the first iteration.
+The rule cannot trigger before `iterations` bounds have been recorded; a resumed run continues the lower-bound series of its checkpoint, and a warm start begins with an empty series. With a positive `tolerance`, a window of `1` compares the bound with itself and triggers at the first iteration.
 
 #### `gap`
 
@@ -314,9 +307,8 @@ either arm is satisfied, not both. The gap itself is
   over the enumerated tree, so it still brackets the risk-averse lower bound.
 
 Under `sampled` selection, with more than one opening on any node, or with a
-**stage-varying** measure (the risk measure differs across stages), the `gap` rule is rejected when `cobre run` sets the
-study up, before training (exit `1`); `cobre validate` checks it only for a
-case that configures `policy.boundary`, so on any other case it exits `0`. The
+**stage-varying** measure (the risk measure differs across stages), the `gap` rule is rejected at study setup,
+by `cobre validate` and by `cobre run` before training (exit `1`). The
 exact-bound comparison the rule depends on is unavailable in those cases.
 
 :::note[Type-scoped fields]
@@ -329,7 +321,7 @@ When multiple stopping rules are listed, `stopping_mode` controls how they
 combine:
 
 - `"any"` (default): stop when any one rule is satisfied.
-- `"all"`: stop only when every rule is satisfied simultaneously.
+- `"all"`: stop when every rule other than `iteration_limit` is satisfied at the same iteration; the largest `iteration_limit` caps the run, and a smaller one has no effect.
 
 ```json
 {
@@ -457,7 +449,7 @@ load error, and a misspelled method is rejected with the list of valid methods.
 - `"dynamic"` — a per-solve lazy loop that loads only a small resident subset of
   rows per solve while retaining the full pool. The resident set is seeded from
   the most recent iterations, and each lazy-solve round adds the most-violated
-  candidate rows. The method is refused under an enumerated [`training.selection`](#trainingselection) when `cobre run` sets the study up (exit `1`); `cobre validate` passes such a case.
+  candidate rows. The method is refused under an enumerated [`training.selection`](#trainingselection) at study setup, by `cobre validate` and by `cobre run` (exit `1`).
 
   | Field                 | Type    | Default | Description                                                                                                                                                                                                                                                                              |
   | --------------------- | ------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -572,7 +564,7 @@ single-unscaling identity does not account for.
 #### Validation
 
 Seven fields are range-checked; a value outside its range is rejected at
-study setup by `cobre run` (exit `1`) with an error naming the phase and the offending field; `cobre validate` builds the study only when `policy.boundary` is set, so it otherwise passes such a value:
+study setup, by `cobre validate` and by `cobre run` (exit `1`), with an error naming the phase and the offending field:
 
 - `primal_feasibility_tolerance` — must be finite.
 - `dual_feasibility_tolerance` — must be finite and `>= 1e-10`.
@@ -666,7 +658,7 @@ When absent, simulation falls back to the scheme configured under
 `training.scenario_source`. This allows you to train with in-sample noise and
 simulate with a different scheme (for example, out-of-sample or historical)
 without changing the training schemes. For which seed each draw uses, and the
-admission rule for the simulation seed, which no draw reads, see [Seed resolution](#seed-resolution).
+admission rule for the simulation seed, see [Seed resolution](#seed-resolution).
 
 The fields are those of `training.scenario_source` except `openings`, which is
 training-only. When `simulation.scenario_source` is present it replaces the training
@@ -675,7 +667,7 @@ value:
 
 | Field              | Type              | Default       | Description                                                                                             |
 | ------------------ | ----------------- | ------------- | ------------------------------------------------------------------------------------------------------- |
-| `seed`             | integer \| null   | `null`        | **Required for admission when a class of `simulation.scenario_source` is not `in_sample`**; no draw reads its value. The simulation's out-of-sample draws use `training.scenario_source.seed`. See [Seed resolution](#seed-resolution). |
+| `seed`             | integer \| null   | `null`        | Forward seed of the simulation's out-of-sample draws; **required when a class of `simulation.scenario_source` is `out_of_sample` or `external`**. See [Seed resolution](#seed-resolution). |
 | `inflow`           | object            | `in_sample`   | Sampling scheme for hydro inflow. Object with `"scheme"` key.                                           |
 | `load`             | object            | `in_sample`   | Sampling scheme for bus load. Object with `"scheme"` key.                                               |
 | `ncs`              | object            | `in_sample`   | Sampling scheme for NCS availability. Object with `"scheme"` key.                                       |
@@ -689,9 +681,9 @@ A worked configuration is under [Out-of-sample simulation](#out-of-sample-simula
 
 ## Seed resolution
 
-Two seeds in `config.json` drive the random draws: `training.tree_seed` and
-`training.scenario_source.seed`. `simulation.scenario_source.seed` is a third key
-that no draw reads. The forward-pass selection of historical windows and external
+Three seeds in `config.json` drive the random draws: `training.tree_seed`,
+`training.scenario_source.seed` and `simulation.scenario_source.seed`. The
+forward-pass selection of historical windows and external
 scenarios uses no seed.
 
 - `training.tree_seed` seeds the opening tree and the in-sample opening draws.
@@ -704,17 +696,12 @@ scenarios uses no seed.
   draws. Cobre applies the same absolute-value rule: it uses `|seed|`. Inflow
   draws from it directly; load and NCS each derive their own stream from it, so
   the three classes draw independent noise. It is required whenever any class
-  is not `in_sample`, including a class on `historical` or `external`, whose
-  selection reads no seed.
-- The simulation uses the same two seeds: its in-sample draws use
-  `training.tree_seed` and its out-of-sample draws use
-  `training.scenario_source.seed`. `simulation.scenario_source.seed` is required
-  for admission when a class of `simulation.scenario_source` is not `in_sample`,
-  and no draw reads its value. A simulation class on `out_of_sample` therefore
-  needs `training.scenario_source.seed`, even when every training class is
-  `in_sample`. `cobre validate` does not check it: without it, `cobre run`
-  trains, writes the policy checkpoint, and stops with exit `4` when the
-  simulation starts.
+  is `out_of_sample` or `external`.
+- The simulation's in-sample draws use `training.tree_seed`, and its
+  out-of-sample draws use `simulation.scenario_source.seed`, or
+  `training.scenario_source.seed` when `simulation.scenario_source` is absent;
+  `simulation.scenario_source.seed` is required when a class of
+  `simulation.scenario_source` is `out_of_sample` or `external`.
 - A `historical` trajectory's window and an `external` trajectory's scenario are
   chosen by a deterministic hash of the iteration and trajectory indices that
   takes no seed.
@@ -842,19 +829,19 @@ Controls policy persistence (checkpoint saving and warm-start loading).
 
 | Field                    | Type                                     | Default      | Description                                                                                                                                 |
 | ------------------------ | ---------------------------------------- | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------- |
-| `path`                   | string                                   | `"./policy"` | Policy directory, resolved against the run's output directory (`<case>/output` by default); training writes the checkpoint there and warm-start, resume and simulation-only read it. The checkpoint's files are listed under [Policy Checkpoint](/reference/output/policy/). |
+| `path`                   | string                                   | `"./policy"` | Policy directory, resolved against the run's output directory (`<case>/output` by default); training writes the checkpoint there and warm-start, resume and simulation-only read it. An empty path, `.`, `..` or a path with no named component is refused when the configuration loads; after resolution, and through a symbolic link's target, a path that is the output directory or one of its ancestors, that names or contains a directory whose files a run replaces (such as `simulation/solver` or `training/solver`), or that lies inside one a run removes whole (such as `simulation/costs`) is refused. The checkpoint's files are listed under [Policy Checkpoint](/reference/output/policy/). |
 | `mode`                   | string                                   | `"fresh"`    | One of `"fresh"`, `"warm_start"`, `"resume"`. Initialization mode. `"fresh"` starts from scratch; `"warm_start"` loads cuts from a previous run; `"resume"` continues an interrupted run. |
 | `boundary`               | object \| null                           | `null`       | Terminal boundary cut configuration for coupling with an outer model's FCF. See below.                                                      |
 
 ### `policy.checkpointing`
 
-The five keys have no effect ([Inert keys](#inert-keys)); training writes one policy checkpoint at its end, with its LP bases ([Policy Management — Resume](/running/policy-management/#resume)).
+`enabled`, `initial_iteration` and `interval_iterations` schedule periodic checkpoints ([Policy Management — Checkpointing Configuration](/running/policy-management/#checkpointing-configuration)); `store_basis` and `compress` have no effect ([Inert keys](#inert-keys)).
 
 | Field                 | Type    | Default | Description                                                         |
 | --------------------- | ------- | ------- | ------------------------------------------------------------------- |
-| `enabled`             | boolean \| null | `null`  | Periodic checkpointing switch. No effect; see [Inert keys](#inert-keys). |
-| `initial_iteration`   | integer \| null | `null`  | First iteration to write a checkpoint. No effect; see [Inert keys](#inert-keys). |
-| `interval_iterations` | integer \| null | `null`  | Iterations between checkpoints. No effect; see [Inert keys](#inert-keys). |
+| `enabled`             | boolean \| null | `null`  | `true` turns periodic checkpoints on; `null` or `false` leaves them off. |
+| `initial_iteration`   | integer \| null | `null`  | First iteration to write a checkpoint, in absolute iteration numbers; `null` means `interval_iterations`. |
+| `interval_iterations` | integer \| null | `null`  | Iterations between checkpoints; required and at least `1` when `enabled` is `true`. |
 | `store_basis`         | boolean \| null | `null`  | Switch for including the LP basis in the checkpoint. No effect; see [Inert keys](#inert-keys). |
 | `compress`            | boolean \| null | `null`  | Switch for compressing the checkpoint files. No effect; see [Inert keys](#inert-keys). |
 
@@ -963,11 +950,13 @@ weekly dispatch inside a monthly stage through chronological blocks.
   start dates fall in the same calendar year. The opening tree copies a group's
   openings only between adjacent stages of the group; an `out_of_sample` forward
   class gives every stage of the group the same draw, adjacent or not.
-- When stages move from monthly to quarterly, the lag rebuild reads season ids
-  0-11 as the calendar months January to December and averages the monthly
+- When stages move from monthly to quarterly, the lag rebuild
+  takes each monthly stage's month from its season's `month_start` and averages the monthly
   values over calendar quarters (January-March, April-June, July-September,
   October-December), whatever months the quarterly seasons declare. The rebuild
-  runs at the first stage with a `season_id` of 12 or more: that stage reads the
+  runs at the first stage whose season spans a calendar quarter right after a
+  stage whose season spans a calendar month, by the spans the seasons declare:
+  that stage reads the
   monthly lags, and the averaged quarterly lags are first read by the stage
   after it.
 - Under a custom season map whose seasons overlap (monthly and quarterly
@@ -1006,11 +995,8 @@ These keys are accepted when `config.json` loads — their names and value types
 
 | Name                                        | Default | What a run does instead                                                                                                                                                         |
 | ------------------------------------------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `policy.checkpointing.enabled`              | `null`  | Training writes one policy checkpoint, at its end, with its LP bases.                                                                                                           |
-| `policy.checkpointing.initial_iteration`    | `null`  | Training writes one policy checkpoint, at its end, with its LP bases.                                                                                                           |
-| `policy.checkpointing.interval_iterations`  | `null`  | Training writes one policy checkpoint, at its end, with its LP bases.                                                                                                           |
-| `policy.checkpointing.store_basis`          | `null`  | Training writes one policy checkpoint, at its end, with its LP bases.                                                                                                           |
-| `policy.checkpointing.compress`             | `null`  | Training writes one policy checkpoint, at its end, with its LP bases.                                                                                                           |
+| `policy.checkpointing.store_basis`          | `null`  | A checkpoint written by a training that ended without failure carries its LP bases.                                                                                                           |
+| `policy.checkpointing.compress`             | `null`  | Checkpoint files are written uncompressed.                                                                                                           |
 | `training.solver.retry_max_attempts`        | `5`     | A solve that does not reach optimality escalates through the solver's built-in retry sequence, not this setting ([Solver Safeguards](/running/performance/#solver-safeguards)). |
 | `training.solver.retry_time_budget_seconds` | `30.0`  | A solve that does not reach optimality escalates through the solver's built-in retry sequence, not this setting ([Solver Safeguards](/running/performance/#solver-safeguards)). |
 | `upper_bound_evaluation`                    | `{}`    | Nothing reads the block: every key in it, the `lipschitz` keys included, has no effect.                                                                                         |
@@ -1041,7 +1027,7 @@ Train with an enumerated forward pass and stop when the exact gap closes. `relat
 
 ### Time-boxed run
 
-Bound a single-process run by wall-clock time. Under the default [`stopping_mode`](#trainingstopping_mode) (`"any"`), training stops at the first rule that is satisfied, so pair [`time_limit`](#time_limit) with an `iteration_limit` above what the time allows: training never runs past the largest `iteration_limit` in the set, or the default cap of [Mandatory Fields](#mandatory-fields) when the set has none. A multi-rank run leaves `time_limit` out, because each rank keeps its own clock, and bounds training with `iteration_limit` instead ([Train in Slices](/running/policy-management/#train-in-slices)).
+Bound a run by wall-clock time. Under the default [`stopping_mode`](#trainingstopping_mode) (`"any"`), training stops at the first rule that is satisfied, so pair [`time_limit`](#time_limit) with an `iteration_limit` above what the time allows: training never runs past the largest `iteration_limit` in the set.
 
 {/* capture: cobre validate case (exit 0) | cobre   v0.17.0 | binary: cobre-cli sha256 23916b46 | case: 1dtoy + config.json training.stopping_rules as below (one iteration_limit entry, replacing the case's 128) */}
 
@@ -1058,7 +1044,7 @@ Bound a single-process run by wall-clock time. Under the default [`stopping_mode
 
 ### Out-of-sample simulation
 
-Train with in-sample noise and simulate with out-of-sample inflow. The `training.scenario_source.seed` (77) drives the out-of-sample draws; `simulation.scenario_source.seed` only satisfies admission ([Seed resolution](#seed-resolution)). The `simulation.scenario_source` fields are listed under [`simulation.scenario_source`](#simulationscenario_source).
+Train with in-sample noise and simulate with out-of-sample inflow. The `simulation.scenario_source.seed` (77) drives the simulation's out-of-sample draws ([Seed resolution](#seed-resolution)). The `simulation.scenario_source` fields are listed under [`simulation.scenario_source`](#simulationscenario_source).
 
 {/* capture: cobre validate case (exit 0) | cobre   v0.17.0 | binary: cobre-cli sha256 23916b46 | case: 1dtoy + config.json training.selection, training.stopping_rules, training.scenario_source and simulation as below */}
 
