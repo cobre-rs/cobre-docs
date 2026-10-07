@@ -42,10 +42,14 @@ states its format and its role in the canonical entity order.
 
 ## Using schemas in your editor
 
-Every schema is served straight from this site at a stable, versioned-free
-URL: `/schemas/<name>.schema.json` (for example
-`https://docs.cobre-rs.dev/schemas/config.schema.json`). Point your editor's JSON Schema mapping there for
-autocompletion and validation while authoring case inputs.
+Every schema is served from this site at a stable URL,
+`/schemas/<name>.schema.json` (for example
+`https://docs.cobre-rs.dev/schemas/config.schema.json`), which serves the
+schemas of the cobre release the latest documentation describes. Each frozen
+documentation version in the header's version picker serves the schemas of its
+own cobre release under its path, `/vX.Y/schemas/<name>.schema.json`. Point
+your editor's JSON Schema mapping at the URL that matches the cobre release you
+run, for autocompletion and validation while authoring case inputs.
 
 ### VS Code
 
