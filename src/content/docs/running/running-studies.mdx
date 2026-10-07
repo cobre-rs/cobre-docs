@@ -45,7 +45,7 @@ cobre validate /path/to/my_study
 
 Successful validation prints entity counts and exits with code 0:
 
-{/* capture: cobre validate my_study | cobre   v0.17.0 | binary: cobre-cli sha256 23916b46 | case: cobre init --template 1dtoy my_study, no diff; run from an empty working directory with a relative case path; exit 0, stderr empty */}
+{/* capture: cobre validate my_study | cobre   v0.18.0 | binary: cobre-cli sha256 93cb7307 | case: cobre init --template 1dtoy my_study, no diff; run from an empty working directory with a relative case path; exit 0, stderr empty */}
 
 ```text
 Valid case: 1 buses, 1 hydros, 2 thermals, 0 lines
@@ -59,7 +59,7 @@ shows only the missing field, because the read of `system/hydros.json` stops
 there before any value is checked. The negative value is reported once the
 field is restored:
 
-{/* capture: cobre validate my_study 2>&1 | cobre   v0.17.0 | binary: cobre-cli sha256 23916b46 | case: temporary 1dtoy derivative (cobre init --template 1dtoy; system/hydros.json edited with jq: .hydros[0] |= del(.reservoir), then .hydros[0].generation.max_turbined_m3s = -5.0); run from an empty working directory with a relative case path; exit 1, stderr empty */}
+{/* capture: cobre validate my_study 2>&1 | cobre   v0.18.0 | binary: cobre-cli sha256 93cb7307 | case: temporary 1dtoy derivative (cobre init --template 1dtoy; system/hydros.json edited with jq: .hydros[0] |= del(.reservoir), then .hydros[0].generation.max_turbined_m3s = -5.0); run from an empty working directory with a relative case path; exit 1, stderr empty */}
 
 ```text
 Validation: 1 errors, 0 warnings in my_study
@@ -84,12 +84,11 @@ location:
 cobre run /path/to/my_study --output /path/to/results
 ```
 
-`cobre run` does not clear the output directory. Each file a run writes replaces
-the earlier copy, and files it does not write stay in place (the policy checkpoint
-also removes its own stale files): after a run with
-fewer simulation scenarios, the `scenario_id=NNNN` partitions beyond the new count
-remain, as does the `stochastic/` export of an earlier run that set
-`exports.stochastic`. Use a fresh `--output` directory, or delete the old one,
+Before it writes a phase's outputs, `cobre run`
+removes the earlier run's outputs of that phase, as listed under
+[Output Format — Success markers](/reference/output/#success-markers); every
+other file stays until a run rewrites it, so the `stochastic/` export of an
+earlier run that set `exports.stochastic` remains. Use a fresh `--output` directory, or delete the old one,
 before comparing runs. Warm-start, resume, and simulation-only runs read the
 policy checkpoint from `policy.path` under the output directory, so keep that
 checkpoint when you plan one of those runs ([Policy Management](/running/policy-management/)).
@@ -155,7 +154,7 @@ scenario count the same way. In `--quiet` mode, no progress is printed.
 An excerpt of the output of `cobre run my_study` on the scaffolded case. It omits the
 banner, the `Host` line, and the progress lines between the first and the last of each phase:
 
-{/* capture: cobre run my_study 2>&1 | cobre   v0.17.0 | binary: cobre-cli sha256 23916b46 | case: cobre init --template 1dtoy my_study, no diff; run from an empty working directory with a relative case path and stderr redirected to a file; excerpt: the banner, the Host line and the progress lines between the first and the last of each phase are not quoted */}
+{/* capture: cobre run my_study 2>&1 | cobre   v0.18.0 | binary: cobre-cli sha256 93cb7307 | case: cobre init --template 1dtoy my_study, no diff; run from an empty working directory with a relative case path and stderr redirected to a file; excerpt: the banner, the Host line and the progress lines between the first and the last of each phase are not quoted */}
 
 ```text
 Execution
@@ -229,7 +228,8 @@ each phase that ran: `training/metadata.json` when training ran, and
 jq '{status, bounds}' /path/to/my_study/output/training/metadata.json
 ```
 
-`status` reads `"complete"` in every written metadata file, including after a
+`status` reads `"partial"` when a shutdown request ended the phase early and
+`"complete"` otherwise, including after a
 training that failed, so a script must check the exit code of `cobre run` to learn
 whether the run succeeded ([Checking Exit Codes](#checking-exit-codes)). `bounds` carries the final lower and upper bounds. The
 convergence gap sits under `convergence`:
@@ -238,10 +238,12 @@ convergence gap sits under `convergence`:
 jq '.convergence.final_gap_percent' /path/to/my_study/output/training/metadata.json
 ```
 
-`convergence.achieved` is `true` only when the `bound_stalling` rule ended the run,
-so a run stopped by `gap` or `iteration_limit` reads `false`.
+`convergence.achieved` is `true` when the stopping rules ended the run and a `gap`
+or `bound_stalling` rule was satisfied at that iteration, so a run that
+`iteration_limit` or `time_limit` alone stopped reads `false`.
 `convergence.termination_reason` names the stopping rule that ended training
-(`iteration_limit`, `time_limit`, `bound_stalling`, or `gap`), or reads `error`
+(`iteration_limit`, `time_limit`, `bound_stalling`, or `gap`),
+reads `graceful_shutdown` when a shutdown request alone ended it, or `error`
 after a failed training:
 
 ```bash
@@ -288,7 +290,7 @@ set it above that number. See
 
 When a scheduler's wall-time limit is shorter than the training needs, train in
 slices: each later slice sets `policy.mode` to `"resume"` and raises the
-`iteration_limit` total. Multi-rank (MPI) jobs slice with `iteration_limit` only.
+`iteration_limit` total.
 See [Policy Management — Train in Slices](/running/policy-management/#train-in-slices).
 
 ---
@@ -318,7 +320,7 @@ The excerpt below compares one thread with four on the scaffold, with
 set to `1000`. Each block starts with the command that produced it, and the excerpt keeps
 only the `Threads` line and each phase's completion line. The times are from one machine:
 
-{/* capture: cobre run my_study --threads 1 2>&1; cobre run my_study --threads 4 2>&1 | cobre   v0.17.0 | binary: cobre-cli sha256 23916b46 | case: temporary 1dtoy derivative (cobre init --template 1dtoy; config.json edited with jq: training.selection.forward_passes 8 and simulation.selection.num_scenarios 1000); run from an empty working directory with a relative case path, the output directory emptied between the runs, both runs exit 0; excerpt: per run, the Threads line and the two phase completion lines are quoted, the rest of the run including the Host line is not */}
+{/* capture: cobre run my_study --threads 1 2>&1; cobre run my_study --threads 4 2>&1 | cobre   v0.18.0 | binary: cobre-cli sha256 93cb7307 | case: temporary 1dtoy derivative (cobre init --template 1dtoy; config.json edited with jq: training.selection.forward_passes 8 and simulation.selection.num_scenarios 1000); run from an empty working directory with a relative case path, the output directory emptied between the runs, both runs exit 0; excerpt: per run, the Threads line and the two phase completion lines are quoted, the rest of the run including the Host line is not */}
 
 ```text
 $ cobre run my_study --threads 1

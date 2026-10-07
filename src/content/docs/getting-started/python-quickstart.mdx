@@ -21,13 +21,13 @@ The Python package has no scaffold command. Create the 1dtoy example case with t
 cobre init --template 1dtoy my_study
 ```
 
-Alternatively, copy the repository's [examples/1dtoy](https://github.com/cobre-rs/cobre/tree/v0.17.0/examples/1dtoy) at the `v0.17.0` tag to `my_study/`. Run the snippets below, in order, from the directory that holds `my_study/`.
+Alternatively, copy the repository's [examples/1dtoy](https://github.com/cobre-rs/cobre/tree/v0.18.0/examples/1dtoy) at the `v0.18.0` tag to `my_study/`. Run the snippets below, in order, from the directory that holds `my_study/`.
 
 ## Run the Study
 
 `cobre.run.run()` loads the case, trains an SDDP policy, simulates 100 scenarios and writes the results to `my_study/output`. It returns a dict:
 
-{/* capture: python run | cobre-python 0.17.0 (PyPI wheel sha256 c0b117d2) | python 3.12.3 | case: 1dtoy (cobre init --template 1dtoy) as my_study; snippets run in page order */}
+{/* capture: python run | cobre-python 0.18.0 (PyPI wheel sha256 8a31828a) | python 3.12.3 | case: 1dtoy (cobre init --template 1dtoy) as my_study; snippets run in page order */}
 
 ```python
 import cobre
@@ -52,13 +52,13 @@ simulation:  {'n_scenarios': 100, 'completed': 100}
 output_dir:  my_study/output
 ```
 
-The printed keys are part of the result dict; see [`RunResult`](/reference/python-api/#cobre_typesrunresult) for the full shape and [`cobre.run.run`](/reference/python-api/#cobrerunrun) for the parameters. `converged` is `True` only when the `bound_stalling` rule stops training. Here the 128-iteration limit stopped it, so `False` is expected. The bounds and the negative gap match the CLI quickstart, which explains them in [What You Just Ran](/getting-started/quickstart/#what-you-just-ran).
+The printed keys are part of the result dict; see [`RunResult`](/reference/python-api/#cobre_typesrunresult) for the full shape and [`cobre.run.run`](/reference/python-api/#cobrerunrun) for the parameters. `converged` is `True` when a `gap` or `bound_stalling` rule stops training. Here the 128-iteration limit stopped it, so `False` is expected. The bounds and the negative gap match the CLI quickstart, which explains them in [What You Just Ran](/getting-started/quickstart/#what-you-just-ran).
 
 ## Read the Results
 
 Read the convergence record and the simulation costs back from the output directory:
 
-{/* capture: python read | cobre-python 0.17.0 (PyPI wheel sha256 c0b117d2) | python 3.12.3 | case: 1dtoy (cobre init --template 1dtoy) as my_study; snippets run in page order */}
+{/* capture: python read | cobre-python 0.18.0 (PyPI wheel sha256 8a31828a) | python 3.12.3 | case: 1dtoy (cobre init --template 1dtoy) as my_study; snippets run in page order */}
 
 ```python
 import cobre
@@ -106,7 +106,7 @@ The two [`cobre.results`](/reference/python-api/#cobreresults) loaders return `p
 
 Plot both bounds against the iteration:
 
-{/* capture: python plot | cobre-python 0.17.0 (PyPI wheel sha256 c0b117d2) | python 3.12.3 | case: 1dtoy (cobre init --template 1dtoy) as my_study; snippets run in page order */}
+{/* capture: python plot | cobre-python 0.18.0 (PyPI wheel sha256 8a31828a) | python 3.12.3 | case: 1dtoy (cobre init --template 1dtoy) as my_study; snippets run in page order */}
 
 ```python
 import cobre
@@ -137,7 +137,7 @@ The saved `convergence.png` uses a log axis. The lower bound rises from about 5.
 
 `config_overrides` changes `config.json` settings for one call without editing the file. This call reruns the study with another seed:
 
-{/* capture: python seed | cobre-python 0.17.0 (PyPI wheel sha256 c0b117d2) | python 3.12.3 | case: 1dtoy (cobre init --template 1dtoy) as my_study; snippets run in page order */}
+{/* capture: python seed | cobre-python 0.18.0 (PyPI wheel sha256 8a31828a) | python 3.12.3 | case: 1dtoy (cobre init --template 1dtoy) as my_study; snippets run in page order */}
 
 ```python
 import cobre
@@ -158,7 +158,7 @@ The keys are dotted `config.json` paths. `training.tree_seed` seeds the opening 
 
 A run with training disabled simulates the policy already in the output directory, here the one the first run wrote:
 
-{/* capture: python simonly | cobre-python 0.17.0 (PyPI wheel sha256 c0b117d2) | python 3.12.3 | case: 1dtoy (cobre init --template 1dtoy) as my_study; snippets run in page order */}
+{/* capture: python simonly | cobre-python 0.18.0 (PyPI wheel sha256 8a31828a) | python 3.12.3 | case: 1dtoy (cobre init --template 1dtoy) as my_study; snippets run in page order */}
 
 ```python
 import cobre
@@ -181,7 +181,7 @@ With training disabled and simulation enabled, `iterations` is `0`, `gap_percent
 
 `cobre.io.validate` checks a case directory without running it:
 
-{/* capture: python validate | cobre-python 0.17.0 (PyPI wheel sha256 c0b117d2) | python 3.12.3 | case: 1dtoy (cobre init --template 1dtoy) as my_study; snippets run in page order */}
+{/* capture: python validate | cobre-python 0.18.0 (PyPI wheel sha256 8a31828a) | python 3.12.3 | case: 1dtoy (cobre init --template 1dtoy) as my_study; snippets run in page order */}
 
 ```python
 import cobre
@@ -199,7 +199,7 @@ The dict has the keys `valid`, `errors` and `warnings`; each entry of `errors` i
 
 A setting that fails validation raises a typed exception. This call misspells a config key:
 
-{/* capture: python errors | cobre-python 0.17.0 (PyPI wheel sha256 c0b117d2) | python 3.12.3 | case: 1dtoy (cobre init --template 1dtoy) as my_study; snippets run in page order */}
+{/* capture: python errors | cobre-python 0.18.0 (PyPI wheel sha256 8a31828a) | python 3.12.3 | case: 1dtoy (cobre init --template 1dtoy) as my_study; snippets run in page order */}
 
 ```python
 import cobre

@@ -61,8 +61,9 @@ cobre-mpi-<version>-<target>.tar.gz
 Download it from the [GitHub Releases page](https://github.com/cobre-rs/cobre/releases/latest).
 The archive contains the binary (named `cobre-mpi` to distinguish it from the
 single-process `cobre` in the same release), the license/notice files, and a
-`README.txt`. The README gives its SLURM launch lines with `srun --mpi=pmi2` and
-names `srun --mpi=pmix` only as an alternative in its troubleshooting notes. With
+`README.txt`. The README gives its SLURM launch lines with `srun --mpi=pmi2`;
+its section on stopping before a SLURM time limit and its troubleshooting notes
+use `srun --mpi=pmix`. With
 an MPICH built for PMIx, as on this page, launch with `srun --mpi=pmix` (see
 [Running under SLURM](#running-under-slurm)).
 
@@ -373,19 +374,18 @@ holds the facts behind them.
 
 ## Resuming a job
 
-A job writes its checkpoint only when training ends. A job killed at its `--time`
-writes none and loses its iterations, and the next job resumes from the last
-complete checkpoint. A job killed while it writes the checkpoint leaves none, because
-the write removes the previous checkpoint first (see [Resume](/running/policy-management/#resume)).
+A job writes its checkpoint when training ends and, with periodic checkpoints on,
+on each scheduled iteration. A job killed at its `--time`
+loses the iterations after its last checkpoint, and the next job resumes from that checkpoint.
+An interrupted write that replaces a checkpoint leaves a complete one, old or new; an interrupted first write can leave none
+(see [Resume](/running/policy-management/#resume)).
 
 To fit a long training into wall-time-limited jobs, split it into slices, one
 batch job each, and submit the next slice after the previous one ends. Every
 slice after the first sets `policy.mode` to `"resume"` and raises
 `iteration_limit` to the new total, which counts the iterations of all earlier
 slices ([Train in Slices](/running/policy-management/#train-in-slices) gives the
-rule sets and how to size a slice). A multi-rank slice's stopping-rule set holds
-one `iteration_limit` entry and no `time_limit` entry (see the
-[`time_limit` caution](/running/configuration/#time_limit)).
+rule sets and how to size a slice).
 
 The job's `--time` covers the case load, the load of the previous checkpoint, the
 slice's iterations and the checkpoint write, plus the simulation and its result
@@ -518,8 +518,7 @@ processor model (the same libm, libstdc++ and MPI library), the numerical conten
 of the output files is bit-identical at any rank count and at any thread count
 (the same `--threads` on every rank); timestamps, wall-clock timing columns and
 the recorded execution topology differ. The guarantee
-holds for a stopping-rule set without `time_limit`: a wall-clock stop depends on
-timing, and a multi-rank run leaves it out
+holds for a stopping-rule set without `time_limit`: a wall-clock or signal stop depends on timing
 ([`time_limit`](/running/configuration/#time_limit)). Validate on one rank with
 `cobre-mpi` itself, because the single-process `cobre` is a different build
 whose results are not promised equal. The full statement is in

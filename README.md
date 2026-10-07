@@ -37,7 +37,7 @@ npm run build:versions # multi-version assembly (versions.json) → dist/
 | Diagrams       | inline [D2](https://d2lang.com/) (ELK engine) for every diagram — schematics, flowcharts, network one-lines (build-time SVG) |
 | Math plots     | [Observable Plot](https://observablehq.com/plot/) islands backed by a unit-tested TypeScript compute layer                   |
 | i18n           | Starlight-native (`en` + `pt-br`) + [Lunaria](https://lunaria.dev/) translation dashboard                                    |
-| Versioning     | build-per-tag → subpaths (no plugin); see `build-versions.mjs` + `versions.json`                                             |
+| Versioning     | latest at `/`, one frozen snapshot per cobre minor at `/vX.Y/` (no plugin); see `build-versions.mjs` + `versions.json`       |
 
 ## Structure
 
@@ -74,7 +74,7 @@ npm run build         # fails on any KaTeX strict-mode violation or parse error 
 npm test              # tested-compute layer + script unit tests (node --test); the i18n-locale test reads dist/
 npm run check         # astro check (types)
 npm run check:math    # KaTeX $$-block render parity (reads dist/)
-npm run check:links   # internal link integrity (reads dist/)
+npm run check:links   # internal link integrity across every version (reads dist/ after `npm run build:versions`)
 npm run check:figures # no retired-figure reference, the figure scope assertions hold, and every Plot island imports a tested src/figures module with an aria-label
 npm run check:voice   # hype phrases, unpinned "typical" numbers, instance magnitudes (two-voice methodology)
 npm run check:counts  # stated counts match their tables and files: column/field counts, the generic-constraint variable catalog, the vendored schema count (public/schemas)
@@ -86,7 +86,7 @@ npm run check:input-schemas # vendored input schemas match the case-format table
 npm run check:python-api # every public cobre-python stub symbol has an anchor in reference/python-api (stubs: scripts/pystubs/)
 npm run check:d2      # D2 uses the ELK engine, never TALA
 npm run check:spdx    # 100% FOSS dependency audit
-npm run check:gc-examples # every gc-check fence behaves as marked under cobre v0.17.0 (COBRE_BIN or cobre on PATH)
+npm run check:gc-examples # every gc-check fence behaves as marked under cobre v0.18.0 (COBRE_BIN or cobre on PATH)
 npm run refresh:recordings -- --check # quickstart.gif matches scripts/recordings-provenance.json (check only)
 npm run check:type-spelling # reference Type cells use the reference-conventions §4 vocabulary
 npm run check:e10     # third-party-notices / content-licensing completeness
@@ -99,6 +99,69 @@ site, runs the build checks, and publishes it to GitHub Pages at
 `docs.cobre-rs.dev` (`methodology.cobre-rs.dev` 301-redirects in). The full gate
 suite, including the doc-lint gates, runs in `.github/workflows/starlight-ci.yml` on
 pull requests to `main`.
+
+## Versioning
+
+`versions.json` lists the documentation versions. `latest` is built from the
+working tree and served at `/`. Each `versions` entry is a frozen snapshot of one
+cobre minor, built from its `ref` (a 40-hex commit SHA on `main`) and served at
+its `base` (`/vX.Y/`). The version picker lists `latest`, then `versions` in file
+order, newest first. A cobre patch release updates `latest` in place. A frozen
+snapshot is never edited: a fix branches from its `ref`, and `ref` moves to the
+fix commit (see **Fixing a frozen version**). Every frozen minor is kept until
+cobre v1.0.0; from then on, only the last two or three minors.
+
+**Freezing vX.Y in the docs sync for cobre vX.(Y+1).0**
+
+1. Read the SHA of the last `main` commit documenting cobre vX.Y.z with
+   `git ls-remote origin refs/heads/main` (normally the merge commit of the last
+   vX.Y sync PR).
+2. Insert the new entry at the top of `versions`:
+   `{ "slug": "vX.Y", "label": "vX.Y", "base": "/vX.Y/", "ref": "<40-hex SHA>", "cobre": "vX.Y.z" }`.
+   `cobre` is the value `latest.cobre` holds before the bump.
+3. Once the cobre vX.(Y+1).0 tag exists, make one commit that:
+   - sets `DEFAULT_COBRE_REF` (`scripts/cobre-ref.mjs`) and `latest.cobre` to
+     vX.(Y+1).0;
+   - re-vendors `scripts/error-kinds.json` with `npm run refresh:error-kinds`
+     and removes the `**Status:** Reserved.` lines of the kinds the new release
+     emits (`src/content/docs/reference/error-codes.mdx`);
+   - moves the CI cobre pin (the step name, URL and archive sha256 in
+     `.github/workflows/starlight-ci.yml`) and the `check:gc-examples` line of
+     this README;
+   - regenerates `scripts/fixtures/gc-overlay/` per its README;
+   - moves every `vX.Y.z` page pin (census:
+     `/usr/bin/grep -rnE 'v[0-9]+\.[0-9]+\.[0-9]+' src/content/docs`; the frozen
+     `versions` entries keep their `cobre` values). A `capture:` marker moves
+     only when its block is re-captured with the new release binary, a
+     `quoted from source: … at cobre vX.Y.z` marker only when it is re-checked
+     at the new tag, and third-party versions and cobre-bridge links are not
+     pins;
+   - re-vendors the schemas and the Python stubs
+     (`npm run refresh:schemas -- --ref vX.(Y+1).0`,
+     `npm run refresh:pystubs -- --ref vX.(Y+1).0`) and updates the recording
+     record `scripts/recordings-provenance.json`, then checks it with
+     `npm run refresh:recordings -- --check`.
+4. From cobre v1.0.0 on, delete every entry but those of the last two or three
+   minors; a deleted entry's `/vX.Y/` URLs then 404.
+5. Run `npm run build:versions` (it logs `=== building vX.Y  (base=/vX.Y/) ===`),
+   then `npm run check:links`, then `npm test`, and record `du -sh dist`.
+6. Serve `dist/` (`python3 -m http.server -d dist 8080`) and check the picker on
+   `/` and on `/vX.Y/`: it lists every version, `/vX.Y/` shows "documents cobre
+   vX.Y.z", and selecting `latest` returns to `/`.
+7. Before merging, run `git fetch origin main`; then `git log <SHA>..origin/main`
+   lists no commit outside the sync, and `git ls-remote origin refs/heads/main`
+   names the same commit as `origin/main`. If another commit landed on `main`,
+   move `ref` to it.
+
+**Fixing a frozen version.** Branch from the entry's `ref` and commit the fix. On
+a branch from `main`, run `git merge -s ours <fix-branch>` (the tree stays
+`main`'s) and land that branch through a PR merged with a merge commit, never a
+squash; then move `ref` to the fix commit. `scripts/versions-json.test.mjs` fails
+on a squash, because the fix commit is then not an ancestor of HEAD.
+
+**Dependency bumps.** Every frozen version must build green in the bump PR (CI
+builds them all). The first bump that breaks one switches the snapshot builds to
+a per-snapshot `npm ci`.
 
 ## License
 

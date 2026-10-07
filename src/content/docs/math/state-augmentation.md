@@ -188,7 +188,7 @@ Under the parallel-blocks formulation the maturing bucket is a single stage-leve
 
 On a declared travel-time arc the share $\nu_{h',t,0}$ of each release ($\nu^{k' \to k}_{h',t}$ on a chronological stage) reaches the downstream row in the release stage ([LP Formulation §4](/math/lp-formulation#4-hydro-water-balance)); the remaining share is deposited into the buckets at release and reaches the downstream plant as this delayed-arrival term at maturity.
 
-The entry belongs to the receiving plant's water balance at every stage where that balance is formed. At a stage where the plant is PreFilling, its row is the frozen identity ([PreFilling Pass-Through](/math/lp-formulation#prefilling-pass-through)), which carries no maturing bucket, so the volume maturing there leaves the modeled system.
+The entry belongs to the receiving plant's water balance at every stage where that balance is formed. At a stage where the plant is PreFilling, its row is the frozen identity ([PreFilling Pass-Through](/math/lp-formulation#prefilling-pass-through)), and the maturing bucket enters the row of the first non-PreFilling plant downstream: with coefficient $-1$ on a parallel stage, and $-\phi_{h,k}$ on each block row of a chronological stage, $\phi_{h,k}$ being the PreFilling plant's own arrival density. It leaves the modeled system only when no such plant exists.
 
 ### Bucket definition rows
 

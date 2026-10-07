@@ -3,27 +3,35 @@
 // `reference/error-codes.mdx` documents the variants of cobre's `ErrorKind`
 // (cobre-io validation) and `LoadError` (cobre-io loader) enums. The interim
 // error-coverage gate needs, in CI and without a cobre checkout, the declared
-// variants of both and whether the code ever constructs each one. This script
+// variants of both and whether the code ever emits each one. This script
 // vendors that data into scripts/error-kinds.json.
 //
 // Released-baseline rule (as refresh-schemas.mjs): content is read from an
 // immutable git TAG via `git -C <cobre> ls-tree` / `show <ref>:<path>`, NEVER
 // the cobre working tree, which can sit past the tag.
 //
-// Emitted rule (D-214a-1, as amended by XD-315). A variant V of enum E is
-// emitted iff some `crates/<crate>/src/**/*.rs` file, other than `tests.rs` /
-// `test_support.rs`, holds a constructor site of V outside comments, string
-// literals and each item that follows a `#[cfg(test)]` attribute (the next
-// `;`-terminated item or brace-matched block, never past the enclosing `}`).
-// A constructor site is
+// Emitted rule (D-214a-1, XD-315, v0.18.0 ADR-008). A variant V of enum E is emitted
+// iff some `crates/<crate>/src/**/*.rs` file, other than `tests.rs` /
+// `test_support.rs`, holds a site of V outside comments, string literals and
+// each item that follows a `#[cfg(test)]` attribute (the next `;`-terminated
+// item or brace-matched block, never past the enclosing `}`). A site is
 //   (a) an `E::V` that is not a pattern. A pattern is an occurrence inside a
 //       `matches!(...)` call; preceded on its line by a `let` whose `=` has not
 //       yet appeared, or by a leading `|` that is not a closure head (`|args|`
 //       or `||`); or followed (after an optional brace- or paren-matched group
-//       and any run of closing `)` / `]`) by `=>`, `|` or a guard `if`; or
+//       and any run of closing `)` / `]`) by `=>`, `|` or a guard `if`;
 //   (b) a call `E::<helper>(` where <helper> is an associated fn of an
-//       `impl E {` block, in E's defining file, whose body starts `Self::V`.
-// `emitter` is the first site in path order, then line order.
+//       `impl E {` block, in E's defining file, whose body starts `Self::V`; or
+//   (c) for `ErrorKind` only, when the ref holds
+//       `crates/cobre-io/src/validation/rules.rs`: a `rules::NAME` (not
+//       `my_rules::NAME`) where NAME is a row of that file's `declare_rules!`
+//       table whose kind is V. A row is
+//       `NAME = "id", Layer, Kind, Severity, "summary";`, read with comments
+//       and literals masked; the `macro_rules! declare_rules` body holds none.
+//       A malformed row, a Kind that is not an `ErrorKind` variant or a
+//       Severity other than `Error` / `Warning` exits 2.
+// `emitter` is the first site in path order, then line order, whichever clause
+// found it.
 //
 // Usage:
 //   node scripts/refresh-error-kinds.mjs [--cobre <path>] [--ref <git-ref>] [--check]
@@ -32,7 +40,8 @@
 //     --ref     git ref/tag to vendor from (default: DEFAULT_COBRE_REF).
 //     --check   verify-only: compare scripts/error-kinds.json against <ref>,
 //               write nothing; exit 1 naming each differing variant, else 0.
-// A git failure, a missing enum or an unknown flag exits 2.
+// A git failure, a missing enum, a bad `declare_rules!` table or an unknown
+// flag exits 2.
 
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
@@ -42,10 +51,16 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { DEFAULT_COBRE_REF } from "./cobre-ref.mjs";
 
 const ENUMS = [
-  { name: "ErrorKind", source: "crates/cobre-io/src/validation/mod.rs" },
+  {
+    name: "ErrorKind",
+    source: "crates/cobre-io/src/validation/mod.rs",
+    rules: "crates/cobre-io/src/validation/rules.rs",
+  },
   { name: "LoadError", source: "crates/cobre-io/src/error.rs" },
 ];
 const SRC_FILE = /^crates\/[^/]+\/src\/.+\.rs$/;
+const SEVERITIES = ["Error", "Warning"];
+const STRING_LITERAL = /^(?:r#*)?"[\s\S]*"#*$/;
 const GIT_MAX_BUFFER = 16 * 1024 * 1024;
 const vendoredPath = fileURLToPath(
   new URL("./error-kinds.json", import.meta.url),
@@ -346,8 +361,79 @@ export function constructorSites(source, enumName, variants, helpers) {
   return sites;
 }
 
+// Rows of the `declare_rules!` table in `source`, as [{ name, id, layer, kind,
+// severity, summary }] in declaration order, `id` and `summary` as literal
+// source text. Throws a named error for a malformed row, a kind not in `kinds`,
+// a severity other than Error or Warning, or a source with no row.
+export function declareRulesRows(source, kinds) {
+  const text = maskNonCode(source);
+  const definitions = [
+    ...text.matchAll(/\bmacro_rules!\s*declare_rules\s*\{/g),
+  ].map((m) => [m.index, matchClose(text, m.index + m[0].length - 1)]);
+  const rows = [];
+  for (const m of text.matchAll(/\bdeclare_rules!\s*\{/g)) {
+    if (definitions.some(([open, close]) => open < m.index && m.index < close))
+      continue;
+    const close = matchClose(text, m.index + m[0].length - 1);
+    const malformed = (at) => {
+      const semi = text.indexOf(";", at);
+      const end = semi === -1 || semi > close ? close : semi + 1;
+      const row = source.slice(at, end).replace(/\s+/g, " ").trim();
+      return new Error(
+        `refresh:error-kinds: malformed declare_rules! row at line ${lineOf(source, at)}: ${row}`,
+      );
+    };
+    // On masked text each literal field is blank; `d` locates it in `source`.
+    const rowPattern =
+      /\s*([A-Za-z_]\w*)\s*=(\s*),\s*([A-Za-z_]\w*)\s*,\s*([A-Za-z_]\w*)\s*,\s*([A-Za-z_]\w*)\s*,(\s*);/dy;
+    let end = m.index + m[0].length;
+    rowPattern.lastIndex = end;
+    let row;
+    while ((row = rowPattern.exec(text))) {
+      end = rowPattern.lastIndex;
+      const [, name, , layer, kind, severity] = row;
+      const at = row.indices[1][0];
+      const [id, summary] = [2, 6].map((g) =>
+        source.slice(...row.indices[g]).trim(),
+      );
+      if (!STRING_LITERAL.test(id) || !STRING_LITERAL.test(summary)) {
+        throw malformed(at);
+      }
+      const named = `refresh:error-kinds: declare_rules! row ${name} (line ${lineOf(source, at)})`;
+      if (!kinds.includes(kind)) {
+        throw new Error(
+          `${named} has kind '${kind}', which is not an ErrorKind variant`,
+        );
+      }
+      if (!SEVERITIES.includes(severity)) {
+        throw new Error(
+          `${named} has severity '${severity}', not Error or Warning`,
+        );
+      }
+      rows.push({ name, id, layer, kind, severity, summary });
+    }
+    const rest = text.slice(end, close).search(/\S/);
+    if (rest !== -1) throw malformed(end + rest);
+  }
+  if (rows.length === 0) {
+    throw new Error("refresh:error-kinds: no declare_rules! row found");
+  }
+  return rows;
+}
+
+// `rules::NAME` sites in `source` (already run through stripTestCode) whose
+// NAME is a key of `rowsByName`, as [{ variant: the row's kind, line }].
+export function rulesReferenceSites(source, rowsByName) {
+  const sites = [];
+  for (const m of source.matchAll(/\brules::(\w+)/g)) {
+    const row = rowsByName.get(m[1]);
+    if (row) sites.push({ variant: row.kind, line: lineOf(source, m.index) });
+  }
+  return sites;
+}
+
 // `enums`: [{ name, source, variants, emitters }], `emitters` a Map of variant
-// name to the first "path:line" constructor site. Key order is the file order.
+// name to the first "path:line" site. Key order is the file order.
 export function buildVendored(ref, enums) {
   return {
     generatedBy: "scripts/refresh-error-kinds.mjs",
@@ -444,29 +530,37 @@ function readVendored(cobre, ref) {
   const paths = listSourcePaths(
     git(cobre, ["ls-tree", "-r", "--name-only", ref, "--", "crates"]),
   );
-  const enums = ENUMS.map(({ name, source }) => {
+  const enums = ENUMS.map(({ name, source, rules }) => {
     const text = show(source);
+    const variants = parseEnumVariants(text, name);
+    const rows = paths.includes(rules)
+      ? declareRulesRows(show(rules), variants)
+      : [];
     return {
       name,
       source,
-      variants: parseEnumVariants(text, name),
+      variants,
       helpers: helperConstructors(text, name),
+      rowsByName: new Map(rows.map((row) => [row.name, row])),
       emitters: new Map(),
     };
   });
   for (const path of paths) {
     const text = show(path);
-    const mentioned = enums.filter((e) => text.includes(`${e.name}::`));
+    const mentioned = enums.filter(
+      (e) =>
+        text.includes(`${e.name}::`) ||
+        (e.rowsByName.size > 0 && text.includes("rules::")),
+    );
     if (mentioned.length === 0) continue;
     try {
       const live = stripTestCode(text);
       for (const e of mentioned) {
-        for (const { variant, line } of constructorSites(
-          live,
-          e.name,
-          e.variants,
-          e.helpers,
-        )) {
+        const sites = [
+          ...constructorSites(live, e.name, e.variants, e.helpers),
+          ...rulesReferenceSites(live, e.rowsByName),
+        ].sort((x, y) => x.line - y.line);
+        for (const { variant, line } of sites) {
           if (!e.emitters.has(variant))
             e.emitters.set(variant, `${path}:${line}`);
         }

@@ -1,6 +1,6 @@
 // Architecture B orchestrator: build each version independently with its own
-// `base`, then assemble into one dist/ tree (e.g. /  +  /vX.Y/ once E6 adds
-// real entries; with a single `latest` entry today it is just /).
+// `base`, then assemble into one dist/ tree: latest at / and each frozen
+// version at its /vX.Y/ base.
 //
 // Each entry from versions.json is built into its own temp dir (`.dist-<slug>`,
 // or `.dist-latest` for `latest`) and then copied into dist/ at its `base`
@@ -12,10 +12,11 @@
 // Two source paths, branched on whether the entry carries a `ref`:
 //   • No `ref` (latest, and any synthetic/prototype entry): build the CURRENT
 //     working tree — `astro build --outDir .dist-<slug>`, no --root.
-//   • `ref` present (a tagged release): materialise that ref's source into a
-//     throwaway git worktree and build FROM it, so each release renders with its
-//     OWN astro.config.mjs (no --config override — an old tag must not be
-//     re-rendered with the current renderer settings):
+//   • `ref` present (a frozen version; `ref` is a commit SHA on `main`):
+//     materialise that ref's source into a throwaway git worktree and build
+//     FROM it, so each release renders with its OWN astro.config.mjs (no
+//     --config override — an old ref must not be re-rendered with the current
+//     renderer settings):
 //       git worktree add --force .src-<slug> <ref>
 //       astro build --root .src-<slug> --outDir <abs .dist-<slug>>
 //     --outDir must be ABSOLUTE — astro resolves a relative --outDir against
@@ -61,8 +62,7 @@ const baseEnv = {
 for (const v of builds) {
   // A versioned entry MUST carry a unique `slug` (only the `latest` entry may omit
   // it → `.dist-latest`). Without this guard, a versioned entry lacking `slug` would
-  // resolve to `.dist-latest` too and silently overwrite the latest build's output
-  // (E6 populates `versions`, so this contract must hold before then).
+  // resolve to `.dist-latest` too and silently overwrite the latest build's output.
   if (v !== cfg.latest && !v.slug) {
     throw new Error(
       `versions.json entry missing required "slug" field: ${JSON.stringify(v)}`,
@@ -72,7 +72,9 @@ for (const v of builds) {
   // `.dist-<slug>`); restrict it to a safe alphabet so a bad value fails fast
   // with a clear message instead of producing a weird path. `ref` is NOT
   // validated here — git itself rejects bad refs and execFileSync (below)
-  // already neutralises shell metacharacters in it.
+  // already neutralises shell metacharacters in it; the committed
+  // contract (a 40-hex SHA on HEAD's history per frozen entry) is
+  // pinned by scripts/versions-json.test.mjs.
   if (v !== cfg.latest && !/^[A-Za-z0-9][A-Za-z0-9.\-]{0,63}$/.test(v.slug)) {
     throw new Error(
       `versions.json entry has invalid "slug" (allowed: [A-Za-z0-9][A-Za-z0-9.\\-]{0,63}): ${JSON.stringify(v.slug)}`,
@@ -123,6 +125,12 @@ for (const v of builds) {
       );
     }
     if (base !== "/") {
+      // The snapshot bundles this checkout's node_modules, so it ships this
+      // checkout's THIRD-PARTY-NOTICES.txt over the ref's own copy.
+      cpSync(
+        "public/THIRD-PARTY-NOTICES.txt",
+        `${dest}/THIRD-PARTY-NOTICES.txt`,
+      );
       const { files, rewritten } = prefixSnapshotTree(dest, base);
       console.log(
         `build:versions: prefixed ${rewritten} root-relative link(s) across ${files} HTML file(s) under ${dest}`,

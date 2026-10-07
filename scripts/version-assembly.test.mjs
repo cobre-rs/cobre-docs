@@ -23,8 +23,8 @@ const norm = (b) => (b.endsWith("/") ? b : b + "/");
 // Mirrors VersionPicker.astro: `const all = [versions.latest, ...versions.versions]`.
 const allEntries = (cfg) => [cfg.latest, ...cfg.versions];
 
-// Representative two-version shape (matches ticket-024's transient versions.json
-// and E6's exit criterion "adding a tag is a one-line config change").
+// Representative two-version shape (matches ticket-024's transient versions.json;
+// adding a frozen version is a one-entry change to versions.json).
 const cfg = {
   latest: { label: "latest", base: "/" },
   versions: [{ slug: "v0.8", label: "v0.8", base: "/v0.8/" }],

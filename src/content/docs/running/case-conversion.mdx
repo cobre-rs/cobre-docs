@@ -34,7 +34,7 @@ simulation-output parquet files directly.)
 
 A cobre-bridge release `X.Y.Z` targets cobre `X.Y.Z`: the converted case
 follows that release's input contract. The bridge records its minimum cobre
-version (`0.17.0`) in the conversion manifest and uses it to decide whether the
+version (`0.18.0`) in the conversion manifest and uses it to decide whether the
 installed `cobre-python` can run `convert --validate`.
 The [Dependencies](#dependencies) section lists the pin that tracks that
 minimum. If the
@@ -113,7 +113,7 @@ payload (entity counts, for `convert`); `diagnostics` is the same findings
 list the Rich panels render.
 
 For the complete flag reference for every command, see the
-[cobre-bridge CLI reference](https://github.com/cobre-rs/cobre-bridge/blob/v0.17.0/docs/cli.md).
+[cobre-bridge CLI reference](https://github.com/cobre-rs/cobre-bridge/blob/v0.18.0/docs/cli.md).
 
 ### Converting a DECOMP Deck
 
@@ -132,11 +132,14 @@ the boundary-FCF import for a quicker conversion with no terminal FCF.
 :::caution
 An imported boundary loads only under a cobre whose version equals that of the
 `cobre-python` that converted the deck, patch included (`pip show cobre-python`
-prints it). Any other cobre version refuses the boundary, and the refusal names
-both versions (see the [version gate](/running/policy-management/#version-gate)).
-To run the case under another cobre release, install that release's
-`cobre-python` and convert the deck again. The cobre-bridge DECOMP guide covers
-[running a case with an imported boundary](https://github.com/cobre-rs/cobre-bridge/blob/v0.17.0/docs/decomp.md#running-a-case-with-an-imported-boundary).
+prints it). Any other cobre version refuses the boundary: the
+[version gate](/running/policy-management/#version-gate) names the software and
+version that wrote it, and a boundary of another checkpoint `format_version` is
+refused at read by the format check.
+To run the case under another cobre release, install the cobre-bridge release
+paired with that cobre release, which pins its `cobre-python`, and convert the
+deck again. The cobre-bridge DECOMP guide covers
+[running a case with an imported boundary](https://github.com/cobre-rs/cobre-bridge/blob/v0.18.0/docs/decomp.md#running-a-case-with-an-imported-boundary).
 :::
 
 ### What Gets Converted
@@ -159,9 +162,9 @@ file, record, and column feeds which output field, and what transformation
 is applied -- see the bridge's own generated data maps. They are produced by
 `scripts/gen-lineage-docs.py`, verified by tests against a real conversion,
 marked "Do not edit by hand," and written in Portuguese:
-[`newave-data-map.md`](https://github.com/cobre-rs/cobre-bridge/blob/v0.17.0/docs/newave-data-map.md)
+[`newave-data-map.md`](https://github.com/cobre-rs/cobre-bridge/blob/v0.18.0/docs/newave-data-map.md)
 and
-[`decomp-data-map.md`](https://github.com/cobre-rs/cobre-bridge/blob/v0.17.0/docs/decomp-data-map.md).
+[`decomp-data-map.md`](https://github.com/cobre-rs/cobre-bridge/blob/v0.18.0/docs/decomp-data-map.md).
 
 ### Output Directory Structure
 
@@ -395,7 +398,7 @@ to the next real plant downstream.
 overrides applied, and its small plants as must-run non-controllable sources.
 
 For the full list of conversion rules, see the cobre-bridge
-[NEWAVE track guide](https://github.com/cobre-rs/cobre-bridge/blob/v0.17.0/docs/newave.md).
+[NEWAVE track guide](https://github.com/cobre-rs/cobre-bridge/blob/v0.18.0/docs/newave.md).
 
 ### Risk Measure Support
 
@@ -430,11 +433,11 @@ merged with sequential integer IDs, and per-stage right-hand-side bounds in
 
 ## Dependencies
 
-cobre-bridge 0.17.0 installs its runtime dependencies with the package. Two
+cobre-bridge 0.18.0 installs its runtime dependencies with the package. Two
 pins matter:
 
-- `cobre-python>=0.17.0,<0.18`: the floor is the bridge's `MIN_COBRE_VERSION`
-  (`0.17.0`), and a packaging test keeps the pin and that constant in lockstep.
+- `cobre-python==0.18.0`: the pinned version is the bridge's `MIN_COBRE_VERSION`
+  (`0.18.0`), and a packaging test keeps the pin and that constant in lockstep.
 - `inewave>=1.16.1`: the NEWAVE file reader.
 
 The minimum cobre version does not make versions interchangeable: an imported boundary

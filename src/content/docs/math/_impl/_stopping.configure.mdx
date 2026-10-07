@@ -40,13 +40,21 @@ as described in [Sampled runs](#sampled-runs).
 ### Shutdown Requests
 
 A shutdown request is not an entry of `stopping_rules`, and `stopping_mode`
-does not apply to it. `cobre run` has no signal path for one: a SIGTERM ends
-the process with status 143 before the training results and the policy
-checkpoint are written. The Python API requests one when the `on_iteration`
+does not apply to it. During training, `cobre run` turns a SIGTERM or SIGINT
+into one, which training reads
+once per iteration, after the lower bound, before the stop decision: training
+stops at the end of the iteration that reads it, writes the training outputs
+and the policy checkpoint, skips the configured simulation, and exits `5`
+([CLI Reference — Exit Codes](/reference/cli-reference/#exit-codes)). A signal
+that reaches any rank of a multi-rank run stops every rank at the same
+iteration, and a second SIGINT ends a single-process run at once. Before
+training starts and while the simulation runs, both signals take their default
+action. The Python API requests one when the `on_iteration`
 callback returns a truthy value or raises
 ([Python API](/reference/python-api/)); the stop is asynchronous, so the run ends
-at a later iteration boundary that is not fixed; a run ended this way records
-`unknown` when no rule triggered at that iteration
+at a later iteration boundary that is not fixed; a run ended this way
+records `graceful_shutdown` unless the stopping rules or the iteration budget also ended it
+at that iteration
 ([What a stopped run records](#what-a-stopped-run-records)).
 
 ### What a stopped run records
@@ -55,15 +63,13 @@ The `convergence`, `bounds` and `iterations` blocks of
 [`training/metadata.json`](/reference/output/metadata/#trainingmetadatajson)
 record how the run stopped:
 
-- `convergence.termination_reason` names the first rule that triggered, in the
-  order `stopping_rules` lists them, or is `iteration_limit` when the run
-  reached the end of its iteration range with no rule triggered, which includes
-  a set with no `iteration_limit` entry that stops at 100 iterations. It is
-  `unknown` when a Python `on_iteration` callback ended the run and no rule
-  triggered at that iteration, and `error` after a training that failed.
-- `convergence.achieved` is `true` exactly when `termination_reason` is
-  `bound_stalling`, so a run the `gap` rule stopped on a closed exact gap
-  records `false`.
+- `convergence.termination_reason` names the first triggered rule, in the
+  order `stopping_rules` lists them (under `"all"`, among the rules other than
+  `iteration_limit`), when the stopping rules ended the run; otherwise it is `iteration_limit`
+  when the run reached its iteration budget, and otherwise `graceful_shutdown`
+  when a shutdown request ended it. It is `error` after a training that failed.
+- `convergence.achieved` is `true` when the stopping rules ended the run and
+  a `gap` or `bound_stalling` rule triggered at that iteration.
 - `convergence.final_gap_percent` is `null` when the final lower bound is not
   positive.
 - `bounds.final_lower_bound` and `bounds.final_upper_bound` are the bounds at

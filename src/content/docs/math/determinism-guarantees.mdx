@@ -313,9 +313,9 @@ iteration, and are not recorded. Under a wall-clock stopping criterion
 ([Stopping Rules §3](/math/stopping-rules#3-time-limit)), elapsed time decides
 the iteration at which training stops, so system load and thread count can
 change how many iterations a single-process run completes; two such runs agree
-iteration by iteration up to the earlier stop. Under such a criterion each rank
-of a multi-rank run measures elapsed time on its own clock and the ranks do not
-reconcile the stop ([multi-rank runs](/running/configuration/#time_limit)), so
+iteration by iteration up to the earlier stop. Under such a criterion the ranks
+of a multi-rank run agree on one elapsed time at each iteration boundary, so
+every rank stops at the same iteration, an iteration that depends on timing;
 iteration count, not elapsed time, is the reproducible bound of such a run.
 
 **Different builds.** A binary built with another compiler, other compiler

@@ -356,7 +356,7 @@ readers that do not hard-code column names.
 | `file`        | string | No       | —     | Label of the output schema this column belongs to (e.g. `"hydros"`, `"costs"`); not a file path. The label table lists the files for each label.              |
 | `column`      | string | No       | —     | Exact column name as it appears in the Parquet file.                                                                                                          |
 | `type`        | string | No       | —     | Lowercase column type token: `i8`, `i32`, `i64`, `u32`, `u64`, `f64`, `bool`, `string`, `date32`, or `unknown`.                                               |
-| `unit`        | string | No       | —     | Physical unit, spelled in ASCII: `""` for dimensionless, code, boolean and id columns, or one of `$`, `$/hm3`, `MW`, `MW/(m3/s)`, `MWh`, `hm3`, `m3/s`, `ms`. |
+| `unit`        | string | No       | —     | Physical unit, spelled in ASCII: `""` for dimensionless, code, boolean and id columns, or one of `$`, `$/MWh`, `$/hm3`, `%`, `MW`, `MW/(m3/s)`, `MWh`, `hm3`, `m3/s`, `ms`; `varies` when the unit depends on the row (`generic_violations.slack_value`). |
 | `description` | string | No       | —     | Short description of the column's meaning.                                                                                                                    |
 | `nullable`    | string | No       | —     | `"true"` or `"false"`.                                                                                                                                        |
 
@@ -381,22 +381,14 @@ The table below maps each `file` label to its output file or directory.
 | `scenario_summary`          | `simulation/scenario_summary.parquet`                                                          |
 | `convergence`               | `training/convergence.parquet`                                                                 |
 | `iteration_timing`          | `training/timing/iterations.parquet`                                                           |
-| `rank_timing`               | No output file: `cobre run` writes no per-rank timing file.                                    |
 | `cut_selection`             | `training/cut_selection/iterations.parquet`                                                    |
 | `solver_iterations`         | `training/solver/iterations.parquet` and `simulation/solver/iterations.parquet`                |
 | `retry_histogram`           | `training/solver/retry_histogram.parquet` and `simulation/solver/retry_histogram.parquet`      |
-| `hydro_energy_productivity` | No output file: its columns are those of the input `system/hydro_energy_productivity.parquet`. |
 
 `variables.csv` has no rows for `simulation/anticipated_lanes/`,
 `anticipated/fixed_deliveries.parquet`, `generic_constraints/resolved_echo.parquet`,
 `training/dictionaries/bounds.parquet`, or the Parquet files under `hydro_models/`
 and `stochastic/`.
-
-In `variables.csv`, the `unit` cell for the columns `spot_price` (`buses`) and
-`pumped_flow_m3s` (`pumping_stations`) reads `MW`, and for `pumped_volume_hm3`
-(`pumping_stations`) reads `m3/s`. For these three columns, the column name and
-the `buses` and `pumping_stations` simulation tables give the unit: monetary units per MWh, m³/s, and
-hm³.
 
 ### `bounds.parquet`
 

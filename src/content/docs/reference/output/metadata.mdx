@@ -14,11 +14,16 @@ it contains a complete, valid JSON document. If a run is interrupted before the
 final write, the `.tmp` sibling may remain, but the target file reflects the
 last successfully completed write.
 
-The `status` field of both files is always `"complete"`; it does not record how
-the run ended. For training, read `convergence.termination_reason`, which is
-`"error"` when training stopped on a failure, and `convergence.achieved`, which
-is `true` when the `bound_stalling` rule stopped the run and `false` for every
-other termination reason. For simulation, read `scenarios.failed`.
+`status` is `"complete"` or `"partial"`. In `training/metadata.json` it is
+`"partial"` when a shutdown request ended training and neither its stopping
+rules nor its iteration budget ended it at that iteration: a signal to
+`cobre run`, or a stop from a Python `on_iteration` callback. In
+`simulation/metadata.json` it is `"partial"` for a simulation skipped after a
+signal stop. Every other ending reads `"complete"`, a failed training included,
+so read `convergence.termination_reason` (`"error"` on a failure) and the exit
+code. `convergence.achieved` is `true` when the stopping rules ended training
+with a `gap` or `bound_stalling` rule triggered at that iteration. For
+simulation, read `scenarios.failed`.
 
 Both files are plain JSON, so `jq` reads them directly. For a script or CI
 check, see [Output format](/reference/cli-reference/#output-format) in the CLI
@@ -41,11 +46,12 @@ single file. The `convergence` block records how the run stopped.
 
 **Example (a `cobre run` of the 1dtoy template; hostname and timestamps replaced):**
 
-{/* capture: cobre run toy --quiet, then toy/output/training/metadata.json | cobre   v0.17.0 | binary: cobre-cli sha256 23916b46 | case: temporary 1dtoy derivative (cobre init --template 1dtoy, unchanged) */}
+{/* capture: cobre run toy --quiet, then toy/output/training/metadata.json | cobre   v0.18.0 | binary: cobre-cli sha256 93cb7307 | case: temporary 1dtoy derivative (cobre init --template 1dtoy, unchanged) */}
 
 ```json
 {
-  "cobre_version": "0.17.0",
+  "software": "cobre",
+  "software_version": "0.18.0",
   "hostname": "<hostname>",
   "solver": "highs",
   "solver_version": "1.13.1",
@@ -128,14 +134,15 @@ single file. The `convergence` block records how the run stopped.
 
 | Name                       | Type   | Nullable | Units | Description                                                                                                                                                        |
 | -------------------------- | ------ | -------- | ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `cobre_version`            | string | No       | —     | Version of the cobre binary that produced this output.                                                                                                             |
+| `software`                 | string | No       | —     | Name of the software that produced this output: `"cobre"`.                                                                                                         |
+| `software_version`         | string | No       | —     | Version of that software, for example `"0.18.0"`.                                                                                                                  |
 | `hostname`                 | string | No       | —     | Hostname of the machine that ran training.                                                                                                                         |
 | `solver`                   | string | No       | —     | LP solver backend: `"highs"` or `"clp"`.                                                                                                                           |
 | `solver_version`           | string | Yes      | —     | Version string of the linked LP solver library. Omitted when not available.                                                                                        |
 | `started_at`               | string | No       | —     | ISO 8601 timestamp when training started.                                                                                                                          |
 | `completed_at`             | string | No       | —     | ISO 8601 timestamp when training completed.                                                                                                                        |
 | `duration_seconds`         | number | No       | s     | Total training wall-clock duration in seconds.                                                                                                                     |
-| `status`                   | string | No       | —     | Always `"complete"`; `convergence.termination_reason` records how the run ended (`"error"` when training stopped on a failure).                                    |
+| `status`                   | string | No       | —     | `"partial"` when a shutdown request alone ended training (then `convergence.termination_reason` is `"graceful_shutdown"`), `"complete"` otherwise, a failed training included; `convergence.termination_reason` records how the run ended (`"error"` when training stopped on a failure). |
 | `production_fit_deviation` | object | Yes      | —     | Run-level rollup of the per-entity production-model fit deviation (informational, never hashed). Omitted when the run fitted no model whose deviation is measured. |
 
 **`configuration` fields:**
@@ -143,7 +150,7 @@ single file. The `convergence` block records how the run stopped.
 | Name                           | Type    | Nullable | Units | Description                                                                                                                   |
 | ------------------------------ | ------- | -------- | ----- | ----------------------------------------------------------------------------------------------------------------------------- |
 | `configuration.seed`           | integer | Yes      | —     | The configured `training.tree_seed`; `null` when absent (the run then uses `42`).                                             |
-| `configuration.max_iterations` | integer | Yes      | —     | Maximum iterations: the `limit` of the first `iteration_limit` entry of `training.stopping_rules`; `null` when there is none. |
+| `configuration.max_iterations` | integer | Yes      | —     | Maximum iterations: the `limit` of the first `iteration_limit` entry of `training.stopping_rules`; always set in a file `cobre run` writes, because the configuration must hold an `iteration_limit` rule. |
 | `configuration.forward_passes` | integer | Yes      | —     | Number of forward-pass scenario trajectories per iteration. `null` under `enumerated` selection.                              |
 | `configuration.stopping_mode`  | string  | No       | —     | How multiple stopping rules combine: `"any"` or `"all"`.                                                                      |
 | `configuration.policy_mode`    | string  | No       | —     | Policy warm-start mode: `"fresh"`, `"warm_start"`, or `"resume"`.                                                             |
@@ -169,9 +176,9 @@ single file. The `convergence` block records how the run stopped.
 
 | Name                             | Type    | Nullable | Units | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
 | -------------------------------- | ------- | -------- | ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `convergence.achieved`           | boolean | No       | —     | `true` when the `bound_stalling` rule stopped the run; `false` for every other termination reason, `gap` included.                                                                                                                                                                                                                                                                                                                                                                         |
+| `convergence.achieved`           | boolean | No       | —     | `true` when the configured stopping rules ended training and a `gap` or `bound_stalling` rule triggered at that iteration, even when `termination_reason` names another rule triggered at the same iteration; `false` when only `iteration_limit` or `time_limit` triggered, when a shutdown request alone ended training, and after a failure.                                                                                                                                            |
 | `convergence.final_gap_percent`  | number  | Yes      | %     | [Optimality gap](/math/stopping-rules#optimality-gap) between lower and upper bounds at termination as a percentage. `null` when the final lower bound is not positive.                                                                                                                                                                                                                                                                                                                    |
-| `convergence.termination_reason` | string  | No       | —     | Name of the stopping rule that ended the run: `"iteration_limit"`, `"time_limit"`, `"bound_stalling"`, or `"gap"`; `"error"` when training stopped on a failure, in which case `cobre run` exits non-zero; `"unknown"` when an `on_iteration` callback of [`cobre.Study.train`](/reference/python-api/#cobrestudytrain) or [`cobre.run.run`](/reference/python-api/#cobrerunrun) stopped the run by returning a truthy value or raising, and no stopping rule triggered at that iteration. |
+| `convergence.termination_reason` | string  | No       | —     | Name of the stopping rule that ended the run: `"iteration_limit"`, `"time_limit"`, `"bound_stalling"`, or `"gap"` (under `"all"`, the first rule other than `iteration_limit`, or `"iteration_limit"` when the largest limit capped the run); `"error"` when training stopped on a failure, in which case `cobre run` exits non-zero; `"graceful_shutdown"` when a shutdown request ended training and neither the stopping rules nor the iteration budget ended it at that iteration (a SIGTERM or SIGINT to `cobre run`, or an `on_iteration` callback of [`cobre.Study.train`](/reference/python-api/#cobrestudytrain) or [`cobre.run.run`](/reference/python-api/#cobrerunrun) that returns a truthy value or raises). |
 
 **`row_pool` fields:**
 
@@ -261,7 +268,10 @@ machine load and are excluded from any parity computation.
 
 ## `simulation/metadata.json`
 
-The simulation metadata file is written atomically when simulation completes.
+The simulation metadata file is written atomically when simulation completes,
+and when a signal stop ends training before a configured simulation: the
+simulation is then skipped, and the file records `status` `"partial"`,
+`scenarios.completed` `0` and `cost` `null`, followed by `simulation/_SUCCESS`.
 It captures run context, scenario completion counts, aggregate cost statistics,
 LP solver statistics, and distribution information.
 
@@ -269,11 +279,12 @@ LP solver statistics, and distribution information.
 
 **Example (the same `cobre run` of the 1dtoy template; hostname and timestamps replaced):**
 
-{/* capture: cobre run toy --quiet, then toy/output/simulation/metadata.json | cobre   v0.17.0 | binary: cobre-cli sha256 23916b46 | case: temporary 1dtoy derivative (cobre init --template 1dtoy, unchanged) */}
+{/* capture: cobre run toy --quiet, then toy/output/simulation/metadata.json | cobre   v0.18.0 | binary: cobre-cli sha256 93cb7307 | case: temporary 1dtoy derivative (cobre init --template 1dtoy, unchanged) */}
 
 ```json
 {
-  "cobre_version": "0.17.0",
+  "software": "cobre",
+  "software_version": "0.18.0",
   "hostname": "<hostname>",
   "solver": "highs",
   "solver_version": "1.13.1",
@@ -318,24 +329,25 @@ LP solver statistics, and distribution information.
 
 | Name               | Type   | Nullable | Units | Description                                                                 |
 | ------------------ | ------ | -------- | ----- | --------------------------------------------------------------------------- |
-| `cobre_version`    | string | No       | —     | Version of the cobre binary that produced this output.                      |
+| `software`         | string | No       | —     | Name of the software that produced this output: `"cobre"`.                  |
+| `software_version` | string | No       | —     | Version of that software, for example `"0.18.0"`.                           |
 | `hostname`         | string | No       | —     | Hostname of the machine that ran simulation.                                |
 | `solver`           | string | No       | —     | LP solver backend: `"highs"` or `"clp"`.                                    |
 | `solver_version`   | string | Yes      | —     | LP solver library version string. Omitted when not available.               |
 | `started_at`       | string | No       | —     | ISO 8601 timestamp when simulation started.                                 |
 | `completed_at`     | string | No       | —     | ISO 8601 timestamp when simulation completed.                               |
 | `duration_seconds` | number | No       | s     | Total simulation wall-clock duration in seconds.                            |
-| `status`           | string | No       | —     | Always `"complete"`: the file is written only when the simulation finishes. |
+| `status`           | string | No       | —     | `"complete"` when the simulation ran; `"partial"` when a signal stop skipped it (no scenario ran). |
 
 **`scenarios` fields:**
 
 | Name                  | Type    | Nullable | Units | Description                                                                                                              |
 | --------------------- | ------- | -------- | ----- | ------------------------------------------------------------------------------------------------------------------------ |
-| `scenarios.total`     | integer | No       | —     | Number of scenarios whose output partitions were written.                                                                |
+| `scenarios.total`     | integer | No       | —     | Number of scenarios whose output partitions were written; on a skipped simulation (`status` `"partial"`), the number of scenarios the run was configured to simulate, with `completed` `0`. |
 | `scenarios.completed` | integer | No       | —     | Number of scenarios whose output partitions were written.                                                                |
 | `scenarios.failed`    | integer | No       | —     | Number of scenarios whose output partitions could not be written; a failed LP solve stops the run with an error instead. |
 
-**`cost` fields** (always written):
+**`cost` fields** (`null` on a skipped simulation):
 
 | Name             | Type   | Nullable | Units | Description                                                      |
 | ---------------- | ------ | -------- | ----- | ---------------------------------------------------------------- |
@@ -386,6 +398,6 @@ two sub-objects, `inflow` and `hydro_production`.
 | Name                                                  | Type    | Nullable | Units | Description                                                                                                                               |
 | ----------------------------------------------------- | ------- | -------- | ----- | ----------------------------------------------------------------------------------------------------------------------------------------- |
 | `hydro_production.n_fpha_computed_from_geometry`      | integer | No       | —     | Hydro plants whose FPHA hyperplanes were computed from reservoir geometry; a computed-FPHA plant with no turbine capacity is not counted. |
-| `hydro_production.n_fpha_precomputed_hyperplanes`     | integer | No       | —     | Hydro plants whose FPHA hyperplanes were supplied precomputed.                                                                            |
+| `hydro_production.n_fpha_precomputed_hyperplanes`     | integer | No       | —     | Hydro plants whose FPHA hyperplanes were supplied precomputed; a precomputed-FPHA plant with no turbine capacity and no hyperplane rows is not counted. |
 | `hydro_production.n_evaporation_ref_user_supplied`    | integer | No       | —     | Hydro plants whose evaporation reference level was user-supplied.                                                                         |
 | `hydro_production.n_evaporation_ref_default_midpoint` | integer | No       | —     | Hydro plants whose evaporation reference level defaulted to the curve midpoint.                                                           |

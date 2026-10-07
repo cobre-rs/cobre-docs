@@ -160,7 +160,7 @@ The plane is fitted once per plant (§2.1–§2.8); a plant split across buses e
 | ----------- | ---- | ------------------------------------------------- |
 | $\gamma_0^m$ | —    | Intercept (MW at zero storage, flow, spillage); its sign is not validated |
 | $\gamma_v^m$ | ≥ 0  | Higher storage → higher forebay → more generation |
-| $\gamma_q^m$ | ≥ 0 (> 0 for precomputed planes) | More turbined flow → more generation              |
+| $\gamma_q^m$ | ≥ 0 (> 0 on at least one plane per stage for precomputed planes) | More turbined flow → more generation              |
 | $\gamma_s^m$ | ≤ 0  | More spillage → higher tailrace → less net head   |
 
 **Source of hyperplanes**: planes are either pre-computed (supplied with the case) or computed from topology data during preprocessing. The computed fit is described in §2.6.

@@ -167,10 +167,10 @@ least `1`); the launcher sets the rank count (see
 [HPC & Cluster Deployment](/running/hpc-deployment/)).
 
 The `Execution` block of the run banner reports both levels. The excerpt below
-is from a two-rank run with two threads per rank on one host; it omits the
+shows an example two-rank run with two threads per rank on one host; it omits the
 `Solver` line and writes the hostname as `<host>`:
 
-{/* capture: LD_LIBRARY_PATH=/opt/mpich/lib /opt/mpich/bin/mpiexec -n 2 "$COBRE_MPI_BIN" run <case> --threads 2 | cobre   v0.17.0 | binary: cobre-mpi sha256 af289cff | case: temporary 1dtoy copy ("$COBRE_MPI_BIN" init --template 1dtoy <case>), no diff; MPICH 4.3.2, one host, exit 0; excerpt: the Solver line and the rest of the run are not quoted, the hostname on the Layout line is written <host> (format of crates/cobre-cli/src/summary.rs:150 at v0.17.0) */}
+{/* quoted from source: crates/cobre-cli/src/summary.rs:94-96, 116-151 at cobre v0.18.0 | format only; the values are an example (never run under mpiexec, D9) */}
 
 ```text
 Execution
@@ -329,7 +329,7 @@ all ranks.
 Each rank holds its own full copy of the case data, the opening tree, the cut
 pool, and the stage templates; ranks on one node do not share memory. The cut
 pool is sized at startup from the iteration budget (the largest `iteration_limit`
-in the stopping rules, or 100 when there is none) times the forward passes, for
+in the stopping rules) times the forward passes, for
 every stage. The memory of every rank is set by that size, and placing more ranks
 on a node multiplies that node's memory use.
 

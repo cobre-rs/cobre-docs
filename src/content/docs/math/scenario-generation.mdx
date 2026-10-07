@@ -415,31 +415,19 @@ window $y$ reads the occurrence of season $m(t)$ in year $y + \delta_t$, with
 $\delta_t$ the offset of stage $t$'s season-occurrence year from stage 1's, so
 $\delta_1 = 0$.
 
-**Calendar walk.** A window also covers the occurrences that precede stage 1's
-season on the calendar. The $\ell$-th preceding occurrence,
-$\ell = 1, \ldots, n_{\text{pre}}$, has season $m^{(\ell)}$ and year offset
-$\delta^{(\ell)}$, so window $y$ reads it in year $y + \delta^{(\ell)}$. Each
-step of the walk goes back one calendar month on a monthly cycle, seven days on
-a weekly cycle, and to the previous season definition in id order on a custom
-cycle; without a season map it goes back one calendar month. The walk runs up
-to the largest AR lag the applied model uses across all hydros and stages (at
-least twelve when the annual component is active) and stops early at an
-occurrence the calendar cannot place, so $n_{\text{pre}}$ is at most that lag.
-
 **Window pool.** A year is admissible when the record holds an observation of
 every hydro for every occurrence the window covers:
 
 $$
-W = \bigl\{\, y : a^{\text{obs}}_h(y + \delta_t,\, m(t)) \text{ exists for every } h, t, \text{ and } a^{\text{obs}}_h(y + \delta^{(\ell)},\, m^{(\ell)}) \text{ exists for every } h \text{ and } \ell \le n_{\text{pre}} \,\bigr\}
+W = \bigl\{\, y : a^{\text{obs}}_h(y + \delta_t,\, m(t)) \text{ exists for every } h, t \,\bigr\}
 $$
 
 with $a^{\text{obs}}_h(y', m)$ the record's observation of hydro $h$ for the
 occurrence of season $m$ in year $y'$. The candidate years are the years of the
 record, or a list of years the study supplies; a candidate outside $W$ is
 dropped, and an empty $W$ refuses the study (§4.3 lists the refusals). The
-preceding occurrences only decide admissibility: the replay's lag chain starts
-from the derived inflow-lag seed, the lag state of $x_0$, not from these
-observations (see §4.5).
+replay's lag chain starts from the derived inflow-lag seed, the lag state of
+$x_0$ (see §4.5).
 
 **Inversion.** Window $y$'s noise at stage $t$ inverts the PAR model on its
 observation:
@@ -463,18 +451,6 @@ classes: {
   hydro: {style: {stroke: "#4a90b8"}}
 }
 
-pre: "Preceding occurrences · admissibility only" {
-  grid-rows: 1
-  horizontal-gap: 60
-
-  first: "ℓ = nₚᵣₑ\nm⁽ⁿᵖʳᵉ⁾" {class: hydro}
-  mid: "ℓ\nm⁽ℓ⁾ in y + δ⁽ℓ⁾" {class: hydro}
-  last: "ℓ = 1\nm⁽¹⁾" {class: hydro}
-
-  first -> mid: "…"
-  mid -> last: "…"
-}
-
 study: "Study stages · replayed" {
   grid-rows: 1
   horizontal-gap: 60
@@ -486,14 +462,9 @@ study: "Study stages · replayed" {
   first -> mid: "…"
   mid -> last: "…"
 }
-
-pre -> study: "precede stage 1"
 ```
 
-For every hydro, each window must cover the $n_{\text{pre}}$ occurrences that
-precede stage 1's season and the season occurrence of every study stage. The
-replay reads only the study stages' observations; the preceding occurrences
-decide admissibility alone.
+For every hydro, each window must cover the season occurrence of every study stage.
 
 ### 3.3 Forward Pass Model
 

@@ -13,7 +13,7 @@ You set the sampling scheme, the opening-tree method and the seeds in `config.js
 
 For `out_of_sample`, the forward draw is fresh noise from a seed independent of the tree's, drawn with the stage's `sampling_method` (plain Monte Carlo at `selective` and `historical_residuals` stages), with correlation applied to every draw.
 
-`historical` is valid for the `inflow` class only. The key `training.scenario_source.historical_years` restricts the pool of historical windows; see [scenario_source](/running/configuration/#trainingscenario_source). `simulation.scenario_source` sets the simulation schemes in the same way, and when it is absent simulation uses `training.scenario_source`. Every scheme other than `in_sample` needs `training.scenario_source.seed` (see [Seeds](#seeds)). A class of `simulation.scenario_source` that is not `in_sample` also requires `simulation.scenario_source.seed` for admission, but no draw reads its value.
+`historical` is valid for the `inflow` class only. The key `training.scenario_source.historical_years` restricts the pool of historical windows; see [scenario_source](/running/configuration/#trainingscenario_source). `simulation.scenario_source` sets the simulation schemes in the same way, and when it is absent simulation uses `training.scenario_source`. `out_of_sample` and `external` need the section's `scenario_source.seed`, and `historical` needs none; `simulation.scenario_source.seed` seeds the simulation's out-of-sample draws (see [Seeds](#seeds)).
 
 ### Opening-tree methods
 
@@ -26,14 +26,15 @@ For `out_of_sample`, the forward draw is fresh noise from a seed independent of 
 | Scrambled Sobol      | `qmc_sobol`                | A noise dimension within the Sobol limit (see the Implementation notes tab)                                                              |
 | Scrambled Halton     | `qmc_halton`               | Nothing further                                                                                                                          |
 | Selective            | `selective`                | A supplied opening tree: `training.scenario_source.openings` set to `{"source": "file"}`, which reads `scenarios/noise_openings.parquet` |
-| Historical residuals | `historical_residuals`     | `scenarios/inflow_history.parquet` and a season on every study stage                                                                     |
+| Historical residuals | `historical_residuals`     | `scenarios/inflow_history.parquet` and a season on every study stage, when the opening tree is generated                                 |
 
 ### Seeds
 
 | Key                             | Seeds                                                  | Default                                                          |
 | ------------------------------- | ------------------------------------------------------ | ---------------------------------------------------------------- |
 | `training.tree_seed`            | The opening tree and the in-sample opening draws       | `42` when absent; a negative value is used by its absolute value |
-| `training.scenario_source.seed` | The out-of-sample draws, in training and in simulation | None; required unless every class is `in_sample`                 |
+| `training.scenario_source.seed` | The out-of-sample draws of training, and of simulation when `simulation.scenario_source` is absent | None; required when a class is `out_of_sample` or `external`     |
+| `simulation.scenario_source.seed` | The simulation's out-of-sample draws                   | None; required when a class of that section is `out_of_sample` or `external` |
 
 Historical-window and external-scenario selection use no seed. [Seed resolution](/running/configuration/#seed-resolution) owns the rules.
 

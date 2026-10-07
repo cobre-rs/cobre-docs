@@ -26,7 +26,7 @@ study graph (`nodes`/`edges`), the stage count, the producer provenance, and
 the `format_version` marker.
 
 The schema lives at
-[`crates/cobre-io/schemas/policy.fbs`](https://github.com/cobre-rs/cobre/blob/v0.17.0/crates/cobre-io/schemas/policy.fbs)
+[`crates/cobre-io/schemas/policy.fbs`](https://github.com/cobre-rs/cobre/blob/v0.18.0/crates/cobre-io/schemas/policy.fbs)
 under namespace `Cobre.IO.Policy`. It declares `file_identifier "CBVF"`
 and `file_extension "bin"` but no `root_type`, so `--root-type` is required
 per file to select the entry point for `flatc`. The reader refuses any buffer
@@ -103,7 +103,7 @@ For other targets see `flatc --help`.
 ## Field-by-field reference
 
 The authoritative description of every field lives in
-[`policy.fbs`](https://github.com/cobre-rs/cobre/blob/v0.17.0/crates/cobre-io/schemas/policy.fbs)
+[`policy.fbs`](https://github.com/cobre-rs/cobre/blob/v0.18.0/crates/cobre-io/schemas/policy.fbs)
 itself — every field carries an inline doc comment. The
 [Output Format](/reference/output/) page has a tabular summary suitable
 for reading on the web.
@@ -137,7 +137,7 @@ The schema reuses one field id and permanently burns three others:
 
 Unlike an ordinary appended field, reusing or burning an id is not
 wire-backward-compatible: a reader built for another layout misreads the slot.
-A buffer with no `CBVF` identifier or a `format_version` other than `2` is
+A buffer with no `CBVF` identifier or a `format_version` other than `3` is
 therefore rejected outright on load rather than read with graceful-absence
 defaults — see [Versioning policy](#versioning-policy) below.
 
@@ -187,15 +187,15 @@ below.
 `.bin` payload. Every `.bin` buffer, the manifest included, carries the `CBVF`
 `file_identifier` described above, and a reader refuses a buffer without it
 before decoding. The manifest's `CheckpointManifest` carries a required
-`format_version` marker, which must equal `2` (`FORMAT_VERSION`); a missing
+`format_version` marker, which must equal `3` (`FORMAT_VERSION`); a missing
 `manifest.bin` or another `format_version` stops the read before any payload is
 parsed. There is **no conversion between format versions**;
 [Policy-load errors](/reference/error-codes/#policy-load-errors) lists what a
 refused load raises.
 
 **Load admission.** A checkpoint that reads is not thereby admitted. Every load
-path requires the `cobre_version` recorded in `manifest.bin` to equal the
-running cobre version exactly; the
+path requires the `software` (id 20) and `software_version` (id 1) recorded in
+`manifest.bin` to equal the running software's name and version exactly; the
 [version gate](/running/policy-management/#version-gate) states the rule, the
 message, and the remedy.
 

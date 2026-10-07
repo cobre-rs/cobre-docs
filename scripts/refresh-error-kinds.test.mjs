@@ -1,9 +1,24 @@
 // Unit fixture for the refresh:error-kinds pure helpers (ticket-214a).
 //
-// node:test + node:assert/strict, mirroring refresh-schemas.test.mjs. Every
-// case runs on an inline Rust fixture: no git, no filesystem.
+// node:test + node:assert/strict, mirroring refresh-schemas.test.mjs. The unit
+// cases run on inline Rust fixtures, with no git and no filesystem. The
+// `declare_rules CLI:` cases run a scratch copy of the script on a temp git
+// repo.
 import test from "node:test";
 import assert from "node:assert/strict";
+import { execFileSync, spawnSync } from "node:child_process";
+import {
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import {
   parseEnumVariants,
   helperConstructors,
@@ -14,6 +29,8 @@ import {
   buildVendored,
   serialize,
   diffVendored,
+  declareRulesRows,
+  rulesReferenceSites,
 } from "./refresh-error-kinds.mjs";
 
 const rust = (strings) => String.raw(strings).replace(/^\n/, "");
@@ -734,4 +751,463 @@ match y {
 }
 `;
   assert.deepEqual(sites(source), ["B:1"]);
+});
+
+// --- Clause (c): declare_rules! rows and rules::NAME references ---------------
+
+const DEFINITION = rust`
+use super::{ErrorKind, Severity};
+
+macro_rules! declare_rules {
+    ($($name:ident = $id:literal, $layer:ident, $kind:ident, $severity:ident, $summary:literal;)+) => {
+        $(
+            pub(crate) const $name: ValidationRule = ValidationRule {
+                id: $id,
+                kind: ErrorKind::$kind,
+                severity: Severity::$severity,
+            };
+        )+
+    };
+    (@nested) => {
+        declare_rules! {
+            IN_DEFINITION = "x.0", Semantic, InvalidValue, Error, "a row in the definition body";
+        }
+    };
+}
+
+`;
+
+const TABLE = rust`
+declare_rules! {
+    ROW_ONE = "x.1", Structural, FileNotFound, Error, "A required file is missing";
+    // A comment between rows, with a , and a ; in it.
+    ROW_WRAPPED = "x.2",
+        Semantic, InvalidValue, Warning,
+        "A summary with ; and , and a \"quoted\" word";
+}
+`;
+
+const KINDS = ["FileNotFound", "InvalidValue"];
+const table = (...rows) =>
+  `declare_rules! {\n${rows.map((row) => `    ${row}\n`).join("")}}\n`;
+const ROW_ONE = TABLE.split("\n")[1].trim();
+
+test('declare_rules: parses a one-line row and a rustfmt-wrapped row whose summary holds ;, , and \\"', () => {
+  assert.deepEqual(declareRulesRows(TABLE, KINDS), [
+    {
+      name: "ROW_ONE",
+      id: '"x.1"',
+      layer: "Structural",
+      kind: "FileNotFound",
+      severity: "Error",
+      summary: '"A required file is missing"',
+    },
+    {
+      name: "ROW_WRAPPED",
+      id: '"x.2"',
+      layer: "Semantic",
+      kind: "InvalidValue",
+      severity: "Warning",
+      summary: String.raw`"A summary with ; and , and a \"quoted\" word"`,
+    },
+  ]);
+});
+
+test("declare_rules: skips the macro_rules! declare_rules definition body", () => {
+  const rows = declareRulesRows(DEFINITION + TABLE, KINDS);
+  assert.deepEqual(
+    rows.map((row) => row.name),
+    ["ROW_ONE", "ROW_WRAPPED"],
+  );
+});
+
+test("declare_rules: throws a named error for a malformed row", () => {
+  for (const row of [
+    'ROW_X = "x.3", Semantic, InvalidValue, "a row with no severity";',
+    'ROW_X = "x.3", Semantic, InvalidValue, Error, "s", Extra;',
+    'ROW_X = x.3, Semantic, InvalidValue, Error, "an id that is not a literal";',
+    'ROW_X = /* no id */, Semantic, InvalidValue, Error, "a comment for an id";',
+    'ROW_X = "x.3", Semantic, InvalidValue, Error, "no terminating semicolon"',
+  ]) {
+    assert.throws(
+      () => declareRulesRows(table(ROW_ONE, row), KINDS),
+      (error) =>
+        error.message ===
+        `refresh:error-kinds: malformed declare_rules! row at line 3: ${row}`,
+      row,
+    );
+  }
+});
+
+test("declare_rules: throws a named error for a kind that is not an ErrorKind variant", () => {
+  const swapped =
+    'ROW_X = "x.3", InvalidValue, Semantic, Error, "layer and kind swapped";';
+  assert.throws(
+    () => declareRulesRows(table(ROW_ONE, swapped), KINDS),
+    /^Error: refresh:error-kinds: declare_rules! row ROW_X \(line 3\) has kind 'Semantic', which is not an ErrorKind variant$/,
+  );
+});
+
+test("declare_rules: throws a named error for a severity other than Error or Warning", () => {
+  const info = 'ROW_X = "x.3", Semantic, InvalidValue, Info, "an info row";';
+  assert.throws(
+    () => declareRulesRows(table(ROW_ONE, info), KINDS),
+    /^Error: refresh:error-kinds: declare_rules! row ROW_X \(line 3\) has severity 'Info', not Error or Warning$/,
+  );
+});
+
+test("declare_rules: throws a named error when the file holds no declare_rules! row", () => {
+  for (const source of [DEFINITION, `${DEFINITION}declare_rules! {}\n`, ""]) {
+    assert.throws(
+      () => declareRulesRows(source, KINDS),
+      /^Error: refresh:error-kinds: no declare_rules! row found$/,
+    );
+  }
+});
+
+const ROWS_BY_NAME = new Map([
+  ["ROW_ONE", { kind: "FileNotFound" }],
+  ["ROW_WRAPPED", { kind: "InvalidValue" }],
+]);
+const references = (source) =>
+  rulesReferenceSites(stripTestCode(source), ROWS_BY_NAME).map(
+    ({ variant, line }) => `${variant}:${line}`,
+  );
+
+test("declare_rules: counts a live rules::NAME reference, plain or qualified, as its row's kind", () => {
+  const source = rust`
+fn check(ctx: &mut ValidationContext) {
+    ctx.emit(&rules::ROW_ONE, "a");
+    ctx.emit(
+        &crate::validation::rules::ROW_WRAPPED,
+        "b",
+    );
+    ctx.emit(&rules::ROW_ONE, "again");
+}
+`;
+  assert.deepEqual(references(source), [
+    "FileNotFound:2",
+    "InvalidValue:4",
+    "FileNotFound:7",
+  ]);
+});
+
+test("declare_rules: no count inside a comment", () => {
+  const source = rust`
+/// Emits rules::ROW_ONE.
+fn check(ctx: &mut ValidationContext) {
+    // ctx.emit(&rules::ROW_ONE, "a");
+    /* ctx.emit(&rules::ROW_ONE, "b"); */
+    ctx.emit(&rules::ROW_WRAPPED, "live");
+}
+`;
+  assert.deepEqual(references(source), ["InvalidValue:5"]);
+});
+
+test("declare_rules: no count inside a string", () => {
+  const source = rust`
+fn check(ctx: &mut ValidationContext) {
+    let s = "rules::ROW_ONE";
+    let r = r#"see rules::ROW_ONE"#;
+    ctx.emit(&rules::ROW_WRAPPED, "live");
+}
+`;
+  assert.deepEqual(references(source), ["InvalidValue:4"]);
+});
+
+test("declare_rules: no count inside a #[cfg(test)] item", () => {
+  const source = rust`
+fn check(ctx: &mut ValidationContext) {
+    ctx.emit(&rules::ROW_WRAPPED, "live");
+}
+
+#[cfg(test)]
+fn only_in_tests(ctx: &mut ValidationContext) {
+    ctx.emit(&rules::ROW_ONE, "a");
+}
+
+#[cfg(test)]
+mod tests {
+    fn t() {
+        let _ = super::rules::ROW_ONE;
+    }
+}
+`;
+  assert.deepEqual(references(source), ["InvalidValue:2"]);
+});
+
+test("declare_rules: no count for rules::RULES", () => {
+  const source = rust`
+fn ids() -> Vec<&'static str> {
+    rules::RULES.iter().map(|rule| rule.id).collect()
+}
+fn check(ctx: &mut ValidationContext) {
+    ctx.emit(&rules::ROW_WRAPPED, "live");
+}
+`;
+  assert.deepEqual(references(source), ["InvalidValue:5"]);
+});
+
+test("declare_rules: no count for my_rules::X, even when X names a row", () => {
+  const source = rust`
+fn check(ctx: &mut ValidationContext) {
+    ctx.emit(&my_rules::ROW_ONE, "another module");
+    ctx.emit(&rules::ROW_WRAPPED, "live");
+}
+`;
+  assert.deepEqual(references(source), ["InvalidValue:3"]);
+});
+
+test("declare_rules: no count for an undeclared rules::X_Y", () => {
+  const source = rust`
+fn check(ctx: &mut ValidationContext) {
+    ctx.emit(&rules::X_Y, "undeclared");
+    ctx.emit(&rules::ROW_ONE_EXTRA, "a longer name than a row");
+    ctx.emit(&rules::ROW_WRAPPED, "live");
+}
+`;
+  assert.deepEqual(references(source), ["InvalidValue:4"]);
+});
+
+// --- Clause (c) end to end: a scratch script copy on a temp git repo ----------
+
+const SCRIPTS_DIR = fileURLToPath(new URL(".", import.meta.url));
+const MOD_RS = "crates/cobre-io/src/validation/mod.rs";
+const RULES_RS = "crates/cobre-io/src/validation/rules.rs";
+const ERROR_RS = "crates/cobre-io/src/error.rs";
+const CHECK_RS = "crates/cobre-io/src/validation/check.rs";
+
+const ROWS = [
+  'ROW_A = "fixture.1", Semantic, A, Error, "Referenced by live code";',
+  'ROW_B = "fixture.2", Semantic, B, Warning, "Referenced only by a test";',
+  'ROW_C = "fixture.3", Semantic, C, Error, "Unreferenced; C is constructed directly";',
+  'ROW_D = "fixture.4", Semantic, D, Error, "Unreferenced";',
+];
+
+// LoadError::A shares its name with the kind of the live ROW_A, so a clause (c)
+// that leaked past ErrorKind would mark it emitted.
+const fixture = (rows = ROWS) => ({
+  [MOD_RS]: rust`
+pub mod rules;
+
+pub enum ErrorKind {
+    A,
+    B,
+    C,
+    D,
+}
+`,
+  [ERROR_RS]: rust`
+pub enum LoadError {
+    A,
+}
+`,
+  [RULES_RS]: DEFINITION + table(...rows),
+  [CHECK_RS]: rust`
+use super::{ErrorKind, rules};
+
+pub(crate) fn check(ctx: &mut ValidationContext) {
+    ctx.emit(&rules::ROW_A, "a");
+    ctx.push(ErrorKind::C, "c");
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn b() {
+        assert_eq!(super::rules::ROW_B.id, "fixture.2");
+    }
+}
+`,
+});
+
+const expected = (emitters) =>
+  buildVendored("HEAD", [
+    {
+      name: "ErrorKind",
+      source: MOD_RS,
+      variants: ["A", "B", "C", "D"],
+      emitters: new Map(Object.entries(emitters)),
+    },
+    {
+      name: "LoadError",
+      source: ERROR_RS,
+      variants: ["A"],
+      emitters: new Map(),
+    },
+  ]);
+
+function git(cwd, ...args) {
+  execFileSync(
+    "git",
+    [
+      "-C",
+      cwd,
+      "-c",
+      "commit.gpgsign=false",
+      "-c",
+      "core.hooksPath=/dev/null",
+      "-c",
+      "user.name=refresh-error-kinds test",
+      "-c",
+      "user.email=refresh-error-kinds@test.invalid",
+      ...args,
+    ],
+    { stdio: "ignore" },
+  );
+}
+
+// Commits `files` (path to text) to a temp git repo and copies the script with
+// cobre-ref.mjs to a scratch directory, where it writes its error-kinds.json.
+function withFixture(files, fn) {
+  const root = mkdtempSync(join(tmpdir(), "refresh-error-kinds-"));
+  try {
+    const repo = join(root, "cobre");
+    const bin = join(root, "bin");
+    for (const [path, text] of Object.entries(files)) {
+      mkdirSync(dirname(join(repo, path)), { recursive: true });
+      writeFileSync(join(repo, path), text);
+    }
+    git(repo, "init", "-q");
+    git(repo, "add", ".");
+    git(repo, "commit", "-q", "-m", "fixture");
+    mkdirSync(bin);
+    for (const name of ["refresh-error-kinds.mjs", "cobre-ref.mjs"]) {
+      copyFileSync(join(SCRIPTS_DIR, name), join(bin, name));
+    }
+    const run = (...args) =>
+      spawnSync(
+        process.execPath,
+        [
+          join(bin, "refresh-error-kinds.mjs"),
+          "--cobre",
+          repo,
+          "--ref",
+          "HEAD",
+          ...args,
+        ],
+        { encoding: "utf8", cwd: root },
+      );
+    return fn({ run, vendored: join(bin, "error-kinds.json") });
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+}
+
+const vendor = (files) =>
+  withFixture(files, ({ run, vendored }) => {
+    const result = run();
+    assert.equal(result.status, 0, result.stderr);
+    return JSON.parse(readFileSync(vendored, "utf8"));
+  });
+
+test("declare_rules CLI: row A (live reference) and kind C (direct constructor) are emitted; B (test-only reference) and D (unused) are not", () => {
+  assert.deepEqual(
+    vendor(fixture()),
+    expected({ A: `${CHECK_RS}:4`, C: `${CHECK_RS}:5` }),
+  );
+});
+
+test("declare_rules CLI: clause (c) adds nothing when the ref holds no rules.rs", () => {
+  const files = fixture();
+  assert.deepEqual(
+    vendor(files),
+    expected({ A: `${CHECK_RS}:4`, C: `${CHECK_RS}:5` }),
+  );
+  delete files[RULES_RS];
+  assert.deepEqual(vendor(files), expected({ C: `${CHECK_RS}:5` }));
+});
+
+test("declare_rules CLI: a malformed table exits 2 naming the row", () => {
+  for (const [row, message] of [
+    [
+      'ROW_D = "fixture.4", Semantic, D, "Unreferenced";',
+      /^refresh:error-kinds: malformed declare_rules! row at line \d+: ROW_D = "fixture\.4", Semantic, D, "Unreferenced";$/m,
+    ],
+    [
+      'ROW_D = "fixture.4", Semantic, E, Error, "Unreferenced";',
+      /^refresh:error-kinds: declare_rules! row ROW_D \(line \d+\) has kind 'E', which is not an ErrorKind variant$/m,
+    ],
+    [
+      'ROW_D = "fixture.4", Semantic, D, Fatal, "Unreferenced";',
+      /^refresh:error-kinds: declare_rules! row ROW_D \(line \d+\) has severity 'Fatal', not Error or Warning$/m,
+    ],
+  ]) {
+    withFixture(fixture([...ROWS.slice(0, 3), row]), ({ run, vendored }) => {
+      const result = run();
+      assert.equal(result.status, 2, `${row}\n${result.stderr}`);
+      assert.match(result.stderr, message, row);
+      assert.equal(existsSync(vendored), false, row);
+    });
+  }
+});
+
+test("declare_rules CLI: --check exits 0 on a matching file, then 1 naming ErrorKind.A after a seeded flip", () => {
+  withFixture(fixture(), ({ run, vendored }) => {
+    const want = expected({ A: `${CHECK_RS}:4`, C: `${CHECK_RS}:5` });
+    writeFileSync(vendored, serialize(want));
+    const clean = run("--check");
+    assert.equal(clean.status, 0, clean.stderr);
+    assert.equal(
+      clean.stdout,
+      "refresh:error-kinds --check: scripts/error-kinds.json matches HEAD\n",
+    );
+
+    const flipped = structuredClone(want);
+    Object.assign(flipped.enums[0].variants[0], {
+      emitted: false,
+      emitter: null,
+    });
+    writeFileSync(vendored, serialize(flipped));
+    const drift = run("--check");
+    assert.equal(drift.status, 1, drift.stderr);
+    assert.match(drift.stderr, /differs from HEAD in 1 place\(s\)/);
+    assert.ok(
+      drift.stderr.includes(
+        `ErrorKind.A (vendored emitted=false emitter=null; HEAD has emitted=true emitter=${CHECK_RS}:4)`,
+      ),
+      drift.stderr,
+    );
+  });
+});
+
+test("declare_rules CLI: the emitter is the first site in path, then line, order whichever clause found it", () => {
+  const REPORT_RS = "crates/cobre-io/src/report.rs";
+  const LATER_RS = "crates/cobre-io/src/validation/semantic.rs";
+  const files = {
+    ...fixture(),
+    [REPORT_RS]: rust`
+use crate::validation::rules;
+
+pub fn rule() -> ValidationRule {
+    rules::ROW_D
+}
+`,
+    [CHECK_RS]: rust`
+use super::{ErrorKind, rules};
+
+pub(crate) fn check(ctx: &mut ValidationContext) {
+    ctx.push(ErrorKind::B, "b");
+    ctx.emit(&rules::ROW_A, "a");
+    ctx.push(ErrorKind::A, "a");
+    ctx.emit(&rules::ROW_B, "b");
+    ctx.push(ErrorKind::C, "c");
+    ctx.push(ErrorKind::D, "d");
+}
+`,
+    [LATER_RS]: rust`
+pub(crate) fn later(ctx: &mut ValidationContext) {
+    ctx.emit(&super::rules::ROW_C, "c");
+}
+`,
+  };
+  assert.deepEqual(
+    vendor(files),
+    expected({
+      A: `${CHECK_RS}:5`,
+      B: `${CHECK_RS}:4`,
+      C: `${CHECK_RS}:8`,
+      D: `${REPORT_RS}:4`,
+    }),
+  );
 });

@@ -17,7 +17,7 @@ SDDP can terminate based on multiple criteria. Each rule is evaluated independen
 
 - `"any"`: Stop when **any** rule triggers (OR logic)
 
-- `"all"`: Stop when **all** rules trigger (AND logic)
+- `"all"`: Stop when all rules other than the iteration limits trigger at the same iteration (AND logic); the largest iteration limit caps the run
 
 ## 2 Iteration Limit
 
@@ -138,7 +138,8 @@ A shutdown request ends the training loop at an iteration boundary, with the lat
 completed iteration's policy persisted.
 
 **Guarantee**: The policy at the moment of termination is usable. The loop reads a request
-at the start of an iteration and completes that iteration before it stops, so the cuts
+once per iteration, after its lower bound and before its stop decision, and
+completes that iteration before it stops, so the cuts
 and bounds of every iteration that ran are recorded and no partial iteration is left
 behind. The graceful-shutdown guarantee is a special case of the broader
 provenance commitment described in [Determinism & Provenance §5](/math/determinism-guarantees#5-provenance):
@@ -168,10 +169,10 @@ First rule to trigger causes termination.
 **Mode: `"all"`**:
 
 $$
-\text{STOP} \iff \text{Rule}_1 \land \text{Rule}_2 \land \ldots
+\text{STOP} \iff (\text{Rule}_1 \land \text{Rule}_2 \land \ldots) \lor k \geq k_{max}
 $$
 
-All rules must trigger simultaneously.
+The conjunction runs over the rules other than the iteration limits and is false when there are none; $k_{max}$ is the largest iteration limit, and a smaller iteration limit has no effect.
 
 Graceful shutdown is independent of the `stopping_mode` combination logic — it terminates
 the training loop regardless of whether any or all of the configured rules have triggered.

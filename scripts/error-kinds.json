@@ -1,6 +1,6 @@
 {
   "generatedBy": "scripts/refresh-error-kinds.mjs",
-  "ref": "v0.17.0",
+  "ref": "v0.18.0",
   "enums": [
     {
       "name": "ErrorKind",
@@ -44,7 +44,7 @@
         {
           "name": "DimensionMismatch",
           "emitted": true,
-          "emitter": "crates/cobre-io/src/validation/dimensional.rs:73"
+          "emitter": "crates/cobre-io/src/validation/dimensional.rs:62"
         },
         {
           "name": "BusinessRuleViolation",
@@ -53,18 +53,18 @@
         },
         {
           "name": "WarmStartIncompatible",
-          "emitted": false,
-          "emitter": null
+          "emitted": true,
+          "emitter": "crates/cobre-sddp/src/validate_phases.rs:215"
         },
         {
           "name": "ResumeIncompatible",
-          "emitted": false,
-          "emitter": null
+          "emitted": true,
+          "emitter": "crates/cobre-sddp/src/validate_phases.rs:217"
         },
         {
           "name": "NotImplemented",
           "emitted": true,
-          "emitter": "crates/cobre-io/src/validation/semantic/travel_time.rs:253"
+          "emitter": "crates/cobre-io/src/validation/semantic/travel_time.rs:189"
         },
         {
           "name": "UnusedEntity",
@@ -74,7 +74,7 @@
         {
           "name": "ModelQuality",
           "emitted": true,
-          "emitter": "crates/cobre-io/src/validation/semantic/hydro.rs:382"
+          "emitter": "crates/cobre-io/src/validation/semantic/hydro.rs:381"
         },
         {
           "name": "SemanticAmbiguity",
@@ -90,27 +90,22 @@
         {
           "name": "IoError",
           "emitted": true,
-          "emitter": "crates/cobre-io/src/config/mod.rs:126"
+          "emitter": "crates/cobre-io/src/config/mod.rs:130"
         },
         {
           "name": "ParseError",
           "emitted": true,
-          "emitter": "crates/cobre-io/src/config/mod.rs:137"
+          "emitter": "crates/cobre-io/src/config/mod.rs:141"
         },
         {
           "name": "SchemaError",
           "emitted": true,
-          "emitter": "crates/cobre-io/src/config/mod.rs:131"
+          "emitter": "crates/cobre-io/src/config/mod.rs:135"
         },
         {
           "name": "ConstraintError",
           "emitted": true,
           "emitter": "crates/cobre-io/src/pipeline.rs:54"
-        },
-        {
-          "name": "PolicyIncompatible",
-          "emitted": false,
-          "emitter": null
         }
       ]
     }

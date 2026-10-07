@@ -192,7 +192,9 @@ ParallelCluster reference architecture.
 
 ## `cobre validate`
 
-Runs the layered validation pipeline and prints a diagnostic report to stdout.
+Runs the layered validation pipeline, then study construction, the policy load
+the run would apply, and the boundary reconciliation, as `cobre run` does before
+training, without solving. It prints a diagnostic report to stdout.
 
 On success, prints a single line of entity counts:
 
@@ -203,29 +205,31 @@ Valid case: 3 buses, 12 hydros, 8 thermals, 4 lines
 A warning-free case prints nothing else. When the pipeline raises warnings, a
 `Validation: 0 errors, N warnings in <dir>` summary follows the `Valid case:`
 line (with `<dir>` exactly as passed on the command line), then one `warning:`
-line per finding. When `config.json` configures a boundary policy, a
+line per finding, the policy load's included (`warning: <output dir>/<policy.path>: …`).
+When `config.json` configures a boundary policy, a
 `boundary policy priced at <date>` line and a one-line reconciliation summary
 follow.
 
 On failure, cobre prints a `Validation: N errors, 0 warnings in <dir>` summary
-followed by each error as an `error:`-prefixed line; a semantic constraint
-violation exits with code 1. An unreadable case directory is reported as an I/O
-error on stderr, without the summary. See [Exit Codes](#exit-codes) for the full
-mapping.
+followed by each error as an `error:`-prefixed line, and exits as
+[Exit Codes](#exit-codes) gives: `1` for a refused case or policy,
+`2` for a policy checkpoint the operating system refuses to read or a stochastic input it cannot read,
+which also prints the I/O error on stderr. A case directory that does not
+exist is reported on stderr without the summary.
 
 When `config.json` configures `policy.boundary`, `cobre validate` loads and
 reconciles that boundary policy, including the
 [version gate](/running/policy-management/#version-gate). A refusal exits `1`,
 as does a boundary checkpoint that cannot be read. Under `--json`, a refusal
-reports phase `BoundaryReconciliationError` and an unreadable checkpoint prints
-no JSON object; see
+and an unreadable checkpoint both report phase `BoundaryReconciliationError`;
+see
 [Policy-load errors](/reference/error-codes/#policy-load-errors).
 
-`cobre validate` does not read `policy.path`, so a warm-start, resume, or
-simulation-only checkpoint is checked only when `cobre run` loads it. For a
-`policy.path` checkpoint that `cobre run` refuses, `cobre validate` reports the
-case valid and exits `0`, although the hint printed with the refusal suggests running
-`cobre validate`.
+When the run would load a policy (`policy.mode` `warm_start` or `resume` with
+training enabled, or training disabled with simulation enabled), `cobre validate`
+reads it from `<output dir>/<policy.path>` and applies the same checks: a refusal
+exits `1` (phase `WarmStartIncompatible` or `ResumeIncompatible`), and so does a
+case whose policy does not exist yet. `--output` names the output directory.
 
 ### Arguments
 
@@ -237,7 +241,8 @@ case valid and exits `0`, although the hint printed with the refusal suggests ru
 
 | Option   | Type | Default | Description                                                                                                                                                                                                                                                                                                   |
 | -------- | ---- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `--json` | flag | off     | Replace the human-readable report with exactly one JSON object on stdout. On success it carries the boundary-policy reconciliation outcome (`configured`, `boundary_date`, `report` — the last two `null` when no boundary policy is configured); on failure it carries an `error` object with the failing `phase` and `message`. Exit codes are unchanged. |
+| `--json` | flag | off     | Replace the human-readable report with exactly one JSON object on stdout. On success it carries the boundary-policy reconciliation outcome (`configured`, `boundary_date`, `report` — the last two `null` when no boundary policy is configured) plus `policy_load` (`mode`, `unused_stored_bases`) when a policy load is configured; on failure it carries an `error` object with the failing `phase` and `message`. Exit codes are unchanged. |
+| `--output <DIR>` | Path | `<CASE_DIR>/output/` | The output directory: the policy load reads `<DIR>/<policy.path>`, and `policy.path` is checked against it. |
 
 ### Examples
 
@@ -288,10 +293,10 @@ support, host architecture, and build profile.
 
 ### Output lines
 
-{/* capture: cobre version | cobre   v0.17.0 | binary: cobre-cli sha256 23916b46 | case: none */}
+{/* capture: cobre version | cobre   v0.18.0 | binary: cobre-cli sha256 93cb7307 | case: none */}
 
 ```
-cobre   v0.17.0
+cobre   v0.18.0
 solver: HiGHS 1.13.1
 comm:   local
 zstd:   enabled
@@ -323,10 +328,11 @@ None.
 | Code | Category   | Cause                                                                                                                |
 | ---- | ---------- | -------------------------------------------------------------------------------------------------------------------- |
 | `0`  | Success    | The command completed without errors                                                                                 |
-| `1`  | Validation | A parse, schema, or semantic-constraint error in any case file, `config.json` included, collected into the validation report, or a refused or unreadable `policy.boundary` checkpoint (both subcommands). `cobre run` also exits `1` for every other non-I/O load failure, and when a policy load is refused (another cobre version, or a stored basis or state that does not fit the study) |
-| `2`  | I/O or usage | A case directory that does not exist (both subcommands); a disk-full or other filesystem failure while writing the policy checkpoint or the training or simulation results after training starts, except the write of one simulation scenario's results, which is logged and leaves the exit code `0` (`cobre run`); or a command-line usage error — an unknown subcommand or option, a missing subcommand or argument, a conflicting argument, or an invalid option value — reported by the argument parser before any file is read |
-| `3`  | Solver     | LP infeasible subproblem or numerical solver failure during simulation, or a solver backend that cannot be initialized |
-| `4`  | Internal   | Communication failure, unexpected channel closure, or other software/environment problem. Under `cobre run`, exit `4` also covers a missing `policy.path` directory or a checkpoint that cannot be read, and a stochastic-preparation failure that is a stochastic-model error (`cobre validate` reports it as `StochasticPreparationError`, exit `1`, with `stochastic error:` after the file label). `cobre validate` also maps the rare load error that escapes the validation report — a scenario-assembly schema error (an AR-coefficient count mismatch) — to this code, where `cobre run` exits `1`. A training iteration that fails (an infeasible stage LP, a solver failure or a communication failure) also exits `4` under `cobre run`, after its training outputs are written. |
+| `1`  | Validation | A refused case or policy under either subcommand: an error collected into the validation report; a `config.json` rule, the `policy.path` guards included; a study-setup refusal (stochastic model, solver profile, admission gate); a refused policy (another software or version, format, state, graph, cost scale); a missing policy directory or a missing or undecodable checkpoint file; a refused or unreadable `policy.boundary` checkpoint; a refusal met while training (thread count, cut-wire version) |
+| `2`  | I/O or usage | A case directory that does not exist (both subcommands); a policy checkpoint the operating system refuses to read; a stochastic input that cannot be read, such as a declared opening-tree file that is absent; a disk-full or other filesystem failure while writing the policy checkpoint or the training or simulation results after training starts, except the write of one simulation scenario's results, which is logged and leaves the exit code `0` (`cobre run`); or a command-line usage error — an unknown subcommand or option, a missing subcommand or argument, a conflicting argument, or an invalid option value — reported by the argument parser before any file is read |
+| `3`  | Solver     | An infeasible LP or a solver failure, in training or in simulation, or a solver backend that cannot be initialized |
+| `4`  | Internal   | A communication failure, an unexpected channel closure, or another internal fault; under `cobre validate` also the load error that escapes the validation report, an AR-coefficient count mismatch (`cobre run`: `1`) |
+| `5`  | Stopped    | `cobre run` only: a SIGTERM or SIGINT during training stopped the run at an iteration boundary after writing the training outputs and the checkpoint; the simulation is skipped ([Stopping Rules — Shutdown Requests](/math/stopping-rules/#shutdown-requests)) |
 
 A dangling reference (an entity ID that refers to a non-existent entity) surfaces
 as an `InvalidReference` line inside a semantic-constraint violation (exit code 1).
@@ -336,13 +342,10 @@ Error messages are printed to stderr with `error:` prefix and hint lines. See
 [Policy-load errors](/reference/error-codes/#policy-load-errors). For the cause and fix of the failures a study commonly meets, see [Troubleshooting](/running/troubleshooting/).
 
 :::note
-`cobre validate` and `cobre run` do not share one exit code for every load
-failure. Parse, schema, and semantic-constraint errors found while reading the
-case files are collected into the validation report and exit `1` under both
-subcommands. The load error that surfaces only after that report is complete —
-a scenario-assembly schema error — exits `4` under `cobre validate` but `1`
-under `cobre run`. A refusal of the fitted inflow model that arrives as a load
-error exits `1` under both subcommands. Message texts and renderings are under
+Every load failure before the solver exits with the same code under both
+subcommands, except the load error that surfaces only after the validation
+report is complete, a scenario-assembly schema error: `4` under
+`cobre validate`, `1` under `cobre run`. Message texts and renderings are under
 [`StochasticPreparationError`](/reference/error-codes/#stochasticpreparationerror).
 :::
 
