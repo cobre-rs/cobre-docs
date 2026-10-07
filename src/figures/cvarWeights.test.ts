@@ -2,8 +2,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
-  appliedTailFraction,
-  asShippedWeights,
   exampleRows,
   methodologyWeights,
   tailWeights,
@@ -59,15 +57,6 @@ test("methodology value is 30.0", () => {
   assert.ok(Math.abs(weightedValue(COSTS, mu) - 30) < TOL);
 });
 
-test("as-shipped value is 31.25 (CVaR at tail fraction 2/3)", () => {
-  const shipped = asShippedWeights(COSTS, EQUAL, 0.5, 0.5);
-  close(shipped, [0, 0.25, 0.375, 0.375], "as-shipped weights");
-  assert.ok(Math.abs(weightedValue(COSTS, shipped) - 31.25) < TOL);
-  const applied = appliedTailFraction(0.5, 0.5);
-  assert.ok(Math.abs(applied - 2 / 3) < TOL, `alpha' = ${applied}`);
-  close(shipped, tailWeights(COSTS, EQUAL, applied), "tail weights at alpha'");
-});
-
 test("tail weights fill the costliest openings up to p/alpha, whatever the input order", () => {
   close(tailWeights(COSTS, EQUAL, 0.5), [0, 0, 0.5, 0.5], "ascending input");
   close(
@@ -100,10 +89,6 @@ test("weights sum to 1", () => {
           TOL,
         `mu* ${label}`,
       );
-      assert.ok(
-        Math.abs(sum(asShippedWeights(costs, probs, alpha, lambda)) - 1) < TOL,
-        `as-shipped ${label}`,
-      );
     }
   }
 });
@@ -125,7 +110,6 @@ test("lambda = 0 gives the nominal probabilities", () => {
   for (const { costs, probs } of CASES) {
     for (const alpha of [0.05, 0.5, 1]) {
       close(methodologyWeights(costs, probs, alpha, 0), probs, "mu*");
-      close(asShippedWeights(costs, probs, alpha, 0), probs, "as-shipped");
     }
   }
 });
@@ -134,7 +118,6 @@ test("alpha = 1 gives the nominal probabilities", () => {
   for (const { costs, probs } of CASES) {
     for (const lambda of [0, 0.5, 1]) {
       close(methodologyWeights(costs, probs, 1, lambda), probs, "mu*");
-      close(asShippedWeights(costs, probs, 1, lambda), probs, "as-shipped");
     }
   }
 });
@@ -162,22 +145,6 @@ test("mu* value is (1 - lambda) E[Z] + lambda CVaR_alpha[Z]", () => {
       assert.ok(
         Math.abs(value - expected) < 1e-9,
         `alpha=${alpha} lambda=${lambda}: ${value} vs ${expected}`,
-      );
-    }
-  }
-});
-
-test("as-shipped value is the CVaR at the applied tail fraction", () => {
-  for (const { costs, probs } of CASES) {
-    for (const { alpha, lambda } of PARAMS) {
-      const applied = appliedTailFraction(alpha, lambda);
-      const value = weightedValue(
-        costs,
-        asShippedWeights(costs, probs, alpha, lambda),
-      );
-      assert.ok(
-        Math.abs(value - cvarMinimisation(costs, probs, applied)) < 1e-9,
-        `alpha=${alpha} lambda=${lambda}`,
       );
     }
   }

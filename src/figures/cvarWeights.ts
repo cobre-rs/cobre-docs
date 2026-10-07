@@ -12,14 +12,8 @@
 //                        keeps the floor (1 - lambda) p_i, so mu*_i lies in
 //                        [(1 - lambda) p_i, (1 - lambda) p_i + lambda p_i / alpha]
 //                        and sum_i mu*_i Z_i = (1 - lambda) E[Z] + lambda CVaR_alpha[Z].
-//   - asShippedWeights   the weighting at the tag: the same greedy walk with the
-//                        cap (1 - lambda) p_i + lambda p_i / alpha and no floor
-//                        (`compute_cvar_weights_into`, risk_measure.rs:272, cap at :285).
-//   - appliedTailFraction alpha' = alpha / (lambda + (1 - lambda) alpha), the tail
-//                        fraction whose CVaR has that cap, p_i / alpha'.
 // Worked example (risk-measures §7): costs 10, 20, 30, 40, p = 0.25 each,
-// alpha = lambda = 0.5 give mu* = (0.125, 0.125, 0.375, 0.375) and value 30.0;
-// the as-shipped weights are (0, 0.25, 0.375, 0.375), value 31.25 = CVaR at 2/3.
+// alpha = lambda = 0.5 give mu* = (0.125, 0.125, 0.375, 0.375) and value 30.0.
 
 export interface WeightRow {
   cost: number;
@@ -29,30 +23,23 @@ export interface WeightRow {
 }
 
 /**
- * Greedy fill in descending cost order up to `caps`, the last opening touched
- * taking the remainder; ties keep input order. Returns weights in input order.
+ * q*: the CVaR_alpha tail weights, a greedy fill in descending cost order up to
+ * p_i / alpha, the last opening touched taking the remainder; ties keep input
+ * order. Returns weights in input order.
  */
-function greedyFill(costs: number[], caps: number[]): number[] {
-  const order = costs.map((_, i) => i).sort((i, j) => costs[j] - costs[i]);
-  const weights = costs.map(() => 0);
-  let remaining = 1;
-  for (const i of order) {
-    weights[i] = Math.min(caps[i], remaining);
-    remaining -= weights[i];
-  }
-  return weights;
-}
-
-/** q*: the CVaR_alpha tail weights, the greedy fill up to p_i / alpha. */
 export function tailWeights(
   costs: number[],
   probs: number[],
   alpha: number,
 ): number[] {
-  return greedyFill(
-    costs,
-    probs.map((p) => p / alpha),
-  );
+  const order = costs.map((_, i) => i).sort((i, j) => costs[j] - costs[i]);
+  const weights = costs.map(() => 0);
+  let remaining = 1;
+  for (const i of order) {
+    weights[i] = Math.min(probs[i] / alpha, remaining);
+    remaining -= weights[i];
+  }
+  return weights;
 }
 
 /** mu* = (1 - lambda) p + lambda q*: the risk-adjusted weights with the floor. */
@@ -64,24 +51,6 @@ export function methodologyWeights(
 ): number[] {
   const q = tailWeights(costs, probs, alpha);
   return probs.map((p, i) => (1 - lambda) * p + lambda * q[i]);
-}
-
-/** The weights at the tag: greedy fill up to (1 - lambda) p + lambda p / alpha, no floor. */
-export function asShippedWeights(
-  costs: number[],
-  probs: number[],
-  alpha: number,
-  lambda: number,
-): number[] {
-  return greedyFill(
-    costs,
-    probs.map((p) => (1 - lambda) * p + (lambda * p) / alpha),
-  );
-}
-
-/** alpha' = alpha / (lambda + (1 - lambda) alpha), so that p / alpha' is the as-shipped cap. */
-export function appliedTailFraction(alpha: number, lambda: number): number {
-  return alpha / (lambda + (1 - lambda) * alpha);
 }
 
 /** The value a weight vector assigns to the opening costs: the sum of weight times cost. */
