@@ -102,11 +102,10 @@ pull requests to `main`.
 
 ## License
 
-Dual-licensed:
+Copyright 2026 Rogerio J. M. Alves and Cobre Contributors. Licensed under the
+[Apache License 2.0](LICENSE), the license of the Cobre codebase. It covers the whole
+repository: the documentation content (prose, equations, figures) and the code (build
+scripts, Astro components, configuration).
 
-- **Code** (build scripts, Astro components, configuration) — [Apache-2.0](LICENSE).
-- **Content** (prose, equations, figures) — [CC-BY-4.0](LICENSE-docs).
-
-See [`LICENSE-docs`](LICENSE-docs) for how the two compose, and
-[`public/THIRD-PARTY-NOTICES.txt`](public/THIRD-PARTY-NOTICES.txt) for the bundled
+See [`public/THIRD-PARTY-NOTICES.txt`](public/THIRD-PARTY-NOTICES.txt) for the bundled
 third-party dependencies.
