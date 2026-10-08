@@ -5,12 +5,6 @@ diagram uses**, and the conventions that keep them visually coherent. It covers
 diagrams embedded in chapters under `src/content/docs/` and the compute components
 under `src/components/` and `src/figures/`.
 
-This is separate from the _tutorial-layer_ visualizations in
-[`dev-strategy.md`](dev-strategy.md) §5 (Chart.js, GSAP hero, interactive
-widgets) — those are user-facing onboarding artifacts for
-`methodology.cobre-rs.dev` and `cobre-rs.dev`. This guide is the rulebook
-for **every diagram you author inside a spec file**.
-
 > **Paths in this guide are repo-root-relative**: `src/content/docs/`,
 > `src/components/`, `src/styles/diagrams.css`, and `astro.config.mjs`.
 
@@ -32,8 +26,9 @@ every computed math plot.
 
 Observable Plot covers the math-plot role (it _computes_ the curve from tested
 code — d2 cannot). D2 covers everything else. There are no other diagram tools
-in this pipeline; **Mermaid was retired** (2026-07, §8) — its flowcharts are now
-d2, so the whole diagram surface renders build-time with one themable keystone.
+on the site, and **no Mermaid**: flowcharts are d2, so every diagram renders at
+build time with one themable keystone. (Mermaid stays fine in the `cobre`
+READMEs and `ARCHITECTURE.md`, which GitHub renders.)
 
 ### 1.2 Decision tree
 
@@ -258,7 +253,7 @@ survives the keystone's `!important`. **Do not** name a node the same as a class
 
 **Never introduce ad-hoc hex colors** beyond this semantic vocabulary in a D2
 fence. If a diagram genuinely needs a new semantic colour, add it to the table
-above and note it in §8 (migration log).
+above.
 
 ### 4.3 Engine: ELK, never TALA
 
@@ -268,9 +263,9 @@ it. See §2 for the TALA watermark rationale.
 ### 4.4 Reference implementations
 
 - `src/content/docs/math/lp-layout-and-scaling.md` — inline ` ```d2 ` block (LP
-  column-layout schematic, d24)
+  column-layout schematic)
 - `src/content/docs/math/par-inflow-model.mdx` — inline ` ```d2 ` block (PAR
-  stored-vs-computed schematic, d23 equivalent)
+  stored-vs-computed schematic)
 - `src/content/docs/math/system-elements.mdx` — inline ` ```d2 ` block
   (power-system one-line; exercises the semantic node-colour vocabulary in §4.2)
 - `src/content/docs/math/sddp-algorithm.mdx` — inline ` ```d2 ` block (the SDDP
@@ -362,8 +357,8 @@ Reach for these before hand-shrinking a diagram:
 ## 5. D2 — flowcharts, loops, and state machines
 
 **Use when** the diagram is a flowchart, decision tree, state machine, loop, or
-sequential pipeline. (These were Mermaid until 2026-07; d2 does all of them and
-renders build-time — one keystone, zero client JS.) The palette and semantic
+sequential pipeline. d2 draws all of them at build time — one keystone, zero
+client JS. The palette and semantic
 colours are §4.2; this section is the flowchart-specific idiom.
 
 d2 draws directed graphs natively:
@@ -425,27 +420,7 @@ All four must pass before the PR is opened.
 
 ---
 
-## 8. Migration log
-
-Short record of decisions worth preserving across sessions.
-
-| Date       | Decision                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        | Source               |
-| ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------- |
-| 2026-04-22 | Original pipeline established with Python-based math plots, inline mermaid, and a render-locally policy for committed SVG assets                                                                                                                                                                                                                                                                                                                                                                                                                                                                | `55bb979`            |
-| 2026-04-22 | Math plots (value function, convergence bounds, CVaR risk measure, PAR stored vs computed) authored in the original pipeline                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | `55bb979`, `d0a6d4c` |
-| 2026-04-22 | Flowchart batch authored as inline mermaid: 7 diagrams across sddp-algorithm, work-distribution, solver-abstraction, cli-and-lifecycle, etc.                                                                                                                                                                                                                                                                                                                                                                                                                                                    | `e9c3699`            |
-| 2026-04-22 | Consistency rule established for HPC topology family (all diagrams in a family share one tool)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  | User directive       |
-| 2026-06-xx | Pipeline overhauled for Starlight (E4): math plots → tested-compute Observable Plot islands; composed-block schematics → inline D2 (ELK); spatial diagrams → inline D2; browser-mermaid → astro-mermaid (autoTheme)                                                                                                                                                                                                                                                                                                                                                                             | E4 epic              |
-| 2026-06-xx | ELK-only mandate established (E10 ticket-032): proprietary TALA layout engine watermarks output without a licence; `check:d2` guard enforces ELK                                                                                                                                                                                                                                                                                                                                                                                                                                                | ticket-032           |
-| 2026-06-25 | Onboarding-figures guidance added (§1.4): conceptual/overview chapters pair the key equation with a diagram/plot, reusing the tested-compute islands as teasers (model: SDDP.jl `first_steps`)                                                                                                                                                                                                                                                                                                                                                                                                  | Part-1 docs review   |
-| 2026-07-06 | **Consolidated to two tools.** Mermaid retired (`astro-mermaid` removed); its 4 flowcharts converted to d2 — d2 is now the single diagram tool, Observable Plot the single math-plot tool. `.d2-svg` keystone re-keyed from hardcoded hex to brand tokens (copper linework on warm-neutral cards); softened copper, lightened decision diamonds, per-node semantic colours (§4.2). Content measure widened to 56rem + table column floor (`layout.css`).                                                                                                                                        | User directive       |
-| 2026-07-06 | **ASCII diagrams → d2 + readability net.** Converted 4 remaining ASCII/box-drawing diagrams to d2 (`scenario-generation` PAR pipeline + scenario trees, `performance` selection pipeline, `policy-management` coupling flow). Added the `.d2-fig` scroll wrapper (`rehypeWrapD2` in `astro.config.mjs` + CSS) so wide diagrams render native-size and scroll instead of shrinking to illegible text (§4.5); re-laid the over-wide `system-elements` one-line vertically (2166px→717px).                                                                                                         | User directive       |
-| 2026-07-06 | **Native diagram sizing + shape vocabulary (§4.6).** Every d2 diagram now renders at its native px size (small ones no longer stretch to fill/oversize; wide ones scroll) via `sizeD2Figures` in `Footer.astro` — pure CSS can't read the viewBox through astro-d2's nested-svg wrapper. Documented the shape vocabulary (rectangle / oval / diamond / cylinder / parallelogram / circle / container) and shrank the oversized scenario-tree nodes with a shared small-circle class.                                                                                                            | User directive       |
-| 2026-07-06 | **Redesigned two overflowing/oversized diagrams + ELK layout gotchas (§4.7).** Rebuilt the SDDP forward/backward diagram (was a full 1→3→9 tree mislabeled "M=2 paths", 1819px) as two stacked panels showing the sparse-forward / exhaustive-backward asymmetry (603px); rebuilt the LP column/row layout (giant 7-wide dispatch row, 1604px) as compact vertical column-blocks + grid-stacked row families (734px). Recorded the layout gotchas that caused both: root-level `classes`, `grid-columns: 1` to stack disconnected nodes, edge-connect sibling containers, titles set min width. | User directive       |
-
----
-
-## 9. Anti-patterns
+## 8. Anti-patterns
 
 - **Don't** hand-author SVGs for methodology diagrams. Without a source of
   truth, they bitrot silently and nobody can review a small change.

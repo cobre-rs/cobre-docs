@@ -6,7 +6,8 @@
 > guidelines are the **source of truth** — when they diverge, the guidelines win.
 >
 > **Consult this (and the authority) before ANY theming change.** Do **not** infer
-> brand colours from the `spike/` palette — see [Why this doc exists](#why-this-doc-exists).
+> brand colours from the diagram palette (`--dgm-*`): its `--dgm-hydro` is Flow Blue
+> for hydro/water marks only, never the UI accent.
 
 ## Palette (from `BRAND-GUIDELINES.md` §2.2)
 
@@ -32,7 +33,7 @@
 **Neutrals (light):** `#FAFAF8` (bg) · Surface `#F0EDE8` · Border `#D4D0CA` · Muted
 `#6B7280` · Body `#374151` · Dark `#1A2028`.
 
-## How the docs site applies it (decisions locked 2026-06-24)
+## How the docs site applies it
 
 - **Chrome accent → Copper.** `--sl-color-accent*` (active sidebar item, header,
   focus rings, hover, buttons) = the copper ramp. This is the dominant identity.
@@ -43,10 +44,12 @@
   `#FAFAF8` (light), with the brand body/border/muted greys. WCAG AA on body text.
 - **Semantic asides:** `note`/info → Flow Blue · `tip` → Patina · `caution` → Spark
   Amber · `danger` → Signal Red.
-- **Diagram palette (`--dgm-*`):** copper (`storage`), patina (`runtime`), copper-light
-  (`curve`). **Flow Blue is reserved for hydro/water** (`--dgm-hydro`); non-hydro
-  "accent" marks (e.g. Benders tangents) use a warm tone. (The `.d2-svg` keystone uses
-  d2's own hardcoded palette — a separate system, do not confuse with `--dgm`.)
+- **Diagram palette (`--dgm-*`):** copper (`storage`), patina (`runtime`, `accent`),
+  copper-light (`curve`). **Flow Blue is reserved for hydro/water** (`--dgm-hydro`);
+  non-hydro accent marks (e.g. Benders tangents) use Patina. The `.d2-svg` keystone
+  re-keys d2's palette classes onto these tokens and the warm neutrals, so d2 diagrams
+  and Observable Plot figures share one palette (see
+  [`diagram-authoring.md`](diagram-authoring.md) §4.2).
 - **Logo + favicon:** the **icon mark beside the "Cobre Documentation" title**,
   **theme-adaptive** via Starlight `logo:{dark,light}` — `cobre-icon.svg` (Midnight
   tile) on dark, `cobre-icon-light.svg` (light brand-surface tile; a **derived**
@@ -63,28 +66,18 @@
 2. **Dark-first.** Dark is the default; light is the alternative.
 3. **Technical, not trendy.** No decorative gradients, no rounded-everything.
 
-## Typography (§2.3 — already wired)
+## Typography (§2.3)
 
 IBM Plex Sans (body/headings) · JetBrains Mono (code), self-hosted via Fontsource
 (SIL OFL). See `src/styles/fonts.css`.
 
 ## Where it's implemented
 
-| File                           | Holds                                                                |
-| ------------------------------ | -------------------------------------------------------------------- |
-| `src/styles/brand.css`         | `--sl-color-accent*` copper ramp + the flow-blue prose-link override |
-| `src/styles/neutrals.css`      | the warm-neutral Starlight greyscale/bg/text override                |
-| `src/styles/palette.css`       | `--dgm-*` diagram palette (copper/patina + `--dgm-hydro`)            |
-| `src/styles/fonts.css`         | brand fonts (`--sl-font` / `--sl-font-mono`)                         |
-| `astro.config.mjs`             | `logo`, favicon, `customCss` order                                   |
-
-## Why this doc exists
-
-In the Starlight migration E2, the chrome accent was derived from the `spike/`
-palette's `--dgm-accent: #4a90b8` (flow blue), turning the **entire UI blue** —
-directly contradicting "copper primary / differentiate from the sea of blue."
-**Root cause:** the brand guidelines live in the **main `cobre` repo** and were
-never referenced from `cobre-docs`, so the work anchored on the spike's exploratory
-colour _labels_ instead of the authority. Corrected in **ticket-011b**.
-**Rule:** consult this doc + the authority before theming; never treat the spike
-palette as the brand.
+| File                      | Holds                                                                |
+| ------------------------- | -------------------------------------------------------------------- |
+| `src/styles/brand.css`    | `--sl-color-accent*` copper ramp + the flow-blue prose-link override |
+| `src/styles/neutrals.css` | the warm-neutral Starlight greyscale/bg/text override                |
+| `src/styles/palette.css`  | `--dgm-*` diagram palette (copper/patina + `--dgm-hydro`)            |
+| `src/styles/diagrams.css` | `.d2-svg` keystone: d2 palette classes → the brand tokens            |
+| `src/styles/fonts.css`    | brand fonts (`--sl-font` / `--sl-font-mono`)                         |
+| `astro.config.mjs`        | `logo`, favicon, `customCss` order                                   |

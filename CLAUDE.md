@@ -21,8 +21,8 @@ lives as per-crate `README.md` files + `ARCHITECTURE.md` in the `cobre` repo.
 - **Source**: all chapters live under `src/content/docs/`; the sidebar/TOC is
   configured in `astro.config.mjs` (Starlight `sidebar`), not a flat text
   table-of-contents file.
-- **Audience & domain**: the unified site serves `docs.cobre-rs.dev` (see
-  `docs/design/dev-strategy.md`); `methodology.cobre-rs.dev` 301-redirects in.
+- **Audience & domain**: the unified site serves `docs.cobre-rs.dev`;
+  `methodology.cobre-rs.dev` 301-redirects in.
 
 The actual Cobre code at the main org repo is the **ground truth**. When specs
 diverge from the code, the spec must be updated — not the other way around.
@@ -76,8 +76,8 @@ is the freeze runbook.
   interface.
 - **Brand colours**: the site identity is **Copper** (`#B87333`), not blue — see
   [`docs/design/brand.md`](docs/design/brand.md) before any theming. **Never infer
-  brand colour from the `spike/` palette** (its `--dgm-accent` is flow-blue for
-  diagram/hydro use, not the UI accent).
+  brand colour from the diagram palette** (`--dgm-*` in `src/styles/palette.css`;
+  its `--dgm-hydro` is Flow Blue for hydro/water marks only, not the UI accent).
 - **Current-state voice, both layers.** Every page in both layers states what
   cobre does now, with no change narration (no "now", "no longer", "previously",
   "used to", "formerly", "fixed in", "was broken", "BREAKING", "new in",
@@ -510,7 +510,6 @@ tree). Refresh on each cobre release; the freshness gate stays in `cobre`.
 | Cobre code (ground truth) | `https://github.com/cobre-rs/cobre/`                           | Actual implementation                                       |
 | Unified docs site         | `https://docs.cobre-rs.dev/`                                   | This site (methodology + software layer)                    |
 | Crate READMEs + ARCHITECTURE | `https://github.com/cobre-rs/cobre/` (`crates/*/README.md`, `ARCHITECTURE.md`) | Developer/crate-internal surface (not on the site) |
-| Dev strategy              | `docs/design/dev-strategy.md`                                  | Documentation & public-presence strategy                    |
 | CHANGELOG                 | `https://github.com/cobre-rs/cobre/CHANGELOG.md`               | Per-release feature list (sync source)                      |
 | Diagram authoring guide   | [`docs/design/diagram-authoring.md`](docs/design/diagram-authoring.md) | Tool selection + design system for diagrams        |
 | Brand & colour            | [`docs/design/brand.md`](docs/design/brand.md)                 | Site colour/identity — **Copper** primary, Flow Blue for links/hydro only |
