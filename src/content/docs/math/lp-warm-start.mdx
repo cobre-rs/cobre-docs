@@ -53,16 +53,20 @@ one captured basis — the partition of variables and constraints into basic and
 non-basic — for each trial point at each node.
 
 The forward and backward passes of an iteration hand bases to one another
-through the store. A forward solve at a node starts from its trial point's slot
-when the slot holds a basis, and stores its own optimal basis there. The
-backward pass runs after the forward pass of the same iteration; when it solves
-that node's openings from the same trial point's incoming state, it seeds the
-first-solved opening from the slot, which then holds the forward capture, and
-stores that opening's optimal basis in its place. The next iteration's forward
-solve at the node starts from that backward capture. One backward scheduling
-option reads the forward capture without storing its own; under an enumerated
-forward pass the backward pass uses no stored basis; and while dynamic cut
-selection is active no solve uses the store (see the implementation notes).
+through the store. A forward solve at a node stores its optimal basis in its
+trial point's slot. The backward pass runs after the forward pass of the same
+iteration; when it solves that node's openings from the same trial point's
+incoming state, it seeds the first-solved opening from the slot, which then
+holds the forward capture, and stores that opening's optimal basis in its place.
+Whether a forward solve also starts from the slot depends on the solver backend:
+under the HiGHS backend's default settings only backward solves start from a
+stored basis, and forward and simulation solves start cold; the CLP backend
+starts every solve from the slot when it holds a basis, so the next iteration's
+forward solve at the node starts from that backward capture. One backward
+scheduling option reads the forward capture without storing its own; under an
+enumerated forward pass the backward pass uses no stored basis; and while the
+dynamic method of cut selection is active no solve uses the store (see the
+implementation notes).
 
 ```d2
 shape: sequence_diagram
@@ -70,11 +74,11 @@ fwd: Forward pass
 slot: Stored basis\n(trial point, node)
 bwd: Backward pass
 
-slot -> fwd: seeds the solve
+slot -> fwd: can seed the solve
 fwd -> slot: stores its basis
 slot -> bwd: seeds the first-solved opening
 bwd -> slot: stores that opening's basis
-slot -> fwd: seeds the next iteration's solve
+slot -> fwd: can seed the next iteration's solve
 ```
 
 Within each chain of openings solved in sequence, the store is read at most
@@ -89,10 +93,13 @@ opening's LP yields a valid cut;
 [Determinism & Provenance §3](/math/determinism-guarantees#3-methodology-mechanisms)
 sets out how the fixed order keeps the run reproducible.
 
-A warm-start or resume run seeds the store from each saved basis that fits its
-stage LP, so that its first iteration also warm-starts at those nodes, through
-the reconstruction of §4;
-a node whose saved basis does not fit starts its first iteration cold.
+A warm-start or resume run seeds the store from the saved bases, one per trial
+point at each node, so that its first iteration also warm-starts at those
+nodes, through the reconstruction of §4. A resume run seeds each trial point
+from its own saved basis and leaves a trial point without one cold; a warm-start
+run seeds a trial point without its own saved basis from the node's
+lowest-scenario saved basis. A saved basis that does not fit its stage LP is
+left out, and a node left with none starts its first iteration cold.
 
 ## 3. Cut-Set Changes
 
