@@ -445,7 +445,8 @@ When **updating the generic-constraint `hydro_inflow` term**
 (`crates/cobre-io/src/constraints/generic.rs`) and `resolve_hydro_inflow`
 (`crates/cobre-sddp/src/lp/builder/generic_constraints.rs`) resolves it to a
 **rate** identity (m³/s), not the `−τ`-weighted storage-balance row: the plant's
-local `z_inflow` column, inflow diverted into the plant, upstream releases
+local `z_inflow` column, its inflow non-negativity slack under the truncation
+methods only (`push_local_inflow_rate`), inflow diverted into the plant, upstream releases
 weighted by the share the downstream balance row credits to the block, and
 maturing transit water. Each upstream PreFilling plant whose short-circuit
 targets this plant adds its local inflow, diverted inflow and upstream releases
