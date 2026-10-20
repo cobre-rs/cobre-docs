@@ -546,8 +546,16 @@ template is built — and every rank resolves the same profile from the broadcas
 
 - `presolve` affects only a genuinely cold solve — a warm-started solve
   skips presolve regardless of the setting.
-- `use_warm_start` is a **diagnostic** override, not an intended production
-  setting: setting it to `false` forces every solve in the phase cold.
+- `use_warm_start` chooses whether a phase's HiGHS solves start from the stored
+  basis. The built-in profiles set it to `true` for `training.solver.backward` and
+  to `false` for `training.solver.forward` and `simulation.solver`. Under `false`,
+  HiGHS ignores the stored basis and solves cold, with presolve (on in every
+  built-in profile). Set `"use_warm_start": true` in `training.solver.forward` or
+  `simulation.solver` to warm-start that phase. A cold solve can stop at a
+  different, equally optimal vertex than a warm-started one: the same objective
+  value, possibly different duals. HiGHS retry escalation keeps the phase's
+  `use_warm_start` at every retry level. The CLP backend has no such setting:
+  every phase starts from the stored basis when one exists.
 - `dual_edge_weight: "steepest_edge"` is a **request, not a guarantee** —
   HiGHS silently falls back to Devex pricing once the dual steepest-edge
   weight log-error exceeds `steepest_edge_devex_fallback_threshold`.
@@ -882,9 +890,11 @@ Example — load an upstream study's policy as the terminal boundary:
 }
 ```
 
-Running `cobre validate --json` on a case that configures a boundary emits the
-selected date and the per-family reconciliation report as one object — the
-success shape carries `configured`, `boundary_date`, and `report`:
+Running `cobre validate --json` on a case that configures a boundary and trains
+emits the selected date and the per-family reconciliation report as one object —
+the success shape carries `configured`, `boundary_date`, and `report`. The boundary
+is reconciled only when the run trains, so a case with training disabled reports
+`configured: false`:
 
 ```json
 {
