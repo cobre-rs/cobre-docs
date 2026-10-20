@@ -107,8 +107,8 @@ For domain terms, see [Glossary](/reference/glossary).
   _Cited in [PAR(p) Inflow Model](/math/par-inflow-model) §7._
 
 - **Larroyd, P.V., Pedrini, R., Beltran, F., Teixeira, G., Finardi, E.C. & Picarelli, L.B.** (2022). Dealing with Negative Inflows in the Long-Term Hydrothermal Scheduling Problem. _Energies_, 15(3), 1115. [doi:10.3390/en15031115](https://doi.org/10.3390/en15031115)
-  Inflow non-negativity treatment for PAR(p) models in hydrothermal dispatch — the reference design that motivates the clamp-plus-slack formulation.
-  _Cited in [Inflow Non-Negativity Solution Methods](/math/inflow-nonnegativity) §8._
+  Inflow non-negativity treatment for PAR(p) models in hydrothermal dispatch. Source of the truncation formulation: the realized inflow and the autoregressive state keep the raw, possibly negative PAR value, and a separate correction bounded by the truncation amount lifts the inflow the water balance receives to zero. Its §2.5 states the method's limitation: the correction depends on the trial state, so the lower bound is not guaranteed to stay below the upper bound.
+  _Cited in [Inflow Non-Negativity Solution Methods](/math/inflow-nonnegativity) §5, §8._
 
 - **Maceira, M.E.P., Terry, L.A., Costa, F.S., Damázio, J.M. & Melo, A.C.G.** (2002). Chain of optimization models for setting the energy dispatch and spot price in the Brazilian system. In _Proceedings of the 14th Power Systems Computation Conference (PSCC)_, Seville, Spain.
   The NEWAVE / DECOMP / GEVAZP optimization chain for the Brazilian system. Source of the DECOMP-style scenario tree — a deterministic trunk with branching at the final stage — expressed as a terminal fan of sibling nodes traversed by enumerated selection.
