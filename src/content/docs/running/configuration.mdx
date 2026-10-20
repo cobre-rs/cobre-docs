@@ -727,14 +727,24 @@ Controls physical modeling options.
 | -------- | ------ | ----------- | ------------------------------------------------------------------------------- |
 | `method` | string | `"penalty"` | One of `"none"`, `"penalty"`, `"truncation"`, or `"truncation_with_penalty"`. |
 
-- `"none"` -- no treatment; negative inflows are passed through to the LP.
-- `"penalty"` -- adds a slack variable to the LP that absorbs negative inflow
-  realisations. The slack carries a per-hydro objective cost from
-  `penalties.json::hydro.inflow_nonnegativity_cost`.
-- `"truncation"` -- clamps negative PAR model draws to zero before applying noise.
-- `"truncation_with_penalty"` -- combines both: clamps the inflow to zero and adds
-  a slack variable (`>= 0`, the same column as under `"penalty"`) penalised by `penalties.json::hydro.inflow_nonnegativity_cost`,
-  providing a smooth backstop for extreme tail realisations.
+Under every method a hydro's incremental inflow keeps the value the inflow
+model gives it, which may be negative, and the inflow lags of later stages are
+built from that value. The methods differ in the water a slack column may add
+to it in the hydro's water balance:
+
+- `"none"` -- no slack; a negative inflow can make a stage infeasible.
+- `"penalty"` -- any non-negative amount, priced at the hydro's
+  `inflow_nonnegativity_cost` times the stage hours; the study-wide default of
+  the cost is `penalties.json::hydro.inflow_nonnegativity_cost`.
+- `"truncation"` -- exactly `max(-inflow, 0)`, at no cost, so the water balance
+  receives `max(inflow, 0)`. The amount is computed at every solve from that
+  solve's inflow lags.
+- `"truncation_with_penalty"` -- any amount from 0 to `max(-inflow, 0)`, priced
+  as under `"penalty"`.
+
+Under `"truncation"` and `"truncation_with_penalty"` the lower bound can exceed
+the upper bound, and a [`gap`](#gap) stopping rule (admitted only under enumerated
+forward selection) can then report convergence that has not occurred.
 
 The four methods are defined in [Inflow Non-Negativity Solution Methods](/math/inflow-nonnegativity/).
 
