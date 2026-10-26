@@ -31,7 +31,10 @@ diverge from the code, the spec must be updated — not the other way around.
 
 ## Current State
 
-**Synced to: cobre v0.18.0 (2026-10-07).**
+**Synced to: cobre v0.18.0 (2026-10-07) on `main`.** `develop` documents
+unreleased cobre `develop` at `488e3057` (2026-10-26) and keeps the pin at
+v0.18.0 until the v0.19.0 tag exists; the flip then refreshes every vendored
+artifact and capture from the tag.
 
 The corpus is a **unified two-layer reference**: the annotation-free **math
 layer** (formulation, algorithm, worked examples) interleaved per topic with a
@@ -218,8 +221,8 @@ When **updating the LP / SDDP / cut / warm-start cluster** (`lp-formulation.md`,
 `crates/cobre-sddp/src/lp/builder/` (`build_inputs.rs`, `columns.rs`,
 `delivery_ring.rs`, `entries.rs`, `fpha_cursor.rs`, `generic_constraints.rs`,
 `hydro_state.rs`, `layout.rs`, `patch.rs`, `rows.rs`, `scaling.rs`,
-`state_box.rs`, `template.rs`); `StageGeometry` is at
-`lp/builder/layout.rs:1707`. Other owners: `lp/indexer/entity_positions.rs`,
+`state_box.rs`, `template.rs`); `StageGeometry` is in
+`lp/builder/layout.rs`. Other owners: `lp/indexer/entity_positions.rs`,
 `lp/indexer/anticipated_plants.rs`, `lp/indexer/block_row_family.rs`, the
 crate-root `block_clock.rs`, `time_value.rs` and `bucket_topology.rs`, and
 `setup/lp_build_inputs.rs`. The normative contract is cobre's
@@ -242,8 +245,9 @@ is structural, so a coefficient on a live slot may be zero.
 (`parallel` default | `chronological`); a chronological stage chains per-block
 storage, computes per-block FPHA + evaporation on each block's **average**
 storage, and (PreFilling) freezes each block's storage identity
-(`rows.rs`/`entries.rs`). `push_z_inflow_coupling` (`entries.rs`) puts `z_h` on
-each water row of the target hydro: `−ζ` on a parallel stage, `−τ_k` per block
+(`rows.rs`/`entries.rs`). `push_local_inflow_coupling` (`entries.rs`) puts `z_h`,
+and the inflow-slack column when the method has one, on each water row of the
+target hydro: `−ζ` on a parallel stage, `−τ_k` per block
 on a chronological stage. `evaporation_slot_count` (`lp/builder/layout.rs`)
 gives one stage-level evaporation slot on a parallel stage and one per block on
 a chronological stage; `StageGeometry::water_balance_row` returns the block row
@@ -251,13 +255,31 @@ on a chronological stage and the single stage row on a parallel stage. Cut
 coefficients are block-count/mode-independent, so the cuts are **portable across
 block modes and counts**: `validate_policy_load` (`policy_load.rs`) never reads
 `block_mode`. A full-FCF load (warm start, resume, simulation-only) also runs
-`build_basis_cache_from_checkpoint`, which uses a stored basis for its node
-only when `admit_stored_basis` passes (column count equals the template's, row
-count equals the template rows plus the record's own `num_cut_rows`, basic
-count equals the row count); a record that fails is left out with one
-aggregated warning (`UnusedStoredBases`), never a refusal, so a checkpoint
-loads across a changed block mode or count and the affected nodes start
-without a stored basis. Boundary injection uses no stored basis.
+`build_basis_cache_from_checkpoint` over the stored bases (one per node and
+forward-pass scenario), which uses an entry only when `admit_stored_basis`
+passes (column count equals the template's, row count equals the template rows
+plus the entry's own recorded cut-row slots `piece_row_slots`, basic count
+equals the row count) and every recorded cut-row slot translates through the
+node's pool slot map (`LoadedSlotMap`) to a loaded cut; an entry that fails is
+left out with one aggregated warning (`UnusedStoredBases`), never a refusal, so
+a checkpoint loads across a changed block mode or count and the affected nodes
+start without a stored basis. Boundary injection uses no stored basis.
+→ **Warm start per phase**: each phase's solver profile
+(`solve/solver_phase.rs`) sets `use_warm_start`. The HiGHS profiles warm-start
+the backward pass (`true`) and start forward and simulation solves cold
+(`false`); a cold HiGHS solve uses neither the offered basis nor the one the
+previous solve left (`backends/highs/interface.rs` drops the offered basis, so
+`basis_offered` stays 0), the dynamic method's inner re-solves included. A
+phase's `use_warm_start` override changes either choice and every retry level
+keeps it. CLP has no `use_warm_start`, rejects every per-phase override, and
+warm-starts every phase. The dynamic method neither reads nor writes the basis
+store; outside it, bases are captured whatever the profile. Under the HiGHS
+defaults a checkpoint's stored bases seed no training solve on a stage chain
+(the cold forward pass overwrites the slot before the backward pass reads it);
+on a branching graph a warm backward pass also starts from them at successor
+nodes the first forward path did not visit. Simulation-only uses them only with
+`simulation.solver.use_warm_start: true`. The math layer says "a phase that
+warm-starts", never a backend name.
 → **LP scaling**: Cobre applies its own offline geometric-mean row/col prescaler
 plus a configurable cost-scale factor (`modeling.cost_scale_factor`, default
 `1_000_000.0` = `DEFAULT_COST_SCALE_FACTOR` in `setup/params.rs`); the LP
@@ -311,10 +333,19 @@ Warm-start/resume still require an exact state-dimension match
 When **updating hydro production / FPHA** (`hydro-production-models.mdx`):
 
 → Computed-FPHA fit is a **3-D convex hull** of the `(volume, turbined)` cloud at
-spillage = 0 (flow axis starts at 0; **no** spillage axis; **no** synthetic
-closing point — the q=0 column anchors), capped at installed capacity, with a
-least-squares **`α` correction** and a per-plane lateral-flow secant for `γ_S`.
-Per-stage fits; run-of-river supported (`γ_V` snapped to 0). **`reference_volume`**
+spillage = 0 over `[0, turbined_fit_max_m3s]` (default `max_turbined_m3s`; flow
+axis starts at 0; **no** spillage axis; **no** synthetic closing point — the q=0
+column anchors), capped at installed capacity, with a least-squares **`α`
+correction**. Each plane's `γ_S` is the mean, over the spill = 0 grid points
+where that plane binds (within `1e-8` MW of the planes' minimum), of a
+zero-anchored least-squares slope over 101 samples of `[0, S_max]`; `S_max` is
+`spillage_fit_max_m3s`, else 2 × the mean inflow history when above 0, else
+2 × `max_turbined_m3s` (`secant.rs`). Both fit maxima are optional and must be
+finite and `> 0` (`validate_fit_maxima`, SchemaError). Planes are fit only on
+the stages that select `fpha` (`fit_computed_planes_per_stage`), so a plant may
+mix FPHA and other models across stages; on a computed plant every `fpha` entry
+is fit from geometry (`determine_source`). Run-of-river supported (`γ_V`
+snapped to 0). **`reference_volume`**
 (`volume_hm3` XOR `percentile`) is the single source of truth. A plant without
 turbine capacity (`max_turbined_m3s` ≤ `1e-9` m³/s, `Hydro::has_turbine_capacity`)
 whose FPHA source is computed, or precomputed with no hyperplane rows, resolves
@@ -396,11 +427,21 @@ Operating (Filling counts as not Operating) is rejected at case load by
 `validation/semantic/pumping.rs`).
 **Hydros are the exception**: outside its window a non-filling hydro is
 **PreFilling** — turbine/spillage/diversion pinned to 0, storage decoupled by a
-frozen identity, inflow and maturing transit water passed downstream to its
-short-circuit target. **Spillage** is frozen to 0 in
+frozen identity, inflow (with its inflow slack, which follows `z`) and maturing
+transit water passed downstream to its short-circuit target. **Spillage** is frozen to 0 in
 PreFilling only, free during Filling and Operating (`columns.rs`; the phase is
 `hydro_phase` in `lp/builder/hydro_state.rs`, over `filling_phase` in
-`crates/cobre-core/src/commissioning.rs`).
+`crates/cobre-core/src/commissioning.rs`). A dormant (PreFilling) plant keeps its
+initial storage at every dormant stage: its storage floor is not applied and its
+ceiling is never below its own `max_storage_hm3` (`storage_floor_relaxed`,
+`storage_ceiling`, `hydro_state.rs`).
+→ **Initial storage**: an `initial_conditions.json` seed outside the hydro's own
+`[min_storage_hm3, max_storage_hm3]` is refused at load (`semantic.5a.53`,
+InvalidValue), as is a filling hydro under `storage` or a non-filling one under
+`filling_storage` (`semantic.5a.54`); the seed is used as declared, never moved
+into stage 0's `hydro_bounds` storage bounds, which bound the end of that stage,
+and `cobre validate` warns when it lies outside them (`semantic.5a.55`,
+ModelQuality; `check_initial_storage_*`, `validation/semantic/hydro.rs`).
 → **Required `operational_start_date`** (ISO) on every `system/*` entity; canonical
 entity order is `(operational_start_date, id)` — rename-invariant, id-renumber
 moves LP/cut/output order (`system/builder.rs` `sort_canonical`).
@@ -445,14 +486,43 @@ When **updating the generic-constraint `hydro_inflow` term**
 (`crates/cobre-io/src/constraints/generic.rs`) and `resolve_hydro_inflow`
 (`crates/cobre-sddp/src/lp/builder/generic_constraints.rs`) resolves it to a
 **rate** identity (m³/s), not the `−τ`-weighted storage-balance row: the plant's
-local `z_inflow` column, its inflow non-negativity slack under the truncation
-methods only (`push_local_inflow_rate`), inflow diverted into the plant, upstream releases
+local `z_inflow` column, its inflow slack at `1.0` under the truncation methods
+only (`push_local_inflow_rate`), inflow diverted into the plant, upstream releases
 weighted by the share the downstream balance row credits to the block, and
 maturing transit water. Each upstream PreFilling plant whose short-circuit
-targets this plant adds its local inflow, diverted inflow and upstream releases
+targets this plant adds its local inflow (with its slack under the truncation
+methods), diverted inflow and upstream releases
 at `1.0`, and its maturing bucket at the rate `arrival_density[blk]/τ(blk)`
 (`push_maturing_bucket_rate`). The plant's own outflows,
-evaporation, withdrawal slacks, AR-lag `ψ` and pumping are excluded.
+evaporation, withdrawal slacks, the `penalty` inflow slack, AR-lag `ψ` and
+pumping are excluded.
+
+When **updating inflow non-negativity** (`inflow-nonnegativity.md`,
+`lp-formulation.md` §4/§10, `penalty-system.mdx`, the Tier 1 convexity bullet of
+`cut-management.mdx`, `stopping-rules.mdx` §5, `scenario-generation.mdx`,
+`running/configuration.mdx`, `reference/output/simulation.mdx`):
+
+→ The methods follow Larroyd et al. (2022): the raw PAR realization stays on the
+z row and in the inflow lags under every method, never clamped
+(`transform_inflow_noise`, `crates/cobre-sddp/src/stochastic/noise.rs`), and the
+correction is the inflow-slack column `σ^inf`, present under every method except
+`none` (`InflowNonNegativityMethod::truncates`/`slack_is_priced`,
+`stochastic/inflow_method.rs`). With the truncation amount
+`a^-_h = max(0, −a_h)`: `penalty`, the default
+(`InflowNonNegativityMethod`, `cobre-io/src/config/modeling.rs`), is `[0, ∞)`,
+priced; `truncation` is fixed at `[a^-, a^-]` at cost 0;
+`truncation_with_penalty` is `[0, a^-]`, priced. The price is
+`inflow_nonnegativity_cost` × stage hours (`fill_inflow_slack_columns`,
+`lp/builder/columns.rs`, template bounds `[0, 0]`); every solve patches the
+bounds from its own realization, divided by `col_scale`
+(`apply_inflow_slack_col_bounds`, `noise.rs`). The slack carries exactly z's
+water-row entries, on a PreFilling plant's short-circuit target too
+(`push_local_inflow_coupling`). Under a PAR model with lag terms (an order above
+zero or an annual component) `a^-` is not affine in the lags, so the cost-to-go
+need not be convex in them and the lower bound can exceed the upper bound; the
+gap rule compares `max(UB − LB, 0)` (`gap_triggered`,
+`convergence/stopping_rule.rs`), so it can stop with no optimality certificate
+(`inflow-nonnegativity.md` §7; §6.2 maps each method to the paper's strategy).
 
 When **updating policy reuse and its gates** (`running/policy-management.mdx`,
 `reference/error-codes.mdx`):
