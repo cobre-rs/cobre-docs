@@ -96,15 +96,17 @@ single resident LP per stage that it mutates continuously across an iteration's
 openings. Each backward work unit is a chain of one trial point's openings at a
 stage; it begins by resetting the solver's retained basis and factorization and
 reloading the stage's frozen LP template, then appends the cuts generated during
-the current iteration. Warm-starting enters at exactly one point in the chain:
+the current iteration. When the backward pass warm-starts, warm-starting enters
+at exactly one point in the chain:
 at its first-solved opening, the basis captured for that trial point's own
 `(scenario, node)` slot — one capture per trial point per node, not one shared
 by every trial point — is loaded as the starting point. The remaining openings
 in the chain warm-continue from the factorization the previous opening left in
 place, advancing along the pinned solve order, since only the noise-dependent
-bounds change from one opening to the next. See
-[LP Warm-Start](/math/lp-warm-start) for the basis-store and reconstruction
-mechanism in full.
+bounds change from one opening to the next. A phase that starts cold starts
+every solve from no basis, so its starting point is the same in every run. See
+[LP Warm-Start](/math/lp-warm-start) for the per-phase setting, the basis store
+and the reconstruction mechanism in full.
 
 Warm-starting is compatible with the guarantee, but for a more specific reason
 than "the answer does not depend on the basis". An LP's optimal _value_ is
@@ -331,7 +333,10 @@ builds from source alike, compiles it to one floating-point kernel without
 AVX2 or FMA instructions, so those builds score and select cuts identically. A
 build compiled with extra target features or for a specific target CPU can fuse
 multiply-adds there, and a build for another architecture can resolve another
-kernel; either can select different, equally valid cuts.
+kernel; either can select different, equally valid cuts. The bundled LP solver
+and convex-hull code compile without fused multiply-adds on every target, so a
+compiler whose default target has FMA changes neither a build's LP solutions nor
+its fitted production planes.
 
 **Cross-platform binary equality of output files.** Timestamps, schema-version
 fields, and file-format padding may differ across platforms and library versions.

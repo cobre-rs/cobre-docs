@@ -11,13 +11,21 @@ HiGHS backend's phase profiles set `use_warm_start` to `false` for the forward
 pass and simulation and to `true` for the backward pass, so by default forward
 and simulation solves start cold and backward solves warm-start. Under
 `use_warm_start: false` HiGHS ignores the offered basis: it is not installed,
-not validated and not counted in `basis_offered`. The retry levels 5–11, which
+not validated and not counted in `basis_offered`. A cold HiGHS solve does not
+continue from the basis the previous solve left in the solver either, so every
+solve of a cold phase starts from scratch. The retry levels 5–11, which
 restore HiGHS's default settings before applying their own, keep the phase's
 `use_warm_start`. The CLP backend has no such setting and starts a solve from
 the offered basis in every phase. Where the sections below say a forward or
 simulation solve starts from a stored basis, that applies under CLP, or under
 HiGHS when that phase's profile sets `use_warm_start: true` (see
 [Turning warm-start off](#turning-warm-start-off)).
+
+A cold solve can stop at a different optimal vertex from a warm one, with the
+same optimal value
+([Determinism & Provenance §3](/math/determinism-guarantees#3-methodology-mechanisms)),
+so a run's trial points, its cuts, its final lower bound and its simulated duals
+can differ between the two settings.
 
 ### Backward work units
 
@@ -26,10 +34,11 @@ selection is inactive; the next section covers the active case. A backward work 
 openings in sequence for one trial point at one node. Before the chain, the
 worker resets the solver's retained basis and factorization, reloads the node's
 frozen LP template, and appends the cuts that the node's cut pool has gained
-since the template was built. The chain's first-solved opening starts from the
-trial point's slot in the basis store, and its basis is the only one the chain
-stores back into that slot; the remaining openings continue from the retained
-factorization. On a branching graph, each successor node's openings form a chain
+since the template was built. When the backward phase warm-starts, the chain's
+first-solved opening starts from the trial point's slot in the basis store and
+the remaining openings continue from the retained factorization; that
+opening's basis is the only one the chain stores back into the slot, whatever
+the phase setting. On a branching graph, each successor node's openings form a chain
 of their own, because each successor loads its own LP.
 
 The default `by_scenario` scheduler solves a trial point's openings at a
@@ -49,22 +58,25 @@ slot for the node, which the next iteration's forward solve at the node is
 offered.
 The backward pass reads no stored basis and stores none: each chain's
 first-solved opening starts without a stored basis, and the rest continue from
-the retained factorization.
+the retained factorization. Under the default HiGHS profiles an enumerated run
+therefore starts no solve from the store.
 
 ### When a stored basis is reused
 
-A stored basis seeds a solve only when it was captured at the node being solved:
-each basis carries the node it was captured at, and a basis tagged with another
-node, or an empty slot, leaves the solve to start cold. A slot is empty until
-its first capture, so in a fresh run the first iteration's forward solves start
-cold. An infeasible forward solve clears its slot.
+A stored basis seeds a solve only when the solve's phase warm-starts and the
+basis was captured at the node being solved: each basis carries the node it was
+captured at, and a basis tagged with another node, or an empty slot, leaves the
+solve to start cold. A slot is empty until its first capture, so in a fresh run
+the first iteration's forward solves start cold whatever the phase setting. An
+infeasible forward solve clears its slot.
 
 While the dynamic method of cut selection
 ([Cut Management §8](/math/cut-management#8-the-dynamic-method)) is active, no
 solve reads or writes the store. The forward pass leaves its slot untouched,
-and every solve's initial LP starts without a stored basis; the later openings
-of a backward chain, and each re-solve after the dynamic method adds violated
-cuts, continue from the retained basis. The store therefore keeps the bases
+and every solve's initial LP starts without a stored basis; in a warm-starting
+phase the later openings of a backward chain, and each re-solve after the
+dynamic method adds violated cuts, continue from the retained basis, while in a
+cold phase they start cold as well. The store therefore keeps the bases
 captured in the iterations before the dynamic method started, and those are the
 bases the end-of-training checkpoint carries.
 
@@ -79,14 +91,26 @@ without one to start cold; a warm-start run seeds a trial point without its own
 basis from the node's lowest-scenario basis, since the run that wrote the
 checkpoint may have run fewer forward passes. A slot left empty starts its first
 solve cold and then reuses its own captures. Outside the dynamic method, the
-first iteration's seeded solves then warm-start through the reconstruction of
+first iteration's seeded solves of a warm-starting phase start through the
+reconstruction of
 [§4](/math/lp-warm-start#4-cut-aware-basis-reconstruction-by-slot-identity); a
-fresh run has nothing to seed. Outside the dynamic method, simulation starts
-each visited node's solve from that node's basis, taken from the preceding
-training run or, in a simulation-only run, from the node's lowest-scenario
-checkpoint basis for every scenario (a node with none is solved without its own
-stored basis); under the dynamic method simulation solves start without a
-stored basis.
+fresh run has nothing to seed. Under the default HiGHS forward profile the
+forward solves start cold, and each forward capture replaces the seeded basis of
+the node it visits before the backward pass reads that slot. On a stage chain,
+where every trial point visits every node, the checkpoint bases therefore seed
+no training solve unless `training.solver.forward` sets
+`"use_warm_start": true`. On a branching graph, a backward pass that reads the
+store also starts from them at the successor nodes that a trial point's
+first-iteration forward path did not visit.
+
+When the simulation phase warm-starts, and outside the dynamic method,
+simulation starts each visited node's solve from that node's basis, taken from
+the preceding training run or, in a simulation-only run, from the node's
+lowest-scenario checkpoint basis for every scenario (a node with none is solved
+without its own stored basis); under the dynamic method simulation solves start
+without a stored basis. Under the default HiGHS simulation profile every
+simulation solve starts cold, so a simulation-only run uses its checkpoint bases
+only when `simulation.solver` sets `"use_warm_start": true`.
 
 A checkpoint basis is used only when its column count equals the node's
 current stage LP's, its row count equals the LP's template rows plus its
@@ -121,7 +145,8 @@ the last, and each stored basis grows with them, carrying one status per row.
 For a study with many nodes and a large state-variable count, the combined
 footprint of the templates and the basis store can be significant.
 
-After the first iteration, a backward-pass solve costs mainly the dual simplex
+When the backward phase warm-starts, as it does by default, a backward-pass
+solve after the first iteration costs mainly the dual simplex
 work that restores optimality from the reused basis, once that basis is
 reconciled to the current cut set
 ([§4](/math/lp-warm-start#4-cut-aware-basis-reconstruction-by-slot-identity)),

@@ -107,7 +107,8 @@ Cobre runs the SDDP training loop (128 iterations, 1 forward pass each) followed
 a simulation pass (100 scenarios). Output is written to `my_first_study/results/`.
 The banner, an execution/setup header, the progress output and the post-run summary
 are printed to stdout; warnings and errors go to stderr. On a terminal the progress
-bars draw on stderr. Once the training progress ends, the output reads:
+bars draw on stderr. Each phase's summary follows its progress; this excerpt
+starts at the training summary and leaves out the simulation progress lines:
 
 {/* capture: cobre run my_first_study --output my_first_study/results 2>&1, post-run summary excerpt | cobre   v0.18.0 | binary: cobre-cli sha256 93cb7307 | case: 1dtoy (cobre init --template 1dtoy); timings vary run to run */}
 

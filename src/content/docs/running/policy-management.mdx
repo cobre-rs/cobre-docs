@@ -424,7 +424,8 @@ A [boundary load](#boundary-cuts) runs its own checks, listed under
    ```text
    unsupported checkpoint manifest format_version {format_version}; expected 4; re-run the program that produced it with cobre {running}; for a converted boundary policy, convert it again
    ```
-2. **Cost scale.** The terminal pool records its `cost_scale_factor` (see
+2. **Cost scale.** Every pool records a `cost_scale_factor` that is a finite
+   positive number (see
    [Cost-Scale Canonicalization](#cost-scale-canonicalization)).
 3. **Software and version.** The recorded `software` and `software_version` equal
    the running software's name and version exactly (see [Version gate](#version-gate)).
@@ -501,6 +502,19 @@ a stored basis is used only when its column count equals the LP's, its row count
 Warm-start and resume check the bases a checkpoint carries, simulation-only
 always checks them, and a [boundary load](#boundary-cuts) checks none.
 
+A stored basis that fits seeds a solve only in a phase that warm-starts
+([`use_warm_start`](/running/configuration/#solver-profile-fields)). Under the
+built-in HiGHS profiles forward and simulation solves start cold, so a
+simulation-only run starts from its checkpoint bases only with
+`simulation.solver.use_warm_start: true`. On a stage chain a warm-start or
+resume run starts from them only with
+`training.solver.forward.use_warm_start: true`, because the backward pass reads
+the bases the forward pass captures; on a branching graph the backward pass also
+starts from them at the successor nodes a scenario's first forward path did not
+visit. On CLP every phase starts from them. The
+[LP Warm-Start implementation notes](/math/lp-warm-start/#implementation-in-cobre)
+trace the store through each phase.
+
 Every checkpoint holds the LP bases of the run's forward-pass scenarios, and
 `policy.checkpointing.store_basis` has no effect on that. Any
 change that alters the column count of a stage LP therefore leaves out the
@@ -542,15 +556,24 @@ injection — converts each pool by its own recorded factor:
 | Bit-equal to the loading study's factor | Values used unchanged; a same-factor round trip, a resume included, is bit for bit. |
 | Any other value | Every value becomes `(value * source) / loading`: multiplied by the source factor first, then divided by the loading factor. |
 
-Every load path **requires** each resolved pool to carry the factor: a pool
-whose `cost_scale_factor` reads absent is rejected. A full-FCF load refuses with
+Every load path **requires** each resolved pool to carry a factor that is a
+finite positive number. A full-FCF load refuses a pool whose `cost_scale_factor`
+reads absent with
 
 ```text
-policy checkpoint predates self-describing cuts (its resolved cuts/<pool>.bin carries no cost_scale_factor); re-run the program that produced it with cobre {running}; for a converted boundary policy, convert it again
+policy checkpoint predates self-describing cuts (its cuts/<pool>.bin for pool {pool} carries no cost_scale_factor); re-run the program that produced it with cobre {running}; for a converted boundary policy, convert it again
 ```
 
-A [boundary load](#boundary-cuts) refuses with its own message, quoted in item 3
-of the [boundary load order](#compatibility-requirements).
+and a pool whose factor is not a finite positive number with
+
+```text
+policy checkpoint pool {pool} records cost_scale_factor {factor}, which is not a finite positive number; re-run the program that produced it with cobre {running}; for a converted boundary policy, convert it again
+```
+
+A [boundary load](#boundary-cuts) refuses a pool without the factor with its own
+message, quoted in item 3 of the
+[boundary load order](#compatibility-requirements), and a pool whose factor is
+not a finite positive number with the second message above.
 
 To read a coefficient or an intercept outside Cobre in currency units, multiply
 it by the pool's `cost_scale_factor`. A load at another factor rounds twice, once
@@ -666,7 +689,8 @@ failure stops the run:
    where `{e}` is the underlying error.
 2. **Pool selection.** Exactly one pool of the source is priced at the study's
    terminal boundary date.
-3. **Cost scale.** The resolved pool records its `cost_scale_factor` (see
+3. **Cost scale.** The resolved pool records a `cost_scale_factor` that is a
+   finite positive number (see
    [Cost-Scale Canonicalization](#cost-scale-canonicalization)); a pool without
    it is refused with `boundary policy checkpoint at {path} predates self-describing cuts (its resolved cuts/<pool>.bin carries no cost_scale_factor); re-run the program that produced it with cobre {running}; for a converted boundary policy, convert it again`.
 4. **Single-node source.** The resolved pool is a single-node terminal pool, not
@@ -1111,15 +1135,25 @@ The script prints the reloaded cut count and the version that
 ### Input validation
 
 `write_policy_checkpoint` raises `ValueError` when any of the following holds.
-The message locates the problem: the stage and cut for the two per-cut checks,
-the stage for a state-data mismatch, and the hydro for an unplaceable
-inflow-lag coefficient.
+The message locates the problem: the position of a retired key, the stage and
+cut slot for the two per-cut checks, the pool's states file for a state-data
+mismatch, and the hydro for an unplaceable inflow-lag coefficient.
 
+- a pool, cut or basis dict holds a retired key (see
+  [Write a checkpoint](#write-a-checkpoint));
+- a pool's `cost_scale_factor` is missing, not finite or not positive;
 - a cut's `coefficients` length does not match its stage's `state_dimension`;
-- a stage's state data length does not match `count * state_dimension`;
 - a cut carries `inflow_lag_coefficients` without a positive `inflow_lag_depth`;
 - (under `inflow_lag_depth`) a manifest lacks a leading storage block;
-- (under `inflow_lag_depth`) an inflow-lag coefficient is unplaceable; or
+- (under `inflow_lag_depth`) an inflow-lag coefficient is unplaceable;
+- the producer sets `basis_store_complete` with no basis in `stage_bases`;
+- a producer `state_history` is other than `None`, `"whole"` or a positive
+  window;
+- the payloads break a checkpoint rule (slot order, row counts, counter
+  presence, dates, a repeated id, size limits), a `stage_states` entry whose
+  `data` length differs from `count * state_dimension` included; the message is
+  `serialization error for entity {entity}: {message}`, where `{message}` names
+  the file and the rule; or
 - `path` (for a link, its target) or its `.staging` or `.previous` sibling holds an entry no checkpoint writer leaves there (`cobre.errors.ValidationError`, a `ValueError`, with the `refusing to write a checkpoint: …` text; nothing on disk changes).
 
 Each snippet below uses `metadata` from the round-trip example. The second also
@@ -1137,9 +1171,9 @@ bad_cuts = [
         "stage_id": 0,
         "state_dimension": 3,
         "capacity": 10,
+        "cost_scale_factor": 2_500_000.0,
         "cuts": [
             {
-                "cut_id": 1,
                 "slot_index": 0,
                 "iteration": 1,
                 "forward_pass_index": 0,
@@ -1152,7 +1186,7 @@ bad_cuts = [
 ]
 
 cobre.write_policy_checkpoint("output/policy", bad_cuts, metadata)
-# ValueError: stage 0 cut 1: coefficients has 2 entries, expected state_dimension=3
+# ValueError: stage 0 cut at slot 0: coefficients has 2 entries, expected state_dimension=3
 ```
 
 A `stage_states` entry whose flat `data` length disagrees with
@@ -1166,6 +1200,7 @@ stage_states = [
         "stage_id": 0,
         "state_dimension": 3,
         "count": 2,
+        "slots": [0, 1],
         "data": [1.0, 2.0, 3.0],  # length 3, but count * state_dimension = 6
     }
 ]
@@ -1173,7 +1208,7 @@ stage_states = [
 cobre.write_policy_checkpoint(
     "output/policy", stage_cuts, metadata, stage_states=stage_states
 )
-# ValueError: stage 0: states data has 3 entries, expected count*state_dimension=6
+# ValueError: serialization error for entity policy_checkpoint_structure: states/000.bin: data holds 3 values, not count 2 times state_dimension 3
 ```
 
 A cut carrying `inflow_lag_coefficients` with no `inflow_lag_depth` passed to
@@ -1188,9 +1223,9 @@ stage_cuts = [
         "stage_id": 0,
         "state_dimension": 3,
         "capacity": 10,
+        "cost_scale_factor": 2_500_000.0,
         "cuts": [
             {
-                "cut_id": 1,
                 "slot_index": 0,
                 "iteration": 1,
                 "forward_pass_index": 0,
@@ -1204,7 +1239,7 @@ stage_cuts = [
 ]
 
 cobre.write_policy_checkpoint("output/policy", stage_cuts, metadata)
-# ValueError: stage 0 cut 1: inflow_lag_coefficients supplied without inflow_lag_depth; pass inflow_lag_depth=N to reserve the lag slots
+# ValueError: stage 0 cut at slot 0: inflow_lag_coefficients supplied without inflow_lag_depth; pass inflow_lag_depth=N to reserve the lag slots
 ```
 
 ---
