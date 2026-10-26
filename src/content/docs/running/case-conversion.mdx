@@ -27,10 +27,10 @@ and is needed only to run `cobre validate` and `cobre run` on the converted
 case.
 
 `cobre-python` is a **required** runtime dependency, not an optional extra —
-it provides the Python bindings that `convert --validate`, `dashboard`, and
-`convert decomp`'s boundary-FCF import need, so installing cobre-bridge pulls
-it in automatically. (`compare` does not use the bindings: it reads Cobre's
-simulation-output parquet files directly.)
+it provides the Python bindings that `convert --validate`, `dashboard`,
+`convert decomp`'s boundary-FCF import and `export dessem` need, so installing
+cobre-bridge pulls it in automatically. (`compare` does not use the bindings: it
+reads Cobre's simulation-output parquet files directly.)
 
 A cobre-bridge release `X.Y.Z` targets cobre `X.Y.Z`: the converted case
 follows that release's input contract. The bridge records its minimum cobre
@@ -98,6 +98,9 @@ cobre-bridge convert newave /path/to/source/case /path/to/output/case
 | `1`  | Conversion error.                       |
 | `2`  | `--validate` reported a load failure.   |
 
+A conversion that fails with exit `1` still reports the warnings found before
+the failure, in the console notes and in the `--json` diagnostics.
+
 `convert decomp` uses the same `0`/`1`/`2` exit-code set. On every cobre-bridge
 command, a usage error (an unknown option, a missing argument, or an invalid
 option value such as an unwritable `--log-file` path) also exits `2`, with a
@@ -148,8 +151,8 @@ The conversion pipeline transforms the source case's input files into a
 complete Cobre case directory, organised by output sub-directory:
 
 - **`system/`** -- plant and network configuration: hydros, thermals, buses,
-  lines, non-controllable sources, hydro production models, and hydro
-  geometry.
+  lines, pumping stations, non-controllable sources, hydro production models,
+  and hydro geometry.
 - **`scenarios/`** -- stochastic inputs: inflow, load, and non-controllable
   seasonal statistics and factors.
 - **`constraints/`** -- per-stage bounds, penalty overrides, and generic
@@ -182,6 +185,7 @@ output/
     thermals.json
     buses.json
     lines.json
+    pumping_stations.json
     non_controllable_sources.json
     hydro_production_models.json
     hydro_geometry.parquet
@@ -199,6 +203,7 @@ output/
     line_bounds.parquet
     hydro_bounds.parquet                (conditional)
     thermal_bounds.parquet              (conditional)
+    pumping_bounds.parquet              (conditional)
     penalty_overrides_bus.parquet       (conditional)
     penalty_overrides_hydro.parquet     (conditional)
     generic_constraints.json            (conditional: deck has generic constraints)
@@ -214,13 +219,12 @@ A case written by `convert decomp` does not write `scenarios/inflow_history.parq
 `constraints/penalty_overrides_hydro.parquet`, and it also writes files that
 `convert newave` never writes:
 
-- `system/energy_contracts.json` and `system/pumping_stations.json`
+- `system/energy_contracts.json`
 - `scenarios/external_inflow_scenarios.parquet`,
   `scenarios/external_load_scenarios.parquet` and
   `scenarios/external_ncs_scenarios.parquet`
-- `constraints/contract_bounds.parquet`,
-  `constraints/hydro_unit_group_bounds.parquet` and
-  `constraints/pumping_bounds.parquet`
+- `constraints/contract_bounds.parquet` and
+  `constraints/hydro_unit_group_bounds.parquet`
 - `post_study_stages.json` at the top level
 - the imported boundary under `boundary/` (see
   [Converting a DECOMP Deck](#converting-a-decomp-deck))
@@ -242,7 +246,10 @@ results (`MEDIAS-*.CSV`, `pmo.dat`) against Cobre simulation output.
 `compare decomp <DECOMP_DIR> <COBRE_OUTPUT_DIR>` compares a DECOMP run's
 published operation (`dec_oper_*.csv`) the same way. Both source directories
 must hold the case/deck and its result files directly (not nested in a
-subdirectory).
+subdirectory). The Productivity tab of `compare newave` places both models at
+their operating points only when the NEWAVE run has its per-plant `nwlistop`
+tables, which the `nwlistop.dat` plant list set to `999` produces; without them
+it leaves the operating points out, with a note.
 
 | Flag                | Description                                                                                                                    |
 | ------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
@@ -335,7 +342,8 @@ cobre-bridge check decomp /path/to/deck
 
 `check decomp` also reports what the conversion will leave behind (deck
 features `convert decomp` does not carry over), so a limitation is never a
-silent omission.
+silent omission. `check` and `convert` warn when a fixed-column input file holds
+a tab character, which shifts every field after it on its line.
 
 `check` shares `convert`'s `--json`, `-v/--verbose`, `--log-file`,
 `--no-color`, and `--quiet` flags.
@@ -366,6 +374,43 @@ cobre-bridge dashboard /path/to/cobre/case
 `dashboard` also shares `convert`'s `-v/--verbose`, `--log-file`,
 `--no-color`, and `--quiet` flags. Exit codes: `0` written, `1` error.
 
+`dashboard` also builds for a case run with training or simulation disabled,
+and leaves out the tabs and sections of the phase that did not run. Its
+Constraints tab, like those of `compare`, shows each generic constraint as Cobre
+resolved it, read from the run's `generic_constraints/resolved_echo.parquet`
+([the resolved echo](/reference/generic-constraints/#the-resolved-echo)).
+
+### Exporting a DESSEM Cost Function
+
+`export dessem` writes the policy of a solved case converted from a DECOMP deck
+as the future cost function DESSEM reads:
+
+```bash
+cobre-bridge export dessem /path/to/deck /path/to/cobre/case
+```
+
+`export dessem <DECOMP_DIR> <CASE_DIR>` reads the policy checkpoint under
+`<CASE_DIR>/output/policy/` through `cobre-python` and writes `mapcut.<rev>`,
+`cortdeco.<rev>` and `export_manifest.json`. `DECOMP_DIR` is the deck the case
+was converted from: its `caso.dat` names the revision `<rev>`, its `hidr.dat`
+codes label the plants, and the order of its `VI` records numbers the plants
+with a water travel time, whose in-transit water the cuts carry. A plant with a
+travel time but no `VI` record in the deck, a travel time that is not a whole
+number of hours, and a plant with a travel time but no downstream plant are
+refused. The anticipated-thermal (GNL) coefficients are written as zeros, with a
+warning.
+
+| Flag                 | Description                                                       |
+| -------------------- | ----------------------------------------------------------------- |
+| `--output, -o PATH`  | Output directory. Default `<case_dir>/dessem_fcf/`.               |
+| `--force`            | Overwrite the outputs if the output directory already holds them. |
+| `--audit-csv`        | Also write the cuts as audit CSV files.                           |
+| `--include-terminal` | Include the terminal pool in the audit CSV files.                 |
+| `--json`             | Emit a single machine-readable JSON verdict to stdout.            |
+
+`export dessem` also shares `convert`'s `-v/--verbose`, `--log-file`,
+`--no-color`, and `--quiet` flags. Exit codes: `0` written, `1` error.
+
 ---
 
 ## Conversion Details
@@ -391,14 +436,28 @@ An `EE` plant operates from the first stage at the machine configuration
 exist yet are left out, except a future plant whose `exph.dat` schedule fills
 its dead volume. Fictitious accounting plants are removed; they are identified
 structurally, as a plant with zero productivity that shares its inflow gauge
-with a generating plant, and a cascade link through a removed plant is rewired
-to the next real plant downstream.
+with a generating plant and that no pumping station uses, and a cascade link
+through a removed plant is rewired to the next real plant downstream.
 
 `convert decomp` converts the deck's operated hydros, with the deck's registry
 overrides applied, and its small plants as must-run non-controllable sources.
 
 For the full list of conversion rules, see the cobre-bridge
 [NEWAVE track guide](https://github.com/cobre-rs/cobre-bridge/blob/v0.18.0/docs/newave.md).
+
+### Study Settings
+
+Both tracks set [`simulation.cut_set`](/running/configuration/#simulation-cut-set)
+to `"all"`, so the simulation loads every cut training added, as the source
+models do. When `dger.dat` turns cut selection on for either pass,
+`convert newave` sets the `selection` of
+[`training.cut_selection`](/running/configuration/#trainingcut_selection) to the
+`level1` method with `check_frequency` `1` and `lookback_iterations` `2`, and
+when `dger.dat` turns the cut window on, it warns that Cobre has no cut window
+and keeps every cut. `convert newave` sets
+[`modeling.inflow_non_negativity`](/running/configuration/#modelinginflow_non_negativity)
+to `truncation_with_penalty` and `convert decomp` sets it to `penalty`.
+`convert decomp` trains and simulates under the `enumerated` selection.
 
 ### Risk Measure Support
 
@@ -413,21 +472,32 @@ in `stages.json`. Three modes are supported:
 
 ### Generic Constraints
 
-Three families of source constraints are converted into Cobre's
+`convert newave` converts three families of source constraints into Cobre's
 generic-constraint authoring format: one definition per constraint in
 `generic_constraints.json` (a `name`, an `expression`, and an optional `slack`),
 merged with sequential integer IDs, and per-stage right-hand-side bounds in
 `generic_constraint_bounds.parquet`.
 
-- **VminOP** -- minimum stored-energy constraints. Each is a weighted sum of the
-  participating reservoirs' end-of-stage storage, where the weight is that
-  reservoir's accumulated productivity, referenced as a named parameter
-  (`@rho_acum_h<id>`) declared in `constraints/generic_parameters.json` and
-  resolved by Cobre to its own ρ at solve time. This keeps the constraint's
-  coefficients aligned with the study's productivities rather than freezing a
-  converted value.
-- **Electric** -- operational constraints on hydro generation and line flows.
-- **AGRINT** -- group dispatch constraints for thermal and hydro plants.
+- **VminOP** -- minimum stored-energy constraints, one per REE. Each bounds
+  the useful stored energy, in MWh, of the REE's participating reservoirs at
+  the end of the stage from below by the curve's fraction of their maximum
+  useful stored energy. Each reservoir's weight and maximum are named
+  parameters (`@rho_acum_mwh_h<id>`, `@earm_max_mwh_h<id>`) declared in
+  `constraints/generic_parameters.json` as computed parameters
+  (`integrated_accumulated_productivity_mwh_per_hm3`, `max_stored_energy_mwh`),
+  which Cobre resolves from the study's own productivities (see the
+  [security-curve example](/reference/generic-constraints/#worked-example-a-security-curve)).
+  The slack's [penalty basis](/reference/generic-constraints/#penalty-basis) is
+  `per_unit`, a price per MWh of violation.
+- **Electric** -- operational constraints on hydro generation and line flows,
+  with a `per_hour` slack priced at the `penalid.dat` electric-constraint
+  penalty, or at 10 times the largest deficit cost when the case declares none.
+- **AGRINT** -- exchange-group limits, each a cap on a weighted sum of
+  directional line flows, with no slack.
+
+`convert decomp` converts the deck's `RE`, `RHQ`, `RHV` and LIBS electrical
+constraints with a `per_hour` slack and its `RHE` stored-energy constraints with
+a `per_unit` slack.
 
 ---
 
